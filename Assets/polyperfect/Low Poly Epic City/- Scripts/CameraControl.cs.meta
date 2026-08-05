@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 65024f0d1de7a99439b355268c7caac6
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 202624
+  packageName: Low Poly Epic City
+  packageVersion: 1.7.1
+  assetPath: Assets/polyperfect/Low Poly Epic City/- Scripts/CameraControl.cs
+  uploadId: 730079

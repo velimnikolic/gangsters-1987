@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: eed4512c6903c1240938b386c3cd6b25
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 500
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 202624
+  packageName: Low Poly Epic City
+  packageVersion: 1.7.1
+  assetPath: Assets/polyperfect/Low Poly Epic City/- Scripts/TrainController.cs
+  uploadId: 730079

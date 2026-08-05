@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 15710002b9ca08c4a8b42c210ca5482b
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 450
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 202624
+  packageName: Low Poly Epic City
+  packageVersion: 1.7.1
+  assetPath: Assets/polyperfect/Low Poly Epic City/- Scripts/CarBehavior.cs
+  uploadId: 730079

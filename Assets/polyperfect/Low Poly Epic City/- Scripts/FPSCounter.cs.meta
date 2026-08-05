@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 2cd218204f3aced468ef6065c9572e3e
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 202624
+  packageName: Low Poly Epic City
+  packageVersion: 1.7.1
+  assetPath: Assets/polyperfect/Low Poly Epic City/- Scripts/FPSCounter.cs
+  uploadId: 730079

@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 31d63f09177c84d43ae7bff6b9ffa319
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 202624
+  packageName: Low Poly Epic City
+  packageVersion: 1.7.1
+  assetPath: Assets/polyperfect/Low Poly Epic City/- Scripts/Direction.cs
+  uploadId: 730079
