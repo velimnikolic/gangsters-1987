@@ -105,12 +105,19 @@ namespace LivingCity.Data
         }
 
         /// <summary>
-        /// Correction for prefabs authored off the pack's facade convention. BlockBuilder
-        /// rotates local +Z toward the street, which is how the pack's own demo scene orients
-        /// these buildings - but three block pieces put their windows elsewhere (measured from
-        /// the meshes: the plain 5floor's facade is on -Z and its +Z is a blank wall, and the
-        /// two corner kits are mirrored relative to each other), so each carries the yaw that
-        /// puts its windows back on the pavement.
+        /// Correction for prefabs authored off the pack's facade convention. BlockBuilder rotates
+        /// local +Z toward the street, which is how the pack's own demo scene orients these
+        /// buildings - but a few pieces put their windows elsewhere (the plain 5floor's facade is
+        /// on -Z and its +Z is a blank wall), so each carries the yaw that puts its windows back
+        /// on the pavement.
+        ///
+        /// For a CORNER piece the number means something different, and getting that wrong is
+        /// what put a blank wall on one of every corner's two streets. A corner has two finished
+        /// elevations, so there is no single "front" to point at a street; what the value aligns
+        /// is the outer QUADRANT, in a convention rotated 45 degrees from the flat one. See
+        /// BlockBuilder's corner loop for the derivation and CornerFacing for the measurement
+        /// that produces it. Either way the only legal values are 0, 90, 180 and 270 - the pack
+        /// is modelled square and anything else leaves a facade skew to its street.
         /// </summary>
         [Serializable]
         public sealed class FacadeYawFix
@@ -147,7 +154,7 @@ namespace LivingCity.Data
 
             [Tooltip("Hard cap in blocks regardless of city size. 0 = none. This is the right " +
                      "control for anything a city has ONE of - the hospital, the police station, " +
-                     "Chinatown. A share cap cannot express that: 9% of a twelve-block map is " +
+                     "the fire station. A share cap cannot express that: 9% of a twelve-block map is " +
                      "one hospital, but 9% of a forty-block map is three.")]
             [Min(0)] public int maxBlocks;
 
@@ -174,6 +181,20 @@ namespace LivingCity.Data
                      "off the 30m grid and break the link to the pavements.")]
             public bool groundIsTilePerCell;
 
+            [Range(0f, 1f)]
+            [Tooltip("How often a yard patch rolls its own surface instead of repeating its " +
+                     "lot's. 1 is a full mosaic - right for a works yard, where mixed concrete " +
+                     "and dirt is what the place looks like. Lower it for a zone that should " +
+                     "read as deliberately surfaced, and 0 leaves the yard one flat colour " +
+                     "with only the shade varying.")]
+            public float groundPatchChance = 1f;
+
+            [Tooltip("Draw paving joints across the yards of this zone - the thin darker grid " +
+                     "that turns a flat slab into a paved forecourt. Right where the ground is " +
+                     "meant to be laid rather than poured, so it belongs downtown and behind a " +
+                     "terrace, and not in a works yard or a suburban garden.")]
+            public bool paveJoints;
+
             [Header("Buildings")]
             [Tooltip("Empty means no perimeter buildings at all - a park or a car park.")]
             public WeightedGroup[] groups = Array.Empty<WeightedGroup>();
@@ -185,9 +206,11 @@ namespace LivingCity.Data
                      "bleed keep their per-slot rolls.")]
             public bool uniformStreetRuns;
 
-            [Tooltip("Cap on Subdivide's columns AND rows. 0 = uncapped. 1 = a single perimeter " +
-                     "ring: every building fronts a street and the block encloses one courtyard, " +
-                     "instead of interior lots whose rows can only ever face the alleys.")]
+            [Tooltip("Cap on Subdivide's columns AND rows. 0 = uncapped, which lets a big block " +
+                     "break into two or three ringed lots with alleys between them - the way a " +
+                     "big Chicago block reads as several small ones. 1 forces a single perimeter " +
+                     "ring: every building fronts a street, and the block encloses one courtyard " +
+                     "however large it is.")]
             [Min(0)] public int maxLotsPerAxis;
 
             [Tooltip("At most one per block, on the longest street run. This is what makes a " +
@@ -196,10 +219,44 @@ namespace LivingCity.Data
             [Range(0f, 1f)] public float landmarkChance;
 
             [Header("Yard")]
-            [Tooltip("Scattered across the block interior - trees for a park, timber and " +
-                     "brick stacks for a works yard.")]
+            [Tooltip("Dropped on whatever ground the lots left over - the alleys between them " +
+                     "and the light-wells inside them - each turned so its front faces away " +
+                     "from the nearest wall. Keep it light: bins, a dumpster, a bench, a lamp, " +
+                     "a tree. Empty leaves the interior to Scatter instead.")]
+            public GameObject[] alleyProps = Array.Empty<GameObject>();
+
+            [Tooltip("Chance a slot on an ALLEY-facing run becomes a 12m parking bay instead of " +
+                     "a building - the same idea as parkingChance, on the back elevation. Cars " +
+                     "go here rather than in the alley itself, which is only 6m wide.")]
+            [Range(0f, 1f)] public float alleyParkingChance = 0.15f;
+
+            [Tooltip("Scattered across whatever the alley furniture leaves free - timber and " +
+                     "brick stacks for a works yard, bins behind a terrace. NOT used by the Park " +
+                     "zone: uniform noise is exactly what made the park read as a lawn with " +
+                     "objects dropped on it. See the Park section below.")]
             public GameObject[] scatter = Array.Empty<GameObject>();
             [Range(0f, 1f)] public float scatterDensity;
+
+            [Header("Park (groundIsTilePerCell zones only)")]
+            [Tooltip("Trees planted in rows through the park quadrants. Weighted rather than " +
+                     "flat because the species are not interchangeable in size: tree-lime is a " +
+                     "7.07m crown against tree-poplar's 2.21m, so an even draw fills a 9.5m " +
+                     "quadrant with three limes and nothing else fits. A row draws ONE group and " +
+                     "plants the whole row from it - that is what makes an avenue read as planted " +
+                     "rather than grown.")]
+            public WeightedPrefabs[] parkTrees = Array.Empty<WeightedPrefabs>();
+
+            [Tooltip("Low planting filling the lawn between the rows: shrubs, flowers, grass " +
+                     "tufts. Drawn flat because at this size the pieces really are " +
+                     "interchangeable, and placed in small clusters so it reads as beds rather " +
+                     "than as noise. Anything here wants a footprint under about 2m.")]
+            public GameObject[] parkUndergrowth = Array.Empty<GameObject>();
+
+            [Tooltip("Seating set along the path legs and turned to face the path. Kept separate " +
+                     "from the undergrowth because these are the only park pieces with a front - " +
+                     "a bench at a random yaw in the middle of a lawn is the single clearest " +
+                     "tell that a park was generated rather than laid out.")]
+            public GameObject[] parkBenches = Array.Empty<GameObject>();
 
             [Tooltip("Chance a street-facing slot becomes a surface car park instead of a building.")]
             [Range(0f, 1f)] public float parkingChance = 0.12f;
@@ -207,13 +264,15 @@ namespace LivingCity.Data
             [Tooltip("Fill the whole block with rows of parked cars - the Parking zone.")]
             public bool carRows;
 
-            [Header("Car park (carRows zones only)")]
-            [Tooltip("fence-classic - one 2m length of railing, tiled round the boundary and " +
-                     "stretched slightly to close the run. Empty leaves the lot unfenced.")]
+            [Header("Boundary")]
+            [Tooltip("One length of boundary, tiled round the edge and stretched slightly to " +
+                     "close the run - fence-classic railing on a car park, fence-shrub hedge on " +
+                     "a park. Empty leaves the block unbounded, which for a park means it bleeds " +
+                     "into the road tile's verge with nothing to say where it starts.")]
             public GameObject fenceSegment;
 
             [Tooltip("fence-stone-tower - the pier that terminates a fence run, at the four " +
-                     "corners and either side of the gate.")]
+                     "corners and either side of a gate. Car parks only; a hedge has no piers.")]
             public GameObject fencePost;
 
             [Tooltip("ticket-ride-booth - the attendant's kiosk beside the entrance. From the " +
@@ -298,6 +357,21 @@ namespace LivingCity.Data
                  "Painted onto the procedural parking-line mesh, so the markings need no new " +
                  "asset and no UV authoring. Empty leaves car parks unmarked.")]
         public Material lineMaterial;
+
+        [Tooltip("Material variants of buildingBaseMaterial for the ground slabs. Free to range " +
+                 "much wider than buildingTints: a floor is one flat patch of the atlas with no " +
+                 "roof or windows for _BaseColor to drag along, and it is exactly that width " +
+                 "that turns a block's slabs into a mosaic instead of one field of grey. Empty " +
+                 "leaves every slab the pack's own colour.")]
+        public Material[] groundTints = Array.Empty<Material>();
+
+        [Tooltip("18 GREY-DARK-LPEC - untextured, like lineMaterial. Paving joints and faded " +
+                 "repair patches are painted on it. Empty leaves them undrawn.")]
+        public Material paintDarkMaterial;
+
+        [Tooltip("22 GREY-LIGHTEST-LPEC - the same idea one end of the ramp up, for the footpath " +
+                 "worn across a yard. Empty leaves the paths undrawn.")]
+        public Material paintLightMaterial;
 
         [Header("Props (Props_T/City_T, Nature_T/Trees_T)")]
         public GameObject[] streetLamps = Array.Empty<GameObject>();

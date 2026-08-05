@@ -1,0 +1,459 @@
+using System.Collections.Generic;
+using UnityEngine;
+using PolyPerfect.City;
+
+namespace LivingCity.Entities
+{
+    /// <summary>One live car's entry in <see cref="TrafficRegistry"/>.</summary>
+    public sealed class TrafficBody
+    {
+        public readonly CarBehavior Car;
+        public readonly Transform Tf;
+        /// <summary>
+        /// EntityId rather than int: Unity 6.5 raises BOTH GetInstanceID() and the implicit
+        /// EntityId-to-int conversion as CS0619 errors, so the id has to stay in its own type
+        /// the whole way. EntityId carries its own comparison operators, which is all
+        /// ShouldYieldTo's tie-break needs.
+        /// </summary>
+        public readonly EntityId Id;
+
+        /// <summary>Measured once at registration - see <see cref="TrafficRegistry.Measure"/>.</summary>
+        public readonly float HalfLength;
+        public readonly float HalfWidth;
+
+        /// <summary>Written by the car each frame. Metres per second, never negative.</summary>
+        public float SpeedMs;
+
+        /// <summary>How long this car has been held still by crossing traffic. See the stall breaker.</summary>
+        public float StalledFor;
+
+        /// <summary>Time.time until which this car refuses to yield to crossing traffic.</summary>
+        public float IgnoreCrossingUntil;
+
+        /// <summary>
+        /// Extra seconds this particular car waits before giving up on yielding, so a symmetric
+        /// pair does not give up on the same frame and recreate the standoff. Derived from the id
+        /// rather than drawn randomly, so a car behaves the same way every run.
+        /// </summary>
+        public readonly float StallJitter;
+
+        public TrafficBody(CarBehavior car, float halfLength, float halfWidth, float stallJitterRange)
+        {
+            Car = car;
+            Tf = car.transform;
+            Id = car.GetEntityId();
+            HalfLength = halfLength;
+            HalfWidth = halfWidth;
+            StallJitter = Mathf.Abs(Id.GetHashCode() % 1000) / 1000f * stallJitterRange;
+        }
+
+        /// <summary>
+        /// Built fresh on every read rather than cached per frame. Cars move during Update in
+        /// whatever order Unity feels like, so a cached pose would be stale for roughly half of
+        /// them - and a stale pose makes the clamp optimistic in exactly the situation it exists
+        /// to catch. Thirty cars is nine hundred of these a frame, which is nothing.
+        /// </summary>
+        public TrafficBox Box => new TrafficBox(Tf.position, Tf.forward, HalfLength, HalfWidth);
+    }
+
+    /// <summary>What the road ahead looks like to one car this frame.</summary>
+    public readonly struct Obstacle
+    {
+        /// <summary>Gap to the nearest blocker the car must SLOW for. Infinite when clear.</summary>
+        public readonly float Gap;
+
+        /// <summary>That blocker's speed resolved along our heading, m/s. Never negative.</summary>
+        public readonly float LeadSpeedMs;
+
+        /// <summary>
+        /// Gap to the nearest blocker of ANY kind, including ones we have priority over. This is
+        /// what the hard movement clamp uses: right of way decides who slows down gracefully, it
+        /// does not decide who is allowed to drive through whom.
+        ///
+        /// Bodies we ALREADY overlap are left out of it, and only those. The clamp's job is to
+        /// stop a gap closing; against something that has already closed it there is nothing left
+        /// to protect, and including it would freeze the pair at the overlap forever. Every other
+        /// blocker stays in, which is the part that matters - see <see cref="Overlapping"/>.
+        /// </summary>
+        public readonly float ClampGap;
+
+        /// <summary>
+        /// Our body genuinely intersects another car's, by the exact separating-axis test.
+        ///
+        /// It used to be inferred from a negative <see cref="Gap"/>, which is a projection onto
+        /// ONE axis and says nothing about the other. A car crossing the junction ahead of us -
+        /// centre 2.5m forward, 3.5m to the side, bodies comfortably apart - measures gap -0.8
+        /// and set this true. Worse, it was one flag for the whole probe and the caller read it as
+        /// "the clamp does not apply this frame", so a car passing in front switched off the
+        /// anti-overlap guarantee against the car we were following. Junctions were where cars
+        /// crashed because junctions were where this went wrong.
+        ///
+        /// Now it means what it says, and it no longer disables anything: overlapping bodies are
+        /// simply absent from <see cref="ClampGap"/>. The flag survives only to tell the car it
+        /// may creep - being inside somebody is the one state a car has to be allowed to leave.
+        /// </summary>
+        public readonly bool Overlapping;
+
+        /// <summary>The binding constraint on <see cref="Gap"/> was crossing traffic, not a leader.</summary>
+        public readonly bool BlockedByCrossing;
+
+        /// <summary>
+        /// The stall breaker has given up on yielding for this car. Also the car's licence to
+        /// creep - see <see cref="CarFollowing.CreepSpeed"/>. Both halves are needed: dropping the
+        /// yield alone only decides who SHOULD go, and a car whose speed model is pinned at zero
+        /// cannot act on winning that argument.
+        /// </summary>
+        public readonly bool ReleaseActive;
+
+        public Obstacle(float gap, float leadSpeedMs, float clampGap, bool overlapping,
+                        bool blockedByCrossing, bool releaseActive)
+        {
+            Gap = gap;
+            LeadSpeedMs = leadSpeedMs;
+            ClampGap = clampGap;
+            Overlapping = overlapping;
+            BlockedByCrossing = blockedByCrossing;
+            ReleaseActive = releaseActive;
+        }
+
+        public static Obstacle Clear =>
+            new Obstacle(float.PositiveInfinity, 0f, float.PositiveInfinity, false, false, false);
+    }
+
+    /// <summary>
+    /// Every AI car in the scene, and the one question worth asking about them: what is in the way?
+    ///
+    /// This exists because the pack has no answer. Its cars are moved by writing straight to
+    /// transform.position with a KINEMATIC Rigidbody, so PhysX never generates a contact between
+    /// two of them - there is no collision to suppress and none to rely on. Its avoidance is a
+    /// trigger box reaching about two metres past the bumper of a car doing 100km/h, read once on
+    /// OnTriggerEnter, and disabled outright on the first lane of every route. Cars therefore
+    /// drove through each other, which is what this replaces.
+    ///
+    /// A flat list, scanned in full. carCount is 30, so a probe is 30 comparisons and a frame is
+    /// 900 - far below the cost of the transform reads around it. If the population ever reaches
+    /// the high hundreds, bucket the list on a uniform grid keyed to CityGrid.CellSize; nothing
+    /// outside this file would need to change.
+    /// </summary>
+    public static class TrafficRegistry
+    {
+        /// <summary>
+        /// Seconds of being held still by crossing traffic before a car stops yielding. Insurance,
+        /// not a mechanism: the right-of-way rule below is symmetric and should never stall a pair
+        /// in the first place. It fires when three or more cars meet in a way the pairwise rule
+        /// cannot resolve, and when a car yields to one that has itself been stopped by a red light.
+        /// </summary>
+        const float StallTimeout = 4f;
+
+        /// <summary>How long a stalled car ignores crossing traffic once the timeout fires.</summary>
+        const float StallRelease = 1.5f;
+
+        /// <summary>Spread of the per-car stagger added to StallTimeout. See TrafficBody.StallJitter.</summary>
+        const float StallJitterRange = 1.5f;
+
+        /// <summary>Below this the car counts as stopped for the stall breaker, m/s.</summary>
+        const float StalledSpeed = 0.2f;
+
+        /// <summary>
+        /// How much closer to the conflict one car has to be before the other yields to it. Without
+        /// the margin, two cars arriving symmetrically would flip the decision every frame as their
+        /// gaps crossed; with it, ties fall through to the instance-id rule and stay decided.
+        /// </summary>
+        const float PriorityMargin = 0.25f;
+
+        /// <summary>Used when a prefab has no solid box to measure. No pack car hits this.</summary>
+        const float FallbackHalfLength = 2.25f;
+        const float FallbackHalfWidth = 1.05f;
+
+        static readonly List<TrafficBody> Bodies = new List<TrafficBody>();
+
+        public static int Count => Bodies.Count;
+
+        public static TrafficBody Register(CarBehavior car)
+        {
+            if (!car)
+                return null;
+
+            Measure(car.gameObject, out var halfLength, out var halfWidth);
+
+            var body = new TrafficBody(car, halfLength, halfWidth, StallJitterRange);
+            Bodies.Add(body);
+            return body;
+        }
+
+        public static void Unregister(TrafficBody body)
+        {
+            if (body != null)
+                Bodies.Remove(body);
+        }
+
+        /// <summary>
+        /// The nearest thing in the way of <paramref name="self"/>, and whether it is something to
+        /// slow for or merely something not to drive into.
+        ///
+        /// Two separate answers come back on purpose. <see cref="Obstacle.Gap"/> drives the speed
+        /// model and honours right of way, so the car with priority keeps its speed through a
+        /// junction instead of both cars braking at each other. <see cref="Obstacle.ClampGap"/>
+        /// ignores priority entirely and is what physically stops the car - being in the right is
+        /// not a licence to occupy someone else's bodywork.
+        /// </summary>
+        public static Obstacle Probe(TrafficBody self, float lookahead)
+        {
+            if (self == null || !self.Tf)
+                return Obstacle.Clear;
+
+            var box = self.Box;
+            var yieldingSuspended = Time.time < self.IgnoreCrossingUntil;
+
+            var gap = float.PositiveInfinity;
+            var leadSpeed = 0f;
+            var clampGap = float.PositiveInfinity;
+            var overlapping = false;
+            var blockedByCrossing = false;
+
+            for (var i = 0; i < Bodies.Count; i++)
+            {
+                var other = Bodies[i];
+                if (other == self || other == null || !other.Tf)
+                    continue;
+
+                var otherBox = other.Box;
+                var intersecting = TrafficGeometry.Overlaps(box, otherBox);
+
+                if (!TrafficGeometry.TryMeasure(box, otherBox, lookahead, out var thisGap, out _, out var facing))
+                {
+                    // TryMeasure answers "is it in the corridor AHEAD", which a body we are
+                    // already inside can fail - it can be beside us, or mostly behind us. Being
+                    // inside somebody still has to be reported, or the car has no licence to creep
+                    // back out and stays there.
+                    if (intersecting)
+                        overlapping = true;
+                    continue;
+                }
+
+                // Traffic coming the other way is in the other carriageway, and no width test can
+                // establish that: the lanes are 3m apart and a bus is 2.85m wide, so two buses
+                // pass with 15cm of daylight between them. Heading settles it exactly, so an
+                // oncoming car counts only when the bodies genuinely intersect - which means
+                // somebody is on the wrong side of the road, not that somebody is approaching.
+                //
+                // Getting this wrong is what jammed the city: every car was braking for oncoming
+                // traffic as though it were a stationary obstacle in its own lane, and because the
+                // approach speeds add up, IDM read it as an emergency. The bus tripped it worst -
+                // being the widest thing on the road, it started reacting at 2.8m of clearance
+                // where a car only reacted at 5.3m - and everything behind the bus queued up.
+                if (facing < TrafficGeometry.OncomingDot && !intersecting)
+                    continue;
+
+                if (intersecting)
+                {
+                    // Already inside this one. The clamp cannot un-close a gap that is shut, and
+                    // feeding it a negative number would hold the pair together permanently, so
+                    // this body is left out of clampGap entirely - and ONLY this body. Everything
+                    // else on the road still constrains us, which is the difference between "let
+                    // these two untangle" and the old "this car may now drive through anything".
+                    overlapping = true;
+                }
+                else if (thisGap < clampGap)
+                {
+                    clampGap = thisGap;
+                }
+
+                var crossing = Mathf.Abs(facing) < TrafficGeometry.CrossingDot;
+                if (crossing && !ShouldYieldTo(self, box, other, otherBox, yieldingSuspended))
+                {
+                    // We have right of way, so we do not slow down early for them. We do still
+                    // have to react once they are inside the distance we could stop in, or the
+                    // clamp below ends up doing the braking - which is not braking, it is the car
+                    // hitting a wall at the last frame and wedging there.
+                    if (thisGap > CarFollowing.StoppingDistance(self.SpeedMs))
+                        continue;
+                }
+
+                if (thisGap >= gap)
+                    continue;
+
+                gap = thisGap;
+                blockedByCrossing = crossing;
+
+                // Only the component of the blocker's motion that carries it away along OUR heading
+                // relieves the gap. A car crossing at right angles contributes nothing, and one
+                // coming the other way contributes less than nothing - clamped to zero, since IDM
+                // treats the lead speed as the speed we could safely settle at.
+                leadSpeed = Mathf.Max(0f, other.SpeedMs * Vector3.Dot(otherBox.Forward, box.Forward));
+            }
+
+            // Overlapping counts as blocked in its own right. It no longer shows up in clampGap,
+            // and a car wedged inside another with clear road otherwise would look unobstructed -
+            // which is the one arrangement that most needs the timer running.
+            UpdateStall(self, overlapping || !float.IsPositiveInfinity(clampGap));
+
+            // Re-read rather than reusing yieldingSuspended from the top: UpdateStall may have
+            // fired the release on this very frame, and making the car wait until the next one to
+            // act on it is a frame of standing still for no reason.
+            return new Obstacle(gap, leadSpeed, clampGap, overlapping, blockedByCrossing,
+                                Time.time < self.IgnoreCrossingUntil);
+        }
+
+        /// <summary>
+        /// Right of way between two cars whose paths cross: the one further from the conflict
+        /// gives way. That is both what a driver does and, more importantly, ANTISYMMETRIC - run
+        /// it from either car and exactly one of them yields, which is what stops a junction
+        /// deadlocking with both cars politely stopped.
+        ///
+        /// Distance is measured as each car's own gap to the other, so a long vehicle that is
+        /// already halfway across counts as having arrived.
+        /// </summary>
+        static bool ShouldYieldTo(TrafficBody self, in TrafficBox selfBox, TrafficBody other, in TrafficBox otherBox,
+                                  bool yieldingSuspended)
+        {
+            if (yieldingSuspended)
+                return false;
+
+            // A car that is already stopped has nothing to lose by giving way, and a car that is
+            // moving has a junction to clear. Deciding it this way round drains a knot instead of
+            // tightening it: whoever is stuck stays stuck a moment longer, whoever is rolling gets
+            // out of everyone's way. It also breaks the case the gap comparison below cannot -
+            // two cars whose gaps are equal but only one of which can actually act on winning.
+            var selfStopped = self.SpeedMs < StalledSpeed;
+            var otherStopped = other.SpeedMs < StalledSpeed;
+            if (selfStopped != otherStopped)
+                return selfStopped;
+
+            var mine = TrafficGeometry.GapTo(selfBox, otherBox);
+            var theirs = TrafficGeometry.GapTo(otherBox, selfBox);
+
+            if (mine > theirs + PriorityMargin)
+                return true;
+            if (theirs > mine + PriorityMargin)
+                return false;
+
+            // Dead heat. Any total order will do as long as both cars compute the same one.
+            return self.Id > other.Id;
+        }
+
+        /// <summary>
+        /// Arms the release valve when a car is standing still with something in front of it.
+        ///
+        /// Keyed on being motionless rather than on what kind of blocker it is. The earlier version
+        /// only counted crossing traffic, which meant the one arrangement that most needs a way out
+        /// - a car wedged against something it had right of way over, so its speed model never even
+        /// saw the obstacle - was the one arrangement the valve could not detect.
+        ///
+        /// Firing it while merely queued at a red light is harmless. It does two things - the car
+        /// stops deferring to crossing traffic, and it is allowed to creep - and the clamp bounds
+        /// both, so the worst case is a car in a queue closing up to MinClearance.
+        ///
+        /// The creep half is not optional. Dropping the yield alone was the original design and it
+        /// released nothing: yielding is decided by ShouldYieldTo, whose result is then gated on
+        /// the blocker being outside StoppingDistance, and the car this fires for is by definition
+        /// stationary and wedged well inside it. The valve opened onto a wall.
+        /// </summary>
+        static void UpdateStall(TrafficBody self, bool blocked)
+        {
+            if (!blocked || self.SpeedMs >= StalledSpeed)
+            {
+                self.StalledFor = 0f;
+                return;
+            }
+
+            self.StalledFor += Time.deltaTime;
+
+            // The jitter matters. A symmetric pair reaches the timeout on the same frame, and two
+            // cars that stop deferring to each other simultaneously are in exactly the standoff
+            // they started in. Staggering by a per-car fraction of a second lets one go first.
+            if (self.StalledFor >= StallTimeout + self.StallJitter)
+            {
+                self.IgnoreCrossingUntil = Time.time + StallRelease;
+                self.StalledFor = 0f;
+            }
+        }
+
+        /// <summary>
+        /// Would a car of this footprint, placed here, be inside another one? Used before the two
+        /// moments that can put a car somewhere without driving it there: the re-path teleport in
+        /// CarBehavior.SetNewPath, and a spawn at a map-edge gate.
+        /// </summary>
+        public static bool IsClear(TrafficBody self, Vector3 position, Vector3 forward, float margin = 0.4f)
+        {
+            if (self == null)
+                return true;
+
+            var box = new TrafficBox(position, forward, self.HalfLength, self.HalfWidth);
+
+            for (var i = 0; i < Bodies.Count; i++)
+            {
+                var other = Bodies[i];
+                if (other == self || other == null || !other.Tf)
+                    continue;
+
+                if (TrafficGeometry.Overlaps(box, other.Box, margin))
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>Same question for a car that has not been registered yet, i.e. before Instantiate.</summary>
+        public static bool IsClear(Vector3 position, Vector3 forward, float halfLength, float halfWidth, float margin = 0.4f)
+        {
+            var box = new TrafficBox(position, forward, halfLength, halfWidth);
+
+            for (var i = 0; i < Bodies.Count; i++)
+            {
+                var other = Bodies[i];
+                if (other == null || !other.Tf)
+                    continue;
+
+                if (TrafficGeometry.Overlaps(box, other.Box, margin))
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// The car's footprint, taken from its largest solid BoxCollider.
+        ///
+        /// It has to be measured rather than assumed: the fleet runs from a 2.2m motorbike to an
+        /// 11.3m bus, and a fixed lookahead would either strand the motorbike a bus-length behind
+        /// everything or let the bus swallow whatever it is following. The trigger box is skipped -
+        /// that is the pack's forward feeler, not the body - and the largest solid one is taken
+        /// because bus-passenger_AI carries five.
+        ///
+        /// Length is local z and width local x, which is how every AI prefab in the pack is built.
+        /// </summary>
+        static void Measure(GameObject car, out float halfLength, out float halfWidth)
+        {
+            BoxCollider best = null;
+            var bestVolume = -1f;
+
+            var boxes = car.GetComponentsInChildren<BoxCollider>(true);
+            for (var i = 0; i < boxes.Length; i++)
+            {
+                var candidate = boxes[i];
+                if (candidate.isTrigger)
+                    continue;
+
+                var size = Vector3.Scale(candidate.size, candidate.transform.lossyScale);
+                var volume = Mathf.Abs(size.x * size.y * size.z);
+                if (volume <= bestVolume)
+                    continue;
+
+                bestVolume = volume;
+                best = candidate;
+            }
+
+            if (best)
+            {
+                var size = Vector3.Scale(best.size, best.transform.lossyScale);
+                halfLength = Mathf.Abs(size.z) * 0.5f;
+                halfWidth = Mathf.Abs(size.x) * 0.5f;
+                return;
+            }
+
+            halfLength = FallbackHalfLength;
+            halfWidth = FallbackHalfWidth;
+        }
+    }
+}

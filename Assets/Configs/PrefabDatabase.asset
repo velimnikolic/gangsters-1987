@@ -40,12 +40,14 @@ MonoBehaviour:
       prefabs:
       - {fileID: 1073993557574936, guid: 09e72c406ea8e4125abb6798f0c60e83, type: 3}
     courtyardGrounds:
-    - {fileID: 1073993557574936, guid: 09e72c406ea8e4125abb6798f0c60e83, type: 3}
-    - {fileID: 1034700540366262, guid: 63f209a73d2eb4e469c7ea5b5d8afd38, type: 3}
+    - {fileID: 1870627807777496, guid: 694c23563628a4178bcd3bf91226687b, type: 3}
+    - {fileID: 1873834763384554, guid: 13772216d1d144ffe932df09a2344533, type: 3}
     groundIsTilePerCell: 0
+    groundPatchChance: 0.55
+    paveJoints: 1
     groups:
     - label: Terrace 4+5 floor
-      weight: 55
+      weight: 85
       prefabs:
       - {fileID: 4202220882244699723, guid: 5731e4f8b569f7e4da151f82fa9f55d3, type: 3}
       - {fileID: 2215209693239599735, guid: 5f3b442e803724c4291da1b5beddba8c, type: 3}
@@ -60,20 +62,6 @@ MonoBehaviour:
       layout: 0
       minGap: 0
       maxGap: 0
-      maxSetback: 0
-      cornerPreferred: 0
-    - label: Old blocks
-      weight: 30
-      prefabs:
-      - {fileID: 1503676966882326081, guid: f64c1829f5061a246a7e4201faf04259, type: 3}
-      - {fileID: 4262399113899048206, guid: cb459f4c3c7f04847888c6c46ebfea15, type: 3}
-      - {fileID: 9028184157379412882, guid: 96bb88e1c4fcdda49811130fda226743, type: 3}
-      - {fileID: 5283052672099081239, guid: 6437b36eaea8de74a840d28be691227f, type: 3}
-      rearPrefabs: []
-      cornerPrefabs: []
-      layout: 1
-      minGap: 1
-      maxGap: 3
       maxSetback: 0
       cornerPreferred: 0
     - label: Shops
@@ -82,29 +70,38 @@ MonoBehaviour:
       - {fileID: 5770481610854054297, guid: cb3726ee9ede51543b90273db342950d, type: 3}
       - {fileID: 1337751412371152, guid: 40409888e44cb7849831b4a62a38977d, type: 3}
       - {fileID: 6429483452423246840, guid: 37eb2303145119844a10fe5567cc3b1d, type: 3}
-      - {fileID: 4578258170708362516, guid: 693a323a480508c4590ac56c309776bf, type: 3}
-      - {fileID: 6594853898818628305, guid: 3f5ebd51f59d75c40a07e99596dc020d, type: 3}
       rearPrefabs: []
       cornerPrefabs: []
-      layout: 1
-      minGap: 1
-      maxGap: 3
+      layout: 0
+      minGap: 0
+      maxGap: 0
       maxSetback: 0
       cornerPreferred: 1
     uniformStreetRuns: 1
-    maxLotsPerAxis: 1
+    maxLotsPerAxis: 0
     landmarks: []
     landmarkChance: 0
+    alleyProps:
+    - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
+    - {fileID: 1470712856484872, guid: d15abc5daf2f94b21940801b1d2705a8, type: 3}
+    - {fileID: 1470712856484872, guid: d15abc5daf2f94b21940801b1d2705a8, type: 3}
+    - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
+    - {fileID: 3965961775537109882, guid: 65d0ee5d2baec234cb305998a796ac1a, type: 3}
+    - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
+    - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
+    - {fileID: 1000011078951186, guid: 2559aa2d368562248aea8c62e35ac2fd, type: 3}
+    - {fileID: 1000011627327490, guid: 235a3b6b70c054bd3b893913a74c8b48, type: 3}
+    alleyParkingChance: 0.15
     scatter:
     - {fileID: 1000012061500174, guid: 09aab8a904970484d99ec36c27b8bb13, type: 3}
     - {fileID: 1000011078951186, guid: 2559aa2d368562248aea8c62e35ac2fd, type: 3}
     - {fileID: 1000010764393110, guid: 15cf8c13b0c302746a6e3eb78510226d, type: 3}
     - {fileID: 1000011627327490, guid: 235a3b6b70c054bd3b893913a74c8b48, type: 3}
-    - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
-    - {fileID: 1470712856484872, guid: d15abc5daf2f94b21940801b1d2705a8, type: 3}
-    - {fileID: 2431533332884081505, guid: ee06803832a7a2e4abed560945bde1ca, type: 3}
     - {fileID: 1132489801067302, guid: ac190142eb4ab4274a80ec7e374c7456, type: 3}
-    scatterDensity: 0.1
+    scatterDensity: 0.06
+    parkTrees: []
+    parkUndergrowth: []
+    parkBenches: []
     parkingChance: 0.12
     carRows: 0
     fenceSegment: {fileID: 0}
@@ -112,155 +109,8 @@ MonoBehaviour:
     parkingBooth: {fileID: 0}
     parkedCars: []
   - zone: 1
-    weight: 20
-    maxShare: 1
-    maxBlocks: 0
-    ground: {fileID: 0}
-    grounds:
-    - label: Grass
-      weight: 45
-      prefabs:
-      - {fileID: 1034700540366262, guid: 63f209a73d2eb4e469c7ea5b5d8afd38, type: 3}
-    - label: Concrete
-      weight: 30
-      prefabs:
-      - {fileID: 1870627807777496, guid: 694c23563628a4178bcd3bf91226687b, type: 3}
-    - label: Dirt
-      weight: 25
-      prefabs:
-      - {fileID: 1073993557574936, guid: 09e72c406ea8e4125abb6798f0c60e83, type: 3}
-    courtyardGrounds: []
-    groundIsTilePerCell: 0
-    groups:
-    - label: Houses
-      weight: 94
-      prefabs:
-      - {fileID: 1699031562973691520, guid: 82809e6ef2813764e93f68cc99f7a75a, type: 3}
-      - {fileID: 4903941222706319683, guid: 01efaf6e931e4d14cb37e9adc4ced205, type: 3}
-      - {fileID: 3969820163229993730, guid: cc955cae991c7c849a898576d26eb6b1, type: 3}
-      - {fileID: 1904341715670951823, guid: 3a680b34a2ee2a245807bd66867a8b7c, type: 3}
-      - {fileID: 9028184157379412882, guid: 96bb88e1c4fcdda49811130fda226743, type: 3}
-      - {fileID: 1503676966882326081, guid: f64c1829f5061a246a7e4201faf04259, type: 3}
-      rearPrefabs: []
-      cornerPrefabs: []
-      layout: 1
-      minGap: 3
-      maxGap: 7
-      maxSetback: 4
-      cornerPreferred: 0
-    - label: Shops
-      weight: 6
-      prefabs:
-      - {fileID: 5770481610854054297, guid: cb3726ee9ede51543b90273db342950d, type: 3}
-      - {fileID: 1337751412371152, guid: 40409888e44cb7849831b4a62a38977d, type: 3}
-      - {fileID: 6429483452423246840, guid: 37eb2303145119844a10fe5567cc3b1d, type: 3}
-      - {fileID: 4578258170708362516, guid: 693a323a480508c4590ac56c309776bf, type: 3}
-      - {fileID: 6594853898818628305, guid: 3f5ebd51f59d75c40a07e99596dc020d, type: 3}
-      rearPrefabs: []
-      cornerPrefabs: []
-      layout: 1
-      minGap: 1
-      maxGap: 3
-      maxSetback: 0
-      cornerPreferred: 1
-    uniformStreetRuns: 0
-    maxLotsPerAxis: 0
-    landmarks: []
-    landmarkChance: 0
-    scatter:
-    - {fileID: 1000012061500174, guid: 09aab8a904970484d99ec36c27b8bb13, type: 3}
-    - {fileID: 1000011078951186, guid: 2559aa2d368562248aea8c62e35ac2fd, type: 3}
-    - {fileID: 1000010764393110, guid: 15cf8c13b0c302746a6e3eb78510226d, type: 3}
-    - {fileID: 1000011627327490, guid: 235a3b6b70c054bd3b893913a74c8b48, type: 3}
-    - {fileID: 1000012427588962, guid: 71c239345c49345569b57ffabafca58e, type: 3}
-    - {fileID: 1813613130969760, guid: 10e99c39073314fc9bdff0e963398434, type: 3}
-    - {fileID: 1461375094142406, guid: a5c3dcba9274345408d32a6db79901ac, type: 3}
-    - {fileID: 1553789813707838, guid: 1203e0fdb8eee407e9f4d0f53f502a1a, type: 3}
-    - {fileID: 1904329721490756, guid: d836b24472f564f629d8cae908c35681, type: 3}
-    - {fileID: 1524571819844122, guid: 4110f446ff81e44cebfa8ed43c21d0d7, type: 3}
-    scatterDensity: 0.16
-    parkingChance: 0.12
-    carRows: 0
-    fenceSegment: {fileID: 0}
-    fencePost: {fileID: 0}
-    parkingBooth: {fileID: 0}
-    parkedCars: []
-  - zone: 2
     weight: 12
-    maxShare: 0.3
-    maxBlocks: 0
-    ground: {fileID: 0}
-    grounds:
-    - label: Concrete
-      weight: 70
-      prefabs:
-      - {fileID: 1870627807777496, guid: 694c23563628a4178bcd3bf91226687b, type: 3}
-    - label: Asphalt
-      weight: 30
-      prefabs:
-      - {fileID: 1873834763384554, guid: 13772216d1d144ffe932df09a2344533, type: 3}
-    courtyardGrounds: []
-    groundIsTilePerCell: 0
-    groups:
-    - label: Terrace 4+5 floor
-      weight: 70
-      prefabs:
-      - {fileID: 4202220882244699723, guid: 5731e4f8b569f7e4da151f82fa9f55d3, type: 3}
-      - {fileID: 2215209693239599735, guid: 5f3b442e803724c4291da1b5beddba8c, type: 3}
-      - {fileID: 4524193779938541034, guid: 575c50ac6726d1545bcd64ffc9b25e68, type: 3}
-      - {fileID: 4382183402933652077, guid: 5ecdad9e9e7fdd9459299af9c1d1bc65, type: 3}
-      - {fileID: 3655131549311888650, guid: 3a5e9009bececcb479700b874c81f922, type: 3}
-      rearPrefabs:
-      - {fileID: 6684296866273395084, guid: 1c69eea314f42f543a55ac9ac3f884b6, type: 3}
-      cornerPrefabs:
-      - {fileID: 5679678132739351760, guid: 8c2b7166132ff7144b342ec6b2ab895e, type: 3}
-      - {fileID: 883696919425858869, guid: 641aa067143b4cf4d83e2dea9c2e70b9, type: 3}
-      layout: 0
-      minGap: 0
-      maxGap: 0
-      maxSetback: 0
-      cornerPreferred: 0
-    - label: Shops
-      weight: 30
-      prefabs:
-      - {fileID: 5770481610854054297, guid: cb3726ee9ede51543b90273db342950d, type: 3}
-      - {fileID: 1337751412371152, guid: 40409888e44cb7849831b4a62a38977d, type: 3}
-      - {fileID: 6429483452423246840, guid: 37eb2303145119844a10fe5567cc3b1d, type: 3}
-      - {fileID: 4578258170708362516, guid: 693a323a480508c4590ac56c309776bf, type: 3}
-      - {fileID: 6594853898818628305, guid: 3f5ebd51f59d75c40a07e99596dc020d, type: 3}
-      rearPrefabs: []
-      cornerPrefabs: []
-      layout: 1
-      minGap: 0
-      maxGap: 2
-      maxSetback: 0
-      cornerPreferred: 1
-    uniformStreetRuns: 0
-    maxLotsPerAxis: 0
-    landmarks:
-    - {fileID: 915700779621246890, guid: ef9d84d2731dcef4fba0d78e0cb8f40e, type: 3}
-    - {fileID: 1516009725801734, guid: 22511d1ae55a5d548870c24b5867abb9, type: 3}
-    - {fileID: 972373096617651945, guid: 77bc047d381c3b0418a767c1331400b8, type: 3}
-    - {fileID: 1542781785484876, guid: 1628a9fea796fc044a45a023443b5b1b, type: 3}
-    - {fileID: 1017154472777420144, guid: 1eee4a0aca7dfc442a911d2bfb78875d, type: 3}
-    landmarkChance: 0.85
-    scatter:
-    - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
-    - {fileID: 1049359017073972, guid: 1c5f3552e1c67466e8d17d6b314b605e, type: 3}
-    - {fileID: 3965961775537109882, guid: 65d0ee5d2baec234cb305998a796ac1a, type: 3}
-    - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
-    - {fileID: 1895011476837396881, guid: 0cd8ca8a7bffa3b46ac0cfc00e604053, type: 3}
-    - {fileID: 1000013074956334, guid: 79a4162811bb74070b2bec2de470b56d, type: 3}
-    scatterDensity: 0.12
-    parkingChance: 0.06
-    carRows: 0
-    fenceSegment: {fileID: 0}
-    fencePost: {fileID: 0}
-    parkingBooth: {fileID: 0}
-    parkedCars: []
-  - zone: 3
-    weight: 12
-    maxShare: 0.3
+    maxShare: 0.4
     maxBlocks: 0
     ground: {fileID: 0}
     grounds:
@@ -278,6 +128,8 @@ MonoBehaviour:
       - {fileID: 1870627807777496, guid: 694c23563628a4178bcd3bf91226687b, type: 3}
     courtyardGrounds: []
     groundIsTilePerCell: 0
+    groundPatchChance: 1
+    paveJoints: 0
     groups:
     - label: Works
       weight: 100
@@ -300,6 +152,8 @@ MonoBehaviour:
     maxLotsPerAxis: 0
     landmarks: []
     landmarkChance: 0
+    alleyProps: []
+    alleyParkingChance: 0.35
     scatter:
     - {fileID: 265990862613161308, guid: cfc6c8d22a0000c43a7ce1a999aec2b0, type: 3}
     - {fileID: 4048172729937154615, guid: ccce2299abb3c5744b77d9ca7c94677b, type: 3}
@@ -312,66 +166,16 @@ MonoBehaviour:
     - {fileID: 5162275840650946576, guid: 13cf13d146da24149b93cbd60bb6424d, type: 3}
     - {fileID: 9187607802181391332, guid: 2fbd6e4bc14375f41b9864a9ff3f0b9e, type: 3}
     scatterDensity: 0.22
+    parkTrees: []
+    parkUndergrowth: []
+    parkBenches: []
     parkingChance: 0.04
     carRows: 0
     fenceSegment: {fileID: 0}
     fencePost: {fileID: 0}
     parkingBooth: {fileID: 0}
     parkedCars: []
-  - zone: 4
-    weight: 10
-    maxShare: 1
-    maxBlocks: 1
-    ground: {fileID: 0}
-    grounds: []
-    courtyardGrounds: []
-    groundIsTilePerCell: 0
-    groups:
-    - label: Chinatown
-      weight: 55
-      prefabs:
-      - {fileID: 5283052672099081239, guid: 6437b36eaea8de74a840d28be691227f, type: 3}
-      - {fileID: 4448999426121116037, guid: fab1aa042ae32f04290b2e2f4ec307b7, type: 3}
-      rearPrefabs: []
-      cornerPrefabs: []
-      layout: 1
-      minGap: 1
-      maxGap: 4
-      maxSetback: 0
-      cornerPreferred: 0
-    - label: Chinatown shops
-      weight: 45
-      prefabs:
-      - {fileID: 5042076022207396807, guid: dfe5d1b589efe2842893d75740ad26b8, type: 3}
-      - {fileID: 4578258170708362516, guid: 693a323a480508c4590ac56c309776bf, type: 3}
-      - {fileID: 6594853898818628305, guid: 3f5ebd51f59d75c40a07e99596dc020d, type: 3}
-      rearPrefabs: []
-      cornerPrefabs: []
-      layout: 1
-      minGap: 1
-      maxGap: 3
-      maxSetback: 0
-      cornerPreferred: 1
-    uniformStreetRuns: 0
-    maxLotsPerAxis: 0
-    landmarks:
-    - {fileID: 6831511418988142410, guid: 13c7dcdb84be88c429ced3c3be00c918, type: 3}
-    - {fileID: 2775898028984632495, guid: ae15a32fda7ceda4cb1e852941089c07, type: 3}
-    landmarkChance: 0.9
-    scatter:
-    - {fileID: 2509528646216286548, guid: 191535993272dfa4e931dde94e94e465, type: 3}
-    - {fileID: 1000013202082976, guid: 4d91d13412c514e49a1e707292505db6, type: 3}
-    - {fileID: 1000013043763282, guid: a87c842fceb844c4e8ca6df988831a4e, type: 3}
-    - {fileID: 1895011476837396881, guid: 0cd8ca8a7bffa3b46ac0cfc00e604053, type: 3}
-    - {fileID: 1000010375850444, guid: 5ecde3e63a2f64f7d8ab8f189a52c8c0, type: 3}
-    scatterDensity: 0.14
-    parkingChance: 0.12
-    carRows: 0
-    fenceSegment: {fileID: 0}
-    fencePost: {fileID: 0}
-    parkingBooth: {fileID: 0}
-    parkedCars: []
-  - zone: 5
+  - zone: 2
     weight: 14
     maxShare: 1
     maxBlocks: 1
@@ -379,6 +183,8 @@ MonoBehaviour:
     grounds: []
     courtyardGrounds: []
     groundIsTilePerCell: 0
+    groundPatchChance: 0.25
+    paveJoints: 1
     groups:
     - label: Outbuildings
       weight: 100
@@ -398,6 +204,8 @@ MonoBehaviour:
     landmarks:
     - {fileID: 8092912279846532118, guid: 898c82c37dd2ab647b1c4a22856d9f56, type: 3}
     landmarkChance: 1
+    alleyProps: []
+    alleyParkingChance: 0.35
     scatter:
     - {fileID: 1000012061500174, guid: 09aab8a904970484d99ec36c27b8bb13, type: 3}
     - {fileID: 1000011078951186, guid: 2559aa2d368562248aea8c62e35ac2fd, type: 3}
@@ -406,6 +214,9 @@ MonoBehaviour:
     - {fileID: 1000013944289814, guid: a66031aa94a7b4d5b91f09a4f0a41e3f, type: 3}
     - {fileID: 3965961775537109882, guid: 65d0ee5d2baec234cb305998a796ac1a, type: 3}
     scatterDensity: 0.12
+    parkTrees: []
+    parkUndergrowth: []
+    parkBenches: []
     parkingChance: 0.35
     carRows: 0
     fenceSegment: {fileID: 0}
@@ -416,7 +227,7 @@ MonoBehaviour:
       weight: 1
       prefabs:
       - {fileID: 1092903705789857238, guid: a1c54521c48f91447a69e41292f7727c, type: 3}
-  - zone: 6
+  - zone: 3
     weight: 14
     maxShare: 1
     maxBlocks: 1
@@ -424,6 +235,8 @@ MonoBehaviour:
     grounds: []
     courtyardGrounds: []
     groundIsTilePerCell: 0
+    groundPatchChance: 0.25
+    paveJoints: 1
     groups:
     - label: Outbuildings
       weight: 100
@@ -443,6 +256,8 @@ MonoBehaviour:
     landmarks:
     - {fileID: 5590961993108706936, guid: b24626a0d6b4f1040a7a5294ddc1fd4b, type: 3}
     landmarkChance: 1
+    alleyProps: []
+    alleyParkingChance: 0.35
     scatter:
     - {fileID: 1000012061500174, guid: 09aab8a904970484d99ec36c27b8bb13, type: 3}
     - {fileID: 1000011078951186, guid: 2559aa2d368562248aea8c62e35ac2fd, type: 3}
@@ -451,6 +266,9 @@ MonoBehaviour:
     - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
     - {fileID: 3965961775537109882, guid: 65d0ee5d2baec234cb305998a796ac1a, type: 3}
     scatterDensity: 0.14
+    parkTrees: []
+    parkUndergrowth: []
+    parkBenches: []
     parkingChance: 0.35
     carRows: 0
     fenceSegment: {fileID: 0}
@@ -461,7 +279,7 @@ MonoBehaviour:
       weight: 1
       prefabs:
       - {fileID: 3599669909053901963, guid: 8533eb24444732d43ad95ef38bceaa96, type: 3}
-  - zone: 7
+  - zone: 4
     weight: 12
     maxShare: 1
     maxBlocks: 1
@@ -469,6 +287,8 @@ MonoBehaviour:
     grounds: []
     courtyardGrounds: []
     groundIsTilePerCell: 0
+    groundPatchChance: 0.25
+    paveJoints: 1
     groups:
     - label: Outbuildings
       weight: 100
@@ -488,6 +308,8 @@ MonoBehaviour:
     landmarks:
     - {fileID: 4072027801496028026, guid: 2fe36541ee99f1b47abfedad4a7da7d2, type: 3}
     landmarkChance: 1
+    alleyProps: []
+    alleyParkingChance: 0.35
     scatter:
     - {fileID: 1000012061500174, guid: 09aab8a904970484d99ec36c27b8bb13, type: 3}
     - {fileID: 1000011078951186, guid: 2559aa2d368562248aea8c62e35ac2fd, type: 3}
@@ -498,13 +320,16 @@ MonoBehaviour:
     - {fileID: 1813613130969760, guid: 10e99c39073314fc9bdff0e963398434, type: 3}
     - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
     scatterDensity: 0.16
+    parkTrees: []
+    parkUndergrowth: []
+    parkBenches: []
     parkingChance: 0.1
     carRows: 0
     fenceSegment: {fileID: 0}
     fencePost: {fileID: 0}
     parkingBooth: {fileID: 0}
     parkedCars: []
-  - zone: 8
+  - zone: 5
     weight: 10
     maxShare: 1
     maxBlocks: 1
@@ -512,6 +337,8 @@ MonoBehaviour:
     grounds: []
     courtyardGrounds: []
     groundIsTilePerCell: 0
+    groundPatchChance: 0.25
+    paveJoints: 1
     groups:
     - label: Outbuildings
       weight: 100
@@ -531,6 +358,8 @@ MonoBehaviour:
     landmarks:
     - {fileID: 1089356905447394778, guid: 616b874272f2c464d902290c933c9c4f, type: 3}
     landmarkChance: 1
+    alleyProps: []
+    alleyParkingChance: 0.35
     scatter:
     - {fileID: 1000012061500174, guid: 09aab8a904970484d99ec36c27b8bb13, type: 3}
     - {fileID: 1000011078951186, guid: 2559aa2d368562248aea8c62e35ac2fd, type: 3}
@@ -538,6 +367,9 @@ MonoBehaviour:
     - {fileID: 1000011627327490, guid: 235a3b6b70c054bd3b893913a74c8b48, type: 3}
     - {fileID: 1000013944289814, guid: a66031aa94a7b4d5b91f09a4f0a41e3f, type: 3}
     scatterDensity: 0.12
+    parkTrees: []
+    parkUndergrowth: []
+    parkBenches: []
     parkingChance: 0.3
     carRows: 0
     fenceSegment: {fileID: 0}
@@ -548,46 +380,72 @@ MonoBehaviour:
       weight: 1
       prefabs:
       - {fileID: 6613697106544072656, guid: c89d2a5e4dc2242418d00fc92122931a, type: 3}
-  - zone: 9
+  - zone: 6
     weight: 8
-    maxShare: 0.15
+    maxShare: 0.25
     maxBlocks: 0
     ground: {fileID: 5859422363808840301, guid: 95753e093881537419ace3deed899efd, type: 3}
     grounds: []
     courtyardGrounds: []
     groundIsTilePerCell: 1
+    groundPatchChance: 1
+    paveJoints: 0
     groups: []
     uniformStreetRuns: 0
     maxLotsPerAxis: 0
-    landmarks: []
-    landmarkChance: 0
-    scatter:
-    - {fileID: 1000012061500174, guid: 09aab8a904970484d99ec36c27b8bb13, type: 3}
-    - {fileID: 1000012548533322, guid: 3678017521dcb4e1bacbd3270c78a089, type: 3}
-    - {fileID: 1000011078951186, guid: 2559aa2d368562248aea8c62e35ac2fd, type: 3}
-    - {fileID: 1000010764393110, guid: 15cf8c13b0c302746a6e3eb78510226d, type: 3}
-    - {fileID: 1000010757296548, guid: 82bd0e3eef3cc854eae31c6f4cd718bf, type: 3}
-    - {fileID: 1000012021262986, guid: 225ec0802551d9340bc86557a67b08fd, type: 3}
-    - {fileID: 1000011788818366, guid: bac0554aef76116419238af986418dc6, type: 3}
+    landmarks:
+    - {fileID: 4831329605755130448, guid: edfb2b753d73072459183537c84ca94e, type: 3}
+    landmarkChance: 1
+    alleyProps: []
+    alleyParkingChance: 0.35
+    scatter: []
+    scatterDensity: 0
+    parkTrees:
+    - label: Park street trees
+      weight: 5
+      prefabs:
+      - {fileID: 1000012061500174, guid: 09aab8a904970484d99ec36c27b8bb13, type: 3}
+      - {fileID: 1000012548533322, guid: 3678017521dcb4e1bacbd3270c78a089, type: 3}
+      - {fileID: 1000010757296548, guid: 82bd0e3eef3cc854eae31c6f4cd718bf, type: 3}
+      - {fileID: 1000011788818366, guid: bac0554aef76116419238af986418dc6, type: 3}
+    - label: Park uprights
+      weight: 3
+      prefabs:
+      - {fileID: 1000010764393110, guid: 15cf8c13b0c302746a6e3eb78510226d, type: 3}
+      - {fileID: 1000013034193654, guid: 3ba8722acc6ed407ba69d7d7d4d5f832, type: 3}
+      - {fileID: 1000013131209694, guid: 140836445facb496ea496a3d5dff7037, type: 3}
+      - {fileID: 1000014286827952, guid: 818821d8635b7754b97b69789a4a2d0f, type: 3}
+    - label: Park evergreens
+      weight: 2
+      prefabs:
+      - {fileID: 1000012021262986, guid: 225ec0802551d9340bc86557a67b08fd, type: 3}
+      - {fileID: 1000010484259552, guid: f95c9e4ca30e50d44b57f3208f0cc306, type: 3}
+      - {fileID: 1000010941489026, guid: 43c4953bafdd8c447a2146dc2f16f970, type: 3}
+    - label: Park specimens
+      weight: 1
+      prefabs:
+      - {fileID: 1000011078951186, guid: 2559aa2d368562248aea8c62e35ac2fd, type: 3}
+    parkUndergrowth:
     - {fileID: 1000012427588962, guid: 71c239345c49345569b57ffabafca58e, type: 3}
     - {fileID: 1000011627327490, guid: 235a3b6b70c054bd3b893913a74c8b48, type: 3}
-    - {fileID: 1000013282467606, guid: a1cbd879186714ce99b9d0d96ebadcad, type: 3}
-    - {fileID: 4831329605755130448, guid: edfb2b753d73072459183537c84ca94e, type: 3}
-    - {fileID: 1000013043763282, guid: a87c842fceb844c4e8ca6df988831a4e, type: 3}
-    - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
     - {fileID: 1000012594744698, guid: 8f978411889e34ca6aee658176b5ad6d, type: 3}
     - {fileID: 1000012618888018, guid: 653cb796147c84b24abcb5e780e76a6a, type: 3}
-    - {fileID: 1000010740549920, guid: 5aa80b55966c6404fb24876c1d1e55d5, type: 3}
-    - {fileID: 1000010262655218, guid: 4474509db5d3de14ba862ea4000efdfd, type: 3}
-    - {fileID: 1000011210138126, guid: f9c68666ec758cb48afb06107c00dfcd, type: 3}
-    scatterDensity: 0.5
+    - {fileID: 1000012396999754, guid: 81a81558ba91f4bb781add930fdd759a, type: 3}
+    - {fileID: 1000012002960424, guid: 44f06f083d27f4a75bdf4b52d745f453, type: 3}
+    - {fileID: 1000011497609644, guid: 86c8aa56418d04c11b5a28c96bc80f96, type: 3}
+    - {fileID: 1000011669407258, guid: 03b67f53c002a4af881d7049bc3e950b, type: 3}
+    - {fileID: 1000014289357120, guid: 5d43bd8198132492795c84a7a66997e0, type: 3}
+    - {fileID: 1000010651977466, guid: 1689020eaa3b542b1ae54fbdb838f290, type: 3}
+    parkBenches:
+    - {fileID: 1000013282467606, guid: a1cbd879186714ce99b9d0d96ebadcad, type: 3}
+    - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
     parkingChance: 0.12
     carRows: 0
-    fenceSegment: {fileID: 0}
+    fenceSegment: {fileID: 1332791148678480, guid: 25aba0cfa42f64de79d495bae6447be3, type: 3}
     fencePost: {fileID: 0}
     parkingBooth: {fileID: 0}
     parkedCars: []
-  - zone: 10
+  - zone: 7
     weight: 5
     maxShare: 0.1
     maxBlocks: 0
@@ -595,16 +453,23 @@ MonoBehaviour:
     grounds: []
     courtyardGrounds: []
     groundIsTilePerCell: 0
+    groundPatchChance: 1
+    paveJoints: 0
     groups: []
     uniformStreetRuns: 0
     maxLotsPerAxis: 0
     landmarks: []
     landmarkChance: 0
+    alleyProps: []
+    alleyParkingChance: 0.35
     scatter:
     - {fileID: 3965961775537109882, guid: 65d0ee5d2baec234cb305998a796ac1a, type: 3}
     - {fileID: 1470712856484872, guid: d15abc5daf2f94b21940801b1d2705a8, type: 3}
     - {fileID: 1132489801067302, guid: ac190142eb4ab4274a80ec7e374c7456, type: 3}
     scatterDensity: 0.1
+    parkTrees: []
+    parkUndergrowth: []
+    parkBenches: []
     parkingChance: 0.12
     carRows: 1
     fenceSegment: {fileID: 1000013944289814, guid: a66031aa94a7b4d5b91f09a4f0a41e3f, type: 3}
@@ -614,10 +479,6 @@ MonoBehaviour:
   facadeYawFixes:
   - prefab: {fileID: 4524193779938541034, guid: 575c50ac6726d1545bcd64ffc9b25e68, type: 3}
     extraYaw: 180
-  - prefab: {fileID: 5679678132739351760, guid: 8c2b7166132ff7144b342ec6b2ab895e, type: 3}
-    extraYaw: 90
-  - prefab: {fileID: 883696919425858869, guid: 641aa067143b4cf4d83e2dea9c2e70b9, type: 3}
-    extraYaw: -90
   - prefab: {fileID: 5283052672099081239, guid: 6437b36eaea8de74a840d28be691227f, type: 3}
     extraYaw: 180
   - prefab: {fileID: 4262399113899048206, guid: cb459f4c3c7f04847888c6c46ebfea15, type: 3}
@@ -629,6 +490,15 @@ MonoBehaviour:
   - {fileID: 2100000, guid: facfdbcfd17c6448abbc5c8837c5da5d, type: 2}
   - {fileID: 2100000, guid: 351d36b1c52cf4639b283e90c7f08483, type: 2}
   lineMaterial: {fileID: 2100000, guid: 10ae6b21c629441748ad77b50d8a4c6e, type: 2}
+  groundTints:
+  - {fileID: 2100000, guid: 093450b0235f94dd0a54da206336e62f, type: 2}
+  - {fileID: 2100000, guid: 93362ba1674e54d429b5beaac5c0406e, type: 2}
+  - {fileID: 2100000, guid: a27d19c26d0d3486eb06ea0d6587bd70, type: 2}
+  - {fileID: 2100000, guid: b47c1c47418e34c68a2d608c97880ec8, type: 2}
+  - {fileID: 2100000, guid: a37d71781ce5e44a3994edab3a8f26ea, type: 2}
+  - {fileID: 2100000, guid: 1a89ab56751a74e069c15ecee4a0a51c, type: 2}
+  paintDarkMaterial: {fileID: 2100000, guid: b4c8453584a5a46b585853fdd7a8c899, type: 2}
+  paintLightMaterial: {fileID: 2100000, guid: 5ac15ef4e59a24e5f9082be9fc6c399f, type: 2}
   streetLamps:
   - {fileID: 3965961775537109882, guid: 65d0ee5d2baec234cb305998a796ac1a, type: 3}
   - {fileID: 8680524471966997947, guid: 3d48150c9bbf9bd4f856992e59127f71, type: 3}

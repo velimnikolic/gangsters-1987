@@ -22,17 +22,21 @@ namespace LivingCity.Data
 
         [Header("Layout")]
         [Tooltip("Size of the map in cells; cells are 30m, so 9 x 7 is 240 x 180 metres. " +
-                 "Streets run from one edge of this rectangle to the other and stop there - " +
-                 "there is no ring road round the outside, so the outer cells are built on. " +
-                 "At the default 2-4 arterial spacing the block count is about " +
-                 "((width+1)/3) x ((height+1)/3), which puts 9 x 7 at around 9 blocks.")]
+                 "Streets reach the edge of this rectangle and stop there - there is no ring " +
+                 "road round the outside, so the outer cells are built on. At the default 2-4 " +
+                 "spacing about 45% of the map ends up as street, which puts 9 x 7 at around " +
+                 "10 blocks.")]
         [Min(MinGridSize)] public int gridWidth = 9;
         [Min(MinGridSize)] public int gridHeight = 7;
 
-        [Tooltip("Cells between arterial roads. A gap of s leaves a block (s-1) cells wide, so " +
-                 "at 30m cells the 2-4 default gives blocks of 30m, 60m and 90m. Narrowing this " +
-                 "range reduces how many distinct layouts a seed can produce - 3-4 on a 9x9 grid " +
-                 "admits only one partition, making every seed identical.")]
+        [Tooltip("Cells between two parallel streets. A gap of s leaves a block (s-1) cells " +
+                 "wide, so at 30m cells the 2-4 default gives blocks anywhere from 30m to 90m " +
+                 "on each axis. The layout is cut recursively rather than laid out as a grid, " +
+                 "so a street stops instead of running the width of the map and the blocks do " +
+                 "not line up into rows and columns; every size in the range appears, and the " +
+                 "two axes of one block are drawn independently, so wide and narrow sit side " +
+                 "by side. Setting both to the same value fixes the block size and brings back " +
+                 "some of the regularity.")]
         [Min(2)] public int minArterialSpacing = 2;
         [Min(2)] public int maxArterialSpacing = 4;
 
@@ -55,6 +59,50 @@ namespace LivingCity.Data
                  "art present. 0 disables tinting entirely.")]
         public float buildingTintChance = 0.65f;
 
+        [Header("Ground")]
+        [Tooltip("Target side of one paving patch. Every lot and every alley of a block is cut " +
+                 "into roughly square patches of about this size, and each rolls its own surface " +
+                 "and shade - which is what stops a block reading as one flat rectangle of " +
+                 "colour. This is the only dial on how many ground objects the city costs, and " +
+                 "it is not linear: at 24 a 106m block comes out around 25 patches, at 12 nearer " +
+                 "a hundred. Raise it if the ground object count becomes a problem.")]
+        [Min(4f)] public float groundPatchSize = 24f;
+
+        [Range(0f, 1f)]
+        [Tooltip("Share of ground slabs that get a shade instead of the plain atlas one. Higher " +
+                 "than buildingTintChance because a floor has no windows for the tint to reach - " +
+                 "see BuildTintPalette on why ground shades may go far wider than facade ones. " +
+                 "0 disables ground shading entirely and leaves every slab the pack's own colour.")]
+        public float groundTintChance = 0.85f;
+
+        [Tooltip("Paving joints, yard footpaths and faded repair patches, drawn as one flat mesh " +
+                 "per block over the slabs. Off leaves the surfaces plain; the parking bay lines " +
+                 "are separate and stay either way.")]
+        public bool groundPaint = true;
+
+        [Header("Block geometry")]
+        [Tooltip("Distance kept clear between a block's street wall and the road centreline. " +
+                 "BlockRect expands a block into its adjacent road tiles by (half a cell - this), " +
+                 "so raising it pulls every facade back off the kerb at once.")]
+        [Min(0f)] public float sidewalkWidth = 7f;
+
+        [Tooltip("Service alley down the long axis of a block interior. Wide enough to read as a " +
+                 "passage and to park a truck across, narrow enough that it never reads as a street.")]
+        [Min(0f)] public float alleyWidth = 6f;
+
+        [Tooltip("Separation between two touching facades in a terrace. This is NOT visual " +
+                 "spacing - it exists only so coplanar walls do not z-fight, and so the " +
+                 "occupancy test can tell 'flush neighbour' from 'genuine overlap'. " +
+                 "Bounds.Intersects compares inclusively, so at exactly 0 a flush neighbour " +
+                 "reports as a collision and is silently dropped. Do not set this to 0.")]
+        [Min(0.01f)] public float partyWallGap = 0.05f;
+
+        [Tooltip("Largest gap the run packer may open between two buildings when it spreads a " +
+                 "run's leftover length. The leftover is divided equally across every joint " +
+                 "rather than left as one hole at the end of the run - otherwise every block in " +
+                 "the city has a visible notch at the same corner. Keep it small.")]
+        [Min(0f)] public float maxFillerGap = 0.8f;
+
         [Header("Entities")]
         [Min(0)] public int carCount = 30;
         [Min(0)] public int pedestrianCount = 50;
@@ -76,6 +124,20 @@ namespace LivingCity.Data
                  "cannot find any tile 90m away and sits still logging " +
                  "'Target Tile not found farther then 90m' - lower this to about 50 there.")]
         [Min(0f)] public float carMinTravelDistance;
+
+        [Tooltip("Overrides CarBehavior.maxspeed (prefab default 80-100 km/h). 0 keeps the prefab " +
+                 "value. A tile is 30m, so 100 km/h is 27.8 m/s - a car crosses a whole city " +
+                 "block in about a second, which leaves no room to react to anything and makes " +
+                 "every junction a near miss. Lane limits on the road tiles run 30-80; this caps " +
+                 "them all.")]
+        [Min(0f)] public float carMaxSpeed = 45f;
+
+        [Tooltip("Seconds of following distance a car keeps to the one in front. This is the " +
+                 "time gap, so the metre gap grows with speed; the standstill gap is fixed " +
+                 "separately in CarFollowing. Lower it for denser, more aggressive traffic - " +
+                 "below about 0.5 cars tailgate hard enough that the hard clamp starts doing the " +
+                 "braking instead of the model.")]
+        [Min(0.2f)] public float carHeadway = Entities.CarFollowing.DefaultHeadway;
 
         [Header("Debug")]
         [Tooltip("Bypass ZonePlanner and stamp every block with Debug Zone. Isolates one " +

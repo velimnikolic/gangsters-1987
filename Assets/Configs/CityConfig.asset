@@ -12,17 +12,26 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 42c7a6e183ace48838f51cde888f32db, type: 3}
   m_Name: CityConfig
   m_EditorClassIdentifier: Assembly-CSharp::LivingCity.Data.CityConfig
-  gridWidth: 9
+  gridWidth: 16
   gridHeight: 7
   minArterialSpacing: 2
   maxArterialSpacing: 4
-  seed: 1076918664
+  seed: 636972590
   blockFillRatio: 1
   buildingTintChance: 1
+  groundPatchSize: 18
+  groundTintChance: 0.85
+  groundPaint: 1
+  sidewalkWidth: 7
+  alleyWidth: 6
+  partyWallGap: 0.05
+  maxFillerGap: 0.8
   carCount: 30
   pedestrianCount: 50
   entitySpawnInterval: 0.1
   wanderRoutesBeforeExit: {x: 1, y: 2}
   carMinTravelDistance: 0
+  carMaxSpeed: 45
+  carHeadway: 0.9
   debugSingleZone: 1
   debugZone: 0

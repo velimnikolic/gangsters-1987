@@ -34,7 +34,6 @@ namespace PolyPerfect.City
 
         float angle = 0;
         bool isMoving = false;
-        bool drivingBihindCar = false;
         bool drivingTrafficLights = false;
         int randomPathTries = 10;
 
@@ -45,7 +44,6 @@ namespace PolyPerfect.City
 
         public List<Vector3> checkpoints = new List<Vector3>();
         private Vector3 start;
-        private CarBehavior carInFront;
 
         // PATCH (Living City): hooks for the traffic system in Assets/Scripts/Entities. The
         // package assumes a car is born on the road and stays there forever, picking random
@@ -88,10 +86,62 @@ namespace PolyPerfect.City
         /// <summary>How closely the car has to be pointing along the lane. 0.5 is 60 degrees.</summary>
         const float LaneMatchFacing = 0.5f;
 
+        /// <summary>
+        /// Seconds of following distance. Set from CityConfig by VehicleSpawner; the default is
+        /// what a car gets in a scene assembled by hand.
+        /// </summary>
+        [HideInInspector] public float headway = LivingCity.Entities.CarFollowing.DefaultHeadway;
+
+        /// <summary>
+        /// This car's entry in the traffic registry - see TrafficRegistry for why the pack's own
+        /// trigger-based avoidance had to go. Null only if registration failed.
+        /// </summary>
+        LivingCity.Entities.TrafficBody trafficBody;
+
+        /// <summary>How many positions along the lane to try before accepting an occupied one.</summary>
+        const int ClearSpotAttempts = 8;
+
+        // PATCH (Living City): a watchdog over the three trigger stops below.
+        //
+        // Each of them sets isMoving = false and then waits for a C# event to set it back. There
+        // is no timeout, so a single lost event parks the car in a live lane permanently. And the
+        // events are genuinely losable: Crosswalk only fires when its pedestrian count decrements
+        // to zero, so one pedestrian destroyed or deactivated inside the trigger leaves
+        // PedestriansAreCrossing true for the rest of the scene and every car that ever stops
+        // there is finished. TrafficLight.ChangeCrosswalk toggles rather than assigns, so one
+        // missed invoke desynchronises it the same way.
+        //
+        // The fix is to stop trusting the event and go and look. Holding the reference that
+        // stopped us is what makes that possible - it also keeps the watchdog strictly scoped to
+        // trigger stops, so it can never override stopHere or the spawn stagger.
+
+        /// <summary>Seconds held at a trigger before the car re-reads the blocker's actual state.</summary>
+        const float HoldWatchdog = 6f;
+
+        TrafficLight heldByLight;
+        Crosswalk heldByCrosswalk;
+        LevelCrossingController heldByLevelCrossing;
+        float heldSince;
+
 
         private void Awake()
         {
             pathFinding = GetComponent<PathFinding>();
+        }
+
+        // PATCH (Living City): the registry has to see a car for exactly as long as it is in the
+        // scene. OnDisable rather than OnDestroy because CarBehavior deactivates itself when it
+        // runs out of pathfinding retries, and VehicleSpawner's sweep may not collect it for
+        // another five seconds - during which a deactivated car is not an obstacle.
+        private void OnEnable()
+        {
+            trafficBody = LivingCity.Entities.TrafficRegistry.Register(this);
+        }
+
+        private void OnDisable()
+        {
+            LivingCity.Entities.TrafficRegistry.Unregister(trafficBody);
+            trafficBody = null;
         }
 
         void Start()
@@ -106,6 +156,12 @@ namespace PolyPerfect.City
         public void SetNewPath()
         {
             isMoving = false;
+
+            // PATCH (Living City): the stop below belongs to re-pathing, not to a trigger, so the
+            // watchdog must not see a stale reference from an earlier hold and decide this one is
+            // over. It would cut the spawn stagger short and, worse, resume a car whose trajectory
+            // is still null.
+            ReleaseHold();
             if (randomDestination)
             {
                 start = transform.position;
@@ -148,8 +204,17 @@ namespace PolyPerfect.City
                         }
                         if (tries == Tile.Tiles.Count)
                         {
+                            // PATCH (Living City): this was a `return`, and it is the quietest way
+                            // a car dies. isMoving was set false at the top of SetNewPath and
+                            // trajectory was set null just above, so returning here left the car
+                            // stationary in a live lane with the GameObject still ACTIVE - which
+                            // means VehicleSpawner.SweepRoutine, which only collects deactivated
+                            // cars, never replaced it. A permanent wall, and everything behind it
+                            // queues up. Fall through instead: trajectory stays null, the else
+                            // branch at the bottom retries or deactivates, and the sweep can see
+                            // it either way.
                             Debug.Log(name + ": Target Tile not found farther then " + minDistance + "m");
-                            return;
+                            continue;
                         }
                         //Path finding
                         List<Path> candidate = pathFinding.GetPath(start, destination, PathType.Road);
@@ -181,6 +246,11 @@ namespace PolyPerfect.City
                 rearWheelsCheckpoint = 1;
                 frontWheelsPath = 0;
                 frontWheelsCheckpoint = 1;
+
+                // PATCH (Living City): currentMaxSpeed is set once in Start() and afterwards only
+                // on lane transitions, so a car that re-paths carries the limit of whatever lane it
+                // was last on into a road with a different one. Re-seed it from the new route.
+                currentMaxSpeed = LaneSpeed(trajectory[0]);
 
                 // PATCH (Living City): where the car ends up standing once it has a route.
                 //
@@ -235,7 +305,36 @@ namespace PolyPerfect.City
                 targetDrivePoint = trajectory[frontWheelsPath].pathPositions[frontWheelsCheckpoint].transform.position;
                 if (randomDestination && !enteringAtGate && !onRoute)
                 {
-                    transform.position = Vector3.Lerp(trajectory[frontWheelsPath].pathPositions[frontWheelsCheckpoint - 1].transform.position, trajectory[frontWheelsPath].pathPositions[frontWheelsCheckpoint].transform.position, Random.Range(0f, 0.9f));
+                    Vector3 segmentStart = trajectory[frontWheelsPath].pathPositions[frontWheelsCheckpoint - 1].transform.position;
+                    Vector3 segmentEnd = trajectory[frontWheelsPath].pathPositions[frontWheelsCheckpoint].transform.position;
+
+                    // PATCH (Living City): pick a spot on the segment that is not already taken.
+                    //
+                    // This teleport is one of only two ways a car can end up INSIDE another one -
+                    // it can drop thirty cars onto the network in a single frame at the start of a
+                    // scene, and it fires again on every re-path. The clamp in Update deliberately
+                    // stands down when bodies overlap, so an overlap created here would be driven
+                    // out of rather than prevented. Cheaper to not create it.
+                    // PATCH (Living City): every candidate is tested, including the last one. The
+                    // earlier loop drew, tested, then redrew - so the value it finally assigned
+                    // was always the one draw nobody had looked at, and all the testing bought
+                    // nothing on the attempt that mattered. Draw first, test second, keep the
+                    // first clear one.
+                    Vector3 spot = Vector3.Lerp(segmentStart, segmentEnd, Random.Range(0f, 0.9f));
+                    for (int attempt = 0; attempt < ClearSpotAttempts; attempt++)
+                    {
+                        Vector3 candidate = Vector3.Lerp(segmentStart, segmentEnd, Random.Range(0f, 0.9f));
+                        spot = candidate;
+                        if (LivingCity.Entities.TrafficRegistry.IsClear(trafficBody, candidate, frontPathDirection))
+                            break;
+                    }
+
+                    // If none was clear the teleport still happens. The snap is what guarantees
+                    // the car is on its OWN carriageway rather than cutting across the median -
+                    // see the block above - and a median cut is permanent damage where an overlap
+                    // is now recoverable: the pair is left out of each other's ClampGap and creeps
+                    // apart within a couple of seconds.
+                    transform.position = spot;
                     transform.rotation = Quaternion.LookRotation(frontPathDirection);
                 }
 
@@ -318,6 +417,22 @@ namespace PolyPerfect.City
             return found;
         }
 
+        /// <summary>
+        /// PATCH (Living City): a lane's speed limit in km/h, capped by the car's own.
+        ///
+        /// Path.speed is 0 on any lane whose limit was never authored - every sidewalk path in the
+        /// pack is one, and so is anything hand-built. Feeding that straight into currentMaxSpeed,
+        /// as the package did, parks the car mid-road at zero desired speed with a queue building
+        /// behind it. An unset limit means "no limit", not "stop".
+        /// </summary>
+        private float LaneSpeed(Path lane)
+        {
+            if (!lane || lane.speed <= 0)
+                return maxspeed;
+
+            return Mathf.Min(lane.speed, maxspeed);
+        }
+
         private void UpdateCheckpoint(ref int path, ref int checkpoint, ref Vector3 pathDirection, Transform wheelsMidpoint, bool isFront)
         {
             if (!trajectory[path] || !trajectory[path].gameObject.activeInHierarchy)
@@ -373,7 +488,7 @@ namespace PolyPerfect.City
                         }
                         else if (isFront)
                         {
-                            currentMaxSpeed = Mathf.Min(trajectory[path].speed, maxspeed);
+                            currentMaxSpeed = LaneSpeed(trajectory[path]);
                             trajectory[path - 1].Vehicles.Remove(this);
                             trajectory[path].Vehicles.Add(this);
                         }
@@ -417,23 +532,57 @@ namespace PolyPerfect.City
                         return;
                     UpdateCheckpoint(ref rearWheelsPath, ref rearWheelsCheckpoint, ref rearPathDirection, rearWheelsMiddlePoint, false);
 
-                    if (drivingBihindCar && trajectory[frontWheelsPath].Vehicles.Count > 0)
-                    {
-                        if (carInFront.speed < speed)
-                            speed = Mathf.Lerp(speed, carInFront.speed * 0.8f, 12 * Time.deltaTime);
-                    }
-                    else
-                    {
-                        float targetSpeed = currentMaxSpeed * Mathf.Clamp((1f - Mathf.Abs(Vector3.SignedAngle(transform.forward, (targetDrivePoint - frontWheelsMiddlePoint.position).normalized, Vector3.up)) / maxTurnAngle), 0.65f, 1f);
+                    // PATCH (Living City): longitudinal control, rewritten.
+                    //
+                    // What stood here matched the speed of the car in front IF it happened to be
+                    // slower. That is not a following distance: two cars at the same speed fail the
+                    // comparison outright, so the follower kept closing at full relative speed until
+                    // it was inside the leader - which is what "cars drive through each other"
+                    // looked like. TrafficRegistry has the rest of the diagnosis.
+                    //
+                    // In its place, two independent things:
+                    //
+                    //   the Intelligent Driver Model  - how fast the car WANTS to go, which
+                    //                                   converges on a gap rather than on a speed
+                    //   the clamp further down        - how far it is ALLOWED to move this frame
+                    //
+                    // The separation is the point. The model can be mistuned, or lose sight of a
+                    // car around a bend, and the clamp still makes overlapping impossible.
 
-                        if (trajectory[frontWheelsPath].pathShape == PathShape.LaneChange || trajectory[frontWheelsPath].pathShape == PathShape.RampExit)
-                            speed = Mathf.Lerp(speed, targetSpeed * 0.8f, 4 * Time.deltaTime);
-                        else if (speed > targetSpeed)
-                            speed = Mathf.Lerp(speed, targetSpeed, 3 * Time.deltaTime);
-                        else
-                            speed = Mathf.Lerp(speed, maxspeed, acceleration * Time.deltaTime);
+                    float steerAngle = Vector3.SignedAngle(transform.forward, (targetDrivePoint - frontWheelsMiddlePoint.position).normalized, Vector3.up);
+                    float cornering = Mathf.Clamp(1f - Mathf.Abs(steerAngle) / maxTurnAngle, 0.65f, 1f);
 
-                    }
+                    float desiredSpeed = Mathf.Min(currentMaxSpeed, maxspeed) * cornering;
+                    if (trajectory[frontWheelsPath].pathShape == PathShape.LaneChange || trajectory[frontWheelsPath].pathShape == PathShape.RampExit)
+                        desiredSpeed *= 0.8f;
+
+                    float speedMs = speed * KMHTOMS;
+                    if (trafficBody != null)
+                        trafficBody.SpeedMs = speedMs;
+
+                    var ahead = LivingCity.Entities.TrafficRegistry.Probe(
+                        trafficBody, LivingCity.Entities.CarFollowing.Lookahead(speedMs, headway));
+
+                    // PATCH (Living City): the model, plus the way out of a jam that the model
+                    // cannot provide.
+                    //
+                    // IDM at rest wants a 1.5m gap, so at any smaller gap it returns a negative
+                    // acceleration and the Max(0, ...) inside NextSpeed holds the car at zero -
+                    // forever, because nothing ever pushes cars apart. Meanwhile the clamp below
+                    // deliberately parks a stopped car at 0.6m. Every car the model stopped was
+                    // therefore stopped for good, and one of those in a lane queues the whole city
+                    // behind it. That is the freeze.
+                    //
+                    // Two states earn a creep, and only these two: the registry has declared the
+                    // car stalled, or the car is genuinely inside another body. Both are already
+                    // broken situations that comfort has no opinion about. A normal queue at a red
+                    // light is neither, so it still settles at the comfortable 1.5m rather than
+                    // compacting to bumper contact.
+                    speedMs = LivingCity.Entities.CarFollowing.NextSpeed(
+                        speedMs, desiredSpeed * KMHTOMS, ahead.Gap, ahead.LeadSpeedMs, headway,
+                        ahead.ReleaseActive || ahead.Overlapping, Time.deltaTime);
+
+                    speed = speedMs / KMHTOMS;
 
 
                     if (trajectory[frontWheelsPath].pathShape == PathShape.Curve && frontWheelsCheckpoint > 1 && frontWheelsCheckpoint <= 3)
@@ -461,7 +610,36 @@ namespace PolyPerfect.City
 
                     }
 
-                    float positionDelta = speed * KMHTOMS * Time.deltaTime;
+                    float positionDelta = speedMs * Time.deltaTime;
+
+                    // PATCH (Living City): the guarantee. Whatever the model decided, this frame's
+                    // movement may not close the gap past MinClearance. It uses ClampGap, which
+                    // ignores right of way - being the car with priority is not a licence to
+                    // occupy somebody else's bodywork, it only means you are the one who does not
+                    // have to slow down gracefully for it.
+                    //
+                    // It applies unconditionally, including while overlapping something. The
+                    // exemption that used to stand here - skip the whole clamp whenever any
+                    // blocker overlapped - was the collision: Overlapping was a single flag ORed
+                    // over every car in range, so one car crossing the junction ahead let this car
+                    // drive straight through the one it was following. The untangling it was
+                    // supposed to allow is now handled where it belongs, by leaving overlapped
+                    // bodies out of ClampGap in TrafficRegistry.Probe, so a pair already inside
+                    // each other is unconstrained WITH RESPECT TO EACH OTHER and nothing else.
+                    float allowed = Mathf.Max(0f, ahead.ClampGap - LivingCity.Entities.CarFollowing.MinClearance);
+                    if (allowed < positionDelta)
+                    {
+                        positionDelta = allowed;
+
+                        // Keep speed, wheel spin and the registry consistent with what actually
+                        // happened, or the next frame's model starts from a speed the car never
+                        // reached and the wheels spin against a stationary car.
+                        speedMs = Time.deltaTime > 0f ? positionDelta / Time.deltaTime : 0f;
+                        speed = speedMs / KMHTOMS;
+                    }
+
+                    if (trafficBody != null)
+                        trafficBody.SpeedMs = speedMs;
 
                     UpdateCarIncline();
 
@@ -495,7 +673,72 @@ namespace PolyPerfect.City
             else
             {
                 speed = 0;
+
+                // PATCH (Living City): a car held at a red light or a crosswalk is still an
+                // obstacle, and the cars behind it have to be told it is a stationary one. Without
+                // this the registry keeps serving its last moving speed and followers queue up
+                // expecting it to pull away.
+                if (trafficBody != null)
+                    trafficBody.SpeedMs = 0f;
+
+                CheckHoldWatchdog();
             }
+        }
+
+        /// <summary>
+        /// PATCH (Living City): has the thing that stopped us stopped blocking us?
+        ///
+        /// Polls the blocker's own state rather than waiting for its event, which is the whole
+        /// point - the failure this exists for IS the event not arriving. A destroyed or
+        /// deactivated blocker reads as clear, which is correct: it cannot be stopping anyone.
+        /// </summary>
+        void CheckHoldWatchdog()
+        {
+            // stopHere means the traffic system is taking the car off the map this frame. It can
+            // still be standing on a crosswalk when that happens, and resuming it would drive a
+            // car that is mid-Destroy off down the road.
+            if (stopHere || trajectory == null)
+                return;
+
+            if (!heldByLight && !heldByCrosswalk && !heldByLevelCrossing)
+                return;
+
+            if (Time.time - heldSince < HoldWatchdog)
+                return;
+
+            if (heldByLight && !heldByLight.isGreen)
+                return;
+            if (heldByCrosswalk && heldByCrosswalk.PedestriansAreCrossing)
+                return;
+            if (heldByLevelCrossing && heldByLevelCrossing.trainCrossing)
+                return;
+
+            ReleaseHold();
+            isMoving = true;
+        }
+
+        /// <summary>Forget what was holding the car, without touching the event subscriptions -
+        /// OnTriggerExit owns those and still fires when the car finally drives clear.</summary>
+        void ReleaseHold()
+        {
+            heldByLight = null;
+            heldByCrosswalk = null;
+            heldByLevelCrossing = null;
+            drivingTrafficLights = false;
+        }
+
+        /// <summary>Records which object stopped the car, and when, for the watchdog above.</summary>
+        void BeginHold(TrafficLight light, Crosswalk crosswalk, LevelCrossingController levelCrossing)
+        {
+            if (light)
+                heldByLight = light;
+            if (crosswalk)
+                heldByCrosswalk = crosswalk;
+            if (levelCrossing)
+                heldByLevelCrossing = levelCrossing;
+
+            heldSince = Time.time;
+            isMoving = false;
         }
 
         private void OnTriggerEnter(Collider other)
@@ -509,8 +752,8 @@ namespace PolyPerfect.City
                     if (!trafic.isGreen)
                     {
                         drivingTrafficLights = true;
-                        isMoving = false;
                         trafic.lightChange += StartMoving;
+                        BeginHold(trafic, null, null);
                     }
                 }
             }
@@ -521,7 +764,7 @@ namespace PolyPerfect.City
                 if (crosswalk.PedestriansAreCrossing)
                 {
                     crosswalk.stateChange += CrosswalkChange;
-                    isMoving = false;
+                    BeginHold(null, crosswalk, null);
                 }
 
             }
@@ -532,57 +775,58 @@ namespace PolyPerfect.City
                 if (levelCrossing.trainCrossing)
                 {
                     levelCrossing.stateChange += LevelCrossingChange;
-                    isMoving = false;
+                    BeginHold(null, null, levelCrossing);
                 }
 
             }
-            // Primitive car avoidence
-            else if (other.CompareTag("Car") && !other.isTrigger && frontWheelsPath > 0)
-            {
-                float direction = Vector3.Angle(transform.forward, other.transform.forward);
-                float carDirection = Vector3.Angle(transform.right, (other.transform.position - transform.position).normalized);
-                if (direction < 60)
-                {
-                    carInFront = other.GetComponentInParent<CarBehavior>();
-                    if (trajectory[frontWheelsPath].Vehicles.Contains(carInFront) || direction < 45)
-                        drivingBihindCar = true;
-                }
-                if (direction > 40 && carDirection < 80 && carDirection > 45 && !drivingBihindCar && direction < 110)
-                {
-                    isMoving = false;
-                }
 
-            }
+            // PATCH (Living City): the "Primitive car avoidence" branch that stood here is gone,
+            // along with its counterpart in OnTriggerExit. It read the forward trigger box once on
+            // entry - about two metres of lookahead on a car doing 100km/h - never re-checked, was
+            // disabled outright whenever frontWheelsPath was 0 (which SetNewPath resets, so every
+            // re-path blinded the car), and leaned on Path.Vehicles, a list that is never seeded
+            // for the first lane and never cleared when a car re-paths or is destroyed. Its
+            // crossing rule set isMoving = false with no timeout, so two cars that stopped for
+            // each other stayed stopped.
+            //
+            // Car-to-car spacing now belongs entirely to TrafficRegistry, which is continuous,
+            // measures real bodies, and cannot be blinded by a re-path. Traffic lights, crosswalks
+            // and level crossings above are untouched.
         }
 
         private void OnTriggerExit(Collider other)
         {
-            if (other.CompareTag("Car") && !other.isTrigger)
-            {
-                StopCoroutine(StartMovingAfterWait(0.2f));
-                StartCoroutine(StartMovingAfterWait(0.2f));
-                drivingBihindCar = false;
-            }
-            else if (other.CompareTag("TrafficLight"))
+            // PATCH (Living City): driving clear of the trigger ends the hold too. The car is past
+            // it, so whatever its state, it is no longer this car's problem.
+            if (other.CompareTag("TrafficLight"))
             {
                 TrafficLight trafic = other.GetComponent<TrafficLight>();
                 trafic.lightChange -= StartMoving;
                 drivingTrafficLights = false;
+                heldByLight = null;
             }
             else if (other.CompareTag("Crosswalk"))
             {
                 other.GetComponent<Crosswalk>().stateChange -= CrosswalkChange;
+                heldByCrosswalk = null;
             }
             else if (other.CompareTag("LevelCrossing"))
             {
                 other.GetComponent<LevelCrossingController>().stateChange -= LevelCrossingChange;
+                heldByLevelCrossing = null;
             }
         }
+        // PATCH (Living City): each handler now also drops the reference the watchdog holds, so a
+        // hold released the normal way leaves nothing behind for it to re-examine. Only the ref
+        // it owns - a car can be stopped by a red light and a crosswalk at once, and clearing
+        // both because one of them let go is how the watchdog would start waving cars through
+        // red lights.
         void StartMoving(bool isGreen)
         {
             if (isGreen)
             {
                 drivingTrafficLights = false;
+                heldByLight = null;
                 isMoving = true;
             }
         }
@@ -590,6 +834,7 @@ namespace PolyPerfect.City
         {
             if (!crossing && !drivingTrafficLights)
             {
+                heldByCrosswalk = null;
                 isMoving = true;
             }
         }
@@ -597,6 +842,7 @@ namespace PolyPerfect.City
         {
             if (!crossing)
             {
+                heldByLevelCrossing = null;
                 isMoving = true;
             }
         }

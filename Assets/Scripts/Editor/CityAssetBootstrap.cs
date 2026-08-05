@@ -50,6 +50,7 @@ namespace LivingCity.EditorTools
         const string Amusement = Root + "Amusement Park_T/";
         const string Trees = Root + "Nature_T/Trees_T/";
         const string Flowers = Root + "Nature_T/Flowers_T/";
+        const string Grass = Root + "Nature_T/Grass_T/";
         const string Stones = Root + "Nature_T/Stones_T/";
         const string Clouds = Root + "Nature_T/Clouds_T/";
         const string Vehicles_ = Root + "Vehicles_T/";
@@ -82,6 +83,25 @@ namespace LivingCity.EditorTools
         {
             "building-block-4floor-corner", "building-block-5floor-corner",
         };
+
+        /// <summary>
+        /// What stands in a back alley. Deliberately light, and deliberately short: a bin against
+        /// the wall, a dumpster, a bench, a lamp, the odd tree.
+        ///
+        /// The garage, crates, pallets, timber and yard wall that used to be in here are gone.
+        /// They are works-yard furniture, and behind a block of flats they read as a builder's
+        /// merchant rather than as an alley - which is also why the alley no longer builds ROWS
+        /// of anything: the buildings of the interior lots are the fill now, and this is only
+        /// what is dropped on the tarmac between them. See BlockBuilder.BuildInterior.
+        ///
+        /// bin-wheelie and trash-can are listed twice on purpose: ShuffleBag deals each entry
+        /// once per cycle, so a duplicate is how a kit weights one prop above the others.
+        /// </summary>
+        static GameObject[] AlleyKit() =>
+            Merge(LoadAll(CityProps, "dumpster", "bin-wheelie", "bin-wheelie",
+                                     "bench-old", "lamp-city"),
+                  LoadAll(Props, "trash-can", "trash-can"),
+                  LoadAll(Trees, "tree-lime", "shrub-round"));
 
         static readonly List<string> Missing = new();
 
@@ -156,22 +176,7 @@ namespace LivingCity.EditorTools
 
             db.zonePalettes = BuildZonePalettes();
 
-            // Measured off the FBX geometry, not guessed: the plain 5floor block's window rows
-            // are on local -Z (its +Z is a 12-vertex blank wall), and the two corner kits are
-            // mirrored relative to each other, so a single global offset can never fix both.
-            // The china apartment's +Z is its least-windowed face and the pack's own demo
-            // scenes never point it at a road; the big house-block has blank gable ends on
-            // both Z faces, windows on +/-X. house-block and house-block-old are authored
-            // front = +Z and need no entry.
-            // If a facade still shows a blank wall to a street, flip the sign of its entry.
-            db.facadeYawFixes = new[]
-            {
-                YawFix(Buildings + "building-block-5floor.prefab", 180f),
-                YawFix(Buildings + "building-block-4floor-corner.prefab", 90f),
-                YawFix(Buildings + "building-block-5floor-corner.prefab", -90f),
-                YawFix(Buildings + "building-apartment-china.prefab", 180f),
-                YawFix(Buildings + "building-house-block-big.prefab", 90f),
-            };
+            db.facadeYawFixes = BuildFacadeYawFixes();
 
             // lamp-city first and lamp-road dropped: lamp-road is a motorway lantern on a plain
             // steel pole. The ornate one is the period fitting.
@@ -213,7 +218,7 @@ namespace LivingCity.EditorTools
             // globbing this folder used to put outside a flat.
             db.parkedCarGroups = new[]
             {
-                Vehicles("Everyday", 70f, CarsStatic,
+                Bucket("Everyday", 70f, CarsStatic,
                          "car-veteran", "car-passenger", "car-passenger-race", "car-hippie-van",
                          "jeep-open", "car-pickup-modern", "car-camper-vintage",
                          "car-caravan-small"),
@@ -222,11 +227,11 @@ namespace LivingCity.EditorTools
                 // traffic below. The police car is not here on purpose: parked, it is studied,
                 // and outside the Police zone - which has its own override - it would read as
                 // a mistake rather than as a beat car.
-                Vehicles("Service", 8f, CarsStatic, "car-taxi"),
+                Bucket("Service", 8f, CarsStatic, "car-taxi"),
 
                 // The armoured van is the one addition the period actively wants: a bank car is
                 // the whole reason this city has a police station in it.
-                Vehicles("Trade", 22f, CarsStatic, "truck", "car-tow-truck", "armored-truck"),
+                Bucket("Trade", 22f, CarsStatic, "truck", "car-tow-truck", "armored-truck"),
             };
 
             // motorbike_AI is deliberately absent from Everyday. Every vehicle in the pack is
@@ -250,7 +255,7 @@ namespace LivingCity.EditorTools
                 // pack ships no _AI variant for car-pickup-modern, car-camper-vintage or
                 // car-caravan-small, so those three are parked-only. Adding them here would just
                 // land in the Missing warning at the end of this file.
-                Vehicles("Everyday", 66f, CarsAI,
+                Bucket("Everyday", 66f, CarsAI,
                          "car-veteran_AI", "car-passenger_AI", "car-passenger-race_AI",
                          "car-hippie-van_AI", "jeep-open_AI"),
 
@@ -258,9 +263,9 @@ namespace LivingCity.EditorTools
                 // did have both and there is no vintage stand-in in the pack. Kept at a low
                 // weight, and moving, where the silhouette is read for a moment rather than
                 // studied at the kerb.
-                Vehicles("Service", 14f, CarsAI, "car-taxi_AI", "car-police_AI"),
+                Bucket("Service", 14f, CarsAI, "car-taxi_AI", "car-police_AI"),
 
-                Vehicles("Freight", 14f, CarsAI, "truck_AI", "car-tow-truck_AI",
+                Bucket("Freight", 14f, CarsAI, "truck_AI", "car-tow-truck_AI",
                          "armored-truck_AI"),
 
                 // A passenger bus is the one large body worth having: VehicleSpawner calls
@@ -273,7 +278,7 @@ namespace LivingCity.EditorTools
                 // Watch this one first if traffic starts clipping corners. It is by far the
                 // longest thing the pack's CarBehavior has to steer through a junction, and
                 // dropping this single group is the whole fix.
-                Vehicles("Transit", 6f, CarsAI, "bus-passenger_AI"),
+                Bucket("Transit", 6f, CarsAI, "bus-passenger_AI"),
             };
 
             db.aiPedestrians = LoadFolder(PeopleAI);
@@ -313,9 +318,10 @@ namespace LivingCity.EditorTools
             var asphalt = Load(Tiles + "tile-plain_asphalt.prefab");
             var concrete = Load(Tiles + "tile-plain_concrete.prefab");
             var dirt = Load(Tiles + "tile-plain_dirt.prefab");
-            var grass = Load(Tiles + "tile-plain_grass.prefab");
-            // tile-plain_sand exists too, and is omitted on purpose - a sand block in 1920s
-            // Chicago reads as a bug, not as variety. Do not "complete the set".
+            // tile-plain_sand and tile-plain_grass exist too, and are omitted on purpose. Sand in
+            // 1920s Chicago reads as a bug, not as variety; grass was the bungalow belt's ground
+            // and there is no bungalow belt any more - the park carries the city's greenery now.
+            // Do not "complete the set".
 
             var cityTrees = LoadAll(Trees, "tree-oak", "tree-lime", "tree-poplar", "shrub-round");
 
@@ -325,85 +331,53 @@ namespace LivingCity.EditorTools
                 Palette(BlockZone.ResidentialHigh, weight: 26f, maxShare: 1f,
                     groups: new[]
                     {
-                        Terrace("Terrace 4+5 floor", 55f, TerraceStreet, TerraceRear, TerraceCorner),
+                        Terrace("Terrace 4+5 floor", 85f, TerraceStreet, TerraceRear, TerraceCorner),
 
-                        Detached("Old blocks", 30f, 1f, 3f, 0f, false,
-                            "building-house-block", "building-house-block-big",
-                            "building-house-block-old", "building-apartment-china"),
-
-                        Shops(15f),
+                        StreetShops(15f),
                     },
-                    // One development per street: a side is a flush 4/5-storey wall, or a row
-                    // of old blocks, or shops - not a per-slot lottery of all three. This is
-                    // what makes the terraces actually touch.
+                    // One development per street: a side is a flush 4/5-storey wall or a run of
+                    // shops, not a per-slot lottery of the two. This is what makes the terraces
+                    // actually touch.
                     uniformStreetRuns: true,
-                    // A single ring of buildings around one courtyard, however thick the
-                    // block. Uncapped subdivision gave a 3-cell block 3x3 ringed lots - six
-                    // parallel rows, of which only the outermost faced a street.
-                    maxLotsPerAxis: 1,
+                    // Uncapped, so TargetLotSize alone decides: a one-cell block stays a single
+                    // ring, a two-cell block becomes two ringed lots with a real alley between
+                    // them, a three-cell block becomes three. This is what makes a big block read
+                    // as two or three small ones rather than as one ring around a courtyard - the
+                    // interior ROWS are the fill, and what is left over is the alley.
+                    //
+                    // It was 1 for a while, on the argument that only the outermost row faces a
+                    // street. True, and beside the point: the rear elevations face each other
+                    // across the alley, which is the view a 1920s block actually has.
+                    maxLotsPerAxis: 0,
                     grounds: new[]
                     {
                         Ground("Concrete", 55f, concrete),
                         Ground("Asphalt", 25f, asphalt),
                         Ground("Dirt", 20f, dirt),
                     },
-                    // The terrace ring encloses a yard, so the treatment reads strongest here.
-                    courtyardGrounds: new[] { dirt, grass },
-                    scatter: Merge(cityTrees,
-                                   LoadAll(CityProps, "dumpster", "bin-wheelie", "hot-dog-stand"),
-                                   LoadAll(Props, "mail-box")),
-                    scatterDensity: 0.10f),
+                    // The ring encloses a SERVICE yard, not a garden - grass and dirt here were
+                    // what made the interior read as a field with a few trees on it.
+                    courtyardGrounds: new[] { concrete, asphalt },
+                    // A service yard behind a terrace is patched concrete over patched asphalt,
+                    // laid in bays. Both treatments on, but the surface re-roll held back from 1
+                    // so the yard still reads as mostly one thing with repairs in it.
+                    groundPatchChance: 0.55f,
+                    paveJoints: true,
+                    alleyProps: AlleyKit(),
+                    // Chance a slot on an ALLEY-facing run is a 12m parking bay instead of a
+                    // building. This is the "sometimes a car park where a building would be"
+                    // variation, and it belongs on the rear elevations rather than in the alley
+                    // itself - cars parked down the middle of a 6m alley block it.
+                    alleyParkingChance: 0.15f,
+                    // The alley furniture goes down first, so the scatter is only what fills the
+                    // corners it could not reach.
+                    scatter: Merge(cityTrees, LoadAll(Props, "mail-box")),
+                    scatterDensity: 0.06f),
 
-                // Chicago's bungalow belt: detached, set back off the pavement, with the odd
-                // store on the corner. The setback is what separates it visually from the
-                // terraces above - those sit hard on the kerb, these do not.
-                Palette(BlockZone.ResidentialLow, weight: 20f, maxShare: 1f,
-                    groups: new[]
-                    {
-                        Detached("Houses", 94f, 3f, 7f, 4f, false,
-                            "building-house-family-small", "building-house-family-large",
-                            "building-cabin-big", "building-cabin-small",
-                            "building-house-block-old", "building-house-block"),
-
-                        Shops(6f),
-                    },
-                    grounds: new[]
-                    {
-                        Ground("Grass", 45f, grass),
-                        Ground("Concrete", 30f, concrete),
-                        Ground("Dirt", 25f, dirt),
-                    },
-                    scatter: Merge(cityTrees,
-                                   LoadAll(Trees, "shrub"),
-                                   LoadAll(Fences, "fence-picket"),
-                                   LoadAll(Props, "shed-dog", "sand-box", "dryer-outside",
-                                                  "flowers-window")),
-                    scatterDensity: 0.16f),
-
-                // Not a zone of towers - there are none left. The same masonry at its densest,
-                // with the civic set pieces of the era as landmarks.
-                Palette(BlockZone.Downtown, weight: 12f, maxShare: 0.3f,
-                    groups: new[]
-                    {
-                        Terrace("Terrace 4+5 floor", 70f, TerraceStreet, TerraceRear, TerraceCorner),
-                        Shops(30f, minGap: 0f, maxGap: 2f),
-                    },
-                    grounds: new[]
-                    {
-                        Ground("Concrete", 70f, concrete),
-                        Ground("Asphalt", 30f, asphalt),
-                    },
-                    landmarks: LoadAll(Buildings, "building-bank", "building-cinema",
-                                                  "building-casino", "building-hotel",
-                                                  "building-museum"),
-                    landmarkChance: 0.85f,
-                    scatter: Merge(LoadAll(CityProps, "bench-old", "fire-hydrant", "lamp-city"),
-                                   LoadAll(Props, "trash-can", "marketplace-stand-simple",
-                                                  "guidepost")),
-                    scatterDensity: 0.12f,
-                    parkingChance: 0.06f),
-
-                Palette(BlockZone.Industrial, weight: 12f, maxShare: 0.3f,
+                // Up from 0.3: with the bungalow belt gone, ResidentialHigh and Industrial are
+                // the only two zones that fill a map, and a 30% ceiling on the works left the
+                // rim as terraces too.
+                Palette(BlockZone.Industrial, weight: 12f, maxShare: 0.4f,
                     groups: new[]
                     {
                         Detached("Works", 100f, 2f, 6f, 0f, false,
@@ -417,6 +391,10 @@ namespace LivingCity.EditorTools
                         Ground("Asphalt", 30f, asphalt),
                         Ground("Concrete", 20f, concrete),
                     },
+                    // The one zone that wants the full mosaic: a works yard IS mixed dirt,
+                    // concrete and asphalt, poured piecemeal as the site grew. No joints - none
+                    // of it was ever laid in bays.
+                    groundPatchChance: 1f,
                     scatter: Merge(
                         LoadAll(Buildings, "chimney-big", "water-tower-medium"),
                         LoadAll(Props, "timber", "palette", "package-box"),
@@ -426,54 +404,49 @@ namespace LivingCity.EditorTools
                     scatterDensity: 0.22f,
                     parkingChance: 0.04f),
 
-                // maxBlocks rather than a share from here down: a city has one Chinatown, one
-                // hospital and one police station however large it grows. Parks and car parks
-                // below keep their share cap, because a bigger city should have more of both.
-                Palette(BlockZone.Chinatown, weight: 10f, maxShare: 1f, maxBlocks: 1,
-                    groups: new[]
-                    {
-                        Detached("Chinatown", 55f, 1f, 4f, 0f, false,
-                            "building-apartment-china", "building-antique-china"),
-
-                        Detached("Chinatown shops", 45f, 1f, 3f, 0f, true,
-                            "building-restuarant-china", "building-shop-china",
-                            "building-market-china"),
-                    },
-                    landmarks: LoadAll(Buildings, "building-pagoda-china", "building-temple-china"),
-                    landmarkChance: 0.9f,
-                    scatter: Merge(LoadAll(Buildings, "gate-china"),
-                                   LoadAll(Props, "lantern-long", "lantern-sphere",
-                                                  "marketplace-stand-simple"),
-                                   LoadAll(Trees, "tree-bonsai")),
-                    scatterDensity: 0.14f),
-
+                // maxBlocks rather than a share from here down: a city has one hospital and one
+                // police station however large it grows. Parks and car parks below keep their
+                // share cap, because a bigger city should have more of both.
+                //
                 // Four blocks built round one building each. landmarkChance is 1 because the
                 // landmark IS the zone - a police block with no police station is just houses.
                 Palette(BlockZone.Police, weight: 14f, maxShare: 1f, maxBlocks: 1,
                     groups: new[] { Outbuildings() },
                     landmarks: LoadAll(Buildings, "building-policestation"),
                     landmarkChance: 1f,
+                    // An institution's forecourt is laid, swept and uniform - joints on, surface
+                    // re-roll low. The opposite end of the dial from the works yard.
+                    groundPatchChance: 0.25f,
+                    paveJoints: true,
                     scatter: Merge(cityTrees,
                                    LoadAll(Fences, "fence-classic"),
                                    LoadAll(CityProps, "lamp-city")),
                     scatterDensity: 0.12f,
                     parkingChance: 0.35f,
-                    parkedCars: new[] { Vehicles("Patrol", 1f, CarsStatic, "car-police") }),
+                    parkedCars: new[] { Bucket("Patrol", 1f, CarsStatic, "car-police") }),
 
                 Palette(BlockZone.Hospital, weight: 14f, maxShare: 1f, maxBlocks: 1,
                     groups: new[] { Outbuildings() },
                     landmarks: LoadAll(Buildings, "building-hospital"),
                     landmarkChance: 1f,
+                    // An institution's forecourt is laid, swept and uniform - joints on, surface
+                    // re-roll low. The opposite end of the dial from the works yard.
+                    groundPatchChance: 0.25f,
+                    paveJoints: true,
                     scatter: Merge(cityTrees,
                                    LoadAll(CityProps, "bench-old", "lamp-city")),
                     scatterDensity: 0.14f,
                     parkingChance: 0.35f,
-                    parkedCars: new[] { Vehicles("Ambulance", 1f, CarsStatic, "car-ambulance-pickup") }),
+                    parkedCars: new[] { Bucket("Ambulance", 1f, CarsStatic, "car-ambulance-pickup") }),
 
                 Palette(BlockZone.School, weight: 12f, maxShare: 1f, maxBlocks: 1,
                     groups: new[] { Outbuildings() },
                     landmarks: LoadAll(Buildings, "building-school"),
                     landmarkChance: 1f,
+                    // An institution's forecourt is laid, swept and uniform - joints on, surface
+                    // re-roll low. The opposite end of the dial from the works yard.
+                    groundPatchChance: 0.25f,
+                    paveJoints: true,
                     scatter: Merge(cityTrees,
                                    LoadAll(Props, "soccer-gate", "basketball-stand"),
                                    LoadAll(Fences, "fence-picket"),
@@ -485,27 +458,66 @@ namespace LivingCity.EditorTools
                     groups: new[] { Outbuildings() },
                     landmarks: LoadAll(Buildings, "building-firestation"),
                     landmarkChance: 1f,
+                    // An institution's forecourt is laid, swept and uniform - joints on, surface
+                    // re-roll low. The opposite end of the dial from the works yard.
+                    groundPatchChance: 0.25f,
+                    paveJoints: true,
                     scatter: Merge(cityTrees, LoadAll(Fences, "fence-classic")),
                     scatterDensity: 0.12f,
                     parkingChance: 0.3f,
-                    parkedCars: new[] { Vehicles("Appliance", 1f, CarsStatic, "firetruck") }),
+                    parkedCars: new[] { Bucket("Appliance", 1f, CarsStatic, "firetruck") }),
 
                 // No groups at all: a park has no street wall. The ground carries a Tile
                 // component with sidewalk paths, so it is laid unscaled per cell and the
                 // pedestrians walk through - see GroundPlacer.
-                Palette(BlockZone.Park, weight: 8f, maxShare: 0.15f,
+                //
+                // Share up from 0.15: with the bungalow belt gone the park is the only green
+                // left, and at 15% a mid-sized map got one. ClashesWithNeighbour still forbids
+                // two parks touching, so this buys scattered squares, not one green quarter.
+                // groundPerCell is also what routes this block to ParkDresser instead of the
+                // uniform scatter, so scatter/scatterDensity are deliberately left at zero here:
+                // the park is laid out against tile-park's baked walks, not sprinkled over them.
+                //
+                // The fountain goes in as the LANDMARK rather than as one more scatter entry.
+                // It measures 5.98 x 5.98 and the tile's paved roundel is radius 4 - it was
+                // authored for that spot, and one park gets one, on the centre cell.
+                //
+                // The boulders that used to be in here (stone-round is 2.58 x 3.03 and 2.27
+                // tall) are gone. Drawn from a flat 18-entry bag they came up as often as an oak,
+                // and a knee-high boulder in the middle of a city park was the loudest wrong note
+                // in the block.
+                Palette(BlockZone.Park, weight: 8f, maxShare: 0.25f,
                     groups: System.Array.Empty<PrefabDatabase.WeightedGroup>(),
                     ground: park,
                     groundPerCell: true,
-                    scatter: Merge(
-                        LoadAll(Trees, "tree-oak", "tree-birch", "tree-lime", "tree-poplar",
-                                       "tree-beech", "tree-fir", "tree-round",
-                                       "shrub", "shrub-round"),
-                        LoadAll(Props, "bench-forest", "fountain", "lantern-sphere"),
-                        LoadAll(CityProps, "bench-old"),
-                        LoadAll(Flowers, "roses", "carnations"),
-                        LoadAll(Stones, "stone-round", "stone-flat", "stone-oval")),
-                    scatterDensity: 0.5f),
+                    landmarks: LoadAll(Props, "fountain"),
+                    landmarkChance: 1f,
+                    parkTrees: new[]
+                    {
+                        // Weighted by crown, not by taste. A row is planted from ONE group, and
+                        // a quadrant is about 11m across: tree-lime at 7.07m wide fills one on
+                        // its own, so it stays an occasional specimen while the 2-4m species
+                        // carry the avenues.
+                        Bucket("Park street trees", 5f, Trees,
+                            "tree-oak", "tree-birch", "tree-beech", "tree-round"),
+                        Bucket("Park uprights", 3f, Trees,
+                            "tree-poplar", "tree-tall", "tree-birch-tall", "tree-elipse"),
+                        Bucket("Park evergreens", 2f, Trees,
+                            "tree-fir", "tree-forest", "tree-old"),
+                        Bucket("Park specimens", 1f, Trees, "tree-lime"),
+                    },
+                    parkUndergrowth: Merge(
+                        LoadAll(Trees, "shrub", "shrub-round"),
+                        LoadAll(Flowers, "roses", "carnations", "sunflower"),
+                        // Nature_T/Grass_T was in the pack the whole time and no code path had
+                        // ever referenced it. Tufts at 0.4-2.0m are exactly what a lawn between
+                        // tree rows was missing.
+                        LoadAll(Grass, "grass", "grass-basic", "grass-clumb",
+                                       "grass-long", "grass-tall")),
+                    parkBenches: Merge(
+                        LoadAll(Props, "bench-forest"),
+                        LoadAll(CityProps, "bench-old")),
+                    fenceSegment: Load(Fences + "fence-shrub.prefab")),
 
                 // The scatter density is up from 0.04 now that the bays register in the block's
                 // occupancy list. Before, a lamp could be dropped inside a car - BuildCarRows read
@@ -526,18 +538,34 @@ namespace LivingCity.EditorTools
         }
 
         /// <summary>
-        /// The shop group mixed into the residential palettes. A fresh instance per palette,
-        /// because each is serialised into the asset separately.
+        /// The storefronts, party-walled, mixed into the palette that builds a continuous street
+        /// wall. A fresh instance per palette, because each is serialised into the asset
+        /// separately.
         ///
         /// This is what replaced a Commercial zone. A block that is nothing but cafes reads as a
         /// theme park and is not how the period built; a low weight here puts the odd storefront
         /// between the flats instead. cornerPreferred is the other half of it - the corner slot
         /// biases toward these, because the corner is where the tavern and the store went.
+        ///
+        /// Detached is wrong here and it is what the "houses in the middle of the terrace"
+        /// report was actually about. Three separate things follow from the layout flag, and all
+        /// three are wanted here: GapFor and SetbackFor both return 0 for a Terrace group, so the
+        /// shop sits hard on the kerb flush with the flats either side; and LotKit applies its
+        /// no-rear penalty to a Terrace group with no rearPrefabs, which is what keeps these off
+        /// the alley elevations, the other place they were showing up. PickCornerGroup still
+        /// skips the group - it carries no cornerPrefabs - so the block's four corners remain
+        /// the 4/5-floor corner kit.
         /// </summary>
-        static PrefabDatabase.WeightedGroup Shops(float weight, float minGap = 1f, float maxGap = 3f) =>
-            Detached("Shops", weight, minGap, maxGap, 0f, true,
-                "building-cafe", "building-restaurant", "building-post",
-                "building-shop-china", "building-market-china");
+        static PrefabDatabase.WeightedGroup StreetShops(float weight) =>
+            new()
+            {
+                label = "Shops",
+                weight = weight,
+                layout = PrefabDatabase.PieceLayout.Terrace,
+                cornerPreferred = true,
+                prefabs = LoadAll(Buildings,
+                    "building-cafe", "building-restaurant", "building-post"),
+            };
 
         /// <summary>
         /// The yard buildings of a single-landmark block - a garage and a couple of low blocks,
@@ -557,7 +585,8 @@ namespace LivingCity.EditorTools
         /// lets the SRP Batcher keep batching across all of them.
         ///
         /// Colours are deliberately close to white. _BaseColor multiplies the entire atlas, so
-        /// anything saturated tints the roof and windows too.
+        /// anything saturated tints the roof and windows too. The GROUND shades built alongside
+        /// them are not bound by that - see the note on them below.
         /// </summary>
         static void BuildTintPalette(PrefabDatabase db)
         {
@@ -577,6 +606,12 @@ namespace LivingCity.EditorTools
             db.lineMaterial = AssetDatabase.LoadAssetAtPath<Material>(White);
             if (!db.lineMaterial)
                 Missing.Add(White);
+
+            // The same idea two steps along the pack's grey ramp, for the paint GroundPaint lays
+            // over the yards. Untextured like the white, so they need no UV authoring either.
+            db.paintDarkMaterial = FlatColour(PackMaterials + "Colors/18 GREY-DARK-LPEC.mat");
+            db.paintLightMaterial = FlatColour(PackMaterials + "Colors/22 GREY-LIGHTEST-LPEC.mat");
+
             Directory.CreateDirectory(TintDir);
 
             db.buildingTints = new[]
@@ -586,6 +621,36 @@ namespace LivingCity.EditorTools
                 Tint(atlas, "atlas-LPEC-rose", new Color(1.00f, 0.93f, 0.90f)),
                 Tint(atlas, "atlas-LPEC-sage", new Color(0.95f, 0.97f, 0.94f)),
             };
+
+            // Ground shades range far wider than the facade tints above, and deliberately so.
+            // The near-white cap on a building exists because _BaseColor multiplies the WHOLE
+            // atlas and drags roofs and windows along with the walls. A ground slab has neither:
+            // it is one flat patch of atlas, so the multiplier only ever changes the one thing
+            // it is aimed at. Held under 1.1 at the top so a slab never blows out to white, and
+            // over 0.7 at the bottom so a yard never reads as a hole.
+            db.groundTints = new[]
+            {
+                Tint(atlas, "atlas-LPEC-ground-dark",  new Color(0.74f, 0.74f, 0.75f)),
+                Tint(atlas, "atlas-LPEC-ground-cool",  new Color(0.83f, 0.85f, 0.88f)),
+                Tint(atlas, "atlas-LPEC-ground-plain", new Color(0.90f, 0.90f, 0.90f)),
+                Tint(atlas, "atlas-LPEC-ground-warm",  new Color(0.97f, 0.94f, 0.88f)),
+                Tint(atlas, "atlas-LPEC-ground-earth", new Color(0.93f, 0.87f, 0.79f)),
+                Tint(atlas, "atlas-LPEC-ground-pale",  new Color(1.08f, 1.06f, 1.02f)),
+            };
+        }
+
+        /// <summary>
+        /// One of the pack's flat colour materials, loaded straight rather than made into a
+        /// variant - they carry no texture at all, so there is nothing for a variant to inherit
+        /// and nothing to keep tracking.
+        /// </summary>
+        static Material FlatColour(string path)
+        {
+            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (!material)
+                Missing.Add(path);
+
+            return material;
         }
 
         static Material Tint(Material parent, string name, Color color)
@@ -609,7 +674,7 @@ namespace LivingCity.EditorTools
             return material;
         }
 
-        static PrefabDatabase.WeightedPrefabs Vehicles(
+        static PrefabDatabase.WeightedPrefabs Bucket(
             string label, float weight, string folder, params string[] names) =>
             new()
             {
@@ -635,6 +700,66 @@ namespace LivingCity.EditorTools
                 extraYaw = extraYaw,
             };
 
+        /// <summary>
+        /// Which prefabs are authored off the pack's front = local +Z convention, and by how much.
+        ///
+        /// The FLAT pieces are a hand-entered list, measured once off the meshes and cross-checked
+        /// against the pack's own demo scenes: the plain 5floor block's window rows are on local
+        /// -Z and its +Z is a 12-vertex blank wall; the china apartment's +Z is its least-windowed
+        /// face and the demo never points it at a road; the big house-block is gable-fronted, with
+        /// both Z faces blank and the windows on +/-X. house-block and house-block-old are
+        /// authored front = +Z and need no entry. If one of these still shows a blank wall to a
+        /// street, flip the sign of its entry.
+        ///
+        /// The CORNER pieces are measured here instead, every time, by CornerFacing. They were
+        /// hand-entered too - at +90 and -90, on the belief that the two kits are mirrored
+        /// relative to each other - and both were wrong by a quarter turn, which is why every
+        /// corner in the city had one elevation facing its street and one blank. A corner piece
+        /// has two finished elevations, so "which direction is the front" has no answer for it and
+        /// the nearest-road oracle that produced the rest of this list cannot be used; see
+        /// CornerFacing for what replaces it.
+        /// </summary>
+        static PrefabDatabase.FacadeYawFix[] BuildFacadeYawFixes()
+        {
+            var fixes = new List<PrefabDatabase.FacadeYawFix>
+            {
+                YawFix(Buildings + "building-block-5floor.prefab", 180f),
+                YawFix(Buildings + "building-apartment-china.prefab", 180f),
+                YawFix(Buildings + "building-house-block-big.prefab", 90f),
+            };
+
+            // Kept only for the case where the measurement will not commit - a mesh it cannot
+            // read, or a piece whose four elevations are too alike to call. Better a value that
+            // was at least once looked at than a silent 0.
+            var fallback = new Dictionary<string, float>
+            {
+                ["building-block-4floor-corner"] = 90f,
+                ["building-block-5floor-corner"] = -90f,
+            };
+
+            foreach (var name in TerraceCorner)
+            {
+                var prefab = Load(Buildings + name + ".prefab");
+                if (!prefab)
+                    continue;
+
+                var measured = CornerFacing.Measure(prefab, out var report);
+                Debug.Log($"[CityAssetBootstrap] {name}: {report}");
+
+                var extraYaw = measured ?? fallback.GetValueOrDefault(name, 0f);
+                if (!measured.HasValue)
+                    Debug.LogWarning($"[CityAssetBootstrap] {name}: falling back to the " +
+                                     $"hand-entered {extraYaw:F0} degrees.");
+
+                // 0 is the convention, not a correction - no entry needed, and leaving it out
+                // keeps the table to the pieces that actually deviate.
+                if (!Mathf.Approximately(extraYaw, 0f))
+                    fixes.Add(new PrefabDatabase.FacadeYawFix { prefab = prefab, extraYaw = extraYaw });
+            }
+
+            return fixes.ToArray();
+        }
+
         static PrefabDatabase.ZonePalette Palette(
             BlockZone zone,
             float weight,
@@ -645,10 +770,17 @@ namespace LivingCity.EditorTools
             float landmarkChance = 0f,
             GameObject[] scatter = null,
             float scatterDensity = 0f,
+            PrefabDatabase.WeightedPrefabs[] parkTrees = null,
+            GameObject[] parkUndergrowth = null,
+            GameObject[] parkBenches = null,
+            GameObject[] alleyProps = null,
+            float alleyParkingChance = 0.35f,
             GameObject ground = null,
             bool groundPerCell = false,
             PrefabDatabase.WeightedPrefabs[] grounds = null,
             GameObject[] courtyardGrounds = null,
+            float groundPatchChance = 1f,
+            bool paveJoints = false,
             bool uniformStreetRuns = false,
             int maxLotsPerAxis = 0,
             float parkingChance = 0.12f,
@@ -670,10 +802,17 @@ namespace LivingCity.EditorTools
                 landmarkChance = landmarkChance,
                 scatter = scatter ?? System.Array.Empty<GameObject>(),
                 scatterDensity = scatterDensity,
+                parkTrees = parkTrees ?? System.Array.Empty<PrefabDatabase.WeightedPrefabs>(),
+                parkUndergrowth = parkUndergrowth ?? System.Array.Empty<GameObject>(),
+                parkBenches = parkBenches ?? System.Array.Empty<GameObject>(),
+                alleyProps = alleyProps ?? System.Array.Empty<GameObject>(),
+                alleyParkingChance = alleyParkingChance,
                 ground = ground,
                 groundIsTilePerCell = groundPerCell,
                 grounds = grounds ?? System.Array.Empty<PrefabDatabase.WeightedPrefabs>(),
                 courtyardGrounds = courtyardGrounds ?? System.Array.Empty<GameObject>(),
+                groundPatchChance = groundPatchChance,
+                paveJoints = paveJoints,
                 parkingChance = parkingChance,
                 carRows = carRows,
                 parkedCars = parkedCars ?? System.Array.Empty<PrefabDatabase.WeightedPrefabs>(),

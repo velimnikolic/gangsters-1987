@@ -47,6 +47,17 @@ namespace LivingCity.Entities
                  "than being seen to fill up. Turn it off to watch the population build.")]
         [SerializeField] bool fillInstantly = true;
 
+        /// <summary>
+        /// Footprint used to test whether a gate is free before spawning into it. Deliberately
+        /// longer than any single car - the arriving car needs somewhere to accelerate into, not
+        /// just somewhere to stand - and rejecting a gate costs nothing but trying the next one.
+        /// </summary>
+        const float GateHalfLength = 5f;
+        const float GateHalfWidth = 1.5f;
+
+        /// <summary>How many gates to try before accepting whichever one came up last.</summary>
+        const int GateAttempts = 6;
+
         readonly List<GameObject> active = new();
         System.Random rng;
         Generation.VehiclePicker picker;
@@ -146,7 +157,35 @@ namespace LivingCity.Entities
         /// </summary>
         bool SpawnAtGate()
         {
-            if (!gates || !gates.TryPickEntry(view, rng, out var gate))
+            if (!gates)
+                return false;
+
+            // CarBehavior's enteringAtGate branch puts the car exactly on the head of the gate's
+            // lane, which is Gate.Point - so an occupied gate means two cars in the same metre of
+            // road, on the frame the map edge is most likely to be in view. Try another gate
+            // instead; there are one per lane crossing the boundary, so a free one is normal.
+            // The clearance result has to BIND. It used to be discarded: `found` was set true
+            // before the test, so exhausting every attempt on occupied gates still fell through
+            // and spawned a car on top of another one, at the map edge, in plain view - the exact
+            // outcome the retry loop was written to prevent.
+            var gate = default(MapEdgeGates.Gate);
+            var clear = false;
+
+            for (var attempt = 0; attempt < GateAttempts; attempt++)
+            {
+                if (!gates.TryPickEntry(view, rng, out gate))
+                    return false;
+
+                if (TrafficRegistry.IsClear(gate.Point, gate.Direction, GateHalfLength, GateHalfWidth))
+                {
+                    clear = true;
+                    break;
+                }
+            }
+
+            // Every gate is busy. Report failure so SpawnReplacement falls through to
+            // SpawnOnNetwork, which places the car well inside the map where there is room.
+            if (!clear)
                 return false;
 
             var car = Spawn(gate.Point, Quaternion.LookRotation(gate.Direction));
@@ -184,6 +223,18 @@ namespace LivingCity.Entities
             var behaviour = car.GetComponent<CarBehavior>();
             if (behaviour && config.carMinTravelDistance > 0f)
                 behaviour.minDistance = config.carMinTravelDistance;
+
+            // Speed and following distance are set here rather than on the prefabs: there are 23
+            // AI car prefabs in the pack and none of them should have to be forked to retune the
+            // city's traffic. maxspeed still caps the per-lane limit inside CarBehavior, so a car
+            // on a 30 km/h side street stays slower than this.
+            if (behaviour)
+            {
+                if (config.carMaxSpeed > 0f)
+                    behaviour.maxspeed = config.carMaxSpeed;
+
+                behaviour.headway = config.carHeadway;
+            }
 
             if (gates && behaviour)
             {

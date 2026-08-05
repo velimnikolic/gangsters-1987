@@ -7,7 +7,7 @@ namespace LivingCity.Generation
     ///
     /// Note what is NOT here: there is no Commercial zone. A block that is nothing but cafes
     /// reads as a theme park, and it is not how the period built. Shops are a low-weight group
-    /// mixed INTO the residential palettes instead - a storefront on the ground floor with
+    /// mixed INTO the residential palette instead - a storefront on the ground floor with
     /// flats above, and the corner slot biased toward the tavern. See PrefabDatabase.ZonePalette.
     ///
     /// Police, Hospital, School and FireStation are zones rather than one entry in some civic
@@ -16,19 +16,13 @@ namespace LivingCity.Generation
     /// </summary>
     public enum BlockZone
     {
-        /// <summary>The connective tissue: 4- and 5-storey terrace kits mixed along one run.</summary>
+        /// <summary>
+        /// The connective tissue, and now the whole residential fabric: 4- and 5-storey terrace
+        /// kits mixed along one run, with the odd storefront between them.
+        /// </summary>
         ResidentialHigh,
 
-        /// <summary>Detached houses and workers' cottages, with the odd corner store.</summary>
-        ResidentialLow,
-
-        /// <summary>Same masonry fabric at its densest, plus a bank / hotel / cinema landmark.</summary>
-        Downtown,
-
         Industrial,
-
-        /// <summary>Chicago's Chinatown dates from 1912, so the pack's china set is in period.</summary>
-        Chinatown,
 
         Police,
         Hospital,

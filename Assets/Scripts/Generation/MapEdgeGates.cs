@@ -8,12 +8,17 @@ namespace LivingCity.Generation
     /// Finds the places where a road crosses the boundary of the map, so traffic can enter and
     /// leave there instead of materialising in the middle of a street.
     ///
-    /// Nothing here is authored. CityGenerator.PickInteriorArterials guarantees no arterial
-    /// lands on index 0 or size-1, so every arterial runs THROUGH the boundary row or column and
-    /// is sliced by it - that is exactly the one-connection case in RoadTileTable, which drops a
-    /// plain straight whose lanes run the full z = -15..+15 of the tile. The far half of that
-    /// tile is the map's outline, so the lane's first or last checkpoint sits on it. Those
-    /// checkpoints are the gates.
+    /// Nothing here is authored. CityGenerator.Subdivide never cuts at index 0 or size-1, so a
+    /// street that reaches the boundary runs THROUGH the boundary row or column and is sliced by
+    /// it - that is exactly the one-connection case in RoadTileTable, which drops a plain
+    /// straight whose lanes run the full z = -15..+15 of the tile. The far half of that tile is
+    /// the map's outline, so the lane's first or last checkpoint sits on it. Those checkpoints
+    /// are the gates.
+    ///
+    /// All four sides are reached. The map starts as one rectangle larger than the maximum block
+    /// on both axes, so the chain of rectangles containing any given edge keeps being cut until
+    /// it is within that maximum - and a cut spans its whole rectangle, so the first one made
+    /// across that chain lands a road cell on the edge itself.
     ///
     /// Detection is geometric rather than link-based, and that is deliberate. "A lane whose
     /// nextPaths is empty" identifies the same set and is cheaper to test, but DeadEndStitcher

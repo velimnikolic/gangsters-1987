@@ -139,9 +139,13 @@ namespace LivingCity.Generation
         /// <summary>
         /// The blocks that face this one across a street.
         ///
-        /// Blocks are never orthogonally adjacent - an arterial always separates them - so the
+        /// Blocks are never orthogonally adjacent - a street always separates them - so the
         /// usual four-neighbour cell test finds nothing at all. Two blocks are neighbours when
         /// exactly one road cell lies between them, which is what the two-cell probe tests.
+        ///
+        /// Exactly one, never two: CityGenerator.Subdivide leaves at least a block's worth of
+        /// land on both sides of every cut, and a block is at least one cell, so no two cuts
+        /// can end up side by side.
         ///
         /// Wanted by two callers for opposite reasons: ZonePlanner uses it to keep two parks
         /// apart, and BlockBuilder uses it to let a slot occasionally borrow the neighbouring

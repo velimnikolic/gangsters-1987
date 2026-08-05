@@ -51,49 +51,12 @@ namespace LivingCity.Generation
                 if (!building || !wants || !tint)
                     continue;
 
-                if (Repaint(building, prefabs.buildingBaseMaterial, tint))
+                if (MaterialTint.Repaint(building, prefabs.buildingBaseMaterial, tint))
                     tinted++;
             }
 
             Debug.Log($"[BuildingTinter] Tinted {tinted} of {buildings.Count} buildings " +
                       $"from {prefabs.buildingTints.Length} variants (seed {config.seed}).");
-        }
-
-        /// <summary>
-        /// Swaps the base material for a tint across one building's renderers. One colour per
-        /// BUILDING, not per renderer - a terrace piece is several meshes and picking per
-        /// renderer would make one facade shade into another mid-wall.
-        /// </summary>
-        static bool Repaint(GameObject building, Material baseMaterial, Material tint)
-        {
-            var painted = false;
-
-            foreach (var renderer in building.GetComponentsInChildren<MeshRenderer>(true))
-            {
-                // sharedMaterials, never materials: reading .materials instantiates a private
-                // copy per renderer, which leaks and drops the renderer out of batching. That
-                // is the existing bug in the vendor pack's TrafficLightsControl, and here it
-                // would hit every building in the city rather than a handful of traffic lights.
-                var slots = renderer.sharedMaterials;
-                var changed = false;
-
-                for (var i = 0; i < slots.Length; i++)
-                {
-                    if (slots[i] != baseMaterial)
-                        continue;   // Glass uses atlas-transparent-LPEC - leave it transparent.
-
-                    slots[i] = tint;
-                    changed = true;
-                }
-
-                if (!changed)
-                    continue;
-
-                renderer.sharedMaterials = slots;
-                painted = true;
-            }
-
-            return painted;
         }
     }
 }

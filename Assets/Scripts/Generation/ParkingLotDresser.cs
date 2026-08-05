@@ -109,7 +109,7 @@ namespace LivingCity.Generation
 
                 if (!gated)
                 {
-                    Run(palette.fenceSegment, from, along, start, end, parent, spawn, placed);
+                    FenceRun.Lay(palette.fenceSegment, from, along, start, end, parent, spawn, placed);
                 }
                 else
                 {
@@ -117,8 +117,8 @@ namespace LivingCity.Generation
                     var gapFrom = centre - ParkingLayout.GateWidth * 0.5f;
                     var gapTo = centre + ParkingLayout.GateWidth * 0.5f;
 
-                    Run(palette.fenceSegment, from, along, start, gapFrom - PierHalf, parent, spawn, placed);
-                    Run(palette.fenceSegment, from, along, gapTo + PierHalf, end, parent, spawn, placed);
+                    FenceRun.Lay(palette.fenceSegment, from, along, start, gapFrom - PierHalf, parent, spawn, placed);
+                    FenceRun.Lay(palette.fenceSegment, from, along, gapTo + PierHalf, end, parent, spawn, placed);
 
                     Pier(palette.fencePost, from + along * gapFrom, parent, spawn, placed);
                     Pier(palette.fencePost, from + along * gapTo, parent, spawn, placed);
@@ -127,64 +127,6 @@ namespace LivingCity.Generation
 
             foreach (var corner in corners)
                 Pier(palette.fencePost, corner, parent, spawn, placed);
-        }
-
-        /// <summary>
-        /// One straight length of railing, tiled between two parameters along a side.
-        ///
-        /// The segment count is rounded and the spacing derived from it, then each instance is
-        /// stretched to match. A run is never an exact multiple of the prefab, and the two
-        /// alternatives are both worse than a one-or-two-percent stretch on a 2m railing: leaving
-        /// the remainder open puts a hole in the fence, and overlapping the last piece doubles the
-        /// posts where it lands.
-        /// </summary>
-        static void Run(
-            GameObject prefab,
-            Vector3 origin,
-            Vector3 along,
-            float from,
-            float to,
-            Transform parent,
-            SpawnPrefab spawn,
-            List<GameObject> placed)
-        {
-            var length = to - from;
-            if (length <= 0.5f)
-                return;
-
-            // Measured, not assumed - GroundPlacer takes the same care with its slab tile, and for
-            // the same reason: a different fence prefab dropped into the palette must not silently
-            // come out at the wrong scale or lying across the run.
-            var footprint = PrefabBounds.FootprintXZ(prefab, 0f);
-            var lengthAxisIsX = footprint.x >= footprint.y;
-            var segment = lengthAxisIsX ? footprint.x : footprint.y;
-            if (segment < 0.1f)
-                return;
-
-            var count = Mathf.Max(1, Mathf.RoundToInt(length / segment));
-            var spacing = length / count;
-            var stretch = spacing / segment;
-
-            // The prefab's long ground axis has to end up lying along the run. Ry(-90) sends local
-            // +X to +Z, which LookRotation then sends to 'along'; a prefab already built along its
-            // local +Z needs no such correction.
-            var rotation = lengthAxisIsX
-                ? Quaternion.LookRotation(along) * Quaternion.Euler(0f, -90f, 0f)
-                : Quaternion.LookRotation(along);
-
-            for (var i = 0; i < count; i++)
-            {
-                var instance = spawn(prefab, origin + along * (from + spacing * (i + 0.5f)), rotation, parent);
-
-                var scale = instance.transform.localScale;
-                if (lengthAxisIsX)
-                    scale.x = stretch;
-                else
-                    scale.z = stretch;
-                instance.transform.localScale = scale;
-
-                placed.Add(instance);
-            }
         }
 
         static void Pier(

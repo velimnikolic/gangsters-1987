@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine;
 using LivingCity.Data;
 
@@ -22,6 +21,13 @@ namespace LivingCity.Generation
         public const int Zoning = 7_000;
         public const int BuildingTints = 8_000;
         public const int Ground = 9_000;
+
+        /// <summary>
+        /// Read by BlockLots, which both BlockBuilder and GroundPlacer call. Its own offset
+        /// rather than either caller's because the lot rectangles have to come out identical
+        /// no matter which of them asks first - see BlockLots.
+        /// </summary>
+        public const int Lots = 10_000;
     }
 
     /// <summary>
@@ -33,32 +39,41 @@ namespace LivingCity.Generation
         {
             var rng = new System.Random(config.seed + SeedOffsets.Roads);
 
-            // The grid IS the city - no margin, no overhang. Every street runs to the outer
-            // edge and stops there, so the outline stays a clean rectangle. Roads that carried
-            // on past the edge were tried and rejected: the stubs read as an unfinished map.
+            // The grid IS the city - no margin, no overhang. A street that reaches the outer
+            // edge stops there, so the outline stays a clean rectangle. Roads that carried on
+            // past the edge were tried and rejected: the stubs read as an unfinished map.
             var grid = new CityGrid(config.gridWidth, config.gridHeight);
 
-            // Everything starts buildable; the arterials then carve roads back out of it.
+            // Everything starts buildable; Subdivide then carves the streets back out of it.
             for (var x = 0; x < grid.Width; x++)
             for (var z = 0; z < grid.Height; z++)
                 grid[x, z] = CellType.Block;
 
-            var columns = PickInteriorArterials(config.gridWidth, config.minArterialSpacing, config.maxArterialSpacing, rng);
-            var rows = PickInteriorArterials(config.gridHeight, config.minArterialSpacing, config.maxArterialSpacing, rng);
+            // A gap of s cells between two parallel streets leaves a block s-1 cells wide -
+            // the meaning the config has always carried, kept so the existing asset values
+            // still mean what their tooltip says.
+            var minBlock = Mathf.Max(1, config.minArterialSpacing - 1);
+            var maxBlock = Mathf.Max(minBlock, config.maxArterialSpacing - 1);
 
-            foreach (var column in columns)
-                for (var z = 0; z < grid.Height; z++)
-                    grid[column, z] = CellType.Road;
-
-            foreach (var row in rows)
-                for (var x = 0; x < grid.Width; x++)
-                    grid[x, row] = CellType.Road;
+            Subdivide(grid, 0, 0, grid.Width - 1, grid.Height - 1, minBlock, maxBlock, rng);
 
             grid.AssignBlockIds();
 
-            // A full arterial lattice is connected by construction, so this should never
-            // fire. It is kept because an unreachable road cell produces a stream of
-            // "Path not found" warnings that looks exactly like a tile rotation bug.
+            // A map too small to hold even one street subdivides into nothing and comes out as
+            // a single solid block with no roads at all - which then trips every check below
+            // for a reason that has nothing to do with any of them. Caught here first so the
+            // message names the actual cause.
+            if (grid.BlockCount <= 1)
+            {
+                Debug.LogError($"[CityGenerator] No street fits in a {config.gridWidth}x{config.gridHeight} " +
+                               $"map at a minimum block of {minBlock} cells - the city would be one " +
+                               "solid block. Raise the grid size or lower Min Arterial Spacing.");
+                return grid;
+            }
+
+            // Connected by construction - see Subdivide - so this should never fire. It is kept
+            // because an unreachable road cell produces a stream of "Path not found" warnings
+            // that looks exactly like a tile rotation bug.
             if (!grid.RoadsAreConnected())
                 Debug.LogError("[CityGenerator] Road network has unreachable cells - cars will fail to path.");
 
@@ -66,118 +81,89 @@ namespace LivingCity.Generation
         }
 
         /// <summary>
-        /// Arterial line indices across one axis, all of them strictly inside the map.
+        /// Cuts one rectangle of buildable land in two with a street, then cuts each half
+        /// independently, until every piece left is a block.
         ///
-        /// Forcing a line onto index 0 and index size-1 - which is what PickArterials does on
-        /// its own - paves the entire outer ring, and that ring is the single most visible
-        /// thing about the city: a closed loop of asphalt running right round the outside.
-        /// The city has to read as a rectangle that the streets run out of, not as an island
-        /// with a bypass around it.
+        /// This replaced a lattice - a set of columns each paved the full height of the map and
+        /// a set of rows each paved the full width. That is an outer product, so a block's width
+        /// depended only on which column strip it was in and its depth only on which row strip,
+        /// and the city came out as a spreadsheet: every block in a column exactly as wide as
+        /// every other, every block in a row exactly as deep. No spacing value could fix it,
+        /// because the uniformity was the SHAPE of the algorithm rather than a parameter of it.
+        /// The fix is streets that stop. A cut made in the left half is not continued into the
+        /// right half, so the blocks either side of it do not line up.
         ///
-        /// The trick is to ask for a partition of a span two cells LONGER than the map and
-        /// then shift it left by one, so the outermost two lines land at -1 and size - just
-        /// outside the map, where they are dropped. Those two phantom lines are what makes the
-        /// edge blocks behave: every block, including the ones against the map boundary, is
-        /// still bounded by an arterial on both sides, so its width falls in the same
-        /// [minSpacing-1, maxSpacing-1] range as every interior block. The map edge acts as
-        /// one more street that simply is not drawn.
+        /// Four properties the rest of the pipeline depends on, all guaranteed by the recursion
+        /// rather than checked afterwards:
         ///
-        /// Guaranteed by construction: the first surviving line is at least 1 and the last is
-        /// at most size-2, so row 0, row height-1, column 0 and column width-1 are never road.
-        /// The ring is impossible, not merely unlikely.
+        /// 1. Every block is a rectangle. BlockBuilder.BlockRect and GroundPlacer reduce a block
+        ///    to its bounding box, which is only exact while that holds.
+        /// 2. Each side of a block is ENTIRELY street or entirely map edge, never part of each.
+        ///    The neighbour across any side is a single cut that spanned the whole of the
+        ///    rectangle this block was carved out of, so it covers this block's side completely.
+        ///    BlockBuilder.RoadSides relies on this - it probes one corner and generalises.
+        /// 3. The street network is connected. A cut runs the full width or height of its
+        ///    rectangle, so both its ends land on that rectangle's boundary, and after the very
+        ///    first cut every rectangle has at least one street on its boundary.
+        /// 4. A road cell with only ONE connection occurs only on the map boundary. That case is
+        ///    RoadTileTable's "the map edge sliced this street", drawn as a straight running off
+        ///    the map; anywhere inside the city it would read as a road that simply stops. By (3)
+        ///    a cut's ends are on street or on the map edge, so no stub can form in the middle.
+        ///
+        /// The cut position is drawn from [x0 + minBlock, x1 - minBlock], which is never 0 or
+        /// size-1. So the outer ring stays unpaved - the city has to read as a rectangle that
+        /// the streets run out of, not as an island with a bypass around it - and the four
+        /// corner cells in particular are never road, which MapEdgeGates needs because a lane
+        /// standing on two edges at once cannot be classified as an entry or an exit.
         /// </summary>
-        static List<int> PickInteriorArterials(int size, int minSpacing, int maxSpacing, System.Random rng)
+        static void Subdivide(CityGrid grid, int x0, int z0, int x1, int z1,
+                              int minBlock, int maxBlock, System.Random rng)
         {
-            var interior = new List<int>();
-            foreach (var line in PickArterials(size + 2, minSpacing, maxSpacing, rng))
+            var width = x1 - x0 + 1;
+            var height = z1 - z0 + 1;
+
+            // A cut needs a block's worth of land on both sides of it plus the cell it occupies.
+            var canSplitX = width >= 2 * minBlock + 1;
+            var canSplitZ = height >= 2 * minBlock + 1;
+
+            // Oversized land must be cut; land already within the target is left alone. Stopping
+            // at the first legal size rather than always cutting to the minimum is what leaves
+            // the wide blocks wide.
+            var mustSplit = width > maxBlock || height > maxBlock;
+
+            if ((!canSplitX && !canSplitZ) || !mustSplit)
+                return;
+
+            // Forced whenever only one axis can be cut, or only one is over size. Otherwise the
+            // longer axis is the likelier cut, which keeps blocks from degenerating into long
+            // splinters while still leaving the occasional narrow one.
+            bool splitX;
+            if (!canSplitZ) splitX = true;
+            else if (!canSplitX) splitX = false;
+            else if (width > maxBlock && height <= maxBlock) splitX = true;
+            else if (height > maxBlock && width <= maxBlock) splitX = false;
+            else splitX = rng.Next(width + height) < width;
+
+            if (splitX)
             {
-                var index = line - 1;
-                if (index > 0 && index < size - 1)
-                    interior.Add(index);
+                // Uniform over every legal position, so the two halves are rarely equal - that
+                // draw is the whole source of "one wide, one narrow".
+                var column = rng.Next(x0 + minBlock, x1 - minBlock + 1);
+                for (var z = z0; z <= z1; z++)
+                    grid[column, z] = CellType.Road;
+
+                Subdivide(grid, x0, z0, column - 1, z1, minBlock, maxBlock, rng);
+                Subdivide(grid, column + 1, z0, x1, z1, minBlock, maxBlock, rng);
             }
-
-            // A map too small to hold even one interior arterial would generate as a single
-            // solid block with no streets at all. CityConfig.MinGridSize keeps us clear of it.
-            if (interior.Count == 0)
-                Debug.LogError($"[CityGenerator] No arterial fits inside a {size}-cell axis - " +
-                               "the city would have no streets on it. Raise the grid size.");
-
-            return interior;
-        }
-
-        /// <summary>
-        /// Chooses arterial line indices across one axis. Always includes both edges, and
-        /// every gap lands inside [minSpacing, maxSpacing].
-        ///
-        /// This partitions the span into randomly-sized segments rather than spacing lines
-        /// evenly and nudging them afterwards. Nudging does not work: on a 9-wide grid with
-        /// spacing 3-4 the only partition of 8 that respects both bounds is 4+4, so every
-        /// jittered candidate gets rejected and every seed yields an identical city. Choosing
-        /// the segment COUNT first, then distributing the slack, is what produces variety.
-        /// </summary>
-        static List<int> PickArterials(int size, int minSpacing, int maxSpacing, System.Random rng)
-        {
-            var span = size - 1;
-            var lines = new List<int> { 0 };
-            if (span <= 0)
-                return lines;
-
-            // A partition into n segments exists exactly when n*min <= span <= n*max.
-            var minSegments = Mathf.CeilToInt(span / (float)maxSpacing);
-            var maxSegments = span / minSpacing;
-
-            if (maxSegments < minSegments)
+            else
             {
-                // The bounds cannot tile this span exactly - fall back to an even split.
-                var count = Mathf.Max(1, minSegments);
-                for (var i = 1; i <= count; i++)
-                    lines.Add(Mathf.RoundToInt(i * span / (float)count));
-                return lines;
+                var row = rng.Next(z0 + minBlock, z1 - minBlock + 1);
+                for (var x = x0; x <= x1; x++)
+                    grid[x, row] = CellType.Road;
+
+                Subdivide(grid, x0, z0, x1, row - 1, minBlock, maxBlock, rng);
+                Subdivide(grid, x0, row + 1, x1, z1, minBlock, maxBlock, rng);
             }
-
-            // Average two draws so the segment count leans toward the middle of the range.
-            // A flat draw hits the extremes too often, and both extremes are degenerate: the
-            // maximum makes every block the minimum width (a uniform grid of thin strips) and
-            // the minimum makes them all maximum width.
-            var segments = (rng.Next(minSegments, maxSegments + 1)
-                          + rng.Next(minSegments, maxSegments + 1)) / 2;
-
-            var parts = new int[segments];
-            for (var i = 0; i < segments; i++)
-                parts[i] = minSpacing;
-
-            // Hand the leftover cells out in a shuffled order so the wide blocks are not
-            // always at the same end of the street.
-            var order = new int[segments];
-            for (var i = 0; i < segments; i++)
-                order[i] = i;
-            for (var i = segments - 1; i > 0; i--)
-            {
-                var j = rng.Next(i + 1);
-                (order[i], order[j]) = (order[j], order[i]);
-            }
-
-            var remainder = span - segments * minSpacing;
-            var cursor = 0;
-            while (remainder > 0)
-            {
-                var index = order[cursor % segments];
-                if (parts[index] < maxSpacing)
-                {
-                    parts[index]++;
-                    remainder--;
-                }
-                cursor++;
-            }
-
-            var position = 0;
-            foreach (var part in parts)
-            {
-                position += part;
-                lines.Add(position);
-            }
-
-            return lines;
         }
     }
 }

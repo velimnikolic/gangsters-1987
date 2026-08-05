@@ -17,8 +17,8 @@ namespace LivingCity.Generation
     ///
     /// 1. A radial bias. Rolling uniformly scatters factories through the middle of town and
     ///    leaves the centre no denser than the rim. Chicago put its works out by the rail and
-    ///    its density in the Loop, so downtown weights rise toward the centre and industry and
-    ///    houses rise toward the edge.
+    ///    its density in the Loop, so the masonry fabric rises toward the centre and industry
+    ///    rises toward the edge.
     /// 2. Quotas. On a 9x7 map there are only about twelve blocks. Without a cap an unlucky
     ///    seed gives a city four hospitals and no housing.
     /// 3. A shuffled visit order. Quotas are consumed as blocks are assigned, so walking the
@@ -210,10 +210,11 @@ namespace LivingCity.Generation
         /// </summary>
         static float RadialBias(BlockZone zone, float radial) => zone switch
         {
-            BlockZone.Downtown => Mathf.Lerp(1.8f, 0.15f, radial),
-            BlockZone.Chinatown => Mathf.Lerp(1.4f, 0.4f, radial),
+            // The two zones that fill the map, pulling against each other. Everything else -
+            // the civic landmarks, the park, the car park - stays flat: a hospital is put where
+            // there is room for one, not at a radius.
+            BlockZone.ResidentialHigh => Mathf.Lerp(1.4f, 0.7f, radial),
             BlockZone.Industrial => Mathf.Lerp(0.2f, 1.8f, radial),
-            BlockZone.ResidentialLow => Mathf.Lerp(0.35f, 1.6f, radial),
             _ => 1f,
         };
 
