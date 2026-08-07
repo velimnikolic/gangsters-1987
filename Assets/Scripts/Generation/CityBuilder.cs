@@ -99,13 +99,18 @@ namespace LivingCity.Generation
             var interactionPoints = InteractionMarkers.Attach(root.transform);
 
             // In Play the lamp rig built its lights in Start, against the city that just got
-            // replaced - re-wire it here or the new lamps stay dark. In the editor the night
-            // preview menu rebuilds on demand instead, so no lights are created eagerly.
-            if (Application.isPlaying)
+            // replaced - re-wire it here or the new lamps stay dark. In the editor, relight
+            // at the configured start hour too: it used to wait for the night preview menu,
+            // and every freshly generated city read as "the lamps do not work at all".
             {
                 var lampRig = FindAnyObjectByType<Ambient.StreetLampLights>();
                 if (lampRig)
-                    lampRig.Rebuild();
+                {
+                    if (Application.isPlaying)
+                        lampRig.Rebuild();
+                    else
+                        lampRig.ApplyForEditor(Ambient.CityWeather.Nightness(config.startHour));
+                }
             }
 
             Debug.Log($"[CityBuilder] Generated {config.gridWidth}x{config.gridHeight} city " +

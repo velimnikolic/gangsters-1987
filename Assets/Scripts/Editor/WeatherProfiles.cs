@@ -200,8 +200,9 @@ namespace LivingCity.EditorTools
         }
 
         /// <summary>
-        /// Soot. Warm and slightly green, low contrast because haze eats contrast, and the bloom
-        /// pushed hard with a low threshold so bright surfaces bleed the way they do through smoke.
+        /// Soot. Warm and slightly green, low contrast because haze eats contrast. The bloom
+        /// threshold stays above 1 - an earlier 0.95 made ordinarily lit facades bleed too, and
+        /// the whole frame took on a milky wash instead of just the lamps glowing through smoke.
         /// </summary>
         static void BuildSmog(bool overwrite)
         {
@@ -234,7 +235,7 @@ namespace LivingCity.EditorTools
 
             Add<Bloom>(profile, b =>
             {
-                b.threshold.value = 0.95f;
+                b.threshold.value = 1.1f;
                 b.intensity.value = 0.85f * Strength;
                 b.scatter.value = 0.8f;
             });
@@ -346,10 +347,10 @@ namespace LivingCity.EditorTools
 
             foreach (var transform in Object.FindObjectsByType<Transform>(FindObjectsSortMode.None))
             {
-                if (!transform.name.StartsWith("lamp-", System.StringComparison.Ordinal))
+                if (!transform.name.StartsWith(StreetLampLights.LampName, System.StringComparison.Ordinal))
                     continue;
 
-                if (transform.parent && transform.parent.name.StartsWith("lamp-", System.StringComparison.Ordinal))
+                if (transform.parent && transform.parent.name.StartsWith(StreetLampLights.LampName, System.StringComparison.Ordinal))
                     continue;
 
                 lampObjects.Add(transform.gameObject);
@@ -412,8 +413,12 @@ namespace LivingCity.EditorTools
                 rig.ApplyForEditor(1f);
 
                 var lights = new List<Light>();
-                foreach (var light in Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
-                    if (light.type == LightType.Spot && light.name == StreetLampLights.HolderName)
+                // FindObjectsOfTypeAll, because in the editor the holders are HideFlags.DontSave
+                // and FindObjectsByType does not return DontSave objects - the count would read
+                // "created nothing" while the scene view was visibly lit.
+                foreach (var light in Resources.FindObjectsOfTypeAll<Light>())
+                    if (light.type == LightType.Spot && light.name == StreetLampLights.HolderName &&
+                        light.gameObject.scene.IsValid())
                         lights.Add(light);
 
                 var enabled = 0;

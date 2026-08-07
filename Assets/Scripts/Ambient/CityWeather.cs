@@ -130,8 +130,12 @@ namespace LivingCity.Ambient
 
         static readonly Color NightFog = new(0.074f, 0.280f, 0.462f);
 
-        /// <summary>Fog thickens after dark. A multiplier on whatever the weather was already doing.</summary>
-        const float NightFogScale = 1.6f;
+        /// <summary>
+        /// Night multiplier on the weather's fog. Held at 1 - an earlier 1.6 stacked onto Smog
+        /// put the exp² wall at ~200m and swallowed half the grid from the play camera, and the
+        /// densities in the Look table are already chosen against the grid, night included.
+        /// </summary>
+        const float NightFogScale = 1f;
 
         // -- the day's shape --------------------------------------------------------------
 
@@ -460,9 +464,10 @@ namespace LivingCity.Ambient
         ///
         /// Fog densities are chosen against the size of the grid rather than picked for taste:
         /// exponential-squared fog is total at roughly <c>2 / density</c> metres, so 0.003 puts
-        /// the wall at ~670m (past the whole city - a haze), 0.005 at ~400m (the far edge fades)
-        /// and 0.009 at ~220m (half the grid is gone). That progression is the difference between
-        /// the three, and it is the fog more than the colour that sells any of them.
+        /// the wall at ~670m (past the whole city - a haze) and 0.005 at ~400m (the far edge
+        /// fades). Nothing goes denser than that: an earlier 0.009 Smog put the wall at ~220m and
+        /// erased half the grid, so Smog now matches Overcast on density and leans on its colour
+        /// and grade instead - sooty warm fog against neutral grey.
         /// </summary>
         readonly struct Look
         {
@@ -519,7 +524,7 @@ namespace LivingCity.Ambient
                 _ => new Look(
                     sunIntensity: 1.7f, sunTemperature: 4200f,
                     shadowStrength: 0.5f,
-                    fogColor: new Color(0.44f, 0.40f, 0.31f), fogDensity: 0.009f,
+                    fogColor: new Color(0.44f, 0.40f, 0.31f), fogDensity: 0.005f,
                     ambientSky: new Color(0.34f, 0.31f, 0.25f),
                     ambientEquator: new Color(0.27f, 0.25f, 0.20f),
                     ambientGround: new Color(0.13f, 0.12f, 0.09f),

@@ -843,7 +843,7 @@ MonoBehaviour:
   - {fileID: 5678193843773380545, guid: a8bd27e353211b94394e057d69a367e8, type: 3}
   - {fileID: 9148137444187412123, guid: 44020a1c631a53040b9e9c8a8b15dc99, type: 3}
   - {fileID: 2032465738542835680, guid: 45ff3eaf65e932d49948b4b769f50a39, type: 3}
-  pedestrianController: {fileID: 9100000, guid: f5034444b1b564b7e9a2c13067e783dc, type: 2}
+  pedestrianController: {fileID: 9100000, guid: 36ca79ea203524119a80a165c1c81144, type: 2}
   clouds:
   - {fileID: 1569108936417716, guid: 80919aaf925554880b9b809635f0dd9b, type: 3}
   - {fileID: 1236916720052730, guid: 268a4c6663b8b434f9c9477d880c3534, type: 3}

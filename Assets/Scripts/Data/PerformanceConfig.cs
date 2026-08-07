@@ -5,12 +5,14 @@ namespace LivingCity.Data
     /// <summary>
     /// Entity budgets and quality switches for the mobile pass.
     ///
-    /// Deliberately absent: any distance-culling radius. The city is only a few hundred metres
-    /// across and the camera reaches an orthographic size of 160, which frames the whole city
-    /// at once - at wide zoom everything is on screen and a cull radius saves nothing by
-    /// definition, there is nothing off screen to cull. At close zoom it would
-    /// deactivate AI cars mid-route, freezing their trajectory state and popping them back
-    /// into traffic incorrectly. Reduce the counts below instead.
+    /// Deliberately absent: any distance-culling radius. The camera is orthographic and at
+    /// wide zoom frames the whole city, so a cull radius saves nothing by definition - there
+    /// is nothing off screen to cull - and at close zoom it would deactivate AI cars
+    /// mid-route, freezing their trajectory state and popping them back into traffic
+    /// incorrectly. What DOES scale with zoom is per-entity fidelity, not existence: that is
+    /// CityConfig's "Crowd performance" block (probe stride, animator LOD keyed on
+    /// orthographic size, the re-path budget), applied by PedestrianLodSystem. Reduce the
+    /// counts below for devices those levers cannot save.
     /// </summary>
     [CreateAssetMenu(fileName = "PerformanceConfig", menuName = "Living City/Performance Config")]
     public sealed class PerformanceConfig : ScriptableObject

@@ -14,6 +14,16 @@ namespace LivingCity.Entities
     /// </summary>
     public sealed class PedestrianSpawner : MonoBehaviour
     {
+        /// <summary>
+        /// The layer every spawned pedestrian lives on. Unnamed in TagManager is fine - the
+        /// number is what the physics matrix keys on. Pedestrian-pedestrian collisions are
+        /// switched off there: avoidance is PedestrianRegistry's job and PhysX never
+        /// generated contacts between two kinematic bodies anyway, but at crowd scale even
+        /// tracking the candidate pairs in the broadphase costs real time. Collisions with
+        /// everything else stay on, which is what the crosswalk triggers need.
+        /// </summary>
+        public const int PedestrianLayer = 8;
+
         [SerializeField] CityConfig config;
         [SerializeField] PrefabDatabase prefabs;
 
@@ -38,16 +48,45 @@ namespace LivingCity.Entities
             // pack script with no config reference. Handed down once, before the first spawn.
             PedestrianRegistry.PersonalSpace = config.pedestrianPersonalSpace;
             PedestrianRegistry.MinSeparation = config.pedestrianMinSeparation;
+            PedestrianRegistry.ProbeInterval = config.pedestrianProbeInterval;
+            PedestrianRepathQueue.Active = config.pedestrianInteractions;
+            PedestrianRepathQueue.BudgetPerFrame = config.pedestrianRepathBudget;
+
+            Physics.IgnoreLayerCollision(PedestrianLayer, PedestrianLayer, true);
+
+            // A fixed step that overruns otherwise triggers up to 16 catch-up steps in one
+            // rendered frame (0.02 fixed vs the project's 0.333 max) - each a full crowd
+            // pass, which is the hitch death-spiral. Capping at 0.1 bounds it at 5: the
+            // simulation slows down instead of the frame exploding.
+            Time.maximumDeltaTime = Mathf.Min(Time.maximumDeltaTime, 0.1f);
+
+            var lod = gameObject.AddComponent<PedestrianLodSystem>();
+            lod.Configure(config);
 
             // Same reason as VehicleSpawner: sidewalk paths are linked in Tile.Start().
             yield return null;
 
+            // TEMP DIAGNOSTIC (remove once the empty-city report is settled).
+            Debug.Log($"[PedestrianSpawner] starting: count={config.pedestrianCount}, " +
+                      $"tiles={Tile.Tiles.Count}, batch={config.pedestrianSpawnBatch}, " +
+                      $"interval={config.entitySpawnInterval}", this);
+
+            var interval = config.entitySpawnInterval > 0f
+                ? new WaitForSeconds(config.entitySpawnInterval)
+                : null;
+
             for (var i = 0; i < config.pedestrianCount; i++)
             {
                 SpawnOne();
-                if (config.entitySpawnInterval > 0f)
-                    yield return new WaitForSeconds(config.entitySpawnInterval);
+                // Batched: one per tick reads nicely at 50 pedestrians and takes a thousand
+                // seconds at 10000. Null interval still yields, so a big population ramps
+                // over frames rather than landing in one.
+                if ((i + 1) % Mathf.Max(1, config.pedestrianSpawnBatch) == 0)
+                    yield return interval;
             }
+
+            // TEMP DIAGNOSTIC (remove once the empty-city report is settled).
+            Debug.Log($"[PedestrianSpawner] done: spawned {active.Count} of {config.pedestrianCount}.", this);
         }
 
         void SpawnOne()
@@ -72,6 +111,9 @@ namespace LivingCity.Entities
 
             var prefab = prefabs.aiPedestrians[rng.Next(prefabs.aiPedestrians.Length)];
             var person = Instantiate(prefab, position, Quaternion.Euler(0f, rng.Next(4) * 90f, 0f), transform);
+
+            SetLayerRecursively(person.transform, PedestrianLayer);
+            PedestrianLodSystem.Register(person);
 
             var behaviour = person.GetComponent<HumanBehavior>();
             if (behaviour)
@@ -141,6 +183,13 @@ namespace LivingCity.Entities
             }
 
             return tile.transform.TransformPoint(offset);
+        }
+
+        static void SetLayerRecursively(Transform node, int layer)
+        {
+            node.gameObject.layer = layer;
+            for (var i = 0; i < node.childCount; i++)
+                SetLayerRecursively(node.GetChild(i), layer);
         }
 
         Tile RandomWalkableTile()

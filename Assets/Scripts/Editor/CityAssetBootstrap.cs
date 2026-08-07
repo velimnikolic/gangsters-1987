@@ -175,6 +175,28 @@ namespace LivingCity.EditorTools
             return true;
         }
 
+        /// <summary>
+        /// Names the layer PedestrianSpawner assigns to every spawned pedestrian. Purely
+        /// cosmetic - the physics matrix keys on the index and works unnamed - but an
+        /// anonymous layer in the Inspector reads as an accident. Through the editor API
+        /// rather than a file edit because the open Editor rewrites TagManager from memory.
+        /// </summary>
+        static void NamePedestrianLayer()
+        {
+            var assets = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/TagManager.asset");
+            if (assets == null || assets.Length == 0)
+                return;
+
+            var tagManager = new SerializedObject(assets[0]);
+            var slot = tagManager.FindProperty("layers")
+                .GetArrayElementAtIndex(PedestrianSpawner.PedestrianLayer);
+            if (string.IsNullOrEmpty(slot.stringValue))
+            {
+                slot.stringValue = "Pedestrians";
+                tagManager.ApplyModifiedProperties();
+            }
+        }
+
         [MenuItem("Tools/City/Create or Refresh Config Assets")]
         public static void CreateAssets()
         {
@@ -192,6 +214,8 @@ namespace LivingCity.EditorTools
             // are left alone.
             config.minArterialSpacing = 2;
             config.maxArterialSpacing = 4;
+
+            NamePedestrianLayer();
 
             // Road tiles. tileShape values verified in the prefab files:
             // straight=Straight, curve=Turn, intersection-t=T, intersection=Cross, end=End.

@@ -24,8 +24,15 @@ namespace LivingCity.Ambient
     /// </summary>
     public sealed class StreetLampLights : MonoBehaviour
     {
-        /// <summary>The one lamp prefab left in the database is named this way; see CityAssetBootstrap.</summary>
-        const string LampNamePrefix = "lamp-";
+        /// <summary>
+        /// The FULL prefab name of the one street lamp the placers spawn, not a prefix.
+        /// Matching used to be by "lamp-" prefix and that caught more than the lamps: an odd
+        /// bulb total (133 in one city) and a stray light floating beside a parked car both
+        /// traced to lamp-flavoured names that were never street lamps. StartsWith rather than
+        /// equality only so Unity's own suffixes still match - "(Clone)" at runtime, " (1)" on
+        /// a duplicate. Public because the Lamp Report diagnostic must count by the same rule.
+        /// </summary>
+        public const string LampName = "lamp-road-double";
 
         /// <summary>
         /// Name of the light holder objects. Public because the Lamp Report diagnostic filters
@@ -44,41 +51,41 @@ namespace LivingCity.Ambient
         /// pool visually attached itself to the NEXT lantern down the street. The bulb itself
         /// is invisible (no volumetrics), so it can sit at any height; 2.5m keeps the apparent
         /// slip under half the head spacing, which is what makes a pool read as belonging to
-        /// its own lantern. The mesh-measured fraction below is only a ceiling for short lamps.
+        /// its own lantern.
         /// </summary>
         const float BulbHeight = 2.5f;
 
         /// <summary>
-        /// Cap on the bulb height for lamps shorter than BulbHeight is tall, as a fraction of
-        /// the lamp's mesh height - so a knee-high bollard could never emit from above itself.
+        /// Where the two bulbs hang in the lamp's own local space: one under each lantern
+        /// head, measured off the prefab's FBX (arms reach +/-3.60 along local X, head glass
+        /// centres at +/-3.10; local space, so the placer's yaw is followed for free).
+        ///
+        /// FIXED offsets, deliberately NOT measured off the instance's mesh at runtime. The
+        /// generator marks lamp geometry batching-static, and static batching REPLACES
+        /// MeshFilter.sharedMesh with the combined mesh when Play starts - so measuring the
+        /// instance put bulbs at 0.86 x the bounds of half the city: pools at completely
+        /// random spots, arbitrary bulb counts per lamp, and all of it only in Play. One
+        /// known prefab needs no measuring.
         /// </summary>
-        const float BulbHeightFraction = 0.92f;
-
-        /// <summary>
-        /// A lamp whose mesh reaches further than this from the post sideways has a lantern
-        /// hanging on an arm there, not just a wide base - lamp-city, the widest armless lamp,
-        /// is 0.41 across, the double lamp's arms reach 3.60.
-        /// </summary>
-        const float ArmThreshold = 1.5f;
-
-        /// <summary>
-        /// Where along an arm the lantern head hangs, as a fraction of the arm's reach. Off the
-        /// double lamp's mesh: head glass centres at ±3.10 against bounds of ±3.60.
-        /// </summary>
-        const float HeadReachFraction = 0.86f;
+        static readonly Vector3[] BulbOffsets =
+        {
+            new(-3.10f, BulbHeight, 0f),
+            new(3.10f, BulbHeight, 0f),
+        };
 
         /// <summary>
         /// Cone of the down-facing spot. A point at bulb height spends most of itself sideways
         /// into the air; a spot puts the same light on the pavement, where it reads.
         ///
-        /// Sized against BulbHeight, not the lantern: from 2.5m up, 120 degrees paints a
-        /// ~4.3m-radius pool per head, and the 60-degree inner angle keeps the hot core to
-        /// ~1.4m. The heads hang 6.2m apart, so the result is two distinct circles - one under
-        /// each lantern - touching softly between. Wider angles at head height were tried and
-        /// fused into a single wash; narrower ones read as torch spots, not street lighting.
+        /// Sized against BulbHeight, not the lantern: from 2.5m up, 135 degrees paints a
+        /// ~6m-radius pool per head, and the 65-degree inner angle keeps the hot core to
+        /// ~1.6m. The heads hang 6.2m apart, so the result is two circles - one under each
+        /// lantern - overlapping softly between while the cores stay separate. Wider angles
+        /// at head height were tried and fused into a single wash; narrower ones read as
+        /// torch spots, not street lighting.
         /// </summary>
-        const float SpotOuterAngle = 120f;
-        const float SpotInnerAngle = 60f;
+        const float SpotOuterAngle = 135f;
+        const float SpotInnerAngle = 65f;
 
         /// <summary>
         /// Seconds between re-sorts of which lamps are closest. The camera moves slowly enough at
@@ -92,9 +99,6 @@ namespace LivingCity.Ambient
 
         readonly List<Light> lamps = new();
         readonly List<int> order = new();
-
-        /// <summary>Scratch for BulbPositions - at most one bulb per side of the post.</summary>
-        static readonly Vector3[] bulbScratch = new Vector3[4];
 
         float nextResort;
         float lit = -1f;
@@ -137,34 +141,29 @@ namespace LivingCity.Ambient
 
             foreach (var transform in FindObjectsByType<Transform>(FindObjectsSortMode.None))
             {
-                if (!transform.name.StartsWith(LampNamePrefix, System.StringComparison.Ordinal))
+                if (!transform.name.StartsWith(LampName, System.StringComparison.Ordinal))
                     continue;
 
-                // Not the holders themselves: their name shares the lamp- prefix, and in Play the
-                // sweep's Destroy is deferred, so this same-frame walk still sees them. An orphan
-                // whose lamp is gone has no parent to fail the check below.
-                if (transform.name == HolderName)
+                // Only the lamp root, not anything parented under one. The holders can no
+                // longer collide with the full-name match ("lamp-light" is not a lamp name),
+                // so this guard is only against a lamp somehow standing under another lamp.
+                if (transform.parent && transform.parent.name.StartsWith(LampName, System.StringComparison.Ordinal))
                     continue;
 
-                // Only the lamp root, not anything parented under one.
-                if (transform.parent && transform.parent.name.StartsWith(LampNamePrefix, System.StringComparison.Ordinal))
-                    continue;
-
-                var bulbs = BulbPositions(transform, bulbScratch);
-
-                for (var b = 0; b < bulbs; b++)
+                for (var b = 0; b < BulbOffsets.Length; b++)
                 {
                     var holder = new GameObject(HolderName);
 
                     // Outside Play these are a preview, and a preview must not become part of the
-                    // project. DontSave keeps them out of the saved scene and out of the undo stack,
-                    // and Unity drops them on the next reload - so a lamp lit in the Scene view can
-                    // never end up committed, which is the failure this whole session opened with.
+                    // project. DontSave keeps them out of the saved scene and out of the undo
+                    // stack, so a lamp lit in the Scene view can never end up committed. It does
+                    // NOT make Unity clean them up - they survive domain reloads and hide from
+                    // FindObjectsByType - which is why Teardown sweeps with FindObjectsOfTypeAll.
                     if (!Application.isPlaying)
                         holder.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
 
                     holder.transform.SetParent(transform, false);
-                    holder.transform.localPosition = bulbScratch[b];
+                    holder.transform.localPosition = BulbOffsets[b];
                     holder.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);   // cone straight down
 
                     var light = holder.AddComponent<Light>();
@@ -208,22 +207,49 @@ namespace LivingCity.Ambient
         /// <summary>
         /// Destroys every lamp-light holder in the scene - by name, not from the lists, so it
         /// also catches orphans the lists have forgotten - and empties the bookkeeping.
+        ///
+        /// Resources.FindObjectsOfTypeAll rather than FindObjectsByType, and this is
+        /// load-bearing: outside Play the holders carry HideFlags.DontSave, and
+        /// FindObjectsByType does not return DontSave objects - so the sweep saw nothing,
+        /// every editor preview stacked a fresh set of lights over the last, and the stale
+        /// sets kept burning at whatever intensity their last Resort chose (they are not in
+        /// the new lists, so nothing ever dims them). They also survive a domain reload, so
+        /// recompiling made the pile-up worse, not better.
+        ///
+        /// No scene check here, deliberately: a DontSave holder even survives its scene being
+        /// CLOSED - its lamp dies with the scene, the holder is quietly re-rooted with no valid
+        /// scene, and it goes on burning in the next scene as a beam with no lamp above it.
+        /// Requiring a valid scene skipped exactly those orphans. Assets are excluded by
+        /// IsPersistent instead (editor-only; in a build every holder is a plain scene object).
         /// </summary>
         public void Teardown()
         {
-            foreach (var light in FindObjectsByType<Light>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            SweepStrays();
+            lamps.Clear();
+            order.Clear();
+        }
+
+        /// <summary>
+        /// The destroy half of Teardown, static so the editor can also run it on scene open -
+        /// the moment orphans from a previous scene would otherwise become visible.
+        /// </summary>
+        public static void SweepStrays()
+        {
+            foreach (var light in Resources.FindObjectsOfTypeAll<Light>())
             {
                 if (light.name != HolderName)
                     continue;
+
+#if UNITY_EDITOR
+                if (UnityEditor.EditorUtility.IsPersistent(light))
+                    continue;
+#endif
 
                 if (Application.isPlaying)
                     Destroy(light.gameObject);
                 else
                     DestroyImmediate(light.gameObject);
             }
-
-            lamps.Clear();
-            order.Clear();
         }
 
         /// <summary>
@@ -237,62 +263,6 @@ namespace LivingCity.Ambient
                     return true;
 
             return false;
-        }
-
-        /// <summary>
-        /// Where the bulbs are, in the lamp's own local space, from its mesh bounds. One centred
-        /// bulb for a plain post, one per arm for lamps that hang their lanterns out sideways -
-        /// the double lamp used to get a single light floating in mid-air between its two heads.
-        /// Local space, so the offsets follow whatever yaw the placer chose for free.
-        /// </summary>
-        static int BulbPositions(Transform lamp, Vector3[] result)
-        {
-            var filter = lamp.GetComponentInChildren<MeshFilter>();
-
-            // The pack's lamps are single-object prefabs, mesh on the root. Anything else has
-            // no local frame to measure in, so fall back to the centred world-bounds bulb.
-            if (!filter || !filter.sharedMesh || filter.transform != lamp)
-            {
-                result[0] = new Vector3(0f, FallbackHeight(lamp), 0f);
-                return 1;
-            }
-
-            var bounds = filter.sharedMesh.bounds;
-            var height = Mathf.Max(1f, Mathf.Min(BulbHeight, bounds.max.y * BulbHeightFraction));
-            var count = 0;
-
-            // Each side that reaches past the post is an arm with a head hung near its end.
-            // Checked per side, not per axis: lamp-road carries its single head on +X only.
-            if (bounds.min.x < -ArmThreshold)
-                result[count++] = new Vector3(bounds.min.x * HeadReachFraction, height, 0f);
-            if (bounds.max.x > ArmThreshold)
-                result[count++] = new Vector3(bounds.max.x * HeadReachFraction, height, 0f);
-            if (bounds.min.z < -ArmThreshold)
-                result[count++] = new Vector3(0f, height, bounds.min.z * HeadReachFraction);
-            if (bounds.max.z > ArmThreshold)
-                result[count++] = new Vector3(0f, height, bounds.max.z * HeadReachFraction);
-
-            if (count == 0)
-                result[count++] = new Vector3(0f, height, 0f);
-
-            return count;
-        }
-
-        /// <summary>
-        /// A plausible bulb height from world-space renderer bounds, for a lamp whose mesh could
-        /// not be measured - better than dropping the light on the pavement.
-        /// </summary>
-        static float FallbackHeight(Transform lamp)
-        {
-            var renderers = lamp.GetComponentsInChildren<Renderer>();
-            if (renderers.Length == 0)
-                return 6f;
-
-            var top = renderers[0].bounds.max.y;
-            foreach (var renderer in renderers)
-                top = Mathf.Max(top, renderer.bounds.max.y);
-
-            return Mathf.Max(1f, Mathf.Min(BulbHeight, (top - lamp.position.y) * BulbHeightFraction));
         }
 
         /// <summary>
@@ -374,7 +344,16 @@ namespace LivingCity.Ambient
 
             if (camera)
             {
+                // Sort around where the camera LOOKS, not where it stands. The isometric rig
+                // parks the camera 200m back along its boom, so raw camera distance ranked
+                // the map edge nearest the camera above the middle of the screen - the budget
+                // lit a corner the player was not even looking at while every lamp in frame
+                // stayed dark. Projecting the view ray onto the ground puts the budget on
+                // exactly what is on screen.
                 var eye = camera.transform.position;
+                var forward = camera.transform.forward;
+                if (forward.y < -0.05f && eye.y > 0f)
+                    eye += forward * (eye.y / -forward.y);
 
                 order.Sort((a, b) =>
                 {

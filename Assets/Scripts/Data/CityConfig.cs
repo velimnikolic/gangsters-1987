@@ -242,6 +242,44 @@ namespace LivingCity.Data
         [Tooltip("How long a plain pause lasts, seconds.")]
         public Vector2 idleDurationRange = new Vector2(3f, 10f);
 
+        [Header("Crowd performance")]
+        [Tooltip("Fixed steps between two avoidance probes per walker. 1 probes every step, " +
+                 "the original cadence; at N each walker probes every Nth step (staggered " +
+                 "across the crowd) and spends the cached movement allowance in between, so " +
+                 "overlap stays impossible - the steering is merely up to N-1 steps stale. " +
+                 "3 cuts the avoidance cost to a third and is visually indistinguishable.")]
+        [Min(1)] public int pedestrianProbeInterval = 3;
+
+        [Tooltip("Pedestrians spawned per entitySpawnInterval tick (per frame when the " +
+                 "interval is 0). The old one-per-tick ramp takes a thousand seconds at " +
+                 "crowd scale; batching keeps the ramp short without instantiating the whole " +
+                 "population in one frame.")]
+        [Min(1)] public int pedestrianSpawnBatch = 10;
+
+        [Tooltip("Route re-paths granted per frame. A walker finishing its route queues for " +
+                 "a new one instead of running A* on the spot - at crowd scale those " +
+                 "searches land in unsynchronised bursts that read as hitches. Arrivals " +
+                 "beyond the budget stand at the kerb a few frames longer, which is " +
+                 "invisible; 0 is not a valid setting.")]
+        [Min(1)] public int pedestrianRepathBudget = 24;
+
+        [Tooltip("Camera orthographic size above which pedestrian animators tick at reduced " +
+                 "rate (see the LOD rate below). The camera is orthographic, so zoom - not " +
+                 "distance - is what shrinks people on screen; around 45 a pedestrian is " +
+                 "under 20 pixels tall.")]
+        [Min(0f)] public float pedestrianLodMidOrtho = 45f;
+
+        [Tooltip("Orthographic size above which pedestrian animators freeze entirely and " +
+                 "their shadows turn off. At 90 a person is a few pixels; the transform " +
+                 "still moves, so the crowd still flows, it just stops pumping arms nobody " +
+                 "can see.")]
+        [Min(0f)] public float pedestrianLodFarOrtho = 90f;
+
+        [Tooltip("Animator slowdown factor in the mid LOD band: each animator is advanced " +
+                 "once every this many frames, round-robin, so the cost drops by the same " +
+                 "factor. 3 at 60fps still animates everyone at 20fps.")]
+        [Min(2)] public int pedestrianLodMidRate = 3;
+
         [Header("Time of day")]
         [Tooltip("Real seconds for one hour of game time. 60 runs a full day in 24 real minutes; " +
                  "drop it to 1 and the whole day passes in 24 seconds, which is how you watch a " +
@@ -257,9 +295,12 @@ namespace LivingCity.Data
         [Min(0f)] public float nightBrightness = 1f;
 
         [Header("Street lamps")]
-        [Tooltip("How many lamps burn at once, nearest the camera first. Every one is a real " +
-                 "light in a forward renderer, so this is the direct cost dial - 0 turns them off.")]
-        [Min(0)] public int litLampBudget = 48;
+        [Tooltip("How many lamp bulbs burn at once, nearest the camera's look-at point first. " +
+                 "Every one is a real light, so this is the direct cost dial - 0 turns them " +
+                 "off. The bulbs are cheap (10m range, no shadows) and URP Forward+ renders " +
+                 "up to 256 additional lights on desktop, so 250 simply lights the whole city " +
+                 "at current sizes; the sort only starts choosing on a city bigger than that.")]
+        [Min(0)] public int litLampBudget = 250;
 
         [Tooltip("Reach of one lamp bulb, in metres. The bulbs emit from 2.5m up (see " +
                  "StreetLampLights.BulbHeight - kept low so the 45-degree camera's parallax " +
@@ -291,6 +332,7 @@ namespace LivingCity.Data
             gridHeight = Mathf.Max(MinGridSize, gridHeight);
             maxArterialSpacing = Mathf.Max(minArterialSpacing, maxArterialSpacing);
             featureStripMax = Mathf.Max(featureStripMin, featureStripMax);
+            pedestrianLodFarOrtho = Mathf.Max(pedestrianLodMidOrtho, pedestrianLodFarOrtho);
         }
     }
 }

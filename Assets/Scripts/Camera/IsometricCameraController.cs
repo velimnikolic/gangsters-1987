@@ -48,6 +48,10 @@ namespace LivingCity.CameraRig
         [Tooltip("World units per second at the default zoom. A city cell is 30 units, so this " +
                  "is roughly two blocks per second.")]
         [SerializeField] float keyboardPanSpeed = 60f;
+        [Tooltip("Multiplikator za drag pan misem. Na 1 grad prati kursor tacno 1:1; iznad toga " +
+                 "jedan povlacaj pokrije vise grada, po cenu da se tlo pod kursorom pomera brze " +
+                 "od samog kursora. Touch ostaje 1:1.")]
+        [SerializeField] float dragPanSpeed = 3f;
         [Tooltip("Padding beyond the city bounds the focus point may travel.")]
         [SerializeField] float boundsPadding = 30f;
 
@@ -199,6 +203,12 @@ namespace LivingCity.CameraRig
         /// left button free for selecting units and buildings later - no click-versus-drag
         /// threshold needed. Middle-drag stays as a shortcut for mice that have the button;
         /// a trackpad does not, which is why it alone was not enough.
+        ///
+        /// dragPanSpeed deliberately breaks 1:1 cursor tracking: with a mouse the useful limit
+        /// is how far the hand can travel in one stroke, not how well the ground sticks to the
+        /// pointer, so covering more city per stroke is worth the ground outrunning the cursor.
+        /// Touch keeps the exact 1:1 - there the finger IS the contact point and any multiplier
+        /// reads as the map slipping.
         /// </summary>
         void HandleMouseDragPan()
         {
@@ -228,7 +238,7 @@ namespace LivingCity.CameraRig
                 return;
             }
 
-            targetFocus -= ScreenDeltaToWorld(mouse.delta.ReadValue());
+            targetFocus -= ScreenDeltaToWorld(mouse.delta.ReadValue()) * dragPanSpeed;
             focusSnap = true;
         }
 
@@ -270,7 +280,10 @@ namespace LivingCity.CameraRig
             lastTwistAngle = angle;
         }
 
-        /// <summary>Converts a screen-space drag into world movement on the XZ plane.</summary>
+        /// <summary>
+        /// Converts a screen-space drag into world movement on the XZ plane. The result is the
+        /// exact 1:1 distance; callers scale it if they want the ground to outrun the pointer.
+        /// </summary>
         Vector3 ScreenDeltaToWorld(Vector2 screenDelta)
         {
             if (Screen.height <= 0) return Vector3.zero;
@@ -389,6 +402,9 @@ namespace LivingCity.CameraRig
         {
             maxOrthoSize = Mathf.Max(minOrthoSize, maxOrthoSize);
             orthoSize = Mathf.Clamp(orthoSize, minOrthoSize, maxOrthoSize);
+            // Zero would kill drag pan outright, which reads as a broken control rather than
+            // as a setting turned down.
+            dragPanSpeed = Mathf.Max(0.1f, dragPanSpeed);
         }
     }
 }

@@ -16,7 +16,7 @@ MonoBehaviour:
   gridHeight: 7
   minArterialSpacing: 2
   maxArterialSpacing: 4
-  seed: 431784074
+  seed: 1582220114
   blockFillRatio: 1
   buildingTintChance: 1
   commercialTintChance: 1
@@ -54,10 +54,16 @@ MonoBehaviour:
   interactionCooldownRange: {x: 30, y: 90}
   idleChance: 0.3
   idleDurationRange: {x: 3, y: 10}
-  realSecondsPerGameHour: 90
-  startHour: 21.5
+  pedestrianProbeInterval: 3
+  pedestrianSpawnBatch: 10
+  pedestrianRepathBudget: 24
+  pedestrianLodMidOrtho: 45
+  pedestrianLodFarOrtho: 90
+  pedestrianLodMidRate: 3
+  realSecondsPerGameHour: 1
+  startHour: 9.4
   nightBrightness: 1.1
-  litLampBudget: 90
+  litLampBudget: 250
   lampRange: 10
   lampIntensity: 5
   debugSingleZone: 0

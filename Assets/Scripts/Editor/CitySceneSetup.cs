@@ -206,10 +206,10 @@ namespace LivingCity.EditorTools
 
             CityEditorUtils.SetField(controller, "cityBuilder", builder);
 
-            // The three camera-feel values, restated here rather than left to the field
-            // initialisers. They currently agree with the script's own defaults, but this method
-            // overwrites whatever is in the scene, so a silent divergence between the two would
-            // mean "Restore Camera and Lighting" quietly reverts a tuning pass. Keeping all three
+            // The camera-feel values, restated here rather than left to the field initialisers.
+            // They currently agree with the script's own defaults, but this method overwrites
+            // whatever is in the scene, so a silent divergence between the two would mean
+            // "Restore Camera and Lighting" quietly reverts a tuning pass. Keeping them all
             // explicit makes the intended values readable in one place - if you change one, change
             // it in IsometricCameraController.cs and in SampleScene.unity too.
             //
@@ -218,6 +218,9 @@ namespace LivingCity.EditorTools
             CityEditorUtils.SetFloat(controller, "maxOrthoSize", 200f);
             CityEditorUtils.SetFloat(controller, "scrollZoomSpeed", 6f);
             CityEditorUtils.SetFloat(controller, "keyboardPanSpeed", 60f);
+            // dragPanSpeed 3: a mouse drag is limited by how far the hand travels in one stroke,
+            // so the ground is deliberately moved three times the cursor distance. Touch stays 1:1.
+            CityEditorUtils.SetFloat(controller, "dragPanSpeed", 3f);
 
             // Frame the middle of the city so the first frame in Play is not looking at empty space.
             var centre = config

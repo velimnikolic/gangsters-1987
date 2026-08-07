@@ -175,12 +175,20 @@ namespace PolyPerfect.City
             }
         }
 
+        // PATCH (Living City): the overlap box used to allocate its result array per call and
+        // to sweep in EVERY collider around the querent - at crowd scale that is a fistful
+        // of pedestrian capsules per search, none of which can ever be a Tile. Shared
+        // buffer, and the pedestrian layer masked out.
+        private static readonly Collider[] TileOverlapBuffer = new Collider[128];
+        private const int TileOverlapMask = ~(1 << LivingCity.Entities.PedestrianSpawner.PedestrianLayer);
+
         private Tile FindClosestTile(Vector3 point, PathType pathType)
         {
             Tile closestTile = null;
-            Collider[] coliders = Physics.OverlapBox(point, new Vector3(Mathf.Abs(5 * transform.lossyScale.x), Mathf.Abs(5 * transform.lossyScale.y), Mathf.Abs(5 * transform.lossyScale.z)));
-            foreach (Collider collider in coliders)
+            int hits = Physics.OverlapBoxNonAlloc(point, new Vector3(Mathf.Abs(5 * transform.lossyScale.x), Mathf.Abs(5 * transform.lossyScale.y), Mathf.Abs(5 * transform.lossyScale.z)), TileOverlapBuffer, Quaternion.identity, TileOverlapMask);
+            for (int c = 0; c < hits; c++)
             {
+                Collider collider = TileOverlapBuffer[c];
                 closestTile = collider.transform.GetComponent<Tile>();
                 if (closestTile != null)
                 {

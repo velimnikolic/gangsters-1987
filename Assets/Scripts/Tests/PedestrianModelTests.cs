@@ -36,6 +36,9 @@ namespace LivingCity.Tests
             PairingBooksNobodyTwice(failures);
             PairingIsDeterministic(failures);
             PairingPrefersTheNearest(failures);
+            PairingMatchesTheFullScan(failures);
+            RegistryCellsCoverTheProbeReach(failures);
+            RegistryCellKeysDoNotCollide(failures);
 
             return failures;
         }
@@ -407,6 +410,152 @@ namespace LivingCity.Tests
             foreach (var (a, b) in pairs)
                 if (Mathf.Abs(positions[a].y - positions[b].y) > 2f)
                     failures.Add("Pairing: paired across a large height difference.");
+        }
+
+        /// <summary>
+        /// The exact algorithm InteractionPairing used before it was bucketed: a triangular
+        /// scan, nearest forward neighbour, replacement on less-OR-EQUAL so the highest index
+        /// wins ties. The bucketed version exists purely for cost; its OUTPUT must be this,
+        /// pair for pair, in order.
+        /// </summary>
+        static void ReferencePairs(IReadOnlyList<Vector3> candidates, float maxDistance,
+                                   List<(int a, int b)> result)
+        {
+            result.Clear();
+            var used = new bool[candidates.Count];
+            var maxSq = maxDistance * maxDistance;
+
+            for (var i = 0; i < candidates.Count; i++)
+            {
+                if (used[i])
+                    continue;
+
+                var best = -1;
+                var bestSq = maxSq;
+
+                for (var j = i + 1; j < candidates.Count; j++)
+                {
+                    if (used[j])
+                        continue;
+
+                    var delta = candidates[j] - candidates[i];
+                    if (Mathf.Abs(delta.y) > 2f)
+                        continue;
+
+                    delta.y = 0f;
+                    var distSq = delta.sqrMagnitude;
+                    if (distSq > bestSq)
+                        continue;
+
+                    best = j;
+                    bestSq = distSq;
+                }
+
+                if (best < 0)
+                    continue;
+
+                used[i] = true;
+                used[best] = true;
+                result.Add((i, best));
+            }
+        }
+
+        static void PairingMatchesTheFullScan(List<string> failures)
+        {
+            var rng = new System.Random(23);
+            var fast = new List<(int a, int b)>();
+            var reference = new List<(int a, int b)>();
+
+            for (var trial = 0; trial < 25; trial++)
+            {
+                var count = 2 + rng.Next(150);
+                var positions = new List<Vector3>();
+
+                // Negative coordinates on purpose - cell flooring is where a hash slips -
+                // and every fifth walker up on the bridge deck to exercise the height gate.
+                for (var i = 0; i < count; i++)
+                    positions.Add(new Vector3(
+                        ((float)rng.NextDouble() - 0.5f) * 60f,
+                        rng.Next(5) == 0 ? 12f : 0f,
+                        ((float)rng.NextDouble() - 0.5f) * 60f));
+
+                // A dense cluster straddling a cell corner, where neighbours span four cells.
+                for (var i = 0; i < 12; i++)
+                    positions.Add(new Vector3(
+                        (float)rng.NextDouble() * 4f - 2f, 0f,
+                        (float)rng.NextDouble() * 4f - 2f));
+
+                InteractionPairing.Pairs(positions, 3f, fast);
+                ReferencePairs(positions, 3f, reference);
+
+                if (fast.Count != reference.Count)
+                {
+                    failures.Add($"Pairing/full-scan: trial {trial} pair counts differ " +
+                                 $"({fast.Count} vs {reference.Count}).");
+                    continue;
+                }
+
+                for (var i = 0; i < fast.Count; i++)
+                    if (fast[i] != reference[i])
+                    {
+                        failures.Add($"Pairing/full-scan: trial {trial} pair {i} differs " +
+                                     $"({fast[i]} vs {reference[i]}).");
+                        break;
+                    }
+            }
+        }
+
+        // ------------------------------------------------------------------ registry hash
+
+        /// <summary>
+        /// The probe visits one ring of cells around its own, so any body inside the longest
+        /// query reach (OncomingBias at PersonalSpace * 3) must never be more than one cell
+        /// index away on either axis. This is the invariant the whole bucketing rests on.
+        /// </summary>
+        static void RegistryCellsCoverTheProbeReach(List<string> failures)
+        {
+            var reach = PersonalSpace * 3f;
+            if (reach > PedestrianRegistry.HashCellSize + 1e-3f)
+            {
+                failures.Add($"Registry hash: cell size {PedestrianRegistry.HashCellSize} is " +
+                             $"smaller than the probe reach {reach} - a 3x3 scan misses bodies.");
+                return;
+            }
+
+            var rng = new System.Random(31);
+            for (var trial = 0; trial < 500; trial++)
+            {
+                var a = new Vector3(((float)rng.NextDouble() - 0.5f) * 400f, 0f,
+                                    ((float)rng.NextDouble() - 0.5f) * 400f);
+                var angle = (float)rng.NextDouble() * Mathf.PI * 2f;
+                var dist = (float)rng.NextDouble() * reach;
+                var b = a + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * dist;
+
+                var dax = Mathf.Abs(Mathf.FloorToInt(a.x / PedestrianRegistry.HashCellSize)
+                                  - Mathf.FloorToInt(b.x / PedestrianRegistry.HashCellSize));
+                var daz = Mathf.Abs(Mathf.FloorToInt(a.z / PedestrianRegistry.HashCellSize)
+                                  - Mathf.FloorToInt(b.z / PedestrianRegistry.HashCellSize));
+
+                if (dax > 1 || daz > 1)
+                    failures.Add($"Registry hash: bodies {dist:F2}m apart landed {dax}x{daz} " +
+                                 $"cells apart at {a} - the 3x3 scan would miss one.");
+            }
+        }
+
+        static void RegistryCellKeysDoNotCollide(List<string> failures)
+        {
+            // Distinct cells must give distinct keys across the whole plausible city extent
+            // (plus far outside it - walkers can be flung anywhere by a bad path).
+            var seen = new HashSet<long>();
+            for (var cx = -100; cx <= 100; cx++)
+                for (var cz = -100; cz <= 100; cz++)
+                    if (!seen.Add(PedestrianRegistry.KeyFor(
+                            new Vector3(cx * PedestrianRegistry.HashCellSize + 0.5f, 0f,
+                                        cz * PedestrianRegistry.HashCellSize + 0.5f))))
+                    {
+                        failures.Add($"Registry hash: key collision at cell ({cx}, {cz}).");
+                        return;
+                    }
         }
     }
 }

@@ -31,8 +31,11 @@ namespace LivingCity.Entities
         /// <summary>Live agents, maintained alongside registry membership. Read by the director.</summary>
         public static readonly List<PedestrianAgent> Agents = new List<PedestrianAgent>();
 
-        /// <summary>Seconds between opportunity rolls while walking free.</summary>
-        const float RollInterval = 2f;
+        /// <summary>
+        /// Seconds between opportunity rolls while walking free. Public because the director
+        /// paces its per-frame slice off it - see TickOpportunities.
+        /// </summary>
+        public const float RollInterval = 2f;
 
         /// <summary>How far off the pavement a walker will detour for a bench or a door.</summary>
         const float OpportunityRange = 9f;
@@ -45,6 +48,13 @@ namespace LivingCity.Entities
 
         /// <summary>Matches HumanBehavior's own animator scaling (speed * 0.8).</summary>
         const float AnimatorSpeedScale = 0.8f;
+
+        // Fixed-duration yields, shared across all agents. The drawn-per-activity durations
+        // (sit, shop, idle, chat) stay as fresh WaitForSeconds - they differ every time.
+        static readonly WaitForSeconds ExitBeat = new WaitForSeconds(0.4f);
+        static readonly WaitForSeconds SitTransition = new WaitForSeconds(SitTransitionSeconds);
+        static readonly WaitForSeconds ReappearPoll = new WaitForSeconds(0.5f);
+        static readonly WaitForFixedUpdate FixedStep = new WaitForFixedUpdate();
 
         CityConfig config;
         System.Random rng;
@@ -124,7 +134,14 @@ namespace LivingCity.Entities
             Restore();
         }
 
-        void Update()
+        /// <summary>
+        /// The opportunity roll, formerly this component's Update. At crowd scale ten
+        /// thousand per-instance Update callbacks are pure interop overhead - almost all of
+        /// them early-out on a timer - so the director walks the agent list in slices and
+        /// calls this instead. The internal timers are unchanged: however often the director
+        /// visits, an agent still rolls at most once per RollInterval.
+        /// </summary>
+        public void TickOpportunities()
         {
             if (activity != null || rng == null || body == null)
                 return;
@@ -196,7 +213,7 @@ namespace LivingCity.Entities
             SetActivity(PedestrianAnimation.None);
 
             // A beat for the exit transition before the walk cycle takes over.
-            yield return new WaitForSeconds(0.4f);
+            yield return ExitBeat;
 
             Finish();
         }
@@ -228,11 +245,14 @@ namespace LivingCity.Entities
                 yield return null;
             }
             transform.position = seatPos;
+            // The glide moved the body without a probe, and only probes re-bucket - tell the
+            // registry's spatial hash where this body now sits.
+            PedestrianRegistry.Rebucket(body, seatPos);
 
             yield return new WaitForSeconds(Range(config.sitDurationRange));
 
             SetActivity(PedestrianAnimation.None);
-            yield return new WaitForSeconds(SitTransitionSeconds);
+            yield return SitTransition;
 
             ReleaseSeat();
             SetStationary(false);
@@ -265,7 +285,7 @@ namespace LivingCity.Entities
 
             // Do not materialise inside somebody browsing the shopfront.
             for (var waited = 0f; waited < 10f && !PedestrianRegistry.IsClear(body, transform.position); waited += 0.5f)
-                yield return new WaitForSeconds(0.5f);
+                yield return ReappearPoll;
 
             SetHidden(false);
             SetStationary(false);
@@ -322,7 +342,7 @@ namespace LivingCity.Entities
                 body.SpeedMs = actual;
                 SetSpeed(actual);
 
-                yield return new WaitForFixedUpdate();
+                yield return FixedStep;
             }
 
             body.SpeedMs = 0f;
