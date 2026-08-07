@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using LivingCity.Generation;
 
@@ -79,6 +80,11 @@ namespace LivingCity.Data
                      "reading as barracks.")]
             public bool cornerPreferred;
 
+            [Tooltip("Storefront group - cafes, restaurants, shops. The tinter paints these " +
+                     "from the stronger commercialTints palette, so a shop reads as a painted " +
+                     "shopfront among the flats instead of one more brown terrace piece.")]
+            public bool commercial;
+
             /// <summary>Inherited <c>prefabs</c> holds the street-facing pieces - the detailed elevations.</summary>
             public GameObject[] PiecesFor(bool facesStreet) =>
                 facesStreet || rearPrefabs == null || rearPrefabs.Length == 0
@@ -127,6 +133,23 @@ namespace LivingCity.Data
         }
 
         /// <summary>
+        /// One chimney mouth on one prefab, in that prefab's local space, so a rotated or scaled
+        /// instance carries its smoke with it.
+        ///
+        /// A prefab may have several: industry-factory is twin-stacked at local x = +/-4.22. And
+        /// most of the works catalogue has NONE - industry-warehouse, -storage, -building and
+        /// -factory-hall are topped by roof lanterns, which look like chimneys to any measurement
+        /// that only asks "is this cluster narrow". The test that separates them is how far the
+        /// cluster RISES above the roof around it; see ChimneyVents.
+        /// </summary>
+        [Serializable]
+        public sealed class ChimneyVent
+        {
+            public GameObject prefab;
+            public Vector3 local;
+        }
+
+        /// <summary>
         /// Everything one kind of block is built from: its buildings, its ground, its landmark
         /// and its litter.
         ///
@@ -153,10 +176,34 @@ namespace LivingCity.Data
             [Range(0f, 1f)] public float maxShare = 1f;
 
             [Tooltip("Hard cap in blocks regardless of city size. 0 = none. This is the right " +
-                     "control for anything a city has ONE of - the hospital, the police station, " +
-                     "the fire station. A share cap cannot express that: 9% of a twelve-block map is " +
-                     "one hospital, but 9% of a forty-block map is three.")]
+                     "control for anything a city has ONE of - the hospital, the church. A share " +
+                     "cap cannot express that: 9% of a twelve-block map is one hospital, but 9% " +
+                     "of a forty-block map is three. Note this is a CEILING and not a promise; " +
+                     "see 'guaranteed' below for the promise.")]
             [Min(0)] public int maxBlocks;
+
+            [Tooltip("Largest block this zone may take, in cells. 0 = any. The hospital is one " +
+                     "landmark, a couple of outbuildings and a car bay - on a nine-cell block " +
+                     "that dressing rattles around, so it is steered onto the small blocks " +
+                     "instead. If a map has no block this small, the smallest it does have " +
+                     "qualifies, so the zone can never be priced out entirely.")]
+            [Min(0)] public int maxBlockCells;
+
+            [Tooltip("Promise the city this zone rather than merely permitting it: if the " +
+                     "weighted roll never lands on it, ZonePlanner's rescue pass takes the " +
+                     "smallest block still going back from the residential fabric and gives it " +
+                     "to this zone anyway. OFF for every palette in the shipped database, so " +
+                     "the pass does nothing at all today and every zone is a ceiling - at most " +
+                     "one hospital, at most one church - the way the post office and the fire " +
+                     "station have always been.\n\n" +
+                     "What turning it on costs, stated plainly, because it is not free: one " +
+                     "block, taken out of ResidentialHigh or Industrial. On a nine-by-seven map " +
+                     "that is about a tenth of the city. The block taken is the SMALLEST one " +
+                     "still available, which is the right block for a one-cell civic landmark " +
+                     "and the wrong one for anything that wants room. The pass also ignores " +
+                     "maxBlockCells and overshoots ZonePlanner's shared landmark budget by one, " +
+                     "both deliberately - see the comment on the pass itself.")]
+            public bool guaranteed;
 
             [Header("Ground")]
             [Tooltip("Slab under the block. Empty falls back to the shared concrete groundTile.")]
@@ -180,6 +227,33 @@ namespace LivingCity.Data
                      "whose sidewalk paths run to +/-15, and scaling it would drag those nodes " +
                      "off the 30m grid and break the link to the pavements.")]
             public bool groundIsTilePerCell;
+
+            [Tooltip("Surface for the band between the road tile's kerb and this block's own " +
+                     "ground - GroundPlacer's apron. Empty falls back to the shared concrete " +
+                     "groundTile, which is what every built-up zone wants. A park sets grass " +
+                     "here instead, so its lawn runs to the kerb rather than stopping 10m short " +
+                     "behind a concrete ring. Only tiles WITHOUT a Tile component belong here: " +
+                     "the apron is stretched over the whole rect.")]
+            public GameObject apronGround;
+
+            [Tooltip("Patches of a second surface laid over a per-cell ground and tinted off " +
+                     "groundTints, one per quadrant - the park's stand-in for the mosaic a " +
+                     "built-up block gets, whose seams would read as mistakes on a lawn. Use the " +
+                     "same grass tile as the apron. Must carry no Tile component: it is stretched.")]
+            public GameObject parkLawnPatch;
+
+            [Tooltip("Landform dropped on the lawn - tile-plain-hump is the pack's only centred " +
+                     "mound, 30m across and 5.8m tall with all four edges flush, so scaled down " +
+                     "it is a knoll that needs no skirt. Do NOT put the tile-hill pieces here: " +
+                     "they rise at an EDGE and hang a 6m skirt below it, so one on its own leaves " +
+                     "a cliff on three sides.")]
+            public GameObject[] parkMounds = Array.Empty<GameObject>();
+
+            [Tooltip("Boulders, stumps and deadwood, scattered singly after the planting to fill " +
+                     "what it left. Kept apart from parkUndergrowth because that list is drawn " +
+                     "from uniformly - a boulder in among the grass tufts would come up as often " +
+                     "as a tuft.")]
+            public GameObject[] parkFeatures = Array.Empty<GameObject>();
 
             [Range(0f, 1f)]
             [Tooltip("How often a yard patch rolls its own surface instead of repeating its " +
@@ -213,10 +287,33 @@ namespace LivingCity.Data
                      "however large it is.")]
             [Min(0)] public int maxLotsPerAxis;
 
+            [Tooltip("Cap on perimeter buildings per block, the landmark excluded. 0 = " +
+                     "unlimited. This is what keeps a landmark block from ringing itself with " +
+                     "outbuildings - the cap is spent in placement order, so the buildings " +
+                     "cluster on the sides walked first, near the landmark's own.")]
+            [Min(0)] public int maxPerimeterBuildings;
+
             [Tooltip("At most one per block, on the longest street run. This is what makes a " +
                      "block read as 'the hospital block' without filling it with hospitals.")]
             public GameObject[] landmarks = Array.Empty<GameObject>();
             [Range(0f, 1f)] public float landmarkChance;
+
+            [Tooltip("Index into landmarks[] that ONE block of this zone is required to build, " +
+                     "or -1 for none. landmarkChance is a probability and cannot express 'the " +
+                     "city must end up with one of these': across half a dozen blocks it usually " +
+                     "delivers and occasionally does not, which is the right behaviour for the " +
+                     "police station and the wrong one for the bank. ZonePlanner picks the block " +
+                     "- the largest, since a required landmark is generally the one that needs " +
+                     "room - and marks it, and BlockBuilder then skips both the chance roll and " +
+                     "the draw from the bag for that block alone.")]
+            public int requiredLandmark = -1;
+
+            [Tooltip("Uniform scale on the landmark instance. The civic landmarks are the " +
+                     "pack's biggest pieces and their block is already the smallest the map " +
+                     "offers, so this is the one size lever left - 0.5 halves the building. " +
+                     "Nothing uses it today: every landmark in the catalogue turned out to " +
+                     "stand better at full size once its block stopped being oversized.")]
+            [Min(0.1f)] public float landmarkScale = 1f;
 
             [Header("Yard")]
             [Tooltip("Dropped on whatever ground the lots left over - the alleys between them " +
@@ -261,8 +358,63 @@ namespace LivingCity.Data
             [Tooltip("Chance a street-facing slot becomes a surface car park instead of a building.")]
             [Range(0f, 1f)] public float parkingChance = 0.12f;
 
+            [Header("Feature strip")]
+            [Tooltip("Give up one street side of each block for a parking strip or pocket " +
+                     "park, and pack the building rows tight against it. This is where the " +
+                     "length the terrace kit cannot fill goes - see FeatureStrip. Only for " +
+                     "zones whose runs should read as an unbroken street wall.")]
+            public bool featureStrip;
+
+            [Tooltip("The kiosk of a pocket-park strip, stood at the pavement facing the " +
+                     "street - hot-dog-stand, marketplace-stand-simple. One per park, drawn " +
+                     "flat. Empty leaves the park unattended.")]
+            public GameObject[] kioskPrefabs = Array.Empty<GameObject>();
+
+            [Tooltip("What fills a pocket-park strip besides the kiosk: benches, trees, a " +
+                     "lamp. Placed on a coarse grid facing the street. Empty falls back to " +
+                     "alleyProps, which carries the same furniture plus the bins.")]
+            public GameObject[] pocketParkProps = Array.Empty<GameObject>();
+
             [Tooltip("Fill the whole block with rows of parked cars - the Parking zone.")]
             public bool carRows;
+
+            [Header("Works yard (industrialYard zones only)")]
+            [Tooltip("Lay the block out as a walled compound instead of a terrace: wall, one " +
+                     "gate, service roads in from it, halls standing along them with their " +
+                     "doors on the road, staff parking by the gate. Replaces the whole " +
+                     "perimeter path AND the scatter for this zone - a works is arranged, and " +
+                     "the uniform scatter is exactly what made the old industrial block read " +
+                     "as tipped out rather than built.")]
+            public bool industrialYard;
+
+            [Tooltip("military-gate - stood in the gap the wall leaves. Empty leaves the way " +
+                     "in as a plain opening, which reads fine; the gate is the flourish.")]
+            public GameObject gatePrefab;
+
+            [Tooltip("Stretched along each service road, so the carriageway reads as tarmac " +
+                     "instead of as more yard. tile-plain_asphalt-nb - the no-border variant, " +
+                     "because a kerb drawn round every road rectangle would tile visibly where " +
+                     "two carriageways meet. Empty leaves the roads the colour of the yard.")]
+            public GameObject serviceRoadGround;
+
+            [Tooltip("Material stacked in the gaps between halls: brick and plank stacks, " +
+                     "cement bags, pipe. Placed in GROUPS against a hall wall rather than " +
+                     "sprinkled - a works stores things where it uses them, and the same " +
+                     "prefabs at uniform density across a yard is what 'nabacano' looks like.")]
+            public GameObject[] stackProps = Array.Empty<GameObject>();
+
+            [Tooltip("chimney-big, water-tower-medium - stood deliberately in the back yard of a " +
+                     "hall rather than drawn from scatter at a random yaw. These are the pieces " +
+                     "that give a works its skyline, and smoke hangs off the chimneys among them.")]
+            public GameObject[] chimneyProps = Array.Empty<GameObject>();
+
+            [Tooltip("The small stuff a works is actually made of besides its halls: the garage, " +
+                     "the silo, the site hut, the long low store. Placed in the strip BEHIND each " +
+                     "hall, which is where the row depth left over goes - a hall is 6 to 23m deep " +
+                     "in a 26m row, so without this pass every works has a bare band down the " +
+                     "back of every row. Keep these under about 14m on their long side or they " +
+                     "will not fit that strip.")]
+            public GameObject[] auxBuildings = Array.Empty<GameObject>();
 
             [Header("Boundary")]
             [Tooltip("One length of boundary, tiled round the edge and stretched slightly to " +
@@ -298,6 +450,25 @@ namespace LivingCity.Data
                 }
             }
 
+            [Tooltip("Cars for the landmark's own forecourt bay and nowhere else. Unlike " +
+                     "parkedCars this does NOT swap the block-wide picker - the patrol car " +
+                     "stands in front of the police station without turning every bay on the " +
+                     "block into a police pound. Empty means the landmark sits flush to the " +
+                     "street with no forecourt.")]
+            public WeightedPrefabs[] landmarkCars = Array.Empty<WeightedPrefabs>();
+
+            public bool HasLandmarkCars
+            {
+                get
+                {
+                    if (landmarkCars == null) return false;
+                    foreach (var group in landmarkCars)
+                        if (group != null && group.IsUsable)
+                            return true;
+                    return false;
+                }
+            }
+
             public bool BuildsPerimeter
             {
                 get
@@ -322,6 +493,25 @@ namespace LivingCity.Data
                  "sides, but side neighbours simply yield no path matches - safe as a straight.")]
         public GameObject straightCrosswalk;
 
+        [Header("Dual carriageway (Tiles_T/Roads_T)")]
+        [Tooltip("tile-mainroad-straight. Four lanes at x = +/-1.75 and +/-4.75, pavements at " +
+                 "+/-7.25 - all measured out of the prefab. Same 30m module as the road tiles, " +
+                 "which is what lets it drop into the same grid.")]
+        public GameObject mainStraight;
+
+        [Tooltip("tile-mainroad-straight-crosswalk. Same Cross-tileShape caveat as " +
+                 "straightCrosswalk: it probes all four sides, but a run of avenue has no side " +
+                 "neighbours to match, so it behaves as a straight.")]
+        public GameObject mainStraightCrosswalk;
+
+        [Tooltip("tile-road-mainroad-intersection - the avenue crossing a minor street. At 0 " +
+                 "degrees the carriageway runs North-South.")]
+        public GameObject mainCross;
+
+        [Tooltip("tile-road-mainroad-intersection-t - a minor street teeing into the avenue. At " +
+                 "0 degrees the BRANCH is North and the carriageway runs East-West.")]
+        public GameObject mainTJunction;
+
         [Header("Ground (Tiles_T)")]
         [Tooltip("tile-plain_concrete - laid under each block so courtyards and alleys are " +
                  "paved rather than showing the road tiles' grass verge. Carries no Tile " +
@@ -332,6 +522,12 @@ namespace LivingCity.Data
         [Tooltip("traffic-lights_AI - self-contained, TrafficLightsControl already wired.")]
         public GameObject trafficLights;
 
+        [Tooltip("traffic-lights-big_AI - the gantry set, for the avenue's crossroads where the " +
+                 "small post reads as undersized against four lanes. Carries the same one " +
+                 "TrafficLightsControl and four TrafficLight components as trafficLights, so it " +
+                 "is a drop-in. Falls back to trafficLights when empty.")]
+        public GameObject mainTrafficLights;
+
         [Header("Buildings (Buildings_T)")]
         [Tooltip("One entry per BlockZone. ZonePlanner picks a zone per block from these " +
                  "weights; BlockBuilder then builds from the matching palette.")]
@@ -341,17 +537,28 @@ namespace LivingCity.Data
                  "Rewritten by CityAssetBootstrap - edit the table there, not here.")]
         public FacadeYawFix[] facadeYawFixes = Array.Empty<FacadeYawFix>();
 
+        [Tooltip("Prefabs the finished city may hold at most ONE of, whichever path would place " +
+                 "them. The post office is why this exists: it is a street shop in the " +
+                 "residential palette rather than the landmark of a zone, so no quota in " +
+                 "ZonePlanner can reach it and every block was free to build another. Rewritten " +
+                 "by CityAssetBootstrap - edit the list there, not here.")]
+        public GameObject[] uniqueBuildings = Array.Empty<GameObject>();
+
         [Tooltip("atlas-LPEC.mat - the one opaque material every building piece shares. The " +
                  "tinter uses it to recognise which renderer slots it may repaint; anything " +
                  "else (atlas-transparent-LPEC on glass) is left alone, because swapping an " +
                  "opaque tint onto a window would brick it up.")]
         public Material buildingBaseMaterial;
 
-        [Tooltip("Material variants of buildingBaseMaterial overriding only _BaseColor. Kept " +
-                 "few and near-white on purpose: colour in this pack lives in the atlas UVs, " +
-                 "so _BaseColor multiplies the WHOLE building - a saturated tint drags roofs " +
-                 "and windows along with the walls. Empty disables tinting.")]
+        [Tooltip("Copies of buildingBaseMaterial on the Facade Tint shader (which masks the " +
+                 "tint off roofs) - the RESIDENTIAL palette: green, tan, brick, blue-grey. " +
+                 "Clearly coloured but moderate, because windows are vertical like the walls " +
+                 "and the tint reaches them too. Empty disables tinting.")]
         public Material[] buildingTints = Array.Empty<Material>();
+
+        [Tooltip("Stronger versions of the same hues, for groups marked commercial. Empty " +
+                 "falls back to buildingTints, so an asset predating this field still tints.")]
+        public Material[] commercialTints = Array.Empty<Material>();
 
         [Tooltip("58 WHITE-LPEC - the pack's plain white URP/Lit, with no texture bound at all. " +
                  "Painted onto the procedural parking-line mesh, so the markings need no new " +
@@ -373,6 +580,27 @@ namespace LivingCity.Data
                  "worn across a yard. Empty leaves the paths undrawn.")]
         public Material paintLightMaterial;
 
+        [Header("Smoke")]
+        [Tooltip("Where the chimney mouths are on each prefab, in its own local space. Measured " +
+                 "by Tools/City/Measure Chimney Vents and rewritten every bootstrap - do not " +
+                 "type values here. Measured rather than typed for the reason CornerFacing " +
+                 "exists: the FBX importer negates X, so a vent read off the raw mesh file is " +
+                 "mirrored, and industry-refinery's single stack is exactly the case that " +
+                 "catches out.")]
+        public ChimneyVent[] chimneyVents = Array.Empty<ChimneyVent>();
+
+        [Tooltip("Universal Render Pipeline/Particles/Unlit, transparent, untextured. The pack " +
+                 "ships no smoke texture at all, and the Built-in Default-ParticleSystem " +
+                 "material renders magenta under URP - so this is authored by the bootstrap. " +
+                 "Empty disables smoke however industrialSmoke is set.")]
+        public Material smokeMaterial;
+
+        [Tooltip("cloud-fluffy - the particles are MESHES, not billboards. A soft blurred quad " +
+                 "is the obvious choice and the wrong one here: every other surface in this city " +
+                 "is flat-shaded low poly, and a gaussian plume reads as borrowed from another " +
+                 "game. Empty falls back to billboards.")]
+        public Mesh smokePuffMesh;
+
         [Header("Props (Props_T/City_T, Nature_T/Trees_T)")]
         public GameObject[] streetLamps = Array.Empty<GameObject>();
         public GameObject[] trees = Array.Empty<GameObject>();
@@ -391,6 +619,13 @@ namespace LivingCity.Data
         [Header("People")]
         [Tooltip("People_T/People_AI_T - carries HumanBehavior + PathFinding.")]
         public GameObject[] aiPedestrians = Array.Empty<GameObject>();
+
+        [Tooltip("The pack's People Controller (walk + idle) extended with talk, argue and " +
+                 "bench-sit states retargeted from the Animated People pack - every rig " +
+                 "involved is already Humanoid. Authored by the bootstrap; assigned onto each " +
+                 "spawned pedestrian at runtime so no pack prefab is modified. Empty leaves " +
+                 "the pack controller in place and the interaction animations silently off.")]
+        public RuntimeAnimatorController pedestrianController;
 
         [Header("Ambient (Nature_T/Clouds_T)")]
         public GameObject[] clouds = Array.Empty<GameObject>();
@@ -435,6 +670,23 @@ namespace LivingCity.Data
             return 0f;
         }
 
+        /// <summary>
+        /// Chimney mouths on a prefab, in its local space. Empty for most of the catalogue, and
+        /// that is the normal case rather than a gap in the table - a warehouse has no chimney.
+        /// Linear scan for the same reason ExtraYawFor uses one.
+        /// </summary>
+        public void ChimneyVentsFor(GameObject prefab, List<Vector3> into)
+        {
+            into.Clear();
+
+            if (chimneyVents == null || !prefab)
+                return;
+
+            foreach (var vent in chimneyVents)
+                if (vent != null && vent.prefab == prefab)
+                    into.Add(vent.local);
+        }
+
         public GameObject GetRoadTile(RoadTileKind kind) => kind switch
         {
             RoadTileKind.Straight => straight,
@@ -442,6 +694,9 @@ namespace LivingCity.Data
             RoadTileKind.TJunction => tJunction,
             RoadTileKind.Cross => cross,
             RoadTileKind.End => end,
+            RoadTileKind.MainStraight => mainStraight,
+            RoadTileKind.MainCross => mainCross,
+            RoadTileKind.MainTJunction => mainTJunction,
             _ => null,
         };
 
@@ -454,6 +709,27 @@ namespace LivingCity.Data
             if (!tJunction) gaps += " tJunction";
             if (!cross) gaps += " cross";
             if (!end) gaps += " end";
+
+            missing = gaps.Trim();
+            return missing.Length == 0;
+        }
+
+        /// <summary>
+        /// The dual carriageway's own three tiles, checked separately from ValidateRoadTiles and
+        /// deliberately NOT fatal.
+        ///
+        /// An asset file that predates the boulevard has these empty, and the honest failure
+        /// there is a city with an ordinary street where its avenue should be - not no city at
+        /// all. RoadNetworkBuilder warns once and falls back to the minor-road tiles, which fit
+        /// the same grid and link the same way, so the map stays drivable either way.
+        /// Tools/City/Create or Refresh Config Assets fills them in.
+        /// </summary>
+        public bool ValidateMainRoadTiles(out string missing)
+        {
+            var gaps = string.Empty;
+            if (!mainStraight) gaps += " mainStraight";
+            if (!mainCross) gaps += " mainCross";
+            if (!mainTJunction) gaps += " mainTJunction";
 
             missing = gaps.Trim();
             return missing.Length == 0;

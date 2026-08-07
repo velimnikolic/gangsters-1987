@@ -16,22 +16,49 @@ MonoBehaviour:
   gridHeight: 7
   minArterialSpacing: 2
   maxArterialSpacing: 4
-  seed: 636972590
+  seed: 431784074
   blockFillRatio: 1
   buildingTintChance: 1
+  commercialTintChance: 1
   groundPatchSize: 18
   groundTintChance: 0.85
   groundPaint: 1
   sidewalkWidth: 7
+  mainSidewalkWidth: 10
   alleyWidth: 6
   partyWallGap: 0.05
   maxFillerGap: 0.8
+  featureStripMin: 8
+  featureStripMax: 12
+  pocketParkChance: 0.5
+  serviceRoadWidth: 8
+  industrialWallInset: 1
+  industrialSmoke: 1
   carCount: 30
-  pedestrianCount: 50
+  pedestrianCount: 100
   entitySpawnInterval: 0.1
   wanderRoutesBeforeExit: {x: 1, y: 2}
   carMinTravelDistance: 0
   carMaxSpeed: 45
   carHeadway: 0.9
-  debugSingleZone: 1
+  pedestrianInteractions: 1
+  pedestrianPersonalSpace: 1.2
+  pedestrianMinSeparation: 0.6
+  chatChance: 0.06
+  chatDurationRange: {x: 6, y: 20}
+  argueFraction: 0.25
+  benchChance: 0.35
+  sitDurationRange: {x: 15, y: 60}
+  shopChance: 0.3
+  shopDurationRange: {x: 10, y: 40}
+  interactionCooldownRange: {x: 30, y: 90}
+  idleChance: 0.3
+  idleDurationRange: {x: 3, y: 10}
+  realSecondsPerGameHour: 90
+  startHour: 21.5
+  nightBrightness: 1.1
+  litLampBudget: 90
+  lampRange: 10
+  lampIntensity: 5
+  debugSingleZone: 0
   debugZone: 0

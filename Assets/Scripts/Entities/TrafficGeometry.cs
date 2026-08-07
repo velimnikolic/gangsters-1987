@@ -227,6 +227,23 @@ namespace LivingCity.Entities
         /// <summary>Nothing further away than this is considered, whatever the speed.</summary>
         public const float MaxLookahead = 40f;
 
+        /// <summary>
+        /// Floor on the lookahead, whatever the speed - including zero.
+        ///
+        /// Without it a stationary car saw exactly <see cref="StandstillGap"/> = 1.5m, and 1.5m
+        /// of sight is how junctions gridlocked: a car that stopped to yield went blind to the
+        /// conflict it was yielding to, IDM read the empty 1.5m as a clear road, and the car
+        /// nosed forward until the crosser was back inside 1.5m - by which point the car was
+        /// standing INSIDE the junction. Repeat from three directions and the box is full of
+        /// cars that each arrived politely.
+        ///
+        /// 8m is a crossing bus's half-length (5.65m) plus the standstill gap, with margin: a
+        /// stopped car keeps sight of the largest vehicle that can be lying across its line.
+        /// Queues do not feel it - at an 8m gap IDM's desired gap at rest is 1.5m, so the
+        /// interaction term is (1.5/8)^2 and the brake is negligible.
+        /// </summary>
+        public const float MinLookahead = 8f;
+
         /// <summary>Emergency deceleration, m/s^2 - what the car can do rather than what it likes.</summary>
         public const float HardBrake = 8f;
 
@@ -249,6 +266,72 @@ namespace LivingCity.Entities
         public const float CreepSpeed = 0.8f;
 
         /// <summary>
+        /// The clearance the clamp will never surrender, however stuck the car is. Not zero on
+        /// purpose: the escape below works by letting wedged cars shave the clearance down, and
+        /// this is the line where shaving stops - bodies stay visually apart even mid-escape.
+        /// </summary>
+        public const float EscapeFloor = 0.1f;
+
+        /// <summary>Seconds a car must be genuinely stuck before its clearance starts to decay.</summary>
+        public const float EscapeStartsAfter = 6f;
+
+        /// <summary>Stuck seconds at which the decay reaches <see cref="EscapeFloor"/>.</summary>
+        public const float EscapeFullAfter = 18f;
+
+        /// <summary>
+        /// Stuck seconds after which a car may disregard a stalled crossing blocker entirely -
+        /// the same licence a pair that already overlaps gets, and for the same reason: at this
+        /// point staying apart has failed and untangling is the only property left worth having.
+        /// The registry additionally requires the blocker to be crossing-like AND stationary, so
+        /// this can never fire a car through the queue leader in front of it.
+        /// </summary>
+        public const float HardEscapeAfter = 25f;
+
+        /// <summary>
+        /// Metres of actual travel that count as having escaped, resetting the stuck clock. It is
+        /// deliberately travel and not time: a car that inches 0.3m and wedges again is still in
+        /// the same jam and keeps its escalation level, rather than starting the whole ladder
+        /// over after every twitch.
+        /// </summary>
+        public const float EscapeResetDistance = 1.5f;
+
+        /// <summary>
+        /// How close the clamp lets this car get to a particular blocker, given how long the car
+        /// has been stuck.
+        ///
+        /// The escape ladder exists because of the mutual-block ring: A blocks B blocks C blocks
+        /// A, every member parked at exactly <see cref="MinClearance"/> - which is where the
+        /// clamp puts a car it stops. Each member's allowed advance is then zero, the creep the
+        /// stall breaker grants moves nothing, and the arrangement is permanent BY CONSTRUCTION:
+        /// no pairwise rule can drain a cycle. The way out is collective - every member gains a
+        /// little room, the ring rotates at creep speed, and rotation preserves the pairwise gaps
+        /// so the motion sustains itself.
+        ///
+        /// Only crossing-like blockers decay. A same-direction leader keeps the full clearance
+        /// whatever the stuck time, because the car behind a red-light queue IS stuck by this
+        /// measure and must never conclude it may close on the leader's bumper: rings are made of
+        /// crossing geometry, queues are made of following geometry, and the distinction is
+        /// exactly the facing test the registry already runs.
+        /// </summary>
+        public static float ClearanceFor(bool crossingLike, float stuckSeconds)
+        {
+            if (!crossingLike)
+                return MinClearance;
+
+            var t = Mathf.InverseLerp(EscapeStartsAfter, EscapeFullAfter, stuckSeconds);
+            return Mathf.Lerp(MinClearance, EscapeFloor, t);
+        }
+
+        /// <summary>
+        /// How far the frame may move given a gap and the clearance to preserve. Zero-floored:
+        /// a gap already inside the clearance forbids advance, it does not command reverse.
+        /// </summary>
+        public static float AllowedAdvance(float gap, float clearance)
+        {
+            return Mathf.Max(0f, gap - clearance);
+        }
+
+        /// <summary>
         /// The shortest distance in which this car could still stop. Inside it, a car has to react
         /// to what is in the way whether or not it has right of way - priority means not slowing
         /// down EARLY for someone, not pretending they are absent once they are committed.
@@ -268,8 +351,9 @@ namespace LivingCity.Entities
 
         /// <summary>
         /// How far ahead to look: the standstill gap, plus the distance covered during the headway,
-        /// plus the distance needed to brake to a stop. Anything nearer than this can matter;
-        /// anything beyond it cannot be reached before the next frame's probe.
+        /// plus the distance needed to brake to a stop - floored at <see cref="MinLookahead"/> so
+        /// a stationary car does not go blind. Anything nearer than this can matter; anything
+        /// beyond it cannot be reached before the next frame's probe.
         /// </summary>
         public static float Lookahead(float speedMs, float headway)
         {
@@ -277,7 +361,7 @@ namespace LivingCity.Entities
                          + speedMs * headway
                          + speedMs * speedMs / (2f * ComfortBrake);
 
-            return Mathf.Min(distance, MaxLookahead);
+            return Mathf.Clamp(distance, MinLookahead, MaxLookahead);
         }
 
         /// <summary>

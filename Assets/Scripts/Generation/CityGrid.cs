@@ -58,10 +58,72 @@ namespace LivingCity.Generation
         /// <summary>Sidewalk centre offset from the tile's centre line (sidewalk paths sit at x = +/-4).</summary>
         public const float SidewalkOffset = 4f;
 
+        /// <summary>
+        /// Outer edge of the road tile's OWN pavement, measured off the centre line. The tile's
+        /// cross-section is asphalt out to 3, a kerb face at 3, pavement 3..5, then grass all the
+        /// way to the tile edge at 15 - one mesh with one material, so that grass cannot be hidden,
+        /// only covered. This is where GroundPlacer's apron starts covering it.
+        /// </summary>
+        public const float PavementEdge = 5f;
+
+        /// <summary>
+        /// The same three measurements for the dual carriageway (tile-mainroad-*), read out of
+        /// the prefabs the same way - by resolving each Path component's end nodes, not by
+        /// eyeballing the mesh:
+        ///
+        ///   inner lanes  x = +/-1.75     (MainLaneOffset)
+        ///   outer lanes  x = +/-4.75     (MainOuterLaneOffset)
+        ///   pavements    x = +/-7.25     (MainSidewalkOffset)
+        ///
+        /// Every one of them is OUTSIDE its minor-road counterpart, which is the whole reason
+        /// the boulevard needs its own set of clearances: a prop line sized for a street at 5.5
+        /// stands in the boulevard's outer lane, and a building line at 7 stands on its pavement.
+        ///
+        /// The tile module is unchanged at 30 - the mainroad tiles span [-15, +15] exactly like
+        /// the road tiles, which is what lets them drop into the same grid.
+        /// </summary>
+        public const float MainLaneOffset = 1.75f;
+
+        /// <inheritdoc cref="MainLaneOffset"/>
+        public const float MainOuterLaneOffset = 4.75f;
+
+        /// <inheritdoc cref="MainLaneOffset"/>
+        public const float MainSidewalkOffset = 7.25f;
+
+        /// <summary>
+        /// PavementEdge's counterpart on the dual carriageway - where its own paving stops and
+        /// its grass begins, which is where GroundPlacer's apron has to start.
+        ///
+        /// Inferred rather than measured directly: the pavement is a mesh, not a path, so there
+        /// is no node to read. The road tile gives the relation - a sidewalk path at 4 sitting
+        /// in the middle of a 3..5 pavement, i.e. one metre either side of the walking line.
+        /// Applying that to the avenue's 7.25 puts its pavement at 6.25..8.25, which the lane
+        /// geometry independently agrees with: the outer lane centre is 4.75, so about 3m of
+        /// asphalt reaches the kerb at 6.25.
+        ///
+        /// Rounded OUT to 8.5 rather than to the estimate. Too far out leaves at worst a
+        /// hand's width of grass the apron does not cover; too far in lays concrete over the
+        /// pavement mesh, and two coplanar surfaces z-fight in every frame.
+        /// </summary>
+        public const float MainPavementEdge = 8.5f;
+
         const int NoBlock = -1;
 
         readonly CellType[,] cells;
         readonly int[,] blockIds;
+
+        /// <summary>
+        /// Which road cells belong to the city's one dual carriageway.
+        ///
+        /// A parallel mask rather than a third CellType on purpose. Every consumer of the grid
+        /// asks "is this a road?" - RoadsAreConnected, AssignBlockIds, NeighbourBlocks,
+        /// BlockBuilder.RoadSides, MapEdgeGates - and the boulevard IS a road to all of them.
+        /// A new CellType would have meant auditing each one to add it back, and any that was
+        /// missed would fail silently: a boulevard cell read as unbuildable land, blocks flood
+        /// -filled through it, buildings dropped on the avenue. The mask can only be wrong in
+        /// the one place that reads it.
+        /// </summary>
+        readonly bool[,] mainRoad;
 
         /// <summary>
         /// What each block is for, indexed by block id. Lives here rather than being threaded
@@ -72,9 +134,34 @@ namespace LivingCity.Generation
         /// </summary>
         BlockZone[] blockZones = System.Array.Empty<BlockZone>();
 
+        /// <summary>
+        /// A landmark this block MUST build, as an index into its palette's landmarks[], or -1
+        /// for the usual behaviour of rolling landmarkChance and drawing from the bag.
+        ///
+        /// An index rather than a prefab, and that is the whole reason this can live here: the
+        /// grid stays free of UnityEngine.Object exactly as blockZones does, so the zoning half
+        /// of the generator is still exercisable in a bare .NET host with no Unity around it.
+        /// ZonePlanner is the only writer - see the bank's route roll for why one block sometimes
+        /// has to be told rather than asked.
+        /// </summary>
+        int[] forcedLandmarks = System.Array.Empty<int>();
+
         public int Width { get; }
         public int Height { get; }
         public int BlockCount { get; private set; }
+
+        /// <summary>
+        /// Which way the boulevard runs. Recorded when it is carved rather than re-derived from
+        /// the mask, because the tile lookup needs the axis for the END cells too - and there
+        /// the mask alone cannot tell, since a cell with only a North neighbour is the same
+        /// shape whether the avenue runs N-S or the map simply sliced an E-W one.
+        ///
+        /// Meaningless while HasMainRoad is false.
+        /// </summary>
+        public bool MainRoadNorthSouth { get; private set; }
+
+        /// <summary>False on a map too small to be subdivided at all - see CityGenerator.</summary>
+        public bool HasMainRoad { get; private set; }
 
         public CityGrid(int width, int height)
         {
@@ -82,6 +169,7 @@ namespace LivingCity.Generation
             Height = height;
             cells = new CellType[width, height];
             blockIds = new int[width, height];
+            mainRoad = new bool[width, height];
 
             for (var x = 0; x < width; x++)
             for (var z = 0; z < height; z++)
@@ -97,6 +185,26 @@ namespace LivingCity.Generation
         public bool InBounds(int x, int z) => x >= 0 && z >= 0 && x < Width && z < Height;
 
         public bool IsRoad(int x, int z) => InBounds(x, z) && cells[x, z] == CellType.Road;
+
+        /// <summary>
+        /// True for a cell on the dual carriageway. Tests the cell type as well as the mask, so
+        /// this can never answer yes for something that is not a road - the two are set together
+        /// and nothing un-paves a cell afterwards, but a placer acting on a stale yes would put
+        /// buildings in a traffic lane, and that is not a failure worth leaving open.
+        /// </summary>
+        public bool IsMainRoad(int x, int z) =>
+            InBounds(x, z) && cells[x, z] == CellType.Road && mainRoad[x, z];
+
+        /// <summary>Marks one cell of the boulevard. CityGenerator carves the whole line in one pass.</summary>
+        public void SetMainRoad(int x, int z, bool northSouth)
+        {
+            if (!InBounds(x, z))
+                return;
+
+            mainRoad[x, z] = true;
+            MainRoadNorthSouth = northSouth;
+            HasMainRoad = true;
+        }
 
         public int BlockIdAt(int x, int z) => InBounds(x, z) ? blockIds[x, z] : NoBlock;
 
@@ -134,6 +242,19 @@ namespace LivingCity.Generation
         {
             if (blockId >= 0 && blockId < blockZones.Length)
                 blockZones[blockId] = zone;
+        }
+
+        /// <summary>
+        /// The landmark this block is required to build, as an index into its palette's
+        /// landmarks[], or -1 for "roll for it like every other block".
+        /// </summary>
+        public int ForcedLandmarkOf(int blockId) =>
+            blockId >= 0 && blockId < forcedLandmarks.Length ? forcedLandmarks[blockId] : -1;
+
+        public void SetForcedLandmark(int blockId, int landmarkIndex)
+        {
+            if (blockId >= 0 && blockId < forcedLandmarks.Length)
+                forcedLandmarks[blockId] = landmarkIndex;
         }
 
         /// <summary>
@@ -223,6 +344,12 @@ namespace LivingCity.Generation
             // Sized here rather than in the constructor because BlockCount is only known once
             // the flood fill has run. Every entry starts at ResidentialHigh (enum default 0).
             blockZones = new BlockZone[BlockCount];
+
+            // -1 is "no forced landmark", so this one cannot lean on the array's zero fill the
+            // way blockZones does: 0 is a valid landmark index.
+            forcedLandmarks = new int[BlockCount];
+            for (var i = 0; i < forcedLandmarks.Length; i++)
+                forcedLandmarks[i] = -1;
         }
 
         /// <summary>

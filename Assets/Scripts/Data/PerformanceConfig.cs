@@ -26,7 +26,6 @@ namespace LivingCity.Data
         [Min(0)] public int maxSwayingTrees = 40;
 
         [Header("Rendering")]
-        [Range(0.5f, 1f)] public float renderScale = 0.8f;
         [Range(1, 4)] public int shadowCascades = 1;
         public bool softShadows;
 

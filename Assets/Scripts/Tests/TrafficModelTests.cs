@@ -37,8 +37,270 @@ namespace LivingCity.Tests
             LongCrossingVehicleStaysVisible(failures);
             FollowerBehindStaysInvisible(failures);
             OncomingCarIsNotAnObstacle(failures);
+            RingMemberEscapesTheClampEventually(failures);
+            QueueNeverLosesItsClearance(failures);
+            EscapeFloorIsBoundedAndMonotone(failures);
+            StoppedCarStillSeesTheJunction(failures);
+            ExitProbeGeometry(failures);
 
             return failures;
+        }
+
+        /// <summary>Below this the escape bookkeeping counts the car as motionless, m/s. Mirrors
+        /// TrafficRegistry.StalledSpeed, which is rightly private - the tests model the loop, not
+        /// reach into it.</summary>
+        const float StalledSpeed = 0.2f;
+
+        /// <summary>
+        /// One frame of the REAL control loop: the speed model, then the movement clamp, then the
+        /// stuck bookkeeping - the combination CarBehavior.Update and TrafficRegistry run between
+        /// them. NoPermanentTrap above simulates the model plus creep and passes; the freeze it
+        /// missed lived one line further down, where the clamp zeroes whatever the creep granted.
+        /// This helper is that missing line, kept in one place so every co-simulation below
+        /// exercises the same loop.
+        /// </summary>
+        static float StepClampedCar(ref float gap, ref float speed, ref float stuckSeconds,
+                                    ref float escapeProgress, bool crossingLike)
+        {
+            speed = Entities.CarFollowing.NextSpeed(speed, 13.9f, gap, 0f,
+                Entities.CarFollowing.DefaultHeadway, true, Dt);
+
+            var clearance = Entities.CarFollowing.ClearanceFor(crossingLike, stuckSeconds);
+            var allowance = Entities.CarFollowing.AllowedAdvance(gap, clearance);
+            var delta = Mathf.Min(speed * Dt, allowance);
+
+            // The write-back the real clamp does: next frame's model starts from what happened.
+            speed = delta / Dt;
+            gap -= delta;
+
+            // TrafficRegistry.UpdateStall's escalation half, faithfully: travel resets the stuck
+            // clock, being wedged (motionless with the clamp binding) advances it.
+            if (speed >= StalledSpeed)
+            {
+                escapeProgress += speed * Dt;
+                if (escapeProgress >= Entities.CarFollowing.EscapeResetDistance)
+                {
+                    stuckSeconds = 0f;
+                    escapeProgress = 0f;
+                }
+            }
+            else
+            {
+                escapeProgress = 0f;
+                if (allowance <= Entities.CarFollowing.MinClearance)
+                    stuckSeconds += Dt;
+            }
+
+            return delta;
+        }
+
+        /// <summary>
+        /// THE gridlock. A ring member - stopped at exactly MinClearance behind a crossing car,
+        /// which is where the clamp parks it - must eventually move, and must never be granted
+        /// overlap to do it.
+        ///
+        /// Part one pins the stuck clock at zero and demands the car NOT move: that is the trap
+        /// as built, and it doubles as proof that a car which is not escalating (all of normal
+        /// traffic) keeps the full clearance. Part two lets the clock run and demands real
+        /// displacement - the escalation must beat the clamp that the creep alone could not.
+        /// </summary>
+        static void RingMemberEscapesTheClampEventually(List<string> failures)
+        {
+            // Part one: no escalation, no movement. 5 simulated seconds is several release cycles.
+            var gap = Entities.CarFollowing.MinClearance;
+            var speed = 0f;
+            var moved = 0f;
+            var progress = 0f;
+
+            for (var frame = 0; frame < 60 * 5; frame++)
+            {
+                var pinnedStuck = 0f;
+                moved += StepClampedCar(ref gap, ref speed, ref pinnedStuck, ref progress, true);
+            }
+
+            if (moved > 1e-4f)
+            {
+                failures.Add($"un-escalated car at MinClearance moved {moved:0.###}m - the clamp is "
+                           + "no longer holding ordinary traffic at full clearance");
+                return;
+            }
+
+            // Part two: the clock runs, the car must escape - and the gap must never go below the
+            // floor on the way.
+            gap = Entities.CarFollowing.MinClearance;
+            speed = 0f;
+            moved = 0f;
+            progress = 0f;
+            var stuck = 0f;
+
+            for (var frame = 0; frame < 60 * 30; frame++)
+            {
+                moved += StepClampedCar(ref gap, ref speed, ref stuck, ref progress, true);
+
+                if (gap < Entities.CarFollowing.EscapeFloor - 1e-3f)
+                {
+                    failures.Add($"escaping car closed the gap to {gap:0.###}m, below the "
+                               + $"EscapeFloor {Entities.CarFollowing.EscapeFloor:0.###} - the escape "
+                               + "is producing overlap through the clamp");
+                    return;
+                }
+            }
+
+            if (moved < 0.3f)
+            {
+                failures.Add($"ring member moved only {moved:0.###}m in 30 simulated seconds - "
+                           + "the escalation cannot beat the clamp and rings stay permanent");
+            }
+        }
+
+        /// <summary>
+        /// The escape must not leak into car following. A queue leader is stuck by the same
+        /// bookkeeping - blocked, motionless - and if its follower's clearance decayed the same
+        /// way, every long red light would end with the queue fused bumper to bumper, and the
+        /// hard-escape rung would eventually wave cars THROUGH the leader.
+        /// </summary>
+        static void QueueNeverLosesItsClearance(List<string> failures)
+        {
+            foreach (var stuckSeconds in new[] { 0f, 10f, 60f })
+            {
+                var clearance = Entities.CarFollowing.ClearanceFor(false, stuckSeconds);
+                if (Mathf.Abs(clearance - Entities.CarFollowing.MinClearance) > 1e-4f)
+                {
+                    failures.Add($"same-direction clearance at {stuckSeconds}s stuck is {clearance:0.###}, "
+                               + $"expected MinClearance {Entities.CarFollowing.MinClearance:0.###} always");
+                    return;
+                }
+            }
+
+            // Co-simulate a follower wedged close behind a stopped leader, clock running.
+            var gap = Entities.CarFollowing.MinClearance + 0.1f;
+            var speed = 0f;
+            var stuck = 0f;
+            var progress = 0f;
+
+            for (var frame = 0; frame < 60 * 60; frame++)
+            {
+                StepClampedCar(ref gap, ref speed, ref stuck, ref progress, false);
+
+                if (gap < Entities.CarFollowing.MinClearance - 1e-3f)
+                {
+                    failures.Add($"follower closed to {gap:0.###}m on a same-direction leader while stuck - "
+                               + "the escape ladder is eroding queue clearance");
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The shape of the decay itself: starts at the full clearance, never rises as stuck time
+        /// grows, and bottoms out at a floor that is strictly positive - the escape shaves the
+        /// margin, it never abolishes it.
+        /// </summary>
+        static void EscapeFloorIsBoundedAndMonotone(List<string> failures)
+        {
+            if (Entities.CarFollowing.EscapeFloor <= 0f)
+                failures.Add("EscapeFloor is not positive - the escape can produce contact");
+
+            var atZero = Entities.CarFollowing.ClearanceFor(true, 0f);
+            if (Mathf.Abs(atZero - Entities.CarFollowing.MinClearance) > 1e-4f)
+                failures.Add($"crossing clearance at 0s stuck is {atZero:0.###}, expected the full "
+                           + $"MinClearance {Entities.CarFollowing.MinClearance:0.###}");
+
+            var previous = float.PositiveInfinity;
+            for (var t = 0f; t <= 60f; t += 0.5f)
+            {
+                var clearance = Entities.CarFollowing.ClearanceFor(true, t);
+
+                if (clearance > previous + 1e-5f)
+                {
+                    failures.Add($"crossing clearance rose from {previous:0.###} to {clearance:0.###} at {t}s stuck");
+                    return;
+                }
+                if (clearance < Entities.CarFollowing.EscapeFloor - 1e-5f)
+                {
+                    failures.Add($"crossing clearance {clearance:0.###} at {t}s stuck fell below the floor");
+                    return;
+                }
+                previous = clearance;
+            }
+        }
+
+        /// <summary>
+        /// A stopped car must keep sight of the largest vehicle that can be lying across its
+        /// line. Lookahead used to collapse to StandstillGap = 1.5m at rest, and 1.5m of sight
+        /// is how junctions filled up: a car that stopped to yield went blind to the crosser,
+        /// read the empty 1.5m as clear road, and nosed into the box before stopping again -
+        /// INSIDE the junction, as one arc of the next ring.
+        /// </summary>
+        static void StoppedCarStillSeesTheJunction(List<string> failures)
+        {
+            const float busHalfLength = 5.65f;
+
+            var atRest = Entities.CarFollowing.Lookahead(0f, Entities.CarFollowing.DefaultHeadway);
+            if (atRest < busHalfLength + Entities.CarFollowing.StandstillGap)
+                failures.Add($"Lookahead(0) = {atRest:0.###}m cannot cover a crossing bus "
+                           + $"({busHalfLength} + {Entities.CarFollowing.StandstillGap}m) - "
+                           + "a stopped yielder goes blind and noses into the junction");
+
+            if (Entities.CarFollowing.Lookahead(10f, Entities.CarFollowing.DefaultHeadway) < atRest
+                || Entities.CarFollowing.Lookahead(30f, Entities.CarFollowing.DefaultHeadway)
+                   < Entities.CarFollowing.Lookahead(10f, Entities.CarFollowing.DefaultHeadway))
+                failures.Add("Lookahead is not monotone in speed");
+
+            if (Entities.CarFollowing.Lookahead(100f, Entities.CarFollowing.DefaultHeadway)
+                > Entities.CarFollowing.MaxLookahead + 1e-4f)
+                failures.Add("Lookahead exceeds MaxLookahead");
+        }
+
+        /// <summary>
+        /// The geometry of the exit-clearance probe behind "don't block the box": a virtual car
+        /// placed at the junction's far side. A stopped car straddling that spot blocks; a car
+        /// well beyond the required room does not; a car on the CROSS street, laterally clear of
+        /// the exit corridor, does not - that last one is the throughput case, since flagging it
+        /// would hold cars back for traffic that is not in their way at all.
+        /// </summary>
+        static void ExitProbeGeometry(List<string> failures)
+        {
+            var exit = new Entities.TrafficBox(Vector3.zero, Vector3.forward, 2.25f, 1.05f);
+            var requiredRoom = 2f * 2.25f + Entities.CarFollowing.StandstillGap;
+
+            var straddling = new Entities.TrafficBox(new Vector3(0f, 0f, 2f), Vector3.forward, 2.25f, 1.05f);
+            if (!ExitBlockedGeometry(exit, straddling, requiredRoom))
+                failures.Add("a stopped car straddling the junction exit does not read as blocking it");
+
+            var wellBeyond = new Entities.TrafficBox(new Vector3(0f, 0f, 12f), Vector3.forward, 2.25f, 1.05f);
+            if (ExitBlockedGeometry(exit, wellBeyond, requiredRoom))
+                failures.Add($"a stopped car {12f - 4.5f:0.#}m past the exit reads as blocking it "
+                           + $"(required room is only {requiredRoom:0.#}m)");
+
+            var crossStreet = new Entities.TrafficBox(new Vector3(6f, 0f, 1f), Vector3.right, 2.25f, 1.05f);
+            if (ExitBlockedGeometry(exit, crossStreet, requiredRoom))
+                failures.Add("a car on the cross street, laterally clear of the exit corridor, "
+                           + "reads as blocking the exit - junctions would timidly hold for traffic "
+                           + "that is not in the way");
+
+            var oncoming = new Entities.TrafficBox(new Vector3(2.5f, 0f, 8f), Vector3.back, 2.25f, 1.05f);
+            if (ExitBlockedGeometry(exit, oncoming, requiredRoom))
+                failures.Add("an oncoming car beyond the exit reads as a blocker - the opposite "
+                           + "carriageway is not our problem there any more than anywhere else");
+        }
+
+        /// <summary>The pure-geometry half of TrafficRegistry.IsExitBlocked, mirrored: overlap
+        /// blocks outright; otherwise a measured, non-oncoming body inside the required room
+        /// blocks. The speed filter is registry state and is exercised in play mode.</summary>
+        static bool ExitBlockedGeometry(in Entities.TrafficBox exit, in Entities.TrafficBox other,
+                                        float requiredRoom)
+        {
+            if (Entities.TrafficGeometry.Overlaps(exit, other))
+                return true;
+
+            if (!Entities.TrafficGeometry.TryMeasure(exit, other, requiredRoom, out var gap, out _, out var facing))
+                return false;
+
+            if (facing < Entities.TrafficGeometry.OncomingDot)
+                return false;
+
+            return gap < requiredRoom;
         }
 
         /// <summary>

@@ -59,6 +59,15 @@ namespace LivingCity.Generation
             public bool South, East, North, West;
 
             /// <summary>
+            /// Whether each side faces the map boundary - not a street, but not an alley
+            /// either. The corner logic needs the three-way split the street flags alone
+            /// cannot give: a street/alley junction earns a corner piece and an alley/alley
+            /// one resolves by recession, but a side facing the void deserves neither -
+            /// there is nobody out there to show the second elevation to.
+            /// </summary>
+            public bool SouthOpen, EastOpen, NorthOpen, WestOpen;
+
+            /// <summary>
             /// True when this lot IS the whole block. Only such a lot seals its courtyard on
             /// all four sides, so only it earns a passage through the street wall.
             /// </summary>
@@ -111,6 +120,10 @@ namespace LivingCity.Generation
                     East = roadSides.HasFlag(Sides.East),
                     North = roadSides.HasFlag(Sides.North),
                     West = roadSides.HasFlag(Sides.West),
+                    SouthOpen = !roadSides.HasFlag(Sides.South),
+                    EastOpen = !roadSides.HasFlag(Sides.East),
+                    NorthOpen = !roadSides.HasFlag(Sides.North),
+                    WestOpen = !roadSides.HasFlag(Sides.West),
                     WholeBlock = true,
                 });
                 return lots;
@@ -135,6 +148,12 @@ namespace LivingCity.Generation
                         North = row == rows - 1 && roadSides.HasFlag(Sides.North),
                         West = column == 0 && roadSides.HasFlag(Sides.West),
                         East = column == columns - 1 && roadSides.HasFlag(Sides.East),
+                        // An outer side without a street is the map boundary; an interior side
+                        // is an alley, and stays false on both counts.
+                        SouthOpen = row == 0 && !roadSides.HasFlag(Sides.South),
+                        NorthOpen = row == rows - 1 && !roadSides.HasFlag(Sides.North),
+                        WestOpen = column == 0 && !roadSides.HasFlag(Sides.West),
+                        EastOpen = column == columns - 1 && !roadSides.HasFlag(Sides.East),
                         WholeBlock = columns == 1 && rows == 1,
                     });
 

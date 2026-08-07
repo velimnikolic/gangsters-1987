@@ -60,9 +60,28 @@ namespace LivingCity.Generation
 
                     TotalPieces += group.prefabs.Length;
                     HasCornerPreferred |= group.cornerPreferred;
+
+                    Measure(group.prefabs);
+                    Measure(group.rearPrefabs);
+                    Measure(group.cornerPrefabs);
                 }
 
             weights = new float[groups.Count];
+        }
+
+        void Measure(GameObject[] pieces)
+        {
+            if (pieces == null)
+                return;
+
+            foreach (var piece in pieces)
+            {
+                if (!piece)
+                    continue;
+
+                var size = PrefabBounds.Get(piece).size;
+                DeepestPiece = Mathf.Max(DeepestPiece, Mathf.Max(size.x, size.z));
+            }
         }
 
         public bool IsEmpty => groups.Count == 0;
@@ -71,6 +90,18 @@ namespace LivingCity.Generation
         public int TotalPieces { get; }
 
         public bool HasCornerPreferred { get; }
+
+        /// <summary>
+        /// Largest horizontal extent of any piece in the kit, either axis. This is how far a
+        /// run has to stand back from a lot corner it shares with another run that got no
+        /// corner piece - the neighbour's end piece can reach at most this deep. Conservative
+        /// on purpose: measuring the actual end piece would need the neighbour's draw, which
+        /// has not happened yet when the insets are decided.
+        /// </summary>
+        public float DeepestPiece { get; private set; }
+
+        /// <summary>How many groups the kit holds - for callers that sweep every piece.</summary>
+        public int GroupCount => groups.Count;
 
         public PrefabDatabase.WeightedGroup GroupAt(int index) => groups[index];
 

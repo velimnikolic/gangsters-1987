@@ -31,8 +31,14 @@ namespace LivingCity.Generation
     /// measurement to see why. A 106m block subdivides into nine lots of about 30m, and the
     /// terrace kit is 13.4-15.7m deep - so a lot of that size is ENTIRELY building, front row
     /// backing onto rear row with nothing between. The ground a player actually sees in such a
-    /// block is the alleys and the verge out to the kerb, which is exactly the area a per-lot
+    /// block is the alleys and the band out to the kerb, which is exactly the area a per-lot
     /// treatment would have skipped. Only the big single-lot blocks have a yard at all.
+    ///
+    /// 0. Before either of those, an apron: the block rect widened to the road tile's own kerb,
+    ///    under everything else. See LayApron - it is what keeps any of the tile's grass from
+    ///    showing beside a block, which is otherwise 2m on an ordinary block and 10m on a park.
+    ///    Concrete everywhere except the park, which surfaces its own band in grass so the lawn
+    ///    reaches the kerb instead of stopping 10m short of it.
     ///
     /// The shades come from PrefabDatabase.groundTints and may range far wider than the facade
     /// tints, because a floor is one flat patch of the atlas - there is no roof or window for
@@ -69,6 +75,14 @@ namespace LivingCity.Generation
         /// park props at 0 instead put every one of them 2cm under its own grass.
         /// </summary>
         public const float BlockLift = 0.02f;
+
+        /// <summary>
+        /// The apron, under everything the block itself lays and over the road tile's grass at 0.
+        ///
+        /// Only 1cm below BlockLift because the road tile's pavement is at 0 and there is nowhere
+        /// else to go. If this ever z-fights, raise BlockLift - do not lower this.
+        /// </summary>
+        const float ApronLift = 0.01f;
 
         /// <summary>The patchwork, above the block slab it sits on.</summary>
         const float PatchLift = 0.05f;
@@ -160,6 +174,9 @@ namespace LivingCity.Generation
                 var zone = grid.ZoneOf(blockId);
                 var palette = prefabs.PaletteFor(zone);
 
+                LayApron(grid, cells, palette, prefabs, config, blockId, zone,
+                         parent, spawn, rng, placed);
+
                 if (palette != null && palette.groundIsTilePerCell)
                 {
                     var perCell = palette.ground ? palette.ground : prefabs.groundTile;
@@ -167,7 +184,11 @@ namespace LivingCity.Generation
                     continue;
                 }
 
-                var (min, max) = BlockBuilder.BlockRect(grid, cells, config.sidewalkWidth);
+                // Same clearance BlockBuilder gives this block, or the slab and the lot it is
+                // supposed to sit under drift apart - see BlockRect and ClearanceFor.
+                var (min, max) = BlockBuilder.BlockRect(grid, cells,
+                                                        BlockBuilder.ClearanceFor(palette, config),
+                                                        BlockBuilder.MainClearanceFor(palette, config));
                 if (max.x <= min.x || max.y <= min.y)
                     continue;
 
@@ -178,6 +199,19 @@ namespace LivingCity.Generation
                                    prefabs, config, parent, spawn, rng);
                 if (slab)
                     placed.Add(slab);
+
+                // A works has no lots either, but for the opposite reason to a car park: it is
+                // NOT one continuous surface, it is a yard with carriageways cut through it. So
+                // it keeps the mosaic - a works yard is genuinely mixed dirt, concrete and
+                // asphalt - and then gets tarmac laid over the roads the halls were arranged
+                // around. Replanned here from (seed, blockId) rather than passed across from
+                // BlockBuilder, which is exactly what IndustrialLayout's determinism is for.
+                if (palette != null && palette.industrialYard)
+                {
+                    LayServiceRoads(grid, cells, min, max, palette, prefabs, config,
+                                    blockId, zone, parent, spawn, rng, placed);
+                    continue;
+                }
 
                 // A palette that builds no perimeter has no lots and no alleys - a car park is
                 // one continuous surface, and seams across it would mark boundaries that are
@@ -190,6 +224,117 @@ namespace LivingCity.Generation
             }
 
             return placed;
+        }
+
+        /// <summary>
+        /// Pavement from the road tile's own kerb in to wherever this block's surface starts.
+        ///
+        /// The road tile is paved only out to CityGrid.PavementEdge (5); from there to its edge
+        /// at 15 it is grass. A block's surface starts at BlockBuilder.ClearanceFor, so the band
+        /// between the two showed that grass: 2m beside an ordinary block, and the full 10m
+        /// beside a park, whose tiles cover its own cells and nothing else. That band used to be
+        /// the verge - dressed with trees and parked cars, and reading as a lawn beside the park
+        /// with cars standing on it. It is now paved end to end.
+        ///
+        /// Laid as one slab under everything the block itself puts down, rather than by widening
+        /// BlockRect: BlockBuilder and GroundPlacer must hand BlockRect the SAME clearance or the
+        /// mosaic seams drift off the lot plan, and the same rect feeds FeatureStrip.Shrink and
+        /// BlockLots.Plan. An extra slab underneath moves none of that.
+        ///
+        /// The surface is prefabs.groundTile unless the palette names its own apronGround, and
+        /// never shaded either way: the band reads as one continuous surface whatever the zone
+        /// lays on top of it, and - see LayRect - it takes no draw from the ground stream.
+        ///
+        /// The park is the one palette that overrides it, with grass. Its 10m band is by far the
+        /// widest, and paving it made the park read as set back behind a concrete ring while
+        /// every building on the street stood 8m further forward. Green, the lawn runs to the
+        /// kerb and the park lines up with its street. That does leave StreetPropPlacer's lamps
+        /// and trees standing on grass rather than pavement beside a park, which is what a verge
+        /// beside a park looks like anyway.
+        /// </summary>
+        static void LayApron(
+            CityGrid grid,
+            List<Vector2Int> cells,
+            PrefabDatabase.ZonePalette palette,
+            PrefabDatabase prefabs,
+            CityConfig config,
+            int blockId,
+            BlockZone zone,
+            Transform parent,
+            SpawnPrefab spawn,
+            System.Random rng,
+            List<GameObject> placed)
+        {
+            // A car park already runs its own asphalt out to the pavement edge, so an apron
+            // under it would be strictly smaller than the slab above and never show.
+            if (BlockBuilder.ClearanceFor(palette, config) <= CityGrid.PavementEdge)
+                return;
+
+            var (min, max) = BlockBuilder.BlockRect(grid, cells,
+                                                    CityGrid.PavementEdge,
+                                                    CityGrid.MainPavementEdge);
+            if (max.x <= min.x || max.y <= min.y)
+                return;
+
+            var surface = palette != null && palette.apronGround
+                ? palette.apronGround
+                : prefabs.groundTile;
+
+            var apron = LayRect(surface, min, max, ApronLift,
+                                $"apron_{zone}_{blockId}",
+                                prefabs, config, parent, spawn, rng, shade: false);
+            if (apron)
+                placed.Add(apron);
+        }
+
+        /// <summary>
+        /// Tarmac down each carriageway of a works compound.
+        ///
+        /// Laid at PatchLift rather than BlockLift so it sits ON the yard slab instead of
+        /// z-fighting it, which is the same trick the repair patches use one function down.
+        /// Unshaded: a road surface is one colour, and rolling a shade per carriageway would make
+        /// the two halves of a compound look resurfaced at different times.
+        ///
+        /// The rectangles come from IndustrialLayout, called here with the same arguments
+        /// BlockBuilder passed it. That is the whole reason that class takes (seed, blockId) and
+        /// nothing from a caller's rng - lay this tarmac from a different plan and every works in
+        /// the city has its halls standing in the road.
+        /// </summary>
+        static void LayServiceRoads(
+            CityGrid grid,
+            List<Vector2Int> cells,
+            Vector2 min,
+            Vector2 max,
+            PrefabDatabase.ZonePalette palette,
+            PrefabDatabase prefabs,
+            CityConfig config,
+            int blockId,
+            BlockZone zone,
+            Transform parent,
+            SpawnPrefab spawn,
+            System.Random rng,
+            List<GameObject> placed)
+        {
+            var surface = palette.serviceRoadGround;
+            if (!surface)
+                return;
+
+            var roadSides = BlockBuilder.RoadSides(grid, cells);
+
+            var layout = IndustrialLayout.ForBlock(
+                min, max, roadSides,
+                config.serviceRoadWidth, config.industrialWallInset,
+                config.seed, blockId);
+
+            for (var i = 0; i < layout.Roads.Count; i++)
+            {
+                var road = layout.Roads[i];
+                var tarmac = LayRect(surface, road.Min, road.Max, PatchLift,
+                                     $"works_road_{zone}_{blockId}_{i}",
+                                     prefabs, config, parent, spawn, rng, shade: false);
+                if (tarmac)
+                    placed.Add(tarmac);
+            }
         }
 
         /// <summary>
@@ -214,6 +359,16 @@ namespace LivingCity.Generation
             List<GameObject> placed)
         {
             var roadSides = BlockBuilder.RoadSides(grid, cells);
+
+            // The strip band keeps the plain block slab - a car lot or a paved plaza IS one
+            // continuous surface - so the mosaic and its paint stop at the pulled-in building
+            // line. Same expression for `enabled` as BlockBuilder passes, or the two shrink
+            // different rectangles and the seams drift off the alleys.
+            var strip = FeatureStrip.For(min, max, roadSides,
+                                         palette.featureStrip && palette.BuildsPerimeter,
+                                         config, blockId);
+            FeatureStrip.Shrink(strip, ref min, ref max);
+
             var lots = BlockLots.Plan(min, max, roadSides, palette.maxLotsPerAxis,
                                       config.alleyWidth, config.seed, blockId);
             if (lots.Count == 0)
@@ -537,7 +692,13 @@ namespace LivingCity.Generation
             return PickGround(palette, prefabs, rng);
         }
 
-        /// <summary>Stretches one ground tile over a world-space rectangle and shades it.</summary>
+        /// <summary>
+        /// Stretches one ground tile over a world-space rectangle and shades it.
+        ///
+        /// shade:false is not merely "leave it plain" - Shade takes two draws off the stream
+        /// whatever it decides, so a slab that opts out must skip the call entirely or every
+        /// block after it re-rolls its surface. The apron is the one caller that does.
+        /// </summary>
         static GameObject LayRect(
             GameObject tile,
             Vector2 min,
@@ -548,7 +709,8 @@ namespace LivingCity.Generation
             CityConfig config,
             Transform parent,
             SpawnPrefab spawn,
-            System.Random rng)
+            System.Random rng,
+            bool shade = true)
         {
             if (!tile)
                 return null;
@@ -572,7 +734,9 @@ namespace LivingCity.Generation
 
             slab.name = name;
 
-            Shade(slab, prefabs, config, rng);
+            if (shade)
+                Shade(slab, prefabs, config, rng);
+
             return slab;
         }
 
@@ -603,10 +767,11 @@ namespace LivingCity.Generation
         /// <summary>
         /// One unscaled tile per cell. For tile-park, whose Tile component carries sidewalk paths
         /// authored to the 30m cell - see the note on this class. The tiles cover only the
-        /// block's own cells, not the expanded rect the buildings use, so an 8m strip of the road
-        /// tile's grass verge shows between the park and the pavement. For a park that reads
-        /// correctly, which is why no attempt is made to fill it - and why no shade, patch or
-        /// stroke touches this branch either.
+        /// block's own cells, not the expanded rect the buildings use, which leaves the widest
+        /// gap of any zone between the park and the pavement: the full 10m from the pavement edge
+        /// at 5 out to the cell boundary at 15. LayApron fills it with the park palette's own
+        /// grass, so the lawn carries on to the kerb and the gap stops reading as a setback. No
+        /// shade, patch or stroke touches this branch.
         ///
         /// Each tile is turned by a random QUARTER turn. Unscaled is a hard requirement, but
         /// unrotated never was: measured out of the prefab with the parent rotation chain

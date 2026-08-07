@@ -2,8 +2,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEngine;
 using LivingCity.Data;
+using LivingCity.Entities;
 using LivingCity.Generation;
 
 namespace LivingCity.EditorTools
@@ -30,6 +32,8 @@ namespace LivingCity.EditorTools
     {
         const string ConfigDir = "Assets/Configs";
         const string TintDir = "Assets/Materials/BuildingTints";
+        const string SmokeDir = "Assets/Materials/Smoke";
+        const string FacadeShaderPath = "Assets/Shaders/FacadeTint.shader";
         const string Root = "Assets/polyperfect/Low Poly Epic City/T/- Prefabs_T/";
         const string PackMaterials = "Assets/polyperfect/Low Poly Epic City/- Materials/";
 
@@ -41,6 +45,15 @@ namespace LivingCity.EditorTools
         const string CityProps = Root + "Props_T/City_T/";
         const string Fences = Root + "Props_T/Fence_T/";
         const string Construction = Root + "Construction_T/";
+        const string Military = Root + "Military_T/";
+        const string Farm = Root + "Farm_T/";
+
+        /// <summary>
+        /// The no-border ground tiles. Same surfaces as Tiles_T, minus the kerb drawn round the
+        /// edge - which is what you want for anything laid in adjoining rectangles, because two
+        /// bordered tiles meeting show a seam down the join.
+        /// </summary>
+        const string NoBorder = Root + "Tiles-NB_T/";
 
         /// <summary>
         /// Only one thing is taken from here: ticket-ride-booth. It is a plain 2.24 x 2.80 x 1.71
@@ -99,9 +112,27 @@ namespace LivingCity.EditorTools
         /// </summary>
         static GameObject[] AlleyKit() =>
             Merge(LoadAll(CityProps, "dumpster", "bin-wheelie", "bin-wheelie",
-                                     "bench-old", "lamp-city"),
+                                     "bench-old"),
                   LoadAll(Props, "trash-can", "trash-can"),
                   LoadAll(Trees, "tree-lime", "shrub-round"));
+
+        /// <summary>
+        /// What furnishes a pocket-park feature strip: seating first - benches twice, so the
+        /// bag deals them most often - then shade. No bins and no dumpster; this is
+        /// the block's front, not its back.
+        /// </summary>
+        static GameObject[] PocketParkKit() =>
+            Merge(LoadAll(CityProps, "bench-old", "bench-old"),
+                  LoadAll(Trees, "tree-lime", "tree-oak", "shrub-round"));
+
+        /// <summary>
+        /// The trafika. hot-dog-stand and marketplace-stand-simple are the pack's two pieces
+        /// that read as a street kiosk in 1920 - everything else in that register belongs to
+        /// the amusement park set and says so.
+        /// </summary>
+        static GameObject[] KioskKit() =>
+            Merge(LoadAll(CityProps, "hot-dog-stand"),
+                  LoadAll(Props, "marketplace-stand-simple"));
 
         static readonly List<string> Missing = new();
 
@@ -171,16 +202,52 @@ namespace LivingCity.EditorTools
             db.end = Load(Roads + "tile-road-end.prefab");
             db.straightCrosswalk = Load(Roads + "tile-road-straight-crosswalk.prefab");
 
+            // The dual carriageway. Same three tileShapes as the minor road above - verified in
+            // the prefab files the same way - so RoadTileTable reuses the same rotations.
+            //
+            // Which arms carry four lanes was measured, not read off the file name, because the
+            // names do not say: tile-road-mainroad-intersection puts the carriageway North-South
+            // while tile-road-mainroad-intersection-t puts it East-WEST, with its odd arm being
+            // the minor branch. The pack also ships mainroad curves, tapers and three-way
+            // mainroad junctions; none is wired up because CityGenerator.Subdivide proves the
+            // boulevard can never need one.
+            db.mainStraight = Load(Roads + "tile-mainroad-straight.prefab");
+            db.mainStraightCrosswalk = Load(Roads + "tile-mainroad-straight-crosswalk.prefab");
+            db.mainCross = Load(Roads + "tile-road-mainroad-intersection.prefab");
+            db.mainTJunction = Load(Roads + "tile-road-mainroad-intersection-t.prefab");
+
             db.groundTile = Load(Root + "Tiles_T/tile-plain_concrete.prefab");
             db.trafficLights = Load(Traffic + "traffic-lights_AI.prefab");
+            db.mainTrafficLights = Load(Traffic + "traffic-lights-big_AI.prefab");
 
             db.zonePalettes = BuildZonePalettes();
 
             db.facadeYawFixes = BuildFacadeYawFixes();
 
-            // lamp-city first and lamp-road dropped: lamp-road is a motorway lantern on a plain
-            // steel pole. The ornate one is the period fitting.
-            db.streetLamps = LoadAll(CityProps, "lamp-city", "lamp-road-double");
+            db.chimneyVents = BuildChimneyVents();
+
+            // The post office and the fire station are storefronts in the residential Shops group,
+            // not the landmarks of zones, so nothing in the zoning can reach them: every block in
+            // the city is free to build another, and the per-lot bag that stops repeats has no
+            // memory across lots. This list is the entire cap for all three. The police station
+            // joined them when its zone went: it is ResidentialHigh's landmark now, and with
+            // maxBlocks no longer capping it, PickLandmark's IsSpent test against this list is
+            // the only thing keeping the city to one station. Hospital and school are still not
+            // here - they are one block each by quota already - and adding them would change
+            // nothing but the reason.
+            // The bank is here for a reason none of the others have: it is the one building the
+            // city reaches for down TWO paths - ResidentialHigh's landmark bag and its own Bank
+            // zone - and ZonePlanner's route roll picks between them precisely so that only one
+            // fires. This list is the belt to that braces: if the roll is ever bypassed, or a
+            // seed finds a corner of it nobody thought about, the city still ends up with one
+            // bank rather than two.
+            db.uniqueBuildings = LoadAll(Buildings, "building-post", "building-firestation",
+                                                    "building-policestation", "building-bank");
+
+            // Only the double lantern. lamp-road is a motorway lantern on a plain steel pole,
+            // and lamp-city is out of the city entirely - dropped from the streets first and
+            // then from every scatter bag too, so the double lantern is the one lamp there is.
+            db.streetLamps = LoadAll(CityProps, "lamp-road-double");
             db.trees = LoadAll(Trees, "tree-oak", "tree-birch", "tree-lime", "tree-round",
                                       "tree-poplar", "shrub", "shrub-round");
 
@@ -207,10 +274,29 @@ namespace LivingCity.EditorTools
             // every body in the pack that a private owner would plausibly drive is in, at an
             // equal share, and car-veteran is now one of eight rather than the whole street.
             //
-            // car-camper-vintage is 7.29m, over ParkedCarPlacer.MaxParkedLength, so
-            // VehiclePicker.Fits rejects it at every kerb and it can only ever land in a block
-            // car park (limit 11m). That is left as it is rather than raised - a camper belongs
-            // in a car park, not nose to tail on a terrace - so do not "fix" the silent reject.
+            // car-camper-vintage (7.29 x 2.54) was dropped rather than left as a silent reject.
+            // Since kerbside parking went, every parked vehicle in the city comes out of
+            // BlockBuilder.FillStalls, which caps at ParkingLayout.StallDepth (5.6) by
+            // StallWidth - 0.3 (2.4) - a marked bay, whether a street bay or a whole car park.
+            // There is no longer a second, laxer limit for a camper to fall back on.
+            //
+            // Measured off the binary FBX vertex arrays (the parser calibrates on this file's own
+            // two recorded numbers, 7.29 and 6.25), as length x width in metres. What still does
+            // not fit the 5.6 x 2.4 bay, and is therefore rejected and re-rolled by
+            // VehiclePicker.Fits every time it is drawn:
+            //
+            //   car-pickup-modern     5.70 x 2.32   Everyday, 1 of 7
+            //   truck                 6.25 x 2.26   Trade, 1 of 3
+            //   armored-truck         5.85 x 2.29   Trade, 1 of 3
+            //   car-ambulance-pickup  6.24 x 2.43   Hospital zone override - never appears
+            //
+            // Left in deliberately, unlike the camper: each is a body the city wants and the
+            // honest fix is a deeper bay for them, not a shorter list. Note the hospital's
+            // override produces NOTHING at all today - its group has no other member - so the
+            // hospital has an empty forecourt. Do not "fix" that by raising StallDepth: 5.6m is
+            // the marked bay, and widening it moves every painted line. The firetruck (8.54 x
+            // 3.02) was the other such override and is referenced nowhere now that the fire
+            // station is not a zone.
             //
             // Still out, and why: golf-cart and car-baywatch are not road cars a resident owns;
             // the buses are 9.8-11.3m and cannot fit either limit, so they are AI-only below;
@@ -220,13 +306,12 @@ namespace LivingCity.EditorTools
             {
                 Bucket("Everyday", 70f, CarsStatic,
                          "car-veteran", "car-passenger", "car-passenger-race", "car-hippie-van",
-                         "jeep-open", "car-pickup-modern", "car-camper-vintage",
-                         "car-caravan-small"),
+                         "jeep-open", "car-pickup-modern", "car-caravan-small"),
 
                 // A taxi waits at a kerb as often as it drives, and it is already accepted in
                 // traffic below. The police car is not here on purpose: parked, it is studied,
-                // and outside the Police zone - which has its own override - it would read as
-                // a mistake rather than as a beat car.
+                // and outside the station's own forecourt - ResidentialHigh's landmarkCars
+                // override - it would read as a mistake rather than as a beat car.
                 Bucket("Service", 8f, CarsStatic, "car-taxi"),
 
                 // The armoured van is the one addition the period actively wants: a bank car is
@@ -283,6 +368,8 @@ namespace LivingCity.EditorTools
 
             db.aiPedestrians = LoadFolder(PeopleAI);
 
+            db.pedestrianController = BuildPedestrianController();
+
             BuildTintPalette(db);
 
             EditorUtility.SetDirty(config);
@@ -302,6 +389,155 @@ namespace LivingCity.EditorTools
             Selection.activeObject = db;
         }
 
+        const string PackPeopleController =
+            "Assets/polyperfect/Low Poly Epic City/People Controller.controller";
+        const string AnimatedPeopleClips =
+            "Assets/polyperfect/Low Poly Animated People/- Animations/Common_Animations/Common_Animation_Set.fbx";
+        const string PedestrianControllerPath = ConfigDir + "/People Interaction Controller.controller";
+
+        /// <summary>
+        /// The animator for interaction-enabled pedestrians: the pack's own People Controller
+        /// (whose walk/idle tuning is copied wholesale rather than rebuilt) plus talk, argue
+        /// and bench-sit states retargeted from the Animated People pack. Both packs' rigs are
+        /// Humanoid already, so retargeting is just clip assignment.
+        ///
+        /// Rebuilt from scratch on every run - the copy is deleted first - which is the same
+        /// overwrite discipline as every list in CreateAssets: hand-edits to the generated
+        /// controller do not survive, changes belong here. Nothing references it by GUID
+        /// except PrefabDatabase, which is reassigned in the same run; the pack's AI prefabs
+        /// keep their original controller and PedestrianSpawner swaps it at runtime.
+        ///
+        /// One structural rule worth keeping: Talk and Argue hang off AnyState, the sit chain
+        /// does NOT. A looping state is safe under AnyState because the only state satisfying
+        /// its condition is itself, and canTransitionToSelf blocks that. Sit Down is a
+        /// one-shot that leads to Sitting with the condition still true - under AnyState the
+        /// machine would re-enter Sit Down from Sitting forever, so the sit entry runs off
+        /// the two locomotion states explicitly.
+        /// </summary>
+        static RuntimeAnimatorController BuildPedestrianController()
+        {
+            if (!AssetDatabase.LoadAssetAtPath<AnimatorController>(PackPeopleController))
+            {
+                Missing.Add(PackPeopleController);
+                return null;
+            }
+
+            var clips = AssetDatabase.LoadAllAssetsAtPath(AnimatedPeopleClips)
+                .OfType<AnimationClip>()
+                .Where(clip => !clip.name.StartsWith("__preview"))
+                .ToDictionary(clip => clip.name, clip => clip);
+
+            AnimationClip Clip(string name)
+            {
+                if (clips.TryGetValue(name, out var clip))
+                    return clip;
+                Missing.Add($"{AnimatedPeopleClips} :: {name}");
+                return null;
+            }
+
+            var talkClip = Clip("Standing_Talking");
+            var argueClip = Clip("Standing_Shouting");
+            var sitDownClip = Clip("Idle-Sitting_Bench");
+            var sittingClip = Clip("Sitting_Bench_Idle");
+            var standUpClip = Clip("Sitting-Idle");
+            if (!talkClip || !argueClip || !sitDownClip || !sittingClip || !standUpClip)
+                return null;
+
+            AssetDatabase.DeleteAsset(PedestrianControllerPath);
+            if (!AssetDatabase.CopyAsset(PackPeopleController, PedestrianControllerPath))
+            {
+                Missing.Add(PedestrianControllerPath);
+                return null;
+            }
+
+            var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(PedestrianControllerPath);
+            controller.AddParameter(PedestrianAnimation.ActivityParam, AnimatorControllerParameterType.Int);
+
+            var machine = controller.layers[0].stateMachine;
+            var idle = FindState(machine, "Breathing Idle");
+            var walk = FindState(machine, "Standard Walk");
+            if (idle == null || walk == null)
+            {
+                Missing.Add($"{PackPeopleController} :: Breathing Idle / Standard Walk state");
+                return controller;
+            }
+
+            var talk = AddState(machine, "Talk", talkClip);
+            var argue = AddState(machine, "Argue", argueClip);
+            var sitDown = AddState(machine, "Sit Down", sitDownClip);
+            var sitting = AddState(machine, "Sitting", sittingClip);
+            var standUp = AddState(machine, "Stand Up", standUpClip);
+
+            AnyStateEntry(machine, talk, PedestrianAnimation.Talk);
+            AnyStateEntry(machine, argue, PedestrianAnimation.Argue);
+            Exit(talk, idle, PedestrianAnimation.Talk);
+            Exit(argue, idle, PedestrianAnimation.Argue);
+
+            SitEntry(idle, sitDown);
+            SitEntry(walk, sitDown);
+            OnExitTime(sitDown, sitting);
+            Exit(sitting, standUp, PedestrianAnimation.Sit);
+            OnExitTime(standUp, idle);
+
+            EditorUtility.SetDirty(controller);
+            return controller;
+        }
+
+        static AnimatorState FindState(AnimatorStateMachine machine, string name)
+        {
+            foreach (var child in machine.states)
+                if (child.state && child.state.name == name)
+                    return child.state;
+            return null;
+        }
+
+        static AnimatorState AddState(AnimatorStateMachine machine, string name, AnimationClip clip)
+        {
+            var state = machine.AddState(name);
+            state.motion = clip;
+            return state;
+        }
+
+        static void AnyStateEntry(AnimatorStateMachine machine, AnimatorState to, int activity)
+        {
+            var transition = machine.AddAnyStateTransition(to);
+            transition.canTransitionToSelf = false;
+            transition.hasExitTime = false;
+            transition.duration = 0.25f;
+            transition.AddCondition(AnimatorConditionMode.Equals, activity, PedestrianAnimation.ActivityParam);
+        }
+
+        static void SitEntry(AnimatorState from, AnimatorState sitDown)
+        {
+            var transition = from.AddTransition(sitDown);
+            transition.hasExitTime = false;
+            transition.duration = 0.25f;
+            transition.AddCondition(AnimatorConditionMode.Equals, PedestrianAnimation.Sit,
+                                    PedestrianAnimation.ActivityParam);
+        }
+
+        /// <summary>Leave a looping activity state the moment its activity value is withdrawn.</summary>
+        static void Exit(AnimatorState from, AnimatorState to, int activity)
+        {
+            var transition = from.AddTransition(to);
+            transition.hasExitTime = false;
+            transition.duration = 0.25f;
+            transition.AddCondition(AnimatorConditionMode.NotEqual, activity, PedestrianAnimation.ActivityParam);
+        }
+
+        /// <summary>
+        /// A one-shot rolling into its successor when the clip completes. Exit time rather
+        /// than trusting the clips' loop import flags - most of the pack's transition clips
+        /// are imported looping, and a looping sit-down bobs up and down forever.
+        /// </summary>
+        static void OnExitTime(AnimatorState from, AnimatorState to)
+        {
+            var transition = from.AddTransition(to);
+            transition.hasExitTime = true;
+            transition.exitTime = 0.95f;
+            transition.duration = 0.15f;
+        }
+
         /// <summary>
         /// What each kind of block is built from. This is the catalogue the whole generator
         /// hangs off - see BlockZone for what the zones mean and why there is no Commercial one.
@@ -318,10 +554,13 @@ namespace LivingCity.EditorTools
             var asphalt = Load(Tiles + "tile-plain_asphalt.prefab");
             var concrete = Load(Tiles + "tile-plain_concrete.prefab");
             var dirt = Load(Tiles + "tile-plain_dirt.prefab");
-            // tile-plain_sand and tile-plain_grass exist too, and are omitted on purpose. Sand in
-            // 1920s Chicago reads as a bug, not as variety; grass was the bungalow belt's ground
-            // and there is no bungalow belt any more - the park carries the city's greenery now.
-            // Do not "complete the set".
+            // Grass is the park's APRON only - the band from the kerb in to its own tiles, which
+            // is 10m wide and was concrete, leaving the park looking set back behind a ring while
+            // every building on the street stood 8m further forward. It is not a block surface:
+            // grass was the bungalow belt's ground and there is no bungalow belt any more.
+            // tile-plain_sand is still omitted on purpose - sand in 1920s Chicago reads as a bug,
+            // not as variety. Do not "complete the set".
+            var grass = Load(Tiles + "tile-plain_grass.prefab");
 
             var cityTrees = LoadAll(Trees, "tree-oak", "tree-lime", "tree-poplar", "shrub-round");
 
@@ -339,6 +578,56 @@ namespace LivingCity.EditorTools
                     // shops, not a per-slot lottery of the two. This is what makes the terraces
                     // actually touch.
                     uniformStreetRuns: true,
+                    // The police station, demoted from its own zone the way the fire station
+                    // was - but through the landmark path, not the Shops bag: it is too wide
+                    // for a terrace slot, and a landmark is placed before uniformStreetRuns
+                    // locks the side, so the single-prefab-group trap (see StreetShops) does
+                    // not apply. db.uniqueBuildings caps it at one per city.
+                    // The bank rides in beside the station for the same reason the station is
+                    // here at all - 17.10 x 20.53, too wide for a terrace slot and finished on
+                    // all four elevations - and this is where it usually ends up. Its other
+                    // shape is a Bank block of its own; ZonePlanner rolls once per city between
+                    // the two so that exactly one of them happens. Index 1 in this array is
+                    // therefore load-bearing: requiredLandmark below points at it.
+                    landmarks: LoadAll(Buildings, "building-policestation", "building-bank"),
+                    // Under 1 on purpose, unlike the civic zones where the landmark IS the
+                    // block: at 1 the station would stand in the first-built residential block
+                    // every time, i.e. the same corner of every map. At 0.45 across the six-plus
+                    // blocks this zone gets, which block hosts it varies by seed and a city with
+                    // no station at all is a once-in-fifty seed - a ceiling, not a guarantee,
+                    // like the rest of the civic list.
+                    landmarkChance: 0.45f,
+                    // The bank, which is NOT a ceiling: the city has one, always. A chance can
+                    // deliver a station nineteen times in twenty and that is fine for a station;
+                    // it is not fine for the building the whole period turns on. ZonePlanner
+                    // marks one block with this index - the largest, because the bank is 20.53m
+                    // deep and wants a courtyard to push back into - and that block builds it
+                    // without rolling. Ignored entirely on the seeds where the bank drew its own
+                    // block instead.
+                    requiredLandmark: 1,
+                    // Forecourt cars, NOT parkedCars: parkedCars swaps the picker for the WHOLE
+                    // block (BlockBuilder.BuildBlock), which here would fill every bay of every
+                    // residential block with patrol cars. landmarkCars reaches only the bay
+                    // PlaceLandmark cuts in front of the recessed station.
+                    //
+                    // One bucket for both of this palette's landmarks, because landmarkCars is a
+                    // property of the PALETTE and there is no per-landmark list to hang a second
+                    // one off. So the station can draw the van and the bank can draw a squad car.
+                    // Left that way rather than plumbed: a police car outside a bank is the most
+                    // period-appropriate thing in the file, and an armoured van at the station
+                    // reads as one that came in for escort. If it ever needs splitting, the honest
+                    // fix is landmarkCars keyed by landmark, not two palettes.
+                    //
+                    // The van is in a bucket WITH other cars for a mechanical reason: armored-truck
+                    // is 5.85 x 2.29 against a marked bay of 5.6 x 2.4, so VehiclePicker rejects it
+                    // from every bay it is offered (it is on the reject list above). Alone it would
+                    // leave the forecourt empty - exactly what the hospital's single-entry ambulance
+                    // bucket does today, which is a defect and not a pattern to copy. Beside cars
+                    // that fit, the bay is always occupied.
+                    landmarkCars: new[]
+                    {
+                        Bucket("Forecourt", 1f, CarsStatic, "car-police", "armored-truck"),
+                    },
                     // Uncapped, so TargetLotSize alone decides: a one-cell block stays a single
                     // ring, a two-cell block becomes two ringed lots with a real alley between
                     // them, a three-cell block becomes three. This is what makes a big block read
@@ -369,6 +658,12 @@ namespace LivingCity.EditorTools
                     // variation, and it belongs on the rear elevations rather than in the alley
                     // itself - cars parked down the middle of a 6m alley block it.
                     alleyParkingChance: 0.15f,
+                    // One street side of each block gives up its buildings for a car lot or a
+                    // pocket park, and the rows pack tight against it - where the length the
+                    // terrace kit cannot fill goes. See FeatureStrip.
+                    featureStrip: true,
+                    kioskPrefabs: KioskKit(),
+                    pocketParkProps: PocketParkKit(),
                     // The alley furniture goes down first, so the scatter is only what fills the
                     // corners it could not reach.
                     scatter: Merge(cityTrees, LoadAll(Props, "mail-box")),
@@ -378,6 +673,12 @@ namespace LivingCity.EditorTools
                 // the only two zones that fill a map, and a 30% ceiling on the works left the
                 // rim as terraces too.
                 Palette(BlockZone.Industrial, weight: 12f, maxShare: 0.4f,
+                    // The whole block is now a walled compound rather than a terrace of
+                    // factories: IndustrialLayout plans a wall, a gate, carriageways in from it
+                    // and rows of halls along them, and IndustrialDresser builds onto that. The
+                    // perimeter path, the feature strip, the interior pass and the scatter are
+                    // all skipped for this zone - see BlockBuilder.BuildBlock.
+                    industrialYard: true,
                     groups: new[]
                     {
                         Detached("Works", 100f, 2f, 6f, 0f, false,
@@ -395,37 +696,74 @@ namespace LivingCity.EditorTools
                     // concrete and asphalt, poured piecemeal as the site grew. No joints - none
                     // of it was ever laid in bays.
                     groundPatchChance: 1f,
-                    scatter: Merge(
-                        LoadAll(Buildings, "chimney-big", "water-tower-medium"),
+                    // Tarmac over that mosaic, on the carriageways only. The no-border variant:
+                    // a kerb drawn round every road rectangle would tile visibly where two
+                    // carriageways meet at the gate.
+                    serviceRoadGround: Load(NoBorder + "tile-plain_asphalt-nb.prefab"),
+                    // Concrete, not railing. The car park uses fence-classic because a 1.5m wall
+                    // would hide the front row of cars, which is the thing being shown; a works
+                    // is the opposite - the wall IS the thing being shown, and you are meant to
+                    // see the halls over it rather than through it.
+                    fenceSegment: Load(Props + "wall-concrete.prefab"),
+                    fencePost: Load(Fences + "fence-stone-tower.prefab"),
+                    gatePrefab: Load(Military + "military-gate.prefab"),
+                    // The same material as before, used differently. These were thirteen entries
+                    // in one scatter bag at density 0.22, so they landed anywhere at any yaw;
+                    // IndustrialDresser now lays each one as a short row against a hall wall.
+                    stackProps: Merge(
                         LoadAll(Props, "timber", "palette", "package-box"),
                         LoadAll(Construction, "brick-plain-stack", "brick-concrete-stack",
                                               "planks-stack", "cement-bag-pile",
                                               "pipe-concrete-stack")),
-                    scatterDensity: 0.22f,
-                    parkingChance: 0.04f),
+                    // Out of the scatter bag and stood deliberately in a hall's back yard. These
+                    // two are what give a works its skyline, and the smoke hangs off the chimney.
+                    chimneyProps: LoadAll(Buildings, "chimney-big", "water-tower-medium"),
+                    // The back band of every row, which is otherwise bare ground: a hall is 6 to
+                    // 23m deep in a 26m row. All measured to fit that strip - the garage is
+                    // 8 x 10, the silo 3.9 x 4.1, the site hut 13.6 x 13.6, the store 6 x 16.4.
+                    // Deliberately NOT here: crane-tower is 72m tall, airport-hangar is 43m wide
+                    // and water-station-big is 29 x 24 - each of them would simply never be
+                    // placed, and a prefab that can never be drawn is worse than an absent one
+                    // because the list reads as though it were.
+                    auxBuildings: Merge(
+                        LoadAll(Buildings, "building-policestation-garage", "industry-storage",
+                                           "water-tower-medium"),
+                        LoadAll(Farm, "farm-silo"),
+                        LoadAll(Construction, "contruction-large", "restroom-portable")),
+                    // A works runs lorries and a forklift, not saloons - the same idea as the
+                    // police car outside the police station. `truck` at 6.25m is rejected by
+                    // every marked bay, which is why IndustrialLayout keeps its own deeper
+                    // lorry stand; the rest fit the staff park.
+                    parkedCars: new[]
+                    {
+                        Bucket("Works", 1f, CarsStatic,
+                               "truck", "car-truck-dump", "car-truck-cement", "forklift"),
+                    },
+                    // Nothing is scattered any more. The yard is arranged, and uniform noise
+                    // across it is precisely what made the old block read as tipped out.
+                    scatterDensity: 0f,
+                    parkingChance: 0f),
 
                 // maxBlocks rather than a share from here down: a city has one hospital and one
-                // police station however large it grows. Parks and car parks below keep their
-                // share cap, because a bigger city should have more of both.
+                // school however large it grows. Parks and car parks below keep their share
+                // cap, because a bigger city should have more of both.
                 //
-                // Four blocks built round one building each. landmarkChance is 1 because the
-                // landmark IS the zone - a police block with no police station is just houses.
-                Palette(BlockZone.Police, weight: 14f, maxShare: 1f, maxBlocks: 1,
-                    groups: new[] { Outbuildings() },
-                    landmarks: LoadAll(Buildings, "building-policestation"),
-                    landmarkChance: 1f,
-                    // An institution's forecourt is laid, swept and uniform - joints on, surface
-                    // re-roll low. The opposite end of the dial from the works yard.
-                    groundPatchChance: 0.25f,
-                    paveJoints: true,
-                    scatter: Merge(cityTrees,
-                                   LoadAll(Fences, "fence-classic"),
-                                   LoadAll(CityProps, "lamp-city")),
-                    scatterDensity: 0.12f,
-                    parkingChance: 0.35f,
-                    parkedCars: new[] { Bucket("Patrol", 1f, CarsStatic, "car-police") }),
-
+                // Two blocks built round one building each. landmarkChance is 1 because the
+                // landmark IS the zone - a hospital block with no hospital is just houses.
+                //
+                // The police block was the third and is gone, the same demotion the fire
+                // station went through before it: a whole block is the city's scarcest thing,
+                // and a station house does not need one. The station is ResidentialHigh's
+                // landmark now, recessed behind a forecourt of patrol cars and capped at one
+                // per city through db.uniqueBuildings. See the ResidentialHigh palette above.
                 Palette(BlockZone.Hospital, weight: 14f, maxShare: 1f, maxBlocks: 1,
+                    // A hospital is one building with grounds, not a campus: the single smallest
+                    // block the map offers, one perimeter ring, and no more than two
+                    // outbuildings beside the landmark. The other civic zones can adopt the
+                    // same two caps if they start reading as districts.
+                    maxBlockCells: 1,
+                    maxLotsPerAxis: 1,
+                    maxPerimeterBuildings: 2,
                     groups: new[] { Outbuildings() },
                     landmarks: LoadAll(Buildings, "building-hospital"),
                     landmarkChance: 1f,
@@ -433,13 +771,27 @@ namespace LivingCity.EditorTools
                     // re-roll low. The opposite end of the dial from the works yard.
                     groundPatchChance: 0.25f,
                     paveJoints: true,
+                    // The short perimeter leaves most of the block as open yard, and bare paving
+                    // there read as a vacant lot. The pocket-park kit is the right register for
+                    // hospital grounds - benches, shade, nothing that says service yard -
+                    // and the scatter runs at the top of the pack's density range for the same
+                    // reason.
+                    alleyProps: PocketParkKit(),
                     scatter: Merge(cityTrees,
-                                   LoadAll(CityProps, "bench-old", "lamp-city")),
-                    scatterDensity: 0.14f,
-                    parkingChance: 0.35f,
+                                   LoadAll(CityProps, "bench-old")),
+                    scatterDensity: 0.22f,
+                    // Higher than the civic default: with the perimeter this short a 0.35 roll
+                    // too often leaves the ambulance nowhere to stand.
+                    parkingChance: 0.5f,
                     parkedCars: new[] { Bucket("Ambulance", 1f, CarsStatic, "car-ambulance-pickup") }),
 
                 Palette(BlockZone.School, weight: 12f, maxShare: 1f, maxBlocks: 1,
+                    // Same footprint discipline as the hospital above: one cell, one ring,
+                    // two outbuildings. Left open, the school took a 3x3 block and read as
+                    // a campus.
+                    maxBlockCells: 1,
+                    maxLotsPerAxis: 1,
+                    maxPerimeterBuildings: 2,
                     groups: new[] { Outbuildings() },
                     landmarks: LoadAll(Buildings, "building-school"),
                     landmarkChance: 1f,
@@ -454,26 +806,22 @@ namespace LivingCity.EditorTools
                     scatterDensity: 0.16f,
                     parkingChance: 0.1f),
 
-                Palette(BlockZone.FireStation, weight: 10f, maxShare: 1f, maxBlocks: 1,
-                    groups: new[] { Outbuildings() },
-                    landmarks: LoadAll(Buildings, "building-firestation"),
-                    landmarkChance: 1f,
-                    // An institution's forecourt is laid, swept and uniform - joints on, surface
-                    // re-roll low. The opposite end of the dial from the works yard.
-                    groundPatchChance: 0.25f,
-                    paveJoints: true,
-                    scatter: Merge(cityTrees, LoadAll(Fences, "fence-classic")),
-                    scatterDensity: 0.12f,
-                    parkingChance: 0.3f,
-                    parkedCars: new[] { Bucket("Appliance", 1f, CarsStatic, "firetruck") }),
+                // There was a fourth civic zone here, the fire station, and it is gone rather than
+                // turned down: it was a whole block - the city's scarcest thing at about ten of
+                // them - spent on a single-cell yard whose appliance never fit the bay anyway. The
+                // building itself is still in the city, in the residential Shops group below and
+                // capped through db.uniqueBuildings. See BlockZone and StreetShops.
 
                 // No groups at all: a park has no street wall. The ground carries a Tile
                 // component with sidewalk paths, so it is laid unscaled per cell and the
                 // pedestrians walk through - see GroundPlacer.
                 //
-                // Share up from 0.15: with the bungalow belt gone the park is the only green
-                // left, and at 15% a mid-sized map got one. ClashesWithNeighbour still forbids
-                // two parks touching, so this buys scattered squares, not one green quarter.
+                // maxBlocks rather than maxShare, and the difference is the whole point. A share
+                // scales with the map - 25% of a forty-block city is ten parks - which is right
+                // for parkland in general and wrong here: this city has ONE park, however big it
+                // gets, the same way it has one hospital. ClashesWithNeighbour is left in place
+                // even though one park can have no park neighbour; it costs nothing and stays
+                // correct if the count is ever raised.
                 // groundPerCell is also what routes this block to ParkDresser instead of the
                 // uniform scatter, so scatter/scatterDensity are deliberately left at zero here:
                 // the park is laid out against tile-park's baked walks, not sprinkled over them.
@@ -486,28 +834,37 @@ namespace LivingCity.EditorTools
                 // tall) are gone. Drawn from a flat 18-entry bag they came up as often as an oak,
                 // and a knee-high boulder in the middle of a city park was the loudest wrong note
                 // in the block.
-                Palette(BlockZone.Park, weight: 8f, maxShare: 0.25f,
+                Palette(BlockZone.Park, weight: 8f, maxShare: 1f, maxBlocks: 1,
                     groups: System.Array.Empty<PrefabDatabase.WeightedGroup>(),
                     ground: park,
                     groundPerCell: true,
+                    // The one palette that does not want a concrete apron - see LayApron.
+                    apronGround: grass,
                     landmarks: LoadAll(Props, "fountain"),
                     landmarkChance: 1f,
                     parkTrees: new[]
                     {
-                        // Weighted by crown, not by taste. A row is planted from ONE group, and
-                        // a quadrant is about 11m across: tree-lime at 7.07m wide fills one on
-                        // its own, so it stays an occasional specimen while the 2-4m species
-                        // carry the avenues.
+                        // Weighted by crown, not by taste. A row - and a grove stand - is planted
+                        // from ONE group, and a quadrant is about 11m across: tree-lime at 7.07m
+                        // wide fills one on its own, so it stays an occasional specimen while the
+                        // 2-4m species carry the avenues.
                         Bucket("Park street trees", 5f, Trees,
-                            "tree-oak", "tree-birch", "tree-beech", "tree-round"),
+                            "tree-oak", "tree-birch", "tree-beech", "tree-round", "tree"),
                         Bucket("Park uprights", 3f, Trees,
                             "tree-poplar", "tree-tall", "tree-birch-tall", "tree-elipse"),
-                        Bucket("Park evergreens", 2f, Trees,
-                            "tree-fir", "tree-forest", "tree-old"),
-                        Bucket("Park specimens", 1f, Trees, "tree-lime"),
+                        // tree-conifer and tree-spruce were in Trees_T the whole time with no
+                        // code path behind them. At 2.4-3.1m across they are exactly the size a
+                        // stand wants, and evergreens are what makes a grove read as woodland
+                        // rather than as an orchard - so this bucket is up from 2 to 4.
+                        Bucket("Park evergreens", 4f, Trees,
+                            "tree-fir", "tree-forest", "tree-old", "tree-conifer", "tree-spruce"),
+                        Bucket("Park specimens", 1f, Trees, "tree-lime", "tree-bonsai"),
                     },
                     parkUndergrowth: Merge(
                         LoadAll(Trees, "shrub", "shrub-round"),
+                        // A sapling among the shrubs is what an unmanaged corner of a park grows,
+                        // and at 1.11m across it sits in the undergrowth layer, not the canopy.
+                        LoadAll(Trees, "tree-little"),
                         LoadAll(Flowers, "roses", "carnations", "sunflower"),
                         // Nature_T/Grass_T was in the pack the whole time and no code path had
                         // ever referenced it. Tufts at 0.4-2.0m are exactly what a lawn between
@@ -517,7 +874,146 @@ namespace LivingCity.EditorTools
                     parkBenches: Merge(
                         LoadAll(Props, "bench-forest"),
                         LoadAll(CityProps, "bench-old")),
+                    // The one centred mound in the pack - see ParkDresser.PlaceMounds for why
+                    // none of the tile-hill kit can join it.
+                    parkMounds: LoadAll(Tiles, "tile-plain-hump"),
+                    // Nature_T/Stones_T had a named constant in this file and nothing behind it,
+                    // the same orphan Grass_T was. rock-terrasse is 6.04 x 7.97 and only 1.88
+                    // tall, which is an outcrop rather than a boulder; rock-pillar (6.77 tall)
+                    // and rock-sharp are left out as alpine. The deadwood is here rather than in
+                    // the undergrowth because a standing dead tree is a feature, not a filler.
+                    parkFeatures: Merge(
+                        LoadAll(Stones, "rock-terrasse", "stone-round", "stone-flat",
+                                        "stone-pointy", "stone-oval", "stone-small", "rocks-small"),
+                        LoadAll(Trees, "stump", "stump-small", "tree-dead", "tree-dry")),
+                    parkLawnPatch: grass,
                     fenceSegment: Load(Fences + "fence-shrub.prefab")),
+
+                // One per city like the hospital, but guaranteed by ZonePlanner's rescue pass
+                // (maxBlocks 1 + maxBlockCells 1 is its trigger) rather than by the shared
+                // landmark budget, which stays spent on the civic three - see BlockZone.
+                //
+                // The pack ships no church; building-museum plays one. Measured 21.41 x 15.90
+                // and 12.89 tall, it fits the single cell at FULL scale with ~12m of garden a
+                // side and stands shorter than the terraces - no landmarkScale 0.5 here, that
+                // exists for buildings that tower from one cell.
+                //
+                // No groups: the block is a walled garden round one building, laid out by
+                // ChurchDresser off the gate-to-door axis. groundPerCell stays FALSE on
+                // purpose - tile-park's baked walk cross runs through the exact centre, where
+                // the church stands, and pedestrians would path through the nave. The plain
+                // grass slab carries no Path nodes, so nobody navigates into the yard.
+                //
+                // fence-stone and fence-stone-tower were unused in the pack until here: a
+                // 1.5m stone wall with piers is a churchyard, where the park's shrub hedge
+                // and the car park's railing would each read as the wrong institution.
+                // marketplace-stand-simple (3.06 x 1.74) is the stand by the gate - ALWAYS
+                // placed by the dresser, no chance roll; it shares kioskPrefabs with the
+                // pocket-park path safely because that only runs for featureStrip zones.
+                Palette(BlockZone.Church, weight: 10f, maxShare: 1f, maxBlocks: 1,
+                    maxBlockCells: 1,
+                    groups: System.Array.Empty<PrefabDatabase.WeightedGroup>(),
+                    ground: grass,
+                    landmarks: LoadAll(Buildings, "building-museum"),
+                    landmarkChance: 1f,
+                    landmarkScale: 1f,
+                    parkTrees: new[]
+                    {
+                        // The park's weighting logic at the park's ratios, minus the lime:
+                        // the corner pockets are ~12m and a 7.07m specimen crown fills one
+                        // whole on its own.
+                        Bucket("Church street trees", 5f, Trees,
+                            "tree-oak", "tree-birch", "tree-beech", "tree-round"),
+                        Bucket("Church uprights", 3f, Trees,
+                            "tree-poplar", "tree-tall", "tree-birch-tall", "tree-elipse"),
+                        Bucket("Church evergreens", 2f, Trees,
+                            "tree-fir", "tree-forest", "tree-old"),
+                    },
+                    parkUndergrowth: Merge(
+                        LoadAll(Trees, "shrub", "shrub-round"),
+                        LoadAll(Flowers, "roses", "carnations", "sunflower"),
+                        LoadAll(Grass, "grass", "grass-basic", "grass-clumb",
+                                       "grass-long", "grass-tall")),
+                    parkBenches: Merge(
+                        LoadAll(Props, "bench-forest"),
+                        LoadAll(CityProps, "bench-old")),
+                    kioskPrefabs: LoadAll(Props, "marketplace-stand-simple"),
+                    fenceSegment: Load(Fences + "fence-stone.prefab"),
+                    fencePost: Load(Fences + "fence-stone-tower.prefab")),
+
+                // The bank's other shape. It is usually ResidentialHigh's landmark - see the
+                // requiredLandmark up there - and about one city in four it takes a block of its
+                // own instead, which is this. ZonePlanner rolls between the two once per city and
+                // then makes good on whichever it rolled, so the city always has exactly one bank
+                // and this palette is either the whole story or unused, never half of it.
+                //
+                // building-bank had been sitting in Buildings_T with no code path near it until
+                // now. Measured 17.10 x 20.53 and 13.70m tall, and both numbers earn their keep:
+                // the footprint is why it cannot be a storefront in the Shops bag the way the post
+                // office is, and the height is why it stands at full size - it is SHORTER than the
+                // 23.8m terraces it faces, so the halving that the pack's other big civic pieces
+                // want would only make it a doll's house. A one-cell block is a 46 x 46m buildable
+                // rect, which leaves it about 13m clear on every side.
+                //
+                // NO facadeYawFixes entry, and that is a measurement rather than an omission. The
+                // mesh is perfectly X-symmetric - 2927 verts mirror 2927 - so the pack's usual
+                // FBX X-negation trap cannot apply here, and the entrance is on local +Z: front
+                // steps, recessed double doors at z=7.30, the portico, and a line of ten anti-ram
+                // bollards across z~9.87 with a gap where the stairs come down. The -Z face is six
+                // windows on a flat wall. That is exactly BlockBuilder's convention, so extraYaw is
+                // 0 and the house style is to omit a 0. Anyone re-deriving the facing from the
+                // pack's own demo scene will get 180 and be wrong: the instance in
+                // "City - Night.unity" sits at yaw -90 on an undressed empty lot facing nothing.
+                //
+                // No fence. The mesh ships its own bollard line across the front, which is the
+                // security line a bank actually has; a railing on top of it would read as two
+                // fences. The hospital and the school set none either, for the plainer reason that
+                // an institution's forecourt is open to the pavement.
+                Palette(BlockZone.Bank, weight: 12f, maxShare: 1f, maxBlocks: 1,
+                    // The hospital's footprint discipline, for the hospital's reason: one cell,
+                    // one ring, two outbuildings beside the landmark. Note this puts four zones -
+                    // hospital, school, church, bank - in competition for the map's one-cell
+                    // blocks, of which a 9x7 map has only a handful. That competition, not the
+                    // weights alone, is what decides how often each turns up.
+                    maxBlockCells: 1,
+                    maxLotsPerAxis: 1,
+                    maxPerimeterBuildings: 2,
+                    // NOT Outbuildings(), whose lead prefab is building-policestation-garage. The
+                    // station itself is somewhere else entirely in the same city now, standing as
+                    // ResidentialHigh's landmark, so its garage in the bank's yard would be
+                    // visibly orphaned from it - and a police garage behind a bank reads as a
+                    // motor pool besides. Ordinary masonry instead.
+                    //
+                    // Non-empty on purpose: a palette with groups builds its own perimeter, which
+                    // is what keeps this zone out of BlockBuilder entirely. The Church needs a
+                    // branch there only because its groups[] is empty.
+                    groups: new[] { BankNeighbours() },
+                    landmarks: LoadAll(Buildings, "building-bank"),
+                    landmarkChance: 1f,
+                    // An institution's forecourt is laid, swept and uniform - joints on, surface
+                    // re-roll low. The opposite end of the dial from the works yard.
+                    groundPatchChance: 0.25f,
+                    paveJoints: true,
+                    // The hospital's kit rather than the alley kit, and for the hospital's reason:
+                    // one ring on a one-cell block leaves most of the yard open, and bare paving
+                    // there reads as a vacant lot. Bins and a dumpster would say service yard,
+                    // which is the one thing a bank frontage must not say.
+                    alleyProps: PocketParkKit(),
+                    scatter: Merge(cityTrees,
+                                   LoadAll(CityProps, "bench-old")),
+                    scatterDensity: 0.18f,
+                    // Higher than the civic default for the hospital's reason again: with the
+                    // perimeter this short, a 0.35 roll too often leaves the forecourt empty.
+                    parkingChance: 0.5f,
+                    // parkedCars here rather than landmarkCars, unlike the residential route: the
+                    // whole block IS the bank, so swapping the picker block-wide has nothing else
+                    // to spoil. Same pairing rule as up there though - the van does not fit a
+                    // marked bay and would leave the forecourt bare if it stood in the bucket
+                    // alone.
+                    parkedCars: new[]
+                    {
+                        Bucket("Bullion", 1f, CarsStatic, "armored-truck", "car-veteran"),
+                    }),
 
                 // The scatter density is up from 0.04 now that the bays register in the block's
                 // occupancy list. Before, a lamp could be dropped inside a car - BuildCarRows read
@@ -525,10 +1021,13 @@ namespace LivingCity.EditorTools
                 // nothing. With the bays reserved, the extra props land in the aisles and along
                 // the fence, where they belong.
                 Palette(BlockZone.Parking, weight: 5f, maxShare: 0.1f,
+                    // Half the largest 3x3 block - a car park may take up to 2x2/1x4, never
+                    // swallow a full-size block.
+                    maxBlockCells: 4,
                     groups: System.Array.Empty<PrefabDatabase.WeightedGroup>(),
                     ground: asphalt,
                     carRows: true,
-                    scatter: Merge(LoadAll(CityProps, "lamp-city", "bin-wheelie"),
+                    scatter: Merge(LoadAll(CityProps, "bin-wheelie"),
                                    LoadAll(Props, "mail-box")),
                     scatterDensity: 0.1f,
                     fenceSegment: Load(Fences + "fence-classic.prefab"),
@@ -555,6 +1054,15 @@ namespace LivingCity.EditorTools
         /// the alley elevations, the other place they were showing up. PickCornerGroup still
         /// skips the group - it carries no cornerPrefabs - so the block's four corners remain
         /// the 4/5-floor corner kit.
+        ///
+        /// The fire station is in here rather than in a zone of its own. A 1920s city fire house
+        /// was built INTO the street wall with its doors on the pavement, not set in grounds, and
+        /// at 13.65 x 10.82 it is narrower than the post office beside it - it needs no scaling
+        /// and no block. It belongs in THIS bag rather than in a group of its own for a mechanical
+        /// reason too: uniformStreetRuns locks a whole side to one group, so a single-prefab group
+        /// would, once UniqueBuildings has spent its prefab, hand the same rejected candidate back
+        /// on every attempt until the run gives up - an empty street side. In a four-prefab bag
+        /// the spend is absorbed exactly as the post office's is.
         /// </summary>
         static PrefabDatabase.WeightedGroup StreetShops(float weight) =>
             new()
@@ -563,30 +1071,51 @@ namespace LivingCity.EditorTools
                 weight = weight,
                 layout = PrefabDatabase.PieceLayout.Terrace,
                 cornerPreferred = true,
+                // The tinter's stronger palette. This flag is the whole of what "commercial"
+                // means to the generator - there is no Commercial zone, per the note above. The
+                // fire station rides along with it: a fire house with painted doors is a fair
+                // reading, and if it ever looks like a shopfront the fix is to move that one
+                // prefab into the Terrace group's street list, which takes the mild tier.
+                commercial = true,
                 prefabs = LoadAll(Buildings,
-                    "building-cafe", "building-restaurant", "building-post"),
+                    "building-cafe", "building-restaurant", "building-post",
+                    "building-firestation"),
             };
 
         /// <summary>
         /// The yard buildings of a single-landmark block - a garage and a couple of low blocks,
         /// so the rest of the perimeter is not bare while the landmark holds one side.
         /// </summary>
+        /// <summary>
+        /// What stands beside the bank on its own block. Outbuildings() without the police
+        /// garage: the garage belongs to a station that is elsewhere in the city now, and next to
+        /// a bank it reads as a motor pool rather than as a back yard.
+        /// </summary>
+        static PrefabDatabase.WeightedGroup BankNeighbours() =>
+            Detached("Bank neighbours", 100f, 3f, 6f, 2f, false,
+                "building-house-block", "building-house-block-big");
+
         static PrefabDatabase.WeightedGroup Outbuildings() =>
             Detached("Outbuildings", 100f, 3f, 6f, 2f, false,
                 "building-policestation-garage", "building-house-block",
                 "building-house-block-big");
 
         /// <summary>
-        /// Creates the near-white facade tints as Material Variants of atlas-LPEC.
+        /// Creates the facade tints in two tiers - a mild residential set and a stronger
+        /// commercial one, hue for hue - plus the ground shades.
         ///
-        /// Variants rather than copies so the tints inherit the atlas textures and smoothness
-        /// and keep tracking the parent - editing atlas-LPEC later does not leave four stale
-        /// clones behind. They stay on the same URP/Lit shader as the parent, which is what
-        /// lets the SRP Batcher keep batching across all of them.
+        /// The facade tints are full copies of atlas-LPEC on the LivingCity/Facade Tint shader
+        /// (Assets/Shaders/FacadeTint.shader): URP/Lit with _BaseColor masked by the surface
+        /// normal, so the tint paints the walls and leaves the roof the atlas's own colour.
+        /// They cannot be Material Variants - a variant is locked to its parent's shader - so
+        /// FacadeTint() re-copies the atlas's properties on every run instead, which is the
+        /// same "keep tracking the parent" promise done by hand.
         ///
-        /// Colours are deliberately close to white. _BaseColor multiplies the entire atlas, so
-        /// anything saturated tints the roof and windows too. The GROUND shades built alongside
-        /// them are not bound by that - see the note on them below.
+        /// _BaseColor still multiplies everything VERTICAL, windows included, and that is the
+        /// remaining ceiling on saturation - why the commercial set stops at "painted
+        /// shopfront" rather than "primary colour". The GROUND shades stay plain variants on
+        /// URP/Lit: a slab is horizontal, exactly the geometry the facade shader refuses to
+        /// tint, and one flat patch of atlas has nothing for a plain multiply to spoil anyway.
         /// </summary>
         static void BuildTintPalette(PrefabDatabase db)
         {
@@ -594,6 +1123,13 @@ namespace LivingCity.EditorTools
             if (!atlas)
             {
                 Missing.Add(PackMaterials + "atlas-LPEC.mat");
+                return;
+            }
+
+            var facadeShader = AssetDatabase.LoadAssetAtPath<Shader>(FacadeShaderPath);
+            if (!facadeShader)
+            {
+                Missing.Add(FacadeShaderPath);
                 return;
             }
 
@@ -612,14 +1148,47 @@ namespace LivingCity.EditorTools
             db.paintDarkMaterial = FlatColour(PackMaterials + "Colors/18 GREY-DARK-LPEC.mat");
             db.paintLightMaterial = FlatColour(PackMaterials + "Colors/22 GREY-LIGHTEST-LPEC.mat");
 
+            db.smokeMaterial = SmokeMaterial();
+
+            // The puff. cloud-fluffy rather than a billboard, because a soft blurred quad would
+            // be the only such surface in a city built entirely from flat-shaded low poly - and
+            // the pack ships no smoke texture to make one from anyway.
+            var puff = Load(Clouds + "cloud-fluffy.prefab");
+            var puffFilter = puff ? puff.GetComponentInChildren<MeshFilter>() : null;
+            db.smokePuffMesh = puffFilter ? puffFilter.sharedMesh : null;
+            if (!db.smokePuffMesh)
+                Debug.LogWarning("[CityAssetBootstrap] No cloud-fluffy mesh - works chimneys " +
+                                 "will fall back to billboard smoke.");
+
             Directory.CreateDirectory(TintDir);
 
+            // Residential: mild but unmistakable - green, tan, brick, blue-grey, cream, olive.
+            // Every entry keeps at least one channel at 1.0, because a multiplier below white
+            // on all three channels only darkens the atlas into mud. The old near-white set
+            // read as no variation at all; these are as far as a facade can go before the
+            // multiply starts recolouring windows louder than walls (roofs are out of reach
+            // now - the shader masks them - but windows are vertical and still ride along).
             db.buildingTints = new[]
             {
-                Tint(atlas, "atlas-LPEC-warm", new Color(1.00f, 0.97f, 0.92f)),
-                Tint(atlas, "atlas-LPEC-cool", new Color(0.94f, 0.95f, 1.00f)),
-                Tint(atlas, "atlas-LPEC-rose", new Color(1.00f, 0.93f, 0.90f)),
-                Tint(atlas, "atlas-LPEC-sage", new Color(0.95f, 0.97f, 0.94f)),
+                FacadeTint(atlas, facadeShader, "atlas-LPEC-sage",  new Color(0.85f, 0.96f, 0.83f)),
+                FacadeTint(atlas, facadeShader, "atlas-LPEC-ochre", new Color(1.00f, 0.90f, 0.72f)),
+                FacadeTint(atlas, facadeShader, "atlas-LPEC-rose",  new Color(1.00f, 0.80f, 0.75f)),
+                FacadeTint(atlas, facadeShader, "atlas-LPEC-cool",  new Color(0.82f, 0.88f, 1.00f)),
+                FacadeTint(atlas, facadeShader, "atlas-LPEC-warm",  new Color(1.00f, 0.96f, 0.82f)),
+                FacadeTint(atlas, facadeShader, "atlas-LPEC-olive", new Color(0.90f, 0.92f, 0.72f)),
+            };
+
+            // Commercial: the same six hues pushed roughly twice as far from white - a painted
+            // shopfront among the flats, not a different building. Same order as above so a
+            // group flipping tiers keeps its hue family.
+            db.commercialTints = new[]
+            {
+                FacadeTint(atlas, facadeShader, "atlas-LPEC-shop-sage",  new Color(0.66f, 0.95f, 0.62f)),
+                FacadeTint(atlas, facadeShader, "atlas-LPEC-shop-ochre", new Color(1.00f, 0.78f, 0.45f)),
+                FacadeTint(atlas, facadeShader, "atlas-LPEC-shop-rose",  new Color(1.00f, 0.60f, 0.52f)),
+                FacadeTint(atlas, facadeShader, "atlas-LPEC-shop-cool",  new Color(0.60f, 0.75f, 1.00f)),
+                FacadeTint(atlas, facadeShader, "atlas-LPEC-shop-warm",  new Color(1.00f, 0.92f, 0.55f)),
+                FacadeTint(atlas, facadeShader, "atlas-LPEC-shop-olive", new Color(0.82f, 0.88f, 0.45f)),
             };
 
             // Ground shades range far wider than the facade tints above, and deliberately so.
@@ -653,6 +1222,56 @@ namespace LivingCity.EditorTools
             return material;
         }
 
+        /// <summary>
+        /// The chimney smoke material, authored here because nothing in the project can serve.
+        ///
+        /// Two constraints, both of which bite silently. Unity's built-in Default-ParticleSystem
+        /// material is a Built-in-pipeline shader and renders MAGENTA under URP - the failure
+        /// looks like a bug in the particle system rather than in the material. And the pack ships
+        /// no smoke, dust or steam texture at all, so there is nothing to bind: the material is
+        /// deliberately untextured, and the shape comes from the mesh instead.
+        ///
+        /// Surface 1 is Transparent and blend 0 is Alpha in URP's Unlit particle shader; both
+        /// have to be set alongside the render-state properties, because the shader reads the
+        /// numeric properties and the INSPECTOR reads the keywords, and setting only one leaves a
+        /// material that renders correctly but shows as Opaque when opened.
+        /// </summary>
+        static Material SmokeMaterial()
+        {
+            const string Path = SmokeDir + "/smoke.mat";
+
+            var shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+            if (!shader)
+            {
+                Missing.Add("Shader: Universal Render Pipeline/Particles/Unlit");
+                return null;
+            }
+
+            Directory.CreateDirectory(SmokeDir);
+
+            var material = AssetDatabase.LoadAssetAtPath<Material>(Path);
+            if (!material)
+            {
+                material = new Material(shader);
+                AssetDatabase.CreateAsset(material, Path);
+            }
+
+            material.shader = shader;
+            material.SetFloat("_Surface", 1f);
+            material.SetFloat("_Blend", 0f);
+            material.SetFloat("_ZWrite", 0f);
+            material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            material.SetColor("_BaseColor", new Color(0.78f, 0.78f, 0.76f, 1f));
+            material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+
+            EditorUtility.SetDirty(material);
+            return material;
+        }
+
         static Material Tint(Material parent, string name, Color color)
         {
             var path = $"{TintDir}/{name}.mat";
@@ -668,6 +1287,40 @@ namespace LivingCity.EditorTools
             // so a material left over from an earlier copy-based version gets upgraded in place
             // rather than silently staying a detached clone.
             material.parent = parent;
+            material.SetColor("_BaseColor", color);
+            EditorUtility.SetDirty(material);
+
+            return material;
+        }
+
+        /// <summary>
+        /// A facade tint: a full copy of the atlas on the roof-masking shader. Not a variant -
+        /// a variant cannot change shader - so the "keep tracking the parent" promise the
+        /// ground tints get from Unity is delivered here by re-copying the atlas's properties
+        /// on every bootstrap run. Existing assets (including the old variant-based ones) are
+        /// upgraded in place, keeping their GUIDs and whatever scenes reference them.
+        /// </summary>
+        static Material FacadeTint(Material atlas, Shader shader, string name, Color color)
+        {
+            var path = $"{TintDir}/{name}.mat";
+            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+
+            if (!material)
+            {
+                material = new Material(atlas);
+                AssetDatabase.CreateAsset(material, path);
+            }
+
+            // Order matters: a variant's shader is locked to its parent's, so detach first.
+            // CopyPropertiesFromMaterial brings over the atlas textures and floats; assigning
+            // the shader afterwards keeps them, because Unity matches properties by name.
+            material.parent = null;
+            material.shader = atlas.shader;
+            material.CopyPropertiesFromMaterial(atlas);
+            material.shader = shader;
+            material.shaderKeywords = atlas.shaderKeywords;
+            material.renderQueue = atlas.renderQueue;
+            material.globalIlluminationFlags = atlas.globalIlluminationFlags;
             material.SetColor("_BaseColor", color);
             EditorUtility.SetDirty(material);
 
@@ -760,14 +1413,67 @@ namespace LivingCity.EditorTools
             return fixes.ToArray();
         }
 
+        /// <summary>
+        /// Every works prefab that has been measured to carry a chimney mouth, derived each run
+        /// rather than typed - the same discipline BuildFacadeYawFixes applies to the corner
+        /// pieces, and for the same reason: a value read off the raw FBX is mirrored in X, and a
+        /// typed constant would preserve that error forever.
+        ///
+        /// Most of this list comes back empty and that is the expected result: a warehouse has
+        /// no chimney. What the log is for is the COUNT, and the whole table was checked against
+        /// the meshes before this shipped. It should read exactly:
+        ///
+        ///     chimney-big          1   (rise 18.4)
+        ///     industry-factory     2   (twin stacks, rise 8.6 each)
+        ///     industry-factory-old 1   (rise 14.6)
+        ///     industry-refinery    1   (rise 5.6)
+        ///     everything else      0   (roof lanterns, rise 3.1-3.2, rejected)
+        ///
+        /// Five vents on industry-factory-hall or seven on industry-building means the rise test
+        /// has stopped discriminating; ZERO on industry-factory means the roof reference has gone
+        /// back to a maximum and the twin stacks are cancelling each other out. Both of those
+        /// happened during development and both look like "smoke is broken" from the scene.
+        /// </summary>
+        static PrefabDatabase.ChimneyVent[] BuildChimneyVents()
+        {
+            var vents = new List<PrefabDatabase.ChimneyVent>();
+
+            var candidates = new[]
+            {
+                "chimney-big", "industry-factory", "industry-factory-old", "industry-factory-hall",
+                "industry-warehouse", "industry-storage", "industry-refinery", "industry-building",
+                "water-tower-medium",
+            };
+
+            foreach (var name in candidates)
+            {
+                var prefab = Load(Buildings + name + ".prefab");
+                if (!prefab)
+                    continue;
+
+                var mouths = ChimneyVents.Measure(prefab, out var report);
+                Debug.Log($"[CityAssetBootstrap] {name}: {report}");
+
+                foreach (var mouth in mouths)
+                    vents.Add(new PrefabDatabase.ChimneyVent { prefab = prefab, local = mouth });
+            }
+
+            return vents.ToArray();
+        }
+
         static PrefabDatabase.ZonePalette Palette(
             BlockZone zone,
             float weight,
             float maxShare,
             PrefabDatabase.WeightedGroup[] groups,
             int maxBlocks = 0,
+            int maxBlockCells = 0,
+            bool guaranteed = false,
+            int maxPerimeterBuildings = 0,
             GameObject[] landmarks = null,
             float landmarkChance = 0f,
+            int requiredLandmark = -1,
+            float landmarkScale = 1f,
             GameObject[] scatter = null,
             float scatterDensity = 0f,
             PrefabDatabase.WeightedPrefabs[] parkTrees = null,
@@ -775,8 +1481,15 @@ namespace LivingCity.EditorTools
             GameObject[] parkBenches = null,
             GameObject[] alleyProps = null,
             float alleyParkingChance = 0.35f,
+            bool featureStrip = false,
+            GameObject[] kioskPrefabs = null,
+            GameObject[] pocketParkProps = null,
             GameObject ground = null,
             bool groundPerCell = false,
+            GameObject apronGround = null,
+            GameObject parkLawnPatch = null,
+            GameObject[] parkMounds = null,
+            GameObject[] parkFeatures = null,
             PrefabDatabase.WeightedPrefabs[] grounds = null,
             GameObject[] courtyardGrounds = null,
             float groundPatchChance = 1f,
@@ -786,20 +1499,32 @@ namespace LivingCity.EditorTools
             float parkingChance = 0.12f,
             bool carRows = false,
             PrefabDatabase.WeightedPrefabs[] parkedCars = null,
+            PrefabDatabase.WeightedPrefabs[] landmarkCars = null,
             GameObject fenceSegment = null,
             GameObject fencePost = null,
-            GameObject parkingBooth = null) =>
+            GameObject parkingBooth = null,
+            bool industrialYard = false,
+            GameObject gatePrefab = null,
+            GameObject serviceRoadGround = null,
+            GameObject[] stackProps = null,
+            GameObject[] chimneyProps = null,
+            GameObject[] auxBuildings = null) =>
             new()
             {
                 zone = zone,
                 weight = weight,
                 maxShare = maxShare,
                 maxBlocks = maxBlocks,
+                maxBlockCells = maxBlockCells,
+                guaranteed = guaranteed,
+                maxPerimeterBuildings = maxPerimeterBuildings,
                 groups = groups,
                 uniformStreetRuns = uniformStreetRuns,
                 maxLotsPerAxis = maxLotsPerAxis,
                 landmarks = landmarks ?? System.Array.Empty<GameObject>(),
                 landmarkChance = landmarkChance,
+                requiredLandmark = requiredLandmark,
+                landmarkScale = landmarkScale,
                 scatter = scatter ?? System.Array.Empty<GameObject>(),
                 scatterDensity = scatterDensity,
                 parkTrees = parkTrees ?? System.Array.Empty<PrefabDatabase.WeightedPrefabs>(),
@@ -807,8 +1532,15 @@ namespace LivingCity.EditorTools
                 parkBenches = parkBenches ?? System.Array.Empty<GameObject>(),
                 alleyProps = alleyProps ?? System.Array.Empty<GameObject>(),
                 alleyParkingChance = alleyParkingChance,
+                featureStrip = featureStrip,
+                kioskPrefabs = kioskPrefabs ?? System.Array.Empty<GameObject>(),
+                pocketParkProps = pocketParkProps ?? System.Array.Empty<GameObject>(),
                 ground = ground,
                 groundIsTilePerCell = groundPerCell,
+                apronGround = apronGround,
+                parkLawnPatch = parkLawnPatch,
+                parkMounds = parkMounds ?? System.Array.Empty<GameObject>(),
+                parkFeatures = parkFeatures ?? System.Array.Empty<GameObject>(),
                 grounds = grounds ?? System.Array.Empty<PrefabDatabase.WeightedPrefabs>(),
                 courtyardGrounds = courtyardGrounds ?? System.Array.Empty<GameObject>(),
                 groundPatchChance = groundPatchChance,
@@ -816,9 +1548,16 @@ namespace LivingCity.EditorTools
                 parkingChance = parkingChance,
                 carRows = carRows,
                 parkedCars = parkedCars ?? System.Array.Empty<PrefabDatabase.WeightedPrefabs>(),
+                landmarkCars = landmarkCars ?? System.Array.Empty<PrefabDatabase.WeightedPrefabs>(),
                 fenceSegment = fenceSegment,
                 fencePost = fencePost,
                 parkingBooth = parkingBooth,
+                industrialYard = industrialYard,
+                gatePrefab = gatePrefab,
+                serviceRoadGround = serviceRoadGround,
+                stackProps = stackProps ?? System.Array.Empty<GameObject>(),
+                chimneyProps = chimneyProps ?? System.Array.Empty<GameObject>(),
+                auxBuildings = auxBuildings ?? System.Array.Empty<GameObject>(),
             };
 
         /// <summary>Modular kit whose pieces abut flush, split by street / alley / corner role.</summary>

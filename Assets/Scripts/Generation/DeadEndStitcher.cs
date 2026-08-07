@@ -37,12 +37,24 @@ namespace LivingCity.Generation
     public sealed class DeadEndStitcher : MonoBehaviour
     {
         /// <summary>
-        /// How far the returning lane's start may be from the dead end. Carriageway lanes sit
-        /// 3m apart and pavement lanes share a point, so 6m covers both with room to spare
-        /// while staying well inside one 30m tile - a neighbouring tile's paths are never this
-        /// close, so this can only ever match within the tile.
+        /// How far the returning lane's start may be from the dead end.
+        ///
+        /// On an ordinary street the two carriageway lanes sit 3m apart (x = +/-1.5) and the
+        /// pavement lanes share a point, which is what the old value of 6 was sized for.
+        ///
+        /// The dual carriageway needs more. Its four lanes are at x = +/-1.75 and +/-4.75, so a
+        /// dead-ended OUTER lane at +4.75 has to reach the nearest lane running the other way at
+        /// -1.75: 6.5m, just past the old limit. At 6 nothing matched, and the failure was
+        /// silent - no warning, just cars quietly stranding at the ends of the avenue, which is
+        /// the exact symptom this component exists to prevent.
+        ///
+        /// 11 covers that and the far lane at -4.75 (9.5m) as well. Widening it cannot disturb
+        /// the streets: the search takes the NEAREST opposite-heading entry, so a street lane
+        /// still pairs with its partner 3m away, and only lanes that previously found nothing
+        /// at all can reach further. Still well inside one 30m tile, so it can never match into
+        /// a neighbour.
         /// </summary>
-        const float LinkRadius = 6f;
+        const float LinkRadius = 11f;
 
         /// <summary>
         /// How head-on the return has to be. -0.5 is a 120-degree turn or sharper, which

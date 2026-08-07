@@ -17,6 +17,21 @@ namespace LivingCity.Generation
         /// wired up and is the right piece for a genuine dead-end street inside a block.
         /// </summary>
         End,
+
+        /// <summary>tile-mainroad-straight: the dual carriageway running through.</summary>
+        MainStraight,
+
+        /// <summary>
+        /// tile-road-mainroad-intersection-t: the boulevard running through with a minor street
+        /// teeing in. At 0 degrees the branch is North and the carriageway runs East-West.
+        /// </summary>
+        MainTJunction,
+
+        /// <summary>
+        /// tile-road-mainroad-intersection: the boulevard crossing a minor street. At 0 degrees
+        /// the carriageway runs North-South.
+        /// </summary>
+        MainCross,
     }
 
     public readonly struct RoadTilePlacement
@@ -112,6 +127,69 @@ namespace LivingCity.Generation
                 // check should have removed these before we ever get here.
                 default: return new RoadTilePlacement(RoadTileKind.None, 0f);
             }
+        }
+
+        /// <summary>
+        /// The same question for a cell on the dual carriageway.
+        ///
+        /// The mainroad prefabs carry the SAME tileShape values as their minor-road counterparts
+        /// - straight=Straight, road-mainroad-intersection-t=T, road-mainroad-intersection=Cross
+        /// - all verified in the prefab files. Since tileShape is the only thing
+        /// Tile.GetNeighborTiles() switches on, every rotation below is the one Lookup already
+        /// derives for that mask, and the derivation in this class's doc applies unchanged.
+        ///
+        /// What IS new is that these tiles are no longer symmetric under rotation: two of their
+        /// arms carry four lanes and the others carry two, so the mask alone no longer settles
+        /// the rotation. Hence the axis parameter.
+        ///
+        /// The measured arms at 0 degrees, read out of the prefabs' Path components:
+        ///
+        ///   tile-mainroad-straight                N,S = carriageway
+        ///   tile-road-mainroad-intersection       N,S = carriageway   E,W = street
+        ///   tile-road-mainroad-intersection-t     E,W = carriageway   N   = street branch
+        ///
+        /// Note the Cross and the T disagree about which axis is the carriageway at 0 degrees.
+        /// That is the pack's convention, not a mistake here: the T's odd arm is its "forward",
+        /// and the odd arm is the BRANCH, so the carriageway has to lie across it.
+        ///
+        /// Only five masks can reach this function - see CityGenerator.Subdivide, which explains
+        /// why the boulevard can never curve, taper or dead-end inside the city. Anything else
+        /// is a layout bug rather than a shape to draw, so it returns None and the caller warns.
+        /// </summary>
+        public static RoadTilePlacement LookupMain(Sides sides, bool northSouth)
+        {
+            // Along-axis neighbours are the carriageway; the other two are side streets.
+            var along = northSouth ? Sides.North | Sides.South : Sides.East | Sides.West;
+            var across = northSouth ? Sides.East | Sides.West : Sides.North | Sides.South;
+
+            // The avenue always continues in at least one direction - at the end cells because
+            // the map edge cut it there, everywhere else because it spans the map. A cell that
+            // carries none of it is not on the boulevard at all.
+            if ((sides & along) == Sides.None)
+                return new RoadTilePlacement(RoadTileKind.None, 0f);
+
+            // Nothing across: a plain run of dual carriageway, including the two end cells where
+            // the map edge slices it. Same rule and same rotation as Lookup's one-connection
+            // case - the axis of the street, not the direction of its one neighbour.
+            if ((sides & across) == Sides.None)
+                return new RoadTilePlacement(RoadTileKind.MainStraight, northSouth ? 0f : 90f);
+
+            // Both sides: a full crossroads. The Cross probes all four ways, so its rotation is
+            // free as far as linking goes - it is chosen purely to lay the four lanes along the
+            // avenue, which at 0 degrees run North-South.
+            if ((sides & across) == across)
+                return new RoadTilePlacement(RoadTileKind.MainCross, northSouth ? 0f : 90f);
+
+            // One side: a minor street tees in. The T's missing arm is the one it faces away
+            // from, so the rotation is fixed by where the branch is - and it comes out the same
+            // as Lookup's TJunction entry for this mask, since the shapes are the same.
+            return new RoadTilePlacement(RoadTileKind.MainTJunction, (sides & across) switch
+            {
+                Sides.North => 0f,
+                Sides.East => 90f,
+                Sides.South => 180f,
+                _ => 270f, // West
+            });
         }
     }
 }

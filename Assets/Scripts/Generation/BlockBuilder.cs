@@ -34,13 +34,20 @@ namespace LivingCity.Generation
         /// Closest a building may sit to the road centreline. Pavements are at 4 and street
         /// props at 5.5, so 7 puts walls just behind the lamps without overlapping them.
         ///
-        /// This is the DEFAULT, not the live value - CityConfig.sidewalkWidth is what
-        /// BlockBuilder and GroundPlacer actually hand to BlockRect. StreetPropPlacer's verge
-        /// (5.5) and ParkedCarPlacer's kerb (5.6) are offsets from the road centreline and do
-        /// not depend on it; moving the building line only widens the gap between them and the
-        /// wall.
+        /// This is the DEFAULT, not the live value - ClearanceFor is what BlockBuilder and
+        /// GroundPlacer actually hand to BlockRect, and it answers CityConfig.sidewalkWidth for
+        /// every zone but the car park. StreetPropPlacer's prop line (5.5) is an offset from the
+        /// road centreline and does not depend on it; moving the building line only widens the
+        /// gap between the props and the wall, which GroundPlacer's apron paves either way.
         /// </summary>
         public const float SidewalkClearance = 7f;
+
+        /// <summary>
+        /// The same default for a side facing the dual carriageway. Its pavements are at 7.25
+        /// and its props at 8.5, so 10 stands in the same relation to them that 7 does to a
+        /// street's 4 and 5.5. Mirrors CityConfig.mainSidewalkWidth, which is the live value.
+        /// </summary>
+        public const float MainSidewalkClearance = 10f;
 
         /// <summary>
         /// Gap left in a whole-block street wall so the courtyard is reachable. A subdivided
@@ -67,6 +74,16 @@ namespace LivingCity.Generation
         /// far apart the rows were, and a real lot in a working city is close to full.
         /// </summary>
         const float EmptyBayChance = 0.15f;
+
+        /// <summary>
+        /// Cars in a landmark's forecourt bay. The bay itself is as wide as the building - a
+        /// half-scale station fronts four or five stalls - but two or three patrol cars say
+        /// "police station"; a full rank says "impound lot".
+        /// </summary>
+        const int LandmarkForecourtMaxCars = 3;
+
+        /// <summary>Pavement between the forecourt bays and the recessed landmark's door.</summary>
+        const float LandmarkForecourtWalkway = 1f;
 
         /// <summary>
         /// Chance the slot beside a street corner draws from a cornerPreferred group - the
@@ -112,6 +129,20 @@ namespace LivingCity.Generation
         const float RingEdgeTolerance = 1.5f;
 
         /// <summary>
+        /// Smallest run leftover worth turning into a parking bay instead of spreading through
+        /// the joints - two stalls and change. Anything under this disappears into the joints;
+        /// anything over it would need more than maxFillerGap per joint and start reading as
+        /// gaps in the wall.
+        /// </summary>
+        const float MinResidueBay = 6f;
+
+        /// <summary>
+        /// Chance one cell of a pocket park's grid gets a piece of furniture. Denser than the
+        /// alley grid - a park is furnished on purpose, an alley by accretion.
+        /// </summary>
+        const float PocketParkPropChance = 0.45f;
+
+        /// <summary>
         /// One scatter attempt per this much ground, before density scales it. Attempts, not
         /// placements: anything landing on a building is dropped.
         /// </summary>
@@ -122,10 +153,17 @@ namespace LivingCity.Generation
             PrefabDatabase prefabs,
             CityConfig config,
             Transform parent,
-            SpawnPrefab spawn = null)
+            SpawnPrefab spawn = null,
+            List<BuildingTinter.Target> tintTargets = null)
         {
             var placed = new List<GameObject>();
             spawn ??= RoadNetworkBuilder.RuntimeSpawn;
+
+            // Buildings only, with the tier their group put them in. `placed` cannot serve:
+            // it collects everything the block placer spawns - parked cars, trees, kiosks,
+            // bins - and most of the pack shares the atlas material, so a tinter fed the flat
+            // list paints the trees too. Optional so callers that never tint need not care.
+            tintTargets ??= new List<BuildingTinter.Target>();
 
             if (prefabs.zonePalettes == null || prefabs.zonePalettes.Length == 0)
             {
@@ -136,8 +174,13 @@ namespace LivingCity.Generation
 
             var rng = new System.Random(config.seed + SeedOffsets.Buildings);
 
-            // Car parks draw from the same curated groups as the kerbside cars, but off this
-            // block's RNG stream rather than SeedOffsets.ParkedCars.
+            // The only per-CITY state in the build, and the only thing that keeps the city to one
+            // post office - see UniqueBuildings for why it is neither per-block nor per-lot. Reset
+            // here rather than at declaration because the set outlives a build.
+            UniqueBuildings.Reset(prefabs);
+
+            // Every parked vehicle in the city now comes from here - kerbside parking is gone, so
+            // PrefabDatabase.parkedCarGroups feeds marked bays only, off this block's own stream.
             var parking = new VehiclePicker(prefabs.parkedCarGroups, rng);
 
             for (var blockId = 0; blockId < grid.BlockCount; blockId++)
@@ -157,7 +200,7 @@ namespace LivingCity.Generation
                 var bleed = PickNeighbourPalette(grid, prefabs, blockId, zone, rng);
 
                 BuildBlock(grid, cells, blockId, palette, bleed, parking, prefabs, config,
-                           parent, spawn, rng, placed);
+                           parent, spawn, rng, placed, tintTargets);
             }
 
             return placed;
@@ -171,9 +214,22 @@ namespace LivingCity.Generation
         /// buildings occupy - if the two computed it separately they would drift apart and
         /// leave a strip of the road tile's grass verge showing along the street wall. Both
         /// callers must therefore pass the SAME sidewalkWidth; both read it off CityConfig.
+        ///
+        /// The clearance is resolved PER SIDE, because a side facing the dual carriageway needs
+        /// a deeper one - the avenue's pavements sit at 7.25 from its centreline against a
+        /// street's 4, so a facade set back by the ordinary 7 would stand on it. A block can
+        /// face the avenue on one side and side streets on the other three, so this cannot be
+        /// one value per block.
+        ///
+        /// Deciding it in here rather than at the two call sites is what keeps the contract
+        /// above honest: both callers pass the same PAIR, and the per-side choice is then made
+        /// once, in one place, from the same grid. Two callers each deriving "is this side the
+        /// avenue?" separately is exactly the drift this function exists to prevent.
         /// </summary>
         public static (Vector2 min, Vector2 max) BlockRect(
-            CityGrid grid, List<Vector2Int> cells, float sidewalkWidth = SidewalkClearance)
+            CityGrid grid, List<Vector2Int> cells,
+            float sidewalkWidth = SidewalkClearance,
+            float mainSidewalkWidth = MainSidewalkClearance)
         {
             var half = CityGrid.CellSize * 0.5f;
 
@@ -188,11 +244,13 @@ namespace LivingCity.Generation
             var min = new Vector2(grid.CellToWorld(minCell).x - half, grid.CellToWorld(minCell).z - half);
             var max = new Vector2(grid.CellToWorld(maxCell).x + half, grid.CellToWorld(maxCell).z + half);
 
-            var reach = half - sidewalkWidth;
-            if (grid.IsRoad(minCell.x - 1, minCell.y)) min.x -= reach;
-            if (grid.IsRoad(maxCell.x + 1, maxCell.y)) max.x += reach;
-            if (grid.IsRoad(minCell.x, minCell.y - 1)) min.y -= reach;
-            if (grid.IsRoad(maxCell.x, maxCell.y + 1)) max.y += reach;
+            float Reach(int x, int z) =>
+                half - (grid.IsMainRoad(x, z) ? mainSidewalkWidth : sidewalkWidth);
+
+            if (grid.IsRoad(minCell.x - 1, minCell.y)) min.x -= Reach(minCell.x - 1, minCell.y);
+            if (grid.IsRoad(maxCell.x + 1, maxCell.y)) max.x += Reach(maxCell.x + 1, maxCell.y);
+            if (grid.IsRoad(minCell.x, minCell.y - 1)) min.y -= Reach(minCell.x, minCell.y - 1);
+            if (grid.IsRoad(maxCell.x, maxCell.y + 1)) max.y += Reach(maxCell.x, maxCell.y + 1);
 
             return (min, max);
         }
@@ -232,6 +290,54 @@ namespace LivingCity.Generation
         }
 
         /// <summary>
+        /// How far in from the road centreline a block's own surface stops - what BlockRect is
+        /// handed as its sidewalkWidth.
+        ///
+        /// CityConfig.sidewalkWidth (7) for anything with a street wall: the band between the
+        /// pavement edge and the building line is where StreetPropPlacer stands its lamps and
+        /// trees. It used to be left as the road tile's grass and read as a verge; it is now
+        /// paved by GroundPlacer's apron, so what this value sets is only where the WALL starts,
+        /// not where the paving stops.
+        ///
+        /// A car park has no street wall. Its asphalt and its fence run out to the pavement edge
+        /// instead, which is why StreetPropPlacer skips its kerb rather than stand props inside
+        /// the lot - and why the apron has nothing to add there.
+        ///
+        /// BlockRect's contract is unchanged: BlockBuilder and GroundPlacer must pass the SAME
+        /// value for a given block, which is why this is one function and not two constants.
+        /// </summary>
+        public static float ClearanceFor(PrefabDatabase.ZonePalette palette, CityConfig config) =>
+            palette != null && palette.carRows ? CityGrid.SidewalkOffset : config.sidewalkWidth;
+
+        /// <summary>
+        /// The same answer for a side facing the dual carriageway - BlockRect's second clearance.
+        ///
+        /// The car park still runs out to the pavement, it is just a wider pavement there
+        /// (7.25 against 4), so the shape of the rule is identical and only the two constants
+        /// change. Kept as its own function for the same reason as ClearanceFor: both callers
+        /// have to arrive at the same number, and one function is how that is guaranteed.
+        /// </summary>
+        public static float MainClearanceFor(PrefabDatabase.ZonePalette palette, CityConfig config) =>
+            palette != null && palette.carRows ? CityGrid.MainSidewalkOffset : config.mainSidewalkWidth;
+
+        /// <summary>
+        /// True when this cell belongs to a block the car-park palette builds. False for a road
+        /// cell or one off the map - BlockIdAt returns NoBlock for both.
+        ///
+        /// Cell-level rather than block-level because the two callers that need it walk ROAD
+        /// cells and ask what lies across each kerb, not blocks.
+        /// </summary>
+        public static bool IsCarParkAt(CityGrid grid, PrefabDatabase prefabs, int x, int z)
+        {
+            var blockId = grid.BlockIdAt(x, z);
+            if (blockId < 0)
+                return false;
+
+            var palette = prefabs.PaletteFor(grid.ZoneOf(blockId));
+            return palette != null && palette.carRows;
+        }
+
+        /// <summary>
         /// A palette from across the street, for the occasional borrowed slot. Null when the
         /// block has no neighbours with buildings of their own to lend - a park has nothing to
         /// contribute to the terrace next door.
@@ -263,7 +369,21 @@ namespace LivingCity.Generation
         sealed class BlockState
         {
             public GameObject Landmark;
+            public float LandmarkScale = 1f;
+
+            // Perimeter buildings this block may still take, the landmark excluded. Spent in
+            // walk order across every lot and side, which is what maxPerimeterBuildings needs
+            // to mean "per block" rather than "per run".
+            public int PerimeterBudget;
         }
+
+        /// <summary>
+        /// Rejected BUILDING placements of the block currently being built - see the reset in
+        /// BuildBlock for what counts. A static rather than a parameter because Place sits
+        /// under every placement path and threading a counter through all of them buys nothing;
+        /// generation is single-threaded.
+        /// </summary>
+        static int placeRejections;
 
         static void BuildBlock(
             CityGrid grid,
@@ -277,9 +397,12 @@ namespace LivingCity.Generation
             Transform parent,
             SpawnPrefab spawn,
             System.Random rng,
-            List<GameObject> placed)
+            List<GameObject> placed,
+            List<BuildingTinter.Target> tints)
         {
-            var (min, max) = BlockRect(grid, cells, config.sidewalkWidth);
+            var (min, max) = BlockRect(grid, cells,
+                                       ClearanceFor(palette, config),
+                                       MainClearanceFor(palette, config));
 
             if (max.x <= min.x || max.y <= min.y)
                 return;
@@ -301,16 +424,68 @@ namespace LivingCity.Generation
 
             var roadSides = RoadSides(grid, cells);
 
+            // A works is laid out, not built up. Same fork as the park below, and taken earlier
+            // because it replaces the WHOLE block: no lots, no feature strip, no interior, no
+            // scatter. Those passes are all about wrapping buildings round a lot and furnishing
+            // what is left, and a factory site is the other way round - the roads come first and
+            // the halls stand along them. GroundPlacer forks on the same flag.
+            if (palette.industrialYard)
+            {
+                IndustrialDresser.Build(min, max, roadSides, blockId, palette, prefabs, config,
+                                        parking, parent, spawn, rng, occupied, markings, placed, tints);
+
+                var works = ParkingMarkings.Emit(markings, prefabs.lineMaterial,
+                                                 $"parking_lines_{grid.ZoneOf(blockId)}_{blockId}", parent);
+                if (works)
+                    placed.Add(works);
+
+                return;
+            }
+
+            // The strip comes off the rect BEFORE the lots are planned in it, so every pass
+            // below - lots, interior, scatter - already works to the pulled-in building line.
+            // GroundPlacer shrinks by the same strip, from the same seed; see FeatureStrip.
+            var strip = FeatureStrip.For(min, max, roadSides,
+                                         palette.featureStrip && palette.BuildsPerimeter,
+                                         config, blockId);
+            var buildMin = min;
+            var buildMax = max;
+            FeatureStrip.Shrink(strip, ref buildMin, ref buildMax);
+
             if (palette.BuildsPerimeter)
             {
-                var state = new BlockState { Landmark = PickLandmark(palette, rng) };
+                var state = new BlockState
+                {
+                    Landmark = PickLandmark(palette, grid.ForcedLandmarkOf(blockId), rng),
+                    LandmarkScale = palette.landmarkScale > 0f ? palette.landmarkScale : 1f,
+                    PerimeterBudget = palette.maxPerimeterBuildings > 0
+                        ? palette.maxPerimeterBuildings
+                        : int.MaxValue,
+                };
+
+                // Counted across the ring passes only. The interior and scatter passes reject
+                // by DESIGN - that is how a flat grid covers an arbitrary interior - but a
+                // rejected BUILDING means the packer and the occupancy test disagreed about the
+                // same wall, and each one is a hole in a street elevation.
+                placeRejections = 0;
 
                 // Not drawn from this block's rng: GroundPlacer lays its mosaic on exactly these
                 // rectangles and has no way to replay the draws spent above. See BlockLots.
-                foreach (var lot in BlockLots.Plan(min, max, roadSides, palette.maxLotsPerAxis,
+                foreach (var lot in BlockLots.Plan(buildMin, buildMax, roadSides, palette.maxLotsPerAxis,
                                                    config.alleyWidth, config.seed, blockId))
                     BuildLot(lot, palette, bleedPalette, state, parking, prefabs, config,
-                             parent, spawn, rng, occupied, markings, placed);
+                             parent, spawn, rng, occupied, markings, placed, tints);
+
+                if (placeRejections > 0)
+                    Debug.LogWarning($"[BlockBuilder] Block {blockId} ({grid.ZoneOf(blockId)}): " +
+                                     $"{placeRejections} building placement(s) rejected for overlap - " +
+                                     "each one is a gap in a run that expected a building there.");
+
+                // After the buildings, so the pocket park's furniture and the stall occupancy
+                // tests see the finished rows beside the band.
+                if (strip.Has)
+                    BuildFeatureStrip(min, max, buildMin, buildMax, strip, palette, parking,
+                                      prefabs, config, parent, spawn, rng, occupied, markings, placed);
             }
 
             if (palette.carRows)
@@ -320,7 +495,7 @@ namespace LivingCity.Generation
             // Before the scatter, so the alley furniture gets first claim on the interior and the
             // trees and mailboxes fall into whatever is left rather than into the alley itself.
             if (palette.BuildsPerimeter)
-                BuildInterior(min, max, palette, prefabs, config,
+                BuildInterior(buildMin, buildMax, palette, prefabs, config,
                               parent, spawn, rng, occupied, placed);
 
             // A park is laid out, not scattered. groundIsTilePerCell is the exact precondition
@@ -328,9 +503,18 @@ namespace LivingCity.Generation
             // cross and centre plaza are the geometry the whole layout hangs off. Every other
             // zone gets the uniform scatter, which is right for a yard and wrong for a park.
             if (palette.groundIsTilePerCell)
-                ParkDresser.Build(grid, cells, palette, prefabs, parent, spawn, rng, occupied, placed);
+                ParkDresser.Build(grid, cells, palette, prefabs, config,
+                                  parent, spawn, rng, occupied, placed);
+            // The churchyard is laid out too, but off its own gate-to-door axis rather than
+            // tile-park's baked walks - which is why it is NOT groundIsTilePerCell: the church
+            // stands exactly where the tile's paths cross, and pedestrians would walk through
+            // it. Keyed on the zone so an unmigrated PrefabDatabase (no Church palette,
+            // PaletteFor falls back to ResidentialHigh) degrades to the scatter below.
+            else if (palette.zone == BlockZone.Church)
+                ChurchDresser.Build(grid, cells, min, max, palette, prefabs, config,
+                                    parent, spawn, rng, occupied, placed, tints);
             else
-                BuildScatter(min, max, palette, parent, spawn, rng, occupied, placed);
+                BuildScatter(buildMin, buildMax, palette, parent, spawn, rng, occupied, placed);
 
             var paint = ParkingMarkings.Emit(markings, prefabs.lineMaterial,
                                              $"parking_lines_{grid.ZoneOf(blockId)}_{blockId}", parent);
@@ -338,14 +522,36 @@ namespace LivingCity.Generation
                 placed.Add(paint);
         }
 
-        static GameObject PickLandmark(PrefabDatabase.ZonePalette palette, System.Random rng)
+        static GameObject PickLandmark(
+            PrefabDatabase.ZonePalette palette, int forcedLandmark, System.Random rng)
         {
             if (palette.landmarks == null || palette.landmarks.Length == 0)
                 return null;
+
+            // One block per city can be TOLD which landmark it builds instead of being asked.
+            // ZonePlanner marks it when the city owes itself a particular building and a
+            // probability will not do - see ZonePalette.requiredLandmark. Deliberately ahead of
+            // the chance roll and of the draw from the bag, because a required landmark that
+            // still had to survive landmarkChance would not be required.
+            if (forcedLandmark >= 0 && forcedLandmark < palette.landmarks.Length)
+            {
+                var required = palette.landmarks[forcedLandmark];
+                return UniqueBuildings.IsSpent(required) ? null : required;
+            }
+
             if (rng.NextDouble() >= palette.landmarkChance)
                 return null;
 
-            return palette.landmarks[rng.Next(palette.landmarks.Length)];
+            // Drawn first and tested after, so a capped landmark that is already built costs the
+            // same two rng draws as one that is not and the seed's sequence does not depend on
+            // what the city happens to contain yet.
+            //
+            // Redundant today - each civic zone is one block by quota, and one block places its
+            // landmark once - and kept anyway, because it puts the ceiling on the PREFAB. Raise a
+            // maxBlocks, or list one building as the landmark of two palettes, and the zoning
+            // rule quietly stops holding while this one still does.
+            var pick = palette.landmarks[rng.Next(palette.landmarks.Length)];
+            return UniqueBuildings.IsSpent(pick) ? null : pick;
         }
 
         static void BuildLot(
@@ -361,7 +567,8 @@ namespace LivingCity.Generation
             System.Random rng,
             List<Bounds> occupied,
             List<ParkingLayout.Line> markings,
-            List<GameObject> placed)
+            List<GameObject> placed,
+            List<BuildingTinter.Target> tints)
         {
             // Fresh kits per lot, not per block. Sharing one set of bags across a whole block
             // made its lots march through the same sequence of pieces; rebuilding them here is
@@ -380,34 +587,61 @@ namespace LivingCity.Generation
             // Walked as one continuous loop so every side starts where the last one ended.
             var sides = new[]
             {
-                (origin: new Vector3(min.x, 0f, min.y), along: Vector3.right,   outward: Vector3.back,    length: max.x - min.x, isStreet: lot.South),
-                (origin: new Vector3(max.x, 0f, min.y), along: Vector3.forward, outward: Vector3.right,   length: max.y - min.y, isStreet: lot.East),
-                (origin: new Vector3(max.x, 0f, max.y), along: Vector3.left,    outward: Vector3.forward, length: max.x - min.x, isStreet: lot.North),
-                (origin: new Vector3(min.x, 0f, max.y), along: Vector3.back,    outward: Vector3.left,    length: max.y - min.y, isStreet: lot.West),
+                (origin: new Vector3(min.x, 0f, min.y), along: Vector3.right,   outward: Vector3.back,    length: max.x - min.x, isStreet: lot.South, isOpen: lot.SouthOpen),
+                (origin: new Vector3(max.x, 0f, min.y), along: Vector3.forward, outward: Vector3.right,   length: max.y - min.y, isStreet: lot.East,  isOpen: lot.EastOpen),
+                (origin: new Vector3(max.x, 0f, max.y), along: Vector3.left,    outward: Vector3.forward, length: max.x - min.x, isStreet: lot.North, isOpen: lot.NorthOpen),
+                (origin: new Vector3(min.x, 0f, max.y), along: Vector3.back,    outward: Vector3.left,    length: max.y - min.y, isStreet: lot.West,  isOpen: lot.WestOpen),
             };
 
             // Corners first, so each run knows how much room the corners at its two ends take.
             // Only terrace kits have corner pieces at all - a detached model is finished on all
             // four elevations and has no corner variant, so those zones simply start at zero.
+            //
+            // Chosen in two phases rather than placed on sight. Corner i joins sides[i] and
+            // sides[(i+3)%4], and it earns a piece by rank: two streets is mandatory, a
+            // street/alley junction is preferred - the building beside the mouth of an alley
+            // still stands on the street and shows the passer-by its second elevation - and an
+            // alley/alley corner gets none, back rows meet by recession instead. Anything
+            // touching the map boundary also gets none; there is nobody out there to see it.
+            // The ranking exists because small lots cannot afford every corner they qualify
+            // for: two corner pieces eat 23.5-28.5m of frontage and the narrowest street piece
+            // is 8.1m wide, so on a ~31m side something has to give, and it should be the
+            // preferred corner, not the mandatory one.
+            var cornerRank = new int[4];
+            var cornerGroup = new int[4];
+            var cornerPrefab = new GameObject[4];
+            var cornerYaw = new float[4];
             var cornerWidth = new float[4];
+            var cornerDepth = new float[4];
+
             for (var i = 0; i < 4; i++)
             {
-                // A corner piece belongs only where two streets meet. sides[i].origin is the
-                // end of sides[(i+3)%4], so this lot corner joins exactly those two sides;
-                // alley and map-boundary corners keep cornerWidth[i] = 0 and the runs meet
-                // flush instead. Checked before PickCornerGroup so a skipped corner consumes
-                // neither an RNG draw nor a corner-bag entry.
-                if (!sides[i].isStreet || !sides[(i + 3) % 4].isStreet)
+                var a = sides[i];
+                var b = sides[(i + 3) % 4];
+
+                cornerRank[i] = a.isOpen || b.isOpen ? -1
+                              : a.isStreet && b.isStreet ? 2
+                              : a.isStreet || b.isStreet ? 1
+                              : -1;
+                if (cornerRank[i] < 0)
                     continue;
 
+                // The draw happens for every RANKED corner whether or not it survives the
+                // pruning below - candidacy depends only on the lot plan, so the rng sequence
+                // stays a function of the seed alone.
                 var group = kit.PickCornerGroup();
-                if (group < 0)
-                    continue;
+                var prefab = group < 0 ? null : kit.PeekCorner(group);
 
-                var side = sides[i];
-                var prefab = kit.PeekCorner(group);
-                if (!prefab)
+                // A corner piece the city has already used its one of retires the corner, exactly
+                // as an empty bag does. Nothing capped is a corner piece today - the Shops group
+                // that carries the post office ships none, so PickCornerGroup cannot even return
+                // it - and the guard is here so that stays a fact about the database rather than
+                // a hole waiting for the first corner variant somebody adds.
+                if (!prefab || UniqueBuildings.IsSpent(prefab))
+                {
+                    cornerRank[i] = -1;
                     continue;
+                }
 
                 // One number covers all four corners of the lot, and that is worth spelling out
                 // because it is not obvious. The two sides meeting here are sides[i] and
@@ -420,17 +654,63 @@ namespace LivingCity.Generation
                 // quarter turn off, which shows as one elevation on its street and one blank.
                 //
                 // It goes into the footprint measurement too: a quarter-turn swaps x and z.
-                var yaw = YawFor(side.outward) + prefabs.ExtraYawFor(prefab);
-
+                var yaw = YawFor(a.outward) + prefabs.ExtraYawFor(prefab);
                 var footprint = PrefabBounds.FootprintXZ(prefab, yaw);
-                var width = Extent(footprint, side.along);
-                var depth = Extent(footprint, side.outward);
-                cornerWidth[i] = width;
 
-                var centre = side.origin + side.along * (width * 0.5f) - side.outward * (depth * 0.5f);
-                Place(prefab, centre, yaw, width, depth, side.along, side.outward,
-                      config.partyWallGap, spawn, parent, occupied, placed);
-                kit.AdvanceCorner(group);
+                cornerGroup[i] = group;
+                cornerPrefab[i] = prefab;
+                cornerYaw[i] = yaw;
+                cornerWidth[i] = Extent(footprint, a.along);
+                cornerDepth[i] = Extent(footprint, a.outward);
+            }
+
+            PruneCorners(sides, cornerRank, cornerPrefab, cornerWidth);
+
+            for (var i = 0; i < 4; i++)
+            {
+                if (!cornerPrefab[i])
+                    continue;
+
+                var side = sides[i];
+                var centre = side.origin + side.along * (cornerWidth[i] * 0.5f)
+                                         - side.outward * (cornerDepth[i] * 0.5f);
+                var corner = Place(cornerPrefab[i], centre, cornerYaw[i], cornerWidth[i], cornerDepth[i],
+                                   side.along, side.outward, config.partyWallGap, spawn, parent, occupied, placed);
+                if (corner)
+                {
+                    UniqueBuildings.Spend(cornerPrefab[i]);
+                    tints.Add(new BuildingTinter.Target(corner, kit.GroupAt(cornerGroup[i]).commercial));
+                }
+
+                kit.AdvanceCorner(cornerGroup[i]);
+            }
+
+            // Where two runs share a corner WITHOUT a piece, they used to both build to the lot
+            // corner, overlap by a building's footprint, and Place silently dropped whichever
+            // came second - a hole, at the same place on every such lot. One side has to give
+            // way: the more public one holds the corner (street beats alley beats map edge) and
+            // the other starts behind its end piece, as deep as any piece in the kit can reach.
+            var startInset = new float[4];
+            var endInset = new float[4];
+            for (var i = 0; i < 4; i++)
+            {
+                startInset[i] = cornerWidth[i];
+                endInset[i] = cornerWidth[(i + 1) % 4];
+            }
+
+            var recession = kit.DeepestPiece + config.partyWallGap;
+            for (var i = 0; i < 4; i++)
+            {
+                if (cornerPrefab[i])
+                    continue;
+
+                var starting = i;              // sides[i] starts at this corner
+                var ending = (i + 3) % 4;      // sides[i-1] ends at it
+
+                if (Publicity(sides[starting]) > Publicity(sides[ending]))
+                    endInset[ending] = Mathf.Max(endInset[ending], recession);
+                else
+                    startInset[starting] = Mathf.Max(startInset[starting], recession);
             }
 
             // A ring that is the whole block seals its yard, so one street side gives up
@@ -442,7 +722,7 @@ namespace LivingCity.Generation
                 var eligible = new List<int>(4);
                 for (var i = 0; i < 4; i++)
                     if (sides[i].isStreet
-                        && sides[i].length - cornerWidth[i] - cornerWidth[(i + 1) % 4] >= PassageMinRun)
+                        && sides[i].length - startInset[i] - endInset[i] >= PassageMinRun)
                         eligible.Add(i);
                 if (eligible.Count > 0)
                     passageSide = eligible[rng.Next(eligible.Count)];
@@ -451,16 +731,16 @@ namespace LivingCity.Generation
             for (var i = 0; i < 4; i++)
             {
                 var side = sides[i];
-                var start = cornerWidth[i];
-                var end = side.length - cornerWidth[(i + 1) % 4];
+                var start = startInset[i];
+                var end = side.length - endInset[i];
                 if (end <= start)
                     continue;
 
                 // The landmark takes the head of the first street run long enough to hold it.
                 if (side.isStreet && state.Landmark)
                     start = PlaceLandmark(state, side.origin, side.along, side.outward,
-                                          start, end, config.partyWallGap, prefabs,
-                                          spawn, parent, occupied, placed);
+                                          start, end, config.partyWallGap, palette, prefabs,
+                                          spawn, parent, rng, occupied, markings, placed, tints);
 
                 // Placed after the landmark has claimed its head, in the middle half of what
                 // is left, so it cannot collide with either corner.
@@ -469,8 +749,72 @@ namespace LivingCity.Generation
                     passageAt = start + (0.35f + 0.3f * (float)rng.NextDouble()) * (end - start - PassageWidth);
 
                 WalkSide(side.origin, side.along, side.outward, start, end, side.isStreet,
-                         kit, bleed, parking, palette, prefabs, config, parent, spawn, rng,
-                         occupied, markings, placed, passageAt);
+                         kit, bleed, state, parking, palette, prefabs, config, parent, spawn,
+                         rng, occupied, markings, placed, tints, passageAt);
+            }
+        }
+
+        /// <summary>
+        /// How much a side matters when two runs contest a cornerless corner. A street run is
+        /// seen by everyone, an alley run by whoever walks the alley, a map-edge run by nobody.
+        /// </summary>
+        static int Publicity(
+            (Vector3 origin, Vector3 along, Vector3 outward, float length, bool isStreet, bool isOpen) side)
+            => side.isStreet ? 2 : side.isOpen ? 0 : 1;
+
+        /// <summary>
+        /// Shortest run worth keeping between two corner pieces - just over the narrowest
+        /// street piece (8.1m), so whatever survives the corners can still be closed with a
+        /// building rather than left as a hole.
+        /// </summary>
+        const float MinRunAfterCorners = 9f;
+
+        /// <summary>
+        /// Drops corner candidates until every side can hold at least one piece between its two
+        /// corners. The preferred (street/alley) corners go first; a mandatory street/street
+        /// pair is only broken when the two pieces physically overlap, because a blank side
+        /// wall on a true street corner costs more than a short run does.
+        /// </summary>
+        static void PruneCorners(
+            (Vector3 origin, Vector3 along, Vector3 outward, float length, bool isStreet, bool isOpen)[] sides,
+            int[] rank,
+            GameObject[] prefab,
+            float[] width)
+        {
+            // At most four corners can be dropped, so the guard is generous, not load-bearing.
+            for (var guard = 0; guard < 8; guard++)
+            {
+                var drop = -1;
+
+                for (var i = 0; i < 4 && drop < 0; i++)
+                {
+                    var a = i;                 // corner at the start of side i
+                    var b = (i + 1) % 4;       // corner at its end
+                    if (!prefab[a] && !prefab[b])
+                        continue;
+
+                    var run = sides[i].length - width[a] - width[b];
+                    if (run >= MinRunAfterCorners)
+                        continue;
+
+                    // A merely short run gives up a preferred corner only; overlapping pieces
+                    // must resolve whatever their rank, or Place drops one of them silently.
+                    var limit = run < 0.5f ? 2 : 1;
+
+                    if (prefab[a] && rank[a] <= limit)
+                        drop = a;
+                    if (prefab[b] && rank[b] <= limit
+                        && (drop < 0 || rank[b] < rank[drop]
+                            || (rank[b] == rank[drop] && width[b] > width[drop])))
+                        drop = b;
+                }
+
+                if (drop < 0)
+                    return;
+
+                prefab[drop] = null;
+                width[drop] = 0f;
+                rank[drop] = -1;
             }
         }
 
@@ -487,28 +831,60 @@ namespace LivingCity.Generation
             float start,
             float end,
             float partyWallGap,
+            PrefabDatabase.ZonePalette palette,
             PrefabDatabase prefabs,
             SpawnPrefab spawn,
             Transform parent,
+            System.Random rng,
             List<Bounds> occupied,
-            List<GameObject> placed)
+            List<ParkingLayout.Line> markings,
+            List<GameObject> placed,
+            List<BuildingTinter.Target> tints)
         {
             // The facade correction was missing here, alone among the placement paths. Harmless
             // so far only because none of the five landmarks is in the table - which is luck, not
             // a reason, and the block's most conspicuous building is the worst one to have face
             // its own back yard.
             var yaw = YawFor(outward) + prefabs.ExtraYawFor(state.Landmark);
-            var footprint = PrefabBounds.FootprintXZ(state.Landmark, yaw);
+            var scale = state.LandmarkScale;
+            var footprint = PrefabBounds.FootprintXZ(state.Landmark, yaw) * scale;
             var width = Extent(footprint, along);
             var depth = Extent(footprint, outward);
 
             if (width > end - start)
                 return start;
 
-            var centre = origin + along * (start + width * 0.5f) - outward * (depth * 0.5f);
-            if (!Place(state.Landmark, centre, yaw, width, depth, along, outward,
-                       partyWallGap, spawn, parent, occupied, placed))
+            // A palette with landmark cars wants them IN FRONT of the building, so the building
+            // gives up the frontage: recessed one stall depth plus a pavement, with the bay in
+            // the band it vacated. Hospital and School have no landmarkCars and stay flush.
+            var forecourt = palette.HasLandmarkCars;
+            var setback = forecourt ? ParkingLayout.StallDepth + LandmarkForecourtWalkway : 0f;
+
+            var centre = origin + along * (start + width * 0.5f)
+                       - outward * (depth * 0.5f + setback);
+            var landmark = Place(state.Landmark, centre, yaw, width, depth, along, outward,
+                                 partyWallGap, spawn, parent, occupied, placed, scale);
+            if (!landmark)
                 return start;
+
+            // The mild tier: a civic landmark is a building, not a shopfront.
+            tints.Add(new BuildingTinter.Target(landmark, commercial: false));
+
+            // On a successful Place, not on the pick: the pick can be handed to a later side and
+            // a landmark spent for a building that never stood would be the whole city's one.
+            UniqueBuildings.Spend(state.Landmark);
+
+            if (forecourt)
+            {
+                // The bay spans exactly the frontage the recessed building vacated, so the
+                // terrace on either side continues at the normal facade line and the notch
+                // reads as the station's own yard. FillStalls reserves every bay whether or
+                // not a car stands in it, which keeps the scatter pass off the forecourt.
+                var layout = ParkingLayout.ForStreetBay(origin, along, outward, start, width);
+                markings.AddRange(layout.Markings);
+                FillStalls(layout, new VehiclePicker(palette.landmarkCars, rng), spawn, parent,
+                           rng, occupied, placed, LandmarkForecourtMaxCars);
+            }
 
             state.Landmark = null;
             return start + width + 2f;
@@ -528,6 +904,7 @@ namespace LivingCity.Generation
             public float Trailing;      // group gap + party wall, owed AFTER this slot
             public bool IsParking;
             public bool Build;          // blockFillRatio roll - false leaves the slot reserved but empty
+            public bool Commercial;     // its group's flag, carried to the tinter's palette choice
         }
 
         /// <summary>
@@ -551,6 +928,7 @@ namespace LivingCity.Generation
             bool isStreet,
             LotKit kit,
             LotKit bleed,
+            BlockState state,
             VehiclePicker parking,
             PrefabDatabase.ZonePalette palette,
             PrefabDatabase prefabs,
@@ -561,6 +939,7 @@ namespace LivingCity.Generation
             List<Bounds> occupied,
             List<ParkingLayout.Line> markings,
             List<GameObject> placed,
+            List<BuildingTinter.Target> tints,
             float passageAt = -1f)
         {
             var yaw = YawFor(outward);
@@ -616,6 +995,12 @@ namespace LivingCity.Generation
                     continue;
                 }
 
+                // After the bay roll, so a parking bay can still land on a run whose building
+                // budget is spent; before the source draw, so an exhausted budget stops the
+                // walk instead of spinning without moving the cursor.
+                if (state.PerimeterBudget <= 0)
+                    break;
+
                 // Most slots come from this block's own palette; a few borrow from across the
                 // street so the zone boundary does not land exactly on the kerb.
                 //
@@ -651,6 +1036,17 @@ namespace LivingCity.Generation
 
                     var candidate = source.Peek(index, isStreet);
                     if (!candidate)
+                    {
+                        source.Advance(index, isStreet);
+                        continue;
+                    }
+
+                    // The city already has its one of these. Advanced exactly like the too-wide
+                    // case below, and for a sharper reason: a bag Peeked without being Advanced
+                    // offers the same piece on every try, so skipping without it would spend the
+                    // whole attempt budget on one prefab and end the run early - a hole in the
+                    // street wall, not a different building.
+                    if (UniqueBuildings.IsSpent(candidate))
                     {
                         source.Advance(index, isStreet);
                         continue;
@@ -696,6 +1092,13 @@ namespace LivingCity.Generation
                 // stops the same prefab repeating, and pass one is where the choosing happens.
                 source.Advance(chosen, isStreet);
 
+                // Spent on the same reasoning - but only when the slot will actually be built.
+                // PerimeterBudget below is spent either way because an unbuilt slot still holds
+                // its frontage; a cap on how many of a building EXIST has nothing to hold, and
+                // spending it here would cost the city its only post office to build nothing.
+                if (build)
+                    UniqueBuildings.Spend(prefab);
+
                 var trailing = gap + config.partyWallGap;
                 slots.Add(new Slot
                 {
@@ -706,7 +1109,12 @@ namespace LivingCity.Generation
                     Setback = setback,
                     Trailing = trailing,
                     Build = build,
+                    Commercial = group.commercial,
                 });
+
+                // Spent even when the Build roll came up empty - the slot holds its frontage
+                // either way, and a budget that depends on later rolls stops being a cap.
+                state.PerimeterBudget--;
 
                 content += width;
                 mandatory += trailing;
@@ -714,8 +1122,55 @@ namespace LivingCity.Generation
                 atCorner = false;
             }
 
+            // ---- CLOSERS: the loop above stops at the first width a random draw cannot fit,
+            // which can leave most of a building's width unfilled. Terrace zones sweep the
+            // whole kit instead for the widest piece that still fits, repeatedly - the -short
+            // variants exist precisely to close a run. Detached zones skip this; their spacing
+            // is gaps by design.
+            if (palette.uniformStreetRuns)
+            {
+                while (state.PerimeterBudget > 0)
+                {
+                    var closer = BestCloser(kit, isStreet, yaw, prefabs, along, outward,
+                                            end - cursor, out var closerWidth,
+                                            out var closerDepth, out var closerYaw,
+                                            out var closerCommercial);
+                    if (!closer)
+                        break;
+
+                    slots.Add(new Slot
+                    {
+                        Prefab = closer,
+                        Yaw = closerYaw,
+                        Width = closerWidth,
+                        Depth = closerDepth,
+                        Trailing = config.partyWallGap,
+                        Build = true,
+                        Commercial = closerCommercial,
+                    });
+                    state.PerimeterBudget--;
+                    content += closerWidth;
+                    mandatory += config.partyWallGap;
+                    cursor += closerWidth + config.partyWallGap;
+                }
+            }
+
             if (slots.Count == 0)
                 return;
+
+            // ---- RESIDUE BAY: what still remains is narrower than the narrowest piece, and
+            // on a terrace it is too wide to hide in the joints - so it becomes a small
+            // parking bay at the end of the run, the street-scale cousin of the feature strip.
+            // Below two stalls' width it goes to the joints as before.
+            if (palette.uniformStreetRuns)
+            {
+                var residue = (end - start) - content - mandatory;
+                if (residue >= MinResidueBay)
+                {
+                    slots.Add(new Slot { Width = residue, IsParking = true });
+                    content += residue;
+                }
+            }
 
             // ---- PASS TWO: spread what is left over, then place.
             // The final slot's trailing gap is not a joint - nothing follows it - so it is not
@@ -748,12 +1203,62 @@ namespace LivingCity.Generation
                                + along * (cursor + slot.Width * 0.5f)
                                - outward * (slot.Depth * 0.5f + slot.Setback);
 
-                    Place(slot.Prefab, centre, slot.Yaw, slot.Width, slot.Depth, along, outward,
-                          config.partyWallGap, spawn, parent, occupied, placed);
+                    var building = Place(slot.Prefab, centre, slot.Yaw, slot.Width, slot.Depth,
+                                         along, outward, config.partyWallGap, spawn, parent,
+                                         occupied, placed);
+                    if (building)
+                        tints.Add(new BuildingTinter.Target(building, slot.Commercial));
                 }
 
                 cursor += slot.Width + slot.Trailing + extra;
             }
+        }
+
+        /// <summary>
+        /// The widest piece in the kit that still fits the given space, measured in the run's
+        /// frame with its facade fix folded in - the same arithmetic the pass-one search uses.
+        /// Sweeps the raw group lists rather than the shuffle bags: a closer is chosen for its
+        /// width, and cycling a bag to find it would reorder every draw after it.
+        /// </summary>
+        static GameObject BestCloser(
+            LotKit kit,
+            bool facesStreet,
+            float baseYaw,
+            PrefabDatabase prefabs,
+            Vector3 along,
+            Vector3 outward,
+            float space,
+            out float width,
+            out float depth,
+            out float yaw,
+            out bool commercial)
+        {
+            GameObject best = null;
+            width = 0f;
+            depth = 0f;
+            yaw = baseYaw;
+            commercial = false;
+
+            for (var group = 0; group < kit.GroupCount; group++)
+                foreach (var piece in kit.GroupAt(group).PiecesFor(facesStreet))
+                {
+                    if (!piece)
+                        continue;
+
+                    var candidateYaw = baseYaw + prefabs.ExtraYawFor(piece);
+                    var footprint = PrefabBounds.FootprintXZ(piece, candidateYaw);
+                    var candidateWidth = Extent(footprint, along);
+                    if (candidateWidth > space || candidateWidth <= width)
+                        continue;
+
+                    best = piece;
+                    width = candidateWidth;
+                    depth = Extent(footprint, outward);
+                    yaw = candidateYaw;
+                    commercial = kit.GroupAt(group).commercial;
+                }
+
+            return best;
         }
 
         /// <summary>Nose-in parking stalls filling one bay cut out of a run.</summary>
@@ -819,6 +1324,178 @@ namespace LivingCity.Generation
         }
 
         /// <summary>
+        /// Fills the band a feature strip took off the block - the `*` column of the block
+        /// sketch, along one whole street side. Parking gets the street-bay treatment over the
+        /// full length; a pocket park gets a kiosk on the pavement line and a coarse grid of
+        /// benches and trees, everything facing the street it fronts.
+        /// </summary>
+        static void BuildFeatureStrip(
+            Vector2 min,
+            Vector2 max,
+            Vector2 buildMin,
+            Vector2 buildMax,
+            FeatureStrip.Strip strip,
+            PrefabDatabase.ZonePalette palette,
+            VehiclePicker parking,
+            PrefabDatabase prefabs,
+            CityConfig config,
+            Transform parent,
+            SpawnPrefab spawn,
+            System.Random rng,
+            List<Bounds> occupied,
+            List<ParkingLayout.Line> markings,
+            List<GameObject> placed)
+        {
+            // The same frame BuildLot walks its sides in: origin at the run's start corner,
+            // outward pointing at the street the strip fronts. The band is the difference
+            // between the full rect and the shrunk one.
+            Vector3 origin, along, outward;
+            float length;
+            Vector2 bandMin, bandMax;
+
+            switch (strip.Side)
+            {
+                case Sides.South:
+                    origin = new Vector3(min.x, 0f, min.y);
+                    along = Vector3.right;
+                    outward = Vector3.back;
+                    length = max.x - min.x;
+                    bandMin = min;
+                    bandMax = new Vector2(max.x, buildMin.y);
+                    break;
+                case Sides.East:
+                    origin = new Vector3(max.x, 0f, min.y);
+                    along = Vector3.forward;
+                    outward = Vector3.right;
+                    length = max.y - min.y;
+                    bandMin = new Vector2(buildMax.x, min.y);
+                    bandMax = max;
+                    break;
+                case Sides.North:
+                    origin = new Vector3(max.x, 0f, max.y);
+                    along = Vector3.left;
+                    outward = Vector3.forward;
+                    length = max.x - min.x;
+                    bandMin = new Vector2(min.x, buildMax.y);
+                    bandMax = max;
+                    break;
+                default:
+                    origin = new Vector3(min.x, 0f, max.y);
+                    along = Vector3.back;
+                    outward = Vector3.left;
+                    length = max.y - min.y;
+                    bandMin = min;
+                    bandMax = new Vector2(buildMin.x, max.y);
+                    break;
+            }
+
+            if (strip.IsPark)
+            {
+                PlacePocketPark(bandMin, bandMax, along, outward, palette, prefabs, config,
+                                parent, spawn, rng, occupied, placed);
+                return;
+            }
+
+            var layout = ParkingLayout.ForStreetBay(origin, along, outward, 0f, length);
+            markings.AddRange(layout.Markings);
+            FillStalls(layout, parking, spawn, parent, rng, occupied, placed);
+        }
+
+        /// <summary>
+        /// A paved corner plaza on a feature strip: the kiosk stood at the pavement facing the
+        /// street, and benches, trees and a lamp behind it on the same coarse grid the alleys
+        /// use - only denser, and all of it turned to the street rather than away from a wall,
+        /// because a park fronts the pavement the way a shop does.
+        /// </summary>
+        static void PlacePocketPark(
+            Vector2 min,
+            Vector2 max,
+            Vector3 along,
+            Vector3 outward,
+            PrefabDatabase.ZonePalette palette,
+            PrefabDatabase prefabs,
+            CityConfig config,
+            Transform parent,
+            SpawnPrefab spawn,
+            System.Random rng,
+            List<Bounds> occupied,
+            List<GameObject> placed)
+        {
+            var streetYaw = YawFor(outward);
+
+            var kiosks = palette.kioskPrefabs;
+            if (kiosks != null && kiosks.Length > 0)
+            {
+                // Both draws happen before the null check, the usual discipline: a missing
+                // prefab in the list must not reshuffle everything placed after it.
+                var kiosk = kiosks[rng.Next(kiosks.Length)];
+                var at = 0.2f + 0.6f * (float)rng.NextDouble();
+
+                if (kiosk)
+                {
+                    var yaw = streetYaw + prefabs.ExtraYawFor(kiosk);
+                    var footprint = PrefabBounds.FootprintXZ(kiosk, yaw);
+                    var width = Extent(footprint, along);
+                    var depth = Extent(footprint, outward);
+
+                    var centre2 = new Vector3((min.x + max.x) * 0.5f, 0f, (min.y + max.y) * 0.5f);
+                    var outHalf = Mathf.Abs(outward.x) > 0.5f ? (max.x - min.x) * 0.5f : (max.y - min.y) * 0.5f;
+                    var alongHalf = Mathf.Abs(along.x) > 0.5f ? (max.x - min.x) * 0.5f : (max.y - min.y) * 0.5f;
+
+                    var centre = centre2
+                               + outward * (outHalf - depth * 0.5f - 0.5f)
+                               + along * ((at - 0.5f) * 2f * Mathf.Max(0f, alongHalf - width));
+
+                    Place(kiosk, centre, yaw, width, depth, along, outward,
+                          config.partyWallGap, spawn, parent, occupied, placed);
+                }
+            }
+
+            var props = palette.pocketParkProps != null && palette.pocketParkProps.Length > 0
+                      ? palette.pocketParkProps
+                      : palette.alleyProps;
+            if (props == null || props.Length == 0)
+                return;
+
+            var bandWidth = max.x - min.x;
+            var bandDepth = max.y - min.y;
+            if (bandWidth < AlleyPropStep || bandDepth < AlleyPropStep)
+                return;
+
+            // Cells tile the band exactly, for the reason BuildInterior gives.
+            var columns = Mathf.Max(1, Mathf.FloorToInt(bandWidth / AlleyPropStep));
+            var rows = Mathf.Max(1, Mathf.FloorToInt(bandDepth / AlleyPropStep));
+            var stepX = bandWidth / columns;
+            var stepZ = bandDepth / rows;
+
+            var bag = new ShuffleBag(props, rng);
+
+            for (var row = 0; row < rows; row++)
+            {
+                for (var column = 0; column < columns; column++)
+                {
+                    if (rng.NextDouble() >= PocketParkPropChance)
+                        continue;
+
+                    var prefab = bag.Peek();
+                    bag.Advance();
+                    if (!prefab)
+                        continue;
+
+                    var position = new Vector3(min.x + (column + 0.5f) * stepX, 0f,
+                                               min.y + (row + 0.5f) * stepZ);
+
+                    var yaw = streetYaw + prefabs.ExtraYawFor(prefab);
+                    var footprint = PrefabBounds.FootprintXZ(prefab, yaw);
+
+                    Place(prefab, position, yaw, footprint.x, footprint.y,
+                          Vector3.right, Vector3.forward, config.partyWallGap,
+                          spawn, parent, occupied, placed);
+                }
+            }
+        }
+
+        /// <summary>
         /// Puts a vehicle in each bay of a layout, leaving a few empty, and RESERVES every bay it
         /// fills. The reservation is the part that used to be missing: the old car-park pass read
         /// the occupancy list and never wrote to it, so BuildScatter could drop a lamp post or a
@@ -836,8 +1513,10 @@ namespace LivingCity.Generation
             Transform parent,
             System.Random rng,
             List<Bounds> occupied,
-            List<GameObject> placed)
+            List<GameObject> placed,
+            int maxCars = int.MaxValue)
         {
+            var cars = 0;
             foreach (var stall in layout.Stalls)
             {
                 // Every stall yaw is a quarter turn - the lot frame and the four lot sides are
@@ -864,6 +1543,11 @@ namespace LivingCity.Generation
                 // bin standing in one reads worse than the gap does.
                 occupied.Add(bounds);
 
+                // Past the cap the remaining bays stay marked and reserved, just empty - the
+                // forecourt's spare stalls, not a hole in the layout.
+                if (cars >= maxCars)
+                    continue;
+
                 if (rng.NextDouble() < EmptyBayChance)
                     continue;
 
@@ -875,6 +1559,7 @@ namespace LivingCity.Generation
                     continue;
 
                 placed.Add(spawn(prefab, stall.Centre, Quaternion.Euler(0f, stall.Yaw, 0f), parent));
+                cars++;
             }
         }
 
@@ -1095,8 +1780,12 @@ namespace LivingCity.Generation
         ///
         /// The FULL box is what goes into <paramref name="occupied"/>, so BuildScatter still
         /// refuses to plant a tree inside a wall.
+        ///
+        /// Returns the spawned instance, null on rejection - GameObject's implicit bool keeps
+        /// the callers that only care whether it stood reading as before, while the building
+        /// paths hand the instance on to the tinter.
         /// </summary>
-        static bool Place(
+        static GameObject Place(
             GameObject prefab,
             Vector3 centre,
             float yaw,
@@ -1108,7 +1797,8 @@ namespace LivingCity.Generation
             SpawnPrefab spawn,
             Transform parent,
             List<Bounds> occupied,
-            List<GameObject> placed)
+            List<GameObject> placed,
+            float scale = 1f)
         {
             var bounds = new Bounds(
                 new Vector3(centre.x, 0f, centre.z),
@@ -1127,17 +1817,25 @@ namespace LivingCity.Generation
 
             foreach (var existing in occupied)
                 if (existing.Intersects(probe))
-                    return false;
+                {
+                    placeRejections++;
+                    return null;
+                }
 
             // The mesh is not necessarily centred on its pivot, so offset by the rotated local
-            // bounds centre to land the geometry where we actually want it.
+            // bounds centre to land the geometry where we actually want it. The offset scales
+            // with the mesh - a scaled instance moves its geometry centre towards the pivot.
             var rotation = Quaternion.Euler(0f, yaw, 0f);
             var localCentre = PrefabBounds.Get(prefab).center;
-            var offset = rotation * new Vector3(localCentre.x, 0f, localCentre.z);
+            var offset = rotation * new Vector3(localCentre.x * scale, 0f, localCentre.z * scale);
 
-            placed.Add(spawn(prefab, new Vector3(centre.x - offset.x, 0f, centre.z - offset.z), rotation, parent));
+            var instance = spawn(prefab, new Vector3(centre.x - offset.x, 0f, centre.z - offset.z),
+                                 rotation, parent);
+            if (!Mathf.Approximately(scale, 1f))
+                instance.transform.localScale *= scale;
+            placed.Add(instance);
             occupied.Add(bounds);
-            return true;
+            return instance;
         }
 
         static float YawFor(Vector3 outward) => Mathf.Atan2(outward.x, outward.z) * Mathf.Rad2Deg;

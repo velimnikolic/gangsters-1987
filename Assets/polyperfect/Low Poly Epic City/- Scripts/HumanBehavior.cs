@@ -1,12 +1,23 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using LivingCity.Entities;
 
 namespace PolyPerfect.City
 {
     [RequireComponent(typeof(PathFinding)),RequireComponent(typeof(Rigidbody))]
     public class HumanBehavior : MonoBehaviour
     {
+        // PATCH (Living City): this pedestrian's entry in PedestrianRegistry, set by
+        // PedestrianAgent on spawn. Null everywhere else - pack demo scenes - and every
+        // avoidance line below is gated on it, so behaviour there is unchanged.
+        [HideInInspector]
+        public PedestrianBody body;
+
+        // PATCH (Living City): isMoving is private and arrival is unobservable, but the
+        // interaction layer must not start an activity mid-crosswalk-wait.
+        public bool IsMoving => isMoving;
+
         [HideInInspector]
         public List<Path> trajectory = new List<Path>();
         private PathFinding pathFinding;
@@ -51,7 +62,10 @@ namespace PolyPerfect.City
         {
             if (isMoving)
             {
-                if (Vector3.Distance(targetPoint , transform.position) < 0.1f)
+                // PATCH (Living City): the arrival radius widens while avoidance is active.
+                // A walker steered sideways around somebody can otherwise end up orbiting a
+                // waypoint it is never allowed to touch.
+                if (Vector3.Distance(targetPoint , transform.position) < (body != null ? 0.75f : 0.1f))
                 {
                     MoveToNextPoint();
                 }
@@ -62,19 +76,54 @@ namespace PolyPerfect.City
                 {
                     speed = Mathf.Lerp(speed, maxspeed, 10 * Time.deltaTime);
                 }
-                
-                Vector3 newPosition = transform.position + (direction.normalized * speed * Time.deltaTime);
-                transform.position = newPosition;
 
-                if (direction != Vector3.zero)
+                if (body != null)
                 {
-                    direction.y = 0;
-                    transform.rotation = Quaternion.LookRotation(direction, Vector3.up);
+                    // PATCH (Living City): pedestrian avoidance. Steering bends the walking
+                    // direction away from bodies in personal space; the clamp bounds the step
+                    // so two people can never occupy the same ground. Both only ever REDUCE
+                    // motion - a walker halted at a red light cannot be pushed anywhere.
+                    var obstacle = PedestrianRegistry.Probe(body, direction);
+                    var heading = PedestrianSteering.Blend(direction, obstacle.Push);
+                    var advance = Mathf.Min(speed * Time.deltaTime, obstacle.AllowedAdvance);
+                    var step = heading * advance;
+
+                    // Steering is strictly horizontal; keep the follower's own vertical
+                    // component so bridge ramps still climb.
+                    step.y = direction.normalized.y * speed * Time.deltaTime;
+
+                    var actual = step.magnitude / Mathf.Max(Time.deltaTime, 1e-5f);
+                    body.SpeedMs = actual;
+
+                    // Fold the clamp back into the speed model, so the walk animation tracks
+                    // what the feet actually do and a released walker accelerates from rest
+                    // instead of lurching off at full speed.
+                    speed = Mathf.Min(speed, actual);
+
+                    transform.position = transform.position + step;
+
+                    if (heading != Vector3.zero)
+                        transform.rotation = Quaternion.LookRotation(heading, Vector3.up);
+                }
+                else
+                {
+                    Vector3 newPosition = transform.position + (direction.normalized * speed * Time.deltaTime);
+                    transform.position = newPosition;
+
+                    if (direction != Vector3.zero)
+                    {
+                        direction.y = 0;
+                        transform.rotation = Quaternion.LookRotation(direction, Vector3.up);
+                    }
                 }
             }
             else
             {
                 speed = 0;
+                // PATCH (Living City): a walker waiting at a crossing is still an obstacle,
+                // and one that must read as standing to everyone probing around it.
+                if (body != null)
+                    body.SpeedMs = 0f;
             }
             animator.SetFloat("speed",speed * 0.8f);
         }

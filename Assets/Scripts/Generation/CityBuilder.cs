@@ -24,7 +24,6 @@ namespace LivingCity.Generation
                  "check the path graph without buildings and props cluttering the gizmos.")]
         [SerializeField] bool buildBuildings = true;
         [SerializeField] bool buildProps = true;
-        [SerializeField] bool buildParkedCars = true;
 
         public CityConfig Config => config;
         public PrefabDatabase Prefabs => prefabs;
@@ -75,46 +74,97 @@ namespace LivingCity.Generation
                 ? GroundPlacer.Build(Grid, prefabs, config, Category(root.transform, "Ground"), spawn)
                 : new System.Collections.Generic.List<GameObject>();
 
+            // The tinter takes its own list rather than `buildings`: that one collects
+            // everything the block placer spawned - parked cars, trees, kiosks - and only
+            // placement knows which spawns are buildings and which group each came from,
+            // which is what decides the residential/commercial palette split.
+            var tintTargets = new System.Collections.Generic.List<BuildingTinter.Target>();
             var buildings = buildBuildings
-                ? BlockBuilder.Build(Grid, prefabs, config, Category(root.transform, "Buildings"), spawn)
+                ? BlockBuilder.Build(Grid, prefabs, config, Category(root.transform, "Buildings"),
+                                     spawn, tintTargets)
                 : new System.Collections.Generic.List<GameObject>();
 
-            // Colour variation is a post-pass over what BlockBuilder placed, deliberately not a
-            // parameter threaded through the perimeter walk - placement and appearance have no
-            // reason to know about each other.
-            BuildingTinter.Apply(buildings, prefabs, config);
+            BuildingTinter.Apply(tintTargets, prefabs, config);
 
+            // Lamps and street trees only. Nothing parks at the kerb any more - the band they
+            // stand in is paved by GroundPlacer's apron rather than left as grass verge.
             var props = buildProps
                 ? StreetPropPlacer.Build(Grid, prefabs, config, Category(root.transform, "Props"), spawn)
                 : new System.Collections.Generic.List<GameObject>();
 
-            // Props are passed in as obstacles: parked cars share the verge with the lamps and
-            // trees, so the placer needs to know what is already standing there.
-            var parked = buildParkedCars
-                ? ParkedCarPlacer.Build(Grid, prefabs, config, Category(root.transform, "ParkedCars"), spawn, props)
-                : new System.Collections.Generic.List<GameObject>();
+            // Interaction markers last, over the finished hierarchy: benches and shopfronts
+            // are spawned from five different places, and one name-matching sweep here is the
+            // single hook that covers them all. The markers are data-only components, so they
+            // ride into the saved scene and cost nothing when interactions are off.
+            var interactionPoints = InteractionMarkers.Attach(root.transform);
+
+            // In Play the lamp rig built its lights in Start, against the city that just got
+            // replaced - re-wire it here or the new lamps stay dark. In the editor the night
+            // preview menu rebuilds on demand instead, so no lights are created eagerly.
+            if (Application.isPlaying)
+            {
+                var lampRig = FindAnyObjectByType<Ambient.StreetLampLights>();
+                if (lampRig)
+                    lampRig.Rebuild();
+            }
 
             Debug.Log($"[CityBuilder] Generated {config.gridWidth}x{config.gridHeight} city " +
                       $"(seed {config.seed}): {roads.Tiles.Count} tiles, " +
                       $"{roads.TrafficLights.Count} traffic lights, {Grid.BlockCount} blocks, " +
                       $"{ground.Count} ground slabs, {buildings.Count} buildings, " +
-                      $"{props.Count} props, {parked.Count} parked cars.\n" +
+                      $"{props.Count} props, {interactionPoints} interaction points.\n" +
                       $"[CityBuilder] Zones: {ZonePlanner.Describe(Grid)}");
 
             return root.transform;
         }
 
-        public void Clear()
+        /// <summary>
+        /// Tears the generated city down and returns how many roots it removed.
+        ///
+        /// Every matching child, not transform.Find's first hit. Find returning one root at a
+        /// time is what let them stack: Build calls Clear once and then adds a root, so a second
+        /// root never gets removed, it only ever gets pushed down the sibling list. The symptom
+        /// is a Clear button that reports success on click after click while the city stays put -
+        /// each press was removing one root off a pile.
+        ///
+        /// The count is returned rather than logged because Build calls Clear on every generate,
+        /// and a log here would bury the generation summary.
+        /// </summary>
+        public int Clear()
         {
-            var existing = transform.Find(GeneratedRootName);
-            if (!existing)
-                return;
+            var destroyed = 0;
 
-            if (Application.isPlaying)
-                Destroy(existing.gameObject);
-            else
-                DestroyImmediate(existing.gameObject);
+            // Backwards, because destroying re-indexes the remaining children.
+            for (var i = transform.childCount - 1; i >= 0; i--)
+            {
+                var child = transform.GetChild(i);
+                if (!IsGeneratedRoot(child.name)) continue;
+
+                if (Application.isPlaying)
+                    Destroy(child.gameObject);
+                else
+                    DestroyImmediate(child.gameObject);
+
+                destroyed++;
+            }
+
+            // The lamp rig hangs its lights under the lamps just destroyed. Torn down even when
+            // there was no root: an interrupted earlier clear can leave orphaned lights hanging
+            // mid-air where lamps used to stand, and this is the only sweep that removes them.
+            var lampRig = FindAnyObjectByType<Ambient.StreetLampLights>();
+            if (lampRig)
+                lampRig.Teardown();
+
+            return destroyed;
         }
+
+        /// <summary>
+        /// Also matches "Generated City (1)" and friends - the name Unity gives a root duplicated
+        /// in the hierarchy with Cmd+D. Those are invisible to transform.Find, so before this they
+        /// could never be cleared by any route and simply sat there looking like a failed clear.
+        /// </summary>
+        static bool IsGeneratedRoot(string name) =>
+            name == GeneratedRootName || name.StartsWith(GeneratedRootName + " (");
 
         public Transform GeneratedRoot => transform.Find(GeneratedRootName);
 

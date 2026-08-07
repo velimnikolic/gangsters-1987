@@ -34,6 +34,11 @@ namespace LivingCity.Entities
 
             rng = new System.Random(config.seed + SeedOffsets.Pedestrians);
 
+            // The registry's tuning is global on purpose - the probes run inside a patched
+            // pack script with no config reference. Handed down once, before the first spawn.
+            PedestrianRegistry.PersonalSpace = config.pedestrianPersonalSpace;
+            PedestrianRegistry.MinSeparation = config.pedestrianMinSeparation;
+
             // Same reason as VehicleSpawner: sidewalk paths are linked in Tile.Start().
             yield return null;
 
@@ -51,15 +56,19 @@ namespace LivingCity.Entities
             if (!tile)
                 return;
 
-            // Offset onto one of the two sidewalk lines (x = +/-4 in tile-local space),
-            // then a little along the street so pedestrians do not stack up on tile centres.
+            // Put them on a pavement, then a little along it so they do not stack up on tile
+            // centres.
+            //
+            // The pavement line is READ OFF THE TILE rather than assumed. It used to be the
+            // constant x = +/-4 measured from tile-road-straight, which stopped being true the
+            // moment the city gained a second kind of road: the dual carriageway walks at
+            // +/-7.25, so at 4 pedestrians would spawn in its outer traffic lane. Asking the
+            // tile for its own sidewalkPaths is right for every tile in the pack - avenue,
+            // street, park path - and leaves nothing to keep in sync.
             var side = rng.Next(2) == 0 ? 1f : -1f;
-            var localOffset = new Vector3(
-                CityGrid.SidewalkOffset * side,
-                0f,
-                ((float)rng.NextDouble() - 0.5f) * CityGrid.CellSize * 0.6f);
+            var alongStreet = ((float)rng.NextDouble() - 0.5f) * CityGrid.CellSize * 0.6f;
 
-            var position = tile.transform.position + tile.transform.rotation * localOffset;
+            var position = SidewalkPoint(tile, side, alongStreet);
 
             var prefab = prefabs.aiPedestrians[rng.Next(prefabs.aiPedestrians.Length)];
             var person = Instantiate(prefab, position, Quaternion.Euler(0f, rng.Next(4) * 90f, 0f), transform);
@@ -68,10 +77,70 @@ namespace LivingCity.Entities
             if (behaviour)
                 behaviour.randomDestination = true;
 
-            if (behaviour && rng.NextDouble() < idlerFraction)
+            if (behaviour && config.pedestrianInteractions)
+            {
+                // The interaction controller is swapped in on the INSTANCE, so the pack's AI
+                // prefabs and demo scenes keep their own; empty (bootstrap could not build
+                // it) leaves the pack controller and the agent simply never finds the
+                // activity parameter.
+                var animator = person.GetComponent<Animator>();
+                if (animator && prefabs.pedestrianController)
+                    animator.runtimeAnimatorController = prefabs.pedestrianController;
+
+                // The agent subsumes PedestrianIdler: idling is one of its activities, with
+                // its odds owned by CityConfig rather than a per-spawn fraction here.
+                var agent = person.AddComponent<PedestrianAgent>();
+                agent.Configure(config, rng.Next());
+            }
+            else if (behaviour && rng.NextDouble() < idlerFraction)
+            {
                 person.AddComponent<PedestrianIdler>();
+            }
 
             active.Add(person);
+        }
+
+        /// <summary>
+        /// A point on one of this tile's pavements, `alongStreet` metres down it.
+        ///
+        /// Works in the tile's LOCAL frame, so it is independent of how the tile was rotated:
+        /// the pavement lines always run parallel to local Z, and which one you get is the sign
+        /// of the local X. The widest |x| on the requested side is the outer pavement - on a
+        /// crosswalk tile some sidewalk paths cut ACROSS the carriageway, and their nodes sit
+        /// near x = 0, which is the one place a pedestrian must not be put.
+        ///
+        /// Falls back to the old constant when a tile has no sidewalk paths at all, which keeps
+        /// this working for any tile the pack adds later rather than dropping the spawn.
+        /// </summary>
+        Vector3 SidewalkPoint(Tile tile, float side, float alongStreet)
+        {
+            var offset = new Vector3(CityGrid.SidewalkOffset * side, 0f, alongStreet);
+
+            if (tile.sidewalkPaths != null)
+            {
+                var best = 0f;
+
+                foreach (var path in tile.sidewalkPaths)
+                {
+                    if (!path || path.pathPositions == null)
+                        continue;
+
+                    foreach (var node in path.pathPositions)
+                    {
+                        if (!node)
+                            continue;
+
+                        var local = tile.transform.InverseTransformPoint(node.position);
+                        if (Mathf.Sign(local.x) != side || Mathf.Abs(local.x) <= best)
+                            continue;
+
+                        best = Mathf.Abs(local.x);
+                        offset = new Vector3(local.x, local.y, alongStreet);
+                    }
+                }
+            }
+
+            return tile.transform.TransformPoint(offset);
         }
 
         Tile RandomWalkableTile()

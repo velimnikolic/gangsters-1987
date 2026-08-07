@@ -101,6 +101,32 @@ namespace PolyPerfect.City
         /// <summary>How many positions along the lane to try before accepting an occupied one.</summary>
         const int ClearSpotAttempts = 8;
 
+        // PATCH (Living City): don't block the box.
+        //
+        // Nothing else in the system asks whether a junction can be EXITED before it is entered -
+        // right of way only compares two cars' distance to each other. So when the street beyond
+        // a junction backed up, cars kept flowing into the box until they stood in each other's
+        // way from three directions at once, and a cyclic block like that is beyond anything a
+        // pairwise rule can undo. The check here is the missing question: if a stationary car
+        // leaves no room past the far side of the junction ahead, stop at the entry line, as a
+        // comfort-braking target fed to the speed model - never as a hard clamp, because the
+        // virtual stop line is a courtesy, not a body.
+
+        /// <summary>How far short of the junction's first lane the car aims to stand, metres.</summary>
+        const float JunctionEntryMargin = 0.75f;
+
+        /// <summary>
+        /// Seconds after which a car gives up waiting at the entry line and reverts to the old
+        /// behaviour. A car held here accrues no stall - it has clear road in front of it - so
+        /// without a timeout a false positive (a misread tile, a blocker that deactivated
+        /// without moving) would hold it, and everyone behind it, forever. Reverting is safe:
+        /// worst case is exactly the pre-rule behaviour, which the escape ladder now bounds.
+        /// </summary>
+        const float JunctionHoldTimeout = 12f;
+
+        /// <summary>Time.time when the current entry-line hold began; negative when not holding.</summary>
+        float junctionHoldSince = -1f;
+
         // PATCH (Living City): a watchdog over the three trigger stops below.
         //
         // Each of them sets isMoving = false and then waits for a C# event to set it back. There
@@ -332,7 +358,7 @@ namespace PolyPerfect.City
                     // If none was clear the teleport still happens. The snap is what guarantees
                     // the car is on its OWN carriageway rather than cutting across the median -
                     // see the block above - and a median cut is permanent damage where an overlap
-                    // is now recoverable: the pair is left out of each other's ClampGap and creeps
+                    // is now recoverable: the pair is left out of each other's allowance and creeps
                     // apart within a couple of seconds.
                     transform.position = spot;
                     transform.rotation = Quaternion.LookRotation(frontPathDirection);
@@ -560,8 +586,47 @@ namespace PolyPerfect.City
                     if (trafficBody != null)
                         trafficBody.SpeedMs = speedMs;
 
-                    var ahead = LivingCity.Entities.TrafficRegistry.Probe(
-                        trafficBody, LivingCity.Entities.CarFollowing.Lookahead(speedMs, headway));
+                    float lookahead = LivingCity.Entities.CarFollowing.Lookahead(speedMs, headway);
+                    var ahead = LivingCity.Entities.TrafficRegistry.Probe(trafficBody, lookahead);
+
+                    // PATCH (Living City): don't block the box - see the constants above. The
+                    // stall release outranks the hold: a car the registry is actively trying to
+                    // unstick must not be re-stuck by its own caution.
+                    float gapForModel = ahead.Gap;
+                    float leadForModel = ahead.LeadSpeedMs;
+                    if (trafficBody != null && !ahead.ReleaseActive
+                        && LivingCity.Entities.JunctionMap.TryFindJunctionAhead(
+                               trajectory, frontWheelsPath, frontWheelsCheckpoint,
+                               frontWheelsMiddlePoint.position, lookahead,
+                               out float distToJunction, out Vector3 junctionExitPos, out Vector3 junctionExitDir))
+                    {
+                        float requiredRoom = 2f * trafficBody.HalfLength
+                                           + LivingCity.Entities.CarFollowing.StandstillGap;
+                        if (LivingCity.Entities.TrafficRegistry.IsExitBlocked(
+                                trafficBody, junctionExitPos, junctionExitDir, requiredRoom))
+                        {
+                            if (junctionHoldSince < 0f)
+                                junctionHoldSince = Time.time;
+
+                            if (Time.time - junctionHoldSince < JunctionHoldTimeout)
+                            {
+                                float holdGap = Mathf.Max(0f, distToJunction - JunctionEntryMargin);
+                                if (holdGap < gapForModel)
+                                {
+                                    gapForModel = holdGap;
+                                    leadForModel = 0f;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            junctionHoldSince = -1f;
+                        }
+                    }
+                    else
+                    {
+                        junctionHoldSince = -1f;
+                    }
 
                     // PATCH (Living City): the model, plus the way out of a jam that the model
                     // cannot provide.
@@ -579,7 +644,7 @@ namespace PolyPerfect.City
                     // light is neither, so it still settles at the comfortable 1.5m rather than
                     // compacting to bumper contact.
                     speedMs = LivingCity.Entities.CarFollowing.NextSpeed(
-                        speedMs, desiredSpeed * KMHTOMS, ahead.Gap, ahead.LeadSpeedMs, headway,
+                        speedMs, desiredSpeed * KMHTOMS, gapForModel, leadForModel, headway,
                         ahead.ReleaseActive || ahead.Overlapping, Time.deltaTime);
 
                     speed = speedMs / KMHTOMS;
@@ -613,10 +678,10 @@ namespace PolyPerfect.City
                     float positionDelta = speedMs * Time.deltaTime;
 
                     // PATCH (Living City): the guarantee. Whatever the model decided, this frame's
-                    // movement may not close the gap past MinClearance. It uses ClampGap, which
-                    // ignores right of way - being the car with priority is not a licence to
-                    // occupy somebody else's bodywork, it only means you are the one who does not
-                    // have to slow down gracefully for it.
+                    // movement may not exceed what the registry allows. The allowance ignores
+                    // right of way - being the car with priority is not a licence to occupy
+                    // somebody else's bodywork, it only means you are the one who does not have
+                    // to slow down gracefully for it.
                     //
                     // It applies unconditionally, including while overlapping something. The
                     // exemption that used to stand here - skip the whole clamp whenever any
@@ -624,9 +689,17 @@ namespace PolyPerfect.City
                     // over every car in range, so one car crossing the junction ahead let this car
                     // drive straight through the one it was following. The untangling it was
                     // supposed to allow is now handled where it belongs, by leaving overlapped
-                    // bodies out of ClampGap in TrafficRegistry.Probe, so a pair already inside
-                    // each other is unconstrained WITH RESPECT TO EACH OTHER and nothing else.
-                    float allowed = Mathf.Max(0f, ahead.ClampGap - LivingCity.Entities.CarFollowing.MinClearance);
+                    // bodies out of the allowance in TrafficRegistry.Probe, so a pair already
+                    // inside each other is unconstrained WITH RESPECT TO EACH OTHER and nothing
+                    // else.
+                    //
+                    // The clearance is subtracted per blocker inside the registry, not here,
+                    // because it is no longer one number: a wedged car's clearance against
+                    // CROSSING bodies decays with time stuck (see CarFollowing.ClearanceFor), so
+                    // a mutually-blocked ring - which this clamp used to hold shut forever, zero
+                    // allowance all round, creep achieving nothing - eventually earns the few
+                    // tenths of a metre it needs to rotate itself loose.
+                    float allowed = ahead.AllowedAdvance;
                     if (allowed < positionDelta)
                     {
                         positionDelta = allowed;

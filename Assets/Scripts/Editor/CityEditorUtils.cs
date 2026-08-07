@@ -18,9 +18,13 @@ namespace LivingCity.EditorTools
         }
 
         /// <summary>
-        /// Flags generated geometry as batching-static. Traffic lights are skipped: they swap
-        /// emission colour through a material instance at runtime, which opts that renderer out
-        /// of the batch anyway.
+        /// Flags generated geometry as batching-static.
+        ///
+        /// Two things are skipped. Traffic lights swap emission colour through a material
+        /// instance at runtime, which opts that renderer out of the batch anyway. And a factory
+        /// carrying a SmokeVent must stay non-static: SmokeStackSystem parents a live
+        /// ParticleSystem at that mouth, and a static-flagged ancestor is exactly how you get a
+        /// plume that renders once and then never moves again.
         /// </summary>
         public static void MarkStaticForBatching(Transform root)
         {
@@ -33,6 +37,9 @@ namespace LivingCity.EditorTools
             foreach (var child in root.GetComponentsInChildren<Transform>(true))
             {
                 if (child.GetComponentInParent<TrafficLightsControl>())
+                    continue;
+
+                if (child.GetComponentInParent<Ambient.SmokeVent>())
                     continue;
 
                 GameObjectUtility.SetStaticEditorFlags(child.gameObject, Flags);
@@ -63,6 +70,15 @@ namespace LivingCity.EditorTools
             var property = so.FindProperty(fieldName);
             if (property == null) return;
             property.boolValue = value;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        public static void SetFloat(Object target, string fieldName, float value)
+        {
+            var so = new SerializedObject(target);
+            var property = so.FindProperty(fieldName);
+            if (property == null) return;
+            property.floatValue = value;
             so.ApplyModifiedPropertiesWithoutUndo();
         }
     }

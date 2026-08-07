@@ -33,13 +33,15 @@ namespace LivingCity.CameraRig
 
         [Header("Zoom")]
         [SerializeField] float minOrthoSize = 10f;
-        [Tooltip("Grad je 270x210 m; rotiran za 45 stepeni to je ~339 m po sirini ekrana i " +
-                 "~240 m po visini. Visina kadra je 2x ova vrednost, pa 160 uokviruje ceo " +
-                 "grad sa marginom - 80 je pokazivalo samo dve trecine.")]
-        [SerializeField] float maxOrthoSize = 160f;
+        [Tooltip("Grid je 16x7 celija, pa su bounds 480x210 m. Rotirano za yaw 45 ovo je ~488 m " +
+                 "po obe planarne ose, a ekranska visina je jos skracena za sin(pitch): ~345 m. " +
+                 "Kadar pokriva 2x ovu vrednost, pa cela mapa trazi 173 na 16:9 i 183 na 4:3 - " +
+                 "200 pokriva oba sa marginom. Prethodnih 80 je pokazivalo manje od pola grada.")]
+        [SerializeField] float maxOrthoSize = 200f;
         [SerializeField] float orthoSize = 40f;
-        [Tooltip("Percent change in zoom per scroll step.")]
-        [SerializeField] float scrollZoomSpeed = 8f;
+        [Tooltip("Percent change in zoom per scroll step. Na 6% je od default zooma 40 do " +
+                 "potpuno odzumirano ~28 klikova, a ceo opseg 10-200 je ~51.")]
+        [SerializeField] float scrollZoomSpeed = 6f;
         [SerializeField] float pinchZoomSpeed = 0.05f;
 
         [Header("Pan")]

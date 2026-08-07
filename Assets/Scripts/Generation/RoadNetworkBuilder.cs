@@ -57,10 +57,26 @@ namespace LivingCity.Generation
             spawn ??= RuntimeSpawn;
             var rng = new System.Random(config.seed + SeedOffsets.Roads + 1);
 
+            // The avenue degrades to an ordinary street rather than stopping the build - see
+            // PrefabDatabase.ValidateMainRoadTiles. Resolved once: the warning belongs to the
+            // asset, not to each of the dozen-odd cells that would repeat it.
+            var buildBoulevard = grid.HasMainRoad;
+            if (buildBoulevard && !prefabs.ValidateMainRoadTiles(out var missingMain))
+            {
+                Debug.LogWarning($"[RoadNetworkBuilder] PrefabDatabase is missing dual carriageway " +
+                                 $"tiles: {missingMain}. The boulevard is drawn as an ordinary " +
+                                 "street - run Tools/City/Create or Refresh Config Assets.");
+                buildBoulevard = false;
+            }
+
             foreach (var cell in grid.RoadCells())
             {
                 var sides = grid.GetNeighborMask(cell.x, cell.y);
-                var placement = RoadTileTable.Lookup(sides);
+                var onBoulevard = buildBoulevard && grid.IsMainRoad(cell.x, cell.y);
+
+                var placement = onBoulevard
+                    ? RoadTileTable.LookupMain(sides, grid.MainRoadNorthSouth)
+                    : RoadTileTable.Lookup(sides);
 
                 if (!placement.IsValid)
                 {
@@ -73,20 +89,44 @@ namespace LivingCity.Generation
                 // Crosswalk straights give pedestrians a marked place to cross. The prefab's
                 // tileShape is Cross so it probes all four sides, but a straight run has no
                 // side neighbours to match against, so it behaves as a plain straight.
+                //
+                // The avenue rolls for one too, and on the same draw. A boulevard cell was a
+                // Straight before it was a MainStraight, so keeping the roll here - rather than
+                // skipping it or moving it - leaves the random stream identical and every
+                // existing seed's crosswalk pattern on the minor streets exactly where it was.
                 if (placement.Kind == RoadTileKind.Straight
                     && prefabs.straightCrosswalk
                     && rng.NextDouble() < crosswalkChance)
                 {
                     prefab = prefabs.straightCrosswalk;
                 }
+                //
+                // Note the operand order: the roll comes BEFORE the null check, so a database
+                // with no mainStraightCrosswalk still consumes its draw. Written the other way
+                // round it would silently skip one and shift every later cell's crosswalk.
+                else if (placement.Kind == RoadTileKind.MainStraight
+                         && rng.NextDouble() < crosswalkChance
+                         && prefabs.mainStraightCrosswalk)
+                {
+                    prefab = prefabs.mainStraightCrosswalk;
+                }
 
                 var tile = spawn(prefab, grid.CellToWorld(cell), placement.Rotation, parent);
                 tile.name = $"tile_{cell.x}_{cell.y}_{placement.Kind}";
                 result.Tiles.Add(tile);
 
-                if (placement.Kind == RoadTileKind.Cross && prefabs.trafficLights)
+                var crossroads = placement.Kind == RoadTileKind.Cross
+                                 || placement.Kind == RoadTileKind.MainCross;
+
+                // The gantry set on the avenue, the post elsewhere; either falls back to the
+                // other so a half-filled asset still lights its junctions.
+                var lightsPrefab = placement.Kind == RoadTileKind.MainCross && prefabs.mainTrafficLights
+                    ? prefabs.mainTrafficLights
+                    : prefabs.trafficLights;
+
+                if (crossroads && lightsPrefab)
                 {
-                    var lights = spawn(prefabs.trafficLights, grid.CellToWorld(cell), Quaternion.identity, parent);
+                    var lights = spawn(lightsPrefab, grid.CellToWorld(cell), Quaternion.identity, parent);
                     lights.name = $"lights_{cell.x}_{cell.y}";
                     result.TrafficLights.Add(lights);
                 }

@@ -14,7 +14,6 @@ namespace LivingCity.Generation
         public const int Roads = 0;
         public const int Buildings = 1_000;
         public const int Props = 2_000;
-        public const int ParkedCars = 3_000;
         public const int Vehicles = 4_000;
         public const int Pedestrians = 5_000;
         public const int Ambient = 6_000;
@@ -28,6 +27,34 @@ namespace LivingCity.Generation
         /// no matter which of them asks first - see BlockLots.
         /// </summary>
         public const int Lots = 10_000;
+
+        /// <summary>
+        /// Read by FeatureStrip, shared by the same two callers for the same reason: the strip
+        /// moves the rectangle the lots are planned in, so both must agree on it exactly.
+        /// </summary>
+        public const int FeatureStrips = 11_000;
+
+        /// <summary>
+        /// Read by CityWeather. Its own offset so that changing the weather roll cannot shift
+        /// any other subsystem's stream - a seed has to keep producing the same city whatever
+        /// the sky over it is doing.
+        /// </summary>
+        public const int Weather = 12_000;
+
+        /// <summary>
+        /// Read by IndustrialLayout, shared by BlockBuilder and GroundPlacer for the third time
+        /// in this list and for the third identical reason: the works plans its own rows and
+        /// carriageways, and the ground has to lay asphalt on exactly the carriageways the halls
+        /// were arranged around.
+        /// </summary>
+        public const int Industrial = 13_000;
+
+        /// <summary>
+        /// Read by PedestrianInteractionDirector for the chat pairing rolls. Its own offset so
+        /// that tuning conversation odds cannot shift what any per-agent System.Random draws -
+        /// the agents themselves are seeded through the Pedestrians stream via the spawner.
+        /// </summary>
+        public const int PedestrianLife = 14_000;
     }
 
     /// <summary>
@@ -55,7 +82,7 @@ namespace LivingCity.Generation
             var minBlock = Mathf.Max(1, config.minArterialSpacing - 1);
             var maxBlock = Mathf.Max(minBlock, config.maxArterialSpacing - 1);
 
-            Subdivide(grid, 0, 0, grid.Width - 1, grid.Height - 1, minBlock, maxBlock, rng);
+            Subdivide(grid, 0, 0, grid.Width - 1, grid.Height - 1, minBlock, maxBlock, rng, depth: 0);
 
             grid.AssignBlockIds();
 
@@ -115,9 +142,25 @@ namespace LivingCity.Generation
         /// the streets run out of, not as an island with a bypass around it - and the four
         /// corner cells in particular are never road, which MapEdgeGates needs because a lane
         /// standing on two edges at once cannot be classified as an entry or an exit.
+        ///
+        /// THE FIRST CUT IS THE BOULEVARD (depth 0). It is the only cut that spans the whole
+        /// map, which is exactly what the city's main axis has to do, so it costs nothing to
+        /// take: no extra draw from rng, no change to where anything lands. Every existing seed
+        /// produces the identical layout it did before and simply gains a dual carriageway on
+        /// the line it was already cutting.
+        ///
+        /// That choice also CLOSES the set of tile shapes the boulevard can need, which is why
+        /// RoadTileTable.LookupMain has no curve or taper case:
+        ///
+        /// - It spans the map, so a boulevard cell always has both of its along-axis neighbours
+        ///   except at the two ends, where property (4) above applies - the map edge slices it.
+        /// - No later cut can be parallel-adjacent to it: every recursion happens strictly
+        ///   inside one of the two halves, and a cut needs minBlock >= 1 cells of land before it.
+        /// - No later cut can touch its end cells either, since no cut lands at index 0 or
+        ///   size-1. So an end cell has no side street, and the boulevard never has to turn.
         /// </summary>
         static void Subdivide(CityGrid grid, int x0, int z0, int x1, int z1,
-                              int minBlock, int maxBlock, System.Random rng)
+                              int minBlock, int maxBlock, System.Random rng, int depth)
         {
             var width = x1 - x0 + 1;
             var height = z1 - z0 + 1;
@@ -150,19 +193,25 @@ namespace LivingCity.Generation
                 // draw is the whole source of "one wide, one narrow".
                 var column = rng.Next(x0 + minBlock, x1 - minBlock + 1);
                 for (var z = z0; z <= z1; z++)
+                {
                     grid[column, z] = CellType.Road;
+                    if (depth == 0) grid.SetMainRoad(column, z, northSouth: true);
+                }
 
-                Subdivide(grid, x0, z0, column - 1, z1, minBlock, maxBlock, rng);
-                Subdivide(grid, column + 1, z0, x1, z1, minBlock, maxBlock, rng);
+                Subdivide(grid, x0, z0, column - 1, z1, minBlock, maxBlock, rng, depth + 1);
+                Subdivide(grid, column + 1, z0, x1, z1, minBlock, maxBlock, rng, depth + 1);
             }
             else
             {
                 var row = rng.Next(z0 + minBlock, z1 - minBlock + 1);
                 for (var x = x0; x <= x1; x++)
+                {
                     grid[x, row] = CellType.Road;
+                    if (depth == 0) grid.SetMainRoad(x, row, northSouth: false);
+                }
 
-                Subdivide(grid, x0, z0, x1, row - 1, minBlock, maxBlock, rng);
-                Subdivide(grid, x0, row + 1, x1, z1, minBlock, maxBlock, rng);
+                Subdivide(grid, x0, z0, x1, row - 1, minBlock, maxBlock, rng, depth + 1);
+                Subdivide(grid, x0, row + 1, x1, z1, minBlock, maxBlock, rng, depth + 1);
             }
         }
     }

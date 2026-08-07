@@ -5,13 +5,20 @@ using LivingCity.Data;
 namespace LivingCity.Generation
 {
     /// <summary>
-    /// Dresses the verge between the pavement and the block edge.
+    /// Dresses the band between the pavement and the block edge.
     ///
     /// Measured tile geometry (tile-road-straight, resolved through the prefab hierarchy):
     ///   driving lanes  x = +/-1.5
     ///   sidewalk paths x = +/-4
     ///   tile edge      x = +/-15
     /// So anything from about 5.5 outwards is clear of both the lanes and the walking route.
+    ///
+    /// That band used to be the road tile's grass verge. It is now surfaced end to end by
+    /// GroundPlacer's apron, so these props stand on pavement - which is what a street lamp
+    /// wants, and reads as a tree pit for the trees. Beside the park the apron is grass rather
+    /// than concrete, so there the same props stand on a lawn that carries on past them into the
+    /// park; a lamp on a park verge is right too, and the alternative was a 10m concrete ring
+    /// that made the park look set back from its own street.
     /// </summary>
     public static class StreetPropPlacer
     {
@@ -21,6 +28,14 @@ namespace LivingCity.Generation
         /// trees stand between the kerb and the walls rather than inside either.
         /// </summary>
         const float VergeOffset = 5.5f;
+
+        /// <summary>
+        /// The same line on the dual carriageway, whose cross-section is wider throughout:
+        /// outer lanes at 4.75 and pavements at 7.25, against a street's 1.5 and 4. At 5.5 a
+        /// lamp would stand in the avenue's outer LANE. 8.5 keeps the same relation - clear of
+        /// the pavement, inside the building line at CityConfig.mainSidewalkWidth (10).
+        /// </summary>
+        const float MainVergeOffset = 8.5f;
 
         /// <summary>Lamps every other tile, i.e. every 60 units.</summary>
         const int LampTileInterval = 2;
@@ -50,6 +65,12 @@ namespace LivingCity.Generation
                     if (grid.IsRoad(neighbour.x, neighbour.y)) continue;
                     if (!grid.InBounds(neighbour.x, neighbour.y)) continue;
 
+                    // A car park is fenced at the pavement edge (BlockBuilder.ClearanceFor), so
+                    // the prop line at 5.5 is INSIDE its lot - a lamp here would stand among the
+                    // parked cars and a tree would grow through the tarmac. Its own scatter
+                    // dresses the apron instead.
+                    if (BlockBuilder.IsCarParkAt(grid, prefabs, neighbour.x, neighbour.y)) continue;
+
                     var outward = side.direction;
                     var along = new Vector3(-outward.z, 0f, outward.x);
 
@@ -58,10 +79,11 @@ namespace LivingCity.Generation
                     var rotation = Quaternion.Euler(0f, yaw, 0f);
 
                     var lampHere = (cell.x + cell.y) % LampTileInterval == 0;
+                    var verge = grid.IsMainRoad(cell.x, cell.y) ? MainVergeOffset : VergeOffset;
 
                     for (var i = 0; i < AlongOffsets.Length; i++)
                     {
-                        var position = centre + outward * VergeOffset + along * AlongOffsets[i];
+                        var position = centre + outward * verge + along * AlongOffsets[i];
                         var middle = i == 1;
 
                         GameObject prefab = null;

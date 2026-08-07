@@ -29,10 +29,34 @@ namespace LivingCity.EditorTools
 
         void OnEnable() => FindBuilder();
 
+        /// <summary>
+        /// Picks the builder that actually holds a city, then any configured one, and only then
+        /// whatever is left. FindFirstObjectByType alone was a coin flip whenever the scene had a
+        /// spare unconfigured "City" - and landing on the spare showed the "assign a CityConfig"
+        /// warning while a perfectly good city sat in the scene.
+        /// </summary>
         void FindBuilder()
         {
-            if (!builder)
-                builder = FindFirstObjectByType<CityBuilder>();
+            if (builder) return;
+
+            var builders = FindObjectsByType<CityBuilder>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+            foreach (var candidate in builders)
+                if (candidate.GeneratedRoot)
+                {
+                    builder = candidate;
+                    return;
+                }
+
+            foreach (var candidate in builders)
+                if (candidate.Config && candidate.Prefabs)
+                {
+                    builder = candidate;
+                    return;
+                }
+
+            builder = builders.Length > 0 ? builders[0] : null;
         }
 
         void OnGUI()
@@ -147,11 +171,38 @@ namespace LivingCity.EditorTools
 
         void Clear()
         {
-            var root = builder.GeneratedRoot;
-            if (root)
-                Undo.DestroyObjectImmediate(root.gameObject);
+            // Through the builder, same as every other route, and deliberately NOT through
+            // Undo.DestroyObjectImmediate: the lamp rig's preview lights inside the hierarchy
+            // are HideFlags.DontSave, which the undo system cannot record - tearing the city
+            // down through undo left them orphaned in mid-air where the lamps used to be.
+            // A cleared city is regenerated in seconds; it does not need to be undoable.
+            var destroyed = builder.Clear();
+            if (destroyed > 0)
+            {
+                MarkSceneDirty();
+                Debug.Log($"[CityGenerator] Cleared {destroyed} generated " +
+                          $"{(destroyed == 1 ? "root" : "roots")} under '{builder.name}'.", builder);
+            }
+            else
+            {
+                // Dumps what IS under the builder. "Nothing to clear" on its own reads as a broken
+                // button; the child list says immediately whether this is the wrong CityBuilder or
+                // a root under a name nothing recognises.
+                Debug.LogWarning($"[CityGenerator] '{builder.name}' has no generated city to clear. " +
+                                 $"Its children: {DescribeChildren(builder.transform)}. " +
+                                 "If a city is visible in the scene it belongs to a different CityBuilder - " +
+                                 "use Tools/City/Clear Generated City, which clears every one of them.", builder);
+            }
+        }
 
-            MarkSceneDirty();
+        static string DescribeChildren(Transform parent)
+        {
+            if (parent.childCount == 0) return "(none)";
+
+            var names = new string[parent.childCount];
+            for (var i = 0; i < parent.childCount; i++)
+                names[i] = $"'{parent.GetChild(i).name}'";
+            return string.Join(", ", names);
         }
 
         static void MarkSceneDirty()

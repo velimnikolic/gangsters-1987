@@ -5,21 +5,40 @@ using LivingCity.Data;
 namespace LivingCity.Generation
 {
     /// <summary>
-    /// Gives each building a slightly different facade colour.
+    /// Gives each building a different facade colour - mild for housing, stronger for shops.
     ///
     /// The LPEC pack bakes colour into UVs, not into materials: every building piece points at
     /// swatches inside a single 1024x1024 palette atlas and shares one material. So there is no
-    /// "wall colour" to set. The only lever is _BaseColor on URP/Lit, which the shader
-    /// MULTIPLIES with the atlas - it shifts the entire building at once, walls, roof and
-    /// windows together. That is why the palette must stay near white: a saturated tint stops
-    /// reading as a different render and starts reading as a monochrome toy.
+    /// "wall colour" to set - the only lever is _BaseColor, which multiplies the whole atlas.
+    /// The tint materials therefore sit on LivingCity/Facade Tint (URP/Lit with _BaseColor
+    /// masked by the surface normal), so the multiply reaches walls and windows but not the
+    /// roof - see Assets/Shaders/FacadeTint.shader. Windows are vertical and still ride
+    /// along, which is what caps how saturated a tint can go; within that cap the palettes
+    /// range deliberately wide (green, tan, brick, blue-grey), because near-white tints left
+    /// every street reading as one brown.
     ///
-    /// Runs as a post-pass over the list BlockBuilder already returns, so placement stays
-    /// untouched - no extra argument threaded through the perimeter walk.
+    /// Two tiers: buildings from a WeightedGroup marked commercial draw from the stronger
+    /// commercialTints palette at commercialTintChance; everything else draws from
+    /// buildingTints at buildingTintChance. Which tier an instance belongs to is decided at
+    /// placement - only BlockBuilder knows which spawns are buildings and which group each
+    /// came from - and handed over as the Target list.
     /// </summary>
     public static class BuildingTinter
     {
-        public static void Apply(List<GameObject> buildings, PrefabDatabase prefabs, CityConfig config)
+        /// <summary>One placed building and the tier its group put it in.</summary>
+        public readonly struct Target
+        {
+            public readonly GameObject Instance;
+            public readonly bool Commercial;
+
+            public Target(GameObject instance, bool commercial)
+            {
+                Instance = instance;
+                Commercial = commercial;
+            }
+        }
+
+        public static void Apply(List<Target> buildings, PrefabDatabase prefabs, CityConfig config)
         {
             if (buildings == null || buildings.Count == 0)
                 return;
@@ -33,30 +52,50 @@ namespace LivingCity.Generation
                 return;
             }
 
-            if (prefabs.buildingTints == null || prefabs.buildingTints.Length == 0)
+            var residential = prefabs.buildingTints;
+            if (residential == null || residential.Length == 0)
                 return;   // Palette deliberately empty - tinting is off, nothing wrong.
+
+            var commercial = prefabs.commercialTints;
+            if (commercial == null || commercial.Length == 0)
+            {
+                // An asset from before the field existed - still tint, just without the tier.
+                Debug.LogWarning("[BuildingTinter] PrefabDatabase.commercialTints is empty - shops " +
+                                 "tinted from the residential palette. Run Tools/City/Create or " +
+                                 "Refresh Config Assets to build the stronger set.");
+                commercial = residential;
+            }
 
             var rng = new System.Random(config.seed + SeedOffsets.BuildingTints);
             var tinted = 0;
+            var shops = 0;
 
-            foreach (var building in buildings)
+            foreach (var target in buildings)
             {
-                // Both draws happen unconditionally. If the palette draw were skipped for
-                // untinted buildings, moving the buildingTintChance slider would shift the
-                // whole stream and repaint the entire city instead of only changing how many
-                // buildings are painted.
-                var wants = rng.NextDouble() < config.buildingTintChance;
-                var tint = prefabs.buildingTints[rng.Next(prefabs.buildingTints.Length)];
+                // Both draws happen unconditionally, and the tier only decides which threshold
+                // and which palette the SAME two draws are read against - never how many draws
+                // happen. So moving either chance slider, or flipping a group's commercial
+                // flag, changes that building without repainting the rest of the city.
+                // (rng.Next(n) consumes one sample whatever n is, so the palettes may differ
+                // in length without desynchronising the stream.)
+                var roll = rng.NextDouble();
+                var palette = target.Commercial ? commercial : residential;
+                var tint = palette[rng.Next(palette.Length)];
 
-                if (!building || !wants || !tint)
+                var chance = target.Commercial ? config.commercialTintChance : config.buildingTintChance;
+                if (!target.Instance || roll >= chance || !tint)
                     continue;
 
-                if (MaterialTint.Repaint(building, prefabs.buildingBaseMaterial, tint))
+                if (MaterialTint.Repaint(target.Instance, prefabs.buildingBaseMaterial, tint))
+                {
                     tinted++;
+                    if (target.Commercial)
+                        shops++;
+                }
             }
 
             Debug.Log($"[BuildingTinter] Tinted {tinted} of {buildings.Count} buildings " +
-                      $"from {prefabs.buildingTints.Length} variants (seed {config.seed}).");
+                      $"({shops} commercial, seed {config.seed}).");
         }
     }
 }

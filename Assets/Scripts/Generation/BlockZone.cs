@@ -10,9 +10,37 @@ namespace LivingCity.Generation
     /// mixed INTO the residential palette instead - a storefront on the ground floor with
     /// flats above, and the corner slot biased toward the tavern. See PrefabDatabase.ZonePalette.
     ///
-    /// Police, Hospital, School and FireStation are zones rather than one entry in some civic
-    /// bucket because each is a whole block built around a single landmark building, with a
-    /// yard and outbuildings - and each is capped at one per city by ZonePlanner.
+    /// Hospital, School, Church and Bank are zones rather than entries in some civic bucket
+    /// because each is a whole block built around a single landmark building, with a yard and
+    /// outbuildings around it. Each is capped at ONE per city by ZonePlanner - and a cap is all
+    /// it is. None of them is promised.
+    ///
+    /// That distinction is the one to hold on to when reading this file. A ceiling says the city
+    /// may not have two hospitals; it does not say the city has a hospital. The two used to be
+    /// conflated: ZonePlanner ran a rescue pass that INFERRED "the city is supposed to have this"
+    /// from the shape of the caps - maxBlocks 1 together with a size cap - and so quietly promised
+    /// a block to every zone that happened to be shaped like a civic one. The promise is an
+    /// explicit per-palette switch now, PrefabDatabase.ZonePalette.guaranteed, and every palette
+    /// in the shipped database sets it FALSE. So an unlucky seed can produce a city with no
+    /// school in it, the same way it has always been able to produce one with no post office,
+    /// and each of those absences is a roll of the dice rather than a bug. Weight is the only
+    /// thing standing between a zone and never appearing.
+    ///
+    /// The Bank is the one exception, and it is not an exception to the rule above so much as a
+    /// different mechanism: the city always has exactly one, but WHICH SHAPE it takes - its own
+    /// block or a landmark in the street wall - is a single roll ZonePlanner makes per city and
+    /// then fulfils by force. See ZonePlanner.Assign.
+    ///
+    /// The fire station used to be one of those and is not a zone any more. A whole block
+    /// is the city's scarcest thing - about ten of them, measured - and a fire house does not need one:
+    /// the period built them INTO the street wall, doors onto the pavement. It is an ordinary
+    /// piece of the residential fabric now, capped at one per city through
+    /// PrefabDatabase.uniqueBuildings the same way the post office is. See UniqueBuildings.
+    ///
+    /// The police station followed it, by the other door: too wide for a terrace slot, it is
+    /// ResidentialHigh's LANDMARK rather than one of its shop prefabs - recessed off the street
+    /// wall behind a forecourt bay of patrol cars (see BlockBuilder.PlaceLandmark and
+    /// ZonePalette.landmarkCars), with the same uniqueBuildings cap keeping it to one per city.
     /// </summary>
     public enum BlockZone
     {
@@ -24,15 +52,50 @@ namespace LivingCity.Generation
 
         Industrial,
 
+        /// <summary>
+        /// Retired - no palette builds this any more; the station is ResidentialHigh's
+        /// landmark. The member stays because the enum is serialized as ints (CityConfig's
+        /// debugZone, the palette assets) and deleting it would shift every zone below.
+        /// </summary>
         Police,
+
         Hospital,
         School,
-        FireStation,
 
         /// <summary>No perimeter buildings - tile-park laid per cell, then planted.</summary>
         Park,
 
         /// <summary>No perimeter buildings - asphalt and rows of cars.</summary>
         Parking,
+
+        /// <summary>
+        /// One per city at most: the church in its walled garden - stone fence with a gate onto
+        /// the street, a walk up to the door, benches, a market stand by the entrance. A ceiling
+        /// and not a promise, like every zone here; it was guaranteed by ZonePlanner's rescue
+        /// pass until that pass went dormant. Deliberately NOT in SingleLandmarkZones, and that
+        /// part still matters: it does not spend the shared landmark budget, so adding a church
+        /// cannot cost the city its hospital. Laid out by ChurchDresser.
+        /// </summary>
+        Church,
+
+        /// <summary>
+        /// The bank, and the city always has exactly one. building-bank had been sitting
+        /// unreferenced in the pack the whole time - measured 17.10 x 20.53 and 13.70m tall,
+        /// which is why it gets a zone of its own rather than a slot in the terrace: it is wider
+        /// than a lot run and finished on all four elevations, so a street wall has nowhere to
+        /// put it flush.
+        ///
+        /// It appears two ways and ZonePlanner picks between them with one roll per city, so the
+        /// guarantee holds whichever way the roll falls (see BankOwnBlockChance). Usually it
+        /// stands in the street wall as ResidentialHigh's landmark, the way the police station
+        /// does. Sometimes it takes this zone instead: a single-cell block, the smallest the map
+        /// offers, with its forecourt of cars in front of it.
+        ///
+        /// Like the Church, deliberately NOT in SingleLandmarkZones - a bank block must not be
+        /// able to cost the city its hospital. Unlike the Church it has a non-empty groups[], so
+        /// it builds its perimeter the ordinary way and needs no dresser and no zone branch in
+        /// BlockBuilder at all.
+        /// </summary>
+        Bank,
     }
 }
