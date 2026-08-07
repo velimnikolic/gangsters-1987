@@ -17,11 +17,16 @@ namespace LivingCity.Entities
     /// so the director walks the agent list in slices instead - every agent visited about
     /// once per RollInterval, a bounded handful per frame.
     ///
-    /// Also the runtime index of the world's interaction points. Benches and shop doors are
-    /// baked into the saved scene as marker components (see BenchSeats / ShopEntrance);
-    /// collected once at Start by FindObjectsByType, the SmokeStackSystem pattern - and
-    /// bucketed onto a coarse grid, because "nearest bench within 9m" was a full scan per
-    /// roll and the props never move.
+    /// Also the runtime index of the world's interaction points. Benches, shop doors and the
+    /// street doors of the buildings themselves are baked into the saved scene as marker
+    /// components (see BenchSeats / ShopEntrance / BuildingDoor); collected once at Start by
+    /// FindObjectsByType, the SmokeStackSystem pattern - and bucketed onto a coarse grid,
+    /// because "nearest bench within 9m" was a full scan per roll and the props never move.
+    ///
+    /// Doors carry one query the other two do not: TryPickAnyDoor, a uniform pick over the
+    /// whole city rather than a neighbourhood one. It is what somebody who walked into a
+    /// building comes back out of, and picking it globally is the point - the person you see
+    /// leaving a door is not the one you watched go in.
     /// </summary>
     public sealed class PedestrianInteractionDirector : MonoBehaviour
     {
@@ -41,10 +46,20 @@ namespace LivingCity.Entities
         /// </summary>
         const float PropCellSize = 16f;
 
+        /// <summary>
+        /// Tries at picking a free door anywhere in the city for somebody to come out of. A
+        /// handful is plenty: doors outnumber the people indoors by a wide margin, so a busy
+        /// one is a coincidence, not a queue - and failing simply means walking back out of
+        /// the door they went in.
+        /// </summary>
+        const int ExitDoorTries = 6;
+
         BenchSeats[] benches = System.Array.Empty<BenchSeats>();
         ShopEntrance[] shops = System.Array.Empty<ShopEntrance>();
+        BuildingDoor[] doors = System.Array.Empty<BuildingDoor>();
         readonly Dictionary<long, List<int>> benchCells = new Dictionary<long, List<int>>();
         readonly Dictionary<long, List<int>> shopCells = new Dictionary<long, List<int>>();
+        readonly Dictionary<long, List<int>> doorCells = new Dictionary<long, List<int>>();
 
         readonly List<PedestrianAgent> candidates = new List<PedestrianAgent>();
         readonly List<Vector3> candidatePositions = new List<Vector3>();
@@ -69,6 +84,7 @@ namespace LivingCity.Entities
         {
             benches = FindObjectsByType<BenchSeats>(FindObjectsSortMode.None);
             shops = FindObjectsByType<ShopEntrance>(FindObjectsSortMode.None);
+            doors = FindObjectsByType<BuildingDoor>(FindObjectsSortMode.None);
 
             for (var i = 0; i < benches.Length; i++)
                 if (benches[i])
@@ -76,6 +92,9 @@ namespace LivingCity.Entities
             for (var i = 0; i < shops.Length; i++)
                 if (shops[i])
                     CellFor(shopCells, shops[i].StandWorld).Add(i);
+            for (var i = 0; i < doors.Length; i++)
+                if (doors[i])
+                    CellFor(doorCells, doors[i].StandWorld).Add(i);
 
             rng = new System.Random((config ? config.seed : 0) + SeedOffsets.PedestrianLife);
         }
@@ -231,6 +250,72 @@ namespace LivingCity.Entities
             }
 
             return shop;
+        }
+
+        /// <summary>
+        /// The nearest street door with a free doorstep. Same 3x3 prop-grid visit as the
+        /// shopfront query - doors are far denser than shopfronts, but they are indexed the
+        /// same way and the range is the same 9m detour, so one ring still covers it.
+        /// </summary>
+        public bool TryPickDoor(Vector3 near, float range, out BuildingDoor door)
+        {
+            door = null;
+
+            var bestSq = range * range;
+            var cx = Mathf.FloorToInt(near.x / PropCellSize);
+            var cz = Mathf.FloorToInt(near.z / PropCellSize);
+
+            for (var dx = -1; dx <= 1; dx++)
+            for (var dz = -1; dz <= 1; dz++)
+            {
+                if (!doorCells.TryGetValue(Key(cx + dx, cz + dz), out var cell))
+                    continue;
+
+                for (var i = 0; i < cell.Count; i++)
+                {
+                    var candidate = doors[cell[i]];
+                    if (!candidate || !candidate.StepFree)
+                        continue;
+
+                    var delta = candidate.StandWorld - near;
+                    if (Mathf.Abs(delta.y) > 2f)
+                        continue;
+
+                    delta.y = 0f;
+                    if (delta.sqrMagnitude > bestSq)
+                        continue;
+
+                    door = candidate;
+                    bestSq = delta.sqrMagnitude;
+                }
+            }
+
+            return door;
+        }
+
+        /// <summary>
+        /// A free door anywhere in the city, for somebody indoors to come out of. Flat and
+        /// uniform over the whole array on purpose: this is the one thing that keeps the
+        /// crowd from settling into whichever streets it happened to start on, and any bias
+        /// here would slowly drain the city into one district.
+        /// </summary>
+        public bool TryPickAnyDoor(System.Random rng, out BuildingDoor door)
+        {
+            door = null;
+            if (doors.Length == 0 || rng == null)
+                return false;
+
+            for (var attempt = 0; attempt < ExitDoorTries; attempt++)
+            {
+                var candidate = doors[rng.Next(doors.Length)];
+                if (!candidate || !candidate.StepFree)
+                    continue;
+
+                door = candidate;
+                return true;
+            }
+
+            return false;
         }
 
         static List<int> CellFor(Dictionary<long, List<int>> cells, Vector3 position)

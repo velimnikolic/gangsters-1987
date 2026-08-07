@@ -55,6 +55,13 @@ namespace LivingCity.Generation
         /// the agents themselves are seeded through the Pedestrians stream via the spawner.
         /// </summary>
         public const int PedestrianLife = 14_000;
+
+        /// <summary>
+        /// Read by PoliceDirector for the patrol fleet and foot-patrol officers: initial
+        /// mid-shift distribution, per-unit patrol budgets and rest timers. Its own offset so
+        /// that tuning police counts cannot shift what traffic or civilians draw.
+        /// </summary>
+        public const int Police = 15_000;
     }
 
     /// <summary>

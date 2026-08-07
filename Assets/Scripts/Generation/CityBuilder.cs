@@ -79,9 +79,15 @@ namespace LivingCity.Generation
             // placement knows which spawns are buildings and which group each came from,
             // which is what decides the residential/commercial palette split.
             var tintTargets = new System.Collections.Generic.List<BuildingTinter.Target>();
+
+            // Compound gate approaches, filled by the block pass and read by the prop pass -
+            // the only way StreetPropPlacer can know where the walls have their holes. Empty
+            // when buildings are off, which is correct: no walls, no gates to keep clear.
+            var gateKeepOuts = new System.Collections.Generic.List<Bounds>();
+
             var buildings = buildBuildings
                 ? BlockBuilder.Build(Grid, prefabs, config, Category(root.transform, "Buildings"),
-                                     spawn, tintTargets)
+                                     spawn, tintTargets, gateKeepOuts)
                 : new System.Collections.Generic.List<GameObject>();
 
             BuildingTinter.Apply(tintTargets, prefabs, config);
@@ -89,14 +95,19 @@ namespace LivingCity.Generation
             // Lamps and street trees only. Nothing parks at the kerb any more - the band they
             // stand in is paved by GroundPlacer's apron rather than left as grass verge.
             var props = buildProps
-                ? StreetPropPlacer.Build(Grid, prefabs, config, Category(root.transform, "Props"), spawn)
+                ? StreetPropPlacer.Build(Grid, prefabs, config, Category(root.transform, "Props"),
+                                         spawn, gateKeepOuts)
                 : new System.Collections.Generic.List<GameObject>();
 
             // Interaction markers last, over the finished hierarchy: benches and shopfronts
             // are spawned from five different places, and one name-matching sweep here is the
             // single hook that covers them all. The markers are data-only components, so they
             // ride into the saved scene and cost nothing when interactions are off.
-            var interactionPoints = InteractionMarkers.Attach(root.transform);
+            //
+            // The grid goes with it because street doors need to know which facades front a
+            // pavement, and this is the last moment anything knows: CityGrid is not
+            // serialized, so Grid is null at Play in a scene that was generated and saved.
+            var interactionPoints = InteractionMarkers.Attach(root.transform, Grid);
 
             // In Play the lamp rig built its lights in Start, against the city that just got
             // replaced - re-wire it here or the new lamps stay dark. In the editor, relight

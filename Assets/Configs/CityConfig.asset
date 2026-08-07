@@ -16,7 +16,7 @@ MonoBehaviour:
   gridHeight: 7
   minArterialSpacing: 2
   maxArterialSpacing: 4
-  seed: 1582220114
+  seed: 1714570989
   blockFillRatio: 1
   buildingTintChance: 1
   commercialTintChance: 1
@@ -33,9 +33,9 @@ MonoBehaviour:
   pocketParkChance: 0.5
   serviceRoadWidth: 8
   industrialWallInset: 1
-  industrialSmoke: 1
+  chimneySmoke: 1
   carCount: 30
-  pedestrianCount: 100
+  pedestrianCount: 200
   entitySpawnInterval: 0.1
   wanderRoutesBeforeExit: {x: 1, y: 2}
   carMinTravelDistance: 0
@@ -54,6 +54,17 @@ MonoBehaviour:
   interactionCooldownRange: {x: 30, y: 90}
   idleChance: 0.3
   idleDurationRange: {x: 3, y: 10}
+  buildingVisitChance: 0.22
+  buildingStayRange: {x: 20, y: 120}
+  buildingSwapChance: 0.6
+  policeCarCount: 4
+  policeOfficerCount: 4
+  policeCarPatrolRoutes: {x: 2, y: 4}
+  policeCarRestRange: {x: 20, y: 60}
+  policeOfficerPatrolRoutes: {x: 2, y: 4}
+  policeOfficerStationStayRange: {x: 20, y: 90}
+  policeCarsStartAtStation: 1
+  policeOfficersStartAtStation: 1
   pedestrianProbeInterval: 3
   pedestrianSpawnBatch: 10
   pedestrianRepathBudget: 24
@@ -61,9 +72,11 @@ MonoBehaviour:
   pedestrianLodFarOrtho: 90
   pedestrianLodMidRate: 3
   realSecondsPerGameHour: 1
-  startHour: 9.4
-  nightBrightness: 1.1
-  litLampBudget: 250
+  startHour: 21.7
+  nightBrightness: 1.2
+  litLampBudget: 100000
+  headlightRange: 12
+  headlightIntensity: 16
   lampRange: 10
   lampIntensity: 5
   debugSingleZone: 0

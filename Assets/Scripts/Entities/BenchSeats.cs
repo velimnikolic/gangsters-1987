@@ -9,11 +9,15 @@ namespace LivingCity.Entities
     /// the save and is picked up by FindObjectsByType at Play. Attached by
     /// InteractionMarkers, found by PedestrianInteractionDirector.
     ///
-    /// Seat offsets are local: X spreads sitters along the slats, Z puts the sit root just in
-    /// FRONT of the bench (the pack's sit-down clip carries the hips back and down onto it),
-    /// Y stays at ground level - a Humanoid sit pose lowers the hips relative to the root, so
-    /// the root itself never leaves the ground. Occupancy is runtime-only on purpose: a seat
-    /// claim saved into the scene would be a bench nobody can ever use again.
+    /// Seat offsets are local, and measured rather than tuned - see InteractionMarkers for the
+    /// bench geometry they come from. X spreads sitters along the slats. Y is the seat TOP:
+    /// SeatWorld therefore names the contact patch, not a place to stand, and the sitter's own
+    /// root goes SitContactHeight below it, scaled to that rig. Z puts the root in front of
+    /// the bench because the authored pose keeps the pelvis SitPelvisBack behind the root -
+    /// the sitter's feet end up on the pavement and its weight over the slats.
+    ///
+    /// Occupancy is runtime-only on purpose: a seat claim saved into the scene would be a
+    /// bench nobody can ever use again.
     /// </summary>
     public sealed class BenchSeats : MonoBehaviour
     {
@@ -27,8 +31,23 @@ namespace LivingCity.Entities
 
         public Vector3 SeatWorld(int seat) => transform.TransformPoint(seatOffsets[seat]);
 
-        /// <summary>Where to stand before turning and sitting down: a step out in front.</summary>
-        public Vector3 ApproachWorld(int seat) => SeatWorld(seat) + Facing * 0.7f;
+        /// <summary>How far out in front the walker stops before turning and sitting down.</summary>
+        const float ApproachStep = 0.35f;
+
+        /// <summary>
+        /// Where to stand before turning and sitting down: one short step out in front, ON THE
+        /// GROUND. The ground part matters - WalkTo climbs towards its target's Y, so handing
+        /// it SeatWorld directly would walk the pedestrian up into the air on the way in. The
+        /// step is short because the descent glide has to cover it while the sit-down clip
+        /// plays, and the clip is already carrying the pelvis SitPelvisBack in the same
+        /// direction; the old 0.7 made that a metre of backwards travel.
+        /// </summary>
+        public Vector3 ApproachWorld(int seat)
+        {
+            var stand = SeatWorld(seat) + Facing * ApproachStep;
+            stand.y = transform.position.y;
+            return stand;
+        }
 
         /// <summary>The way a sitter faces - the bench's own front (+Z by pack convention).</summary>
         public Vector3 Facing

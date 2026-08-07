@@ -4,6 +4,10 @@ using System.Linq;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
+// Aliased rather than a whole `using PolyPerfect.City`: that namespace has a Path type of its
+// own, which collides with System.IO.Path in LoadFolder.
+using HumanBehavior = PolyPerfect.City.HumanBehavior;
+using PathFinding = PolyPerfect.City.PathFinding;
 using LivingCity.Data;
 using LivingCity.Entities;
 using LivingCity.Generation;
@@ -70,6 +74,74 @@ namespace LivingCity.EditorTools
         const string CarsAI = Root + "Vehicles_T/Cars_AI_T/";
         const string CarsStatic = Root + "Vehicles_T/Cars_T/";
         const string PeopleAI = Root + "People_T/People_AI_T/";
+
+        /// <summary>
+        /// The Animated People pack, whose cast is four times the size of Epic City's and is the
+        /// only source in the project for a business suit, an overcoat or a tailcoat. Its prefabs
+        /// are NOT usable as they ship - see AuthorPedestrians.
+        /// </summary>
+        const string AnimatedPeople = "Assets/polyperfect/Low Poly Animated People/- Prefabs/";
+
+        /// <summary>
+        /// Where the converted Animated People walkers are written. Deliberately outside
+        /// People_AI_T: that folder is globbed wholesale, so anything dropped in it becomes a
+        /// civilian automatically, and the same rule is what keeps the (unbuilt) police officer
+        /// out of the crowd. See PrefabDatabase.policeOfficerPrefab.
+        /// </summary>
+        const string AuthoredPeople = ConfigDir + "/People/";
+
+        /// <summary>
+        /// Who does NOT belong on a Chicago pavement in the 1920s.
+        ///
+        /// Same period rule the zone palettes enforce on buildings, applied to the cast for the
+        /// first time. Epic City ships its people for a generic contemporary city with a beach
+        /// and a theme park attached, and the folder glob took all of them: two samurai, a geisha,
+        /// three swimmers, a lifeguard, three beachgoers, a man in Rastafarian colours and a
+        /// metalhead in a band shirt - eleven of twenty-five, every one of them either off-period
+        /// or off-continent.
+        ///
+        /// What survives is deliberately wider than "gangsters": a street of nothing but suits
+        /// reads as a cutscene. man-golf stays because the pack's golf model is a flat cap and a
+        /// sleeveless vest, which is period menswear rather than sportswear; man-soldier stays as
+        /// a demobbed veteran, and the farm pair as the poorer end of the working class.
+        /// </summary>
+        static readonly string[] OffPeriodPedestrians =
+        {
+            "boy-beach_AI", "girl-beach_AI", "man-beach_AI", "man-jamaica_AI",
+            "man-metalhead_AI", "man-samurai_AI", "man-samurai-black_AI",
+            "man-swimming_AI", "woman-geisha_AI", "woman-swimming_AI",
+            "woman-swimming-guard_AI",
+        };
+
+        /// <summary>
+        /// Animated People models worth converting into city walkers, by source prefab name.
+        ///
+        /// Chosen for SILHOUETTE, because that is all the packs give you: clothing here is
+        /// geometry plus a UV pointing at a flat colour swatch in a shared palette atlas, so
+        /// there is no texture to re-dress anyone with and no material to tint. business and
+        /// butler carry the suit shapes Epic City has exactly two of; coat_winter is the only
+        /// long-coat body in either pack; judge reads at street distance as a full-length dark
+        /// overcoat. punk and homeless are in for the same reason man-golf is - a crowd needs a
+        /// bottom end, and both silhouettes are unremarkable enough to pass once they are not
+        /// the thing you are looking at.
+        ///
+        /// Cost of admission is one extra material: this pack draws from atlas-LPAP, Epic City
+        /// from atlas-LPEC, so the crowd is two batches from here on.
+        /// </summary>
+        static readonly string[] AnimatedPeopleWalkers =
+        {
+            "man_business", "woman_business",
+            "man_coat_winter", "woman_coat_winter",
+            "man_butler", "man_judge",
+            "man_punk", "woman_punk",
+            "man_homeless", "woman_homeless",
+
+            // The beat officer - authored through the same conversion but NEVER in the crowd:
+            // BuildPedestrianGroups draws from AuthoredPeople by name and does not list him,
+            // so the only route onto the street is PoliceDirector via policeOfficerPrefab.
+            // Male model only, per design - woman_police is referenced nowhere.
+            "man_police",
+        };
 
         /// <summary>
         /// The 4- and 5-storey kits in ONE list, which is the whole point.
@@ -368,11 +440,14 @@ namespace LivingCity.EditorTools
                          "car-veteran_AI", "car-passenger_AI", "car-passenger-race_AI",
                          "car-hippie-van_AI", "jeep-open_AI"),
 
-                // The taxi and the police car are modern shells, but a city street of the era
-                // did have both and there is no vintage stand-in in the pack. Kept at a low
-                // weight, and moving, where the silhouette is read for a moment rather than
-                // studied at the kerb.
-                Bucket("Service", 14f, CarsAI, "car-taxi_AI", "car-police_AI"),
+                // The taxi is a modern shell, but a city street of the era did have taxis and
+                // there is no vintage stand-in in the pack. Kept at a low weight, and moving,
+                // where the silhouette is read for a moment rather than studied at the kerb.
+                // car-police_AI left this bucket when the police became real: the only police
+                // cars in the city are the station's patrol fleet (PoliceDirector), which
+                // actually returns to base - a random one dissolving at the map edge next to
+                // them would read as a bug. See PrefabDatabase.policeCarPrefab.
+                Bucket("Service", 14f, CarsAI, "car-taxi_AI"),
 
                 Bucket("Freight", 14f, CarsAI, "truck_AI", "car-tow-truck_AI",
                          "armored-truck_AI"),
@@ -390,7 +465,19 @@ namespace LivingCity.EditorTools
                 Bucket("Transit", 6f, CarsAI, "bus-passenger_AI"),
             };
 
-            db.aiPedestrians = LoadFolder(PeopleAI);
+            // Kept as the flat fallback list PedestrianSpawner drops back to when the weighted
+            // groups below are empty - an old scene whose PrefabDatabase predates this change
+            // should still populate its pavements rather than log and give up.
+            db.aiPedestrians = LoadFolder(PeopleAI, OffPeriodPedestrians);
+
+            AuthorPedestrians();
+            db.pedestrianGroups = BuildPedestrianGroups();
+
+            // The police: the fleet's car is the pack's own AI police car (now absent from
+            // every traffic bucket above - the patrol fleet is the only source of one), the
+            // officer the authored man_police conversion that AuthorPedestrians just wrote.
+            db.policeCarPrefab = Load(CarsAI + "car-police_AI.prefab");
+            db.policeOfficerPrefab = Load(AuthoredPeople + "man_police_AI.prefab");
 
             db.pedestrianController = BuildPedestrianController();
 
@@ -408,10 +495,177 @@ namespace LivingCity.EditorTools
             Debug.Log($"[CityAssetBootstrap] Config assets ready in {ConfigDir}.\n" +
                       $"Zones: {DescribeZones(db.zonePalettes)}\n" +
                       $"AI cars: {Describe(db.aiCarGroups)}, parked cars: {Describe(db.parkedCarGroups)}, " +
-                      $"pedestrians: {db.aiPedestrians.Length}, clouds: {db.clouds.Length}.");
+                      $"pedestrians: {Describe(db.pedestrianGroups)}, clouds: {db.clouds.Length}.");
 
             Selection.activeObject = db;
         }
+
+        /// <summary>
+        /// The one prefab every authored walker is measured against, so the kit below is COPIED
+        /// off a working example rather than guessed at. If the pack ever changes it, the
+        /// authored people change with it.
+        /// </summary>
+        const string PedestrianReference = PeopleAI + "man-mafia_AI.prefab";
+
+        /// <summary>
+        /// Converts the Animated People models into walkers Epic City's AI can drive.
+        ///
+        /// The two packs disagree about who moves the character. Epic City's _AI prefabs carry
+        /// HumanBehavior + PathFinding, which walk the transform along a checkpoint route and
+        /// need a kinematic Rigidbody and a capsule to trip the crosswalk triggers. Animated
+        /// People ships a NavMeshAgent plus a wander script instead, and there is no baked
+        /// NavMesh in the generated city for it to stand on - dropped in as-is, the character
+        /// simply never moves.
+        ///
+        /// The subtle half of the conversion is applyRootMotion. Animated People authors it ON
+        /// (their locomotion clips carry the displacement), Epic City OFF. Left on, the walker
+        /// gets moved twice per frame - once by the clip, once by HumanBehavior - and slides off
+        /// its route. This is the single line most likely to be the cause if authored people
+        /// drift and Epic City's do not.
+        ///
+        /// Rebuilt on every run, same overwrite discipline as the animator controller: the
+        /// output is generated, so hand-edits in the inspector do not survive and belong here.
+        /// </summary>
+        static void AuthorPedestrians()
+        {
+            var reference = Load(PedestrianReference);
+            if (!reference)
+                return;
+
+            var referenceCapsule = reference.GetComponent<CapsuleCollider>();
+            var referenceBody = reference.GetComponent<Rigidbody>();
+            var referenceBehavior = reference.GetComponent<HumanBehavior>();
+            if (!referenceCapsule || !referenceBody || !referenceBehavior)
+            {
+                Missing.Add($"{PedestrianReference} :: expected capsule + rigidbody + HumanBehavior");
+                return;
+            }
+
+            Directory.CreateDirectory(AuthoredPeople);
+
+            foreach (var name in AnimatedPeopleWalkers)
+            {
+                var source = Load($"{AnimatedPeople}{name}.prefab");
+                if (!source)
+                    continue;
+
+                var instance = (GameObject)PrefabUtility.InstantiatePrefab(source);
+
+                // Unpacked completely, not just at the root: what is saved has to be a
+                // standalone prefab, because a variant would inherit the wander script and the
+                // agent back from the pack the moment the pack is updated.
+                PrefabUtility.UnpackPrefabInstance(
+                    instance, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
+
+                foreach (var agent in instance.GetComponentsInChildren<UnityEngine.AI.NavMeshAgent>(true))
+                    Object.DestroyImmediate(agent);
+
+                // The pack's mover, and not a MonoBehaviour, so the sweep below cannot catch
+                // it. It IS a collider: left on beside the capsule copied from the reference,
+                // the walker carries two, and every crosswalk trigger counts it twice.
+                foreach (var mover in instance.GetComponentsInChildren<CharacterController>(true))
+                    Object.DestroyImmediate(mover);
+
+                // The wander script is the pack's own and lives in a namespace this assembly
+                // does not reference, so it goes by elimination: anything that is not one of
+                // ours, on a prefab that so far has none of ours. Null entries are missing
+                // scripts, which would break the build silently, and go too.
+                foreach (var script in instance.GetComponentsInChildren<MonoBehaviour>(true))
+                    if (!script || script is not (HumanBehavior or PathFinding))
+                        Object.DestroyImmediate(script);
+
+                var animator = instance.GetComponent<Animator>();
+                var referenceAnimator = reference.GetComponent<Animator>();
+                if (animator)
+                {
+                    // See the summary: this is the double-movement trap.
+                    animator.applyRootMotion = false;
+                    if (referenceAnimator)
+                        animator.cullingMode = referenceAnimator.cullingMode;
+                }
+
+                // Copied off the reference like everything else - "Human" in practice, and
+                // load-bearing: Crosswalk counts bodies by this tag, so an Untagged walker
+                // (Animated People ships them Untagged) crosses without cars ever seeing it.
+                instance.tag = reference.tag;
+
+                var capsule = instance.AddComponent<CapsuleCollider>();
+                capsule.radius = referenceCapsule.radius;
+                capsule.height = referenceCapsule.height;
+                capsule.center = referenceCapsule.center;
+                capsule.direction = referenceCapsule.direction;
+
+                var body = instance.AddComponent<Rigidbody>();
+                body.mass = referenceBody.mass;
+                body.useGravity = referenceBody.useGravity;
+                body.isKinematic = referenceBody.isKinematic;
+                body.interpolation = referenceBody.interpolation;
+                body.collisionDetectionMode = referenceBody.collisionDetectionMode;
+                body.constraints = referenceBody.constraints;
+
+                // HumanBehavior [RequireComponent]s PathFinding, so adding it first means Unity
+                // adds PathFinding for us - and adding PathFinding explicitly afterwards would
+                // give the walker two of them.
+                var behavior = instance.AddComponent<HumanBehavior>();
+                behavior.maxspeed = referenceBehavior.maxspeed;
+
+                // randomDestination is set per-instance by PedestrianSpawner, not baked here -
+                // the same prefab has to serve a commanded walker later.
+                behavior.randomDestination = false;
+
+                PrefabUtility.SaveAsPrefabAsset(instance, $"{AuthoredPeople}{name}_AI.prefab");
+                Object.DestroyImmediate(instance);
+            }
+        }
+
+        /// <summary>
+        /// The crowd mix, as weights over groups rather than one flat list.
+        ///
+        /// The flat list was the bug: PedestrianSpawner drew uniformly, so every model was
+        /// exactly as common as every other and the one gangster in the pack appeared as often
+        /// as the lifeguard. Vehicles hit this first and solved it the same way - see the note
+        /// at the top of VehiclePicker about the crawler crane parked outside a flat.
+        ///
+        /// Weights are shares of the street, not probabilities per model. Suits at 3/10.5 is a
+        /// city of clerks, brokers and the odd wise guy; Civilians at 4/10.5 keeps them from
+        /// owning it. Children is one model at 0.5 because Epic City has exactly one child left
+        /// once the beach is gone, and a pavement where every child is the same boy is worse
+        /// than a pavement with few children.
+        /// </summary>
+        static PrefabDatabase.WeightedPrefabs[] BuildPedestrianGroups() => new[]
+        {
+            Crowd("Suits", 3f,
+                LoadAll(PeopleAI, "man-mafia_AI", "man-tie_AI"),
+                LoadAll(AuthoredPeople, "man_business_AI", "man_butler_AI", "man_judge_AI")),
+
+            Crowd("Civilians", 4f,
+                LoadAll(PeopleAI, "man-casual_AI", "man-shirt_AI",
+                        "woman-casual_AI", "woman-dress_AI", "woman-ginger_AI"),
+                LoadAll(AuthoredPeople, "man_coat_winter_AI", "woman_coat_winter_AI",
+                        "woman_business_AI")),
+
+            Crowd("Workers", 2f,
+                LoadAll(PeopleAI, "man-worker_AI", "man-construction-worker_AI",
+                        "man-farm_AI", "woman-farm_AI", "man-golf_AI")),
+
+            Crowd("Fringe", 1f,
+                LoadAll(PeopleAI, "man-soldier_AI"),
+                LoadAll(AuthoredPeople, "man_homeless_AI", "woman_homeless_AI",
+                        "man_punk_AI", "woman_punk_AI")),
+
+            Crowd("Children", 0.5f,
+                LoadAll(PeopleAI, "boy-sport_AI")),
+        };
+
+        /// <summary>One weighted slice of the crowd, drawn from more than one pack.</summary>
+        static PrefabDatabase.WeightedPrefabs Crowd(
+            string label, float weight, params GameObject[][] lists) =>
+            new()
+            {
+                label = label,
+                weight = weight,
+                prefabs = Merge(lists),
+            };
 
         const string PackPeopleController =
             "Assets/polyperfect/Low Poly Epic City/People Controller.controller";
@@ -617,9 +871,10 @@ namespace LivingCity.EditorTools
                     // Under 1 on purpose, unlike the civic zones where the landmark IS the
                     // block: at 1 the station would stand in the first-built residential block
                     // every time, i.e. the same corner of every map. At 0.45 across the six-plus
-                    // blocks this zone gets, which block hosts it varies by seed and a city with
-                    // no station at all is a once-in-fifty seed - a ceiling, not a guarantee,
-                    // like the rest of the civic list.
+                    // blocks this zone gets, which block hosts it varies by seed. Since the
+                    // station became guaranteed (below), this roll only decides whether an
+                    // EARLIER block beats the forced one to it - either way the city has
+                    // exactly one, the variety in WHERE is what the 0.45 still buys.
                     landmarkChance: 0.45f,
                     // The bank, which is NOT a ceiling: the city has one, always. A chance can
                     // deliver a station nineteen times in twenty and that is fine for a station;
@@ -629,6 +884,13 @@ namespace LivingCity.EditorTools
                     // without rolling. Ignored entirely on the seeds where the bank drew its own
                     // block instead.
                     requiredLandmark: 1,
+                    // The station, promoted to the same certainty the day the police became a
+                    // system: the patrol fleet and the beat officers both treat it as home, and
+                    // a once-in-fifty city with no station stopped being flavour and became a
+                    // city with no police. Index 0 is now load-bearing too. ZonePlanner fulfils
+                    // this AFTER the bank's route, on the largest unclaimed block of the zone -
+                    // see FulfilGuaranteedLandmarks for the ordering and the fallbacks.
+                    guaranteedLandmark: 0,
                     // Forecourt cars, NOT parkedCars: parkedCars swaps the picker for the WHOLE
                     // block (BlockBuilder.BuildBlock), which here would fill every bay of every
                     // residential block with patrol cars. landmarkCars reaches only the bay
@@ -636,11 +898,11 @@ namespace LivingCity.EditorTools
                     //
                     // One bucket for both of this palette's landmarks, because landmarkCars is a
                     // property of the PALETTE and there is no per-landmark list to hang a second
-                    // one off. So the station can draw the van and the bank can draw a squad car.
-                    // Left that way rather than plumbed: a police car outside a bank is the most
-                    // period-appropriate thing in the file, and an armoured van at the station
-                    // reads as one that came in for escort. If it ever needs splitting, the honest
-                    // fix is landmarkCars keyed by landmark, not two palettes.
+                    // one off. In practice it now serves only the BANK: the station's forecourt
+                    // is the patrol fleet's parking, so PlaceLandmark passes maxCars 0 for it -
+                    // lines painted, bays reserved, no static bakes - and records the stalls on
+                    // a PoliceStation marker for PoliceDirector's four real cars. A police car
+                    // outside the bank is still the most period-appropriate thing in the file.
                     //
                     // The van is in a bucket WITH other cars for a mechanical reason: armored-truck
                     // is 5.85 x 2.29 against a marked bay of 5.6 x 2.4, so VehiclePicker rejects it
@@ -1457,32 +1719,82 @@ namespace LivingCity.EditorTools
         /// has stopped discriminating; ZERO on industry-factory means the roof reference has gone
         /// back to a maximum and the twin stacks are cancelling each other out. Both of those
         /// happened during development and both look like "smoke is broken" from the scene.
+        ///
+        /// The terrace list is measured against ChimneyVents.HouseMinRise instead, and the reason
+        /// it needs its own threshold is written up there. It should read exactly:
+        ///
+        ///     building-block-4floor-front   1   (rise 4.4)
+        ///     building-block-4floor-short   1   (rise 4.2)
+        ///     building-block-4floor-back    1   (rise 4.8)
+        ///     building-block-4floor-corner  1   (rise 4.4)
+        ///     building-block-5floor         1   (rise 4.0)
+        ///     building-block-5floor-front   1   (rise 4.4)
+        ///     building-block-5floor-short   1   (rise 4.6)
+        ///     building-block-5floor-corner  1   (rise 3.5)
+        ///     building-house-block          1   (rise 4.0)
+        ///     building-house-block-big      0   (no cluster in the top band at all)
+        ///
+        /// TWO on any terrace piece means the threshold has slipped under the roof pipes at 1.1
+        /// to 1.8m and every house is about to smoke from its plumbing.
         /// </summary>
         static PrefabDatabase.ChimneyVent[] BuildChimneyVents()
         {
             var vents = new List<PrefabDatabase.ChimneyVent>();
 
-            var candidates = new[]
+            var works = new[]
             {
                 "chimney-big", "industry-factory", "industry-factory-old", "industry-factory-hall",
                 "industry-warehouse", "industry-storage", "industry-refinery", "industry-building",
                 "water-tower-medium",
             };
 
-            foreach (var name in candidates)
+            // The terrace kit. Every piece carries the same authored chimney column - radius 1.20,
+            // 56 to 57 vertices, top at 20.61 on the 4-floor pieces and 23.81 on the 5-floor - so
+            // the corners and the -back are in here as well as the street elevations. A terrace is
+            // built from all of them and smoke off only the fronts would read as a bug.
+            //
+            // One known imprecision, left alone deliberately. On building-block-4floor-corner the
+            // 2m cluster link swallows two 5-vertex scraps of roof trim at y 17.9-18.2 into the
+            // chimney's cluster, which drags the reported centroid from (-2.91, -3.33) to
+            // (-2.47, -3.18): the mouth lands about 0.46m off the actual stack. The puff is 1.2m
+            // wide at birth so it still covers the chimney, and the alternative - taking the
+            // centroid from the cluster's top ring instead of the whole column - would move every
+            // works mouth in the baked table too. Not worth that to gain half a metre on one
+            // prefab.
+            var houses = new[]
+            {
+                "building-block-4floor-front", "building-block-4floor-short",
+                "building-block-4floor-back", "building-block-4floor-corner",
+                "building-block-5floor", "building-block-5floor-front",
+                "building-block-5floor-short", "building-block-5floor-corner",
+                "building-house-block", "building-house-block-big",
+            };
+
+            Measure(works, ChimneyVents.WorksMinRise, "works", vents);
+            Measure(houses, ChimneyVents.HouseMinRise, "house", vents);
+
+            return vents.ToArray();
+        }
+
+        /// <summary>
+        /// One family's worth of vent measurement. The threshold is passed rather than looked up,
+        /// so which family a prefab belongs to is decided in one visible place.
+        /// </summary>
+        static void Measure(
+            string[] names, float minRise, string family, List<PrefabDatabase.ChimneyVent> into)
+        {
+            foreach (var name in names)
             {
                 var prefab = Load(Buildings + name + ".prefab");
                 if (!prefab)
                     continue;
 
-                var mouths = ChimneyVents.Measure(prefab, out var report);
-                Debug.Log($"[CityAssetBootstrap] {name}: {report}");
+                var mouths = ChimneyVents.Measure(prefab, out var report, minRise);
+                Debug.Log($"[CityAssetBootstrap] {name} ({family}, rise >= {minRise}): {report}");
 
                 foreach (var mouth in mouths)
-                    vents.Add(new PrefabDatabase.ChimneyVent { prefab = prefab, local = mouth });
+                    into.Add(new PrefabDatabase.ChimneyVent { prefab = prefab, local = mouth });
             }
-
-            return vents.ToArray();
         }
 
         static PrefabDatabase.ZonePalette Palette(
@@ -1497,6 +1809,7 @@ namespace LivingCity.EditorTools
             GameObject[] landmarks = null,
             float landmarkChance = 0f,
             int requiredLandmark = -1,
+            int guaranteedLandmark = -1,
             float landmarkScale = 1f,
             GameObject[] scatter = null,
             float scatterDensity = 0f,
@@ -1548,6 +1861,7 @@ namespace LivingCity.EditorTools
                 landmarks = landmarks ?? System.Array.Empty<GameObject>(),
                 landmarkChance = landmarkChance,
                 requiredLandmark = requiredLandmark,
+                guaranteedLandmark = guaranteedLandmark,
                 landmarkScale = landmarkScale,
                 scatter = scatter ?? System.Array.Empty<GameObject>(),
                 scatterDensity = scatterDensity,

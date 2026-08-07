@@ -39,6 +39,33 @@ namespace LivingCity.Generation
         }
 
         /// <summary>
+        /// How far in front of a gate the street stays clear. The prop line sits 17.5m out
+        /// from an industrial wall on BOTH road classes (15 half-tile + 7 pavement + 1 wall
+        /// inset - 5.5 verge; 15 + 10 + 1 - 8.5 on the avenue) and 17.1m from a churchyard
+        /// fence. 20 covers both with slack, and stops short of the far verge across the
+        /// street at 28.5 - a tree over the road from a gate blocks nothing.
+        /// </summary>
+        public const float ApproachDepth = 20f;
+
+        /// <summary>Margin past the gap's own edges, for tree crowns that overhang their pit.</summary>
+        public const float ApproachMargin = 2f;
+
+        /// <summary>
+        /// The ground in front of the gate that must stay clear - axis-aligned, which the four
+        /// cardinal Outwards guarantee. StreetPropPlacer tests its slots against it, so the one
+        /// hole the wall has does not get a tree planted in its throat.
+        /// </summary>
+        public static Bounds Approach(Gate gate)
+        {
+            var centre = gate.Centre + gate.Outward * (ApproachDepth * 0.5f);
+            var lateral = gate.Width + 2f * ApproachMargin;
+            var size = Mathf.Abs(gate.Outward.x) > 0.5f
+                ? new Vector3(ApproachDepth, 2f, lateral)
+                : new Vector3(lateral, 2f, ApproachDepth);
+            return new Bounds(new Vector3(centre.x, 0f, centre.z), size);
+        }
+
+        /// <summary>
         /// Lays the boundary. <paramref name="min"/> and <paramref name="max"/> are the fence
         /// line itself, already inset by the caller - what that inset should be depends on what
         /// stands outside it, which is the caller's business and not this one's.

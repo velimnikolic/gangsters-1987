@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using UnityEngine;
+using LivingCity.Data;
 using LivingCity.Entities;
+using LivingCity.Generation;
 
 namespace LivingCity.Tests
 {
@@ -39,6 +41,238 @@ namespace LivingCity.Tests
             PairingMatchesTheFullScan(failures);
             RegistryCellsCoverTheProbeReach(failures);
             RegistryCellKeysDoNotCollide(failures);
+            DoorNameFilterRejectsWhatItMust(failures);
+            SeatsPutTheSittingPelvisOnTheSlats(failures);
+            CrowdWeightsAreTheSharesTheyClaim(failures);
+            CrowdSkipsGroupsThatCannotDeal(failures);
+            CrowdIsDeterministicForASeed(failures);
+            RoadCrossSectionsClassifyAsMeasured(failures);
+            RoadTileNamesRoundTrip(failures);
+            CurveBandCoversAsphaltAndSparesPavement(failures);
+            CrossingPairMidpointIsRefused(failures);
+
+            return failures;
+        }
+
+        /// <summary>
+        /// The crowd mix, restated independently of the bootstrap that builds it - same reason
+        /// the bench table above is restated rather than imported.
+        /// </summary>
+        static readonly (string Label, float Weight, int Models)[] Crowd =
+        {
+            ("Suits", 3f, 5), ("Civilians", 4f, 8), ("Workers", 2f, 5),
+            ("Fringe", 1f, 5), ("Children", 0.5f, 1),
+        };
+
+        static PrefabDatabase.WeightedPrefabs[] CrowdGroups()
+        {
+            var groups = new PrefabDatabase.WeightedPrefabs[Crowd.Length];
+            for (var i = 0; i < Crowd.Length; i++)
+                groups[i] = new PrefabDatabase.WeightedPrefabs
+                {
+                    label = Crowd[i].Label,
+                    weight = Crowd[i].Weight,
+                    // Null entries: the picker's group roll never dereferences a prefab, and a
+                    // real GameObject cannot be constructed outside the Editor anyway.
+                    prefabs = new GameObject[Crowd[i].Models],
+                };
+            return groups;
+        }
+
+        /// <summary>
+        /// Reaches the private group roll directly. The public Next() cannot answer this: with
+        /// no real prefabs to hand back it reports nothing about WHICH group it drew from, and
+        /// that split is the entire point of the change - a flat list made the pack's one
+        /// gangster exactly as common as its lifeguard.
+        /// </summary>
+        static int RollGroup(PedestrianPicker picker) =>
+            (int)typeof(PedestrianPicker)
+                .GetMethod("PickGroupIndex", System.Reflection.BindingFlags.NonPublic |
+                                             System.Reflection.BindingFlags.Instance)
+                .Invoke(picker, null);
+
+        /// <summary>
+        /// Each group has to take its weight's share of the street. A picker that always
+        /// returned 0, or that fell through to the fallback on every roll, still compiles and
+        /// still spawns people - it just quietly spawns one group of them.
+        /// </summary>
+        static void CrowdWeightsAreTheSharesTheyClaim(List<string> failures)
+        {
+            const int Rolls = 200000;
+            const float Tolerance = 0.01f;
+
+            var picker = new PedestrianPicker(CrowdGroups(), new System.Random(12345));
+            var hits = new int[Crowd.Length];
+
+            for (var i = 0; i < Rolls; i++)
+                hits[RollGroup(picker)]++;
+
+            var total = 0f;
+            foreach (var group in Crowd)
+                total += group.Weight;
+
+            for (var i = 0; i < Crowd.Length; i++)
+            {
+                var expected = Crowd[i].Weight / total;
+                var actual = hits[i] / (float)Rolls;
+
+                if (Mathf.Abs(actual - expected) > Tolerance)
+                    failures.Add($"Crowd share for {Crowd[i].Label}: expected " +
+                                 $"{expected:P1}, got {actual:P1} over {Rolls} rolls.");
+            }
+        }
+
+        /// <summary>
+        /// A group with no weight or no prefabs must be dropped at construction, not rolled and
+        /// then found empty: a zero-weight group left in the list still occupies an index, and
+        /// PickGroupIndex's fallback would hand it out on every roll that overshoots.
+        /// </summary>
+        static void CrowdSkipsGroupsThatCannotDeal(List<string> failures)
+        {
+            var groups = new[]
+            {
+                new PrefabDatabase.WeightedPrefabs
+                    { label = "Real", weight = 1f, prefabs = new GameObject[2] },
+                new PrefabDatabase.WeightedPrefabs
+                    { label = "NoWeight", weight = 0f, prefabs = new GameObject[2] },
+                new PrefabDatabase.WeightedPrefabs
+                    { label = "NoPrefabs", weight = 5f, prefabs = new GameObject[0] },
+            };
+
+            var picker = new PedestrianPicker(groups, new System.Random(7));
+
+            for (var i = 0; i < 200; i++)
+                if (RollGroup(picker) != 0)
+                {
+                    failures.Add("Crowd rolled a group that has no weight or no prefabs.");
+                    break;
+                }
+
+            if (new PedestrianPicker(null, new System.Random(7)).IsEmpty == false)
+                failures.Add("Crowd built from a null catalogue does not report itself empty.");
+
+            if (!new PedestrianPicker(new[] { groups[1], groups[2] }, new System.Random(7)).IsEmpty)
+                failures.Add("Crowd of only unusable groups does not report itself empty.");
+        }
+
+        /// <summary>
+        /// One seed, one city. The picker consumes the pedestrian RNG stream, so a roll that
+        /// varied run to run would desync every draw made after it.
+        /// </summary>
+        static void CrowdIsDeterministicForASeed(List<string> failures)
+        {
+            var first = new PedestrianPicker(CrowdGroups(), new System.Random(99));
+            var second = new PedestrianPicker(CrowdGroups(), new System.Random(99));
+
+            for (var i = 0; i < 500; i++)
+                if (RollGroup(first) != RollGroup(second))
+                {
+                    failures.Add("Crowd rolls diverge between two pickers built on the same seed.");
+                    break;
+                }
+        }
+
+        /// <summary>
+        /// Bench geometry, measured off the FBXs: seat top, the Z span of the seat slab, and
+        /// the half-width the slats run to. Restated here rather than imported so the test is
+        /// an independent statement of the measurement - a table checking itself proves
+        /// nothing.
+        /// </summary>
+        struct BenchShape
+        {
+            public string Prefab;
+            public float SeatTop;
+            public float SlabBack;
+            public float SlabFront;
+            public float HalfWidth;
+            public bool Backrest;
+        }
+
+        static readonly BenchShape[] Benches =
+        {
+            new BenchShape { Prefab = "bench-old", SeatTop = 0.428f,
+                             SlabBack = -0.245f, SlabFront = 0.242f, HalfWidth = 0.834f,
+                             Backrest = true },
+            new BenchShape { Prefab = "bench-forest", SeatTop = 0.401f,
+                             SlabBack = -0.234f, SlabFront = 0.234f, HalfWidth = 1.464f,
+                             Backrest = false },
+        };
+
+        /// <summary>
+        /// The seat offsets are derived from the authored sit pose, and nothing at runtime
+        /// would complain if one drifted - a sitter half a metre out still sits, just in mid
+        /// air. So state the derivation as assertions.
+        ///
+        /// A seat is a place for the CONTACT PATCH, not for the root: the root ends up
+        /// SitContactHeight below it and the pelvis SitPelvisBack behind it. Both have to
+        /// land on the bench.
+        /// </summary>
+        static void SeatsPutTheSittingPelvisOnTheSlats(List<string> failures)
+        {
+            foreach (var bench in Benches)
+            {
+                var seats = InteractionMarkers.SeatsFor(bench.Prefab);
+                if (seats == null || seats.Length == 0)
+                {
+                    failures.Add($"seats: {bench.Prefab} has no seat table");
+                    continue;
+                }
+
+                for (var i = 0; i < seats.Length; i++)
+                {
+                    var seat = seats[i];
+                    var where = $"seats: {bench.Prefab}[{i}]";
+
+                    // The seat names the surface, so its Y is the surface.
+                    if (Mathf.Abs(seat.y - bench.SeatTop) > 0.005f)
+                        failures.Add($"{where} Y {seat.y:F3} is not the seat top {bench.SeatTop:F3}");
+
+                    // Where the weight actually goes. The pose reclines, so on a bench that HAS
+                    // a backrest the pelvis has to be back against it - a hand's width of the
+                    // slab's back edge, clear of it but not out on the open slats, which is
+                    // where a plain "is it on the bench" range check would happily leave it.
+                    // A backless bench has nothing to sit back against, so it wants the middle.
+                    var pelvisZ = seat.z - PedestrianAnimation.SitPelvisBack;
+                    var nearest = bench.Backrest ? bench.SlabBack + 0.06f
+                                                 : (bench.SlabBack + bench.SlabFront) * 0.5f;
+                    if (Mathf.Abs(pelvisZ - nearest) > 0.06f)
+                        failures.Add($"{where} seats the pelvis at z {pelvisZ:F3}, not within " +
+                                     $"0.06 of {nearest:F3} on a bench " +
+                                     (bench.Backrest ? "with a backrest" : "without one"));
+
+                    if (pelvisZ < bench.SlabBack + 0.02f || pelvisZ > bench.SlabFront - 0.02f)
+                        failures.Add($"{where} seats the pelvis at z {pelvisZ:F3}, off the " +
+                                     $"slats {bench.SlabBack:F3}..{bench.SlabFront:F3}");
+
+                    // An adult (humanScale 1) has to end up standing on the pavement, not
+                    // hovering over it or buried in it.
+                    var adultRootY = seat.y - PedestrianAnimation.SitContactHeight;
+                    if (adultRootY > 0.005f || adultRootY < -0.05f)
+                        failures.Add($"{where} puts an adult root at y {adultRootY:F3}");
+
+                    if (Mathf.Abs(seat.x) + 0.25f > bench.HalfWidth)
+                        failures.Add($"{where} X {seat.x:F3} hangs a sitter off a bench of " +
+                                     $"half-width {bench.HalfWidth:F3}");
+                }
+
+                for (var i = 1; i < seats.Length; i++)
+                    if (Mathf.Abs(seats[i].x - seats[i - 1].x) < 0.6f)
+                        failures.Add($"seats: {bench.Prefab} seats {i - 1} and {i} overlap " +
+                                     $"({Mathf.Abs(seats[i].x - seats[i - 1].x):F3} apart)");
+            }
+        }
+
+        /// <summary>
+        /// The checks that need a real generated city rather than a synthetic crowd. Separate
+        /// entry point because it mutates the config's seed - pass a clone, never the
+        /// project's own asset, the ZoneFrequencySweep rule.
+        /// </summary>
+        public static List<string> RunCityRules(CityConfig config, int seeds = 40)
+        {
+            var failures = new List<string>();
+
+            DoorsFrontTheStreetAndOnlyTheStreet(failures, config, seeds);
+            IndustrialAndParkingAdmitNobody(failures, config);
 
             return failures;
         }
@@ -542,6 +776,240 @@ namespace LivingCity.Tests
             }
         }
 
+        // ------------------------------------------------------------------ street doors
+
+        /// <summary>
+        /// The whole geometric claim BuildingDoorRule rests on, checked against real generated
+        /// cities: a facade that fronts a street stands INSIDE the road cell (facades are 7m
+        /// from the centreline, 10m on the avenue, and the cell boundary is at 15), while a
+        /// facade turned toward the interior of its block stands in a block cell. If that ever
+        /// stops holding, doors appear on alley walls and pedestrians walk into brickwork.
+        ///
+        /// The facades here are synthesised rather than placed, because placing them means
+        /// BlockBuilder and prefab instantiation, which no headless host can do. What is being
+        /// tested is the rule, and the rule only ever sees a point and a normal.
+        /// </summary>
+        static void DoorsFrontTheStreetAndOnlyTheStreet(List<string> failures, CityConfig config, int seeds)
+        {
+            // `is null`, not `== null`: CityConfig is a UnityEngine.Object, and the headless
+            // host constructs one through GetUninitializedObject - which has no native peer,
+            // so Unity's overloaded == reports the live object we were just handed as null.
+            if (config is null)
+            {
+                failures.Add("Door rule: no CityConfig supplied.");
+                return;
+            }
+
+            var streetFacades = 0;
+            var interiorFacades = 0;
+            var backlessFacades = 0;
+            var maps = 0;
+
+            for (var seed = 0; seed < seeds; seed++)
+            {
+                config.seed = seed;
+
+                var grid = CityGenerator.Generate(config);
+                if (grid == null || grid.BlockCount <= 1)
+                    continue;
+
+                maps++;
+
+                for (var x = 0; x < grid.Width; x++)
+                for (var z = 0; z < grid.Height; z++)
+                {
+                    if (!grid.IsRoad(x, z))
+                        continue;
+
+                    foreach (var step in Steps)
+                    {
+                        var bx = x + step.x;
+                        var bz = z + step.y;
+
+                        if (!grid.InBounds(bx, bz) || grid.IsRoad(bx, bz))
+                            continue;
+                        if (grid.BlockIdAt(bx, bz) < 0)
+                            continue;
+
+                        // Toward the block from the road centreline; the facade looks back.
+                        var toBlock = new Vector3(step.x, 0f, step.y);
+                        var centre = grid.CellToWorld(x, z);
+                        var facing = -toBlock;
+
+                        // Both street cross-sections: ordinary street and the avenue.
+                        foreach (var setback in FacadeSetbacks)
+                        {
+                            streetFacades++;
+                            if (!BuildingDoorRule.Eligible(grid, "building-block-4floor",
+                                                           centre + toBlock * setback, facing))
+                                failures.Add($"Door rule: seed {seed}, a facade {setback}m off the " +
+                                             $"centreline of road cell ({x},{z}) facing block " +
+                                             $"({bx},{bz}) was rejected - street facades must qualify.");
+                        }
+                    }
+                }
+
+                // A facade standing in a road cell is necessary but not sufficient: it also
+                // needs a block BEHIND it. Two road cells side by side give a wall facing
+                // across the carriageway at nothing, and a road cell on the map edge gives one
+                // backing onto the void. Both stand exactly where a real facade stands, so
+                // only the behind-test can tell them apart.
+                for (var x = 0; x < grid.Width; x++)
+                for (var z = 0; z < grid.Height; z++)
+                {
+                    if (!grid.IsRoad(x, z))
+                        continue;
+
+                    foreach (var step in Steps)
+                    {
+                        var nx = x + step.x;
+                        var nz = z + step.y;
+
+                        var offMap = !grid.InBounds(nx, nz);
+                        if (!offMap && !grid.IsRoad(nx, nz))
+                            continue;
+
+                        var toward = new Vector3(step.x, 0f, step.y);
+                        var door = grid.CellToWorld(x, z) + toward * 7f;
+
+                        backlessFacades++;
+                        if (BuildingDoorRule.Eligible(grid, "building-block-4floor", door, -toward))
+                            failures.Add($"Door rule: seed {seed}, a facade in road cell ({x},{z}) " +
+                                         $"backing onto {(offMap ? "the map edge" : $"road cell ({nx},{nz})")} " +
+                                         "qualified - there is no building behind that door.");
+                    }
+                }
+
+                // The other side of the claim: a cell buried inside a block. Its own centre is
+                // 15m from every boundary, so nothing there can be mistaken for a street.
+                for (var x = 1; x < grid.Width - 1; x++)
+                for (var z = 1; z < grid.Height - 1; z++)
+                {
+                    if (grid.IsRoad(x, z) || grid.BlockIdAt(x, z) < 0)
+                        continue;
+
+                    var buried = true;
+                    foreach (var step in Steps)
+                        if (grid.IsRoad(x + step.x, z + step.y))
+                            buried = false;
+                    if (!buried)
+                        continue;
+
+                    interiorFacades++;
+                    if (BuildingDoorRule.Eligible(grid, "building-block-4floor",
+                                                  grid.CellToWorld(x, z), Vector3.forward))
+                        failures.Add($"Door rule: seed {seed}, a facade in the interior of block " +
+                                     $"cell ({x},{z}) qualified - that door opens onto nothing.");
+                }
+            }
+
+            // A rule that rejects everything passes every assertion above. Say so out loud.
+            if (maps == 0)
+                failures.Add("Door rule: no city generated across the whole sweep.");
+            else if (streetFacades == 0)
+                failures.Add("Door rule: the sweep found no street facades at all to test.");
+            else if (interiorFacades == 0)
+                failures.Add("Door rule: the sweep found no block interiors at all to test.");
+            else if (backlessFacades == 0)
+                failures.Add("Door rule: the sweep found no backless facades at all to test.");
+        }
+
+        /// <summary>
+        /// Nobody strolls home into a factory yard or a car park. Same facade, same geometry -
+        /// only the zone changes - so this isolates the zone gate from everything else.
+        /// </summary>
+        static void IndustrialAndParkingAdmitNobody(List<string> failures, CityConfig config)
+        {
+            config.seed = 7;
+
+            var grid = CityGenerator.Generate(config);
+            if (grid == null || grid.BlockCount <= 1)
+            {
+                failures.Add("Door rule: seed 7 produced no city to zone-test.");
+                return;
+            }
+
+            for (var x = 0; x < grid.Width; x++)
+            for (var z = 0; z < grid.Height; z++)
+            {
+                if (!grid.IsRoad(x, z))
+                    continue;
+
+                foreach (var step in Steps)
+                {
+                    var bx = x + step.x;
+                    var bz = z + step.y;
+                    var blockId = grid.BlockIdAt(bx, bz);
+
+                    if (!grid.InBounds(bx, bz) || grid.IsRoad(bx, bz) || blockId < 0)
+                        continue;
+
+                    var toBlock = new Vector3(step.x, 0f, step.y);
+                    var door = grid.CellToWorld(x, z) + toBlock * 7f;
+                    var facing = -toBlock;
+
+                    grid.SetZone(blockId, BlockZone.ResidentialHigh);
+                    if (!BuildingDoorRule.Eligible(grid, "building-block-4floor", door, facing))
+                    {
+                        failures.Add($"Door rule: a residential facade at road cell ({x},{z}) was rejected.");
+                        return;
+                    }
+
+                    grid.SetZone(blockId, BlockZone.Industrial);
+                    if (BuildingDoorRule.Eligible(grid, "building-block-4floor", door, facing))
+                    {
+                        failures.Add($"Door rule: an INDUSTRIAL facade at road cell ({x},{z}) qualified.");
+                        return;
+                    }
+
+                    grid.SetZone(blockId, BlockZone.Parking);
+                    if (BuildingDoorRule.Eligible(grid, "building-block-4floor", door, facing))
+                    {
+                        failures.Add($"Door rule: a car-park facade at road cell ({x},{z}) qualified.");
+                        return;
+                    }
+
+                    return;
+                }
+            }
+
+            failures.Add("Door rule: seed 7 offered no road-and-block pair to zone-test.");
+        }
+
+        static void DoorNameFilterRejectsWhatItMust(List<string> failures)
+        {
+            foreach (var name in new[]
+                     {
+                         "building-block-4floor", "building-block-5floor-front(Clone)",
+                         "building-house-block-big", "building-cafe", "building-school",
+                     })
+                if (!BuildingDoorRule.NameQualifies(name))
+                    failures.Add($"Door rule: '{name}' should carry a street door.");
+
+            foreach (var name in new[]
+                     {
+                         // A corner's forward aligns the quadrant bisector, so its "facade
+                         // centre" is inside a wall.
+                         "building-block-4floor-corner", "building-block-5floor-corner(Clone)",
+                         // The whole industrial catalogue, and the one vehicle door named
+                         // building-*.
+                         "industry-factory", "industry-warehouse", "building-policestation-garage",
+                         // Not buildings at all.
+                         "bench-old", "tree-conifer", "tile-park", "", null,
+                     })
+                if (BuildingDoorRule.NameQualifies(name))
+                    failures.Add($"Door rule: '{name}' must not carry a street door.");
+        }
+
+        static readonly Vector2Int[] Steps =
+        {
+            new Vector2Int(1, 0), new Vector2Int(-1, 0),
+            new Vector2Int(0, 1), new Vector2Int(0, -1),
+        };
+
+        /// <summary>Facade distance from the road centreline: ordinary street, then avenue.</summary>
+        static readonly float[] FacadeSetbacks = { 7f, 10f };
+
         static void RegistryCellKeysDoNotCollide(List<string> failures)
         {
             // Distinct cells must give distinct keys across the whole plausible city extent
@@ -556,6 +1024,151 @@ namespace LivingCity.Tests
                         failures.Add($"Registry hash: key collision at cell ({cx}, {cz}).");
                         return;
                     }
+        }
+
+        static void RoadCheck(List<string> failures, string what, RoadTileKind kind,
+                              float x, float z, bool expectRoad)
+        {
+            var shape = RoadSurface.Classify(kind);
+            if (RoadSurface.OnAsphalt(shape, x, z) != expectRoad)
+                failures.Add($"Road surface: {what} at ({x}, {z}) on {kind} should be " +
+                             $"{(expectRoad ? "road" : "pavement")} and is not.");
+        }
+
+        /// <summary>
+        /// The tile cross-sections, restated independently of RoadSurface's constants (the
+        /// bench-table rule: a table checking itself proves nothing). Street: lanes at 1.5,
+        /// asphalt to the kerb at 3, pavement 3..5, walking line at 4. Avenue: lanes at 1.75
+        /// and 4.75, kerb at 6.25, pavement to 8.5, walking line at 7.25. Crosswalk straights
+        /// keep the Straight kind, so their stripe centres at 1.55 ride the same test.
+        /// </summary>
+        static void RoadCrossSectionsClassifyAsMeasured(List<string> failures)
+        {
+            foreach (var lane in new[] { -1.5f, 1.5f, -1.55f, 1.55f, 0f })
+                RoadCheck(failures, "lane", RoadTileKind.Straight, lane, 9f, true);
+
+            foreach (var pavement in new[] { -4.75f, -4f, -3.5f, 3.5f, 4f, 4.75f })
+                RoadCheck(failures, "pavement", RoadTileKind.Straight, pavement, 9f, false);
+
+            foreach (var lane in new[] { -4.75f, -1.75f, 1.75f, 4.75f })
+                RoadCheck(failures, "avenue lane", RoadTileKind.MainStraight, lane, 9f, true);
+
+            foreach (var pavement in new[] { -8.4f, -7.25f, -6.6f, 6.6f, 7.25f, 8.4f })
+                RoadCheck(failures, "avenue pavement", RoadTileKind.MainStraight, pavement, 9f, false);
+
+            // Junction arms are road along both axes; the corner quadrants stay sociable -
+            // that is where pavement pairs meet, and over-blocking them would thin out
+            // exactly the street-corner conversations that look most natural.
+            RoadCheck(failures, "junction centre", RoadTileKind.Cross, 0f, 0f, true);
+            RoadCheck(failures, "junction arm", RoadTileKind.Cross, 12f, 1.5f, true);
+            RoadCheck(failures, "junction arm", RoadTileKind.Cross, 1.5f, 12f, true);
+            RoadCheck(failures, "junction corner", RoadTileKind.Cross, 4.5f, 4.5f, false);
+            RoadCheck(failures, "junction corner", RoadTileKind.Cross, 12f, 4.5f, false);
+
+            // T at 0 degrees: through road left-right (the |z| band), branch north.
+            RoadCheck(failures, "T through", RoadTileKind.TJunction, 12f, -1.5f, true);
+            RoadCheck(failures, "T branch", RoadTileKind.TJunction, 1.5f, 12f, true);
+            RoadCheck(failures, "T corner", RoadTileKind.TJunction, 8f, 8f, false);
+
+            // MainTJunction: boulevard east-west, minor street teeing north.
+            RoadCheck(failures, "boulevard", RoadTileKind.MainTJunction, 12f, 5.5f, true);
+            RoadCheck(failures, "minor branch", RoadTileKind.MainTJunction, 1.5f, 12f, true);
+            RoadCheck(failures, "corner", RoadTileKind.MainTJunction, 5f, 8f, false);
+
+            // MainCross: boulevard north-south crossing a minor street.
+            RoadCheck(failures, "boulevard", RoadTileKind.MainCross, 5.5f, 12f, true);
+            RoadCheck(failures, "minor street", RoadTileKind.MainCross, 12f, 1.5f, true);
+            RoadCheck(failures, "corner", RoadTileKind.MainCross, 8f, 5f, false);
+
+            // Dead end: the turning circle is road, the sidewalk ring behind it is not.
+            RoadCheck(failures, "turning circle", RoadTileKind.End, 0f, 0f, true);
+            RoadCheck(failures, "arm", RoadTileKind.End, 1.5f, 9f, true);
+            RoadCheck(failures, "ring behind circle", RoadTileKind.End, 0f, -4.2f, false);
+        }
+
+        /// <summary>
+        /// Every generated road tile is named tile_{x}_{y}_{Kind}; the parse must recover
+        /// each kind, refuse pack demo names, and refuse a bare coordinate suffix (which
+        /// Enum.TryParse would otherwise happily read as a numeric enum value).
+        /// </summary>
+        static void RoadTileNamesRoundTrip(List<string> failures)
+        {
+            foreach (RoadTileKind kind in System.Enum.GetValues(typeof(RoadTileKind)))
+            {
+                var parsed = RoadSurface.TryParseKind($"tile_4_-7_{kind}", out var got);
+
+                if (kind == RoadTileKind.None)
+                {
+                    if (parsed)
+                        failures.Add("Road names: tile_4_-7_None parsed as a road.");
+                    continue;
+                }
+
+                if (!parsed || got != kind)
+                    failures.Add($"Road names: tile_4_-7_{kind} did not round-trip (got {got}).");
+
+                // Every Main* kind must carry the avenue half-width somewhere; the rest only
+                // street widths - a swapped table would put the no-stopping zone 3m wide on
+                // the boulevard and 6m wide on a side street.
+                var shape = RoadSurface.Classify(kind);
+                var widest = Mathf.Max(shape.BandX, shape.BandZ);
+                var isMain = kind.ToString().StartsWith("Main");
+                var mainEdge = 6.25f + RoadSurface.KerbMargin;
+                if (isMain != Mathf.Approximately(widest, mainEdge))
+                    failures.Add($"Road names: {kind} widest band {widest} does not match " +
+                                 $"its {(isMain ? "avenue" : "street")} family.");
+            }
+
+            foreach (var name in new[] { "tile_3_4", "tile-road-straight", "lights_2_3", "tile_", "" })
+                if (RoadSurface.TryParseKind(name, out _))
+                    failures.Add($"Road names: '{name}' parsed as a road tile.");
+        }
+
+        /// <summary>
+        /// The curve's asphalt, measured off the mesh: an annulus of radius 15 +/- 3 around
+        /// the corner shared by its two connected edges (local (-15, +15) unrotated), with
+        /// sidewalk arcs at radii 11 and 19. The car nav polylines additionally take the
+        /// corner square - through (-1.5, 1.5) - so those bands must classify as road too:
+        /// pedestrians must not stand where the wheels actually go, whatever the paint says.
+        /// </summary>
+        static void CurveBandCoversAsphaltAndSparesPavement(List<string> failures)
+        {
+            // Points on the drawn asphalt: entry lanes at the north edge, the annulus
+            // centreline at the 45-degree diagonal, mesh face centroids.
+            RoadCheck(failures, "curve entry", RoadTileKind.Curve, -1.5f, 15f, true);
+            RoadCheck(failures, "curve exit", RoadTileKind.Curve, -15f, 1.5f, true);
+            RoadCheck(failures, "curve diagonal", RoadTileKind.Curve, -4.39f, 4.39f, true);
+            RoadCheck(failures, "curve mesh face", RoadTileKind.Curve, -5.8f, 7.3f, true);
+
+            // The square nav corner the cars actually drive.
+            RoadCheck(failures, "nav apex inner", RoadTileKind.Curve, -1.5f, 1.5f, true);
+            RoadCheck(failures, "nav apex outer", RoadTileKind.Curve, 1.5f, -1.5f, true);
+
+            // Sidewalk arc points read off the prefab's walking lines (radii 11 and 19).
+            RoadCheck(failures, "inner walk line", RoadTileKind.Curve, -4f, 15f, false);
+            RoadCheck(failures, "inner walk line", RoadTileKind.Curve, -6.36f, 8.06f, false);
+            RoadCheck(failures, "inner walk line", RoadTileKind.Curve, -15f, 4f, false);
+            RoadCheck(failures, "outer walk line", RoadTileKind.Curve, 4f, 15f, false);
+            RoadCheck(failures, "outer walk line", RoadTileKind.Curve, -15f, -4f, false);
+        }
+
+        /// <summary>
+        /// The exact regression that put chat pairs on the asphalt: two walkers on opposite
+        /// pavements pair up across the street, and the midpoint they both walk to is the
+        /// middle of the carriageway. The predicate has to refuse it - and has to allow the
+        /// midpoint of a same-side pair, or corner conversations die out entirely.
+        /// </summary>
+        static void CrossingPairMidpointIsRefused(List<string> failures)
+        {
+            var shape = RoadSurface.Classify(RoadTileKind.Straight);
+
+            var oppositeMidX = (-4f + 4f) * 0.5f;
+            if (!RoadSurface.OnAsphalt(shape, oppositeMidX, 6f))
+                failures.Add("Midpoint: opposite-pavement pair's midpoint passed as pavement.");
+
+            var sameSideMidX = (-4f + -4.5f) * 0.5f;
+            if (RoadSurface.OnAsphalt(shape, sameSideMidX, 6f))
+                failures.Add("Midpoint: same-pavement pair's midpoint classified as road.");
         }
     }
 }

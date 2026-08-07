@@ -45,8 +45,8 @@ namespace LivingCity.EditorTools
         const float MaxRadius = 3.6f;
 
         /// <summary>
-        /// How far a cluster must stand above the roof around it. This is the test that matters -
-        /// see the class note.
+        /// How far a cluster must stand above the roof around it, for a WORKS building. This is
+        /// the test that matters - see the class note.
         ///
         /// Not a guess. Measured across the whole works catalogue, the real stacks clear their
         /// roofs by 5.6m (industry-refinery), 8.6m (industry-factory's twins), 14.6m
@@ -55,7 +55,34 @@ namespace LivingCity.EditorTools
         /// its roof by 3.1 to 3.2m. 4.5 sits between the two populations with over a metre of
         /// margin either side. At 3 the lanterns pass and a warehouse smokes from seven points.
         /// </summary>
-        const float MinRise = 4.5f;
+        public const float WorksMinRise = 4.5f;
+
+        /// <summary>
+        /// The same test for a HOUSE, and it has to be a different number rather than a looser
+        /// one, because the two populations overlap.
+        ///
+        /// A domestic chimney is not a works stack. Measured across the terrace catalogue, the
+        /// authored chimney column - the same mesh on all eight building-block pieces, radius
+        /// 1.20 and 57 vertices - clears its roof by only 3.46m (5floor-corner) to 4.81m
+        /// (4floor-back). That band straddles WorksMinRise, which is why eight of nine
+        /// residential prefabs currently measure as having no chimney at all: at 4.5 only
+        /// 4floor-back and 5floor-short scrape through, and which ones pass is decided by where
+        /// the roof median happens to fall rather than by anything real.
+        ///
+        /// Lowering the works threshold instead is not an option. The lanterns that have to stay
+        /// rejected clear their roofs by 3.09 to 3.21m - within 0.25m of the lowest real house
+        /// chimney - and radius does not separate them either: the house column at 1.20 sits
+        /// BETWEEN industry-building's 0.66 lanterns and its 3.20 one. No scalar this detector
+        /// measures splits the two families, so the threshold has to be told which family it is
+        /// looking at. It can be, because the candidate lists are disjoint.
+        ///
+        /// 2.6 is the middle of the clean plateau. Every threshold from 2.0 to 3.4 returns
+        /// exactly one vent on each of the nine residential prefabs that has a chimney; 2.6
+        /// clears the highest non-chimney cluster (a 0.76-radius, 10-vertex roof pipe at 1.80m)
+        /// by 0.8m and sits 0.86m under the lowest real chimney. At 3.5 the 5floor-corner drops
+        /// out again.
+        /// </summary>
+        public const float HouseMinRise = 2.6f;
 
         /// <summary>Radius around a candidate that counts as "the roof around it".</summary>
         const float NeighbourhoodRadius = 9f;
@@ -69,8 +96,13 @@ namespace LivingCity.EditorTools
         /// <summary>
         /// Chimney mouths on a prefab, in its local space. Empty is the normal answer for most of
         /// the catalogue - a warehouse has no chimney - and not a failure.
+        ///
+        /// <paramref name="minRise"/> has no default on purpose. It is the one number that decides
+        /// what counts as a chimney, it differs by building family, and a default would silently
+        /// measure a terrace against the works threshold and report it as chimneyless. Pass
+        /// <see cref="WorksMinRise"/> or <see cref="HouseMinRise"/>.
         /// </summary>
-        public static List<Vector3> Measure(GameObject prefab, out string report)
+        public static List<Vector3> Measure(GameObject prefab, out string report, float minRise)
         {
             var mouths = new List<Vector3>();
             report = "no mesh";
@@ -124,7 +156,7 @@ namespace LivingCity.EditorTools
                 var roof = RoofAround(points, centre);
                 var rise = head - roof;
 
-                if (rise < MinRise)
+                if (rise < minRise)
                 {
                     rejected++;
                     continue;

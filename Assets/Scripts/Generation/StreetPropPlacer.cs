@@ -47,7 +47,8 @@ namespace LivingCity.Generation
             PrefabDatabase prefabs,
             CityConfig config,
             Transform parent,
-            SpawnPrefab spawn = null)
+            SpawnPrefab spawn = null,
+            List<Bounds> gateKeepOuts = null)
         {
             var placed = new List<GameObject>();
             spawn ??= RoadNetworkBuilder.RuntimeSpawn;
@@ -97,6 +98,14 @@ namespace LivingCity.Generation
 
                         if (!prefab) continue;
 
+                        // A prop stands down for a gate: nothing between the kerb and a
+                        // compound entrance, because a tree in front of a lorry gate blocks
+                        // the one hole the wall has. Tested AFTER the draws so the rng stream
+                        // is untouched - every other prop in the city stays exactly where it
+                        // was, which keeps a before/after diff readable. Skipped, not nudged:
+                        // a nudge under the 9m slot pitch just leans the tree on a gate pier.
+                        if (Blocked(position, gateKeepOuts)) continue;
+
                         var instance = spawn(prefab, position, rotation, parent);
                         placed.Add(instance);
                     }
@@ -108,6 +117,18 @@ namespace LivingCity.Generation
 
         static GameObject Pick(GameObject[] options, System.Random rng) =>
             options == null || options.Length == 0 ? null : options[rng.Next(options.Length)];
+
+        static bool Blocked(Vector3 position, List<Bounds> keepOuts)
+        {
+            if (keepOuts == null)
+                return false;
+
+            foreach (var keepOut in keepOuts)
+                if (keepOut.Contains(position))
+                    return true;
+
+            return false;
+        }
 
         struct Side
         {

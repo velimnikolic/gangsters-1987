@@ -91,7 +91,8 @@ namespace LivingCity.Generation
             System.Random rng,
             List<Bounds> occupied,
             List<GameObject> placed,
-            List<BuildingTinter.Target> tints)
+            List<BuildingTinter.Target> tints,
+            List<Bounds> gateKeepOuts)
         {
             if (cells == null || cells.Count == 0)
                 return;
@@ -103,15 +104,20 @@ namespace LivingCity.Generation
             var fenceMax = new Vector2(max.x - FenceInset, max.y - FenceInset);
             var gateCentre = GateCentre(fenceMin, fenceMax, outward);
 
-            PerimeterFence.Build(fenceMin, fenceMax,
-                new PerimeterFence.Gate
-                {
-                    Has = true,
-                    Centre = gateCentre,
-                    Outward = outward,
-                    Width = GateWidth,
-                },
+            var gate = new PerimeterFence.Gate
+            {
+                Has = true,
+                Centre = gateCentre,
+                Outward = outward,
+                Width = GateWidth,
+            };
+
+            PerimeterFence.Build(fenceMin, fenceMax, gate,
                 palette.fenceSegment, palette.fencePost, parent, spawn, placed);
+
+            // The gateway is the one way through the churchyard wall - keep the verge in
+            // front of it clear of street trees, same as a works gate.
+            gateKeepOuts?.Add(PerimeterFence.Approach(gate));
 
             var centre = new Vector3((min.x + max.x) * 0.5f, GroundPlacer.BlockLift,
                                      (min.y + max.y) * 0.5f);

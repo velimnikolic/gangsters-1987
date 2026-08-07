@@ -42,8 +42,117 @@ namespace LivingCity.Tests
             EscapeFloorIsBoundedAndMonotone(failures);
             StoppedCarStillSeesTheJunction(failures);
             ExitProbeGeometry(failures);
+            DockingCurveTerminatesAtTheStall(failures);
+            DockingStepNeverBeatsTheCap(failures);
+            DockingFinalApproachIsMonotone(failures);
 
             return failures;
+        }
+
+        /// <summary>
+        /// The dock/undock geometries a patrol car actually flies, restated here rather than
+        /// imported: a kerb roughly a stall-depth-and-a-street out from the bay, approaches
+        /// from either side along the lane, and the degenerate everything-coincident case
+        /// that must terminate rather than divide to a NaN.
+        /// </summary>
+        static readonly (Vector3 from, Vector3 stall, Vector3 stallOut)[] DockCases =
+        {
+            (new Vector3(10f, 0f, 8f), Vector3.zero, Vector3.forward),
+            (new Vector3(-12f, 0f, 9f), Vector3.zero, Vector3.forward),
+            (new Vector3(2f, 0f, 10f), Vector3.zero, Vector3.forward),
+            (new Vector3(0.5f, 0f, 0.5f), Vector3.zero, Vector3.forward),
+            (Vector3.zero, Vector3.zero, Vector3.forward),
+        };
+
+        /// <summary>
+        /// Advance must reach t = 1 in bounded steps for every realistic geometry, and the
+        /// endpoints must be exact: t 0 is where the car stands, t 1 is the stall centre.
+        /// The degenerate all-points-coincident curve is the case the tangent floor exists
+        /// for - without it this loop never ends.
+        /// </summary>
+        static void DockingCurveTerminatesAtTheStall(List<string> failures)
+        {
+            foreach (var (from, stall, stallOut) in DockCases)
+            {
+                var curve = Entities.PoliceDocking.Dock(from, stall, stallOut);
+
+                if ((Entities.PoliceDocking.Point(curve, 0f) - from).magnitude > 1e-4f)
+                    failures.Add($"Docking: curve from {from} does not start at the car.");
+                if ((Entities.PoliceDocking.Point(curve, 1f) - stall).magnitude > 1e-4f)
+                    failures.Add($"Docking: curve from {from} does not end in the stall.");
+
+                var t = 0f;
+                var steps = 0;
+                while (t < 1f && steps < 10_000)
+                {
+                    t = Entities.PoliceDocking.Advance(curve, t, Entities.PoliceDocking.Speed * Dt);
+                    steps++;
+                }
+
+                if (t < 1f)
+                    failures.Add($"Docking: curve from {from} never terminates " +
+                                 $"({steps} steps, t {t:F3}).");
+            }
+        }
+
+        /// <summary>
+        /// The cap is stated in metres per second, so the property is about DISPLACEMENT: no
+        /// single Advance step may move the car meaningfully further than Speed * Dt. The
+        /// step is first-order in the tangent, so a curved segment can overrun by its
+        /// curvature error - 20% headroom accepts that and still catches a parameter-space
+        /// step (which overruns by whole multiples on a long curve).
+        /// </summary>
+        static void DockingStepNeverBeatsTheCap(List<string> failures)
+        {
+            foreach (var (from, stall, stallOut) in DockCases)
+            {
+                var curve = Entities.PoliceDocking.Dock(from, stall, stallOut);
+                var ds = Entities.PoliceDocking.Speed * Dt;
+
+                var t = 0f;
+                while (t < 1f)
+                {
+                    var next = Entities.PoliceDocking.Advance(curve, t, ds);
+                    var moved = (Entities.PoliceDocking.Point(curve, next)
+                               - Entities.PoliceDocking.Point(curve, t)).magnitude;
+                    if (moved > ds * 1.2f)
+                    {
+                        failures.Add($"Docking: one step from {from} moved {moved:F3}m " +
+                                     $"against a cap of {ds:F3}m at t {t:F3}.");
+                        break;
+                    }
+                    t = next;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The visually critical half: once past the mouth (t 0.5, the control point's side
+        /// of the curve), the car must close on the stall monotonically - an oscillation at
+        /// the bay is exactly the "parking by binary search" artefact that would read as a
+        /// bug from the camera. The first half owes no such promise: a car standing nearly
+        /// in the mouth balloons outward before it can swing in, and that is the manoeuvre
+        /// working, not failing.
+        /// </summary>
+        static void DockingFinalApproachIsMonotone(List<string> failures)
+        {
+            foreach (var (from, stall, stallOut) in DockCases)
+            {
+                var curve = Entities.PoliceDocking.Dock(from, stall, stallOut);
+
+                var previous = float.PositiveInfinity;
+                for (var t = 0.5f; t <= 1f; t += 0.01f)
+                {
+                    var distance = (Entities.PoliceDocking.Point(curve, t) - stall).magnitude;
+                    if (distance > previous + 1e-4f)
+                    {
+                        failures.Add($"Docking: the final approach from {from} backs away " +
+                                     $"from the stall at t {t:F2}.");
+                        break;
+                    }
+                    previous = distance;
+                }
+            }
         }
 
         /// <summary>Below this the escape bookkeeping counts the car as motionless, m/s. Mirrors

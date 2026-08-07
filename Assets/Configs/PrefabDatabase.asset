@@ -99,6 +99,7 @@ MonoBehaviour:
     - {fileID: 915700779621246890, guid: ef9d84d2731dcef4fba0d78e0cb8f40e, type: 3}
     landmarkChance: 0.45
     requiredLandmark: 1
+    guaranteedLandmark: 0
     landmarkScale: 1
     alleyProps:
     - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
@@ -201,6 +202,7 @@ MonoBehaviour:
     landmarks: []
     landmarkChance: 0
     requiredLandmark: -1
+    guaranteedLandmark: -1
     landmarkScale: 1
     alleyProps: []
     alleyParkingChance: 0.35
@@ -286,6 +288,7 @@ MonoBehaviour:
     - {fileID: 5590961993108706936, guid: b24626a0d6b4f1040a7a5294ddc1fd4b, type: 3}
     landmarkChance: 1
     requiredLandmark: -1
+    guaranteedLandmark: -1
     landmarkScale: 1
     alleyProps:
     - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
@@ -362,6 +365,7 @@ MonoBehaviour:
     - {fileID: 4072027801496028026, guid: 2fe36541ee99f1b47abfedad4a7da7d2, type: 3}
     landmarkChance: 1
     requiredLandmark: -1
+    guaranteedLandmark: -1
     landmarkScale: 1
     alleyProps: []
     alleyParkingChance: 0.35
@@ -430,6 +434,7 @@ MonoBehaviour:
     - {fileID: 4831329605755130448, guid: edfb2b753d73072459183537c84ca94e, type: 3}
     landmarkChance: 1
     requiredLandmark: -1
+    guaranteedLandmark: -1
     landmarkScale: 1
     alleyProps: []
     alleyParkingChance: 0.35
@@ -519,6 +524,7 @@ MonoBehaviour:
     - {fileID: 1017154472777420144, guid: 1eee4a0aca7dfc442a911d2bfb78875d, type: 3}
     landmarkChance: 1
     requiredLandmark: -1
+    guaranteedLandmark: -1
     landmarkScale: 1
     alleyProps: []
     alleyParkingChance: 0.35
@@ -613,6 +619,7 @@ MonoBehaviour:
     - {fileID: 915700779621246890, guid: ef9d84d2731dcef4fba0d78e0cb8f40e, type: 3}
     landmarkChance: 1
     requiredLandmark: -1
+    guaranteedLandmark: -1
     landmarkScale: 1
     alleyProps:
     - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
@@ -675,6 +682,7 @@ MonoBehaviour:
     landmarks: []
     landmarkChance: 0
     requiredLandmark: -1
+    guaranteedLandmark: -1
     landmarkScale: 1
     alleyProps: []
     alleyParkingChance: 0.35
@@ -749,6 +757,24 @@ MonoBehaviour:
     local: {x: 0.091875754, y: 23.294153, z: -6.350312}
   - prefab: {fileID: 72212052519490991, guid: 27aa404be60bae1478bb4a505511d4f6, type: 3}
     local: {x: -8.1959305, y: 9, z: -4.273215}
+  - prefab: {fileID: 4202220882244699723, guid: 5731e4f8b569f7e4da151f82fa9f55d3, type: 3}
+    local: {x: -3.3356442, y: 20.607016, z: 0.55739295}
+  - prefab: {fileID: 2215209693239599735, guid: 5f3b442e803724c4291da1b5beddba8c, type: 3}
+    local: {x: 1.9881994, y: 20.607014, z: -4.152783}
+  - prefab: {fileID: 6684296866273395084, guid: 1c69eea314f42f543a55ac9ac3f884b6, type: 3}
+    local: {x: -3.3356442, y: 20.607016, z: 0.55739295}
+  - prefab: {fileID: 5679678132739351760, guid: 8c2b7166132ff7144b342ec6b2ab895e, type: 3}
+    local: {x: 2.5720308, y: 20.607014, z: -3.217693}
+  - prefab: {fileID: 4524193779938541034, guid: 575c50ac6726d1545bcd64ffc9b25e68, type: 3}
+    local: {x: -3.6584888, y: 23.80671, z: -3.317509}
+  - prefab: {fileID: 4382183402933652077, guid: 5ecdad9e9e7fdd9459299af9c1d1bc65, type: 3}
+    local: {x: -3.6584883, y: 23.80671, z: -2.8591998}
+  - prefab: {fileID: 3655131549311888650, guid: 3a5e9009bececcb479700b874c81f922, type: 3}
+    local: {x: -1.3571482, y: 23.806711, z: 1.4640005}
+  - prefab: {fileID: 883696919425858869, guid: 641aa067143b4cf4d83e2dea9c2e70b9, type: 3}
+    local: {x: -4.118884, y: 23.80671, z: -4.4026446}
+  - prefab: {fileID: 1503676966882326081, guid: f64c1829f5061a246a7e4201faf04259, type: 3}
+    local: {x: -3.4105885, y: 9.9, z: -0.005879376}
   smokeMaterial: {fileID: 2100000, guid: c63d588ff81774854a3088eea91661f0, type: 2}
   smokePuffMesh: {fileID: 4300002, guid: 9609c2921431d4e26bc801af948ee0c4, type: 3}
   streetLamps:
@@ -806,7 +832,6 @@ MonoBehaviour:
     weight: 14
     prefabs:
     - {fileID: 6132606918003946682, guid: de86bb5a94d6f9743a7589b286cb719e, type: 3}
-    - {fileID: 2777159810363629823, guid: c9dd5ab1c88f0034c826788e31523a4f, type: 3}
   - label: Freight
     weight: 14
     prefabs:
@@ -817,33 +842,54 @@ MonoBehaviour:
     weight: 6
     prefabs:
     - {fileID: 4555875449808149645, guid: 7028db554f494cf48a1057edb343adcf, type: 3}
+  pedestrianGroups:
+  - label: Suits
+    weight: 3
+    prefabs:
+    - {fileID: 5534041706690384203, guid: 4907e2a2fa08d26449f823f461386574, type: 3}
+    - {fileID: 5757955882483379394, guid: 5373272d61c43eb448a976bfd04257cd, type: 3}
+  - label: Civilians
+    weight: 4
+    prefabs:
+    - {fileID: 1739492204495814131, guid: d9b30281572acd1428de68fe4e4c9988, type: 3}
+    - {fileID: 7793103633514177349, guid: 9565ed19728f30241abdac15d7ed0ed9, type: 3}
+    - {fileID: 5549721444016830162, guid: fa75ed603b019694f9a56554338a70b4, type: 3}
+    - {fileID: 4141400571594952038, guid: e00438b6d9c586741bafa49bc51ae228, type: 3}
+    - {fileID: 5678193843773380545, guid: a8bd27e353211b94394e057d69a367e8, type: 3}
+  - label: Workers
+    weight: 2
+    prefabs:
+    - {fileID: 7663872161362641315, guid: 119cf27cbf5a69846825f1ad6906ebfa, type: 3}
+    - {fileID: 4773668259113336104, guid: 8df224532d7e80f4ea2e60b21753ca64, type: 3}
+    - {fileID: 8559158833678960086, guid: fc0764a18174c2944abd01c737d1b0d0, type: 3}
+    - {fileID: 5314385134852338919, guid: d92a0ccd16b4a2247ba8becc0d5377ae, type: 3}
+    - {fileID: 3178355596657646033, guid: 85e32c765da7b734c9880285b0f15f72, type: 3}
+  - label: Fringe
+    weight: 1
+    prefabs:
+    - {fileID: 7151790092106136865, guid: 690e9e99bf6f8774e9c3a24d7a643b75, type: 3}
+  - label: Children
+    weight: 0.5
+    prefabs:
+    - {fileID: 6229438364091640978, guid: 77c944ed0161aa344a9f59ce29435cd2, type: 3}
   aiPedestrians:
-  - {fileID: 7565730081248384846, guid: f2b4116e2fceae742828e096f9af85e1, type: 3}
   - {fileID: 6229438364091640978, guid: 77c944ed0161aa344a9f59ce29435cd2, type: 3}
-  - {fileID: 6384937860426892486, guid: c422fb67456fa454980dbb80d76d7aa2, type: 3}
-  - {fileID: 7392328744278797590, guid: d5c702e7707612845a4864856ff12604, type: 3}
   - {fileID: 1739492204495814131, guid: d9b30281572acd1428de68fe4e4c9988, type: 3}
   - {fileID: 4773668259113336104, guid: 8df224532d7e80f4ea2e60b21753ca64, type: 3}
   - {fileID: 8559158833678960086, guid: fc0764a18174c2944abd01c737d1b0d0, type: 3}
   - {fileID: 3178355596657646033, guid: 85e32c765da7b734c9880285b0f15f72, type: 3}
-  - {fileID: 3331814735908807886, guid: 8f4b017fc7806774088de76a27c9aa71, type: 3}
   - {fileID: 5534041706690384203, guid: 4907e2a2fa08d26449f823f461386574, type: 3}
-  - {fileID: 5196320849994863485, guid: 4280bc60d7054914ca5237998df0545e, type: 3}
-  - {fileID: 3042449297034181317, guid: 2a754de43ecafd542bac09cb13b7206e, type: 3}
-  - {fileID: 6554544517775456104, guid: 0adb7dc12ab9614469639ad19703b2c5, type: 3}
   - {fileID: 7793103633514177349, guid: 9565ed19728f30241abdac15d7ed0ed9, type: 3}
   - {fileID: 7151790092106136865, guid: 690e9e99bf6f8774e9c3a24d7a643b75, type: 3}
-  - {fileID: 4436128949835378108, guid: aef4e532d3c4f294fbdfc6b9a04b3624, type: 3}
   - {fileID: 5757955882483379394, guid: 5373272d61c43eb448a976bfd04257cd, type: 3}
   - {fileID: 7663872161362641315, guid: 119cf27cbf5a69846825f1ad6906ebfa, type: 3}
   - {fileID: 5549721444016830162, guid: fa75ed603b019694f9a56554338a70b4, type: 3}
   - {fileID: 4141400571594952038, guid: e00438b6d9c586741bafa49bc51ae228, type: 3}
   - {fileID: 5314385134852338919, guid: d92a0ccd16b4a2247ba8becc0d5377ae, type: 3}
-  - {fileID: 2162866019739783510, guid: a181dd2e05621e04bb68ca74e555a51a, type: 3}
   - {fileID: 5678193843773380545, guid: a8bd27e353211b94394e057d69a367e8, type: 3}
-  - {fileID: 9148137444187412123, guid: 44020a1c631a53040b9e9c8a8b15dc99, type: 3}
-  - {fileID: 2032465738542835680, guid: 45ff3eaf65e932d49948b4b769f50a39, type: 3}
-  pedestrianController: {fileID: 9100000, guid: 36ca79ea203524119a80a165c1c81144, type: 2}
+  pedestrianController: {fileID: 9100000, guid: a9eb8179d67854c26bbe0c85c734024a, type: 2}
+  policeCarPrefab: {fileID: 2777159810363629823, guid: c9dd5ab1c88f0034c826788e31523a4f, type: 3}
+  policeOfficerPrefab: {fileID: 0}
   clouds:
   - {fileID: 1569108936417716, guid: 80919aaf925554880b9b809635f0dd9b, type: 3}
   - {fileID: 1236916720052730, guid: 268a4c6663b8b434f9c9477d880c3534, type: 3}

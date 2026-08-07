@@ -142,12 +142,15 @@ namespace LivingCity.Data
                  "overhanging their own edge; the pavement is metres further out.")]
         [Min(0f)] public float industrialWallInset = 1f;
 
-        [Tooltip("Smoke from the works chimneys. Runtime only - the city is generated into the " +
-                 "scene and saved, and a baked particle system would be stamped BatchingStatic " +
-                 "by MarkStaticForBatching and never move. Generation leaves a SmokeVent marker " +
-                 "at each measured chimney mouth and SmokeStackSystem raises the plumes on Start, " +
-                 "so this off costs nothing rather than leaving dead objects in the scene.")]
-        public bool industrialSmoke = true;
+        [Tooltip("Smoke from the city's chimneys - the works stacks and the terrace flues both. " +
+                 "Runtime only - the city is generated into the scene and saved, and a baked " +
+                 "particle system would be stamped BatchingStatic by MarkStaticForBatching and " +
+                 "never move. Generation leaves a SmokeVent marker at each measured chimney mouth " +
+                 "and SmokeStackSystem raises the plumes on Start, so this off costs nothing " +
+                 "rather than leaving dead objects in the scene. To keep the works and drop only " +
+                 "the houses, set the house profile's chance to 0 on SmokeStackSystem instead.")]
+        [UnityEngine.Serialization.FormerlySerializedAs("industrialSmoke")]
+        public bool chimneySmoke = true;
 
         [Header("Entities")]
         [Min(0)] public int carCount = 30;
@@ -242,6 +245,66 @@ namespace LivingCity.Data
         [Tooltip("How long a plain pause lasts, seconds.")]
         public Vector2 idleDurationRange = new Vector2(3f, 10f);
 
+        [Tooltip("Chance a walker passing a street door goes into that building. This is what " +
+                 "makes people come OUT of buildings too: the city's population is constant, " +
+                 "so every walker who steps inside is answered by one stepping out somewhere. " +
+                 "Doors sit on every street-facing building except the industrial ones, so a " +
+                 "walker is nearly always next to one - this is the density dial for the " +
+                 "whole in-and-out traffic.")]
+        [Range(0f, 1f)] public float buildingVisitChance = 0.22f;
+
+        [Tooltip("How long somebody stays inside a building, seconds, drawn per visit. Longer " +
+                 "than a shop visit on purpose - this is going home, not buying a paper - and " +
+                 "it is also what sets how many of the population are indoors at any moment.")]
+        public Vector2 buildingStayRange = new Vector2(20f, 120f);
+
+        [Tooltip("Chance somebody who went in comes out of a DIFFERENT door somewhere else in " +
+                 "the city rather than the one they entered. This is what makes doors read as " +
+                 "a city rather than as airlocks - the person you see leaving is never the " +
+                 "one you watched go in. At 0 everyone returns to their own doorstep.")]
+        [Range(0f, 1f)] public float buildingSwapChance = 0.6f;
+
+        [Header("Police")]
+        [Tooltip("Patrol cars in the station's fleet. These are persistent GameObjects - the " +
+                 "same cars drive out, patrol, park in the forecourt and drive out again; " +
+                 "none of the traffic system's spawn/exit churn applies to them. 0 disables " +
+                 "car patrols. The forecourt has floor(width/2.7) stalls, so counts above " +
+                 "that simply keep more of the fleet out on the street at once.")]
+        [Min(0)] public int policeCarCount = 4;
+
+        [Tooltip("Officers walking the beat. Persistent like the cars: they patrol the " +
+                 "pavements and periodically return to the station through its door. Not " +
+                 "counted in pedestrianCount. 0 disables foot patrols.")]
+        [Min(0)] public int policeOfficerCount = 4;
+
+        [Tooltip("Random routes a patrol car serves before it heads back to the station, " +
+                 "drawn per patrol, inclusive at both ends. The same dial as " +
+                 "wanderRoutesBeforeExit, but the destination is home, not the map edge.")]
+        public Vector2Int policeCarPatrolRoutes = new Vector2Int(2, 4);
+
+        [Tooltip("Seconds a car rests in its forecourt stall between patrols, drawn per " +
+                 "visit. Also staggers the fleet - each car draws independently, so they " +
+                 "never pull out in convoy.")]
+        public Vector2 policeCarRestRange = new Vector2(20f, 60f);
+
+        [Tooltip("Sidewalk routes an officer walks before returning to the station, drawn " +
+                 "per patrol, inclusive at both ends.")]
+        public Vector2Int policeOfficerPatrolRoutes = new Vector2Int(2, 4);
+
+        [Tooltip("Seconds an officer stays inside the station between beats, drawn per " +
+                 "visit. Same hide-and-reappear machinery as civilian building visits.")]
+        public Vector2 policeOfficerStationStayRange = new Vector2(20f, 90f);
+
+        [Tooltip("How many of the fleet begin a session parked at the station; the rest " +
+                 "start already out on the road mid-patrol, so the city opens looking like " +
+                 "the shift has been running for a while. Clamped to the fleet size and to " +
+                 "the stalls actually available.")]
+        [Min(0)] public int policeCarsStartAtStation = 1;
+
+        [Tooltip("How many officers begin a session inside the station; the rest start " +
+                 "mid-beat on random pavements. Clamped to the officer count.")]
+        [Min(0)] public int policeOfficersStartAtStation = 1;
+
         [Header("Crowd performance")]
         [Tooltip("Fixed steps between two avoidance probes per walker. 1 probes every step, " +
                  "the original cadence; at N each walker probes every Nth step (staggered " +
@@ -296,11 +359,23 @@ namespace LivingCity.Data
 
         [Header("Street lamps")]
         [Tooltip("How many lamp bulbs burn at once, nearest the camera's look-at point first. " +
-                 "Every one is a real light, so this is the direct cost dial - 0 turns them " +
-                 "off. The bulbs are cheap (10m range, no shadows) and URP Forward+ renders " +
-                 "up to 256 additional lights on desktop, so 250 simply lights the whole city " +
-                 "at current sizes; the sort only starts choosing on a city bigger than that.")]
-        [Min(0)] public int litLampBudget = 250;
+                 "Effectively unlimited for now (early stages) - every lamp in the city " +
+                 "burns and the sort never has to choose. 0 turns them off. Note the hard " +
+                 "pipeline ceiling either way: URP Forward+ renders at most 256 additional " +
+                 "lights per frame on desktop and quietly culls the rest. If a cap returns " +
+                 "later, the plan is to derive it from camera zoom rather than a fixed number.")]
+        [Min(0)] public int litLampBudget = 100000;
+
+        [Tooltip("Reach of one car headlight, in metres. Short on purpose - the beam is " +
+                 "steeply tilted and pools right in front of the bumper, so 12 covers it " +
+                 "and keeps the light's culling sphere small.")]
+        [Min(1f)] public float headlightRange = 12f;
+
+        [Tooltip("Brightness of one car headlight at full night. Same 1/distance^2 rule as " +
+                 "the lamps: the beam is tilted 24 degrees down from bumper height and pools " +
+                 "~1.6m ahead, so the road sees roughly intensity/3 - a hot yellow core that " +
+                 "reads much stronger than the street lamp pools.")]
+        [Min(0f)] public float headlightIntensity = 16f;
 
         [Tooltip("Reach of one lamp bulb, in metres. The bulbs emit from 2.5m up (see " +
                  "StreetLampLights.BulbHeight - kept low so the 45-degree camera's parallax " +
@@ -333,6 +408,9 @@ namespace LivingCity.Data
             maxArterialSpacing = Mathf.Max(minArterialSpacing, maxArterialSpacing);
             featureStripMax = Mathf.Max(featureStripMin, featureStripMax);
             pedestrianLodFarOrtho = Mathf.Max(pedestrianLodMidOrtho, pedestrianLodFarOrtho);
+            policeCarsStartAtStation = Mathf.Clamp(policeCarsStartAtStation, 0, policeCarCount);
+            policeOfficersStartAtStation =
+                Mathf.Clamp(policeOfficersStartAtStation, 0, policeOfficerCount);
         }
     }
 }

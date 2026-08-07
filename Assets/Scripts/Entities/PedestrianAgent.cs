@@ -8,8 +8,8 @@ namespace LivingCity.Entities
 {
     /// <summary>
     /// The interaction brain riding on every spawned pedestrian: chats and arguments (on the
-    /// director's command), bench sits, shop visits and plain idling (rolled locally when an
-    /// opportunity is nearby). Subsumes PedestrianIdler.
+    /// director's command), bench sits, shop visits, going in and out of buildings, and plain
+    /// idling (all rolled locally when an opportunity is nearby). Subsumes PedestrianIdler.
     ///
     /// The contract with HumanBehavior is the one PedestrianIdler proved out, extended: the
     /// pack script has no idle state and re-paths on arrival, so the only safe intervention
@@ -43,8 +43,11 @@ namespace LivingCity.Entities
         /// <summary>Give-up timer on any single off-graph leg. Generous - it is a backstop.</summary>
         const float OffGraphTimeout = 20f;
 
-        /// <summary>Seconds the one-shot sit-down / stand-up clips are given to play out.</summary>
-        const float SitTransitionSeconds = 2.4f;
+        /// <summary>
+        /// Seconds the stand-up clip is given to play out before the walk resumes. Sitting-Idle
+        /// is 33 keys at 24fps = 1.38s; the old 2.4 left a second of standing at attention.
+        /// </summary>
+        const float SitTransitionSeconds = 1.5f;
 
         /// <summary>Matches HumanBehavior's own animator scaling (speed * 0.8).</summary>
         const float AnimatorSpeedScale = 0.8f;
@@ -52,7 +55,6 @@ namespace LivingCity.Entities
         // Fixed-duration yields, shared across all agents. The drawn-per-activity durations
         // (sit, shop, idle, chat) stay as fresh WaitForSeconds - they differ every time.
         static readonly WaitForSeconds ExitBeat = new WaitForSeconds(0.4f);
-        static readonly WaitForSeconds SitTransition = new WaitForSeconds(SitTransitionSeconds);
         static readonly WaitForSeconds ReappearPoll = new WaitForSeconds(0.5f);
         static readonly WaitForFixedUpdate FixedStep = new WaitForFixedUpdate();
 
@@ -75,9 +77,16 @@ namespace LivingCity.Entities
         BenchSeats claimedBench;
         int claimedSeat = -1;
 
+        BuildingDoor claimedDoor;
+        BuildingDoor insideOf;
+
+        // The road test matters here: IsMoving only rules out the red-light wait, and a
+        // crossing is an ordinary Sidewalk path across the asphalt - without it a pair
+        // meeting mid-crossing parks in front of the traffic for the whole conversation.
         public bool AvailableForChat =>
             activity == null && rng != null && Time.time >= cooldownUntil
-            && human && human.enabled && human.IsMoving;
+            && human && human.enabled && human.IsMoving
+            && !RoadSurface.IsOnRoad(transform.position);
 
         public void Configure(CityConfig cityConfig, int seed)
         {
@@ -153,6 +162,12 @@ namespace LivingCity.Entities
             if (!human.enabled || !human.IsMoving)
                 return;
 
+            // Nobody decides to sit, shop or loiter while standing on the carriageway. This
+            // also keeps every routine's departure point on the pavement, which is where the
+            // walk-back-and-resume contract returns the agent to.
+            if (RoadSurface.IsOnRoad(transform.position))
+                return;
+
             var director = PedestrianInteractionDirector.Instance;
 
             // The roll comes BEFORE the search on purpose: a failed roll must not claim (and
@@ -173,6 +188,18 @@ namespace LivingCity.Entities
                 return;
             }
 
+            // After the shopfront roll, so a cafe still wins on a street where the same
+            // building carries both markers. Claiming the doorstep is part of the condition -
+            // if somebody is already on it, this walker simply carries on past.
+            if (director && rng.NextDouble() < config.buildingVisitChance
+                && director.TryPickDoor(transform.position, OpportunityRange, out var door)
+                && door.TryClaimStep())
+            {
+                claimedDoor = door;
+                Begin(BuildingRoutine(door));
+                return;
+            }
+
             // Scaled down because this needs no nearby prop: unscaled, a 0.3 chance per roll
             // would have everybody stopping within seconds of their cooldown expiring.
             if (rng.NextDouble() < config.idleChance * 0.2f)
@@ -182,7 +209,7 @@ namespace LivingCity.Entities
         /// <summary>Director's command. Both members of the pair receive it on the same tick.</summary>
         public void BeginConversation(Vector3 partnerPos, float duration, bool argue)
         {
-            if (activity != null || rng == null)
+            if (activity != null || rng == null || RoadSurface.IsOnRoad(transform.position))
                 return;
 
             Begin(ConversationRoutine(partnerPos, duration, argue));
@@ -202,7 +229,13 @@ namespace LivingCity.Entities
             // Close the gap a little first - pairs are found within earshot, not within
             // conversation distance. The avoidance clamp is the spacing: each stops where
             // the other's minSeparation says, so nobody overlaps however short the walk.
+            // Both members were on a pavement when paired, but at a junction corner the
+            // midpoint between them can be on the asphalt. Both compute the same midpoint
+            // from same-tick positions, so either both close the gap or both stay put and
+            // talk across the corner.
             var midpoint = (transform.position + partnerPos) * 0.5f;
+            if (RoadSurface.IsOnRoad(midpoint))
+                midpoint = transform.position;
             yield return WalkTo(midpoint, argue ? 0.5f : 0.7f, 4f);
 
             SetStationary(true);
@@ -234,14 +267,25 @@ namespace LivingCity.Entities
             SetStationary(true);
             yield return Face(transform.position + bench.Facing);
 
-            // The sit-down clip carries the hips back and down onto the slats; the root only
-            // has to glide the last half-metre to the authored seat point while it plays.
+            // The clip does the sitting; the root only has to be where the clip expects it.
+            // SeatWorld names the seat SURFACE, and the authored pose puts the contact patch
+            // SitContactHeight above the root - so the root goes that far below the slats.
+            // Retargeting scales the pose by humanScale, which is what carries a child rig:
+            // it ends up lifted, sitting on the bench with its feet off the pavement, instead
+            // of sunk through the slats to adult depth.
             SetActivity(PedestrianAnimation.Sit);
-            var from = transform.position;
             var seatPos = bench.SeatWorld(seat);
-            for (var t = 0f; t < 0.6f; t += Time.deltaTime)
+            seatPos.y -= PedestrianAnimation.SitContactHeight * animator.humanScale;
+
+            // Glide over the clip's descent rather than in a third of it - the pose and the
+            // root then arrive together instead of the root landing while the body is still
+            // visibly on the way down. Smoothed, because a linear slide into a settling pose
+            // is exactly what reads as gliding.
+            var from = transform.position;
+            for (var t = 0f; t < PedestrianAnimation.SitDescentSeconds; t += Time.deltaTime)
             {
-                transform.position = Vector3.Lerp(from, seatPos, t / 0.6f);
+                var k = Mathf.SmoothStep(0f, 1f, t / PedestrianAnimation.SitDescentSeconds);
+                transform.position = Vector3.Lerp(from, seatPos, k);
                 yield return null;
             }
             transform.position = seatPos;
@@ -251,8 +295,17 @@ namespace LivingCity.Entities
 
             yield return new WaitForSeconds(Range(config.sitDurationRange));
 
+            // Standing up puts the feet back under the root, so a rig that had to be lifted
+            // onto the bench has to come back down with the pose. Free for an adult, whose
+            // seat root was already on the pavement.
             SetActivity(PedestrianAnimation.None);
-            yield return SitTransition;
+            var rise = seatPos;
+            for (var t = 0f; t < SitTransitionSeconds; t += Time.deltaTime)
+            {
+                var k = Mathf.SmoothStep(0f, 1f, t / SitTransitionSeconds);
+                transform.position = new Vector3(rise.x, Mathf.Lerp(rise.y, from.y, k), rise.z);
+                yield return null;
+            }
 
             ReleaseSeat();
             SetStationary(false);
@@ -293,6 +346,124 @@ namespace LivingCity.Entities
             yield return WalkTo(departure, 0.5f);
 
             Finish();
+        }
+
+        /// <summary>
+        /// Go into a building, stay a while, and come back out - usually somewhere else. This
+        /// is what makes the city's people look like they LIVE here rather than having
+        /// materialised on the pavement.
+        ///
+        /// It is deliberately not a spawn and a despawn. At crowd scale a Destroy/Instantiate
+        /// round trip per visit would be dozens of instantiations a second, and it would throw
+        /// away this walker's registry entry, LOD registration and animator wiring only to
+        /// rebuild all three. Hiding costs a renderer flag; the walk out of a different door
+        /// is a transform move plus a re-bucket. What the player sees is identical.
+        ///
+        /// The one thing that cannot be reused is the off-graph contract (walk back to
+        /// departure so HumanBehavior's stale targetPoint stays valid) - somebody who comes
+        /// out three streets away has no departure to walk back to. HumanBehavior.ResetRoute
+        /// is the patch that covers it.
+        /// </summary>
+        IEnumerator BuildingRoutine(BuildingDoor door)
+        {
+            Halt();
+            departure = transform.position;
+
+            yield return WalkTo(door.StandWorld, 0.35f);
+            if (!walkArrived || !door)
+            {
+                yield return WalkTo(departure, 0.5f);
+                Finish();
+                yield break;
+            }
+
+            // The last step through the doorway ignores failure, like the shop's does: a knot
+            // of people on the pavement just means going in from a little further out.
+            yield return Face(door.DoorWorld);
+            yield return WalkTo(door.DoorWorld, 0.3f, 4f);
+
+            SetHidden(true);
+            SetStationary(true);
+
+            // Inside now, so the doorstep is somebody else's to use. Holding it for the whole
+            // visit would padlock the building for two minutes at a time.
+            insideOf = door;
+            door.Entered();
+            ReleaseDoor();
+
+            yield return new WaitForSeconds(Range(config.buildingStayRange));
+
+            var exit = PickExit(door);
+
+            if (!exit)
+            {
+                // The building was destroyed while we were inside it - a city rebuilt in Play.
+                // Come back out where we stand and let the follower find a route from there.
+                SetHidden(false);
+                SetStationary(false);
+                LeaveBuilding();
+                Finish();
+                if (human)
+                    human.ResetRoute();
+                yield break;
+            }
+
+            if (exit != door)
+            {
+                // The second place in the codebase that moves a body without probing - the
+                // bench sit-glide is the other - so the spatial hash has to be told by hand.
+                transform.position = exit.DoorWorld;
+                PedestrianRegistry.Rebucket(body, transform.position);
+            }
+
+            // Do not materialise inside somebody standing on the step.
+            for (var waited = 0f; waited < 10f && !PedestrianRegistry.IsClear(body, transform.position); waited += 0.5f)
+                yield return ReappearPoll;
+
+            SetHidden(false);
+            SetStationary(false);
+            LeaveBuilding();
+
+            yield return Face(transform.position + exit.Facing);
+            yield return WalkTo(exit.StandWorld, 0.4f);
+
+            ReleaseDoor();
+            Finish();
+
+            // Only after Finish, which is what re-enables the follower: its route belongs to
+            // wherever this walker went in, and it has to be thrown away whether or not the
+            // exit was a different door - the doorstep is not where it left the pavement.
+            if (human)
+                human.ResetRoute();
+        }
+
+        /// <summary>
+        /// Which door to come back out of. Mostly a different one somewhere else in the city -
+        /// that is what stops every door from being an airlock that returns the same person -
+        /// but always with a fallback to the way in, which can never fail and so can never
+        /// leave somebody stuck indoors.
+        /// </summary>
+        BuildingDoor PickExit(BuildingDoor entered)
+        {
+            var director = PedestrianInteractionDirector.Instance;
+
+            if (director && rng.NextDouble() < config.buildingSwapChance
+                && director.TryPickAnyDoor(rng, out var elsewhere)
+                && elsewhere && elsewhere != entered
+                && elsewhere.TryClaimStep())
+            {
+                claimedDoor = elsewhere;
+                return elsewhere;
+            }
+
+            // Back out the way we came. The step was released on going in, so somebody may be
+            // standing on it - stepping out onto an occupied doorstep is what the avoidance
+            // layer is for. Only record a claim we actually won: releasing one we did not
+            // would hand somebody else's doorstep away.
+            if (entered && entered.TryClaimStep())
+                claimedDoor = entered;
+
+            return entered;
         }
 
         IEnumerator IdleRoutine()
@@ -387,6 +558,8 @@ namespace LivingCity.Entities
         void Restore()
         {
             ReleaseSeat();
+            ReleaseDoor();
+            LeaveBuilding();
             SetActivity(PedestrianAnimation.None);
             SetHidden(false);
             SetStationary(false);
@@ -400,6 +573,25 @@ namespace LivingCity.Entities
                 claimedBench.Release(claimedSeat);
             claimedBench = null;
             claimedSeat = -1;
+        }
+
+        void ReleaseDoor()
+        {
+            if (claimedDoor)
+                claimedDoor.ReleaseStep();
+            claimedDoor = null;
+        }
+
+        /// <summary>
+        /// Come off a building's occupancy count. Separate from the doorstep claim because the
+        /// two have different lifetimes: the step is held for seconds at each end of a visit,
+        /// the occupancy for the whole of it.
+        /// </summary>
+        void LeaveBuilding()
+        {
+            if (insideOf)
+                insideOf.Left();
+            insideOf = null;
         }
 
         void SetStationary(bool stationary)

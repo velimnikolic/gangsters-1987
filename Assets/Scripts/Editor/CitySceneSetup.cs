@@ -77,6 +77,12 @@ namespace LivingCity.EditorTools
                         ?? spawners.AddComponent<PedestrianInteractionDirector>();
             CityEditorUtils.SetField(director, "config", config);
 
+            // The police: patrol fleet + beat officers, homed on the PoliceStation marker the
+            // build above just attached. Runtime-only like the other spawners.
+            var police = spawners.GetComponent<PoliceDirector>() ?? spawners.AddComponent<PoliceDirector>();
+            CityEditorUtils.SetField(police, "config", config);
+            CityEditorUtils.SetField(police, "prefabs", prefabs);
+
             var clouds = spawners.GetComponent<CloudSystem>() ?? spawners.AddComponent<CloudSystem>();
             CityEditorUtils.SetField(clouds, "config", config);
             CityEditorUtils.SetField(clouds, "prefabs", prefabs);
@@ -103,6 +109,10 @@ namespace LivingCity.EditorTools
             //    default new scene, which meant setting up into an emptied scene produced a city
             //    lit by ambient alone.
             SetUpLighting();
+
+            // 7. The clock readout across the top of the screen. Idempotent, and it quietly does
+            //    nothing on the one run where it has to import TextMeshPro's fonts first.
+            CityHudSetup.EnsureHud();
 
             EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
             Selection.activeGameObject = cityObject;
@@ -303,6 +313,12 @@ namespace LivingCity.EditorTools
             CityEditorUtils.SetField(lamps, "config", config);
             CityEditorUtils.SetField(lamps, "clock", clock);
 
+            var headlights = Object.FindAnyObjectByType<CarHeadlights>()
+                          ?? host.AddComponent<CarHeadlights>();
+
+            CityEditorUtils.SetField(headlights, "config", config);
+            CityEditorUtils.SetField(headlights, "clock", clock);
+
             CityEditorUtils.SetField(weather, "config", config);
 
             CityEditorUtils.SetField(weather, "clock", clock);
@@ -333,7 +349,14 @@ namespace LivingCity.EditorTools
             lightObject.transform.SetPositionAndRotation(
                 new Vector3(0f, 3f, 0f), Quaternion.Euler(50f, -30f, 0f));
 
-            var light = lightObject.GetComponent<Light>() ?? lightObject.AddComponent<Light>();
+            // Ternary, not `??`. Light is a native component, and a missing one comes back as a
+            // wrapper around a null pointer rather than a C# null - which `??` accepts, skipping
+            // the AddComponent and throwing MissingComponentException on the first write below.
+            // This is why the Console has been reporting "There is no 'Light' attached to the
+            // Directional Light game object". Unity's implicit bool is the check that reads the
+            // pointer. The MonoBehaviour cases above are unaffected: those do return a real null.
+            var existingLight = lightObject.GetComponent<Light>();
+            var light = existingLight ? existingLight : lightObject.AddComponent<Light>();
 
             light.type = LightType.Directional;
             light.color = Color.white;

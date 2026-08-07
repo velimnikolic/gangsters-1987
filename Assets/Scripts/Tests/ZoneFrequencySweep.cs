@@ -47,6 +47,28 @@ namespace LivingCity.Tests
             var bothCivic = 0;
             var bankOwnBlock = 0;
             var noBank = new List<int>();
+            var badStation = new List<int>();
+
+            // The two forced-landmark routes are told apart by INDEX now that there are two:
+            // the bank rides requiredLandmark, the police station guaranteedLandmark, and a
+            // "has any forced landmark" test stopped meaning "has a bank" the day the station
+            // joined - it would wave through a city with a station and no bank.
+            var bankIndex = -1;
+            var stationIndex = -1;
+            var stationZone = BlockZone.ResidentialHigh;
+            if (prefabs.zonePalettes != null)
+                foreach (var palette in prefabs.zonePalettes)
+                {
+                    if (palette == null)
+                        continue;
+                    if (palette.requiredLandmark >= 0)
+                        bankIndex = palette.requiredLandmark;
+                    if (palette.guaranteedLandmark >= 0)
+                    {
+                        stationIndex = palette.guaranteedLandmark;
+                        stationZone = palette.zone;
+                    }
+                }
 
             for (var seed = 0; seed < seeds; seed++)
             {
@@ -87,8 +109,24 @@ namespace LivingCity.Tests
                 if (ownBlock)
                     bankOwnBlock++;
 
-                if (!ownBlock && !HasForcedLandmark(grid))
+                if (!ownBlock && !HasForcedLandmark(grid, bankIndex))
                     noBank.Add(seed);
+
+                // The station's guarantee: exactly ONE block of the owning zone marked with
+                // its index. Zero means FulfilGuaranteedLandmarks found no host; two means a
+                // double-mark bug. (Whether the prefab then FITS the block is a placement
+                // question this data-only sweep cannot see - the in-editor pass covers it.)
+                if (stationIndex >= 0 && stationIndex != bankIndex)
+                {
+                    var stationForced = 0;
+                    for (var blockId = 0; blockId < grid.BlockCount; blockId++)
+                        if (grid.ForcedLandmarkOf(blockId) == stationIndex
+                            && grid.ZoneOf(blockId) == stationZone)
+                            stationForced++;
+
+                    if (stationForced != 1)
+                        badStation.Add(seed);
+                }
             }
 
             if (maps == 0)
@@ -103,6 +141,11 @@ namespace LivingCity.Tests
                 result.Failures.Add(
                     $"{noBank.Count}/{maps} cities have NO bank - neither a Bank block nor a " +
                     $"forced landmark. First offending seeds: {string.Join(", ", noBank.GetRange(0, System.Math.Min(8, noBank.Count)))}");
+
+            if (badStation.Count > 0)
+                result.Failures.Add(
+                    $"{badStation.Count}/{maps} cities do not force exactly one police station " +
+                    $"block. First offending seeds: {string.Join(", ", badStation.GetRange(0, System.Math.Min(8, badStation.Count)))}");
 
             var text = new StringBuilder();
             text.AppendLine($"[ZoneFrequency] {maps} maps from {seeds} seeds, " +
@@ -123,14 +166,20 @@ namespace LivingCity.Tests
         }
 
         /// <summary>
-        /// Whether any block was marked to build a required landmark. That mark is how the bank
-        /// gets into a street wall, so it stands in for "this city's bank went the other way".
+        /// Whether any block was marked to build THIS landmark index. That mark is how the
+        /// bank gets into a street wall, so it stands in for "this city's bank went the other
+        /// way" - by index, because the station's guarantee also marks blocks now and an
+        /// index-blind test would count a station as a bank. A negative index (no palette
+        /// carries the landmark) matches the old any-mark behaviour.
         /// </summary>
-        static bool HasForcedLandmark(CityGrid grid)
+        static bool HasForcedLandmark(CityGrid grid, int index)
         {
             for (var blockId = 0; blockId < grid.BlockCount; blockId++)
-                if (grid.ForcedLandmarkOf(blockId) >= 0)
+            {
+                var forced = grid.ForcedLandmarkOf(blockId);
+                if (index < 0 ? forced >= 0 : forced == index)
                     return true;
+            }
 
             return false;
         }

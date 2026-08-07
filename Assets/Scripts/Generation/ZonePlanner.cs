@@ -257,6 +257,65 @@ namespace LivingCity.Generation
             }
 
             FulfilBankRoute(grid, palettes, placed, order, cellCounts, adjacency, bankOwnBlock);
+            FulfilGuaranteedLandmarks(grid, palettes, order, cellCounts);
+        }
+
+        /// <summary>
+        /// Make good on every palette's guaranteedLandmark - today that is one entry, the
+        /// police station, which the patrol fleet and the beat officers both treat as home and
+        /// which therefore stopped being allowed to lose its 45% roll. Runs AFTER
+        /// FulfilBankRoute on purpose: the bank is the older promise and picks its host first,
+        /// and a block holds at most one forced landmark, so the station takes the largest
+        /// block of the zone that the bank left unclaimed.
+        ///
+        /// Largest rather than smallest for the same reason as the bank: a landmark with a
+        /// forecourt wants frontage, not economy. Preference order is blocks of two cells and
+        /// up, then any block of the zone - the station's ~17m face fits even a single-cell
+        /// block's street run, so an all-singles map still gets its station rather than none.
+        ///
+        /// This only marks the block; the build can still come up empty if every street run on
+        /// it is shorter than the prefab (PlaceLandmark returns unchanged and the landmark is
+        /// dropped), or the 45% roll can deliver the station on an earlier-built block first,
+        /// in which case the forced draw is refused by UniqueBuildings and the mark is a no-op.
+        /// Either way the city ends with at most one station, and only a pathological seed
+        /// with none - PoliceDirector logs and stands down when that happens.
+        /// </summary>
+        static void FulfilGuaranteedLandmarks(
+            CityGrid grid,
+            List<PrefabDatabase.ZonePalette> palettes,
+            int[] order,
+            int[] cellCounts)
+        {
+            foreach (var palette in palettes)
+            {
+                if (palette.guaranteedLandmark < 0)
+                    continue;
+
+                var host = -1;
+                var hostSmall = -1;
+                foreach (var blockId in order)
+                {
+                    if (grid.ZoneOf(blockId) != palette.zone)
+                        continue;
+                    if (grid.ForcedLandmarkOf(blockId) >= 0)
+                        continue;
+
+                    if (cellCounts[blockId] >= 2)
+                    {
+                        if (host < 0 || cellCounts[blockId] > cellCounts[host])
+                            host = blockId;
+                    }
+                    else if (hostSmall < 0)
+                    {
+                        hostSmall = blockId;
+                    }
+                }
+
+                if (host < 0)
+                    host = hostSmall;
+                if (host >= 0)
+                    grid.SetForcedLandmark(host, palette.guaranteedLandmark);
+            }
         }
 
         /// <summary>

@@ -342,7 +342,10 @@ namespace LivingCity.Ambient
             var budget = config ? config.litLampBudget : 48;
             var camera = Camera.main;
 
-            if (camera)
+            // Sorting only matters when the budget has to choose; with the budget effectively
+            // unlimited (the current setting), every lamp burns and the sort would be wasted
+            // work every 0.4s.
+            if (camera && order.Count > budget)
             {
                 // Sort around where the camera LOOKS, not where it stands. The isometric rig
                 // parks the camera 200m back along its boom, so raw camera distance ranked

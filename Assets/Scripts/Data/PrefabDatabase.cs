@@ -301,12 +301,19 @@ namespace LivingCity.Data
             [Tooltip("Index into landmarks[] that ONE block of this zone is required to build, " +
                      "or -1 for none. landmarkChance is a probability and cannot express 'the " +
                      "city must end up with one of these': across half a dozen blocks it usually " +
-                     "delivers and occasionally does not, which is the right behaviour for the " +
-                     "police station and the wrong one for the bank. ZonePlanner picks the block " +
+                     "delivers and occasionally does not. ZonePlanner picks the block " +
                      "- the largest, since a required landmark is generally the one that needs " +
                      "room - and marks it, and BlockBuilder then skips both the chance roll and " +
                      "the draw from the bag for that block alone.")]
             public int requiredLandmark = -1;
+
+            [Tooltip("Second landmark index this zone owes the city on EVERY seed, or -1 for " +
+                     "none. Same forced-block mechanism as requiredLandmark, fulfilled after " +
+                     "it so the older promise picks its host first - a zone can owe two " +
+                     "different landmarks (ResidentialHigh owes both the bank and, now that " +
+                     "the patrol fleet lives there, the police station) but each needs its " +
+                     "own block, since a block holds at most one landmark.")]
+            public int guaranteedLandmark = -1;
 
             [Tooltip("Uniform scale on the landmark instance. The civic landmarks are the " +
                      "pack's biggest pieces and their block is already the smallest the map " +
@@ -592,7 +599,7 @@ namespace LivingCity.Data
         [Tooltip("Universal Render Pipeline/Particles/Unlit, transparent, untextured. The pack " +
                  "ships no smoke texture at all, and the Built-in Default-ParticleSystem " +
                  "material renders magenta under URP - so this is authored by the bootstrap. " +
-                 "Empty disables smoke however industrialSmoke is set.")]
+                 "Empty disables smoke however chimneySmoke is set.")]
         public Material smokeMaterial;
 
         [Tooltip("cloud-fluffy - the particles are MESHES, not billboards. A soft blurred quad " +
@@ -617,7 +624,15 @@ namespace LivingCity.Data
         public WeightedPrefabs[] aiCarGroups = Array.Empty<WeightedPrefabs>();
 
         [Header("People")]
-        [Tooltip("People_T/People_AI_T - carries HumanBehavior + PathFinding.")]
+        [Tooltip("The crowd mix, weighted the way traffic is: a group is rolled by weight, then " +
+                 "a ShuffleBag deals within it. A flat list made the pack's one gangster exactly " +
+                 "as common as its lifeguard. Mixes both packs - Epic City's People_AI_T and the " +
+                 "Animated People models the bootstrap converts into Configs/People.")]
+        public WeightedPrefabs[] pedestrianGroups = Array.Empty<WeightedPrefabs>();
+
+        [Tooltip("People_T/People_AI_T - carries HumanBehavior + PathFinding. Fallback only: the " +
+                 "flat, unweighted list PedestrianSpawner uses when pedestrianGroups is empty, " +
+                 "which is what a scene saved before the groups existed will find.")]
         public GameObject[] aiPedestrians = Array.Empty<GameObject>();
 
         [Tooltip("The pack's People Controller (walk + idle) extended with talk, argue and " +
@@ -626,6 +641,19 @@ namespace LivingCity.Data
                  "spawned pedestrian at runtime so no pack prefab is modified. Empty leaves " +
                  "the pack controller in place and the interaction animations silently off.")]
         public RuntimeAnimatorController pedestrianController;
+
+        [Header("Police")]
+        [Tooltip("car-police_AI. Removed from the generic traffic buckets - the only police " +
+                 "cars in the city are the station's own patrol fleet, spawned and owned by " +
+                 "PoliceDirector.")]
+        public GameObject policeCarPrefab;
+
+        [Tooltip("man-police_AI - authored by the bootstrap from the Animated People pack's " +
+                 "man_police (male model only, per design): wander/NavMesh stripped, the AI " +
+                 "pedestrian kit (kinematic Rigidbody, capsule, HumanBehavior, PathFinding) " +
+                 "added. Lives in Assets/Configs, outside the People_AI_T glob, so civilians " +
+                 "can never draw it.")]
+        public GameObject policeOfficerPrefab;
 
         [Header("Ambient (Nature_T/Clouds_T)")]
         public GameObject[] clouds = Array.Empty<GameObject>();

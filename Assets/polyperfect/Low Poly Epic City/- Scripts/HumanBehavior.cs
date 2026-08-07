@@ -18,6 +18,18 @@ namespace PolyPerfect.City
         // interaction layer must not start an activity mid-crosswalk-wait.
         public bool IsMoving => isMoving;
 
+        // PATCH (Living City): a scripted sidewalk destination plus a completion hook, the
+        // exact pair CarBehavior already carries. Without it there is no way to command "walk
+        // to X": with randomDestination off, Repath ping-pongs destination against the private
+        // start, and with it on every re-path rolls a fresh random tile. A beat officer
+        // returning to the station sets both fields; each route end then fires routeCompleted
+        // BEFORE the re-path is enqueued, so a handler can take the walker over (disable this
+        // component) or clear the override in time for the next path. Re-paths still flow
+        // through PedestrianRepathQueue - the patch changes what is pathed, never when.
+        [HideInInspector] public bool hasScriptedDestination;
+        [HideInInspector] public Vector3 scriptedDestination;
+        public event System.Action routeCompleted;
+
         [HideInInspector]
         public List<Path> trajectory = new List<Path>();
         private PathFinding pathFinding;
@@ -196,6 +208,14 @@ namespace PolyPerfect.City
                 // a person pausing at the kerb; the pack's demo scenes re-path immediately
                 // as they always did.
                 isMoving = false;
+
+                // PATCH (Living City): completion fires before the re-path is queued, and a
+                // handler that disabled the component has taken the walker over - no re-path
+                // belongs to it any more.
+                routeCompleted?.Invoke();
+                if (!enabled)
+                    return;
+
                 if (PedestrianRepathQueue.Active && body != null)
                     PedestrianRepathQueue.Enqueue(this);
                 else
@@ -226,6 +246,34 @@ namespace PolyPerfect.City
         }
 
         /// <summary>
+        /// PATCH (Living City): throw the current route away and path afresh from wherever the
+        /// transform is standing now.
+        ///
+        /// The interaction layer's contract is that an off-graph trip walks BACK to its
+        /// departure point before handing control over, because targetPoint and the path
+        /// cursors survive the disable and would otherwise send the walker striding off toward
+        /// a waypoint it is no longer anywhere near. A pedestrian who goes in one building's
+        /// door and comes out of another one across the city cannot honour that - there is no
+        /// departure point to return to - so it needs this instead. Repath alone will not do:
+        /// it declines while isMoving, which is exactly the state a walker interrupted
+        /// mid-route is in, and isMoving is private.
+        ///
+        /// Goes through the central budget queue for the same reason route completion does:
+        /// people come out of doors on their own clocks, and a burst of A* searches in one
+        /// frame is exactly what the queue exists to spread out. The walker stands on its
+        /// doorstep for a frame or two instead - which is what somebody stepping out of a
+        /// building does anyway.
+        /// </summary>
+        public void ResetRoute()
+        {
+            isMoving = false;
+            if (PedestrianRepathQueue.Active && body != null)
+                PedestrianRepathQueue.Enqueue(this);
+            else
+                Repath();
+        }
+
+        /// <summary>
         /// PATCH (Living City): the route-completion re-path, extracted so the central queue
         /// can grant it on its own budget. Safe to call only while isMoving is false.
         /// </summary>
@@ -234,7 +282,14 @@ namespace PolyPerfect.City
             if (isMoving)
                 return;
 
-            if (randomDestination)
+            // PATCH (Living City): the scripted destination outranks both existing modes -
+            // it exists precisely because neither of them can express "go to X".
+            if (hasScriptedDestination)
+            {
+                start = transform.position;
+                destination = scriptedDestination;
+            }
+            else if (randomDestination)
             {
                 //Selects random tile which is at least 90m away
                 SetRandomDestination();

@@ -76,7 +76,8 @@ namespace LivingCity.Generation
             List<Bounds> occupied,
             List<ParkingLayout.Line> markings,
             List<GameObject> placed,
-            List<BuildingTinter.Target> tints)
+            List<BuildingTinter.Target> tints,
+            List<Bounds> gateKeepOuts)
         {
             var layout = IndustrialLayout.ForBlock(
                 min, max, roadSides,
@@ -87,16 +88,25 @@ namespace LivingCity.Generation
             // against it, and the gate before the parking, for the reason ParkingLotDresser runs
             // ahead of FillStalls: the booth and the piers have to claim their ground before
             // something else parks on it.
+            var gate = new PerimeterFence.Gate
+            {
+                Has = layout.HasGate,
+                Centre = layout.GateCentre,
+                Outward = layout.GateOutward,
+                Width = IndustrialLayout.GateWidth,
+            };
+
             PerimeterFence.Build(
-                layout.Wall.Min, layout.Wall.Max,
-                new PerimeterFence.Gate
-                {
-                    Has = layout.HasGate,
-                    Centre = layout.GateCentre,
-                    Outward = layout.GateOutward,
-                    Width = IndustrialLayout.GateWidth,
-                },
+                layout.Wall.Min, layout.Wall.Max, gate,
                 palette.fenceSegment, palette.fencePost, parent, spawn, placed);
+
+            // Before the Usable early-out: the wall and its hole exist even when the yard is
+            // not worth dressing, and an open gap needs its street kept clear as much as a
+            // gated one. The Outward guard matters - ForBlock decides HasGate before several
+            // early returns that leave GateCentre/GateOutward unset, and PerimeterFence's own
+            // Dot test already treats that layout as gateless.
+            if (gate.Has && gate.Outward.sqrMagnitude > 0.5f)
+                gateKeepOuts?.Add(PerimeterFence.Approach(gate));
 
             if (!layout.Usable)
                 return;
@@ -125,8 +135,44 @@ namespace LivingCity.Generation
                 return;
 
             var yaw = Mathf.Atan2(layout.GateOutward.x, layout.GateOutward.z) * Mathf.Rad2Deg;
-            Spawn(palette.gatePrefab, layout.GateCentre, yaw, 1f, parent, spawn, occupied, placed);
+            var rotation = Quaternion.Euler(0f, yaw, 0f);
+            var bounds = PrefabBounds.Get(palette.gatePrefab);
+
+            // The kit's gate is 7.4m of frame and leaf against a 9m opening, so placed as-is
+            // it leaves daylight either side of itself. Stretched along the wall to the clear
+            // opening between the pier faces - the same span ParkingLotDresser gives its boom.
+            var stretch = GateStretch(bounds.size.x);
+
+            // Not through Spawn: it only knows uniform scale, and its own comment sets the
+            // precedent for not widening shared helpers while fixing one caller. Same
+            // recentring maths, with the stretch folded into the local-x term, and no overlap
+            // rejection - the gate is the first claim on this block's ground, and a gate that
+            // silently vanished for overlap would be the worse bug.
+            var offset = rotation * new Vector3(bounds.center.x * stretch, 0f, bounds.center.z);
+
+            var instance = spawn(palette.gatePrefab,
+                                 layout.GateCentre - new Vector3(offset.x, 0f, offset.z),
+                                 rotation, parent);
+            instance.transform.localScale = new Vector3(stretch, 1f, 1f);
+
+            // FootprintXZ already performed the quarter-turn swap, so the along-wall component
+            // is y when the gate faces along world x - mirror of Extent()'s mapping.
+            var footprint = PrefabBounds.FootprintXZ(palette.gatePrefab, yaw);
+            if (Mathf.Abs(layout.GateOutward.x) > 0.5f) footprint.y *= stretch;
+            else footprint.x *= stretch;
+
+            occupied.Add(new Bounds(new Vector3(layout.GateCentre.x, 0f, layout.GateCentre.z),
+                                    new Vector3(footprint.x, 1f, footprint.y)));
+            placed.Add(instance);
         }
+
+        /// <summary>
+        /// How far the gate is stretched along the wall to fill the clear opening between the
+        /// pier faces. Never below 1: if the art ever comes out wider than the hole, the gate
+        /// overlaps the piers rather than shrinking.
+        /// </summary>
+        internal static float GateStretch(float prefabWidth) =>
+            Mathf.Max(1f, (IndustrialLayout.GateWidth - 2f * PerimeterFence.PierHalf) / prefabWidth);
 
         /// <summary>
         /// Staff parking on the pad by the gate. The bays and their paint both come out of
@@ -275,7 +321,7 @@ namespace LivingCity.Generation
                     if (!instance)
                         continue;
 
-                    MarkVents(instance, best, prefabs);
+                    Ambient.SmokeVent.Mark(instance, best, prefabs, Ambient.VentKind.Works);
                     tints.Add(new BuildingTinter.Target(instance, commercial: false));
 
                     halls.Add(new Placed
@@ -367,7 +413,7 @@ namespace LivingCity.Generation
                                              parent, spawn, occupied, placed);
                         if (instance)
                         {
-                            MarkVents(instance, stack, prefabs);
+                            Ambient.SmokeVent.Mark(instance, stack, prefabs, Ambient.VentKind.Works);
                             chimneys++;
                         }
                     }
@@ -425,22 +471,6 @@ namespace LivingCity.Generation
             return candidates[rng.Next(candidates.Length)];
         }
 
-        /// <summary>
-        /// Leaves a SmokeVent on an instance whose prefab has measured chimney mouths, so the
-        /// runtime system can raise a plume there. Most of the works catalogue has none - a
-        /// warehouse does not smoke - so this is a no-op for the majority of what gets built.
-        /// </summary>
-        static void MarkVents(GameObject instance, GameObject prefab, PrefabDatabase prefabs)
-        {
-            var mouths = new List<Vector3>();
-            prefabs.ChimneyVentsFor(prefab, mouths);
-
-            if (mouths.Count == 0)
-                return;
-
-            var vent = instance.AddComponent<Ambient.SmokeVent>();
-            vent.mouths = mouths.ToArray();
-        }
 
         /// <summary>
         /// Material stacked in the gaps between halls.

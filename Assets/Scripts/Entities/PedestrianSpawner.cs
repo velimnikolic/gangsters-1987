@@ -34,15 +34,35 @@ namespace LivingCity.Entities
         readonly List<GameObject> active = new();
         System.Random rng;
 
+        /// <summary>
+        /// Null when the database predates pedestrianGroups, in which case the old flat
+        /// aiPedestrians draw is used instead. See PickPrefab.
+        /// </summary>
+        PedestrianPicker picker;
+
         IEnumerator Start()
         {
-            if (!config || !prefabs || prefabs.aiPedestrians == null || prefabs.aiPedestrians.Length == 0)
+            var hasFlatList = prefabs && prefabs.aiPedestrians is { Length: > 0 };
+            var hasGroups = prefabs && prefabs.pedestrianGroups is { Length: > 0 };
+
+            if (!config || !prefabs || (!hasFlatList && !hasGroups))
             {
                 Debug.LogWarning("[PedestrianSpawner] Needs a CityConfig and a PrefabDatabase with AI people.", this);
                 yield break;
             }
 
             rng = new System.Random(config.seed + SeedOffsets.Pedestrians);
+
+            // Built off the same stream, before the first draw: the picker's own rolls and
+            // shuffles are part of the pedestrian sequence, which is what keeps one seed
+            // reproducing one city. An empty result is left null so PickPrefab falls back
+            // rather than spawning nothing.
+            var candidate = new PedestrianPicker(prefabs.pedestrianGroups, rng);
+            picker = candidate.IsEmpty ? null : candidate;
+
+            if (picker == null && hasFlatList)
+                Debug.LogWarning("[PedestrianSpawner] No usable pedestrianGroups - falling back to " +
+                                 "the flat aiPedestrians list. Re-run the City Asset Bootstrap.", this);
 
             // The registry's tuning is global on purpose - the probes run inside a patched
             // pack script with no config reference. Handed down once, before the first spawn.
@@ -89,6 +109,23 @@ namespace LivingCity.Entities
             Debug.Log($"[PedestrianSpawner] done: spawned {active.Count} of {config.pedestrianCount}.", this);
         }
 
+        /// <summary>
+        /// One pedestrian model, weighted when the database has groups and uniform when it does
+        /// not.
+        ///
+        /// The fallback is not dead code: the bootstrap owns pedestrianGroups, so any scene
+        /// whose PrefabDatabase was written before they existed has only the flat list, and an
+        /// unpopulated pavement is a much louder failure than an unweighted one.
+        /// </summary>
+        GameObject PickPrefab()
+        {
+            if (picker != null)
+                return picker.Next();
+
+            var flat = prefabs.aiPedestrians;
+            return flat is { Length: > 0 } ? flat[rng.Next(flat.Length)] : null;
+        }
+
         void SpawnOne()
         {
             var tile = RandomWalkableTile();
@@ -109,7 +146,10 @@ namespace LivingCity.Entities
 
             var position = SidewalkPoint(tile, side, alongStreet);
 
-            var prefab = prefabs.aiPedestrians[rng.Next(prefabs.aiPedestrians.Length)];
+            var prefab = PickPrefab();
+            if (!prefab)
+                return;
+
             var person = Instantiate(prefab, position, Quaternion.Euler(0f, rng.Next(4) * 90f, 0f), transform);
 
             SetLayerRecursively(person.transform, PedestrianLayer);
@@ -153,8 +193,11 @@ namespace LivingCity.Entities
         ///
         /// Falls back to the old constant when a tile has no sidewalk paths at all, which keeps
         /// this working for any tile the pack adds later rather than dropping the spawn.
+        ///
+        /// Public and static for PoliceDirector, which places its mid-shift officers on the
+        /// pavements exactly the way civilians are placed - one pavement-point rule, not two.
         /// </summary>
-        Vector3 SidewalkPoint(Tile tile, float side, float alongStreet)
+        public static Vector3 SidewalkPoint(Tile tile, float side, float alongStreet)
         {
             var offset = new Vector3(CityGrid.SidewalkOffset * side, 0f, alongStreet);
 
@@ -185,7 +228,7 @@ namespace LivingCity.Entities
             return tile.transform.TransformPoint(offset);
         }
 
-        static void SetLayerRecursively(Transform node, int layer)
+        public static void SetLayerRecursively(Transform node, int layer)
         {
             node.gameObject.layer = layer;
             for (var i = 0; i < node.childCount; i++)

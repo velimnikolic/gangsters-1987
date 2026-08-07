@@ -82,8 +82,10 @@ namespace LivingCity.Generation
         /// </summary>
         const int LandmarkForecourtMaxCars = 3;
 
-        /// <summary>Pavement between the forecourt bays and the recessed landmark's door.</summary>
-        const float LandmarkForecourtWalkway = 1f;
+        /// <summary>Pavement between the forecourt bays and the recessed landmark's door.
+        /// Public for PoliceDirector, which reconstructs the forecourt band's depth to aim
+        /// its kerb-point search past it.</summary>
+        public const float LandmarkForecourtWalkway = 1f;
 
         /// <summary>
         /// Chance the slot beside a street corner draws from a cornerPreferred group - the
@@ -154,7 +156,8 @@ namespace LivingCity.Generation
             CityConfig config,
             Transform parent,
             SpawnPrefab spawn = null,
-            List<BuildingTinter.Target> tintTargets = null)
+            List<BuildingTinter.Target> tintTargets = null,
+            List<Bounds> gateKeepOuts = null)
         {
             var placed = new List<GameObject>();
             spawn ??= RoadNetworkBuilder.RuntimeSpawn;
@@ -164,6 +167,11 @@ namespace LivingCity.Generation
             // bins - and most of the pack shares the atlas material, so a tinter fed the flat
             // list paints the trees too. Optional so callers that never tint need not care.
             tintTargets ??= new List<BuildingTinter.Target>();
+
+            // The approaches of every compound gate in the city, published for the passes that
+            // run AFTER the blocks - StreetPropPlacer reads it so no tree stands in the one
+            // hole a wall has. Optional for the same reason as tintTargets.
+            gateKeepOuts ??= new List<Bounds>();
 
             if (prefabs.zonePalettes == null || prefabs.zonePalettes.Length == 0)
             {
@@ -200,7 +208,7 @@ namespace LivingCity.Generation
                 var bleed = PickNeighbourPalette(grid, prefabs, blockId, zone, rng);
 
                 BuildBlock(grid, cells, blockId, palette, bleed, parking, prefabs, config,
-                           parent, spawn, rng, placed, tintTargets);
+                           parent, spawn, rng, placed, tintTargets, gateKeepOuts);
             }
 
             return placed;
@@ -398,7 +406,8 @@ namespace LivingCity.Generation
             SpawnPrefab spawn,
             System.Random rng,
             List<GameObject> placed,
-            List<BuildingTinter.Target> tints)
+            List<BuildingTinter.Target> tints,
+            List<Bounds> gateKeepOuts)
         {
             var (min, max) = BlockRect(grid, cells,
                                        ClearanceFor(palette, config),
@@ -432,7 +441,8 @@ namespace LivingCity.Generation
             if (palette.industrialYard)
             {
                 IndustrialDresser.Build(min, max, roadSides, blockId, palette, prefabs, config,
-                                        parking, parent, spawn, rng, occupied, markings, placed, tints);
+                                        parking, parent, spawn, rng, occupied, markings, placed, tints,
+                                        gateKeepOuts);
 
                 var works = ParkingMarkings.Emit(markings, prefabs.lineMaterial,
                                                  $"parking_lines_{grid.ZoneOf(blockId)}_{blockId}", parent);
@@ -512,7 +522,7 @@ namespace LivingCity.Generation
             // PaletteFor falls back to ResidentialHigh) degrades to the scatter below.
             else if (palette.zone == BlockZone.Church)
                 ChurchDresser.Build(grid, cells, min, max, palette, prefabs, config,
-                                    parent, spawn, rng, occupied, placed, tints);
+                                    parent, spawn, rng, occupied, placed, tints, gateKeepOuts);
             else
                 BuildScatter(buildMin, buildMax, palette, parent, spawn, rng, occupied, placed);
 
@@ -675,7 +685,7 @@ namespace LivingCity.Generation
                 var centre = side.origin + side.along * (cornerWidth[i] * 0.5f)
                                          - side.outward * (cornerDepth[i] * 0.5f);
                 var corner = Place(cornerPrefab[i], centre, cornerYaw[i], cornerWidth[i], cornerDepth[i],
-                                   side.along, side.outward, config.partyWallGap, spawn, parent, occupied, placed);
+                                   side.along, side.outward, config.partyWallGap, spawn, parent, occupied, placed, prefabs);
                 if (corner)
                 {
                     UniqueBuildings.Spend(cornerPrefab[i]);
@@ -863,7 +873,7 @@ namespace LivingCity.Generation
             var centre = origin + along * (start + width * 0.5f)
                        - outward * (depth * 0.5f + setback);
             var landmark = Place(state.Landmark, centre, yaw, width, depth, along, outward,
-                                 partyWallGap, spawn, parent, occupied, placed, scale);
+                                 partyWallGap, spawn, parent, occupied, placed, prefabs, scale);
             if (!landmark)
                 return start;
 
@@ -880,14 +890,73 @@ namespace LivingCity.Generation
                 // terrace on either side continues at the normal facade line and the notch
                 // reads as the station's own yard. FillStalls reserves every bay whether or
                 // not a car stands in it, which keeps the scatter pass off the forecourt.
+                //
+                // The police station is the one landmark whose bays get NO static cars: its
+                // forecourt is the patrol fleet's parking, and a baked car would be a car
+                // the real fleet can never move. maxCars 0 still paints the lines and still
+                // reserves every bay - only the bakes are withheld - and the stall and door
+                // geometry ride out on a PoliceStation marker for PoliceDirector to find.
                 var layout = ParkingLayout.ForStreetBay(origin, along, outward, start, width);
                 markings.AddRange(layout.Markings);
+
+                var isStation = landmark.name.StartsWith(Entities.PoliceStation.PrefabName);
+                if (isStation)
+                    MarkPoliceStation(landmark, layout, occupied);
                 FillStalls(layout, new VehiclePicker(palette.landmarkCars, rng), spawn, parent,
-                           rng, occupied, placed, LandmarkForecourtMaxCars);
+                           rng, occupied, placed, isStation ? 0 : LandmarkForecourtMaxCars);
             }
 
             state.Landmark = null;
             return start + width + 2f;
+        }
+
+        /// <summary>
+        /// Rides the station instance into the saved scene carrying its forecourt stalls and
+        /// its door, all in the station's own space - see PoliceStation for why local. The
+        /// door is derived exactly the way InteractionMarkers derives every other door (local
+        /// +Z facade centre at ground level) rather than waiting for the name sweep, because
+        /// the recessed facade can fail BuildingDoorRule's road-cell test and the station
+        /// must have a door regardless - the beat officers live there.
+        /// </summary>
+        static void MarkPoliceStation(
+            GameObject landmark, ParkingLayout.Layout layout, List<Bounds> occupied)
+        {
+            var tf = landmark.transform;
+
+            // Runs BEFORE FillStalls reserves the bays, applying its same intersection test:
+            // the marker records exactly the stalls the fleet can genuinely stand in, and no
+            // stall can be rejected for colliding with its own reservation.
+            var stalls = new List<Vector3>(layout.Stalls.Count);
+            foreach (var stall in layout.Stalls)
+            {
+                var quarter = Mathf.RoundToInt(stall.Yaw / 90f) & 1;
+                var bounds = new Bounds(
+                    stall.Centre,
+                    quarter == 0
+                        ? new Vector3(ParkingLayout.StallWidth, 1f, ParkingLayout.StallDepth)
+                        : new Vector3(ParkingLayout.StallDepth, 1f, ParkingLayout.StallWidth));
+
+                var blocked = false;
+                foreach (var existing in occupied)
+                    if (existing.Intersects(bounds))
+                    {
+                        blocked = true;
+                        break;
+                    }
+
+                if (!blocked)
+                    stalls.Add(tf.InverseTransformPoint(stall.Centre));
+            }
+
+            var stallYaw = layout.Stalls.Count > 0
+                ? Mathf.DeltaAngle(tf.eulerAngles.y, layout.Stalls[0].Yaw)
+                : 0f;
+
+            var mesh = InteractionMarkers.LocalBounds(tf);
+            var door = new Vector3(mesh.center.x, 0f, mesh.max.z);
+
+            landmark.AddComponent<Entities.PoliceStation>()
+                    .SetLayout(stalls.ToArray(), stallYaw, door);
         }
 
         /// <summary>
@@ -1205,7 +1274,7 @@ namespace LivingCity.Generation
 
                     var building = Place(slot.Prefab, centre, slot.Yaw, slot.Width, slot.Depth,
                                          along, outward, config.partyWallGap, spawn, parent,
-                                         occupied, placed);
+                                         occupied, placed, prefabs);
                     if (building)
                         tints.Add(new BuildingTinter.Target(building, slot.Commercial));
                 }
@@ -1447,7 +1516,7 @@ namespace LivingCity.Generation
                                + along * ((at - 0.5f) * 2f * Mathf.Max(0f, alongHalf - width));
 
                     Place(kiosk, centre, yaw, width, depth, along, outward,
-                          config.partyWallGap, spawn, parent, occupied, placed);
+                          config.partyWallGap, spawn, parent, occupied, placed, prefabs);
                 }
             }
 
@@ -1490,7 +1559,7 @@ namespace LivingCity.Generation
 
                     Place(prefab, position, yaw, footprint.x, footprint.y,
                           Vector3.right, Vector3.forward, config.partyWallGap,
-                          spawn, parent, occupied, placed);
+                          spawn, parent, occupied, placed, prefabs);
                 }
             }
         }
@@ -1640,7 +1709,7 @@ namespace LivingCity.Generation
 
                     Place(prefab, position, yaw, footprint.x, footprint.y,
                           Vector3.right, Vector3.forward, config.partyWallGap,
-                          spawn, parent, occupied, placed);
+                          spawn, parent, occupied, placed, prefabs);
                 }
             }
         }
@@ -1798,6 +1867,7 @@ namespace LivingCity.Generation
             Transform parent,
             List<Bounds> occupied,
             List<GameObject> placed,
+            PrefabDatabase prefabs,
             float scale = 1f)
         {
             var bounds = new Bounds(
@@ -1833,6 +1903,13 @@ namespace LivingCity.Generation
                                  rotation, parent);
             if (!Mathf.Approximately(scale, 1f))
                 instance.transform.localScale *= scale;
+
+            // Every building on a block funnels through here, so this is the one place a terrace
+            // flue has to be stamped - the corner pieces and the -back carry the same chimney as
+            // the street elevations. A no-op for everything with no measured mouth, which is most
+            // of what Place ever sees: kiosks, props, the landmarks.
+            Ambient.SmokeVent.Mark(instance, prefab, prefabs, Ambient.VentKind.House);
+
             placed.Add(instance);
             occupied.Add(bounds);
             return instance;
