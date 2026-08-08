@@ -48,7 +48,11 @@ namespace LivingCity.Entities
             {
                 yield return new WaitForSeconds(Random.Range(walkDurationRange.x, walkDurationRange.y));
 
-                if (Random.value > idleChance)
+                // The road test is the same one PedestrianAgent.TickOpportunities makes before
+                // it starts anything: this halt is on a pure timer and has no idea where the
+                // walker is standing, and ten seconds of idling on a crossing holds the car that
+                // stopped for it - and everything queued behind that car.
+                if (Random.value > idleChance || RoadSurface.IsOnRoad(transform.position))
                     continue;
 
                 behaviour.enabled = false;

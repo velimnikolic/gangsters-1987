@@ -89,15 +89,17 @@ namespace LivingCity.Data
         [Header("Block geometry")]
         [Tooltip("Distance kept clear between a block's street wall and the road centreline. " +
                  "BlockRect expands a block into its adjacent road tiles by (half a cell - this), " +
-                 "so raising it pulls every facade back off the kerb at once.")]
-        [Min(0f)] public float sidewalkWidth = 7f;
+                 "so raising it pulls every facade back off the kerb at once. World units, so " +
+                 "the default carries CityGrid.TileScale - the tile the wall stands beside is " +
+                 "stretched by it and the pavement it must clear moved out with it.")]
+        [Min(0f)] public float sidewalkWidth = 7f * Generation.CityGrid.TileScale;
 
         [Tooltip("The same distance where a block faces the dual carriageway, which is a wider " +
                  "road: its pavements sit at 7.25 from the centreline against a street's 4, so " +
                  "at the ordinary 7 the facades would stand ON the avenue's pavement. 10 clears " +
                  "it and still leaves a verge. Resolved per side, so a block between the avenue " +
-                 "and a side street gets both setbacks.")]
-        [Min(0f)] public float mainSidewalkWidth = 10f;
+                 "and a side street gets both setbacks. World units - see sidewalkWidth.")]
+        [Min(0f)] public float mainSidewalkWidth = 10f * Generation.CityGrid.TileScale;
 
         [Tooltip("Service alley down the long axis of a block interior. Wide enough to read as a " +
                  "passage and to park a truck across, narrow enough that it never reads as a street.")]
@@ -304,6 +306,58 @@ namespace LivingCity.Data
         [Tooltip("How many officers begin a session inside the station; the rest start " +
                  "mid-beat on random pavements. Clamped to the officer count.")]
         [Min(0)] public int policeOfficersStartAtStation = 1;
+
+        [Header("Bank visitors")]
+        [Tooltip("Customers driving to the bank at once. They arrive through the map edge, " +
+                 "park in the bank's forecourt, stay a while and leave for good - a different " +
+                 "car each time. Spawned outside carCount and outside VehicleSpawner's " +
+                 "population. 0 disables them, leaving the forecourt's static cars alone.")]
+        [Min(0)] public int bankVisitorCount = 2;
+
+        [Tooltip("Seconds a customer's car stands in its forecourt bay, drawn per visit.")]
+        public Vector2 bankVisitStayRange = new Vector2(30f, 90f);
+
+        [Tooltip("Seconds between one departure and the next arrival, drawn per car. Also " +
+                 "the poll interval that keeps the population topped up.")]
+        public Vector2 bankVisitorGapRange = new Vector2(10f, 40f);
+
+        [Header("School run")]
+        [Tooltip("Schoolchildren the bus serves. A fixed, persistent roster spread across the " +
+                 "stops below - the same children ride out and back every day, hidden at home " +
+                 "and hidden inside the school in between, never spawned or destroyed. Not " +
+                 "counted in pedestrianCount. 0 disables the school run entirely, including " +
+                 "the bus.")]
+        [Min(0)] public int schoolChildCount = 8;
+
+        [Tooltip("Pickup stops between the school and the children. More stops with fewer " +
+                 "children at each is better than the reverse: the bus halts in a live lane " +
+                 "while they board, and a short queue is a short halt.")]
+        [Min(1)] public int schoolBusStops = 3;
+
+        [Tooltip("Metres from the school that pickup stops are looked for, nearest and " +
+                 "furthest. Too near and the bus barely leaves; too far and the run outlasts " +
+                 "any window you would set for it.")]
+        public Vector2 schoolStopDistance = new Vector2(60f, 160f);
+
+        [Tooltip("Hour of the CITY's clock the morning run may start at - see Time of day. " +
+                 "Only the START is gated: once a run begins it drives to the end whatever " +
+                 "the clock does, because at 1 real second per game hour a whole day passes " +
+                 "in less time than one round trip takes.")]
+        [Range(0f, 24f)] public float schoolMorningHour = 7.5f;
+
+        [Tooltip("Hour of the city's clock the afternoon run home may start at.")]
+        [Range(0f, 24f)] public float schoolAfternoonHour = 15f;
+
+        [Tooltip("How many game hours each of those windows stays open. The run is latched to " +
+                 "one per window per day, so a generous window only means the bus is less " +
+                 "likely to miss its slot - never that it runs twice.")]
+        [Min(0f)] public float schoolRunWindowHours = 1.5f;
+
+        [Tooltip("Hard cap in real seconds on how long the bus stands at one stop. It is " +
+                 "parked in a live lane and nothing can overtake it, so a halt much longer " +
+                 "than this backs traffic into a junction. Any child still on the pavement " +
+                 "when it expires walks to school on foot instead.")]
+        [Min(1f)] public float schoolBusDwellSeconds = 8f;
 
         [Header("Crowd performance")]
         [Tooltip("Fixed steps between two avoidance probes per walker. 1 probes every step, " +

@@ -15,6 +15,10 @@ namespace LivingCity.Generation
         [SerializeField] CityConfig config;
         [SerializeField] PrefabDatabase prefabs;
 
+        [Tooltip("Tuning for the works yard dressing. Optional: leave it empty and the yards " +
+                 "build with the same defaults the asset ships with, rather than failing.")]
+        [SerializeField] IndustrialLotConfig lotConfig;
+
         [Tooltip("Leave off once the city is generated into the scene and saved - " +
                  "runtime regeneration exists for testing, not for shipping.")]
         [SerializeField] bool buildOnStart;
@@ -90,6 +94,15 @@ namespace LivingCity.Generation
                                      spawn, tintTargets, gateKeepOuts)
                 : new System.Collections.Generic.List<GameObject>();
 
+            // The works yards, dressed after the compounds they stand in. Its inputs come off the
+            // WorksYard markers IndustrialDresser attached - the same generate-in-editor-and-save
+            // handoff PoliceStation uses - so this cannot see, and cannot disturb, BlockBuilder's
+            // rng. Before the tinter so anything it stands up can still join tintTargets.
+            var yards = buildBuildings
+                ? IndustrialLotBuilder.Build(root.transform, prefabs, config, lotConfig,
+                                             Category(root.transform, "Works Yards"), spawn)
+                : new System.Collections.Generic.List<GameObject>();
+
             BuildingTinter.Apply(tintTargets, prefabs, config);
 
             // Lamps and street trees only. Nothing parks at the kerb any more - the band they
@@ -128,6 +141,7 @@ namespace LivingCity.Generation
                       $"(seed {config.seed}): {roads.Tiles.Count} tiles, " +
                       $"{roads.TrafficLights.Count} traffic lights, {Grid.BlockCount} blocks, " +
                       $"{ground.Count} ground slabs, {buildings.Count} buildings, " +
+                      $"{yards.Count} yard surfaces, " +
                       $"{props.Count} props, {interactionPoints} interaction points.\n" +
                       $"[CityBuilder] Zones: {ZonePlanner.Describe(Grid)}");
 

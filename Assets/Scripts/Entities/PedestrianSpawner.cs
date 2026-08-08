@@ -141,8 +141,11 @@ namespace LivingCity.Entities
             // +/-7.25, so at 4 pedestrians would spawn in its outer traffic lane. Asking the
             // tile for its own sidewalkPaths is right for every tile in the pack - avenue,
             // street, park path - and leaves nothing to keep in sync.
+            // alongStreet is handed to SidewalkPoint, which works in the tile's LOCAL frame, so
+            // it has to be an AUTHORED distance - CellSize carries CityGrid.TileScale and would
+            // scatter people a further TileScale down the street, off the end of the tile.
             var side = rng.Next(2) == 0 ? 1f : -1f;
-            var alongStreet = ((float)rng.NextDouble() - 0.5f) * CityGrid.CellSize * 0.6f;
+            var alongStreet = ((float)rng.NextDouble() - 0.5f) * CityGrid.AuthoredCellSize * 0.6f;
 
             var position = SidewalkPoint(tile, side, alongStreet);
 
@@ -192,14 +195,17 @@ namespace LivingCity.Entities
         /// near x = 0, which is the one place a pedestrian must not be put.
         ///
         /// Falls back to the old constant when a tile has no sidewalk paths at all, which keeps
-        /// this working for any tile the pack adds later rather than dropping the spawn.
+        /// this working for any tile the pack adds later rather than dropping the spawn. That
+        /// fallback divides CityGrid.TileScale back out: CityGrid's constants are world-space and
+        /// everything here is in the tile's own frame, which is exactly the frame the measured
+        /// branch below reads with InverseTransformPoint.
         ///
         /// Public and static for PoliceDirector, which places its mid-shift officers on the
         /// pavements exactly the way civilians are placed - one pavement-point rule, not two.
         /// </summary>
         public static Vector3 SidewalkPoint(Tile tile, float side, float alongStreet)
         {
-            var offset = new Vector3(CityGrid.SidewalkOffset * side, 0f, alongStreet);
+            var offset = new Vector3(CityGrid.SidewalkOffset / CityGrid.TileScale * side, 0f, alongStreet);
 
             if (tile.sidewalkPaths != null)
             {

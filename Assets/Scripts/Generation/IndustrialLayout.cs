@@ -91,7 +91,16 @@ namespace LivingCity.Generation
         /// <summary>Spreads consecutive block ids apart in the seed space - see BlockLots.</summary>
         const int BlockStride = 397;
 
-        /// <summary>A rectangle of the compound, in world XZ.</summary>
+        /// <summary>
+        /// A rectangle of the compound, in world XZ.
+        ///
+        /// Serializable because LotZone carries one and rides into the saved scene on the
+        /// WorksYard marker - the city is generated in the editor and saved, so anything the
+        /// runtime or the gizmos need again has to survive a domain reload. Unity will not
+        /// serialize a struct field whose TYPE lacks the attribute, however serializable its
+        /// own members are.
+        /// </summary>
+        [System.Serializable]
         public struct Rect
         {
             public Vector2 Min;

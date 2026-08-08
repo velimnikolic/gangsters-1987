@@ -30,7 +30,13 @@ namespace LivingCity.Entities
     [RequireComponent(typeof(HumanBehavior))]
     public sealed class PoliceOfficerAgent : MonoBehaviour
     {
-        enum State { Patrolling, Returning, AtStation }
+        /// <summary>Public because the overlay HUD colours its indicator and words its popup
+        /// off it. The transitions stay this component's alone.</summary>
+        public enum State { Patrolling, Returning, AtStation }
+
+        /// <summary>Every live officer, in Configure order - the overlay HUD's registry.</summary>
+        public static readonly System.Collections.Generic.List<PoliceOfficerAgent> Officers =
+            new System.Collections.Generic.List<PoliceOfficerAgent>();
 
         /// <summary>
         /// How near the station's doorstep a completed sidewalk route must end before the
@@ -72,11 +78,24 @@ namespace LivingCity.Entities
         /// enabling it paths by itself; ResetRoute on top would path twice.</summary>
         bool humanStarted;
 
-        public void Configure(CityConfig cityConfig, PoliceStation home, int seed, bool startInside)
+        public State CurrentState => state;
+        public int RoutesRemaining => routesRemaining;
+
+        /// <summary>Invisible right now - inside the station. The overlay hides the
+        /// indicator with the body, or a diamond floats over an empty doorstep.</summary>
+        public bool Hidden => body != null && body.Hidden;
+
+        /// <summary>1-based, set by the director - "Officer 3" on the popup.</summary>
+        public int UnitNumber { get; private set; }
+
+        public void Configure(
+            CityConfig cityConfig, PoliceStation home, int seed, bool startInside, int unitNumber)
         {
             config = cityConfig;
             station = home;
             rng = new System.Random(seed);
+            UnitNumber = unitNumber;
+            Officers.Add(this);
             human.routeCompleted += OnRouteCompleted;
 
             if (startInside)
@@ -120,6 +139,7 @@ namespace LivingCity.Entities
 
         void OnDestroy()
         {
+            Officers.Remove(this);
             PedestrianRegistry.Unregister(body);
             body = null;
             if (human)

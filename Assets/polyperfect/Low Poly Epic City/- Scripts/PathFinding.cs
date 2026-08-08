@@ -37,6 +37,15 @@ namespace PolyPerfect.City
 
             startTile = FindClosestTile(startPoint, pathType);
             endTile = FindClosestTile(endPoint, pathType);
+
+            // PATCH (Living City): FindClosestTile returns null when its 10m box finds no tile of
+            // the right type - off the map, over a block interior, or on a park with PathType.Road
+            // - and every use of it below dereferenced that straight away. A caller that gets null
+            // back re-paths or gives up, which is what the null return already means everywhere
+            // else in this method.
+            if (!startTile || !endTile)
+                return null;
+
             List<Path> startPaths;
             if(pathType == PathType.Sidewalk)
             {
@@ -44,6 +53,10 @@ namespace PolyPerfect.City
             }
             else
                 startPaths = startTile.paths;
+
+            if (startPaths == null || startPaths.Count == 0)
+                return null;
+
             foreach (Path path in startPaths)
             {
                 float h = CalculateHeuristic(path.pathPositions[path.pathPositions.Count - 1].position);
@@ -54,8 +67,24 @@ namespace PolyPerfect.City
             }
             if(DoBfsSteps())
             {
-                Closed[endId].path = FindClosestPath(endPoint, Closed[endId].lastNode.path.nextPaths);
-                GetPathList(Closed[endId]);
+                // PATCH (Living City): lastNode is null when the search ended on a SEED node, i.e.
+                // when the destination resolved onto the tile the querent is already standing on.
+                // That is not exotic - every scripted destination (an exit gate, the school kerb,
+                // the station forecourt, a bank bay) is a point beside a landmark, and a car
+                // re-pathing while already on that tile lands here. The line below used to
+                // dereference lastNode unconditionally and take the whole frame down with a
+                // NullReferenceException.
+                //
+                // What it is doing is refining the LAST lane: pick, among the lanes the previous
+                // one leads into, whichever ends closest to the destination. With no previous lane
+                // the analogous set is the start tile's own lanes, which is exactly the
+                // single-tile trip this is.
+                var last = Closed[endId];
+                last.path = last.lastNode != null
+                    ? FindClosestPath(endPoint, last.lastNode.path.nextPaths)
+                    : FindClosestPath(endPoint, startPaths);
+
+                GetPathList(last);
                 PathList.Reverse();
                 //PathList[0] = FindClosestPath(startPoint, startPaths);
                 return PathList;
@@ -79,6 +108,12 @@ namespace PolyPerfect.City
 
                 startTile = FindClosestTile(checkpoints[i-1], pathType);
                 endTile = FindClosestTile(checkpoints[i], pathType);
+
+                // PATCH (Living City): same guard as GetPath - a checkpoint that lands off the
+                // tile network is a route this cannot serve, not a crash.
+                if (!startTile || !endTile)
+                    return null;
+
                 Closed.Clear();
                 List<Path> startPaths;
                 if (i == 1)
@@ -100,9 +135,15 @@ namespace PolyPerfect.City
                 }
                 if (DoBfsSteps())
                 {
-                    if(i == checkpoints.Count-1)
-                        Closed[endId].path = FindClosestPath(checkpoints[i], Closed[endId].lastNode.path.nextPaths);
-                    GetPathList(Closed[endId]);
+                    // PATCH (Living City): lastNode is null on a leg that starts and ends on the
+                    // same tile - see the same guard in GetPath.
+                    var last = Closed[endId];
+                    if (i == checkpoints.Count - 1)
+                        last.path = last.lastNode != null
+                            ? FindClosestPath(checkpoints[i], last.lastNode.path.nextPaths)
+                            : FindClosestPath(checkpoints[i], startPaths);
+
+                    GetPathList(last);
                     PathList.Reverse();
                     //PathList[0] = FindClosestPath(startPoint, startPaths);
                     if(i>1)

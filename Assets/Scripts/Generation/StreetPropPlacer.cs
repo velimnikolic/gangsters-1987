@@ -7,7 +7,9 @@ namespace LivingCity.Generation
     /// <summary>
     /// Dresses the band between the pavement and the block edge.
     ///
-    /// Measured tile geometry (tile-road-straight, resolved through the prefab hierarchy):
+    /// Measured tile geometry (tile-road-straight, resolved through the prefab hierarchy), in
+    /// the tile's own AUTHORED metres - every figure below is multiplied by CityGrid.TileScale
+    /// when it is placed, and so is the tile:
     ///   driving lanes  x = +/-1.5
     ///   sidewalk paths x = +/-4
     ///   tile edge      x = +/-15
@@ -24,23 +26,36 @@ namespace LivingCity.Generation
     {
         /// <summary>
         /// Distance from the road centreline to the prop line. Sits in the gap between the
-        /// pavement (4) and the building line (BlockBuilder.SidewalkClearance, 7), so lamps and
-        /// trees stand between the kerb and the walls rather than inside either.
+        /// pavement (4 authored) and the building line (BlockBuilder.SidewalkClearance, 7), so
+        /// lamps and trees stand between the kerb and the walls rather than inside either.
+        ///
+        /// Carries CityGrid.TileScale because all three of those do: the prop stands on a tile
+        /// that was stretched, between a kerb and a wall that both moved out with it. The LAMP is
+        /// not scaled - only where it stands is.
         /// </summary>
-        const float VergeOffset = 5.5f;
+        const float VergeOffset = 5.5f * CityGrid.TileScale;
 
         /// <summary>
         /// The same line on the dual carriageway, whose cross-section is wider throughout:
         /// outer lanes at 4.75 and pavements at 7.25, against a street's 1.5 and 4. At 5.5 a
         /// lamp would stand in the avenue's outer LANE. 8.5 keeps the same relation - clear of
-        /// the pavement, inside the building line at CityConfig.mainSidewalkWidth (10).
+        /// the pavement, inside the building line at CityConfig.mainSidewalkWidth (10). All
+        /// authored figures, scaled the same way as VergeOffset.
         /// </summary>
-        const float MainVergeOffset = 8.5f;
+        const float MainVergeOffset = 8.5f * CityGrid.TileScale;
 
-        /// <summary>Lamps every other tile, i.e. every 60 units.</summary>
+        /// <summary>Lamps every other tile, i.e. every two cells.</summary>
         const int LampTileInterval = 2;
 
-        static readonly float[] AlongOffsets = { -9f, 0f, 9f };
+        /// <summary>
+        /// Prop slots along the kerb, from the cell centre. World distances along a tile that is
+        /// placed at CityGrid.TileScale, so they carry it - otherwise the three slots bunch up in
+        /// the middle of a stretched tile and leave its ends bare.
+        /// </summary>
+        static readonly float[] AlongOffsets =
+        {
+            -9f * CityGrid.TileScale, 0f, 9f * CityGrid.TileScale,
+        };
 
         public static List<GameObject> Build(
             CityGrid grid,

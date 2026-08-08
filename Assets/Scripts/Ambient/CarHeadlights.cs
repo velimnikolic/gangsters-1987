@@ -22,6 +22,11 @@ namespace LivingCity.Ambient
     ///
     /// Only CarBehavior cars qualify. Parked cars are static set dressing and stay dark -
     /// a parking lot of burning headlights at 3am would be its own bug report.
+    ///
+    /// That held for the STATIC bakes, which have no CarBehavior and were never seen here, and
+    /// not at all for the cars this project parks itself: the patrol fleet in its stalls and
+    /// the bank's visitors in theirs both keep a CarBehavior and both used to sit burning. See
+    /// Parked for the test that closes it.
     /// </summary>
     public sealed class CarHeadlights : MonoBehaviour
     {
@@ -53,7 +58,25 @@ namespace LivingCity.Ambient
         [SerializeField] CityConfig config;
         [SerializeField] CityClock clock;
 
-        readonly List<Light> beams = new();
+        /// <summary>
+        /// A beam and the car it belongs to. The car reference is what the flat List&lt;Light&gt;
+        /// lacked: whether a beam burns is now a question about its car, not about the hour
+        /// alone, and there is no way back from a Light to the CarBehavior above it that does
+        /// not cost a GetComponentInParent per beam per pass.
+        /// </summary>
+        readonly struct Beam
+        {
+            public readonly Light Light;
+            public readonly CarBehavior Car;
+
+            public Beam(Light light, CarBehavior car)
+            {
+                Light = light;
+                Car = car;
+            }
+        }
+
+        readonly List<Beam> beams = new();
 
         float nextScan;
         float lit = -1f;
@@ -80,31 +103,60 @@ namespace LivingCity.Ambient
             // spot. It used to rely on the change-driven loop below - which never runs while
             // the night is steady, so every car spawned after dusk drove dark: only the
             // handful alive during the transition frame ever got lit.
+            var scanned = false;
             if (Time.unscaledTime >= nextScan)
             {
                 nextScan = Time.unscaledTime + RescanInterval;
                 Scan(target);
+                scanned = true;
             }
 
-            if (Mathf.Approximately(target, lit))
+            // Once the hour alone decided this, so the pass could be skipped whenever the night
+            // was steady. Parked-ness changes under a steady night - a car docks at 2am - so the
+            // pass now also rides the rescan tick. A car that stops or pulls away goes dark or
+            // lights up within RescanInterval, which at a walking-pace manoeuvre is not a frame
+            // anyone can catch, and the cost is one walk of the list a second.
+            if (!scanned && Mathf.Approximately(target, lit))
                 return;
 
             lit = target;
+            Apply(target);
+        }
+
+        void Apply(float target)
+        {
             var burn = target > 0.001f;
 
             for (var i = beams.Count - 1; i >= 0; i--)
             {
                 var beam = beams[i];
-                if (!beam)
+                if (!beam.Light)
                 {
                     beams.RemoveAt(i);   // its car despawned
                     continue;
                 }
 
-                beam.enabled = burn;
-                beam.intensity = target;
+                beam.Light.enabled = burn && !Parked(beam.Car);
+                beam.Light.intensity = target;
             }
         }
+
+        /// <summary>
+        /// A car that is not going anywhere. Both halves are how this project stops a car it
+        /// owns: the patrol fleet's session-start cars have their CarBehavior held disabled by
+        /// PoliceDirector, and everything else parked - the rest of the fleet, the bank's
+        /// visitors - is held with stopHere.
+        ///
+        /// Deliberately NOT a speed test. A car at a red light is stopped and should keep its
+        /// lights on, and it is held through heldByCrosswalk/heldByLight rather than through
+        /// either of these - so the two states stay distinguishable without asking the traffic
+        /// model anything.
+        ///
+        /// Not covered by the headless suite: every term is a UnityEngine.Object member, and
+        /// both `enabled` and the null check are native calls that throw outside the Unity
+        /// runtime. This one is verified by eye, at night, in the station forecourt.
+        /// </summary>
+        static bool Parked(CarBehavior car) => !car || !car.enabled || car.stopHere;
 
         /// <summary>Finds cars that have no lights yet and fits them a pair, lit at the given
         /// intensity right away.</summary>
@@ -119,8 +171,8 @@ namespace LivingCity.Ambient
 
                 var range = config ? config.headlightRange : 18f;
 
-                Attach(car.transform, LeftPosition(car), range, intensity);
-                Attach(car.transform, RightPosition(car), range, intensity);
+                Attach(car, LeftPosition(car), range, intensity);
+                Attach(car, RightPosition(car), range, intensity);
                 fitted++;
             }
 
@@ -128,10 +180,10 @@ namespace LivingCity.Ambient
                 Debug.Log($"[Headlights] {fitted} cars fitted, {beams.Count} beams total.", this);
         }
 
-        void Attach(Transform car, Vector3 localPosition, float range, float intensity)
+        void Attach(CarBehavior car, Vector3 localPosition, float range, float intensity)
         {
             var holder = new GameObject(HolderName);
-            holder.transform.SetParent(car, false);
+            holder.transform.SetParent(car.transform, false);
             holder.transform.localPosition = localPosition;
             holder.transform.localRotation = Quaternion.Euler(DownTilt, 0f, 0f);
 
@@ -143,14 +195,17 @@ namespace LivingCity.Ambient
             light.range = range;
             light.intensity = Mathf.Max(0f, intensity);
             light.shadows = LightShadows.None;
-            light.enabled = intensity > 0.001f;
+            // A car fitted while it stands in a stall must not flare even for the one frame
+            // before Apply reaches it - Scan runs from the same LateUpdate, but "the pass right
+            // after this one will fix it" is exactly the kind of ordering that stops being true.
+            light.enabled = intensity > 0.001f && !Parked(car);
             light.lightmapBakeType = LightmapBakeType.Realtime;
             light.renderMode = LightRenderMode.ForcePixel;
 
             holder.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalLightData>()
                   .usePipelineSettings = true;
 
-            beams.Add(light);
+            beams.Add(new Beam(light, car));
         }
 
         // ------------------------------------------------------------------ placement

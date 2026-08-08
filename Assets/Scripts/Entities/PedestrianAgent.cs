@@ -43,6 +43,9 @@ namespace LivingCity.Entities
         /// <summary>Give-up timer on any single off-graph leg. Generous - it is a backstop.</summary>
         const float OffGraphTimeout = 20f;
 
+        /// <summary>Give-up timer on the step off the carriageway. Short: it is a metre or two.</summary>
+        const float RoadClearTimeout = 4f;
+
         /// <summary>
         /// Seconds the stand-up clip is given to play out before the walk resumes. Sitting-Idle
         /// is 33 keys at 24fps = 1.38s; the old 2.4 left a second of standing at attention.
@@ -482,7 +485,8 @@ namespace LivingCity.Entities
         /// each other and can never overlap. Sets <see cref="walkArrived"/> for callers that
         /// need to know whether to go through with the activity at the far end.
         /// </summary>
-        IEnumerator WalkTo(Vector3 target, float stopWithin, float timeout = OffGraphTimeout)
+        IEnumerator WalkTo(Vector3 target, float stopWithin, float timeout = OffGraphTimeout,
+                           bool clearing = false)
         {
             SetStationary(false);
             var speed = 0f;
@@ -519,6 +523,19 @@ namespace LivingCity.Entities
             body.SpeedMs = 0f;
             SetSpeed(0f);
             walkArrived = PedestrianSteering.Flat(target - transform.position).magnitude <= stopWithin * 2f + 0.5f;
+
+            // PATCH (Living City): an off-graph leg can end on the carriageway - a bench or a
+            // door within OpportunityRange can be across a street, and this walk gives up
+            // wherever it ran out of time. Whatever the caller does next (talk, sit, hand back to
+            // the follower) it does STANDING STILL, and standing still on a crossing holds the
+            // car that stopped for it. So step clear first; the caller's verdict on its own
+            // target survives, because SitRoutine and friends decide on it.
+            if (!clearing && RoadSurface.TryNearestOffRoad(transform.position, out var clear))
+            {
+                var arrived = walkArrived;
+                yield return WalkTo(clear, 0.3f, RoadClearTimeout, clearing: true);
+                walkArrived = arrived;
+            }
         }
 
         IEnumerator Face(Vector3 point, float seconds = 0.35f)

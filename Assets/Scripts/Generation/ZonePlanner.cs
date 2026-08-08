@@ -211,13 +211,17 @@ namespace LivingCity.Generation
             // The trigger used to be INFERRED - maxBlocks == 1 together with a size cap - which
             // read as a rule about size and behaved as a rule about existence, and so quietly
             // promised a block to whatever happened to be shaped like a civic zone. It is stated
-            // outright now, one bool per palette. Every palette in the shipped database sets it
-            // false, so this loop currently does nothing at all: the hospital, the school and the
-            // church are ceilings - at most one each - exactly as the post office and the fire
-            // station have always been. The pass is kept, dormant, because it is the lever. Flip
-            // one palette's guaranteed and the city is promised that zone again, with no code
-            // change. (The bank is promised by a different mechanism, below, because what it
-            // needs guaranteed is the BUILDING and not this particular shape of block.)
+            // outright now, one bool per palette, and the database sets it on exactly one:
+            // the SCHOOL. The hospital beside it is still a ceiling - at most one - exactly as
+            // the post office and the fire station have always been.
+            //
+            // The school is not the more important building; it is the one with a system hanging
+            // off it. Its block carries the city's only SchoolMarker, and SchoolBusDirector has
+            // no other way to find a school, so a seed that lost the weighted roll lost the bus,
+            // the stops and every schoolchild with it - silently, one warning deep. That is what
+            // this pass is for, and it was dormant machinery until the school needed it.
+            // (The bank is promised by a different mechanism, below, because what it needs
+            // guaranteed is the BUILDING and not this particular shape of block.)
             //
             // Three properties, each deliberate, each with a price:
             //
@@ -232,8 +236,13 @@ namespace LivingCity.Generation
             //    Right for a one-cell civic landmark, a poor gift to a park.
             // 3. The landmark budget is OVERSHOT, by at most one block per guaranteed palette.
             //    The budget stops a government district forming out of the weighted roll; it was
-            //    never a reason for the city to have no hospital at all. Since nothing is
-            //    guaranteed by default, that overshoot is now only ever paid on purpose.
+            //    never a reason for the city to have no hospital at all. With the school
+            //    guaranteed that overshoot is paid in the ~60% of cities that would otherwise
+            //    have gone without one - one block, knowingly. It is NOT paid by the hospital,
+            //    which competes with the school for the same one-cell blocks: the pass runs
+            //    after the roll and takes only from ResidentialHigh and Industrial, so 500 seeds
+            //    on 16x7 move hospital 45.4% -> 45.4%, park 81.4% -> 81.4%, bank 100% -> 100%,
+            //    and school 38.4% -> 100%. The block comes out of the fabric, as designed.
             //
             // The block always comes back from ResidentialHigh or Industrial - the two zones that
             // FILL a map - never from another scarce one. The search runs over `order` rather than

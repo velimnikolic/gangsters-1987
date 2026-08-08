@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 65765481963fd4a3fa1500fb4328ec6c, type: 3}
+  m_Name: IndustrialLotConfig
+  m_EditorClassIdentifier: Assembly-CSharp::LivingCity.Data.IndustrialLotConfig
+  zoning:
+    maxApronDepth: 9
+    minApronDepth: 3
+    apronSideMargin: 1
+    minYardSize: 8
+    minScrapSize: 6
+    maxBulkYards: 8
+    maxBulkYardSide: 20
+    boilerWidth: 8
+    boilerDepth: 6
+    cinderDepth: 3.5
+    maxZoneCoverage: 0.5
+    metresPerPatch: 90
+    minPatchSide: 5
+    maxPatchSide: 16
+    maxPatches: 26
+  fringePatchesPerEdge: 3
+  minFringeReach: 1.5
+  maxFringeReach: 4
+  minFringeRun: 2
+  maxFringeRun: 6
+  rutGauge: 1.8
+  rutWidth: 0.55
+  maxStains: 14
+  minStainRadius: 0.7
+  maxStainRadius: 2.2
+  minSpurRun: 20
+  spurGauge: 1.5
+  sleeperPitch: 0.9
+  maxPropsPerLot: 120

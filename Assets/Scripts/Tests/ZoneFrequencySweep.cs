@@ -9,7 +9,7 @@ namespace LivingCity.Tests
     /// How often each zone actually appears, measured over a few hundred seeds.
     ///
     /// This exists because the city stopped guaranteeing anything. While ZonePlanner's rescue pass
-    /// ran on an inferred trigger, the hospital, the school and the church were in every city by
+    /// ran on an inferred trigger, the hospital and the school were in every city by
     /// construction and their weights only decided WHERE they went. Now weight decides WHETHER,
     /// and nobody can read a frequency off a weight by eye: four zones carry maxBlockCells 1 and
     /// compete for the map's handful of one-cell blocks, and the shared landmark budget gates two

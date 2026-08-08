@@ -142,12 +142,41 @@ namespace PolyPerfect.City
         // trigger stops, so it can never override stopHere or the spawn stagger.
 
         /// <summary>Seconds held at a trigger before the car re-reads the blocker's actual state.</summary>
-        const float HoldWatchdog = 6f;
+        public const float HoldWatchdog = 6f;
+
+        /// <summary>
+        /// Hard ceiling on a crosswalk hold, whatever the crossing claims. Crosswalk itself now
+        /// stops reporting people who have merely stopped on it, so nothing should ever reach
+        /// this - which is the point: it is the backstop that makes "a car is stuck forever"
+        /// unreachable no matter what goes wrong in front of it. Not applied to lights (they
+        /// cycle) or level crossings (a train legitimately takes a while).
+        ///
+        /// The asymmetry is the argument for having it at all: releasing a car early clips
+        /// through a body there is no physics between anyway, for a frame; never releasing it
+        /// queues every car behind it, and those queues merge at junctions until the district is
+        /// solid.
+        /// </summary>
+        public const float CrosswalkPatience = 15f;
+
+        /// <summary>
+        /// May a car held by a crossing go? Pure, so the model tests can prove the property this
+        /// whole change exists for: for any stream of crossing reports, no hold outlives
+        /// <see cref="CrosswalkPatience"/>.
+        /// </summary>
+        public static bool CrosswalkHoldExpired(bool stillCrossing, float heldFor) =>
+            heldFor >= HoldWatchdog && (!stillCrossing || heldFor >= CrosswalkPatience);
 
         TrafficLight heldByLight;
         Crosswalk heldByCrosswalk;
         LevelCrossingController heldByLevelCrossing;
         float heldSince;
+
+        /// <summary>
+        /// The crossing this car's handler is on, which outlives the hold: ReleaseHold drops
+        /// heldByCrosswalk while OnTriggerExit still owns the unsubscribe. Kept so OnDisable can
+        /// clean up after a car destroyed inside the trigger, which never gets that exit.
+        /// </summary>
+        Crosswalk subscribedCrosswalk;
 
 
         private void Awake()
@@ -168,6 +197,17 @@ namespace PolyPerfect.City
         {
             LivingCity.Entities.TrafficRegistry.Unregister(trafficBody);
             trafficBody = null;
+
+            // PATCH (Living City): stateChange is a raw multicast field on a component that
+            // outlives this car - a car destroyed inside a crossing's trigger never runs
+            // OnTriggerExit, and its handler would stay on that crossing's list for the rest of
+            // the scene, called on a dead MonoBehaviour every time somebody crosses.
+            if (subscribedCrosswalk)
+            {
+                subscribedCrosswalk.stateChange -= CrosswalkChange;
+                subscribedCrosswalk = null;
+            }
+            heldByCrosswalk = null;
         }
 
         void Start()
@@ -575,11 +615,29 @@ namespace PolyPerfect.City
                     // The separation is the point. The model can be mistuned, or lose sight of a
                     // car around a bend, and the clamp still makes overlapping impossible.
 
+                    // PATCH (Living City): the cornering derate, retuned - both numbers here were
+                    // sized for a car following a lane, not for one pivoting through a junction.
+                    //
+                    // A junction turn is a polyline with a corner, not an arc, and UpdateCheckpoint
+                    // does not retarget until the front axle is ABEAM that corner - so all of the
+                    // heading change is spent after it, at whatever speed the car arrived with. A
+                    // passenger car needs ~2.9m to reach full lock and then a 5.4m arc at its 3.89m
+                    // minimum radius, which is why it used to swing several metres wide of the node
+                    // and a bus eight to ten.
+                    //
+                    // The floor was 0.65: at full lock the car still wanted 65% of the lane limit.
+                    // 0.5 halves it instead. And the 0.8 that LaneChange and RampExit get now
+                    // covers Turn, which had no shape derate at all despite being the sharpest
+                    // thing a car does. Both are deliberately conservative - the turn lanes are
+                    // authored at 25-30km/h and CityConfig.carMaxSpeed caps everything at 45, so
+                    // this narrows an already-slow band rather than making the city sluggish.
                     float steerAngle = Vector3.SignedAngle(transform.forward, (targetDrivePoint - frontWheelsMiddlePoint.position).normalized, Vector3.up);
-                    float cornering = Mathf.Clamp(1f - Mathf.Abs(steerAngle) / maxTurnAngle, 0.65f, 1f);
+                    float cornering = Mathf.Clamp(1f - Mathf.Abs(steerAngle) / maxTurnAngle, 0.5f, 1f);
 
                     float desiredSpeed = Mathf.Min(currentMaxSpeed, maxspeed) * cornering;
-                    if (trajectory[frontWheelsPath].pathShape == PathShape.LaneChange || trajectory[frontWheelsPath].pathShape == PathShape.RampExit)
+                    if (trajectory[frontWheelsPath].pathShape == PathShape.LaneChange
+                        || trajectory[frontWheelsPath].pathShape == PathShape.RampExit
+                        || trajectory[frontWheelsPath].pathShape == PathShape.Turn)
                         desiredSpeed *= 0.8f;
 
                     float speedMs = speed * KMHTOMS;
@@ -781,7 +839,8 @@ namespace PolyPerfect.City
 
             if (heldByLight && !heldByLight.isGreen)
                 return;
-            if (heldByCrosswalk && heldByCrosswalk.PedestriansAreCrossing)
+            if (heldByCrosswalk
+                && !CrosswalkHoldExpired(heldByCrosswalk.PedestriansAreCrossing, Time.time - heldSince))
                 return;
             if (heldByLevelCrossing && heldByLevelCrossing.trainCrossing)
                 return;
@@ -837,6 +896,7 @@ namespace PolyPerfect.City
                 if (crosswalk.PedestriansAreCrossing)
                 {
                     crosswalk.stateChange += CrosswalkChange;
+                    subscribedCrosswalk = crosswalk;
                     BeginHold(null, crosswalk, null);
                 }
 
@@ -880,7 +940,10 @@ namespace PolyPerfect.City
             }
             else if (other.CompareTag("Crosswalk"))
             {
-                other.GetComponent<Crosswalk>().stateChange -= CrosswalkChange;
+                var crosswalk = other.GetComponent<Crosswalk>();
+                crosswalk.stateChange -= CrosswalkChange;
+                if (subscribedCrosswalk == crosswalk)
+                    subscribedCrosswalk = null;
                 heldByCrosswalk = null;
             }
             else if (other.CompareTag("LevelCrossing"))

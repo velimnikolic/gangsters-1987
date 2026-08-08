@@ -15,10 +15,14 @@ namespace LivingCity.Entities
     ///
     /// There is no surface data to read at Play time - CityGrid is not serialized, so a saved
     /// generated scene has no grid - but every road tile the generator places is named
-    /// tile_{x}_{y}_{RoadTileKind} (RoadNetworkBuilder), sits on the 30m cell lattice, and its
-    /// cross-section is fixed by the prefab family. So the kind is recovered from the name,
-    /// the tile from a cell dictionary (the JunctionMap approach: derive from Tile, cache
+    /// tile_{x}_{y}_{RoadTileKind} (RoadNetworkBuilder), sits on the CityGrid.CellSize lattice,
+    /// and its cross-section is fixed by the prefab family. So the kind is recovered from the
+    /// name, the tile from a cell dictionary (the JunctionMap approach: derive from Tile, cache
     /// forever), and the asphalt test runs in tile-local space where the numbers are constants.
+    ///
+    /// TILE-LOCAL is load-bearing: the tiles are placed at CityGrid.TileScale, and
+    /// InverseTransformPoint divides that back out. So every constant below is the prefab's own
+    /// authored metre - unscaled - and must never be taken from CityGrid's world-space block.
     ///
     /// The cross-sections are measured off the prefabs, not tuned: a street tile is asphalt
     /// out to |x| = 3 with pavement 3..5 (CityGrid.PavementEdge); the dual carriageway
@@ -58,8 +62,16 @@ namespace LivingCity.Entities
         /// </summary>
         public const float KerbMargin = 0.25f;
 
-        /// <summary>The curve's road centreline arc: half the cell, around the shared corner.</summary>
-        public const float CurveRadius = CityGrid.CellSize * 0.5f;
+        /// <summary>
+        /// The curve's road centreline arc: half the AUTHORED tile, around the shared corner.
+        ///
+        /// AuthoredCellSize and not CellSize, and the difference is the whole frame contract of
+        /// this class. Every number in this pure core is compared against coordinates that came
+        /// out of Transform.InverseTransformPoint, which divides CityGrid.TileScale back out - so
+        /// they are the prefab's own metres, not the world's. Tracking CellSize would put the arc
+        /// at 19.5 while the mesh it describes is still at 15.
+        /// </summary>
+        public const float CurveRadius = CityGrid.AuthoredCellSize * 0.5f;
 
         /// <summary>tile-road-end's turning circle: its sidewalk ring walks at radius ~4.2.</summary>
         public const float TurningCircle = 3.5f;
@@ -131,33 +143,199 @@ namespace LivingCity.Entities
         }
 
         /// <summary>Is this tile-local point on the asphalt (kerb margin included)?</summary>
-        public static bool OnAsphalt(RoadShape shape, float localX, float localZ)
+        public static bool OnAsphalt(RoadShape shape, float localX, float localZ) =>
+            OnAsphalt(shape, localX, localZ, 0f);
+
+        /// <summary>
+        /// The same test with every band, arc and circle widened by <paramref name="margin"/>.
+        /// A margin of zero is the asphalt itself; a positive one asks the stronger question the
+        /// escape below needs - "is this point CLEAR of the asphalt", not merely off it.
+        /// </summary>
+        public static bool OnAsphalt(RoadShape shape, float localX, float localZ, float margin)
         {
             switch (shape.Shape)
             {
                 case SurfaceShape.Bands:
-                    return (shape.BandX > 0f && Mathf.Abs(localX) <= shape.BandX)
-                           || (shape.BandZ > 0f && Mathf.Abs(localZ) <= shape.BandZ);
+                    return (shape.BandX > 0f && Mathf.Abs(localX) <= shape.BandX + margin)
+                           || (shape.BandZ > 0f && Mathf.Abs(localZ) <= shape.BandZ + margin);
 
                 case SurfaceShape.Curve:
                 {
                     var dx = localX + CurveRadius;
                     var dz = localZ - CurveRadius;
                     var fromCorner = Mathf.Sqrt(dx * dx + dz * dz);
-                    return Mathf.Abs(fromCorner - CurveRadius) <= shape.BandX
-                           || Mathf.Abs(localX) <= shape.BandX
-                           || Mathf.Abs(localZ) <= shape.BandZ;
+                    return Mathf.Abs(fromCorner - CurveRadius) <= shape.BandX + margin
+                           || Mathf.Abs(localX) <= shape.BandX + margin
+                           || Mathf.Abs(localZ) <= shape.BandZ + margin;
                 }
 
                 case SurfaceShape.DeadEnd:
                     // The arm reaches the connected (+z) edge only - past the turning circle
                     // the sidewalk ring wraps round the bottom of the tile and must stay free.
-                    return (Mathf.Abs(localX) <= shape.BandX && localZ >= 0f)
-                           || Mathf.Sqrt(localX * localX + localZ * localZ) <= TurningCircle;
+                    return (Mathf.Abs(localX) <= shape.BandX + margin && localZ >= 0f)
+                           || Mathf.Sqrt(localX * localX + localZ * localZ) <= TurningCircle + margin;
 
                 default:
                     return false;
             }
+        }
+
+        /// <summary>
+        /// Is this tile-local point on the DRAWN carriageway? Narrower than
+        /// <see cref="OnAsphalt"/>, and the two differ on exactly one shape.
+        ///
+        /// OnAsphalt answers "may somebody CHOOSE to stop here", so the curve's square nav bands
+        /// count: cars cut that corner as a square whatever the paint says, and nobody should be
+        /// seated in the wheel path. This answers "is somebody standing where the road is", which
+        /// is what the escape below acts on - and a walker on the curve's outer sidewalk arc near
+        /// the diagonal (local ~(-1.56, 1.56)) is inside those nav bands while standing on real
+        /// pavement. Under the wider test the nearest clear point is six metres away across the
+        /// carriageway, so the recovery would march people across a street to fix nothing.
+        /// </summary>
+        public static bool OnCarriageway(RoadShape shape, float localX, float localZ) =>
+            OnCarriageway(shape, localX, localZ, 0f);
+
+        public static bool OnCarriageway(RoadShape shape, float localX, float localZ, float margin)
+        {
+            if (shape.Shape != SurfaceShape.Curve)
+                return OnAsphalt(shape, localX, localZ, margin);
+
+            var dx = localX + CurveRadius;
+            var dz = localZ - CurveRadius;
+            return Mathf.Abs(Mathf.Sqrt(dx * dx + dz * dz) - CurveRadius) <= shape.BandX + margin;
+        }
+
+        // ------------------------------------------------------------------ getting off it
+
+        /// <summary>
+        /// How far past the asphalt a cleared pedestrian is put. One metre lands mid-pavement on
+        /// both families (street band 3.25 -> 4.25, pavement 3..5, props from 5.5; avenue 6.5 ->
+        /// 7.5, pavement 6.25..8.5, walk line 7.25) and it has two jobs beyond looking right.
+        ///
+        /// It must exceed HumanBehavior's 0.75m avoidance arrival radius, or a walker that
+        /// "arrives" at the clear point while being steered around somebody is still on the road.
+        ///
+        /// And it must clear the crosswalk TRIGGER, which is the whole point of the exercise and
+        /// is wider than the kerb test: the boxes on tile-road-straight-crosswalk reach |x| =
+        /// 3.09 (6.32 on the avenue) and a pedestrian capsule is 0.3 across, so contact ends at
+        /// 3.39 / 6.62 - past the 3.25 / 6.5 kerb margin. A walker recovered to 4.25 / 7.5 stands
+        /// 0.86 / 0.88 clear of it and cannot hold the traffic.
+        /// </summary>
+        public const float ClearMargin = 1f;
+
+        /// <summary>Keeps a candidate placed exactly at the margin from failing its own test.</summary>
+        const float ClearEpsilon = 0.01f;
+
+        /// <summary>
+        /// The nearest tile-local point that is clear of this tile's carriageway by
+        /// <see cref="ClearMargin"/>.
+        ///
+        /// Candidates rather than a formula: a junction is two crossing bands, a curve is an
+        /// annulus, and a dead end is an arm plus a turning circle - so the escape from one piece
+        /// routinely lands inside another (the dead end is the sharp case: pushing radially out
+        /// of the turning circle along the centre line lands back on the arm). Offering every
+        /// escape a shape has and keeping the nearest one that clears them ALL is both shorter
+        /// and harder to get wrong than chaining pushes.
+        ///
+        /// False means there is nothing to do - either the point is already clear, or nothing
+        /// offered clears, in which case the caller stays put rather than walking somewhere
+        /// worse. The outputs are left at the input in both cases.
+        /// </summary>
+        public static bool TryOffAsphalt(RoadShape shape, float localX, float localZ,
+                                         out float outX, out float outZ)
+        {
+            outX = localX;
+            outZ = localZ;
+
+            if (!OnCarriageway(shape, localX, localZ))
+                return false;
+
+            var bestSqr = float.MaxValue;
+            var bestX = localX;
+            var bestZ = localZ;
+            var found = false;
+
+            void Consider(float cx, float cz)
+            {
+                if (OnCarriageway(shape, cx, cz, ClearMargin - ClearEpsilon))
+                    return;
+
+                var d = (cx - localX) * (cx - localX) + (cz - localZ) * (cz - localZ);
+                if (d >= bestSqr)
+                    return;
+
+                bestSqr = d;
+                bestX = cx;
+                bestZ = cz;
+                found = true;
+            }
+
+            // The dead end's arm is only as wide as its band, but stepping sideways out of it
+            // can still leave you inside the turning circle - so its sideways escape clears
+            // both at once.
+            var reachX = shape.Shape == SurfaceShape.DeadEnd
+                ? Mathf.Max(shape.BandX, TurningCircle) + ClearMargin
+                : shape.BandX + ClearMargin;
+            var reachZ = shape.BandZ + ClearMargin;
+
+            if (shape.BandX > 0f)
+            {
+                Consider(reachX, localZ);
+                Consider(-reachX, localZ);
+            }
+
+            if (shape.BandZ > 0f)
+            {
+                Consider(localX, reachZ);
+                Consider(localX, -reachZ);
+            }
+
+            // A junction's corner quadrants: the only ground on the tile that is clear of both
+            // carriageways, and where its pavement actually is.
+            if (shape.BandX > 0f && shape.BandZ > 0f)
+            {
+                Consider(reachX, reachZ);
+                Consider(reachX, -reachZ);
+                Consider(-reachX, reachZ);
+                Consider(-reachX, -reachZ);
+            }
+
+            switch (shape.Shape)
+            {
+                case SurfaceShape.Curve:
+                {
+                    // Radially off the bend, to either side of it. These land on the pack's own
+                    // sidewalk arcs: 15 - 4.25 = 10.75 and 15 + 4.25 = 19.25, against walk lines
+                    // measured at 11 and 19.
+                    var dx = localX + CurveRadius;
+                    var dz = localZ - CurveRadius;
+                    var r = Mathf.Sqrt(dx * dx + dz * dz);
+                    if (r > 1e-3f)
+                    {
+                        var ux = dx / r;
+                        var uz = dz / r;
+                        var inner = CurveRadius - reachX;
+                        var outer = CurveRadius + reachX;
+                        Consider(-CurveRadius + ux * inner, CurveRadius + uz * inner);
+                        Consider(-CurveRadius + ux * outer, CurveRadius + uz * outer);
+                    }
+                    break;
+                }
+
+                case SurfaceShape.DeadEnd:
+                {
+                    // Straight out of the turning circle, past the sidewalk ring at ~4.2.
+                    var r = Mathf.Sqrt(localX * localX + localZ * localZ);
+                    var ring = TurningCircle + ClearMargin;
+                    if (r > 1e-3f)
+                        Consider(localX / r * ring, localZ / r * ring);
+                    break;
+                }
+            }
+
+            outX = bestX;
+            outZ = bestZ;
+            return found;
         }
 
         // ------------------------------------------------------------------ runtime adapter
@@ -182,8 +360,43 @@ namespace LivingCity.Entities
         /// Is this world position on a carriageway? False wherever there is no generated road
         /// tile - block interiors, parks, pack demo scenes.
         /// </summary>
-        public static bool IsOnRoad(Vector3 world)
+        public static bool IsOnRoad(Vector3 world) =>
+            TryLocal(world, out var entry, out var local)
+            && OnAsphalt(entry.Shape, local.x, local.z);
+
+        /// <summary>
+        /// The nearest world point clear of the carriageway, for anyone who has to STOP and finds
+        /// themselves standing on it. Crossing the road is normal; coming to rest on it is what
+        /// stops the traffic.
+        ///
+        /// True only when there is somewhere to go, so the whole "am I standing in the road, and
+        /// if so where should I step" question is one call: false covers already being clear,
+        /// there being no road here at all (block interiors, parks, a bridge deck over a road,
+        /// pack demo scenes), and the rare case where nothing clears.
+        /// </summary>
+        public static bool TryNearestOffRoad(Vector3 world, out Vector3 point)
         {
+            point = world;
+
+            if (!TryLocal(world, out var entry, out var local))
+                return false;
+
+            if (!TryOffAsphalt(entry.Shape, local.x, local.z, out var offX, out var offZ))
+                return false;
+
+            point = entry.Tile.TransformPoint(new Vector3(offX, local.y, offZ));
+            return true;
+        }
+
+        /// <summary>
+        /// Which generated road tile covers this world point, and where the point sits in its
+        /// local frame. False when no road tile does - which is the common case city-wide.
+        /// </summary>
+        static bool TryLocal(Vector3 world, out Entry entry, out Vector3 local)
+        {
+            entry = default;
+            local = default;
+
             var tiles = Tile.Tiles;
             if (tiles == null || tiles.Count == 0)
                 return false;
@@ -194,7 +407,7 @@ namespace LivingCity.Entities
             if (tiles.Count != builtFromTileCount)
                 Rebuild(tiles);
 
-            if (!Cells.TryGetValue(CellKey(world), out var entry))
+            if (!Cells.TryGetValue(CellKey(world), out entry))
                 return false;
 
             if (!entry.Tile)
@@ -203,11 +416,8 @@ namespace LivingCity.Entities
                 return false;
             }
 
-            var local = entry.Tile.InverseTransformPoint(world);
-            if (Mathf.Abs(local.y) > MaxHeightDelta)
-                return false;
-
-            return OnAsphalt(entry.Shape, local.x, local.z);
+            local = entry.Tile.InverseTransformPoint(world);
+            return Mathf.Abs(local.y) <= MaxHeightDelta;
         }
 
         static long CellKey(Vector3 world)

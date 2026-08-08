@@ -50,6 +50,52 @@ namespace LivingCity.Generation
         /// whose paint materials were never assigned should cost the caller a bare yard, not an
         /// exception.
         /// </summary>
+        /// <summary>
+        /// Fan-triangulated blobs, for the shapes a stroke cannot make: an oil stain under a
+        /// lorry, a puddle in a rut, the soot halo round a boiler house. A puddle drawn as
+        /// strokes takes four or five overlapping quads and still reads as a plus sign; as a
+        /// polygon it is one fan of five triangles.
+        ///
+        /// The polygons arrive already jittered. Randomness belongs to the caller's seeded
+        /// stream - the same split Emit keeps, and the reason neither of these takes a
+        /// System.Random.
+        /// </summary>
+        public static GameObject EmitPolys(
+            List<Vector2[]> polys, Material material, float lift, string name, Transform parent)
+        {
+            if (polys == null || polys.Count == 0 || !material)
+                return null;
+
+            var vertices = new List<Vector3>();
+            var normals = new List<Vector3>();
+            var uv = new List<Vector2>();
+            var triangles = new List<int>();
+
+            foreach (var poly in polys)
+            {
+                if (poly == null || poly.Length < 3)
+                    continue;
+
+                var v = vertices.Count;
+
+                foreach (var point in poly)
+                {
+                    vertices.Add(new Vector3(point.x, lift, point.y));
+                    normals.Add(Vector3.up);
+                    uv.Add(point);
+                }
+
+                for (var i = 1; i < poly.Length - 1; i++)
+                {
+                    triangles.Add(v);
+                    triangles.Add(v + i);
+                    triangles.Add(v + i + 1);
+                }
+            }
+
+            return Build(vertices, normals, uv, triangles, material, name, parent);
+        }
+
         public static GameObject Emit(
             List<Stroke> strokes, Material material, float lift, string name, Transform parent)
         {
@@ -99,6 +145,16 @@ namespace LivingCity.Generation
                 triangles.Add(v + 3);
             }
 
+            return Build(vertices, normals, uv, triangles, material, name, parent);
+        }
+
+        /// <summary>
+        /// The shared tail of both emitters: one mesh, one renderer, at the world origin.
+        /// </summary>
+        static GameObject Build(
+            List<Vector3> vertices, List<Vector3> normals, List<Vector2> uv, List<int> triangles,
+            Material material, string name, Transform parent)
+        {
             if (vertices.Count == 0)
                 return null;
 

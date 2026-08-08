@@ -70,56 +70,14 @@ namespace LivingCity.Entities
         }
 
         /// <summary>
-        /// The fleet's junction with the lane graph: the road waypoint nearest the forecourt,
-        /// and the direction of its lane segment there. Returning cars route to it, docking
-        /// curves start from it, undocking cars pull out onto it.
+        /// The fleet's junction with the lane graph. The search itself is ForecourtKerb's,
+        /// shared with the bank; what is police here is only where to look from - out of the
+        /// DOOR rather than off the building's origin, because that is the elevation the bays
+        /// were cut in front of.
         /// </summary>
-        bool FindKerb(out Vector3 kerbPos, out Vector3 kerbDir)
-        {
-            // Out from the door, past the forecourt band, is where the street must be.
-            var focus = station.DoorWorld
-                      + station.Facing * (ParkingLayout.StallDepth + BlockBuilder.LandmarkForecourtWalkway);
-
-            kerbPos = Vector3.zero;
-            kerbDir = Vector3.forward;
-            var best = float.MaxValue;
-
-            foreach (var tile in Tile.Tiles)
-            {
-                if (!tile || tile.paths == null)
-                    continue;
-                if ((tile.transform.position - focus).sqrMagnitude > CityGrid.CellSize * CityGrid.CellSize * 4f)
-                    continue;
-
-                foreach (var path in tile.paths)
-                {
-                    if (!path || path.pathType != PathType.Road || path.pathPositions == null)
-                        continue;
-
-                    for (var i = 1; i < path.pathPositions.Count; i++)
-                    {
-                        var node = path.pathPositions[i];
-                        var previous = path.pathPositions[i - 1];
-                        if (!node || !previous)
-                            continue;
-
-                        var distance = (node.position - focus).sqrMagnitude;
-                        if (distance >= best)
-                            continue;
-
-                        var segment = node.position - previous.position;
-                        if (segment.sqrMagnitude < 1e-4f)
-                            continue;
-
-                        best = distance;
-                        kerbPos = node.position;
-                        kerbDir = segment.normalized;
-                    }
-                }
-            }
-
-            return best < float.MaxValue;
-        }
+        bool FindKerb(out Vector3 kerbPos, out Vector3 kerbDir) =>
+            ForecourtKerb.TryFind(
+                ForecourtKerb.FocusFor(station, station.DoorWorld), out kerbPos, out kerbDir);
 
         void SpawnFleet(Vector3 kerbPos, Vector3 kerbDir)
         {
@@ -153,7 +111,7 @@ namespace LivingCity.Entities
                     // road, and traffic has nothing to brake for.
                     car.GetComponent<CarBehavior>().enabled = false;
                     car.AddComponent<PolicePatrolAgent>()
-                       .Bind(config, station, kerbPos, kerbDir, rng.Next(), stall);
+                       .Bind(config, station, kerbPos, kerbDir, rng.Next(), stall, i + 1);
                 }
                 else
                 {
@@ -166,7 +124,7 @@ namespace LivingCity.Entities
                         continue;
 
                     car.AddComponent<PolicePatrolAgent>()
-                       .Bind(config, station, kerbPos, kerbDir, rng.Next(), -1);
+                       .Bind(config, station, kerbPos, kerbDir, rng.Next(), -1, i + 1);
                 }
             }
         }
@@ -254,7 +212,7 @@ namespace LivingCity.Entities
                     animator.runtimeAnimatorController = prefabs.pedestrianController;
 
                 person.AddComponent<PoliceOfficerAgent>()
-                      .Configure(config, station, rng.Next(), startInside);
+                      .Configure(config, station, rng.Next(), startInside, i + 1);
             }
         }
 

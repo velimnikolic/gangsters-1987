@@ -37,7 +37,8 @@ namespace LivingCity.Generation
     public sealed class CityGrid
     {
         /// <summary>
-        /// Tile size in world units. Measured from the prefabs, not guessed:
+        /// The tile prefabs' own authored module - their size in their LOCAL space, before
+        /// TileScale. Measured from the prefabs, not guessed:
         ///
         /// - tile-road-straight's road paths run from z = -15 to z = +15, and its sidewalk
         ///   paths likewise. tile-road-curve runs z = +15 to x = -15. So a tile spans
@@ -50,13 +51,52 @@ namespace LivingCity.Generation
         ///   tile's path end (z=+15) and the neighbour's path start (30-15=15) coincide
         ///   exactly. At 18 spacing they would be 12m apart and nothing would ever connect.
         /// </summary>
-        public const float CellSize = 30f;
+        public const float AuthoredCellSize = 30f;
 
-        /// <summary>Lane centre offset from the tile's centre line (road paths sit at x = +/-1.5).</summary>
-        public const float LaneOffset = 1.5f;
+        /// <summary>
+        /// Uniform scale applied to EVERY tile the generator places - roads, traffic lights and
+        /// the park's per-cell ground. The streets are the pack's own two-lane pieces stretched,
+        /// not a wider family: at authored size the lane centres are 3m apart, which is 0.15m of
+        /// air between two buses, and two opposing left-turners at a crossroads pass at 2.41m
+        /// while the widest body in the fleet is 2.854m across. At 1.3 that becomes 3.13m.
+        ///
+        /// The whole lattice scales with it, and it has to: a tile stretched on one axis only
+        /// still works for a straight, but a junction must stretch on both, and then its path
+        /// ends sit at +/-19.5 while the neighbouring straight's start is at 15 - 3.5m adrift,
+        /// past any link tolerance, and the road network silently comes apart.
+        ///
+        /// The pack is built for this. Tile.GetNeighborTiles probes
+        /// 18 * |lossyScale.z| with a half-extent of lossyScale * 2, and Tile.GetNextPaths links
+        /// on 1.5f * |lossyScale.z| - so neighbours are found and lanes join at any scale, and
+        /// the path ends stay exactly on the cell boundary at CellSize/2.
+        ///
+        /// Both of those tests are ratios of the scale, so linking has no ceiling of its own -
+        /// what does have one is the pack's elevation kit, whose ramp and bridge offsets in that
+        /// same function are a fixed 6m and do NOT scale. The generator lays no ramps or bridges,
+        /// so nothing enforces a limit today; if that changes, this is where it breaks first.
+        ///
+        /// Nothing else scales. Cars, people, buildings and street furniture keep their authored
+        /// size, which is the entire point: the road gets wider around vehicles that do not.
+        /// </summary>
+        public const float TileScale = 1.3f;
 
-        /// <summary>Sidewalk centre offset from the tile's centre line (sidewalk paths sit at x = +/-4).</summary>
-        public const float SidewalkOffset = 4f;
+        /// <summary>
+        /// The tile module in WORLD units - what CellToWorld steps by and what every placer
+        /// measures against.
+        ///
+        /// Which frame a number lives in is the trap in this file. Everything declared here is
+        /// world-space, because that is what all but two of its readers want. The exceptions are
+        /// RoadSurface's pure core, which works in the frame InverseTransformPoint hands it (the
+        /// scale is divided out, so its constants are AUTHORED), and PedestrianSpawner's
+        /// SidewalkPoint, which builds a local offset and calls TransformPoint. Both say so.
+        /// </summary>
+        public const float CellSize = AuthoredCellSize * TileScale;
+
+        /// <summary>Lane centre offset from the tile's centre line (road paths sit at x = +/-1.5 authored).</summary>
+        public const float LaneOffset = 1.5f * TileScale;
+
+        /// <summary>Sidewalk centre offset from the tile's centre line (sidewalk paths sit at x = +/-4 authored).</summary>
+        public const float SidewalkOffset = 4f * TileScale;
 
         /// <summary>
         /// Outer edge of the road tile's OWN pavement, measured off the centre line. The tile's
@@ -64,7 +104,7 @@ namespace LivingCity.Generation
         /// way to the tile edge at 15 - one mesh with one material, so that grass cannot be hidden,
         /// only covered. This is where GroundPlacer's apron starts covering it.
         /// </summary>
-        public const float PavementEdge = 5f;
+        public const float PavementEdge = 5f * TileScale;
 
         /// <summary>
         /// The same three measurements for the dual carriageway (tile-mainroad-*), read out of
@@ -79,16 +119,18 @@ namespace LivingCity.Generation
         /// the boulevard needs its own set of clearances: a prop line sized for a street at 5.5
         /// stands in the boulevard's outer lane, and a building line at 7 stands on its pavement.
         ///
-        /// The tile module is unchanged at 30 - the mainroad tiles span [-15, +15] exactly like
-        /// the road tiles, which is what lets them drop into the same grid.
+        /// The tile module is the same for both - the mainroad tiles span [-15, +15] in their own
+        /// local space exactly like the road tiles, which is what lets them drop into the same grid.
+        ///
+        /// Every figure in this block is the AUTHORED measurement times TileScale, i.e. world.
         /// </summary>
-        public const float MainLaneOffset = 1.75f;
+        public const float MainLaneOffset = 1.75f * TileScale;
 
         /// <inheritdoc cref="MainLaneOffset"/>
-        public const float MainOuterLaneOffset = 4.75f;
+        public const float MainOuterLaneOffset = 4.75f * TileScale;
 
         /// <inheritdoc cref="MainLaneOffset"/>
-        public const float MainSidewalkOffset = 7.25f;
+        public const float MainSidewalkOffset = 7.25f * TileScale;
 
         /// <summary>
         /// PavementEdge's counterpart on the dual carriageway - where its own paving stops and
@@ -105,7 +147,7 @@ namespace LivingCity.Generation
         /// hand's width of grass the apron does not cover; too far in lays concrete over the
         /// pavement mesh, and two coplanar surfaces z-fight in every frame.
         /// </summary>
-        public const float MainPavementEdge = 8.5f;
+        public const float MainPavementEdge = 8.5f * TileScale;
 
         const int NoBlock = -1;
 

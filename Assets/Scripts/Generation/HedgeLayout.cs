@@ -13,9 +13,10 @@ namespace LivingCity.Generation
     /// The line it runs is the BLOCK LINE, not the cell boundary: BlockBuilder.BlockRect expands
     /// every ordinary block out of its cells and into the road tile as far as the sidewalk
     /// clearance, putting the city's street walls at 7 from a road centreline (10 on the dual
-    /// carriageway). The park cannot do that with its ground - tile-park carries a Tile whose
-    /// path nodes are authored to the 30m cell and scaling it severs the pedestrian links - so
-    /// its tiles stop at the cell boundary, 8m further back. With the hedge on that boundary the
+    /// carriageway) - authored figures, both carrying CityGrid.TileScale like everything else in
+    /// world space. The park cannot do that with its ground - tile-park carries a Tile whose path
+    /// nodes are authored to its own cell, so it is laid one per cell at the city's tile scale
+    /// and stops at the cell boundary, a clearance further back. With the hedge on that boundary the
     /// park's visible edge sat 8m behind every facade around it and read as set back from its own
     /// street. The hedge has no such constraint, so it takes the block line and the park lines up.
     ///

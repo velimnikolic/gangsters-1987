@@ -53,6 +53,57 @@ namespace PolyPerfect.City
         private int probeCountdown;
         private bool probeSeeded;
 
+        // PATCH (Living City): nobody comes to REST on the carriageway.
+        //
+        // Walking across a road is normal - crossings are ordinary sidewalk paths that run over
+        // the asphalt. Stopping on one is not, and this script had four ways to do it: a route
+        // that ends mid-crossing (destinations are road TILE CENTRES, so the last node often
+        // is), a re-path that finds nothing and leaves the walker standing for the rest of the
+        // session, a red light entered while already on the road, and the interaction layer
+        // handing control back. A person standing on a crossing holds the car that stopped for
+        // them, and TrafficRegistry then queues every car behind it - the jam.
+        //
+        // So every stand-down first walks to the nearest point clear of the asphalt
+        // (RoadSurface.TryNearestOffRoad) and only then does what it was going to do. The walk
+        // is an ordinary targetPoint move through the same avoidance loop; the intent says what
+        // to do on arrival, because MoveToNextPoint cannot be the arrival handler here - it
+        // dereferences a trajectory the failed-path case does not have.
+        enum RoadClearIntent { None, RouteEnd, Repath, Failed }
+
+        /// <summary>Attempts before a walker accepts where it is - the clear point can be blocked.</summary>
+        const int MaxClearAttempts = 3;
+
+        /// <summary>
+        /// Seconds a single kerb walk may take. The widest push on any cross-section is about 8m
+        /// at 2-3m/s, so this only ever binds when a crowd is in the way - and then aiming again
+        /// from where the walker actually stands beats pushing into the same knot forever.
+        /// </summary>
+        const float RoadClearTimeout = 8f;
+
+        /// <summary>Seconds before a walker with no route tries to find one again.</summary>
+        const float RepathRetrySeconds = 5f;
+
+        /// <summary>
+        /// Seconds between the "am I standing in the road?" looks a stopped walker takes. The
+        /// stand-down sites above all clear the road themselves; this is the net under them, and
+        /// the only reason it is affordable is that it runs solely while stopped, once a second,
+        /// staggered by the body's jitter so a crowd that stood down together does not check
+        /// together forever.
+        /// </summary>
+        const float StrandedInterval = 1f;
+
+        private bool clearingRoad;
+        private int clearAttempts;
+        private RoadClearIntent clearIntent;
+        private float clearUntil;
+        private float nextStrandedCheck;
+
+        /// <summary>Time.time of a failed re-path; 0 when there is nothing to retry.</summary>
+        private float pathFailedAt;
+
+        /// <summary>Retries are on a timer now, so the failure is reported once, not every 5s.</summary>
+        private bool loggedPathFailure;
+
         // PATCH (Living City): the animator's speed float was written with a string key,
         // unconditionally, every fixed step - half a million string hashes a second at 10k
         // walkers. Cached hash, written only when the value actually moves.
@@ -97,6 +148,11 @@ namespace PolyPerfect.City
             else
             {
                 Debug.Log(name + ": Path not found");
+
+                // PATCH (Living City): same as in Repath - a walker that cannot find a route on
+                // its first try is not a walker that never walks. Arm the retry.
+                loggedPathFailure = true;
+                pathFailedAt = Time.time;
             }
         }
         void FixedUpdate()
@@ -108,7 +164,17 @@ namespace PolyPerfect.City
                 // waypoint it is never allowed to touch.
                 if (Vector3.Distance(targetPoint , transform.position) < (body != null ? 0.75f : 0.1f))
                 {
-                    MoveToNextPoint();
+                    // PATCH (Living City): a walker clearing the carriageway is not following a
+                    // route - it may not even have one - so its arrival is its own handler.
+                    if (clearingRoad)
+                        FinishRoadClear();
+                    else
+                        MoveToNextPoint();
+                }
+                else if (clearingRoad && Time.time > clearUntil)
+                {
+                    // Never arrived: pushing into the same knot of people forever helps nobody.
+                    FinishRoadClear();
                 }
                 Vector3 direction = targetPoint - transform.position;
 
@@ -186,6 +252,18 @@ namespace PolyPerfect.City
                 // and one that must read as standing to everyone probing around it.
                 if (body != null)
                     body.SpeedMs = 0f;
+
+                // PATCH (Living City): a re-path that found nothing used to be terminal - the
+                // walker stood on that spot for the rest of the session, and nothing ever asked
+                // again. Ask again. One float compare per stopped walker per step; everyone
+                // else (waiting at a light, queued for a budget grant) has nothing armed.
+                if (pathFailedAt > 0f && Time.time - pathFailedAt > RepathRetrySeconds)
+                {
+                    pathFailedAt = 0f;
+                    QueueRepath();
+                }
+
+                TickStranded();
             }
             // PATCH (Living City): cached hash, and only written when the value moves - the
             // resting population (waiting at lights, standing in queue slots) costs nothing.
@@ -201,25 +279,13 @@ namespace PolyPerfect.City
             if (activePath == trajectory.Count - 1
                 && activepoint == trajectory[activePath].pathPositions.Count - 1)
             {
-                // PATCH (Living City): route complete. Re-pathing here is an A* search plus
-                // two Physics.OverlapBox calls, and with thousands of walkers arriving on
-                // their own clocks those bursts land dozens to a frame. When the spawner has
-                // armed the central queue, stand down and wait for a budget grant instead -
-                // a person pausing at the kerb; the pack's demo scenes re-path immediately
-                // as they always did.
-                isMoving = false;
-
-                // PATCH (Living City): completion fires before the re-path is queued, and a
-                // handler that disabled the component has taken the walker over - no re-path
-                // belongs to it any more.
-                routeCompleted?.Invoke();
-                if (!enabled)
+                // PATCH (Living City): "a person pausing at the kerb" is only true if it IS the
+                // kerb. Routes end on the last sidewalk node nearest a destination that is a
+                // road tile's CENTRE, which on a crossing tile is a node out on the asphalt.
+                if (BeginRoadClear(RoadClearIntent.RouteEnd))
                     return;
 
-                if (PedestrianRepathQueue.Active && body != null)
-                    PedestrianRepathQueue.Enqueue(this);
-                else
-                    Repath();
+                CompleteRoute();
                 return;
             }
 
@@ -266,11 +332,125 @@ namespace PolyPerfect.City
         /// </summary>
         public void ResetRoute()
         {
+            if (BeginRoadClear(RoadClearIntent.Repath))
+                return;
+
             isMoving = false;
+            QueueRepath();
+        }
+
+        /// <summary>
+        /// PATCH (Living City): route complete - stand down and ask for a new one. Re-pathing
+        /// is an A* search plus two Physics.OverlapBox calls, and with thousands of walkers
+        /// arriving on their own clocks those bursts land dozens to a frame, so when the spawner
+        /// has armed the central queue the walker waits for a budget grant instead; the pack's
+        /// demo scenes re-path immediately as they always did.
+        ///
+        /// Completion fires BEFORE the re-path is queued, and a handler that disabled the
+        /// component has taken the walker over - no re-path belongs to it any more.
+        /// </summary>
+        void CompleteRoute()
+        {
+            isMoving = false;
+
+            routeCompleted?.Invoke();
+            if (!enabled)
+                return;
+
+            QueueRepath();
+        }
+
+        void QueueRepath()
+        {
             if (PedestrianRepathQueue.Active && body != null)
                 PedestrianRepathQueue.Enqueue(this);
             else
                 Repath();
+        }
+
+        // ------------------------------------------------------------------ clearing the road
+
+        /// <summary>
+        /// PATCH (Living City): if this walker is standing on the asphalt, send it to the
+        /// nearest point that is not, and remember what it was about to do. True when the walk
+        /// was started and the caller should stand down; false when there is nothing to clear
+        /// (the common case) or nowhere to clear to.
+        /// </summary>
+        bool BeginRoadClear(RoadClearIntent intent)
+        {
+            // Already on the way off; whoever asked second owns what happens on arrival.
+            if (clearingRoad)
+            {
+                clearIntent = intent;
+                return true;
+            }
+
+            if (clearAttempts >= MaxClearAttempts)
+                return false;
+            if (!RoadSurface.TryNearestOffRoad(transform.position, out var clear))
+                return false;
+
+            clearAttempts++;
+            clearingRoad = true;
+            clearIntent = intent;
+            clearUntil = Time.time + RoadClearTimeout;
+            targetPoint = clear;
+            isMoving = true;
+            return true;
+        }
+
+        /// <summary>
+        /// Arrived at the clear point - or at least at the avoidance arrival radius of it, which
+        /// is why this re-tests rather than assuming. Then the deferred stand-down happens.
+        /// </summary>
+        void FinishRoadClear()
+        {
+            var intent = clearIntent;
+            clearingRoad = false;
+
+            // Still on it - blocked short of the kerb by a crowd, or the push landed somewhere
+            // that is road too. Aim again from where we actually stand, up to MaxClearAttempts.
+            if (BeginRoadClear(intent))
+                return;
+
+            clearAttempts = 0;
+            clearIntent = RoadClearIntent.None;
+
+            switch (intent)
+            {
+                case RoadClearIntent.RouteEnd:
+                    CompleteRoute();
+                    break;
+
+                case RoadClearIntent.Repath:
+                    isMoving = false;
+                    QueueRepath();
+                    break;
+
+                case RoadClearIntent.Failed:
+                    // The retry timer armed by Repath is still running; stand and wait for it.
+                    isMoving = false;
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// PATCH (Living City): the net under every stand-down. Whatever stopped this walker -
+        /// a light whose event never came, an idler that halted on a timer, an activity that
+        /// handed control back on the wrong ground - if it is standing on the carriageway, it
+        /// walks off. Runs only while stopped, once a second, staggered per body.
+        /// </summary>
+        void TickStranded()
+        {
+            if (Time.time < nextStrandedCheck)
+                return;
+
+            // The jitter term is not cosmetic: without it a crowd that stood down on the same
+            // frame would check on that same frame for the rest of the session.
+            nextStrandedCheck = Time.time + StrandedInterval
+                                * (1f + (body != null ? body.Jitter : 0f));
+
+            BeginRoadClear(RoadClearIntent.Repath);
         }
 
         /// <summary>
@@ -307,11 +487,31 @@ namespace PolyPerfect.City
                 GetClocestPoint();
                 speed = 0;
                 isMoving = true;
+                clearingRoad = false;
+                clearAttempts = 0;
+                clearIntent = RoadClearIntent.None;
+                pathFailedAt = 0f;
+                loggedPathFailure = false;
                 targetPoint = trajectory[activePath].pathPositions[activepoint].transform.position + (trajectory[activePath].pathPositions[activepoint].transform.right * Random.Range(-0.8f, 0.8f));
             }
             else
             {
-                Debug.Log(name + ": Path not found");
+                // PATCH (Living City): once per walker, not once per retry - the retry below
+                // runs every RepathRetrySeconds for as long as the graph stays severed, and at
+                // crowd scale that is a console flood.
+                if (!loggedPathFailure)
+                {
+                    loggedPathFailure = true;
+                    Debug.Log(name + ": Path not found");
+                }
+
+                // PATCH (Living City): this used to be the end of that pedestrian. isMoving
+                // stayed false, nothing ever asked for a path again, and the walker stood there
+                // for the rest of the session - which, standing on a crossing, is a car stopped
+                // for the rest of the session too, and a queue behind it. Get off the road, then
+                // try again on a timer.
+                pathFailedAt = Time.time;
+                BeginRoadClear(RoadClearIntent.Failed);
             }
         }
         private void SetRandomDestination()
@@ -365,7 +565,15 @@ namespace PolyPerfect.City
             if (other.CompareTag("TrafficLightCrosswalk"))
             {
                 TrafficLight trafic = LightFor(other);
-                if (trafic && trafic.isGreen)
+
+                // PATCH (Living City): wait at the kerb, never in the road. The trigger volume
+                // reaches from the road centre to about three metres past the kerb (measured off
+                // traffic-lights_AI: local x 3.2, span 6.65), so someone walking up the pavement
+                // still enters it off the asphalt and stops exactly as before. Someone already
+                // out on the carriageway when the light catches them finishes crossing instead of
+                // freezing in front of the traffic - which is what a person does, and what stops
+                // them from holding a car for a whole light phase.
+                if (trafic && trafic.isGreen && !RoadSurface.IsOnRoad(transform.position))
                 {
                     isMoving = false;
                     trafic.lightChange += StartMoving;

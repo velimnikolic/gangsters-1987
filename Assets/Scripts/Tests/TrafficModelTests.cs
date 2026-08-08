@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using LivingCity.Generation;
 
 namespace LivingCity.Tests
 {
@@ -45,8 +46,394 @@ namespace LivingCity.Tests
             DockingCurveTerminatesAtTheStall(failures);
             DockingStepNeverBeatsTheCap(failures);
             DockingFinalApproachIsMonotone(failures);
+            PoliceIntentionCoversEveryState(failures);
+            StallClaimsAreExclusiveAndReleasable(failures);
+            NoCrosswalkHoldIsPermanent(failures);
+            CrossingOccupancyGoesStale(failures);
+            SchoolRunWindowWrapsMidnight(failures);
+            SchoolRunWindowDegeneratesCleanly(failures);
+            SchoolStopRejectsInnerLanes(failures);
+            SchoolQueueSlotsNeverOverlap(failures);
+            SchoolAfternoonOrderIsTheMorningReversed(failures);
+            OpposingLeftTurnsClearTheWidestVehicle(failures);
+            TurnExitsLineUpWithTheLaneTheyJoin(failures);
 
             return failures;
+        }
+
+        // ------------------------------------------------ junction turn geometry
+        //
+        // The gap in this file that let "na svako skretanje se zamalo udare kola" ship: 25 checks
+        // on following, yielding and crossing, and not one on the SHAPE of a turn. The polylines
+        // below are transcribed from the tile prefabs' Path components in the tile's own LOCAL
+        // frame (authored metres, +z north, the tile spanning -15..+15), so this is a table
+        // checked against a measurement rather than against itself. Anything compared with a
+        // vehicle has to be multiplied by CityGrid.TileScale first - the tiles are placed
+        // stretched and the cars are not, which is the entire point of the stretch.
+
+        /// <summary>tile-road-intersection, Line Turn Left 1: southbound arm turning west.</summary>
+        static readonly Vector2[] MinorLeftA =
+        {
+            new(1.5f, -15f), new(1.5f, -1.5f), new(-15f, 1.5f),
+        };
+
+        /// <summary>tile-road-intersection, Line Turn Left 2: northbound arm turning east.</summary>
+        static readonly Vector2[] MinorLeftB =
+        {
+            new(-1.5f, 15f), new(-1.5f, 1.5f), new(15f, -1.5f),
+        };
+
+        /// <summary>
+        /// tile-road-mainroad-intersection, Line Turn Left 1 - the avenue's southbound inner lane
+        /// turning west. This is the tile the generator actually places at the boulevard's
+        /// crossings, not the all-mainroad piece: only the depth-0 cut is a dual carriageway, so
+        /// every one of its junctions is the MIXED shape.
+        /// </summary>
+        static readonly Vector2[] AvenueLeftA =
+        {
+            new(1.75f, -15f), new(1.2f, -2.0f), new(-6.0f, 1.5f), new(-15f, 1.5f),
+        };
+
+        /// <summary>tile-road-mainroad-intersection, Line Turn Left 2.</summary>
+        static readonly Vector2[] AvenueLeftB =
+        {
+            new(-1.75f, 15f), new(-1.2f, 2.0f), new(7.0f, -1.5f), new(15f, -1.5f),
+        };
+
+        /// <summary>
+        /// The widest body in the AI fleet, off bus-passenger_AI's solid BoxCollider (2.854 on
+        /// local x). car-truck-tanker_AI is 2.565 and car-passenger_AI 2.097. Restated here rather
+        /// than read from a prefab so this stays runnable in a bare .NET host.
+        /// </summary>
+        const float WidestVehicle = 2.854f;
+
+        /// <summary>
+        /// Two cars turning left from opposite arms at the same time must not occupy the same
+        /// ground. Nothing else in the system stops them: their heading dot is about -1 both
+        /// before and after the corner, and TrafficRegistry.Probe skips anything below OncomingDot
+        /// unless the bodies ALREADY intersect - so the first time it notices is once they are
+        /// inside each other, at which point Overlapping fires and the pair is allowed to drive
+        /// through and untangle. The separation has to come from the geometry or from nowhere.
+        ///
+        /// At authored size it came from nowhere. The two exit legs are antiparallel 2.41m apart
+        /// on a crossroads and 2.55m on the avenue's, while two cars need 2.10m and a bus and a
+        /// car 2.48m - and at closest approach they are not even parallel, so the real footprint
+        /// is a half-LENGTH. CityGrid.TileScale is what buys the clearance, which is why the
+        /// premise below asserts that BOTH families fail without it: drop the scale back to 1 and
+        /// this test goes red rather than quietly passing on a city that has the bug again.
+        /// </summary>
+        static void OpposingLeftTurnsClearTheWidestVehicle(List<string> failures)
+        {
+            foreach (var (name, a, b) in new (string, Vector2[], Vector2[])[]
+                     {
+                         ("crossroads", MinorLeftA, MinorLeftB),
+                         ("avenue crossing", AvenueLeftA, AvenueLeftB),
+                     })
+            {
+                var authored = PolylineDistance(a, b);
+                var placed = authored * CityGrid.TileScale;
+
+                if (placed < WidestVehicle)
+                    failures.Add($"Junction turns: opposing left turns on the {name} pass " +
+                                 $"{placed:0.###}m apart as placed ({authored:0.###} authored x " +
+                                 $"{CityGrid.TileScale}), inside the widest vehicle's " +
+                                 $"{WidestVehicle}m. Two of them turning at once share the " +
+                                 "same ground.");
+
+                if (authored >= WidestVehicle)
+                    failures.Add($"Junction turns: the {name} already clears {authored:0.###}m " +
+                                 "unstretched, so this check no longer shows that " +
+                                 "CityGrid.TileScale is what makes the turn safe.");
+            }
+        }
+
+        /// <summary>
+        /// A turn should hand the car to its destination lane pointing DOWN it, and the avenue's
+        /// turns do: their last segment runs straight along the lane they join. The crossroads'
+        /// is a chord that reaches the tile edge 10.3 degrees off axis, so the car makes a second
+        /// correction the instant it crosses into the next tile.
+        ///
+        /// Angles, unlike distances, are scale-invariant - stretching the city cannot fix this
+        /// one, which is exactly why it is worth stating. Asserted on the avenue and MEASURED on
+        /// the crossroads: the minor tile is the pack's and we are not going to reshape it, so
+        /// the check records what it costs rather than pretending it does not.
+        ///
+        /// The vertex cap is relative for the same reason. A junction turn is a polyline, not an
+        /// arc, and CarBehavior.UpdateCheckpoint does not retarget until the front axle is abeam
+        /// the node - so whatever a vertex asks for is spent AFTER it, at approach speed. The
+        /// crossroads asks for 79.7 degrees in one go; the avenue splits it.
+        /// </summary>
+        static void TurnExitsLineUpWithTheLaneTheyJoin(List<string> failures)
+        {
+            const float exitTolerance = 1f;
+
+            foreach (var (name, turn, laneAxis) in new (string, Vector2[], Vector2)[]
+                     {
+                         ("avenue S->W", AvenueLeftA, new Vector2(-1f, 0f)),
+                         ("avenue N->E", AvenueLeftB, new Vector2(1f, 0f)),
+                     })
+            {
+                var last = turn[turn.Length - 1] - turn[turn.Length - 2];
+                var off = Vector2.Angle(last, laneAxis);
+                if (off > exitTolerance)
+                    failures.Add($"Junction turns: the {name} exit leg leaves {off:0.##} degrees " +
+                                 $"off its lane axis, so the car corrects again on the tile " +
+                                 "boundary beside oncoming traffic.");
+            }
+
+            var minorExit = MinorLeftA[MinorLeftA.Length - 1] - MinorLeftA[MinorLeftA.Length - 2];
+            var minorOff = Vector2.Angle(minorExit, new Vector2(-1f, 0f));
+            if (minorOff <= exitTolerance)
+                failures.Add($"Junction turns: the crossroads exit leg is now only {minorOff:0.##} " +
+                             "degrees off axis, so this check no longer discriminates.");
+
+            var minorVertex = SharpestVertex(MinorLeftA);
+            var avenueVertex = SharpestVertex(AvenueLeftA);
+            if (avenueVertex >= minorVertex)
+                failures.Add($"Junction turns: the avenue's sharpest vertex is {avenueVertex:0.##} " +
+                             $"degrees against the crossroads' {minorVertex:0.##} - its extra " +
+                             "shaping node has stopped splitting the corner.");
+        }
+
+        /// <summary>Largest heading change at any interior vertex of a polyline, in degrees.</summary>
+        static float SharpestVertex(Vector2[] line)
+        {
+            var worst = 0f;
+            for (var i = 1; i < line.Length - 1; i++)
+                worst = Mathf.Max(worst, Vector2.Angle(line[i] - line[i - 1], line[i + 1] - line[i]));
+            return worst;
+        }
+
+        /// <summary>Closest approach between two polylines.</summary>
+        static float PolylineDistance(Vector2[] a, Vector2[] b)
+        {
+            var best = float.MaxValue;
+            for (var i = 0; i < a.Length - 1; i++)
+            for (var j = 0; j < b.Length - 1; j++)
+                best = Mathf.Min(best, SegmentDistance(a[i], a[i + 1], b[j], b[j + 1]));
+            return best;
+        }
+
+        /// <summary>
+        /// Closest approach between two segments. In the plane, two segments that do not cross
+        /// attain their minimum at an endpoint of one of them, so four point-to-segment distances
+        /// settle it - no parametric solve, and no degenerate case when they are parallel, which
+        /// the two exit legs here are.
+        /// </summary>
+        static float SegmentDistance(Vector2 a, Vector2 b, Vector2 c, Vector2 d)
+        {
+            if (SegmentsCross(a, b, c, d))
+                return 0f;
+
+            return Mathf.Min(
+                Mathf.Min(PointToSegment(a, c, d), PointToSegment(b, c, d)),
+                Mathf.Min(PointToSegment(c, a, b), PointToSegment(d, a, b)));
+        }
+
+        static float PointToSegment(Vector2 p, Vector2 a, Vector2 b)
+        {
+            var ab = b - a;
+            var lengthSqr = ab.sqrMagnitude;
+            if (lengthSqr < 1e-9f)
+                return (p - a).magnitude;
+
+            var t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / lengthSqr);
+            return (p - (a + ab * t)).magnitude;
+        }
+
+        static float Cross(Vector2 o, Vector2 p, Vector2 q) =>
+            (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
+
+        /// <summary>
+        /// Strict crossing only. Touching and collinear cases fall through to the endpoint
+        /// distances above, which answer 0 for them anyway.
+        /// </summary>
+        static bool SegmentsCross(Vector2 a, Vector2 b, Vector2 c, Vector2 d)
+        {
+            var d1 = Cross(a, b, c);
+            var d2 = Cross(a, b, d);
+            var d3 = Cross(c, d, a);
+            var d4 = Cross(c, d, b);
+
+            return ((d1 > 0f && d2 < 0f) || (d1 < 0f && d2 > 0f))
+                && ((d3 > 0f && d4 < 0f) || (d3 < 0f && d4 > 0f));
+        }
+
+        /// <summary>
+        /// The jam this file exists to make impossible: one pedestrian standing on a crossing
+        /// used to stop a car for the rest of the session, and TrafficRegistry queued everybody
+        /// behind it. Two independent bounds now, and the properties are what matter - a crossing
+        /// that reports nothing must release at the watchdog, and a crossing that reports people
+        /// for ever must still release.
+        /// </summary>
+        static void NoCrosswalkHoldIsPermanent(List<string> failures)
+        {
+            var wasHeld = true;
+
+            for (var held = 0f; held <= 60f; held += 0.1f)
+            {
+                var stillHeld = !PolyPerfect.City.CarBehavior.CrosswalkHoldExpired(true, held);
+
+                if (held > PolyPerfect.City.CarBehavior.CrosswalkPatience && stillHeld)
+                {
+                    failures.Add($"Crosswalk hold: still holding after {held}s of a crossing " +
+                                 "that never clears.");
+                    return;
+                }
+
+                // Monotone: once a car may go, it may not be told to wait again.
+                if (stillHeld && !wasHeld)
+                {
+                    failures.Add($"Crosswalk hold: released and then re-held at {held}s.");
+                    return;
+                }
+                wasHeld = stillHeld;
+
+                var clearedHold = !PolyPerfect.City.CarBehavior.CrosswalkHoldExpired(false, held);
+                if (held > PolyPerfect.City.CarBehavior.HoldWatchdog && clearedHold)
+                {
+                    failures.Add($"Crosswalk hold: a crossing reporting nobody still held a " +
+                                 $"car at {held}s.");
+                    return;
+                }
+            }
+
+            // And the yield is real: a car must not drive off the instant it arrives.
+            if (PolyPerfect.City.CarBehavior.CrosswalkHoldExpired(true, 0f))
+                failures.Add("Crosswalk hold: a car released immediately, so nobody is yielded to.");
+        }
+
+        /// <summary>
+        /// The other half of the same bound, on the crossing's side: somebody who is walking
+        /// holds the traffic for as long as they keep walking, and somebody who has stopped
+        /// stops counting. The occupancy rule is the mechanism and the car's cap is the backstop,
+        /// so the rule has to fire first or the cap becomes the mechanism.
+        /// </summary>
+        static void CrossingOccupancyGoesStale(List<string> failures)
+        {
+            const float now = 100f;
+
+            if (!Crosswalk.CountsAsCrossing(now, now))
+                failures.Add("Crossing: somebody who just moved is not crossing.");
+
+            if (!Crosswalk.CountsAsCrossing(now, now - Crosswalk.StaleAfter * 0.5f))
+                failures.Add("Crossing: a walker between paces stopped counting as crossing.");
+
+            if (Crosswalk.CountsAsCrossing(now, now - Crosswalk.StaleAfter - 0.01f))
+                failures.Add("Crossing: somebody motionless past StaleAfter still holds the traffic.");
+
+            // Monotone in time: a stationary occupant cannot come back.
+            var wasCrossing = true;
+            for (var since = 0f; since <= 30f; since += 0.05f)
+            {
+                var crossing = Crosswalk.CountsAsCrossing(now, now - since);
+                if (crossing && !wasCrossing)
+                {
+                    failures.Add($"Crossing: stopped counting and then started again at {since}s.");
+                    return;
+                }
+                wasCrossing = crossing;
+            }
+
+            if (Crosswalk.StaleAfter >= PolyPerfect.City.CarBehavior.CrosswalkPatience)
+                failures.Add("Crossing: StaleAfter does not beat the car's patience, so the cap " +
+                             "is doing the work the occupancy rule is supposed to do.");
+        }
+
+        /// <summary>
+        /// Two cars must never be sent to the same bay. StallHost is the one piece of state the
+        /// patrol fleet and the bank's customers now share, and it hands out bays from separate
+        /// coroutines - a claim that is not exclusive, or a release that does not put the bay
+        /// back, shows up as two cars interpenetrating in a forecourt and nowhere earlier.
+        ///
+        /// This is the one assertion in the file that touches a UnityEngine.Object. It gets
+        /// away with it because the claim path reads nothing but its own managed fields: the
+        /// instance is allocated without a constructor and never has a Unity API called on it,
+        /// so no native peer is needed. Anything here that started touching transform would
+        /// have to move to a Play-mode test instead.
+        /// </summary>
+        static void StallClaimsAreExclusiveAndReleasable(List<string> failures)
+        {
+            const int Bays = 4;
+
+            var host = (Entities.StallHost)System.Runtime.Serialization.FormatterServices
+                .GetUninitializedObject(typeof(Entities.PoliceStation));
+
+            var field = typeof(Entities.StallHost).GetField(
+                "stallLocalPositions",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+            if (field == null)
+            {
+                failures.Add("StallHost: stallLocalPositions is gone - the marker's serialized " +
+                             "field was renamed, which silently empties every baked forecourt.");
+                return;
+            }
+
+            field.SetValue(host, new Vector3[Bays]);
+
+            if (host.StallCount != Bays)
+                failures.Add($"StallHost: {Bays} bays in, StallCount says {host.StallCount}.");
+
+            var claimed = new HashSet<int>();
+            for (var i = 0; i < Bays; i++)
+            {
+                if (!host.TryClaimStall(out var stall))
+                {
+                    failures.Add($"StallHost: bay {i} of {Bays} refused a claim while free.");
+                    return;
+                }
+
+                if (!claimed.Add(stall))
+                    failures.Add($"StallHost: bay {stall} was handed out twice.");
+            }
+
+            if (host.TryClaimStall(out var overflow))
+                failures.Add($"StallHost: a full forecourt still handed out bay {overflow}.");
+            else if (overflow != -1)
+                failures.Add($"StallHost: a refused claim must report -1, reported {overflow}.");
+
+            // A car leaving has to give its bay back, and only its own - the release that put
+            // every bay back would let the next claimant into an occupied one.
+            host.ReleaseStall(2);
+            if (!host.TryClaimStall(out var reused) || reused != 2)
+                failures.Add($"StallHost: released bay 2, next claim got {reused}.");
+            if (host.TryClaimStall(out _))
+                failures.Add("StallHost: releasing one bay freed more than one.");
+
+            // Out-of-range releases arrive from real code paths - an agent destroyed before it
+            // ever claimed carries stall -1 - and must not throw.
+            host.ReleaseStall(-1);
+            host.ReleaseStall(Bays + 5);
+        }
+
+        /// <summary>
+        /// Every state a police unit can be in has a sentence and a colour. Nothing at
+        /// runtime would complain about a gap - a state missing from PoliceIntention ships
+        /// as a white diamond over an empty popup - so exhaustiveness is asserted here,
+        /// where adding a state to either enum fails the build's tests instead of the
+        /// player's eye. White is the map's own "unmapped" fallback, which is what makes it
+        /// assertable.
+        /// </summary>
+        static void PoliceIntentionCoversEveryState(List<string> failures)
+        {
+            foreach (Entities.PolicePatrolAgent.State state in
+                     System.Enum.GetValues(typeof(Entities.PolicePatrolAgent.State)))
+            {
+                if (string.IsNullOrEmpty(UI.PoliceIntention.CarIntention(state, 2)))
+                    failures.Add($"PoliceIntention: car state {state} has no sentence.");
+                if (UI.PoliceIntention.CarColor(state) == Color.white)
+                    failures.Add($"PoliceIntention: car state {state} has no colour.");
+            }
+
+            foreach (Entities.PoliceOfficerAgent.State state in
+                     System.Enum.GetValues(typeof(Entities.PoliceOfficerAgent.State)))
+            {
+                if (string.IsNullOrEmpty(UI.PoliceIntention.OfficerIntention(state, 2)))
+                    failures.Add($"PoliceIntention: officer state {state} has no sentence.");
+                if (UI.PoliceIntention.OfficerColor(state) == Color.white)
+                    failures.Add($"PoliceIntention: officer state {state} has no colour.");
+            }
         }
 
         /// <summary>
@@ -615,6 +1002,154 @@ namespace LivingCity.Tests
 
             if (Entities.TrafficGeometry.Overlaps(self, oncoming))
                 failures.Add("cars 3m apart in opposite carriageways report as overlapping");
+        }
+
+        /// <summary>
+        /// The school run's window has to survive midnight. It is written as start + LENGTH for
+        /// exactly this reason - with an end hour, a window from 23:30 to 01:30 is the one case
+        /// every hand-rolled comparison gets wrong, and it gets it wrong silently: the bus
+        /// simply never leaves.
+        /// </summary>
+        static void SchoolRunWindowWrapsMidnight(List<string> failures)
+        {
+            if (!Entities.SchoolRun.InWindow(7.5f, 7.5f, 1.5f))
+                failures.Add("SchoolRun: the window's own start hour reads as outside it");
+
+            if (Entities.SchoolRun.InWindow(9f, 7.5f, 1.5f))
+                failures.Add("SchoolRun: the hour the window closes at reads as inside it");
+
+            if (!Entities.SchoolRun.InWindow(8.9f, 7.5f, 1.5f))
+                failures.Add("SchoolRun: an hour inside the window reads as outside it");
+
+            // 23:30 for two hours: 00:30 is in, 01:30 is the close, 12:00 is nowhere near.
+            if (!Entities.SchoolRun.InWindow(0.5f, 23.5f, 2f))
+                failures.Add("SchoolRun: a window crossing midnight excludes 00:30");
+
+            if (Entities.SchoolRun.InWindow(1.5f, 23.5f, 2f))
+                failures.Add("SchoolRun: a window crossing midnight includes its own close");
+
+            if (Entities.SchoolRun.InWindow(12f, 23.5f, 2f))
+                failures.Add("SchoolRun: a window crossing midnight includes midday");
+        }
+
+        /// <summary>
+        /// The two ends of the dial. A zero-length window must be empty rather than ambiguous,
+        /// and a full-day one must be always-open rather than a floating-point coin toss at the
+        /// wrap - both are reachable from the inspector, where the field is a plain float.
+        /// </summary>
+        static void SchoolRunWindowDegeneratesCleanly(List<string> failures)
+        {
+            for (var hour = 0f; hour < 24f; hour += 0.37f)
+            {
+                if (Entities.SchoolRun.InWindow(hour, 7.5f, 0f))
+                    failures.Add($"SchoolRun: a zero-length window is open at {hour:0.##}");
+
+                if (!Entities.SchoolRun.InWindow(hour, 7.5f, 24f))
+                    failures.Add($"SchoolRun: a full-day window is shut at {hour:0.##}");
+            }
+        }
+
+        /// <summary>
+        /// A bus halted in a boulevard's INNER lane puts its door on the far side of a live
+        /// outer lane, and every child walks across it. Nothing at runtime would complain -
+        /// the children would simply be run over off camera - so the rule is asserted here.
+        /// The numbers are CityGrid's own: a minor street carries lanes at +/-1.5, a boulevard
+        /// at +/-1.75 and +/-4.75.
+        /// </summary>
+        static void SchoolStopRejectsInnerLanes(List<string> failures)
+        {
+            if (!Entities.SchoolRun.IsBoardableLane(1.5f, 1.5f))
+                failures.Add("SchoolRun: a minor street's only lane is rejected as unboardable");
+
+            if (!Entities.SchoolRun.IsBoardableLane(-1.5f, -1.5f))
+                failures.Add("SchoolRun: a minor street's other side is rejected as unboardable");
+
+            if (!Entities.SchoolRun.IsBoardableLane(4.75f, 4.75f))
+                failures.Add("SchoolRun: a boulevard's outer lane is rejected as unboardable");
+
+            if (Entities.SchoolRun.IsBoardableLane(1.75f, 4.75f))
+                failures.Add("SchoolRun: a boulevard's INNER lane is accepted - children would "
+                           + "cross a live outer lane to board");
+
+            if (Entities.SchoolRun.IsBoardableLane(-1.75f, 4.75f))
+                failures.Add("SchoolRun: a lane on the far side of the road is accepted");
+
+            if (Entities.SchoolRun.IsBoardableLane(1.5f, 0f))
+                failures.Add("SchoolRun: a tile with no road lanes accepts a stop");
+        }
+
+        /// <summary>
+        /// Two children may not be given the same square metre to stand in. PedestrianRegistry
+        /// would push them apart, but the queue would then dissolve into the scrum the fan-out
+        /// exists to prevent - and at the kerb, dissolving means stepping into the road.
+        /// </summary>
+        static void SchoolQueueSlotsNeverOverlap(List<string> failures)
+        {
+            var clearance = 2f * Entities.PedestrianSteering.DefaultRadius;
+
+            const int count = 8;
+            var line = new Vector3[count];
+            var fan = new Vector3[count];
+            for (var i = 0; i < count; i++)
+            {
+                line[i] = Entities.SchoolRun.QueueSlot(i, Vector3.zero, Vector3.back);
+                fan[i] = Entities.SchoolRun.FanSlot(i, count, Vector3.zero, Vector3.right);
+            }
+
+            for (var a = 0; a < count; a++)
+            for (var b = a + 1; b < count; b++)
+            {
+                if ((line[a] - line[b]).magnitude < clearance)
+                    failures.Add($"SchoolRun: queue slots {a} and {b} are closer than two bodies");
+
+                if ((fan[a] - fan[b]).magnitude < clearance)
+                    failures.Add($"SchoolRun: fan slots {a} and {b} are closer than two bodies");
+            }
+
+            // The fan is about the door, not off to one side of it, or half the class queues
+            // through a wall.
+            var centre = Vector3.zero;
+            foreach (var slot in fan)
+                centre += slot;
+
+            if (centre.magnitude / count > 1e-3f)
+                failures.Add("SchoolRun: the door fan is not centred on the door");
+        }
+
+        /// <summary>
+        /// The afternoon serves the stops in the exact reverse of the morning, so the child
+        /// picked up first is put down last and the day reads as one round trip. Asserted as an
+        /// involution because that is the property, and it is the one an off-by-one in either
+        /// direction breaks.
+        /// </summary>
+        static void SchoolAfternoonOrderIsTheMorningReversed(List<string> failures)
+        {
+            for (var count = 0; count <= 5; count++)
+            {
+                var morning = Entities.SchoolRun.StopOrder(count, outbound: true);
+                var afternoon = Entities.SchoolRun.StopOrder(count, outbound: false);
+
+                if (morning.Length != count || afternoon.Length != count)
+                {
+                    failures.Add($"SchoolRun: {count} stops produced orders of "
+                               + $"{morning.Length} and {afternoon.Length}");
+                    continue;
+                }
+
+                var seen = new HashSet<int>();
+                for (var i = 0; i < count; i++)
+                {
+                    if (morning[i] != i)
+                        failures.Add($"SchoolRun: the morning order is not outward at {i}");
+
+                    if (afternoon[i] != morning[count - 1 - i])
+                        failures.Add($"SchoolRun: the afternoon order is not the morning "
+                                   + $"reversed at {i}");
+
+                    if (!seen.Add(afternoon[i]))
+                        failures.Add($"SchoolRun: stop {afternoon[i]} is served twice");
+                }
+            }
         }
     }
 }

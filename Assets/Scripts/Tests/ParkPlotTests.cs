@@ -14,9 +14,11 @@ namespace LivingCity.Tests
     /// </summary>
     public static class ParkPlotTests
     {
-        const float Clearance = 7f;
-        const float MainClearance = 10f;
-        const float MapEdge = 14.2f;
+        // World distances - see HedgeLayoutTests. Inset is NOT one of them: it is half a lime's
+        // 7m crown, and trees keep their authored size while the streets stretch around them.
+        const float Clearance = 7f * CityGrid.TileScale;
+        const float MainClearance = 10f * CityGrid.TileScale;
+        const float MapEdge = CityGrid.CellSize * 0.5f - 0.8f;
         const float Inset = 1.5f;
         const float Eps = 1e-3f;
 
@@ -55,8 +57,8 @@ namespace LivingCity.Tests
                          Clearance, MainClearance, MapEdge, Inset);
 
         /// <summary>
-        /// The whole point: a street-facing side plants out to the hedge, which stands 8m PAST
-        /// the cell boundary. Anything at or under the old 13.5 means the ring is still bare.
+        /// The whole point: a street-facing side plants out to the hedge, which stands PAST the
+        /// cell boundary. Anything at or under the old 13.5 means the ring is still bare.
         /// </summary>
         static void StreetSideReachesTheHedge(List<string> failures)
         {
@@ -205,6 +207,12 @@ namespace LivingCity.Tests
             if (Mathf.Abs(plot.North - (MapEdge - Inset)) > Eps)
                 failures.Add($"The side facing a non-road cell is {plot.North}, expected the " +
                              $"map-edge rule {MapEdge - Inset}.");
+
+            // The premise the four checks above rest on: both axes carry two different limits.
+            if (Mathf.Abs(plot.East - plot.West) <= Eps || Mathf.Abs(plot.North - plot.South) <= Eps)
+                failures.Add($"The fixture no longer distinguishes its axes (E {plot.East} / " +
+                             $"W {plot.West}, N {plot.North} / S {plot.South}), so a swapped " +
+                             "field would pass by coincidence.");
         }
     }
 }

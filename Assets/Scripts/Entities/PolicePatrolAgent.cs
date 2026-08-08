@@ -29,7 +29,14 @@ namespace LivingCity.Entities
     /// </summary>
     public sealed class PolicePatrolAgent : MonoBehaviour
     {
-        enum State { Resting, Undocking, Patrolling, Returning, Docking }
+        /// <summary>Public because the overlay HUD colours its indicator and words its popup
+        /// off it. The transitions stay this component's alone.</summary>
+        public enum State { Resting, Undocking, Patrolling, Returning, Docking }
+
+        /// <summary>Every live patrol car, in Bind order - the overlay HUD's registry, the
+        /// same shape as PedestrianAgent.Agents.</summary>
+        public static readonly System.Collections.Generic.List<PolicePatrolAgent> Fleet =
+            new System.Collections.Generic.List<PolicePatrolAgent>();
 
         /// <summary>
         /// How near the kerb point a completed route must end before the car docks. A route's
@@ -59,19 +66,28 @@ namespace LivingCity.Entities
         /// <summary>True for a car that began the session parked - see the class comment.</summary>
         bool carNeverEnabled;
 
+        public State CurrentState => state;
+        public int RoutesRemaining => routesRemaining;
+
+        /// <summary>1-based, set by the director - "Patrol Car 2" on the popup.</summary>
+        public int UnitNumber { get; private set; }
+
         public void Bind(
             CityConfig cityConfig,
             PoliceStation home,
             Vector3 kerbPoint,
             Vector3 kerbDirection,
             int seed,
-            int startStall)
+            int startStall,
+            int unitNumber)
         {
             config = cityConfig;
             station = home;
             kerbPos = kerbPoint;
             kerbDir = kerbDirection;
             rng = new System.Random(seed);
+            UnitNumber = unitNumber;
+            Fleet.Add(this);
 
             car = GetComponent<CarBehavior>();
             car.routeCompleted += OnRouteCompleted;
@@ -93,6 +109,7 @@ namespace LivingCity.Entities
 
         void OnDestroy()
         {
+            Fleet.Remove(this);
             if (car != null)
                 car.routeCompleted -= OnRouteCompleted;
             if (station && stall >= 0)

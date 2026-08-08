@@ -199,9 +199,17 @@ namespace LivingCity.Generation
         /// <paramref name="origin"/> is the lot corner and <paramref name="outward"/> points at
         /// the street, which is the frame BuildLot already walks its four sides in. Bays run from
         /// the lot edge inward; the cars keep the existing facing, nose to the kerb.
+        ///
+        /// <paramref name="paint"/> false lays the bays out and leaves Markings empty, for a
+        /// caller that has to survey them against what is already standing before it knows which
+        /// ones it keeps - see PaintStreetBay. The bays a survey rejects used to be painted
+        /// anyway: FillStalls tests each one and skips it, but the lines had already gone into
+        /// the mesh, so an obstacle overlapping a bay left stripes under itself with no car in
+        /// them and no warning anywhere.
         /// </summary>
         public static Layout ForStreetBay(
-            Vector3 origin, Vector3 along, Vector3 outward, float cursor, float width)
+            Vector3 origin, Vector3 along, Vector3 outward, float cursor, float width,
+            bool paint = true)
         {
             var layout = new Layout();
 
@@ -221,26 +229,83 @@ namespace LivingCity.Generation
                     Yaw = yaw,
                 });
 
-            // One divider per bay edge, running from the lot line inward, plus the head line
-            // across the closed end.
-            for (var i = 0; i <= stalls; i++)
+            if (!paint)
+                return layout;
+
+            var all = new int[stalls];
+            for (var i = 0; i < stalls; i++)
+                all[i] = i;
+
+            PaintStreetBay(layout, along, outward, all);
+            return layout;
+        }
+
+        /// <summary>
+        /// The paint for a street bay, restricted to the stalls the caller actually keeps: one
+        /// divider per bay edge running from the lot line inward, plus a head line across the
+        /// closed end of each unbroken run.
+        ///
+        /// Derived from the stall CENTRES rather than from the run arithmetic that produced
+        /// them, which is the same discipline the class note asks for one level up - a bay and
+        /// its lines cannot drift apart if only one of them is ever computed. Passing every
+        /// index reproduces exactly what ForStreetBay used to emit inline, in the same order.
+        ///
+        /// Appends; it does not clear Markings first, so it composes with a layout that already
+        /// carries some.
+        /// </summary>
+        public static void PaintStreetBay(
+            Layout layout, Vector3 along, Vector3 outward, IReadOnlyList<int> stalls)
+        {
+            if (layout == null || layout.Stalls.Count == 0 || stalls == null)
+                return;
+
+            var kept = new bool[layout.Stalls.Count];
+            foreach (var index in stalls)
+                if (index >= 0 && index < kept.Length)
+                    kept[index] = true;
+
+            var half = along * (StallWidth * 0.5f);
+            var depth = outward * StallDepth;
+
+            // A divider shared by two kept bays is drawn ONCE - two co-linear quads laid end to
+            // end show a seam down the middle, which is why EmitDividers exists for the
+            // whole-block layout. So each kept bay emits its low edge, and its high edge only
+            // when the bay above it is not kept and will therefore never emit that edge itself.
+            for (var i = 0; i < kept.Length; i++)
             {
-                var head = origin + along * (start + StallWidth * i);
-                layout.Markings.Add(new Line
-                {
-                    A = Flat(head),
-                    B = Flat(head - outward * StallDepth),
-                });
+                if (!kept[i])
+                    continue;
+
+                var front = layout.Stalls[i].Centre + outward * (StallDepth * 0.5f);
+
+                var low = front - half;
+                layout.Markings.Add(new Line { A = Flat(low), B = Flat(low - depth) });
+
+                if (i + 1 < kept.Length && kept[i + 1])
+                    continue;
+
+                var high = front + half;
+                layout.Markings.Add(new Line { A = Flat(high), B = Flat(high - depth) });
             }
 
-            var back = origin - outward * StallDepth;
-            layout.Markings.Add(new Line
+            // One head line per unbroken run rather than one for the whole bay: a gap in the
+            // middle is a bay somebody else is standing in, and a line drawn straight through it
+            // is the very thing this overload exists to stop.
+            for (var i = 0; i < kept.Length; i++)
             {
-                A = Flat(back + along * start),
-                B = Flat(back + along * (start + stalls * StallWidth)),
-            });
+                if (!kept[i])
+                    continue;
 
-            return layout;
+                var last = i;
+                while (last + 1 < kept.Length && kept[last + 1])
+                    last++;
+
+                var from = layout.Stalls[i].Centre + outward * (StallDepth * 0.5f) - half - depth;
+                var to = layout.Stalls[last].Centre + outward * (StallDepth * 0.5f) + half - depth;
+                layout.Markings.Add(new Line { A = Flat(from), B = Flat(to) });
+
+                i = last;
+            }
         }
 
         /// <summary>

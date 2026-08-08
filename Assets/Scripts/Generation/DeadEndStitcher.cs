@@ -51,10 +51,14 @@ namespace LivingCity.Generation
         /// 11 covers that and the far lane at -4.75 (9.5m) as well. Widening it cannot disturb
         /// the streets: the search takes the NEAREST opposite-heading entry, so a street lane
         /// still pairs with its partner 3m away, and only lanes that previously found nothing
-        /// at all can reach further. Still well inside one 30m tile, so it can never match into
+        /// at all can reach further. Still well inside one tile, so it can never match into
         /// a neighbour.
+        ///
+        /// Every distance in that argument is a gap between two path NODES, which live in world
+        /// space and therefore carry CityGrid.TileScale - so the radius has to carry it too, or
+        /// the avenue's outer lanes strand again the moment the city is stretched.
         /// </summary>
-        const float LinkRadius = 11f;
+        const float LinkRadius = 11f * CityGrid.TileScale;
 
         /// <summary>
         /// How head-on the return has to be. -0.5 is a 120-degree turn or sharper, which

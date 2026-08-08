@@ -62,6 +62,33 @@ namespace LivingCity.Generation
         /// that tuning police counts cannot shift what traffic or civilians draw.
         /// </summary>
         public const int Police = 15_000;
+
+        /// <summary>
+        /// Read by BankVisitorDirector: which car each customer drives, which gate it comes in
+        /// through, how long it stays. Its own offset so that tuning the bank's traffic cannot
+        /// shift what the fleet or the ordinary population draws.
+        /// </summary>
+        public const int BankVisitors = 16_000;
+
+        /// <summary>
+        /// Read by IndustrialLotPlanner and IndustrialLotBuilder for the yard dressing: which
+        /// ground is apron and which is bulk store, and what stands on it.
+        ///
+        /// Its own offset for a reason worth stating, because the obvious reading says to put
+        /// this on Industrial with the rest of the works. The halls come out of BlockBuilder's
+        /// SHARED Buildings stream, so a draw taken while dressing a yard would move the halls
+        /// of every block after it. Tuning what stands in a works must not be able to move what
+        /// the works is built of.
+        /// </summary>
+        public const int IndustrialLot = 17_000;
+
+        /// <summary>
+        /// Read by SchoolBusDirector: where the pickup stops fall, how the roster is split
+        /// between them, and every per-child timer. Its own offset so that tuning the school
+        /// run cannot shift what traffic, the crowd or the police draw - the run is the newest
+        /// system in the city and the one most likely to be retuned.
+        /// </summary>
+        public const int School = 18_000;
     }
 
     /// <summary>

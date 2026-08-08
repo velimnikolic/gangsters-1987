@@ -22,6 +22,48 @@ namespace LivingCity.Entities
         public const int Argue = 2;
         public const int Sit = 3;
 
+        /// <summary>
+        /// Shot dead. Terminal, and the only activity with no way back to idle: the machine
+        /// enters Die and stays there.
+        ///
+        /// Safe under AnyState even though it is a one-shot, which Sit Down is not. The
+        /// difference is what happens when the clip ends. Sit Down leads to Sitting with the
+        /// activity still set, so AnyState would fire again from Sitting and loop forever;
+        /// Die leads nowhere, so the only state matching the condition is Die itself and
+        /// canTransitionToSelf blocks it. The clip is imported with loopTime 0, so the state
+        /// holds its last frame - the body stays down.
+        /// </summary>
+        public const int Die = 4;
+
+        /// <summary>
+        /// Armed and relaxed - the revolver is out but pointed at the ground. Distinct from
+        /// None, which is empty-handed: a man holding a gun does not stand like a man who is not.
+        /// </summary>
+        public const int PistolIdle = 5;
+
+        /// <summary>Weapon up, pointed where the body is facing. Loops until withdrawn.</summary>
+        public const int Aim = 6;
+
+        /// <summary>
+        /// The shot - a TRIGGER, not an activity value, and that distinction is the whole point.
+        ///
+        /// It was an activity value first, and that re-fired forever: Shoot returns to Aim on
+        /// exit time, the activity int was still Shoot when it got there, so the Aim -> Shoot
+        /// condition matched again immediately and the gunman stood there recoiling on a loop.
+        /// A trigger is CONSUMED by the transition that takes it, which is exactly the "happens
+        /// once per call" semantics a gunshot needs.
+        /// </summary>
+        public const string ShootParam = "shoot";
+
+        public static readonly int ShootHash = Animator.StringToHash(ShootParam);
+
+        /// <summary>
+        /// The aim state's name in the generated controller. Shared because WeaponSocket poses
+        /// the rig into it to work out how a weapon has to sit in the hand - the authored aim
+        /// pose is the only thing in the project that knows where a held gun should point.
+        /// </summary>
+        public const string AimState = "Aim";
+
         public static readonly int ActivityHash = Animator.StringToHash(ActivityParam);
         public static readonly int SpeedHash = Animator.StringToHash("speed");
 

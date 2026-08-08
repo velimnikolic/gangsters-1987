@@ -41,9 +41,11 @@ namespace LivingCity.Generation
         /// <summary>
         /// How far in front of a gate the street stays clear. The prop line sits 17.5m out
         /// from an industrial wall on BOTH road classes (15 half-tile + 7 pavement + 1 wall
-        /// inset - 5.5 verge; 15 + 10 + 1 - 8.5 on the avenue) and 17.1m from a churchyard
-        /// fence. 20 covers both with slack, and stops short of the far verge across the
-        /// street at 28.5 - a tree over the road from a gate blocks nothing.
+        /// inset - 5.5 verge; 15 + 10 + 1 - 8.5 on the avenue), which is the only live case
+        /// now that the churchyard's 17.1m fence has gone. 20 covers it with slack, and stops
+        /// short of the far verge across the street at 28.5 - a tree over the road from a gate
+        /// blocks nothing. Not retuned down to the industrial figure: the slack is what makes
+        /// this safe for the next walled yard, and the value has never been the tight one.
         /// </summary>
         public const float ApproachDepth = 20f;
 

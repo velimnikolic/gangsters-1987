@@ -40,14 +40,14 @@ namespace LivingCity.Generation
         /// road centreline and does not depend on it; moving the building line only widens the
         /// gap between the props and the wall, which GroundPlacer's apron paves either way.
         /// </summary>
-        public const float SidewalkClearance = 7f;
+        public const float SidewalkClearance = 7f * CityGrid.TileScale;
 
         /// <summary>
         /// The same default for a side facing the dual carriageway. Its pavements are at 7.25
         /// and its props at 8.5, so 10 stands in the same relation to them that 7 does to a
         /// street's 4 and 5.5. Mirrors CityConfig.mainSidewalkWidth, which is the live value.
         /// </summary>
-        public const float MainSidewalkClearance = 10f;
+        public const float MainSidewalkClearance = 10f * CityGrid.TileScale;
 
         /// <summary>
         /// Gap left in a whole-block street wall so the courtyard is reachable. A subdivided
@@ -298,6 +298,34 @@ namespace LivingCity.Generation
         }
 
         /// <summary>
+        /// Which of those sides face the dual carriageway rather than an ordinary street. Always
+        /// a subset of RoadSides - the boulevard is a road to every probe in the file.
+        ///
+        /// Same four corner probes for the same reason RoadSides gives, and read only as a
+        /// tie-break in ChooseLandmarkFront: the front a landmark wants is the longest one, and
+        /// this settles which of two equally long ones it takes. Deliberately not a first-order
+        /// term. A short stub on the avenue is a worse address than a full block face on a
+        /// through street, and ranking the boulevard above length would pick the stub.
+        /// </summary>
+        public static Sides MainRoadSides(CityGrid grid, List<Vector2Int> cells)
+        {
+            var minCell = new Vector2Int(int.MaxValue, int.MaxValue);
+            var maxCell = new Vector2Int(int.MinValue, int.MinValue);
+            foreach (var cell in cells)
+            {
+                minCell = Vector2Int.Min(minCell, cell);
+                maxCell = Vector2Int.Max(maxCell, cell);
+            }
+
+            var sides = Sides.None;
+            if (grid.IsMainRoad(minCell.x - 1, minCell.y)) sides |= Sides.West;
+            if (grid.IsMainRoad(maxCell.x + 1, maxCell.y)) sides |= Sides.East;
+            if (grid.IsMainRoad(minCell.x, minCell.y - 1)) sides |= Sides.South;
+            if (grid.IsMainRoad(maxCell.x, maxCell.y + 1)) sides |= Sides.North;
+            return sides;
+        }
+
+        /// <summary>
         /// How far in from the road centreline a block's own surface stops - what BlockRect is
         /// handed as its sidewalkWidth.
         ///
@@ -378,6 +406,18 @@ namespace LivingCity.Generation
         {
             public GameObject Landmark;
             public float LandmarkScale = 1f;
+
+            // The frontage the landmark is RESERVED, chosen for the whole block before a single
+            // lot is built - see ChooseLandmarkFront. Lot index and side index (0 South, 1 East,
+            // 2 North, 3 West, matching BuildLot's sides array), or -1 for no reservation.
+            //
+            // Without it the landmark went to the first street side of the first lot that could
+            // hold it, walked S-E-N-W over lots ordered column-major from the block's minimum -
+            // so on a subdivided block it always took the south-west lot's south run, whatever
+            // else the block fronted. That is how the city's one bank ended up addressing a side
+            // street with its back to the frontage the block was actually built around.
+            public int LandmarkLot = -1;
+            public int LandmarkSide = -1;
 
             // Perimeter buildings this block may still take, the landmark excluded. Spent in
             // walk order across every lot and side, which is what maxPerimeterBuildings needs
@@ -481,9 +521,18 @@ namespace LivingCity.Generation
 
                 // Not drawn from this block's rng: GroundPlacer lays its mosaic on exactly these
                 // rectangles and has no way to replay the draws spent above. See BlockLots.
-                foreach (var lot in BlockLots.Plan(buildMin, buildMax, roadSides, palette.maxLotsPerAxis,
-                                                   config.alleyWidth, config.seed, blockId))
-                    BuildLot(lot, palette, bleedPalette, state, parking, prefabs, config,
+                var lots = BlockLots.Plan(buildMin, buildMax, roadSides, palette.maxLotsPerAxis,
+                                          config.alleyWidth, config.seed, blockId);
+
+                // Which frontage the landmark gets, decided across the WHOLE block before any of
+                // it is built - a lot can only see its own rectangle, and the answer depends on
+                // all of them. Draws no rng, so it cannot move a building.
+                if (state.Landmark)
+                    ChooseLandmarkFront(lots, MainRoadSides(grid, cells),
+                                        out state.LandmarkLot, out state.LandmarkSide);
+
+                for (var i = 0; i < lots.Count; i++)
+                    BuildLot(i, lots[i], palette, bleedPalette, state, parking, prefabs, config,
                              parent, spawn, rng, occupied, markings, placed, tints);
 
                 if (placeRejections > 0)
@@ -515,14 +564,6 @@ namespace LivingCity.Generation
             if (palette.groundIsTilePerCell)
                 ParkDresser.Build(grid, cells, palette, prefabs, config,
                                   parent, spawn, rng, occupied, placed);
-            // The churchyard is laid out too, but off its own gate-to-door axis rather than
-            // tile-park's baked walks - which is why it is NOT groundIsTilePerCell: the church
-            // stands exactly where the tile's paths cross, and pedestrians would walk through
-            // it. Keyed on the zone so an unmigrated PrefabDatabase (no Church palette,
-            // PaletteFor falls back to ResidentialHigh) degrades to the scatter below.
-            else if (palette.zone == BlockZone.Church)
-                ChurchDresser.Build(grid, cells, min, max, palette, prefabs, config,
-                                    parent, spawn, rng, occupied, placed, tints, gateKeepOuts);
             else
                 BuildScatter(buildMin, buildMax, palette, parent, spawn, rng, occupied, placed);
 
@@ -564,7 +605,84 @@ namespace LivingCity.Generation
             return UniqueBuildings.IsSpent(pick) ? null : pick;
         }
 
+        /// <summary>
+        /// Reserves the frontage the block's landmark will stand on: the LONGEST run of lot edge
+        /// that faces a public street, anywhere on the block.
+        ///
+        /// The candidates are the lot street flags and nothing else, which is what keeps the
+        /// building off a back elevation for free - BlockLots leaves South/East/North/West false
+        /// for an internal alley and for a side the map boundary cut off, so neither can ever be
+        /// picked here however long it is. That is the whole of the "never in an alley" rule; it
+        /// needs no test of its own because there is no code path that could break it.
+        ///
+        /// Length first because frontage is what a landmark is FOR - it is the one building on
+        /// the block a passer-by is meant to read at a distance, and a 20m run wedged between two
+        /// corner pieces reads as a gap in the terrace instead. The boulevard breaks ties, then
+        /// the lot and side indices, so the answer is a pure function of the lot plan and the
+        /// same seed keeps producing the same city.
+        ///
+        /// Measured on the RAW lot side, not on the run left after the corner pieces: those are
+        /// sized inside BuildLot from draws this pass must not spend, and a pre-pass that made
+        /// them would move every building on the block. It is a proxy, and PlaceLandmark's own
+        /// width check is what catches the case where it was the wrong one - see BuildLot for
+        /// the fallback that keeps the city's one bank standing when it is.
+        /// </summary>
+        public static void ChooseLandmarkFront(
+            List<BlockLots.Lot> lots, Sides mainSides, out int bestLot, out int bestSide)
+        {
+            bestLot = -1;
+            bestSide = -1;
+
+            var bestLength = 0f;
+            var bestMain = false;
+
+            for (var index = 0; index < lots.Count; index++)
+            {
+                var lot = lots[index];
+
+                for (var side = 0; side < 4; side++)
+                {
+                    // Same order as BuildLot's sides array: South, East, North, West.
+                    var isStreet = side switch
+                    {
+                        0 => lot.South,
+                        1 => lot.East,
+                        2 => lot.North,
+                        _ => lot.West,
+                    };
+                    if (!isStreet)
+                        continue;
+
+                    var length = side == 0 || side == 2
+                        ? lot.Max.x - lot.Min.x
+                        : lot.Max.y - lot.Min.y;
+
+                    var main = mainSides.HasFlag(side switch
+                    {
+                        0 => Sides.South,
+                        1 => Sides.East,
+                        2 => Sides.North,
+                        _ => Sides.West,
+                    });
+
+                    // Strictly better on length, or equal on length and better on the avenue.
+                    // Never equal on both - the first candidate reached wins, which is the lot
+                    // and side order the loops already impose.
+                    if (bestLot >= 0
+                        && !(length > bestLength
+                             || (Mathf.Approximately(length, bestLength) && main && !bestMain)))
+                        continue;
+
+                    bestLot = index;
+                    bestSide = side;
+                    bestLength = length;
+                    bestMain = main;
+                }
+            }
+        }
+
         static void BuildLot(
+            int lotIndex,
             BlockLots.Lot lot,
             PrefabDatabase.ZonePalette palette,
             PrefabDatabase.ZonePalette bleedPalette,
@@ -738,15 +856,48 @@ namespace LivingCity.Generation
                     passageSide = eligible[rng.Next(eligible.Count)];
             }
 
+            // ---- The landmark goes up BEFORE any run is walked, on the frontage
+            // ChooseLandmarkFront reserved for it, and both halves of that matter.
+            //
+            // Which side: first-fit over S-E-N-W meant the block's most conspicuous building took
+            // whichever street side the walk happened to reach first, and its yaw follows the side
+            // (YawFor(outward)), so the choice IS the facing.
+            //
+            // Before the runs: sides walked ahead of it leave their parking bays in `occupied`,
+            // and a bay that reached round the corner could reject the landmark outright - the
+            // block would then either lose it or hand it to a side nobody chose. Standing it
+            // first also puts its box in the list before any bay beside it is surveyed, which is
+            // what stops a stall being painted underneath it.
+            var runStart = (float[])startInset.Clone();
+
+            if (state.Landmark && lotIndex == state.LandmarkLot)
+            {
+                var i = state.LandmarkSide;
+                var end = sides[i].length - endInset[i];
+
+                if (sides[i].isStreet && end > startInset[i])
+                    runStart[i] = PlaceLandmark(state, sides[i].origin, sides[i].along, sides[i].outward,
+                                                startInset[i], end, config.partyWallGap, palette, prefabs,
+                                                spawn, parent, rng, occupied, markings, placed, tints);
+
+                // Spent whatever happened. The reserved run is a proxy measured before the corner
+                // pieces were sized, so it can turn out too short for the prefab after all - and
+                // the city has exactly one bank, which has to stand somewhere. Clearing the
+                // reservation drops the landmark back to the old first-fit below, which is now
+                // only ever a fallback.
+                state.LandmarkLot = -1;
+            }
+
             for (var i = 0; i < 4; i++)
             {
                 var side = sides[i];
-                var start = startInset[i];
+                var start = runStart[i];
                 var end = side.length - endInset[i];
                 if (end <= start)
                     continue;
 
-                // The landmark takes the head of the first street run long enough to hold it.
+                // Fallback only - see above. Still street-only, so a landmark that missed its
+                // reserved front lands on another street run rather than in the alley.
                 if (side.isStreet && state.Landmark)
                     start = PlaceLandmark(state, side.origin, side.along, side.outward,
                                           start, end, config.partyWallGap, palette, prefabs,
@@ -884,6 +1035,12 @@ namespace LivingCity.Generation
             // a landmark spent for a building that never stood would be the whole city's one.
             UniqueBuildings.Spend(state.Landmark);
 
+            // Outside the forecourt branch on purpose: the school has no landmarkCars, so for
+            // it that branch never runs at all. Its marker is the only thing SchoolBusDirector
+            // can find in a saved scene, and it must not depend on bays the school never has.
+            if (landmark.name.StartsWith(Entities.SchoolMarker.PrefabName))
+                MarkSchool(landmark);
+
             if (forecourt)
             {
                 // The bay spans exactly the frontage the recessed building vacated, so the
@@ -896,14 +1053,42 @@ namespace LivingCity.Generation
                 // the real fleet can never move. maxCars 0 still paints the lines and still
                 // reserves every bay - only the bakes are withheld - and the stall and door
                 // geometry ride out on a PoliceStation marker for PoliceDirector to find.
-                var layout = ParkingLayout.ForStreetBay(origin, along, outward, start, width);
-                markings.AddRange(layout.Markings);
+                //
+                // The bank KEEPS its bakes and gets a marker as well, over the bays those bakes
+                // did not take, so its customers have somewhere to park. Both markers are still
+                // recorded from the pre-fill survey below, never from the post-fill state: the
+                // bays abut exactly (centres one StallWidth apart, bounds one StallWidth wide)
+                // and Bounds.Intersects counts touching as intersecting, so once a bay has been
+                // reserved the survey no longer answers the same question.
+                var layout = ParkingLayout.ForStreetBay(origin, along, outward, start, width,
+                                                        paint: false);
 
                 var isStation = landmark.name.StartsWith(Entities.PoliceStation.PrefabName);
+                var isBank = landmark.name.StartsWith(Entities.BankForecourt.PrefabName);
+
+                // The bays that are genuinely clear, surveyed BEFORE anything reserves one. Run
+                // for every forecourt now, not just the two that carry markers, because the paint
+                // is drawn from it as well: a bay the survey rejects is one something else is
+                // standing in, and it must not be painted round.
+                var free = FreeStalls(layout, occupied);
+
+                ParkingLayout.PaintStreetBay(layout, along, outward, free);
+                markings.AddRange(layout.Markings);
+
                 if (isStation)
-                    MarkPoliceStation(landmark, layout, occupied);
+                    MarkPoliceStation(landmark, layout, free);
+
+                var baked = isBank ? new HashSet<int>() : null;
                 FillStalls(layout, new VehiclePicker(palette.landmarkCars, rng), spawn, parent,
-                           rng, occupied, placed, isStation ? 0 : LandmarkForecourtMaxCars);
+                           rng, occupied, placed, isStation ? 0 : LandmarkForecourtMaxCars, baked);
+
+                if (isBank)
+                {
+                    // Painted, clear, and with no static car standing in it.
+                    free.RemoveAll(baked.Contains);
+                    var stalls = StallLocals(landmark.transform, layout, free, out var bankYaw);
+                    landmark.AddComponent<Entities.BankForecourt>().SetStalls(stalls, bankYaw);
+                }
             }
 
             state.Landmark = null;
@@ -912,23 +1097,55 @@ namespace LivingCity.Generation
 
         /// <summary>
         /// Rides the station instance into the saved scene carrying its forecourt stalls and
-        /// its door, all in the station's own space - see PoliceStation for why local. The
-        /// door is derived exactly the way InteractionMarkers derives every other door (local
-        /// +Z facade centre at ground level) rather than waiting for the name sweep, because
-        /// the recessed facade can fail BuildingDoorRule's road-cell test and the station
-        /// must have a door regardless - the beat officers live there.
+        /// its door, all in the station's own space - see StallHost for why local. The door is
+        /// derived exactly the way InteractionMarkers derives every other door (local +Z facade
+        /// centre at ground level) rather than waiting for the name sweep, because the recessed
+        /// facade can fail BuildingDoorRule's road-cell test and the station must have a door
+        /// regardless - the beat officers live there.
         /// </summary>
         static void MarkPoliceStation(
-            GameObject landmark, ParkingLayout.Layout layout, List<Bounds> occupied)
+            GameObject landmark, ParkingLayout.Layout layout, List<int> free)
         {
             var tf = landmark.transform;
+            var stalls = StallLocals(tf, layout, free, out var stallYaw);
 
-            // Runs BEFORE FillStalls reserves the bays, applying its same intersection test:
-            // the marker records exactly the stalls the fleet can genuinely stand in, and no
-            // stall can be rejected for colliding with its own reservation.
-            var stalls = new List<Vector3>(layout.Stalls.Count);
-            foreach (var stall in layout.Stalls)
+            var mesh = InteractionMarkers.LocalBounds(tf);
+            var door = new Vector3(mesh.center.x, 0f, mesh.max.z);
+
+            landmark.AddComponent<Entities.PoliceStation>()
+                    .SetLayout(stalls, stallYaw, door);
+        }
+
+        /// <summary>
+        /// Rides the school instance into the saved scene carrying the door its pupils use.
+        /// The same derivation MarkPoliceStation applies, for the same reason and with one
+        /// extra: the school is FLUSH against the street wall, so its facade is the pavement
+        /// edge and BuildingDoorRule would in principle grant it a door of its own - but a
+        /// rule that can decline is no basis for a population that has to arrive here every
+        /// morning. See SchoolMarker.
+        /// </summary>
+        static void MarkSchool(GameObject landmark)
+        {
+            var mesh = InteractionMarkers.LocalBounds(landmark.transform);
+            landmark.AddComponent<Entities.SchoolMarker>()
+                    .SetDoor(new Vector3(mesh.center.x, 0f, mesh.max.z));
+        }
+
+        /// <summary>
+        /// Which bays of a fresh layout stand clear of everything already placed - FillStalls'
+        /// own test, run before it has reserved anything, which is the only moment it gives a
+        /// stable answer. Bays abut exactly and Bounds.Intersects counts touching as
+        /// intersecting, so a bay surveyed after its neighbour was reserved reads as blocked by
+        /// a car park rather than by an obstacle.
+        /// </summary>
+        static List<int> FreeStalls(ParkingLayout.Layout layout, List<Bounds> occupied)
+        {
+            var free = new List<int>(layout.Stalls.Count);
+
+            for (var index = 0; index < layout.Stalls.Count; index++)
             {
+                var stall = layout.Stalls[index];
+
                 var quarter = Mathf.RoundToInt(stall.Yaw / 90f) & 1;
                 var bounds = new Bounds(
                     stall.Centre,
@@ -945,18 +1162,29 @@ namespace LivingCity.Generation
                     }
 
                 if (!blocked)
-                    stalls.Add(tf.InverseTransformPoint(stall.Centre));
+                    free.Add(index);
             }
 
-            var stallYaw = layout.Stalls.Count > 0
+            return free;
+        }
+
+        /// <summary>
+        /// The chosen bays in the building's own space, plus the stall yaw relative to it. Both
+        /// forecourt markers store their geometry this way, so that an instance which is ever
+        /// moved carries its parking with it - see StallHost.
+        /// </summary>
+        static Vector3[] StallLocals(
+            Transform tf, ParkingLayout.Layout layout, List<int> stalls, out float localYaw)
+        {
+            localYaw = layout.Stalls.Count > 0
                 ? Mathf.DeltaAngle(tf.eulerAngles.y, layout.Stalls[0].Yaw)
                 : 0f;
 
-            var mesh = InteractionMarkers.LocalBounds(tf);
-            var door = new Vector3(mesh.center.x, 0f, mesh.max.z);
+            var locals = new Vector3[stalls.Count];
+            for (var i = 0; i < stalls.Count; i++)
+                locals[i] = tf.InverseTransformPoint(layout.Stalls[stalls[i]].Centre);
 
-            landmark.AddComponent<Entities.PoliceStation>()
-                    .SetLayout(stalls.ToArray(), stallYaw, door);
+            return locals;
         }
 
         /// <summary>
@@ -1351,7 +1579,15 @@ namespace LivingCity.Generation
             // Cars sit perpendicular to the street, front toward it - ForStreetBay keeps that
             // facing. What it does not keep is the old 11m bay depth, which reached halfway back
             // into the lot for a car under 5m long.
-            var layout = ParkingLayout.ForStreetBay(origin, along, outward, cursor, width);
+            //
+            // Surveyed before it is painted. The bay is cut out of a run on ONE side of the lot,
+            // but it reaches 5.6m inward, which is far enough to meet whatever a neighbouring
+            // side put in the same corner - a landmark most visibly. FillStalls has always
+            // skipped a stall that meets something; the paint went down regardless, so the
+            // obstacle ended up standing on stripes.
+            var layout = ParkingLayout.ForStreetBay(origin, along, outward, cursor, width, paint: false);
+            var free = FreeStalls(layout, occupied);
+            ParkingLayout.PaintStreetBay(layout, along, outward, free);
             markings.AddRange(layout.Markings);
 
             FillStalls(layout, parking, spawn, parent, rng, occupied, placed);
@@ -1465,7 +1701,12 @@ namespace LivingCity.Generation
                 return;
             }
 
-            var layout = ParkingLayout.ForStreetBay(origin, along, outward, 0f, length);
+            // Painted only where the bays are actually clear, as in PlaceParking. This one runs
+            // the FULL length of the side rather than a slot cut out of a run, so it is the most
+            // exposed of the three: whatever the corner of the block already holds is inside it.
+            var layout = ParkingLayout.ForStreetBay(origin, along, outward, 0f, length, paint: false);
+            var free = FreeStalls(layout, occupied);
+            ParkingLayout.PaintStreetBay(layout, along, outward, free);
             markings.AddRange(layout.Markings);
             FillStalls(layout, parking, spawn, parent, rng, occupied, placed);
         }
@@ -1574,6 +1815,12 @@ namespace LivingCity.Generation
         /// answer rather than a compromise - a lorry does not fit a marked car bay - and
         /// VehiclePicker re-rolls up to eight times, so a lorry draw becomes some other vehicle
         /// instead of an empty space.
+        ///
+        /// <paramref name="baked"/> collects the indices of bays a static car ended up in, for
+        /// the bank's forecourt: what its customers may drive into is the surveyed-clear set
+        /// (FreeStalls) minus this one. Reported from here because it is the only place that
+        /// knows - the cap, the empty-bay roll and a picker that ran out of vehicles that fit
+        /// all leave a painted bay standing empty, and none of them is visible afterwards.
         /// </summary>
         static void FillStalls(
             ParkingLayout.Layout layout,
@@ -1583,11 +1830,14 @@ namespace LivingCity.Generation
             System.Random rng,
             List<Bounds> occupied,
             List<GameObject> placed,
-            int maxCars = int.MaxValue)
+            int maxCars = int.MaxValue,
+            HashSet<int> baked = null)
         {
             var cars = 0;
-            foreach (var stall in layout.Stalls)
+            for (var index = 0; index < layout.Stalls.Count; index++)
             {
+                var stall = layout.Stalls[index];
+
                 // Every stall yaw is a quarter turn - the lot frame and the four lot sides are
                 // both axis-aligned - so an odd quarter simply swaps depth and width.
                 var quarter = Mathf.RoundToInt(stall.Yaw / 90f) & 1;
@@ -1628,6 +1878,7 @@ namespace LivingCity.Generation
                     continue;
 
                 placed.Add(spawn(prefab, stall.Centre, Quaternion.Euler(0f, stall.Yaw, 0f), parent));
+                baked?.Add(index);
                 cars++;
             }
         }

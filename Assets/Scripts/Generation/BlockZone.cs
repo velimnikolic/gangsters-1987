@@ -10,7 +10,7 @@ namespace LivingCity.Generation
     /// mixed INTO the residential palette instead - a storefront on the ground floor with
     /// flats above, and the corner slot biased toward the tavern. See PrefabDatabase.ZonePalette.
     ///
-    /// Hospital, School, Church and Bank are zones rather than entries in some civic bucket
+    /// Hospital, School and Bank are zones rather than entries in some civic bucket
     /// because each is a whole block built around a single landmark building, with a yard and
     /// outbuildings around it. Each is capped at ONE per city by ZonePlanner - and a cap is all
     /// it is. None of them is promised.
@@ -69,16 +69,6 @@ namespace LivingCity.Generation
         Parking,
 
         /// <summary>
-        /// One per city at most: the church in its walled garden - stone fence with a gate onto
-        /// the street, a walk up to the door, benches, a market stand by the entrance. A ceiling
-        /// and not a promise, like every zone here; it was guaranteed by ZonePlanner's rescue
-        /// pass until that pass went dormant. Deliberately NOT in SingleLandmarkZones, and that
-        /// part still matters: it does not spend the shared landmark budget, so adding a church
-        /// cannot cost the city its hospital. Laid out by ChurchDresser.
-        /// </summary>
-        Church,
-
-        /// <summary>
         /// The bank, and the city always has exactly one. building-bank had been sitting
         /// unreferenced in the pack the whole time - measured 17.10 x 20.53 and 13.70m tall,
         /// which is why it gets a zone of its own rather than a slot in the terrace: it is wider
@@ -91,10 +81,10 @@ namespace LivingCity.Generation
         /// does. Sometimes it takes this zone instead: a single-cell block, the smallest the map
         /// offers, with its forecourt of cars in front of it.
         ///
-        /// Like the Church, deliberately NOT in SingleLandmarkZones - a bank block must not be
-        /// able to cost the city its hospital. Unlike the Church it has a non-empty groups[], so
-        /// it builds its perimeter the ordinary way and needs no dresser and no zone branch in
-        /// BlockBuilder at all.
+        /// Deliberately NOT in SingleLandmarkZones - a bank block must not be able to cost
+        /// the city its hospital. It has a non-empty groups[], so it builds its perimeter the
+        /// ordinary way and needs no dresser and no zone branch in BlockBuilder at all - which is
+        /// now true of every zone, the last such branch having gone with the church.
         /// </summary>
         Bank,
     }

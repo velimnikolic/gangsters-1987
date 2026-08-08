@@ -855,9 +855,12 @@ namespace LivingCity.Generation
         /// placed. The footprint is measured at the yaw and scale it will actually be built at,
         /// so a rotated 7m lime is tested as the 7m obstacle it is.
         ///
-        /// Public because ChurchDresser lays its garden through the same test; returns the
-        /// instance (null on rejection) so a caller that needs the object - the church goes on
-        /// to the tinter - can have it without a second lookup.
+        /// Returns the instance rather than a bool (null on rejection) so a caller that needs the
+        /// object - to hand it to the tinter, say - can have it without a second lookup.
+        ///
+        /// Public is now vestigial: ChurchDresser was the one outside caller and went with the
+        /// church. Left public rather than narrowed because the next garden-shaped dresser wants
+        /// exactly this, and IndustrialDresser already keeps a line-for-line copy for want of it.
         /// </summary>
         public static GameObject Spawn(
             GameObject prefab,

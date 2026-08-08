@@ -50,6 +50,11 @@ namespace LivingCity.Tests
             RoadTileNamesRoundTrip(failures);
             CurveBandCoversAsphaltAndSparesPavement(failures);
             CrossingPairMidpointIsRefused(failures);
+            OffRoadPushAlwaysEscapes(failures);
+            OffRoadPushClearsTheCrosswalkTrigger(failures);
+            OffRoadPushLandsOnPavedGround(failures);
+            CurveNavBandsAreNotACarriageway(failures);
+            OffRoadPushHandlesTheDeadEndAndTheArrivalRadius(failures);
 
             return failures;
         }
@@ -1169,6 +1174,227 @@ namespace LivingCity.Tests
             var sameSideMidX = (-4f + -4.5f) * 0.5f;
             if (RoadSurface.OnAsphalt(shape, sameSideMidX, 6f))
                 failures.Add("Midpoint: same-pavement pair's midpoint classified as road.");
+        }
+
+        // ------------------------------------------------ getting off the carriageway
+
+        /// <summary>Every tile-local point on a 30m tile, at the resolution a person occupies.</summary>
+        static IEnumerable<Vector2> TileSamples()
+        {
+            for (var x = -15f; x <= 15f; x += 0.25f)
+                for (var z = -15f; z <= 15f; z += 0.25f)
+                    yield return new Vector2(x, z);
+        }
+
+        static IEnumerable<RoadTileKind> RoadKinds()
+        {
+            foreach (RoadTileKind kind in System.Enum.GetValues(typeof(RoadTileKind)))
+                if (kind != RoadTileKind.None)
+                    yield return kind;
+        }
+
+        /// <summary>
+        /// The property the whole recovery rests on: from anywhere on a carriageway there is an
+        /// answer, and the answer is not on the carriageway. Naive formulations fail this on the
+        /// dead end - pushing radially out of the turning circle along the centre line lands back
+        /// on the arm - and on junctions, where escaping one band drops you into the other.
+        ///
+        /// The converse matters just as much: off the carriageway it must decline, or a walker
+        /// standing quietly on a pavement gets marched somewhere for no reason.
+        /// </summary>
+        static void OffRoadPushAlwaysEscapes(List<string> failures)
+        {
+            foreach (var kind in RoadKinds())
+            {
+                var shape = RoadSurface.Classify(kind);
+                var escaped = 0;
+
+                foreach (var p in TileSamples())
+                {
+                    var on = RoadSurface.OnCarriageway(shape, p.x, p.y);
+                    var pushed = RoadSurface.TryOffAsphalt(shape, p.x, p.y, out var ox, out var oz);
+
+                    if (!on)
+                    {
+                        if (pushed)
+                            failures.Add($"Off-road push: {kind} moved a walker who was already " +
+                                         $"clear at ({p.x}, {p.y}).");
+                        if (!pushed && (ox != p.x || oz != p.y))
+                            failures.Add($"Off-road push: {kind} changed the outputs while " +
+                                         "declining to move anyone.");
+                        continue;
+                    }
+
+                    if (!pushed)
+                    {
+                        failures.Add($"Off-road push: {kind} found nowhere to go from " +
+                                     $"({p.x}, {p.y}).");
+                        return;
+                    }
+
+                    escaped++;
+                    if (RoadSurface.OnCarriageway(shape, ox, oz))
+                    {
+                        failures.Add($"Off-road push: {kind} sent a walker from ({p.x}, {p.y}) " +
+                                     $"to ({ox}, {oz}), still on the carriageway.");
+                        return;
+                    }
+
+                    // Idempotent, or the arrival handler re-arms for ever.
+                    if (RoadSurface.TryOffAsphalt(shape, ox, oz, out _, out _))
+                    {
+                        failures.Add($"Off-road push: {kind} wants to move its own result " +
+                                     $"({ox}, {oz}) again.");
+                        return;
+                    }
+
+                    if (Mathf.Abs(ox) > CityGrid.CellSize * 0.5f
+                        || Mathf.Abs(oz) > CityGrid.CellSize * 0.5f)
+                    {
+                        failures.Add($"Off-road push: {kind} pushed ({p.x}, {p.y}) off its own " +
+                                     $"tile, to ({ox}, {oz}) - the next tile is another shape.");
+                        return;
+                    }
+                }
+
+                if (escaped == 0)
+                    failures.Add($"Off-road push: no sample landed on {kind}'s carriageway, " +
+                                 "so nothing was tested.");
+            }
+        }
+
+        /// <summary>
+        /// The load-bearing one. A recovered walker must be clear of the crosswalk TRIGGER, not
+        /// merely of the kerb - the trigger is what holds the car. Measured off
+        /// tile-road-straight-crosswalk (boxes to |x| = 3.091) and its avenue counterpart
+        /// (6.317), against a pedestrian capsule 0.3 across; restated here rather than imported,
+        /// because a table that checks itself proves nothing.
+        /// </summary>
+        static void OffRoadPushClearsTheCrosswalkTrigger(List<string> failures)
+        {
+            const float capsule = 0.3f;
+
+            foreach (var (kind, trigger) in new[]
+                     {
+                         (RoadTileKind.Straight, 3.091f),
+                         (RoadTileKind.MainStraight, 6.317f),
+                     })
+            {
+                var shape = RoadSurface.Classify(kind);
+
+                foreach (var p in TileSamples())
+                {
+                    if (!RoadSurface.TryOffAsphalt(shape, p.x, p.y, out var ox, out _))
+                        continue;
+
+                    if (Mathf.Abs(ox) - capsule <= trigger)
+                    {
+                        failures.Add($"Off-road push: {kind} left a walker at x = {ox}, still " +
+                                     $"inside the crosswalk trigger at {trigger} (capsule " +
+                                     $"{capsule}) - the car it is holding never moves.");
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// And it must land on the paved strip, not in the verge: StreetPropPlacer stands lamps
+        /// and trees at 5.5 (8.5 on the avenue), so a larger clearance would recover people into
+        /// street furniture. Kerb and pavement edge restated: street 3..5, avenue 6.25..8.5.
+        /// </summary>
+        static void OffRoadPushLandsOnPavedGround(List<string> failures)
+        {
+            foreach (var (kind, kerb, edge) in new[]
+                     {
+                         (RoadTileKind.Straight, 3f, 5f),
+                         (RoadTileKind.MainStraight, 6.25f, 8.5f),
+                     })
+            {
+                var shape = RoadSurface.Classify(kind);
+
+                foreach (var p in TileSamples())
+                {
+                    if (!RoadSurface.TryOffAsphalt(shape, p.x, p.y, out var ox, out _))
+                        continue;
+
+                    var offset = Mathf.Abs(ox);
+                    if (offset <= kerb || offset > edge)
+                    {
+                        failures.Add($"Off-road push: {kind} put a walker at x = {ox}, outside " +
+                                     $"the pavement strip {kerb}..{edge}.");
+                        break;
+                    }
+
+                    // The near kerb, not an arbitrary one: nobody crosses a carriageway to
+                    // get off it.
+                    if (p.x != 0f && Mathf.Sign(ox) != Mathf.Sign(p.x))
+                    {
+                        failures.Add($"Off-road push: {kind} sent a walker at x = {p.x} to the " +
+                                     $"far kerb at {ox}.");
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// The two road predicates differ on exactly one shape, and both readings are load
+        /// bearing. On the curve's outer sidewalk arc at the diagonal a walker is inside the
+        /// square nav bands the cars actually drive - so OnAsphalt must still call it road (no
+        /// conversations in the wheel path) while OnCarriageway must not (or the recovery marches
+        /// somebody six metres across the carriageway to get off a pavement they are on).
+        /// </summary>
+        static void CurveNavBandsAreNotACarriageway(List<string> failures)
+        {
+            var shape = RoadSurface.Classify(RoadTileKind.Curve);
+
+            // Outer walking arc, radius 19 from the bend centre at (-15, 15), at 45 degrees.
+            const float diagonal = 0.70710678f;
+            var x = -15f + 19f * diagonal;
+            var z = 15f - 19f * diagonal;
+
+            if (!RoadSurface.OnAsphalt(shape, x, z))
+                failures.Add("Curve: the nav-band apex stopped counting as asphalt - " +
+                             "conversations can now be seated in the wheel path.");
+
+            if (RoadSurface.OnCarriageway(shape, x, z))
+                failures.Add("Curve: the outer sidewalk arc counts as carriageway, so walkers " +
+                             "standing on pavement will be recovered across the road.");
+
+            // The drawn asphalt itself must read as carriageway under both.
+            if (!RoadSurface.OnCarriageway(shape, -15f + 15f * diagonal, 15f - 15f * diagonal))
+                failures.Add("Curve: the annulus centreline is not carriageway.");
+        }
+
+
+        /// <summary>
+        /// The dead end's sharp case, called out because the obvious implementation gets it
+        /// wrong: a walker on the centre line inside the turning circle, pushed radially, lands
+        /// on the arm - which is road. And the clearance must beat HumanBehavior's avoidance
+        /// arrival radius, or a walker who "arrives" at the clear point is still in the road.
+        /// </summary>
+        static void OffRoadPushHandlesTheDeadEndAndTheArrivalRadius(List<string> failures)
+        {
+            var shape = RoadSurface.Classify(RoadTileKind.End);
+
+            foreach (var z in new[] { 0f, 0.5f, 1f, 2f, 3f })
+            {
+                if (!RoadSurface.TryOffAsphalt(shape, 0f, z, out var ox, out var oz))
+                {
+                    failures.Add($"Dead end: nowhere to go from the centre line at z = {z}.");
+                    continue;
+                }
+
+                if (RoadSurface.OnCarriageway(shape, ox, oz))
+                    failures.Add($"Dead end: ({ox}, {oz}) is still the arm or the circle.");
+            }
+
+            const float avoidanceArrivalRadius = 0.75f;
+            if (RoadSurface.ClearMargin <= avoidanceArrivalRadius)
+                failures.Add($"Off-road push: ClearMargin {RoadSurface.ClearMargin} does not " +
+                             $"exceed the {avoidanceArrivalRadius} arrival radius, so a walker " +
+                             "can arrive at the clear point while still on the road.");
         }
     }
 }

@@ -21,9 +21,12 @@ namespace LivingCity.Tests
     /// </summary>
     public static class HedgeLayoutTests
     {
-        const float Clearance = 7f;
-        const float MainClearance = 10f;
-        const float MapEdge = 14.2f;
+        // World distances, so they carry CityGrid.TileScale exactly as CityConfig.sidewalkWidth
+        // and ParkDresser's own (CellHalf - HedgeInset) do. Written as the authored figure times
+        // the scale rather than as 9.1, so stretching the city cannot silently orphan them.
+        const float Clearance = 7f * CityGrid.TileScale;
+        const float MainClearance = 10f * CityGrid.TileScale;
+        const float MapEdge = CityGrid.CellSize * 0.5f - 0.8f;
         const float GateHalf = 3f;
         const float Lift = 0.02f;
         const float Eps = 1e-3f;
@@ -85,9 +88,9 @@ namespace LivingCity.Tests
         // ------------------------------------------------------------------ checks
 
         /// <summary>
-        /// The line itself: 8m PAST the cell boundary, on the same 7-from-the-centreline that
-        /// BlockBuilder gives every facade. This is the whole point of the change - on the cell
-        /// boundary the park's edge sat 8m behind the street wall of every block around it.
+        /// The line itself: PAST the cell boundary, on the same sidewalkWidth-from-the-centreline
+        /// that BlockBuilder gives every facade. This is the whole point of the change - on the
+        /// cell boundary the park's edge sat metres behind the street wall of every block around it.
         /// </summary>
         static void SidesStandOnTheBlockLine(List<string> failures)
         {
@@ -289,6 +292,10 @@ namespace LivingCity.Tests
             if (avenue >= street)
                 failures.Add($"Avenue offset {avenue} is not set back from the street offset " +
                              $"{street} - a hedge there stands in the outer lane.");
+
+            var edge = HedgeLayout.SideOffset(grid, -1, 1, Clearance, MainClearance, MapEdge);
+            if (Mathf.Abs(edge - MapEdge) > Eps)
+                failures.Add($"Hedge offset against the map edge is {edge}, expected {MapEdge}.");
         }
 
         /// <summary>

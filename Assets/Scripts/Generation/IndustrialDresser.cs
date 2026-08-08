@@ -120,6 +120,70 @@ namespace LivingCity.Generation
 
             BuildBackYard(halls, palette, prefabs, parent, spawn, rng, occupied, placed);
             BuildStacks(halls, palette, parent, spawn, rng, occupied, placed);
+
+            Publish(layout, halls, blockId, config, parent);
+        }
+
+        /// <summary>
+        /// Hands the yard on to the dressing pass, as a marker component on an empty.
+        ///
+        /// Only the HALLS travel. Everything else about a compound - the wall, the carriageways,
+        /// the pads, the gate - comes back out of IndustrialLayout.ForBlock, which is
+        /// deterministic in (seed, blockId) alone and which GroundPlacer already replays for
+        /// exactly this reason. The halls are the one thing that cannot be replayed: their
+        /// prefabs are drawn from BlockBuilder's SHARED Buildings stream, after however many
+        /// draws every earlier block happened to take.
+        ///
+        /// Takes nothing from that stream itself. IndustrialLotPlanner seeds its own System.Random
+        /// from SeedOffsets.IndustrialLot, so planning a yard - or retuning how one is planned -
+        /// cannot move a single hall anywhere in the city.
+        ///
+        /// The zones are planned HERE rather than in the dressing pass so the marker is complete
+        /// the moment it exists: the scene-view gizmos, the ground pass, the prop pass and the
+        /// runtime director then all read one partition instead of each re-deriving it and
+        /// risking three answers.
+        /// </summary>
+        static void Publish(
+            IndustrialLayout.Layout layout,
+            List<Placed> halls,
+            int blockId,
+            CityConfig config,
+            Transform parent)
+        {
+            var published = new Entities.WorksHall[halls.Count];
+
+            for (var i = 0; i < halls.Count; i++)
+            {
+                var hall = halls[i];
+                published[i] = new Entities.WorksHall
+                {
+                    Centre = hall.Position,
+                    Outward = hall.Outward,
+                    HalfWidth = hall.HalfWidth,
+                    HalfDepth = hall.HalfDepth,
+                    PadMin = hall.Pad.Area.Min,
+                    PadMax = hall.Pad.Area.Max,
+                };
+            }
+
+            var marker = new GameObject($"works_yard_{blockId}");
+            marker.transform.SetParent(parent, false);
+            marker.transform.SetPositionAndRotation(
+                new Vector3(layout.Wall.Centre.x, 0f, layout.Wall.Centre.y), Quaternion.identity);
+
+            var yard = marker.AddComponent<Entities.WorksYard>();
+            yard.SetCompound(blockId, layout.Wall, layout.HasGate, layout.GateCentre,
+                             layout.GateOutward, published,
+                             IndustrialLotPlanner.Lanes(layout),
+                             IndustrialLotPlanner.Bays(layout));
+
+            yard.SetZones(IndustrialLotPlanner
+                .Plan(layout, published, IndustrialLotPlanner.Tuning.Default, config.seed, blockId)
+                .ToArray());
+
+            // Deliberately joins neither `occupied` nor `placed`. It has no renderer, so the
+            // tinter would find nothing to tint and the caller's count would report a building
+            // that does not exist - and an empty must not reserve ground the props can use.
         }
 
         /// <summary>The gate itself, standing in the gap the wall left, facing out.</summary>

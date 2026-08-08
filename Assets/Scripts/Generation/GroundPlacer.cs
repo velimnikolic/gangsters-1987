@@ -267,7 +267,14 @@ namespace LivingCity.Generation
         {
             // A car park already runs its own asphalt out to the pavement edge, so an apron
             // under it would be strictly smaller than the slab above and never show.
-            if (BlockBuilder.ClearanceFor(palette, config) <= CityGrid.PavementEdge)
+            //
+            // Asked of BOTH cross-sections. It used to name only the street pair, which was the
+            // right answer for the wrong reason and stopped even being that once every street
+            // became wide (CityGrid.IsWideRoad): the numbers that decide it on a wide side are
+            // 7.25 against 8.5, not 4 against 5. They happen to agree for both palette classes,
+            // which is exactly why a one-sided test could go wrong silently.
+            if (BlockBuilder.ClearanceFor(palette, config) <= CityGrid.PavementEdge
+                && BlockBuilder.MainClearanceFor(palette, config) <= CityGrid.MainPavementEdge)
                 return;
 
             var (min, max) = BlockBuilder.BlockRect(grid, cells,
@@ -699,6 +706,21 @@ namespace LivingCity.Generation
         /// whatever it decides, so a slab that opts out must skip the call entirely or every
         /// block after it re-rolls its surface. The apron is the one caller that does.
         /// </summary>
+        /// <summary>
+        /// One stretched ground tile, for a caller outside this class that already knows exactly
+        /// what it wants where.
+        ///
+        /// Takes no System.Random and does no shading, deliberately. LayRect's shade pass spends
+        /// two draws per slab, and IndustrialLotBuilder lays dozens of patches per works - run
+        /// through the Ground stream those draws would shift every later block's ground, and run
+        /// through its own they would be a second source of colour fighting the one the yard
+        /// zoning already chose. The yard tints what it wants explicitly, via MaterialTint.
+        /// </summary>
+        public static GameObject LaySurface(
+            GameObject tile, Vector2 min, Vector2 max, float lift, string name,
+            Transform parent, SpawnPrefab spawn) =>
+            LayRect(tile, min, max, lift, name, null, null, parent, spawn, null, shade: false);
+
         static GameObject LayRect(
             GameObject tile,
             Vector2 min,
@@ -793,6 +815,12 @@ namespace LivingCity.Generation
             System.Random rng,
             List<GameObject> placed)
         {
+            // tile-park carries a Tile, so these have the same Awake-runs-inside-Instantiate
+            // problem the road tiles do - see RoadNetworkBuilder.Relink. Collected and relinked
+            // as a batch below; without it a park's walks never join the pavement network and
+            // pedestrians simply never enter it.
+            var parkTiles = new List<GameObject>();
+
             foreach (var cell in cells)
             {
                 var centre = grid.CellToWorld(cell);
@@ -800,8 +828,20 @@ namespace LivingCity.Generation
 
                 var instance = spawn(tile, centre, Quaternion.Euler(0f, 90f * rng.Next(4), 0f), parent);
                 instance.name = $"ground_{zone}_{blockId}_{cell.x}_{cell.y}";
+
+                // tile-park carries a Tile whose sidewalk nodes are authored to its own +/-15, so
+                // it links into the pavement network only while it covers exactly one cell. On a
+                // stretched city that means it takes the same CityGrid.TileScale every road tile
+                // takes - laid at authored size it would leave its nodes short of the boundary by
+                // a whole 4.5m and shut the park to pedestrians. This is the one place the
+                // no-scaling rule for tile-park does NOT apply, because everything it links to
+                // moved with it.
+                instance.transform.localScale = Vector3.one * CityGrid.TileScale;
                 placed.Add(instance);
+                parkTiles.Add(instance);
             }
+
+            RoadNetworkBuilder.Relink(parkTiles);
         }
     }
 }

@@ -1,0 +1,16 @@
+# Quaternius revolver palette, from the glTF baseColorFactor (linear -> sRGB here).
+newmtl Grey
+Kd 0.199328 0.202126 0.207721
+Ks 0.100000 0.100000 0.100000
+Ns 40
+
+newmtl LightMetal
+Kd 0.334589 0.338162 0.348883
+Ks 0.100000 0.100000 0.100000
+Ns 40
+
+newmtl Metal
+Kd 0.255974 0.259548 0.256701
+Ks 0.100000 0.100000 0.100000
+Ns 40
+

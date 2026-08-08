@@ -13,7 +13,8 @@ namespace LivingCity.Generation
     /// new geometry, only the street cross-section the city already has:
     ///
     ///   distances from the road centreline - facades stand at 7m (10m on the avenue), while
-    ///   the boundary between a road cell and a block cell is at CellSize/2 = 15m.
+    ///   the boundary between a road cell and a block cell is at CellSize/2 (15m authored, and
+    ///   whatever CityGrid.TileScale makes of it - the rule is a ratio, so it does not care).
     ///
     /// So a facade that fronts the street stands INSIDE the road cell (blocks expand out of
     /// their own cells into the road tile by BlockBuilder's Reach), and a facade turned toward

@@ -48,6 +48,9 @@ namespace LivingCity.EditorTools
             var builder = cityObject.GetComponent<CityBuilder>() ?? cityObject.AddComponent<CityBuilder>();
 
             CityEditorUtils.SetField(builder, "config", config);
+            CityEditorUtils.SetField(builder, "lotConfig",
+                AssetDatabase.LoadAssetAtPath<IndustrialLotConfig>(
+                    "Assets/Configs/IndustrialLotConfig.asset"));
             CityEditorUtils.SetField(builder, "prefabs", prefabs);
             CityEditorUtils.SetBool(builder, "buildOnStart", false);
 
@@ -82,6 +85,28 @@ namespace LivingCity.EditorTools
             var police = spawners.GetComponent<PoliceDirector>() ?? spawners.AddComponent<PoliceDirector>();
             CityEditorUtils.SetField(police, "config", config);
             CityEditorUtils.SetField(police, "prefabs", prefabs);
+
+            // The bank's customers, homed on the BankForecourt marker the build above attached
+            // to whichever bank this seed produced. Stands down by itself on the seeds where the
+            // bank drew its own block and has no forecourt.
+            var bank = spawners.GetComponent<BankVisitorDirector>()
+                    ?? spawners.AddComponent<BankVisitorDirector>();
+            CityEditorUtils.SetField(bank, "config", config);
+            CityEditorUtils.SetField(bank, "prefabs", prefabs);
+
+            // The police overlay: state diamonds + the click popup. Self-sufficient - it
+            // finds the camera and the police registries itself, and builds its own canvas,
+            // so there is nothing to wire.
+            if (!spawners.GetComponent<UI.PoliceOverlayHud>())
+                spawners.AddComponent<UI.PoliceOverlayHud>();
+
+            // The school run: one bus and its roster of children, homed on the SchoolMarker the
+            // build above attached - if this seed drew a school at all. Runtime-only like the
+            // other spawners; it stands down by itself when there is no school.
+            var school = spawners.GetComponent<SchoolBusDirector>()
+                      ?? spawners.AddComponent<SchoolBusDirector>();
+            CityEditorUtils.SetField(school, "config", config);
+            CityEditorUtils.SetField(school, "prefabs", prefabs);
 
             var clouds = spawners.GetComponent<CloudSystem>() ?? spawners.AddComponent<CloudSystem>();
             CityEditorUtils.SetField(clouds, "config", config);

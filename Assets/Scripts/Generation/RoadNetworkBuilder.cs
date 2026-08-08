@@ -113,6 +113,14 @@ namespace LivingCity.Generation
 
                 var tile = spawn(prefab, grid.CellToWorld(cell), placement.Rotation, parent);
                 tile.name = $"tile_{cell.x}_{cell.y}_{placement.Kind}";
+
+                // The stretch, and the only place it is applied to a road. Tile caches its
+                // neighbours in Awake and links its lanes in Start, both AFTER this returns, so
+                // the scale is already on the transform when the probe distance and the link
+                // tolerance are computed - and both are ratios of lossyScale, so the network
+                // comes out identical to an unscaled one. Setting it any later would relink a
+                // network that had already been built at the wrong size.
+                Rescale(tile);
                 result.Tiles.Add(tile);
 
                 var crossroads = placement.Kind == RoadTileKind.Cross
@@ -128,11 +136,73 @@ namespace LivingCity.Generation
                 {
                     var lights = spawn(lightsPrefab, grid.CellToWorld(cell), Quaternion.identity, parent);
                     lights.name = $"lights_{cell.x}_{cell.y}";
+
+                    // The gantry has to grow with the road it spans, and its stop-trigger boxes
+                    // are children, so they scale with it and keep meeting cars at the same place
+                    // in the tile. A light left at authored size would hang its arms over a lane
+                    // that is no longer there.
+                    Rescale(lights);
                     result.TrafficLights.Add(lights);
                 }
             }
 
+            // THE SCALE IS NOT LIVE UNTIL THIS RUNS. Object.Instantiate is synchronous and runs
+            // Awake before it returns, so every Tile above cached its neighbours at scale 1 - and
+            // Tile.GetNeighborTiles probes 18 * lossyScale.z with a half-extent of 2 * lossyScale,
+            // which at scale 1 is a box covering 16..20 while the neighbour's collider now starts
+            // at CellSize/2 = 19.5. Half a metre of overlap, hit or miss per tile, so the cache
+            // came out partial and the lane graph with it. Cars then find routes that stop in
+            // mid-air or resolve their destination back onto their own tile, which is the
+            // unguarded null in PathFinding.GetPath.
+            //
+            // Re-cached rather than avoided, because the only way to beat Awake is to instantiate
+            // into a deactivated parent, and the parent is the caller's. Doing it here, after the
+            // whole batch, is also strictly better than what Awake could have managed: a tile
+            // placed early cannot see one placed later, so even at scale 1 the first tiles of the
+            // loop were caching an incomplete neighbourhood.
+            Relink(result.Tiles);
+
             return result;
+        }
+
+        /// <summary>
+        /// Puts one placed tile on the city's stretch. Uniform on purpose: a tile scaled on one
+        /// axis only would tear the lattice apart at the first junction - see CityGrid.TileScale.
+        /// </summary>
+        static void Rescale(GameObject instance)
+        {
+            if (instance)
+                instance.transform.localScale = Vector3.one * CityGrid.TileScale;
+        }
+
+        /// <summary>
+        /// Rebuilds every tile's neighbour cache and lane links, once the whole batch is placed
+        /// and scaled.
+        ///
+        /// Physics.SyncTransforms first, and it is not optional: GetNeighborTiles asks the physics
+        /// scene for colliders, and a transform scaled this frame does not reach it until the sync
+        /// (autoSyncTransforms is off in this project). Without it every probe would still be
+        /// measuring the unscaled boxes and this pass would faithfully reproduce the bug.
+        ///
+        /// UpdateNeighbors also re-runs UpdatePaths, which ASSIGNS path.nextPaths rather than
+        /// appending, so it is idempotent - Tile.Start() running it again later is harmless.
+        /// </summary>
+        public static void Relink(List<GameObject> tiles)
+        {
+            if (tiles == null || tiles.Count == 0)
+                return;
+
+            Physics.SyncTransforms();
+
+            foreach (var instance in tiles)
+            {
+                if (!instance)
+                    continue;
+
+                var tile = instance.GetComponent<PolyPerfect.City.Tile>();
+                if (tile)
+                    tile.UpdateNeighbors();
+            }
         }
     }
 }

@@ -176,9 +176,9 @@ namespace LivingCity.Tests
         }
 
         /// <summary>
-        /// Industrial gates from real layouts across seeds, block shapes and road sides, plus
-        /// the churchyard's width on every cardinal - its centre is computed from the fence
-        /// rect the same parametric way, so the cardinals cover its cases.
+        /// Industrial gates from real layouts across seeds, block shapes and road sides. The
+        /// churchyard used to add a second width on every cardinal; it went with the church, and
+        /// the works yard is the only thing that cuts a gate now.
         /// </summary>
         static IEnumerable<PerimeterFence.Gate> AllGates()
         {
@@ -208,16 +208,6 @@ namespace LivingCity.Tests
                     Width = IndustrialLayout.GateWidth,
                 };
             }
-
-            foreach (var outward in new[]
-                     { Vector3.forward, Vector3.back, Vector3.left, Vector3.right })
-                yield return new PerimeterFence.Gate
-                {
-                    Has = true,
-                    Centre = new Vector3(23f, 0f, 23f) + outward * 22.4f,
-                    Outward = outward,
-                    Width = 6f, // ChurchDresser.GateWidth
-                };
         }
     }
 }

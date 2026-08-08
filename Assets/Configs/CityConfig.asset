@@ -16,15 +16,15 @@ MonoBehaviour:
   gridHeight: 7
   minArterialSpacing: 2
   maxArterialSpacing: 4
-  seed: 1714570989
+  seed: 108331815
   blockFillRatio: 1
   buildingTintChance: 1
   commercialTintChance: 1
   groundPatchSize: 18
   groundTintChance: 0.85
   groundPaint: 1
-  sidewalkWidth: 7
-  mainSidewalkWidth: 10
+  sidewalkWidth: 9.1
+  mainSidewalkWidth: 13
   alleyWidth: 6
   partyWallGap: 0.05
   maxFillerGap: 0.8
@@ -65,19 +65,29 @@ MonoBehaviour:
   policeOfficerStationStayRange: {x: 20, y: 90}
   policeCarsStartAtStation: 1
   policeOfficersStartAtStation: 1
+  bankVisitorCount: 2
+  bankVisitStayRange: {x: 30, y: 90}
+  bankVisitorGapRange: {x: 10, y: 40}
+  schoolChildCount: 8
+  schoolBusStops: 3
+  schoolStopDistance: {x: 60, y: 160}
+  schoolMorningHour: 7.5
+  schoolAfternoonHour: 15
+  schoolRunWindowHours: 1.5
+  schoolBusDwellSeconds: 8
   pedestrianProbeInterval: 3
   pedestrianSpawnBatch: 10
   pedestrianRepathBudget: 24
   pedestrianLodMidOrtho: 45
   pedestrianLodFarOrtho: 90
   pedestrianLodMidRate: 3
-  realSecondsPerGameHour: 1
+  realSecondsPerGameHour: 10
   startHour: 21.7
   nightBrightness: 1.2
   litLampBudget: 100000
-  headlightRange: 12
+  headlightRange: 18
   headlightIntensity: 16
-  lampRange: 10
-  lampIntensity: 5
+  lampRange: 12
+  lampIntensity: 7
   debugSingleZone: 0
   debugZone: 0

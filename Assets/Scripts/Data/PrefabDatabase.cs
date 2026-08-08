@@ -176,7 +176,7 @@ namespace LivingCity.Data
             [Range(0f, 1f)] public float maxShare = 1f;
 
             [Tooltip("Hard cap in blocks regardless of city size. 0 = none. This is the right " +
-                     "control for anything a city has ONE of - the hospital, the church. A share " +
+                     "control for anything a city has ONE of - the hospital, the car park. A share " +
                      "cap cannot express that: 9% of a twelve-block map is one hospital, but 9% " +
                      "of a forty-block map is three. Note this is a CEILING and not a promise; " +
                      "see 'guaranteed' below for the promise.")]
@@ -194,7 +194,7 @@ namespace LivingCity.Data
                      "smallest block still going back from the residential fabric and gives it " +
                      "to this zone anyway. OFF for every palette in the shipped database, so " +
                      "the pass does nothing at all today and every zone is a ceiling - at most " +
-                     "one hospital, at most one church - the way the post office and the fire " +
+                     "one hospital, at most one school - the way the post office and the fire " +
                      "station have always been.\n\n" +
                      "What turning it on costs, stated plainly, because it is not free: one " +
                      "block, taken out of ResidentialHigh or Industrial. On a nine-by-seven map " +
@@ -404,6 +404,17 @@ namespace LivingCity.Data
                      "two carriageways meet. Empty leaves the roads the colour of the yard.")]
             public GameObject serviceRoadGround;
 
+            [Tooltip("tile-plain_concrete-nb - laid under the loading aprons, the truck staging " +
+                     "and the boiler plot. The no-border variant for the same reason the service " +
+                     "road uses one: a kerb drawn round every patch tiles visibly where two of " +
+                     "them meet, and the yard is nothing but patches meeting.")]
+            public GameObject yardConcrete;
+
+            [Tooltip("tile-plain_dirt-nb - the bulk stockpiles, the scrap corner, and the worn " +
+                     "ground between them. Empty leaves the whole yard the colour of its slab, " +
+                     "which is the single flat plane this pass exists to break up.")]
+            public GameObject yardDirt;
+
             [Tooltip("Material stacked in the gaps between halls: brick and plank stacks, " +
                      "cement bags, pipe. Placed in GROUPS against a hall wall rather than " +
                      "sprinkled - a works stores things where it uses them, and the same " +
@@ -587,6 +598,20 @@ namespace LivingCity.Data
                  "worn across a yard. Empty leaves the paths undrawn.")]
         public Material paintLightMaterial;
 
+        [Tooltip("Ash-dark variant of the atlas, multiplied onto the ground round a boiler house " +
+                 "and onto the most worn yard patches.\n\n" +
+                 "Deliberately NOT a member of groundTints: GroundPlacer.Shade draws from that " +
+                 "array uniformly for every block in the city, so a near-black entry there would " +
+                 "put cinder-coloured slabs down residential streets.")]
+        public Material cinderTint;
+
+        [Tooltip("17 GREY-DARKEST - tyre ruts and the painted rail spur. Darker than " +
+                 "paintDarkMaterial, which is paving joints and has to stay readable as concrete.")]
+        public Material grimeMaterial;
+
+        [Tooltip("57 BLACK - oil stains under the lorry stands and the loading aprons.")]
+        public Material oilMaterial;
+
         [Header("Smoke")]
         [Tooltip("Where the chimney mouths are on each prefab, in its own local space. Measured " +
                  "by Tools/City/Measure Chimney Vents and rewritten every bootstrap - do not " +
@@ -654,6 +679,18 @@ namespace LivingCity.Data
                  "added. Lives in Assets/Configs, outside the People_AI_T glob, so civilians " +
                  "can never draw it.")]
         public GameObject policeOfficerPrefab;
+
+        [Header("School run")]
+        [Tooltip("bus-school_AI. Kept OUT of the generic traffic buckets the same way the " +
+                 "police car is: the only school bus in the city is the one SchoolBusDirector " +
+                 "spawns and owns, so it is never seen driving a route with nobody on it.")]
+        public GameObject schoolBusPrefab;
+
+        [Tooltip("The child models the roster is drawn from - Epic City's one surviving child " +
+                 "plus the Animated People children the bootstrap authors. Drawn from by " +
+                 "SchoolBusDirector; the SAME models also carry the crowd's Children group, " +
+                 "so a child on the pavement and a child at the bus stop are the same city.")]
+        public GameObject[] schoolChildPrefabs = Array.Empty<GameObject>();
 
         [Header("Ambient (Nature_T/Clouds_T)")]
         public GameObject[] clouds = Array.Empty<GameObject>();

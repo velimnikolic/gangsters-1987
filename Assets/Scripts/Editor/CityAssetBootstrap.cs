@@ -136,6 +136,15 @@ namespace LivingCity.EditorTools
             "man_punk", "woman_punk",
             "man_homeless", "woman_homeless",
 
+            // The children. Epic City has exactly one child left once the beach models are
+            // gone, and this pack has six on a shared rig - so unlike every name above, these
+            // are here to fix a HOLE rather than to widen a silhouette range. They carry both
+            // the crowd's Children group and the school run's roster; the school run is what
+            // made the hole worth fixing, because a bus full of the same boy is worse than the
+            // pavement version of the same problem.
+            "boy_casual_cap", "boy_coat_winter", "boy-large",
+            "girl_casual_shorts", "girl_coat_winter", "girl-large",
+
             // The beat officer - authored through the same conversion but NEVER in the crowd:
             // BuildPedestrianGroups draws from AuthoredPeople by name and does not list him,
             // so the only route onto the street is PoliceDirector via policeOfficerPrefab.
@@ -277,6 +286,12 @@ namespace LivingCity.EditorTools
 
             var config = GetOrCreate<CityConfig>($"{ConfigDir}/CityConfig.asset");
             var db = GetOrCreate<PrefabDatabase>($"{ConfigDir}/PrefabDatabase.asset");
+
+            // Created here so it cannot end up like PerformanceConfig - a ScriptableObject with
+            // a CreateAssetMenu that nothing ever makes, nothing references and nobody notices
+            // is missing. Its defaults come from the class, and GetOrCreate leaves an existing
+            // asset alone, so a yard already tuned in the inspector survives every refresh.
+            var lots = GetOrCreate<IndustrialLotConfig>($"{ConfigDir}/IndustrialLotConfig.asset");
 
             // CityConfig.asset survives every refresh with its serialized values intact -
             // GetOrCreate never rewrites an existing asset - so a default changed in
@@ -456,8 +471,13 @@ namespace LivingCity.EditorTools
                 // picker.Next() with no size limits (VehicleSpawner.cs:176), so unlike the kerb
                 // and the car parks, traffic has no length ceiling and an 11.28m vehicle is
                 // legal here. Kept to 6/100 - it is the biggest silhouette on the road and two
-                // on screen at once would own the street. bus-school stays out: a yellow
-                // American school bus is the loudest anachronism in the pack.
+                // on screen at once would own the street. bus-school stays out of THIS list for
+                // the reason it always did - a yellow American school bus is the loudest
+                // anachronism in the pack, and one wandering the city on a random route is the
+                // anachronism with nothing to justify it. It now has a job instead: it is
+                // db.schoolBusPrefab, driven only by SchoolBusDirector, only between the school
+                // and its stops, and only with children getting on and off it. Same arrangement
+                // as the police car - out of the buckets, owned by a director.
                 //
                 // Watch this one first if traffic starts clipping corners. It is by far the
                 // longest thing the pack's CarBehavior has to steer through a junction, and
@@ -479,12 +499,20 @@ namespace LivingCity.EditorTools
             db.policeCarPrefab = Load(CarsAI + "car-police_AI.prefab");
             db.policeOfficerPrefab = Load(AuthoredPeople + "man_police_AI.prefab");
 
+            // The school run. The bus is the pack's own AI school bus, absent from every
+            // traffic bucket above for the same reason the police car is. The roster draws
+            // from the same seven child models the crowd's Children group does - see
+            // BuildPedestrianGroups for why that list is now seven rather than one.
+            db.schoolBusPrefab = Load(CarsAI + "bus-school_AI.prefab");
+            db.schoolChildPrefabs = Children();
+
             db.pedestrianController = BuildPedestrianController();
 
             BuildTintPalette(db);
 
             EditorUtility.SetDirty(config);
             EditorUtility.SetDirty(db);
+            EditorUtility.SetDirty(lots);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
@@ -532,12 +560,26 @@ namespace LivingCity.EditorTools
             if (!reference)
                 return;
 
-            var referenceCapsule = reference.GetComponent<CapsuleCollider>();
+            // The pack splits these across two objects: the Rigidbody, HumanBehavior and
+            // PathFinding sit on the prefab root, but the capsule is one level down on the
+            // _Rig child that carries the SkinnedMeshRenderer. So this one lookup has to
+            // descend and the other two must not. A root-only GetComponent here returns null
+            // and aborts the whole pass at the return below - one line before the output
+            // folder is created - and the only visible symptom is that police officers never
+            // spawn, because policeOfficerPrefab is the one field with no pack fallback.
+            var referenceCapsule = reference.GetComponentInChildren<CapsuleCollider>(true);
             var referenceBody = reference.GetComponent<Rigidbody>();
             var referenceBehavior = reference.GetComponent<HumanBehavior>();
             if (!referenceCapsule || !referenceBody || !referenceBehavior)
             {
-                Missing.Add($"{PedestrianReference} :: expected capsule + rigidbody + HumanBehavior");
+                // Named individually: the old message listed all three whatever was actually
+                // missing, which is why five bootstrap runs reported this failure without
+                // anyone being able to see that only the capsule lookup was at fault.
+                var absent = new List<string>();
+                if (!referenceCapsule) absent.Add("CapsuleCollider");
+                if (!referenceBody) absent.Add("Rigidbody");
+                if (!referenceBehavior) absent.Add("HumanBehavior");
+                Missing.Add($"{PedestrianReference} :: missing {string.Join(" + ", absent)}");
                 return;
             }
 
@@ -589,6 +631,12 @@ namespace LivingCity.EditorTools
                 // (Animated People ships them Untagged) crosses without cars ever seeing it.
                 instance.tag = reference.tag;
 
+                // Deliberately the reference's capsule verbatim, children included: an adult
+                // capsule on a 1.2m child is oversized, and that is fine. Only two things read
+                // it - PedestrianRegistry.MeasureRadius, which takes the radius and ignores the
+                // height, and the crosswalk triggers, which want to be generous. Scaling it to
+                // the rig would buy nothing and would put a second per-model number in a pass
+                // whose whole discipline is "measured off the reference".
                 var capsule = instance.AddComponent<CapsuleCollider>();
                 capsule.radius = referenceCapsule.radius;
                 capsule.height = referenceCapsule.height;
@@ -628,9 +676,11 @@ namespace LivingCity.EditorTools
         ///
         /// Weights are shares of the street, not probabilities per model. Suits at 3/10.5 is a
         /// city of clerks, brokers and the odd wise guy; Civilians at 4/10.5 keeps them from
-        /// owning it. Children is one model at 0.5 because Epic City has exactly one child left
-        /// once the beach is gone, and a pavement where every child is the same boy is worse
-        /// than a pavement with few children.
+        /// owning it. Children used to be one model at 0.5, because Epic City has exactly one
+        /// child left once the beach is gone and a pavement where every child is the same boy
+        /// is worse than a pavement with few children. The Animated People conversion gives it
+        /// six more, so the weight goes up with the variety that earns it - the constraint was
+        /// never that the period had few children.
         /// </summary>
         static PrefabDatabase.WeightedPrefabs[] BuildPedestrianGroups() => new[]
         {
@@ -653,9 +703,19 @@ namespace LivingCity.EditorTools
                 LoadAll(AuthoredPeople, "man_homeless_AI", "woman_homeless_AI",
                         "man_punk_AI", "woman_punk_AI")),
 
-            Crowd("Children", 0.5f,
-                LoadAll(PeopleAI, "boy-sport_AI")),
+            Crowd("Children", 1.5f, Children()),
         };
+
+        /// <summary>
+        /// Every child model in the city, in one place because two systems must agree on it:
+        /// the crowd's Children group and SchoolBusDirector's roster. A child waiting at a bus
+        /// stop and a child on the pavement have to be able to be the same child, or the school
+        /// run reads as a cast of extras bussed in for the occasion.
+        /// </summary>
+        static GameObject[] Children() => Merge(
+            LoadAll(PeopleAI, "boy-sport_AI"),
+            LoadAll(AuthoredPeople, "boy_casual_cap_AI", "boy_coat_winter_AI", "boy-large_AI",
+                    "girl_casual_shorts_AI", "girl_coat_winter_AI", "girl-large_AI"));
 
         /// <summary>One weighted slice of the crowd, drawn from more than one pack.</summary>
         static PrefabDatabase.WeightedPrefabs Crowd(
@@ -671,6 +731,31 @@ namespace LivingCity.EditorTools
             "Assets/polyperfect/Low Poly Epic City/People Controller.controller";
         const string AnimatedPeopleClips =
             "Assets/polyperfect/Low Poly Animated People/- Animations/Common_Animations/Common_Animation_Set.fbx";
+
+        /// <summary>
+        /// The death clip lives in its own FBX rather than the common set, and imports under the
+        /// name "Death" rather than the file's "Death_FallForwards" - the take is renamed in the
+        /// .meta. Loaded by type rather than by name for that reason.
+        /// </summary>
+        const string DeathClipAsset =
+            "Assets/polyperfect/Low Poly Animated People/- Animations/In Place/Deaths/Death_FallForwards.fbx";
+
+        /// <summary>
+        /// Quaternius' Universal Animation Library (CC0), the only source in the project for a
+        /// gun. Neither character pack ships an aim or a shoot take, which is why the gunman
+        /// was posed by IK to begin with - a guess at what an animator would have done. These
+        /// are the animator's answer, so the guess goes.
+        ///
+        /// The IN-PLACE file, not the _RM one beside it. Every pedestrian here runs with
+        /// applyRootMotion off because HumanBehavior drives the transform, so baked root motion
+        /// would be thrown away at best and fight the script at worst.
+        ///
+        /// Takes come through named "Armature|Pistol_Shoot" - the Blender action prefix rides
+        /// along into the FBX - so clips are matched on the part after the bar, never on the
+        /// whole name.
+        /// </summary>
+        const string PistolClipAsset = "Assets/Animations/UAL1_Standard.fbx";
+
         const string PedestrianControllerPath = ConfigDir + "/People Interaction Controller.controller";
 
         /// <summary>
@@ -718,11 +803,22 @@ namespace LivingCity.EditorTools
             var sitDownClip = Clip("Idle-Sitting_Bench");
             var sittingClip = Clip("Sitting_Bench_Idle");
             var standUpClip = Clip("Sitting-Idle");
-            if (!talkClip || !argueClip || !sitDownClip || !sittingClip || !standUpClip)
+
+            var deathClip = AssetDatabase.LoadAllAssetsAtPath(DeathClipAsset)
+                .OfType<AnimationClip>()
+                .FirstOrDefault(clip => !clip.name.StartsWith("__preview"));
+            if (!deathClip)
+                Missing.Add($"{DeathClipAsset} :: death take");
+
+            EnsureAnimationLibraryIsHumanoid();
+            var pistolIdleClip = PistolClip("Pistol_Idle_Loop");
+            var aimClip = PistolClip("Pistol_Aim_Neutral");
+            var shootClip = PistolClip("Pistol_Shoot");
+
+            if (!talkClip || !argueClip || !sitDownClip || !sittingClip || !standUpClip || !deathClip)
                 return null;
 
-            AssetDatabase.DeleteAsset(PedestrianControllerPath);
-            if (!AssetDatabase.CopyAsset(PackPeopleController, PedestrianControllerPath))
+            if (!ResetControllerFromPack())
             {
                 Missing.Add(PedestrianControllerPath);
                 return null;
@@ -730,6 +826,14 @@ namespace LivingCity.EditorTools
 
             var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(PedestrianControllerPath);
             controller.AddParameter(PedestrianAnimation.ActivityParam, AnimatorControllerParameterType.Int);
+
+            // OnAnimatorIK is never called unless the LAYER asks for it, and a gunman aims by IK
+            // rather than by clip - the packs ship no aim or shoot take, so GunmanAim reaches
+            // the right hand through the humanoid IK goal instead. layers returns a COPY, so the
+            // flag has to be written back through the property or it is silently discarded.
+            var layers = controller.layers;
+            layers[0].iKPass = true;
+            controller.layers = layers;
 
             var machine = controller.layers[0].stateMachine;
             var idle = FindState(machine, "Breathing Idle");
@@ -745,9 +849,45 @@ namespace LivingCity.EditorTools
             var sitDown = AddState(machine, "Sit Down", sitDownClip);
             var sitting = AddState(machine, "Sitting", sittingClip);
             var standUp = AddState(machine, "Stand Up", standUpClip);
+            var die = AddState(machine, "Die", deathClip);
 
             AnyStateEntry(machine, talk, PedestrianAnimation.Talk);
             AnyStateEntry(machine, argue, PedestrianAnimation.Argue);
+
+            // No Exit() and no OnExitTime(): Die is where a walker stops. See
+            // PedestrianAnimation.Die for why a one-shot is safe under AnyState here and the
+            // sit chain is not. Snappier than the others on purpose - a quarter-second blend
+            // into being shot reads as stumbling, not as being hit.
+            AnyStateEntry(machine, die, PedestrianAnimation.Die, duration: 0.08f);
+
+            // The gun chain. Skipped rather than half-built if the library is not imported: a
+            // controller with an Aim state and no clip in it is a T-pose, which reads as a
+            // broken rig rather than as a missing asset.
+            if (pistolIdleClip && aimClip && shootClip)
+            {
+                var pistolIdle = AddState(machine, "Pistol Idle", pistolIdleClip);
+                var aim = AddState(machine, "Aim", aimClip);
+                var shoot = AddState(machine, "Shoot", shootClip);
+
+                AnyStateEntry(machine, pistolIdle, PedestrianAnimation.PistolIdle);
+                AnyStateEntry(machine, aim, PedestrianAnimation.Aim);
+                Exit(pistolIdle, idle, PedestrianAnimation.PistolIdle);
+                Exit(aim, idle, PedestrianAnimation.Aim);
+
+                // Shoot is NOT an AnyState entry - it is reachable only from Aim - and it fires
+                // on a TRIGGER rather than on the activity int. See PedestrianAnimation.ShootParam:
+                // an int condition still matched when Shoot handed back to Aim on exit time, so
+                // the gunman recoiled in a loop. A trigger is consumed by the transition.
+                controller.AddParameter(PedestrianAnimation.ShootParam,
+                                        AnimatorControllerParameterType.Trigger);
+
+                var pull = aim.AddTransition(shoot);
+                pull.hasExitTime = false;
+                pull.duration = 0.02f;
+                pull.AddCondition(AnimatorConditionMode.If, 0f, PedestrianAnimation.ShootParam);
+
+                OnExitTime(shoot, aim);
+            }
             Exit(talk, idle, PedestrianAnimation.Talk);
             Exit(argue, idle, PedestrianAnimation.Argue);
 
@@ -759,6 +899,80 @@ namespace LivingCity.EditorTools
 
             EditorUtility.SetDirty(controller);
             return controller;
+        }
+
+        /// <summary>
+        /// Puts a clean copy of the pack controller at PedestrianControllerPath, KEEPING the
+        /// asset's GUID.
+        ///
+        /// DeleteAsset followed by CopyAsset - what this used to do - mints a brand new GUID
+        /// every run, and every scene that referenced the old one silently loses its animator.
+        /// The character keeps standing there in its bind pose with no error anywhere, which is
+        /// about the most expensive way a build can fail. The demo scene hit exactly this.
+        ///
+        /// So the FILE is overwritten and the .meta beside it is left alone, which is what
+        /// carries the GUID. Sub-object file IDs do change, but nothing references a state
+        /// directly - an Animator points at the controller's main object, whose ID is fixed.
+        /// </summary>
+        static bool ResetControllerFromPack()
+        {
+            if (!AssetDatabase.LoadAssetAtPath<AnimatorController>(PedestrianControllerPath))
+                return AssetDatabase.CopyAsset(PackPeopleController, PedestrianControllerPath);
+
+            var pack = Path.GetFullPath(PackPeopleController);
+            var target = Path.GetFullPath(PedestrianControllerPath);
+            if (!File.Exists(pack))
+                return false;
+
+            File.Copy(pack, target, overwrite: true);
+            AssetDatabase.ImportAsset(PedestrianControllerPath, ImportAssetOptions.ForceUpdate);
+
+            return AssetDatabase.LoadAssetAtPath<AnimatorController>(PedestrianControllerPath);
+        }
+
+        /// <summary>
+        /// A take from the animation library, matched on the part after the "Armature|" prefix.
+        ///
+        /// Missing clips are reported but not fatal: the gun chain is skipped and the rest of
+        /// the controller still builds, so a project without the library still has walking,
+        /// talking, sitting pedestrians.
+        /// </summary>
+        static AnimationClip PistolClip(string take)
+        {
+            var clip = AssetDatabase.LoadAllAssetsAtPath(PistolClipAsset)
+                .OfType<AnimationClip>()
+                .FirstOrDefault(c => !c.name.StartsWith("__preview") &&
+                                     c.name.Split('|').Last() == take);
+
+            if (!clip)
+                Missing.Add($"{PistolClipAsset} :: {take}");
+
+            return clip;
+        }
+
+        /// <summary>
+        /// Imports the library as Humanoid so its clips retarget onto the two character packs.
+        ///
+        /// An animation-only FBX defaults to Generic, and a Generic clip played on a Humanoid
+        /// character animates NOTHING - no warning, no error, the character just stands there.
+        /// That is the same silent failure the missing IK pass produced, and it is worth one
+        /// reimport to rule out.
+        /// </summary>
+        static void EnsureAnimationLibraryIsHumanoid()
+        {
+            var importer = AssetImporter.GetAtPath(PistolClipAsset) as ModelImporter;
+            if (!importer)
+            {
+                Missing.Add(PistolClipAsset);
+                return;
+            }
+
+            if (importer.animationType == ModelImporterAnimationType.Human)
+                return;
+
+            importer.animationType = ModelImporterAnimationType.Human;
+            importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+            importer.SaveAndReimport();
         }
 
         static AnimatorState FindState(AnimatorStateMachine machine, string name)
@@ -776,12 +990,13 @@ namespace LivingCity.EditorTools
             return state;
         }
 
-        static void AnyStateEntry(AnimatorStateMachine machine, AnimatorState to, int activity)
+        static void AnyStateEntry(AnimatorStateMachine machine, AnimatorState to, int activity,
+                                  float duration = 0.25f)
         {
             var transition = machine.AddAnyStateTransition(to);
             transition.canTransitionToSelf = false;
             transition.hasExitTime = false;
-            transition.duration = 0.25f;
+            transition.duration = duration;
             transition.AddCondition(AnimatorConditionMode.Equals, activity, PedestrianAnimation.ActivityParam);
         }
 
@@ -898,21 +1113,38 @@ namespace LivingCity.EditorTools
                     //
                     // One bucket for both of this palette's landmarks, because landmarkCars is a
                     // property of the PALETTE and there is no per-landmark list to hang a second
-                    // one off. In practice it now serves only the BANK: the station's forecourt
-                    // is the patrol fleet's parking, so PlaceLandmark passes maxCars 0 for it -
+                    // one off. In practice it serves only the BANK: the station's forecourt is
+                    // the patrol fleet's parking, so PlaceLandmark passes maxCars 0 for it -
                     // lines painted, bays reserved, no static bakes - and records the stalls on
-                    // a PoliceStation marker for PoliceDirector's four real cars. A police car
-                    // outside the bank is still the most period-appropriate thing in the file.
+                    // a PoliceStation marker for PoliceDirector's four real cars.
+                    //
+                    // These are the bank's CUSTOMERS, which is why they are ordinary cars. The
+                    // bucket used to lead with car-police, and since the station never draws
+                    // from it, the only thing it ever produced was a rank of patrol cars outside
+                    // the bank - the exact reading parkedCarGroups above rejects police cars to
+                    // avoid ("parked, it is studied, and outside the station's own forecourt it
+                    // would read as a mistake rather than as a beat car"). The two rules now
+                    // agree. The bays these bakes leave empty are not spare: BankVisitorDirector
+                    // drives live customers into them, so this list sets the parked HALF of the
+                    // forecourt and the traffic groups set the other.
                     //
                     // The van is in a bucket WITH other cars for a mechanical reason: armored-truck
                     // is 5.85 x 2.29 against a marked bay of 5.6 x 2.4, so VehiclePicker rejects it
                     // from every bay it is offered (it is on the reject list above). Alone it would
                     // leave the forecourt empty - exactly what the hospital's single-entry ambulance
                     // bucket does today, which is a defect and not a pattern to copy. Beside cars
-                    // that fit, the bay is always occupied.
+                    // that fit, the bay is always occupied. It stays for the reason it is in the
+                    // Bank block's own Bullion bucket: a bank car is why this city has a station.
+                    //
+                    // NOT allowed to go empty, whatever is in it: palette.HasLandmarkCars is the
+                    // flag that cuts the forecourt at all (BlockBuilder.PlaceLandmark), so an
+                    // empty list would take the bays away from the police station too.
                     landmarkCars: new[]
                     {
-                        Bucket("Forecourt", 1f, CarsStatic, "car-police", "armored-truck"),
+                        Bucket("Customers", 1f, CarsStatic,
+                                 "car-veteran", "car-passenger", "car-hippie-van", "jeep-open",
+                                 "car-pickup-modern", "car-caravan-small", "car-taxi",
+                                 "armored-truck"),
                     },
                     // Uncapped, so TargetLotSize alone decides: a one-cell block stays a single
                     // ring, a two-cell block becomes two ringed lots with a real alley between
@@ -986,6 +1218,10 @@ namespace LivingCity.EditorTools
                     // a kerb drawn round every road rectangle would tile visibly where two
                     // carriageways meet at the gate.
                     serviceRoadGround: Load(NoBorder + "tile-plain_asphalt-nb.prefab"),
+                    // The two surfaces IndustrialLotBuilder composites the yard out of.
+                    // Both no-border, because the yard is nothing but patches meeting.
+                    yardConcrete: Load(NoBorder + "tile-plain_concrete-nb.prefab"),
+                    yardDirt: Load(NoBorder + "tile-plain_dirt-nb.prefab"),
                     // Concrete, not railing. The car park uses fence-classic because a 1.5m wall
                     // would hide the front row of cars, which is the thing being shown; a works
                     // is the opposite - the wall IS the thing being shown, and you are meant to
@@ -1076,6 +1312,15 @@ namespace LivingCity.EditorTools
                     // two outbuildings. Left open, the school took a 3x3 block and read as
                     // a campus.
                     maxBlockCells: 1,
+                    // The one zone the city PROMISES, and the only palette in the database that
+                    // sets this - see ZonePlanner's rescue pass. maxBlocks and guaranteed
+                    // together read "exactly one", where the hospital beside it still reads
+                    // "at most one". The reason is not that a school matters more than a
+                    // hospital: the school block carries the only SchoolMarker there is, and
+                    // without one SchoolBusDirector finds nothing, so the bus, the stops and
+                    // every schoolchild sit out that seed entirely. A whole system was riding
+                    // on a weighted roll it could not see.
+                    guaranteed: true,
                     maxLotsPerAxis: 1,
                     maxPerimeterBuildings: 2,
                     groups: new[] { Outbuildings() },
@@ -1175,58 +1420,6 @@ namespace LivingCity.EditorTools
                     parkLawnPatch: grass,
                     fenceSegment: Load(Fences + "fence-shrub.prefab")),
 
-                // One per city like the hospital, but guaranteed by ZonePlanner's rescue pass
-                // (maxBlocks 1 + maxBlockCells 1 is its trigger) rather than by the shared
-                // landmark budget, which stays spent on the civic three - see BlockZone.
-                //
-                // The pack ships no church; building-museum plays one. Measured 21.41 x 15.90
-                // and 12.89 tall, it fits the single cell at FULL scale with ~12m of garden a
-                // side and stands shorter than the terraces - no landmarkScale 0.5 here, that
-                // exists for buildings that tower from one cell.
-                //
-                // No groups: the block is a walled garden round one building, laid out by
-                // ChurchDresser off the gate-to-door axis. groundPerCell stays FALSE on
-                // purpose - tile-park's baked walk cross runs through the exact centre, where
-                // the church stands, and pedestrians would path through the nave. The plain
-                // grass slab carries no Path nodes, so nobody navigates into the yard.
-                //
-                // fence-stone and fence-stone-tower were unused in the pack until here: a
-                // 1.5m stone wall with piers is a churchyard, where the park's shrub hedge
-                // and the car park's railing would each read as the wrong institution.
-                // marketplace-stand-simple (3.06 x 1.74) is the stand by the gate - ALWAYS
-                // placed by the dresser, no chance roll; it shares kioskPrefabs with the
-                // pocket-park path safely because that only runs for featureStrip zones.
-                Palette(BlockZone.Church, weight: 10f, maxShare: 1f, maxBlocks: 1,
-                    maxBlockCells: 1,
-                    groups: System.Array.Empty<PrefabDatabase.WeightedGroup>(),
-                    ground: grass,
-                    landmarks: LoadAll(Buildings, "building-museum"),
-                    landmarkChance: 1f,
-                    landmarkScale: 1f,
-                    parkTrees: new[]
-                    {
-                        // The park's weighting logic at the park's ratios, minus the lime:
-                        // the corner pockets are ~12m and a 7.07m specimen crown fills one
-                        // whole on its own.
-                        Bucket("Church street trees", 5f, Trees,
-                            "tree-oak", "tree-birch", "tree-beech", "tree-round"),
-                        Bucket("Church uprights", 3f, Trees,
-                            "tree-poplar", "tree-tall", "tree-birch-tall", "tree-elipse"),
-                        Bucket("Church evergreens", 2f, Trees,
-                            "tree-fir", "tree-forest", "tree-old"),
-                    },
-                    parkUndergrowth: Merge(
-                        LoadAll(Trees, "shrub", "shrub-round"),
-                        LoadAll(Flowers, "roses", "carnations", "sunflower"),
-                        LoadAll(Grass, "grass", "grass-basic", "grass-clumb",
-                                       "grass-long", "grass-tall")),
-                    parkBenches: Merge(
-                        LoadAll(Props, "bench-forest"),
-                        LoadAll(CityProps, "bench-old")),
-                    kioskPrefabs: LoadAll(Props, "marketplace-stand-simple"),
-                    fenceSegment: Load(Fences + "fence-stone.prefab"),
-                    fencePost: Load(Fences + "fence-stone-tower.prefab")),
-
                 // The bank's other shape. It is usually ResidentialHigh's landmark - see the
                 // requiredLandmark up there - and about one city in four it takes a block of its
                 // own instead, which is this. ZonePlanner rolls between the two once per city and
@@ -1257,10 +1450,11 @@ namespace LivingCity.EditorTools
                 // an institution's forecourt is open to the pavement.
                 Palette(BlockZone.Bank, weight: 12f, maxShare: 1f, maxBlocks: 1,
                     // The hospital's footprint discipline, for the hospital's reason: one cell,
-                    // one ring, two outbuildings beside the landmark. Note this puts four zones -
-                    // hospital, school, church, bank - in competition for the map's one-cell
+                    // one ring, two outbuildings beside the landmark. Note this puts three zones -
+                    // hospital, school, bank - in competition for the map's one-cell
                     // blocks, of which a 9x7 map has only a handful. That competition, not the
-                    // weights alone, is what decides how often each turns up.
+                    // weights alone, is what decides how often each turns up. It was four until
+                    // the church went; expect hospital and school measurably more often now.
                     maxBlockCells: 1,
                     maxLotsPerAxis: 1,
                     maxPerimeterBuildings: 2,
@@ -1271,8 +1465,8 @@ namespace LivingCity.EditorTools
                     // motor pool besides. Ordinary masonry instead.
                     //
                     // Non-empty on purpose: a palette with groups builds its own perimeter, which
-                    // is what keeps this zone out of BlockBuilder entirely. The Church needs a
-                    // branch there only because its groups[] is empty.
+                    // is what keeps this zone out of BlockBuilder entirely - no zone branch, no
+                    // dresser of its own.
                     groups: new[] { BankNeighbours() },
                     landmarks: LoadAll(Buildings, "building-bank"),
                     landmarkChance: 1f,
@@ -1306,7 +1500,11 @@ namespace LivingCity.EditorTools
                 // that list and never wrote to it - so the only defence was scattering almost
                 // nothing. With the bays reserved, the extra props land in the aisles and along
                 // the fence, where they belong.
-                Palette(BlockZone.Parking, weight: 5f, maxShare: 0.1f,
+                // maxBlocks rather than the maxShare 0.1 this used to carry. A share cap says
+                // "a bigger city gets proportionally more of these", and one car park is now the
+                // rule at every map size - 0.1 rounded to one block on the shipped 9x7 map and
+                // quietly to three on a forty-block one. Same idiom as the hospital and the bank.
+                Palette(BlockZone.Parking, weight: 5f, maxShare: 1f, maxBlocks: 1,
                     // Half the largest 3x3 block - a car park may take up to 2x2/1x4, never
                     // swallow a full-size block.
                     maxBlockCells: 4,
@@ -1434,6 +1632,12 @@ namespace LivingCity.EditorTools
             db.paintDarkMaterial = FlatColour(PackMaterials + "Colors/18 GREY-DARK-LPEC.mat");
             db.paintLightMaterial = FlatColour(PackMaterials + "Colors/22 GREY-LIGHTEST-LPEC.mat");
 
+            // Two steps further down the same ramp for the works yard, which is grimier than a
+            // street: tyre ruts and the painted rail spur want to read as worn-in rather than as
+            // markings, and an oil stain is black.
+            db.grimeMaterial = FlatColour(PackMaterials + "Colors/17 GREY-DARKEST-LPEC.mat");
+            db.oilMaterial = FlatColour(PackMaterials + "Colors/57 BLACK-LPEC.mat");
+
             db.smokeMaterial = SmokeMaterial();
 
             // The puff. cloud-fluffy rather than a billboard, because a soft blurred quad would
@@ -1492,6 +1696,12 @@ namespace LivingCity.EditorTools
                 Tint(atlas, "atlas-LPEC-ground-earth", new Color(0.93f, 0.87f, 0.79f)),
                 Tint(atlas, "atlas-LPEC-ground-pale",  new Color(1.08f, 1.06f, 1.02f)),
             };
+
+            // Cinders. Far darker than anything in the ground ramp above, and kept OUT of it on
+            // purpose: Shade draws from groundTints uniformly for every block in the city, so an
+            // ash-coloured entry there would turn up under residential terraces. This one is
+            // aimed by hand, at the ring round a boiler house and the most worn yard patches.
+            db.cinderTint = Tint(atlas, "atlas-LPEC-cinder", new Color(0.42f, 0.40f, 0.38f));
         }
 
         /// <summary>
@@ -1843,6 +2053,8 @@ namespace LivingCity.EditorTools
             bool industrialYard = false,
             GameObject gatePrefab = null,
             GameObject serviceRoadGround = null,
+            GameObject yardConcrete = null,
+            GameObject yardDirt = null,
             GameObject[] stackProps = null,
             GameObject[] chimneyProps = null,
             GameObject[] auxBuildings = null) =>
@@ -1893,6 +2105,8 @@ namespace LivingCity.EditorTools
                 industrialYard = industrialYard,
                 gatePrefab = gatePrefab,
                 serviceRoadGround = serviceRoadGround,
+                yardConcrete = yardConcrete,
+                yardDirt = yardDirt,
                 stackProps = stackProps ?? System.Array.Empty<GameObject>(),
                 chimneyProps = chimneyProps ?? System.Array.Empty<GameObject>(),
                 auxBuildings = auxBuildings ?? System.Array.Empty<GameObject>(),
