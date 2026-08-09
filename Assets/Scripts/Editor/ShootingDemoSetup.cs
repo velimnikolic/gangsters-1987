@@ -204,7 +204,9 @@ namespace LivingCity.EditorTools
         /// distinction is kept rather than collapsed to one material because it costs nothing
         /// and throwing away what the author shipped is not this script's call.
         /// </summary>
-        static void RemapRevolverMaterials()
+        // Internal, not private: GameplaySetup equips the same revolver onto the player
+        // prefab and needs the same URP remap - one authority on how the gun is coloured.
+        internal static void RemapRevolverMaterials()
         {
             var importer = (ModelImporter)AssetImporter.GetAtPath(RevolverPath);
             if (!importer)

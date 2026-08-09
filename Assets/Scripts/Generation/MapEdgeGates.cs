@@ -102,6 +102,8 @@ namespace LivingCity.Generation
             if (!TryMeasureBounds())
                 return;
 
+            MeasureSeaSides();
+
             foreach (var tile in Tile.Tiles)
             {
                 if (!tile || tile.paths == null)
@@ -115,15 +117,54 @@ namespace LivingCity.Generation
                         continue;
 
                     if (TryGetLaneEntry(lane, out var start, out var heading)
-                        && OnOutline(start) && Crosses(start, heading, inward: true))
+                        && OnOutline(start) && !OnSeaSide(start) && Crosses(start, heading, inward: true))
                         entries.Add(new Gate(lane, start, heading));
 
                     if (TryGetLaneExit(lane, out var end, out var leaving)
-                        && OnOutline(end) && Crosses(end, leaving, inward: false))
+                        && OnOutline(end) && !OnSeaSide(end) && Crosses(end, leaving, inward: false))
                         exits.Add(new Gate(lane, end, leaving));
                 }
             }
         }
+
+        // The map sides that are open water rather than open road - a port city's quay side.
+        // A gate there would spawn cars out of the sea and despawn them into it. The streets
+        // that reach that outline still exist and still dead-end; DeadEndStitcher gives them
+        // the same U-turn every boundary stub gets, so a car that drives down to the water
+        // turns around at the quay - which is what a car on a dead-end quay street does.
+        bool seaSouth, seaNorth, seaWest, seaEast;
+
+        /// <summary>
+        /// Reads the port's quay line off the PortMarker(s) the generator baked. The line lies
+        /// exactly on the outline, so which side it is on is a coordinate comparison. Marker
+        /// rather than grid for VehicleSpawner's reason: a saved city has no grid at runtime.
+        /// </summary>
+        void MeasureSeaSides()
+        {
+            foreach (var port in FindObjectsByType<Entities.PortMarker>())
+            {
+                var from = port.QuayFrom;
+                var to = port.QuayTo;
+
+                if (Mathf.Abs(from.z - to.z) < 0.5f)
+                {
+                    // Horizontal quay line - the sea is North or South of it.
+                    if (Mathf.Abs(from.z - boundsMin.y) <= edgeTolerance) seaSouth = true;
+                    if (Mathf.Abs(from.z - boundsMax.y) <= edgeTolerance) seaNorth = true;
+                }
+                else
+                {
+                    if (Mathf.Abs(from.x - boundsMin.x) <= edgeTolerance) seaWest = true;
+                    if (Mathf.Abs(from.x - boundsMax.x) <= edgeTolerance) seaEast = true;
+                }
+            }
+        }
+
+        bool OnSeaSide(Vector3 point) =>
+            (seaSouth && point.z - boundsMin.y <= edgeTolerance)
+            || (seaNorth && boundsMax.y - point.z <= edgeTolerance)
+            || (seaWest && point.x - boundsMin.x <= edgeTolerance)
+            || (seaEast && boundsMax.x - point.x <= edgeTolerance);
 
         /// <summary>
         /// Picks a gate to bring a car in through, preferring one the player cannot see.

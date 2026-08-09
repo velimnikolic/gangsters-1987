@@ -32,6 +32,7 @@ MonoBehaviour:
     maxBlocks: 0
     maxBlockCells: 0
     guaranteed: 0
+    requiresMapEdge: 0
     ground: {fileID: 0}
     grounds:
     - label: Concrete
@@ -51,9 +52,7 @@ MonoBehaviour:
     - {fileID: 1873834763384554, guid: 13772216d1d144ffe932df09a2344533, type: 3}
     groundIsTilePerCell: 0
     apronGround: {fileID: 0}
-    parkLawnPatch: {fileID: 0}
     parkMounds: []
-    parkFeatures: []
     groundPatchChance: 0.55
     paveJoints: 1
     groups:
@@ -103,9 +102,12 @@ MonoBehaviour:
     landmarkScale: 1
     alleyProps:
     - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
+    - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
+    - {fileID: 1470712856484872, guid: d15abc5daf2f94b21940801b1d2705a8, type: 3}
     - {fileID: 1470712856484872, guid: d15abc5daf2f94b21940801b1d2705a8, type: 3}
     - {fileID: 1470712856484872, guid: d15abc5daf2f94b21940801b1d2705a8, type: 3}
     - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
+    - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
     - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
     - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
     - {fileID: 1000011078951186, guid: 2559aa2d368562248aea8c62e35ac2fd, type: 3}
@@ -116,11 +118,22 @@ MonoBehaviour:
     - {fileID: 1000011078951186, guid: 2559aa2d368562248aea8c62e35ac2fd, type: 3}
     - {fileID: 1000010764393110, guid: 15cf8c13b0c302746a6e3eb78510226d, type: 3}
     - {fileID: 1000011627327490, guid: 235a3b6b70c054bd3b893913a74c8b48, type: 3}
+    - {fileID: 1470712856484872, guid: d15abc5daf2f94b21940801b1d2705a8, type: 3}
+    - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
     - {fileID: 1132489801067302, guid: ac190142eb4ab4274a80ec7e374c7456, type: 3}
-    scatterDensity: 0.06
+    - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
+    scatterDensity: 0.09
     parkTrees: []
     parkUndergrowth: []
     parkBenches: []
+    parkLamps: []
+    parkBins: []
+    parkMonuments: []
+    parkBoulders: []
+    parkDeadTrees: []
+    parkWaterTile: {fileID: 0}
+    parkGatePiers: {fileID: 0}
+    parkAmusement: []
     parkingChance: 0.12
     featureStrip: 1
     kioskPrefabs:
@@ -141,6 +154,20 @@ MonoBehaviour:
     stackProps: []
     chimneyProps: []
     auxBuildings: []
+    yardBarrels: []
+    yardCrates: []
+    yardSacks: []
+    yardFixtures: []
+    portYard: 0
+    waterTile: {fileID: 0}
+    quayGround: {fileID: 0}
+    pierSegment: {fileID: 0}
+    portCranes: []
+    portContainers: []
+    portShips: []
+    portBoats: []
+    portProps: []
+    portQuayLamp: {fileID: 0}
     fenceSegment: {fileID: 0}
     fencePost: {fileID: 0}
     parkingBooth: {fileID: 0}
@@ -163,6 +190,7 @@ MonoBehaviour:
     maxBlocks: 0
     maxBlockCells: 0
     guaranteed: 0
+    requiresMapEdge: 0
     ground: {fileID: 0}
     grounds:
     - label: Dirt
@@ -180,9 +208,7 @@ MonoBehaviour:
     courtyardGrounds: []
     groundIsTilePerCell: 0
     apronGround: {fileID: 0}
-    parkLawnPatch: {fileID: 0}
     parkMounds: []
-    parkFeatures: []
     groundPatchChance: 1
     paveJoints: 0
     groups:
@@ -219,6 +245,14 @@ MonoBehaviour:
     parkTrees: []
     parkUndergrowth: []
     parkBenches: []
+    parkLamps: []
+    parkBins: []
+    parkMonuments: []
+    parkBoulders: []
+    parkDeadTrees: []
+    parkWaterTile: {fileID: 0}
+    parkGatePiers: {fileID: 0}
+    parkAmusement: []
     parkingChance: 0
     featureStrip: 0
     kioskPrefabs: []
@@ -233,6 +267,8 @@ MonoBehaviour:
     - {fileID: 1501163463327554, guid: 77b5f8619984f4e83b9adfea5d3c77f0, type: 3}
     - {fileID: 1391051809619566, guid: ff3b15dbf20634fb38deaf75f0b200e9, type: 3}
     - {fileID: 1665030572213034, guid: d3fd5bfc18cad454e9be5bd79372cc9d, type: 3}
+    - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
+    - {fileID: 1470712856484872, guid: d15abc5daf2f94b21940801b1d2705a8, type: 3}
     - {fileID: 4443422033992286759, guid: 16e9c844c98965b478a28a6d713f1602, type: 3}
     - {fileID: 4504325424524712750, guid: f834a9a3692a7924b8e8a5eeff906d04, type: 3}
     - {fileID: 8262117082928332476, guid: 43ac6fd4aee0fed47a8b89ca84c1c23e, type: 3}
@@ -248,6 +284,34 @@ MonoBehaviour:
     - {fileID: 1330090781118970, guid: 9d5bf04c12e844c2482c7b4a383846b0, type: 3}
     - {fileID: 3618017333485105166, guid: 0d07906e0d9fc364f8a3f7352faeae78, type: 3}
     - {fileID: 2612582649479418936, guid: 5ca481a8cb1ce794598d31a5421ae510, type: 3}
+    yardBarrels:
+    - {fileID: 3492022511357751809, guid: b746a8a39049651429d3d49749bc1459, type: 3}
+    - {fileID: 4194742535996500365, guid: c7a7f18d36f4f8b4095d6da7a83c1933, type: 3}
+    - {fileID: 7370056187232985952, guid: 04a323ebb9c995c43b68d14db7b378c8, type: 3}
+    - {fileID: 2035517934593662474, guid: f84db0a156635a747ab78854f37e0ab6, type: 3}
+    yardCrates:
+    - {fileID: 1665030572213034, guid: d3fd5bfc18cad454e9be5bd79372cc9d, type: 3}
+    - {fileID: 1599302078891562, guid: db0ad5a13bd0f4a18ab8cd9bf02007a4, type: 3}
+    - {fileID: 6048508556727767060, guid: 361ec4cb4f1b87144b915faa758286bb, type: 3}
+    yardSacks:
+    - {fileID: 5162275840650946576, guid: 13cf13d146da24149b93cbd60bb6424d, type: 3}
+    - {fileID: 1414372620113739292, guid: 98b135364647b404c89d64f0341cf028, type: 3}
+    - {fileID: 2453480032729421386, guid: 7ce24aaa4d3ffb84791afdbc6fd7fe29, type: 3}
+    yardFixtures:
+    - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
+    - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
+    - {fileID: 2567819492064619014, guid: 1bd2afa9eb1aa8c49934076712f6b843, type: 3}
+    - {fileID: 7627442570216701703, guid: 7c3ef8b5909f635449cea6c27ea2228d, type: 3}
+    portYard: 0
+    waterTile: {fileID: 0}
+    quayGround: {fileID: 0}
+    pierSegment: {fileID: 0}
+    portCranes: []
+    portContainers: []
+    portShips: []
+    portBoats: []
+    portProps: []
+    portQuayLamp: {fileID: 0}
     fenceSegment: {fileID: 1109267488826964, guid: 65810125c0cde440aa04f86730ff9090, type: 3}
     fencePost: {fileID: 1594896995144188, guid: 48917a9402bea4a49a4254092f74b9fe, type: 3}
     parkingBooth: {fileID: 0}
@@ -266,14 +330,13 @@ MonoBehaviour:
     maxBlocks: 1
     maxBlockCells: 1
     guaranteed: 0
+    requiresMapEdge: 0
     ground: {fileID: 0}
     grounds: []
     courtyardGrounds: []
     groundIsTilePerCell: 0
     apronGround: {fileID: 0}
-    parkLawnPatch: {fileID: 0}
     parkMounds: []
-    parkFeatures: []
     groundPatchChance: 0.25
     paveJoints: 1
     groups:
@@ -317,6 +380,14 @@ MonoBehaviour:
     parkTrees: []
     parkUndergrowth: []
     parkBenches: []
+    parkLamps: []
+    parkBins: []
+    parkMonuments: []
+    parkBoulders: []
+    parkDeadTrees: []
+    parkWaterTile: {fileID: 0}
+    parkGatePiers: {fileID: 0}
+    parkAmusement: []
     parkingChance: 0.5
     featureStrip: 0
     kioskPrefabs: []
@@ -330,6 +401,20 @@ MonoBehaviour:
     stackProps: []
     chimneyProps: []
     auxBuildings: []
+    yardBarrels: []
+    yardCrates: []
+    yardSacks: []
+    yardFixtures: []
+    portYard: 0
+    waterTile: {fileID: 0}
+    quayGround: {fileID: 0}
+    pierSegment: {fileID: 0}
+    portCranes: []
+    portContainers: []
+    portShips: []
+    portBoats: []
+    portProps: []
+    portQuayLamp: {fileID: 0}
     fenceSegment: {fileID: 0}
     fencePost: {fileID: 0}
     parkingBooth: {fileID: 0}
@@ -345,14 +430,13 @@ MonoBehaviour:
     maxBlocks: 1
     maxBlockCells: 1
     guaranteed: 1
+    requiresMapEdge: 0
     ground: {fileID: 0}
     grounds: []
     courtyardGrounds: []
     groundIsTilePerCell: 0
     apronGround: {fileID: 0}
-    parkLawnPatch: {fileID: 0}
     parkMounds: []
-    parkFeatures: []
     groundPatchChance: 0.25
     paveJoints: 1
     groups:
@@ -394,6 +478,14 @@ MonoBehaviour:
     parkTrees: []
     parkUndergrowth: []
     parkBenches: []
+    parkLamps: []
+    parkBins: []
+    parkMonuments: []
+    parkBoulders: []
+    parkDeadTrees: []
+    parkWaterTile: {fileID: 0}
+    parkGatePiers: {fileID: 0}
+    parkAmusement: []
     parkingChance: 0.1
     featureStrip: 0
     kioskPrefabs: []
@@ -407,37 +499,47 @@ MonoBehaviour:
     stackProps: []
     chimneyProps: []
     auxBuildings: []
+    yardBarrels: []
+    yardCrates: []
+    yardSacks: []
+    yardFixtures: []
+    portYard: 0
+    waterTile: {fileID: 0}
+    quayGround: {fileID: 0}
+    pierSegment: {fileID: 0}
+    portCranes: []
+    portContainers: []
+    portShips: []
+    portBoats: []
+    portProps: []
+    portQuayLamp: {fileID: 0}
     fenceSegment: {fileID: 0}
     fencePost: {fileID: 0}
     parkingBooth: {fileID: 0}
     parkedCars: []
-    landmarkCars: []
+    landmarkCars:
+    - label: Parents
+      weight: 1
+      prefabs:
+      - {fileID: 1155766505344668, guid: 8e79e3b3e7ad3447f8a9d49dee037068, type: 3}
+      - {fileID: 7456181024300956438, guid: ecaf23df87a269446ab6c0fa69c1e000, type: 3}
+      - {fileID: 8111836784205290034, guid: da7730d243803724899f803fd14577ef, type: 3}
+      - {fileID: 4019936506294908779, guid: 4b9cc808c195e8d4c9fbf0f71dc0979c, type: 3}
+      - {fileID: 1992884210171785588, guid: ae49704bd43dc2b448cd979d017c6317, type: 3}
   - zone: 5
     weight: 8
     maxShare: 1
     maxBlocks: 1
     maxBlockCells: 0
     guaranteed: 0
-    ground: {fileID: 5859422363808840301, guid: 95753e093881537419ace3deed899efd, type: 3}
+    requiresMapEdge: 0
+    ground: {fileID: 1034700540366262, guid: 63f209a73d2eb4e469c7ea5b5d8afd38, type: 3}
     grounds: []
     courtyardGrounds: []
     groundIsTilePerCell: 1
     apronGround: {fileID: 1034700540366262, guid: 63f209a73d2eb4e469c7ea5b5d8afd38, type: 3}
-    parkLawnPatch: {fileID: 1034700540366262, guid: 63f209a73d2eb4e469c7ea5b5d8afd38, type: 3}
     parkMounds:
     - {fileID: 3211953871280234727, guid: 132f677729d046942b3b4e8766dac0e6, type: 3}
-    parkFeatures:
-    - {fileID: 1000012339355984, guid: 7359cc47cca404e4cbb673012e02bdec, type: 3}
-    - {fileID: 1000010740549920, guid: 5aa80b55966c6404fb24876c1d1e55d5, type: 3}
-    - {fileID: 1000010262655218, guid: 4474509db5d3de14ba862ea4000efdfd, type: 3}
-    - {fileID: 1000011032761792, guid: 2658a717abb234446829f8a02100617e, type: 3}
-    - {fileID: 1000011210138126, guid: f9c68666ec758cb48afb06107c00dfcd, type: 3}
-    - {fileID: 1000013466349968, guid: f91bd5ad6daecb6499fa5fcadcc2888c, type: 3}
-    - {fileID: 1000010961514128, guid: 6cc963073d7c6dc4a9b1e1487ffda630, type: 3}
-    - {fileID: 1000011132149452, guid: 9d7f29b770d624f689e53cccd7e83eb6, type: 3}
-    - {fileID: 1000011288485768, guid: a3c8d8efbea5a45b6b53d0c32bbf67cb, type: 3}
-    - {fileID: 1000011293490030, guid: cb0dba13ded5e57449e9eb590a4638b7, type: 3}
-    - {fileID: 1000013593877540, guid: 413c0ee9c5b281a42aaccccc0d5d55b6, type: 3}
     groundPatchChance: 1
     paveJoints: 0
     groups: []
@@ -498,6 +600,27 @@ MonoBehaviour:
     parkBenches:
     - {fileID: 1000013282467606, guid: a1cbd879186714ce99b9d0d96ebadcad, type: 3}
     - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
+    parkLamps:
+    - {fileID: 3965961775537109882, guid: 65d0ee5d2baec234cb305998a796ac1a, type: 3}
+    parkBins:
+    - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
+    parkMonuments:
+    - {fileID: 1000010050705002, guid: abe740c479c745546851d15a0ffe6cef, type: 3}
+    parkBoulders:
+    - {fileID: 1000010740549920, guid: 5aa80b55966c6404fb24876c1d1e55d5, type: 3}
+    - {fileID: 1000010262655218, guid: 4474509db5d3de14ba862ea4000efdfd, type: 3}
+    - {fileID: 1000011210138126, guid: f9c68666ec758cb48afb06107c00dfcd, type: 3}
+    - {fileID: 1000013466349968, guid: f91bd5ad6daecb6499fa5fcadcc2888c, type: 3}
+    - {fileID: 1000010961514128, guid: 6cc963073d7c6dc4a9b1e1487ffda630, type: 3}
+    parkDeadTrees:
+    - {fileID: 1000011293490030, guid: cb0dba13ded5e57449e9eb590a4638b7, type: 3}
+    - {fileID: 1000013593877540, guid: 413c0ee9c5b281a42aaccccc0d5d55b6, type: 3}
+    - {fileID: 1000011132149452, guid: 9d7f29b770d624f689e53cccd7e83eb6, type: 3}
+    - {fileID: 1000011288485768, guid: a3c8d8efbea5a45b6b53d0c32bbf67cb, type: 3}
+    parkWaterTile: {fileID: 3248540378835810537, guid: 73b1d213ed2eb684bbc87d693075a09e, type: 3}
+    parkGatePiers: {fileID: 1594896995144188, guid: 48917a9402bea4a49a4254092f74b9fe, type: 3}
+    parkAmusement:
+    - {fileID: 487315950529445375, guid: 574c721d1ada32d42ba7d5e2104ef6a0, type: 3}
     parkingChance: 0.12
     featureStrip: 0
     kioskPrefabs: []
@@ -511,6 +634,20 @@ MonoBehaviour:
     stackProps: []
     chimneyProps: []
     auxBuildings: []
+    yardBarrels: []
+    yardCrates: []
+    yardSacks: []
+    yardFixtures: []
+    portYard: 0
+    waterTile: {fileID: 0}
+    quayGround: {fileID: 0}
+    pierSegment: {fileID: 0}
+    portCranes: []
+    portContainers: []
+    portShips: []
+    portBoats: []
+    portProps: []
+    portQuayLamp: {fileID: 0}
     fenceSegment: {fileID: 1332791148678480, guid: 25aba0cfa42f64de79d495bae6447be3, type: 3}
     fencePost: {fileID: 0}
     parkingBooth: {fileID: 0}
@@ -522,14 +659,13 @@ MonoBehaviour:
     maxBlocks: 1
     maxBlockCells: 1
     guaranteed: 0
+    requiresMapEdge: 0
     ground: {fileID: 0}
     grounds: []
     courtyardGrounds: []
     groundIsTilePerCell: 0
     apronGround: {fileID: 0}
-    parkLawnPatch: {fileID: 0}
     parkMounds: []
-    parkFeatures: []
     groundPatchChance: 0.25
     paveJoints: 1
     groups:
@@ -572,6 +708,14 @@ MonoBehaviour:
     parkTrees: []
     parkUndergrowth: []
     parkBenches: []
+    parkLamps: []
+    parkBins: []
+    parkMonuments: []
+    parkBoulders: []
+    parkDeadTrees: []
+    parkWaterTile: {fileID: 0}
+    parkGatePiers: {fileID: 0}
+    parkAmusement: []
     parkingChance: 0.5
     featureStrip: 0
     kioskPrefabs: []
@@ -585,6 +729,20 @@ MonoBehaviour:
     stackProps: []
     chimneyProps: []
     auxBuildings: []
+    yardBarrels: []
+    yardCrates: []
+    yardSacks: []
+    yardFixtures: []
+    portYard: 0
+    waterTile: {fileID: 0}
+    quayGround: {fileID: 0}
+    pierSegment: {fileID: 0}
+    portCranes: []
+    portContainers: []
+    portShips: []
+    portBoats: []
+    portProps: []
+    portQuayLamp: {fileID: 0}
     fenceSegment: {fileID: 0}
     fencePost: {fileID: 0}
     parkingBooth: {fileID: 0}
@@ -601,14 +759,13 @@ MonoBehaviour:
     maxBlocks: 1
     maxBlockCells: 4
     guaranteed: 0
+    requiresMapEdge: 0
     ground: {fileID: 1873834763384554, guid: 13772216d1d144ffe932df09a2344533, type: 3}
     grounds: []
     courtyardGrounds: []
     groundIsTilePerCell: 0
     apronGround: {fileID: 0}
-    parkLawnPatch: {fileID: 0}
     parkMounds: []
-    parkFeatures: []
     groundPatchChance: 1
     paveJoints: 0
     groups: []
@@ -624,11 +781,21 @@ MonoBehaviour:
     alleyParkingChance: 0.35
     scatter:
     - {fileID: 1470712856484872, guid: d15abc5daf2f94b21940801b1d2705a8, type: 3}
+    - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
     - {fileID: 1132489801067302, guid: ac190142eb4ab4274a80ec7e374c7456, type: 3}
-    scatterDensity: 0.1
+    - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
+    scatterDensity: 0.14
     parkTrees: []
     parkUndergrowth: []
     parkBenches: []
+    parkLamps: []
+    parkBins: []
+    parkMonuments: []
+    parkBoulders: []
+    parkDeadTrees: []
+    parkWaterTile: {fileID: 0}
+    parkGatePiers: {fileID: 0}
+    parkAmusement: []
     parkingChance: 0.12
     featureStrip: 0
     kioskPrefabs: []
@@ -642,10 +809,136 @@ MonoBehaviour:
     stackProps: []
     chimneyProps: []
     auxBuildings: []
+    yardBarrels: []
+    yardCrates: []
+    yardSacks: []
+    yardFixtures: []
+    portYard: 0
+    waterTile: {fileID: 0}
+    quayGround: {fileID: 0}
+    pierSegment: {fileID: 0}
+    portCranes: []
+    portContainers: []
+    portShips: []
+    portBoats: []
+    portProps: []
+    portQuayLamp: {fileID: 0}
     fenceSegment: {fileID: 1000013944289814, guid: a66031aa94a7b4d5b91f09a4f0a41e3f, type: 3}
     fencePost: {fileID: 1594896995144188, guid: 48917a9402bea4a49a4254092f74b9fe, type: 3}
     parkingBooth: {fileID: 5110319538187383589, guid: 920553f69b658d741b02380eade03911, type: 3}
     parkedCars: []
+    landmarkCars: []
+  - zone: 8
+    weight: 0
+    maxShare: 1
+    maxBlocks: 0
+    maxBlockCells: 0
+    guaranteed: 0
+    requiresMapEdge: 1
+    ground: {fileID: 1870627807777496, guid: 694c23563628a4178bcd3bf91226687b, type: 3}
+    grounds: []
+    courtyardGrounds: []
+    groundIsTilePerCell: 0
+    apronGround: {fileID: 0}
+    parkMounds: []
+    groundPatchChance: 1
+    paveJoints: 0
+    groups:
+    - label: Docks
+      weight: 100
+      prefabs:
+      - {fileID: 7747346613568891360, guid: 828327f9a5f1db74785f3bc9592ad530, type: 3}
+      - {fileID: 3319918821040778129, guid: a520474f707db444aae91b030252930d, type: 3}
+      rearPrefabs: []
+      cornerPrefabs: []
+      layout: 1
+      minGap: 2
+      maxGap: 6
+      maxSetback: 0
+      cornerPreferred: 0
+      commercial: 0
+    uniformStreetRuns: 0
+    maxLotsPerAxis: 0
+    maxPerimeterBuildings: 0
+    landmarks:
+    - {fileID: 3035501176962291040, guid: fd5dedab04d098d489e07cb0829f21ec, type: 3}
+    landmarkChance: 0
+    requiredLandmark: -1
+    guaranteedLandmark: -1
+    landmarkScale: 1
+    alleyProps: []
+    alleyParkingChance: 0.35
+    scatter: []
+    scatterDensity: 0
+    parkTrees: []
+    parkUndergrowth: []
+    parkBenches: []
+    parkLamps: []
+    parkBins: []
+    parkMonuments: []
+    parkBoulders: []
+    parkDeadTrees: []
+    parkWaterTile: {fileID: 0}
+    parkGatePiers: {fileID: 0}
+    parkAmusement: []
+    parkingChance: 0
+    featureStrip: 0
+    kioskPrefabs: []
+    pocketParkProps: []
+    carRows: 0
+    industrialYard: 0
+    gatePrefab: {fileID: 318290829188796415, guid: 6a0e62812c4454a4c93385eaace6ddcb, type: 3}
+    serviceRoadGround: {fileID: 0}
+    yardConcrete: {fileID: 0}
+    yardDirt: {fileID: 0}
+    stackProps:
+    - {fileID: 1501163463327554, guid: 77b5f8619984f4e83b9adfea5d3c77f0, type: 3}
+    - {fileID: 1391051809619566, guid: ff3b15dbf20634fb38deaf75f0b200e9, type: 3}
+    - {fileID: 1665030572213034, guid: d3fd5bfc18cad454e9be5bd79372cc9d, type: 3}
+    - {fileID: 1000014107978514, guid: 341771ed74a984e4caa9bd8ec01fa965, type: 3}
+    - {fileID: 8262117082928332476, guid: 43ac6fd4aee0fed47a8b89ca84c1c23e, type: 3}
+    - {fileID: 5162275840650946576, guid: 13cf13d146da24149b93cbd60bb6424d, type: 3}
+    chimneyProps: []
+    auxBuildings: []
+    yardBarrels: []
+    yardCrates: []
+    yardSacks: []
+    yardFixtures: []
+    portYard: 1
+    waterTile: {fileID: 3248540378835810537, guid: 73b1d213ed2eb684bbc87d693075a09e, type: 3}
+    quayGround: {fileID: 1870627807777496, guid: 694c23563628a4178bcd3bf91226687b, type: 3}
+    pierSegment: {fileID: 5182802573156597564, guid: e05a55516bfadc34dadbb81d93a4a828, type: 3}
+    portCranes:
+    - {fileID: 1426054580676314, guid: c6fe72a221ecc41aba30094958f212b3, type: 3}
+    portContainers:
+    - {fileID: 1338355318084972, guid: aa5dc305ea229487caa944e36d991189, type: 3}
+    - {fileID: 1012853047471764, guid: 6d17f1c03ddba4bd982e6a259539d272, type: 3}
+    - {fileID: 1743089644504300, guid: 880105d612d39412b951fe6d75095e05, type: 3}
+    - {fileID: 1735748496291786, guid: 5aa74c7b10e7849639b202685a4de45d, type: 3}
+    - {fileID: 1241916178129826, guid: 9712b31cf233f4e6a838854084ab4d52, type: 3}
+    portShips:
+    - {fileID: 20277845658430194, guid: 2bf1cec311e1ff447abe622813daf0e5, type: 3}
+    portBoats:
+    - {fileID: 7890200977569509778, guid: c4345ffbcfc8cc945bb35cbfd2409f5a, type: 3}
+    - {fileID: 5142040024209798775, guid: 22faefc6fc1373d44829a173981667b8, type: 3}
+    portProps:
+    - {fileID: 1102048447515162, guid: 25595fb68aa0d4f81bd9363a1a314491, type: 3}
+    - {fileID: 1391051809619566, guid: ff3b15dbf20634fb38deaf75f0b200e9, type: 3}
+    - {fileID: 1501163463327554, guid: 77b5f8619984f4e83b9adfea5d3c77f0, type: 3}
+    - {fileID: 1665030572213034, guid: d3fd5bfc18cad454e9be5bd79372cc9d, type: 3}
+    - {fileID: 1000012096175024, guid: fae1240368fb29f4eb38e72b2e047d0a, type: 3}
+    - {fileID: 1000011308840414, guid: 4c8b95dbf9c5cd84db6cff7de3368e67, type: 3}
+    portQuayLamp: {fileID: 1000013202082976, guid: 4d91d13412c514e49a1e707292505db6, type: 3}
+    fenceSegment: {fileID: 1109267488826964, guid: 65810125c0cde440aa04f86730ff9090, type: 3}
+    fencePost: {fileID: 1594896995144188, guid: 48917a9402bea4a49a4254092f74b9fe, type: 3}
+    parkingBooth: {fileID: 0}
+    parkedCars:
+    - label: Docks
+      weight: 1
+      prefabs:
+      - {fileID: 1330241434410046, guid: 396e047ed643f4049803beede69fcb78, type: 3}
+      - {fileID: 1423468028759846, guid: bc8dfa78933894feb833d87fdb95ebfb, type: 3}
+      - {fileID: 5788786309315824959, guid: 31125961197a8b445b33643c583135f8, type: 3}
     landmarkCars: []
   facadeYawFixes:
   - prefab: {fileID: 4524193779938541034, guid: 575c50ac6726d1545bcd64ffc9b25e68, type: 3}
@@ -731,10 +1024,14 @@ MonoBehaviour:
   smallProps:
   - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
   - {fileID: 1470712856484872, guid: d15abc5daf2f94b21940801b1d2705a8, type: 3}
+  - {fileID: 1470712856484872, guid: d15abc5daf2f94b21940801b1d2705a8, type: 3}
+  - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
   - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
   - {fileID: 1049359017073972, guid: 1c5f3552e1c67466e8d17d6b314b605e, type: 3}
   - {fileID: 2431533332884081505, guid: ee06803832a7a2e4abed560945bde1ca, type: 3}
   - {fileID: 1132489801067302, guid: ac190142eb4ab4274a80ec7e374c7456, type: 3}
+  - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
+  - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
   - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
   - {fileID: 1000013202082976, guid: 4d91d13412c514e49a1e707292505db6, type: 3}
   - {fileID: 1000013074956334, guid: 79a4162811bb74070b2bec2de470b56d, type: 3}
@@ -783,6 +1080,29 @@ MonoBehaviour:
     weight: 6
     prefabs:
     - {fileID: 4555875449808149645, guid: 7028db554f494cf48a1057edb343adcf, type: 3}
+  paintableVehicles:
+  - {fileID: 1155766505344668, guid: 8e79e3b3e7ad3447f8a9d49dee037068, type: 3}
+  - {fileID: 8111836784205290034, guid: da7730d243803724899f803fd14577ef, type: 3}
+  - {fileID: 1926647446645284436, guid: ca8fe652b4c284a4bbd48f9d55e8202f, type: 3}
+  - {fileID: 1956382211681866053, guid: fd8dd763d494a264a931d21328366124, type: 3}
+  - {fileID: 1330241434410046, guid: 396e047ed643f4049803beede69fcb78, type: 3}
+  - {fileID: 1992884210171785588, guid: ae49704bd43dc2b448cd979d017c6317, type: 3}
+  - {fileID: 7456181024300956438, guid: ecaf23df87a269446ab6c0fa69c1e000, type: 3}
+  - {fileID: 7816160539625746944, guid: 007966e76ad35c348bdcde5a22c310e4, type: 3}
+  - {fileID: 8463714592555951522, guid: 16f687ee4366d2e46aecd822273c7184, type: 3}
+  - {fileID: 4686496548483734671, guid: b947f77e7757aab478b957faa739e612, type: 3}
+  - {fileID: 5200892472465562799, guid: 22ba476abc453744a9e7f12ced9c00a6, type: 3}
+  - {fileID: 6914005777242037173, guid: ceecad09732a62e43a031e93a92aa67d, type: 3}
+  - {fileID: 4555875449808149645, guid: 7028db554f494cf48a1057edb343adcf, type: 3}
+  vehicleTints:
+  - {fileID: 2100000, guid: ddb556b2da30449699e8a993a5c69448, type: 2}
+  - {fileID: 2100000, guid: 0d3d2721c465944089fcc89cfe7f37d5, type: 2}
+  - {fileID: 2100000, guid: 30c45b72f10dc42daa81692d03c07457, type: 2}
+  - {fileID: 2100000, guid: c9f37b8b30e2a47c8abdf2578a478283, type: 2}
+  - {fileID: 2100000, guid: 826da4f1d1e034fcfa2da6f87129eda7, type: 2}
+  - {fileID: 2100000, guid: d98241c1cbe4e4fecbe429747b910e95, type: 2}
+  - {fileID: 2100000, guid: 210c9c2fac7504fed9be596dba13f1e6, type: 2}
+  - {fileID: 2100000, guid: 4867f2d69071240b991eff8a2a8dc550, type: 2}
   pedestrianGroups:
   - label: Suits
     weight: 3
@@ -856,6 +1176,9 @@ MonoBehaviour:
   - {fileID: 8713510822655231014, guid: 69012da8ecdad4033ac8e17b8165880e, type: 3}
   - {fileID: 9173799594649838335, guid: 42fc5345b213a4799882514d290fe6f8, type: 3}
   - {fileID: 5330915401198231892, guid: 37f74705082f34d799f1ae906b27c934, type: 3}
+  dockWorkerPrefabs:
+  - {fileID: 7663872161362641315, guid: 119cf27cbf5a69846825f1ad6906ebfa, type: 3}
+  - {fileID: 4773668259113336104, guid: 8df224532d7e80f4ea2e60b21753ca64, type: 3}
   clouds:
   - {fileID: 1569108936417716, guid: 80919aaf925554880b9b809635f0dd9b, type: 3}
   - {fileID: 1236916720052730, guid: 268a4c6663b8b434f9c9477d880c3534, type: 3}

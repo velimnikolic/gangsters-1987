@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using PolyPerfect.City;
 using LivingCity.Data;
+using LivingCity.Gameplay;
 using LivingCity.Generation;
 
 namespace LivingCity.Entities
@@ -157,6 +158,12 @@ namespace LivingCity.Entities
 
             SetLayerRecursively(person.transform, PedestrianLayer);
             PedestrianLodSystem.Register(person);
+
+            // The gameplay layer's handle: context-menu target, hover subject, hit points.
+            // RequireComponent pulls in NpcHealth and PedestrianDeath with it. Civilians
+            // only - the police, bank and school directors spawn their own people and are
+            // deliberately not interactable in Phase 1.
+            person.AddComponent<InteractableNpc>();
 
             var behaviour = person.GetComponent<HumanBehavior>();
             if (behaviour)

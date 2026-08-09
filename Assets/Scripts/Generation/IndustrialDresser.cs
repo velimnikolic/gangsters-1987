@@ -70,6 +70,7 @@ namespace LivingCity.Generation
             PrefabDatabase prefabs,
             CityConfig config,
             VehiclePicker vehicles,
+            VehicleTinter tinter,
             Transform parent,
             SpawnPrefab spawn,
             System.Random rng,
@@ -112,16 +113,22 @@ namespace LivingCity.Generation
                 return;
 
             BuildGate(layout, palette, parent, spawn, occupied, placed);
-            BuildParking(layout, vehicles, config, parent, spawn, rng, occupied, markings, placed);
-            BuildLorries(layout, vehicles, parent, spawn, occupied, placed);
+            BuildParking(layout, vehicles, tinter, config, parent, spawn, rng, occupied, markings, placed);
+            BuildLorries(layout, vehicles, tinter, parent, spawn, occupied, placed);
 
             var halls = BuildHalls(layout, palette, prefabs, config, parent, spawn, rng,
                                    occupied, placed, tints);
 
-            BuildBackYard(halls, palette, prefabs, parent, spawn, rng, occupied, placed);
-            BuildStacks(halls, palette, parent, spawn, rng, occupied, placed);
+            // Collected separately from `occupied`, which by this point also holds the buildings
+            // of whatever else shares the block. These are the pieces the ZONE PARTITION could
+            // not have known about: IndustrialLotPlanner runs at the bottom of this method,
+            // against the halls, and everything below is stood inside the compound after it.
+            var obstacles = new List<Bounds>();
 
-            Publish(layout, halls, blockId, config, parent);
+            BuildBackYard(halls, palette, prefabs, parent, spawn, rng, occupied, placed, obstacles);
+            BuildStacks(halls, palette, parent, spawn, rng, occupied, placed, obstacles);
+
+            Publish(layout, halls, obstacles, blockId, config, parent);
         }
 
         /// <summary>
@@ -146,6 +153,7 @@ namespace LivingCity.Generation
         static void Publish(
             IndustrialLayout.Layout layout,
             List<Placed> halls,
+            List<Bounds> obstacles,
             int blockId,
             CityConfig config,
             Transform parent)
@@ -171,11 +179,30 @@ namespace LivingCity.Generation
             marker.transform.SetPositionAndRotation(
                 new Vector3(layout.Wall.Centre.x, 0f, layout.Wall.Centre.y), Quaternion.identity);
 
+            // The one thing here that is neither replayable nor derivable. The zones below are a
+            // function of (seed, blockId, halls); the wall, roads, pads and gate all come back out
+            // of ForBlock. But the stacks and the back-yard pieces were placed from BlockBuilder's
+            // shared stream, against a `occupied` list that dies with this call - and the prop
+            // pass, running an hour later off the saved scene, has no other way to learn they are
+            // there. Without this it stacks barrels inside the brick piles.
+            var footprints = new IndustrialLayout.Rect[obstacles?.Count ?? 0];
+
+            for (var i = 0; i < footprints.Length; i++)
+            {
+                var box = obstacles[i];
+                footprints[i] = new IndustrialLayout.Rect
+                {
+                    Min = new Vector2(box.min.x, box.min.z),
+                    Max = new Vector2(box.max.x, box.max.z),
+                };
+            }
+
             var yard = marker.AddComponent<Entities.WorksYard>();
             yard.SetCompound(blockId, layout.Wall, layout.HasGate, layout.GateCentre,
                              layout.GateOutward, published,
                              IndustrialLotPlanner.Lanes(layout),
-                             IndustrialLotPlanner.Bays(layout));
+                             IndustrialLotPlanner.Bays(layout),
+                             footprints);
 
             yard.SetZones(IndustrialLotPlanner
                 .Plan(layout, published, IndustrialLotPlanner.Tuning.Default, config.seed, blockId)
@@ -246,6 +273,7 @@ namespace LivingCity.Generation
         static void BuildParking(
             IndustrialLayout.Layout layout,
             VehiclePicker vehicles,
+            VehicleTinter tinter,
             CityConfig config,
             Transform parent,
             SpawnPrefab spawn,
@@ -273,7 +301,9 @@ namespace LivingCity.Generation
                     if (!vehicle)
                         continue;
 
-                    Spawn(vehicle, stall.Centre, stall.Yaw, 1f, parent, spawn, occupied, placed);
+                    tinter?.Paint(
+                        Spawn(vehicle, stall.Centre, stall.Yaw, 1f, parent, spawn, occupied, placed),
+                        vehicle);
                 }
             }
         }
@@ -287,6 +317,7 @@ namespace LivingCity.Generation
         static void BuildLorries(
             IndustrialLayout.Layout layout,
             VehiclePicker vehicles,
+            VehicleTinter tinter,
             Transform parent,
             SpawnPrefab spawn,
             List<Bounds> occupied,
@@ -304,7 +335,10 @@ namespace LivingCity.Generation
                            - stand.Outward * (IndustrialLayout.LorryStandDepth * 0.5f);
 
                 var yaw = Mathf.Atan2(stand.Outward.x, stand.Outward.z) * Mathf.Rad2Deg;
-                Spawn(lorry, centre, yaw, 1f, parent, spawn, occupied, placed);
+
+                // Spawn returns null when the stand was already occupied; Paint no-ops on that,
+                // but the roll is still taken, which is what keeps the stream stable.
+                tinter?.Paint(Spawn(lorry, centre, yaw, 1f, parent, spawn, occupied, placed), lorry);
             }
         }
 
@@ -424,7 +458,8 @@ namespace LivingCity.Generation
             SpawnPrefab spawn,
             System.Random rng,
             List<Bounds> occupied,
-            List<GameObject> placed)
+            List<GameObject> placed,
+            List<Bounds> obstacles)
         {
             var chimneys = 0;
 
@@ -474,7 +509,7 @@ namespace LivingCity.Generation
                                  * (padWidth * 0.5f - Extent(footprint, lateral) * 0.5f - 1f);
 
                         var instance = Spawn(stack, bandCentre + lateral * side, yaw, 1f,
-                                             parent, spawn, occupied, placed);
+                                             parent, spawn, occupied, placed, obstacles);
                         if (instance)
                         {
                             Ambient.SmokeVent.Mark(instance, stack, prefabs, Ambient.VentKind.Works);
@@ -507,7 +542,7 @@ namespace LivingCity.Generation
                     var offset = Mathf.Lerp(-padWidth * 0.5f + 2f, padWidth * 0.5f - 2f, t);
 
                     Spawn(aux, bandCentre + lateral * offset, yaw, 1f,
-                          parent, spawn, occupied, placed);
+                          parent, spawn, occupied, placed, obstacles);
                 }
             }
         }
@@ -557,7 +592,8 @@ namespace LivingCity.Generation
             SpawnPrefab spawn,
             System.Random rng,
             List<Bounds> occupied,
-            List<GameObject> placed)
+            List<GameObject> placed,
+            List<Bounds> obstacles)
         {
             if (palette.stackProps == null || palette.stackProps.Length == 0)
                 return;
@@ -596,7 +632,7 @@ namespace LivingCity.Generation
 
                 for (var i = 0; i < count; i++)
                     Spawn(prefab, start - hall.Outward * (step * i), yaw, 1f,
-                          parent, spawn, occupied, placed);
+                          parent, spawn, occupied, placed, obstacles);
             }
         }
 
@@ -760,7 +796,8 @@ namespace LivingCity.Generation
             Transform parent,
             SpawnPrefab spawn,
             List<Bounds> occupied,
-            List<GameObject> placed)
+            List<GameObject> placed,
+            List<Bounds> obstacles = null)
         {
             if (!prefab)
                 return null;
@@ -787,6 +824,7 @@ namespace LivingCity.Generation
                 instance.transform.localScale *= scale;
 
             occupied.Add(bounds);
+            obstacles?.Add(bounds);
             placed.Add(instance);
             return instance;
         }

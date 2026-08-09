@@ -28,6 +28,10 @@ namespace LivingCity.Entities
         [SerializeField] CityConfig config;
         [SerializeField] PrefabDatabase prefabs;
 
+        /// <summary>The response force self-wires its officer/car prefabs from here at
+        /// runtime, so a scene that predates PoliceResponseDirector still fields one.</summary>
+        public PrefabDatabase Prefabs => prefabs;
+
         PoliceStation station;
         System.Random rng;
 

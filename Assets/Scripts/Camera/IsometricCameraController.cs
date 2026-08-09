@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.EnhancedTouch;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using LivingCity.Generation;
 using Touch = UnityEngine.InputSystem.EnhancedTouch.Touch;
 
@@ -28,7 +30,9 @@ namespace LivingCity.CameraRig
         [SerializeField] float pitch = 45f;
         [SerializeField] float yaw = 45f;
         [Tooltip("Distance the camera sits back from the focus point. Irrelevant to " +
-                 "orthographic framing - it only needs to clear the near plane and the city.")]
+                 "orthographic framing - it only needs to clear the near plane and the city - " +
+                 "but NOT to shadows: URP measures shadow distance from the camera, so the boom " +
+                 "is pure dead range in front of the city. See FitShadows.")]
         [SerializeField] float boomLength = 200f;
 
         [Header("Zoom")]
@@ -64,6 +68,20 @@ namespace LivingCity.CameraRig
         [Tooltip("Optional. If set, the focus point is clamped to this builder's generated grid.")]
         [SerializeField] CityBuilder cityBuilder;
 
+        [Header("Shadows")]
+        [Tooltip("Off = the pipeline asset's authored shadow distance and cascade splits are left " +
+                 "alone. On = both are refitted to this rig every frame; see FitShadows.")]
+        [SerializeField] bool fitShadowsToView = true;
+        [Tooltip("Metri iza najdalje vidljive tacke tla. Sluzi samo da ivica shadow dometa i " +
+                 "cascade fade band ostanu van kadra; sve iznad par metara je bacena rezolucija.")]
+        [SerializeField] float shadowDistanceMargin = 10f;
+
+        /// <summary>Where on the ground the camera is looking. The audio listener stands here.</summary>
+        public Vector3 FocusPoint => focusPoint;
+
+        /// <summary>Current smoothed zoom, for anything scaling itself to the view.</summary>
+        public float OrthoSize => orthoSize;
+
         Camera cam;
         Vector3 focusPoint;
         Vector3 targetFocus;
@@ -86,6 +104,14 @@ namespace LivingCity.CameraRig
         bool framed;
         int boundsAttempts;
 
+        // Shadow fit. The asset is a project asset, not scene state, so whatever we write to it
+        // outlives Play mode in the Editor - hence the authored values are kept and restored.
+        UniversalRenderPipelineAsset urp;
+        float authoredShadowDistance;
+        int authoredCascadeCount;
+        Vector3 authoredCascade4Split;
+        bool shadowsAdjusted;
+
         void Awake()
         {
             cam = GetComponent<Camera>();
@@ -97,10 +123,12 @@ namespace LivingCity.CameraRig
 
             focusPoint = targetFocus = transform.position + transform.forward * boomLength;
             ApplyTransform();
+            FitShadows();
         }
 
         void OnEnable() => EnhancedTouchSupport.Enable();
         void OnDisable() => EnhancedTouchSupport.Disable();
+        void OnDestroy() => RestoreShadows();
 
         void Start() => ResolveBounds();
 
@@ -127,6 +155,7 @@ namespace LivingCity.CameraRig
             ClampFocus();
             SmoothToTargets();
             ApplyTransform();
+            FitShadows();
         }
 
         void HandleKeyboardPan()
@@ -398,6 +427,83 @@ namespace LivingCity.CameraRig
             cam.orthographicSize = orthoSize;
         }
 
+        /// <summary>
+        /// Refits the pipeline's shadow range to this rig, every frame.
+        ///
+        /// URP culls shadow casters by distance from the CAMERA (UniversalRenderer hands
+        /// cameraData.maxShadowDistance straight to cullingParameters.shadowDistance), and an
+        /// orthographic rig parks its camera boomLength metres away from what it is looking at.
+        /// The authored 50 m against a 200 m boom put the whole cascade volume in empty air in
+        /// front of the city, so the shadow map came out blank every frame - which is why
+        /// nothing had a shadow, pedestrians and cars most visibly of all.
+        ///
+        /// A ground point s metres up the screen from the focus sits at depth
+        /// boomLength + s * cot(pitch), so the far edge of the visible ground is at
+        /// boomLength + orthoSize * cot(pitch). The range has to reach that far or a hard shadow
+        /// cutoff line crawls across the city as you pan.
+        ///
+        /// The cascade splits are refitted with it, because a long boom otherwise spends its near
+        /// cascades on that same empty air: split 0 is pushed out to where the ground actually
+        /// starts, and the remaining three are spread over the band that is on screen. At the
+        /// default zoom that is ~40 m per 1024-texel cascade instead of one cascade stretched
+        /// over ~86 m.
+        /// </summary>
+        void FitShadows()
+        {
+            if (!fitShadowsToView)
+                return;
+
+            if (!urp)
+            {
+                urp = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+                if (!urp)
+                    return;
+
+                authoredShadowDistance = urp.shadowDistance;
+                authoredCascadeCount = urp.shadowCascadeCount;
+                authoredCascade4Split = urp.cascade4Split;
+            }
+
+            var reach = orthoSize / Mathf.Tan(Mathf.Deg2Rad * Mathf.Clamp(pitch, 5f, 89f));
+
+            // The last cascade fades out over cascadeBorder of the whole range, so the range has
+            // to overshoot the visible ground by that fraction or the fade lands in frame.
+            var border = Mathf.Clamp(urp.cascadeBorder, 0f, 0.5f);
+            var distance = Mathf.Min((boomLength + reach) / (1f - border) + shadowDistanceMargin,
+                                     cam.farClipPlane);
+
+            // Dead range between the camera and the near edge of the ground, as a fraction of the
+            // whole. Cascade 0 absorbs all of it; the ceiling keeps every cascade a usable slice.
+            var dead = Mathf.Clamp((boomLength - reach) / distance, 0f, 0.85f);
+            var step = (1f - dead) / 3f;
+            var split = new Vector3(dead, dead + step, dead + step * 2f);
+
+            if (!Mathf.Approximately(urp.shadowDistance, distance))
+                urp.shadowDistance = distance;
+            if (urp.shadowCascadeCount != 4)
+                urp.shadowCascadeCount = 4;
+            if ((urp.cascade4Split - split).sqrMagnitude > 1e-6f)
+                urp.cascade4Split = split;
+
+            shadowsAdjusted = true;
+        }
+
+        /// <summary>
+        /// The pipeline asset is a project asset, not scene state, so anything written during Play
+        /// survives back into the Editor - where the Scene view camera stands right next to the
+        /// city and wants the authored short range back.
+        /// </summary>
+        void RestoreShadows()
+        {
+            if (!shadowsAdjusted || !urp)
+                return;
+
+            urp.shadowDistance = authoredShadowDistance;
+            urp.shadowCascadeCount = authoredCascadeCount;
+            urp.cascade4Split = authoredCascade4Split;
+            shadowsAdjusted = false;
+        }
+
         void OnValidate()
         {
             maxOrthoSize = Mathf.Max(minOrthoSize, maxOrthoSize);
@@ -405,6 +511,7 @@ namespace LivingCity.CameraRig
             // Zero would kill drag pan outright, which reads as a broken control rather than
             // as a setting turned down.
             dragPanSpeed = Mathf.Max(0.1f, dragPanSpeed);
+            shadowDistanceMargin = Mathf.Max(0f, shadowDistanceMargin);
         }
     }
 }

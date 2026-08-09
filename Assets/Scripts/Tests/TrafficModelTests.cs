@@ -47,6 +47,9 @@ namespace LivingCity.Tests
             DockingStepNeverBeatsTheCap(failures);
             DockingFinalApproachIsMonotone(failures);
             PoliceIntentionCoversEveryState(failures);
+            SchoolIntentionCoversEveryState(failures);
+            ForecourtIntentionCoversEveryState(failures);
+            SchoolLineNamesEveryPupil(failures);
             StallClaimsAreExclusiveAndReleasable(failures);
             NoCrosswalkHoldIsPermanent(failures);
             CrossingOccupancyGoesStale(failures);
@@ -101,11 +104,18 @@ namespace LivingCity.Tests
         };
 
         /// <summary>
-        /// The widest body in the AI fleet, off bus-passenger_AI's solid BoxCollider (2.854 on
-        /// local x). car-truck-tanker_AI is 2.565 and car-passenger_AI 2.097. Restated here rather
-        /// than read from a prefab so this stays runnable in a bare .NET host.
+        /// The widest body on the road, off bus-school_AI's solid BoxCollider (2.9832 on local x).
+        /// armored-truck_AI is 2.287, truck_AI 2.262 and car-passenger_AI 2.097. Restated here
+        /// rather than read from a prefab so this stays runnable in a bare .NET host.
+        ///
+        /// This was 2.854 - bus-passenger_AI - for as long as that bus was in the traffic buckets,
+        /// and it was wrong for just as long: the school bus is 12.9cm WIDER, and it has always
+        /// driven the same junctions, SchoolBusDirector steering it between the school and its
+        /// stops. Taking the passenger bus out of the fleet is what made the omission visible. If
+        /// a wider body is ever added, this number moves with it - the point of the check is that
+        /// nothing on the road is wider than the gap two opposing left turns leave.
         /// </summary>
-        const float WidestVehicle = 2.854f;
+        const float WidestVehicle = 2.9832f;
 
         /// <summary>
         /// Two cars turning left from opposite arms at the same time must not occupy the same
@@ -116,8 +126,8 @@ namespace LivingCity.Tests
         /// through and untangle. The separation has to come from the geometry or from nowhere.
         ///
         /// At authored size it came from nowhere. The two exit legs are antiparallel 2.41m apart
-        /// on a crossroads and 2.55m on the avenue's, while two cars need 2.10m and a bus and a
-        /// car 2.48m - and at closest approach they are not even parallel, so the real footprint
+        /// on a crossroads and 2.55m on the avenue's, while two cars need 2.10m and the bus and a
+        /// car 2.54m - and at closest approach they are not even parallel, so the real footprint
         /// is a half-LENGTH. CityGrid.TileScale is what buys the clearance, which is why the
         /// premise below asserts that BOTH families fail without it: drop the scale back to 1 and
         /// this test goes red rather than quietly passing on a city that has the bug again.
@@ -434,6 +444,103 @@ namespace LivingCity.Tests
                 if (UI.PoliceIntention.OfficerColor(state) == Color.white)
                     failures.Add($"PoliceIntention: officer state {state} has no colour.");
             }
+        }
+
+        /// <summary>
+        /// The same guarantee for the school run, and it matters more here than for the police:
+        /// SchoolBusAgent's enum grew from five states to eight in one edit, and three silently
+        /// unmapped states would have shipped as three white diamonds with empty popups.
+        ///
+        /// The bus's sentence is checked in BOTH run directions, because two of its states word
+        /// themselves off that flag and a map that answered only one of them would pass a test
+        /// that asked only once.
+        /// </summary>
+        static void SchoolIntentionCoversEveryState(List<string> failures)
+        {
+            foreach (Entities.SchoolBusAgent.State state in
+                     System.Enum.GetValues(typeof(Entities.SchoolBusAgent.State)))
+            {
+                foreach (var toSchool in new[] { true, false })
+                    if (string.IsNullOrEmpty(
+                            UI.SchoolIntention.BusIntention(state, 2, 3, toSchool)))
+                        failures.Add($"SchoolIntention: bus state {state} has no sentence " +
+                                     $"(toSchool {toSchool}).");
+
+                // Off the road, where the stop counters are both zero - the Driving branch has
+                // to survive it, because a run whose stops were all unreachable passes through.
+                if (string.IsNullOrEmpty(UI.SchoolIntention.BusIntention(state, 0, 0, true)))
+                    failures.Add($"SchoolIntention: bus state {state} has no sentence off-route.");
+
+                if (UI.SchoolIntention.BusColor(state) == Color.white)
+                    failures.Add($"SchoolIntention: bus state {state} has no colour.");
+            }
+
+            foreach (Entities.SchoolChildAgent.State state in
+                     System.Enum.GetValues(typeof(Entities.SchoolChildAgent.State)))
+            {
+                if (string.IsNullOrEmpty(UI.SchoolIntention.ChildIntention(state)))
+                    failures.Add($"SchoolIntention: child state {state} has no sentence.");
+                if (UI.SchoolIntention.ChildColor(state) == Color.white)
+                    failures.Add($"SchoolIntention: child state {state} has no colour.");
+            }
+        }
+
+        /// <summary>
+        /// Forecourt drivers, across both errands. The errand is the reason this is not one
+        /// loop: two of the four states word themselves off it, so a map missing the school's
+        /// half would still pass a check that only ever asked about the bank.
+        /// </summary>
+        static void ForecourtIntentionCoversEveryState(List<string> failures)
+        {
+            foreach (Entities.ForecourtVisitorAgent.State state in
+                     System.Enum.GetValues(typeof(Entities.ForecourtVisitorAgent.State)))
+            {
+                if (UI.ForecourtIntention.VisitorColor(state) == Color.white)
+                    failures.Add($"ForecourtIntention: visitor state {state} has no colour.");
+
+                foreach (UI.ForecourtErrand errand in
+                         System.Enum.GetValues(typeof(UI.ForecourtErrand)))
+                {
+                    if (string.IsNullOrEmpty(UI.ForecourtIntention.VisitorIntention(state, errand)))
+                        failures.Add($"ForecourtIntention: {errand} visitor state {state} has " +
+                                     "no sentence.");
+                    if (string.IsNullOrEmpty(UI.ForecourtIntention.VisitorTitle(errand)))
+                        failures.Add($"ForecourtIntention: errand {errand} has no title.");
+                }
+            }
+        }
+
+        /// <summary>
+        /// The two building lines are composed rather than looked up, so exhaustiveness says
+        /// nothing about them - the failure mode is an empty clause or a lost pupil, not a
+        /// missing case. Both are checked by counting: whatever the school says, it must never
+        /// say nothing, and it must never report a state of the roster that cannot happen.
+        /// </summary>
+        static void SchoolLineNamesEveryPupil(List<string> failures)
+        {
+            foreach (Entities.SchoolBusAgent.State state in
+                     System.Enum.GetValues(typeof(Entities.SchoolBusAgent.State)))
+                if (string.IsNullOrEmpty(UI.SchoolIntention.SchoolLine(3, 2, 1, true, state)))
+                    failures.Add($"SchoolIntention: school line empty with bus state {state}.");
+
+            // The four ways a roster can be distributed, including the empty one - a school
+            // whose children are all mid-journey still has something true to say.
+            if (string.IsNullOrEmpty(UI.SchoolIntention.SchoolLine(0, 0, 0, false, default)))
+                failures.Add("SchoolIntention: school line empty with an empty roster.");
+            if (string.IsNullOrEmpty(UI.SchoolIntention.SchoolLine(0, 0, 4, true, default)))
+                failures.Add("SchoolIntention: school line empty with everyone travelling.");
+
+            // Singular and plural are separate branches and both have shipped wrong elsewhere.
+            if (!UI.SchoolIntention.SchoolLine(1, 0, 0, false, default).Contains("1 child "))
+                failures.Add("SchoolIntention: one waiting child is not reported in the singular.");
+            if (!UI.SchoolIntention.SchoolLine(2, 0, 0, false, default).Contains("2 children"))
+                failures.Add("SchoolIntention: two waiting children are not reported in the plural.");
+
+            // The bank's line, same shape: a full forecourt and an empty one both say something.
+            if (string.IsNullOrEmpty(UI.ForecourtIntention.BankLine(0, 0, 0)))
+                failures.Add("ForecourtIntention: bank line empty with no bays at all.");
+            if (!UI.ForecourtIntention.BankLine(2, 0, 5).Contains("full"))
+                failures.Add("ForecourtIntention: a bank with no free bays does not say so.");
         }
 
         /// <summary>

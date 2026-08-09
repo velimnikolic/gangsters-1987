@@ -1,0 +1,50 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4bd5f4b0f958b4200b42106909616383, type: 3}
+  m_Name: SoundDatabase
+  m_EditorClassIdentifier: Assembly-CSharp::LivingCity.Data.SoundDatabase
+  cityDayBed:
+    clip: {fileID: 8300000, guid: 862a27a88209c4bb2b228fdce5190849, type: 3}
+    volume: 0.35
+  cityNightBed:
+    clip: {fileID: 0}
+    volume: 0.35
+  clearDuskLayer:
+    clip: {fileID: 0}
+    volume: 1
+  overcastLayer:
+    clip: {fileID: 0}
+    volume: 1
+  smogLayer:
+    clip: {fileID: 8300000, guid: bf87262ad37ca4adbbdbb60ef4c3f840, type: 3}
+    volume: 0.08
+  engineLoops:
+  - {fileID: 8300000, guid: caed81ea692d4cce9db6db45d72545dc, type: 3}
+  - {fileID: 8300000, guid: a084fa909537457bb5d9e1f2d9e7d0d0, type: 3}
+  engineVolume: 0.311
+  enginePitchMin: 0.95
+  enginePitchMax: 1.35
+  gunshots:
+  - {fileID: 8300000, guid: ffc3c234f27cf45f39815593be6bba6d, type: 3}
+  gunshotVolume: 1
+  footsteps:
+  - {fileID: 8300000, guid: 18e9a8413796c457aafca476571579c1, type: 3}
+  - {fileID: 8300000, guid: 65f9d46a5caa14006a34d5dfd7e4ea1a, type: 3}
+  - {fileID: 8300000, guid: bea075ec206944b6b976a9715b705e40, type: 3}
+  - {fileID: 8300000, guid: 8c43aa9d1d52b4dcd8e5b572a20813b2, type: 3}
+  footstepVolume: 0.04
+  crowdMurmurLoops:
+  - {fileID: 8300000, guid: ddec8cf93b66b4785985c0c49e5816a5, type: 3}
+  murmurVolume: 0.259
+  masterVolume: 1
+  detailMaxDistance: 60
+  oneShotVoices: 16

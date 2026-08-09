@@ -89,6 +89,67 @@ namespace LivingCity.Generation
         /// system in the city and the one most likely to be retuned.
         /// </summary>
         public const int School = 18_000;
+
+        /// <summary>
+        /// Read by SchoolParentDirector - the parents using the school's forecourt. Kept off the
+        /// School stream above on purpose: the bus round and the parents share a building and
+        /// nothing else, and a change to one must not relay the other's arrivals.
+        /// </summary>
+        public const int SchoolParents = 19_000;
+
+        /// <summary>
+        /// Read by StreetPropPlacer for the street lamps alone. The lamps used to draw from the
+        /// Props stream, which meant the number of lamps in the city decided where every kerbside
+        /// tree stood; retuning the lighting relaid the greenery. They are placed by geometry now
+        /// rather than by chance, so the only draw left is which prefab out of the bag - but it
+        /// gets its own stream anyway, because the point of this list is that one subsystem's
+        /// draw count is never another's business.
+        /// </summary>
+        public const int Lamps = 20_000;
+
+        /// <summary>
+        /// Read by PortLayout, shared by BlockBuilder and GroundPlacer for the fourth time in
+        /// this list and for the fourth identical reason: the port plans its own quay, water
+        /// and pads, and the ground has to sink water exactly where the dresser moors the ship.
+        /// </summary>
+        public const int Port = 21_000;
+
+        /// <summary>
+        /// Read by PortDirector: which rig each docker is, where on the quay the shift starts,
+        /// and every per-worker walk-and-idle timer. Its own offset so that tuning the shift
+        /// cannot shift what the crowd, the police or the layout draw.
+        /// </summary>
+        public const int PortWorkers = 22_000;
+
+        /// <summary>
+        /// Read by VehicleTinter for the car paint roll, from every place a car appears - the
+        /// block placer's marked bays, the works yard, the traffic spawner and the forecourt
+        /// visitors.
+        ///
+        /// Its own offset for the reason the whole list exists, and here it is not a nicety: the
+        /// parked-car picker draws from BlockBuilder's SHARED Buildings stream, so a colour roll
+        /// taken alongside it would move every building placed after it. Retuning the palette
+        /// must not be able to re-lay the city.
+        /// </summary>
+        public const int VehicleTints = 23_000;
+
+        /// <summary>
+        /// Read by ParkLayout - the park's archetype, entrances, path spines and every planting
+        /// and prop station. Deterministic in (seed, blockId) alone, the BlockLots contract,
+        /// because the dresser, the ground painter and the nav builder all read the SAME plan.
+        /// Claiming its own stream also ends ParkDresser's old habit of draining BlockBuilder's
+        /// shared Buildings stream, which meant retuning a shrub count re-laid every block built
+        /// after the park. Landing that change reshuffles those blocks once, on purpose.
+        /// </summary>
+        public const int Park = 24_000;
+
+        /// <summary>
+        /// Read by PortShipDirector: which ship sails in, how long it lies alongside, the gap
+        /// before the next one, and the forklift's little pauses. Kept off PortWorkers for the
+        /// SchoolParents reason: the shift and the shipping share a quay and nothing else, and
+        /// retuning one must not re-time the other.
+        /// </summary>
+        public const int PortShips = 25_000;
     }
 
     /// <summary>

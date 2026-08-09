@@ -35,6 +35,19 @@ namespace LivingCity.Generation
         /// <summary>Enough for a car to turn ninety degrees out of a bay.</summary>
         public const float AisleWidth = 6f;
 
+        /// <summary>
+        /// Frontage the school bus's own bay eats, measured the same way the numbers above were:
+        /// bus-school is 9.77 x 3.03, so this leaves 0.86m of daylight at each end.
+        ///
+        /// The bus bay is the one bay in the city laid PARALLEL to the kerb, and that is forced
+        /// rather than chosen: a nose-in bay is StallDepth deep, and a 9.77m vehicle nosed into
+        /// 5.6m of depth leaves 4.2m of bus standing in the carriageway. Parallel, it fits inside
+        /// the same depth every other bay uses - the bus is 3.03 wide against 5.6 - so the
+        /// forecourt keeps one setback and one head line, and the school's frontage of 24.9m
+        /// still has 13.4m left over for four ordinary bays.
+        /// </summary>
+        public const float BusStallLength = 11.5f;
+
         /// <summary>Fence to first aisle.</summary>
         public const float EdgeMargin = 2.5f;
 
@@ -307,6 +320,64 @@ namespace LivingCity.Generation
                 i = last;
             }
         }
+
+        /// <summary>
+        /// The school bus's bay: one stall lying ALONG the kerb rather than nosed into it, in
+        /// the same band and at the same depth as the car bays beside it. See BusStallLength for
+        /// why parallel is the only option.
+        ///
+        /// The stall's Yaw is the direction of <paramref name="along"/>, i.e. the bus stands
+        /// parallel to the street - but WHICH of the two ways it faces is not decided here. That
+        /// depends on which way the traffic runs past the school, and the lane direction is not
+        /// known until ForecourtKerb finds a road waypoint at runtime. SchoolBusDirector adds the
+        /// 180 when it needs it.
+        ///
+        /// Painted like a street bay and for the same reason - two side lines running in from the
+        /// lot edge and one across the closed end, no line along the kerb - so the bus bay and
+        /// the car bays read as one forecourt rather than as two schemes meeting in the middle.
+        /// </summary>
+        public static Layout ForBusBay(
+            Vector3 origin, Vector3 along, Vector3 outward, float cursor, float length)
+        {
+            var layout = new Layout();
+            if (length < 1f)
+                return layout;
+
+            layout.Stalls.Add(new Stall
+            {
+                Centre = origin
+                       + along * (cursor + length * 0.5f)
+                       - outward * (StallDepth * 0.5f),
+                Yaw = Mathf.Atan2(along.x, along.z) * Mathf.Rad2Deg,
+            });
+
+            var low = origin + along * cursor;
+            var high = origin + along * (cursor + length);
+            var depth = outward * StallDepth;
+
+            layout.Markings.Add(new Line { A = Flat(low), B = Flat(low - depth) });
+            layout.Markings.Add(new Line { A = Flat(high), B = Flat(high - depth) });
+            layout.Markings.Add(new Line { A = Flat(low - depth), B = Flat(high - depth) });
+
+            return layout;
+        }
+
+        /// <summary>
+        /// The world box a bay of this size occupies, for the survey against what is already
+        /// standing. Axis-aligned because <paramref name="along"/> and <paramref name="outward"/>
+        /// always are - they come from a lot side - so the two extents just land on whichever of
+        /// x and z each unit vector points down.
+        ///
+        /// FreeStalls does this for car bays from the stall yaw alone, which works only because
+        /// every car bay is the same StallWidth x StallDepth. The bus bay is not, so it is
+        /// surveyed through here instead.
+        /// </summary>
+        public static Bounds BayBounds(
+            Vector3 centre, Vector3 along, Vector3 outward, float length, float depth) =>
+            new Bounds(centre, new Vector3(
+                Mathf.Abs(along.x) * length + Mathf.Abs(outward.x) * depth,
+                1f,
+                Mathf.Abs(along.z) * length + Mathf.Abs(outward.z) * depth));
 
         /// <summary>
         /// One row of bays whose open side is the aisle. facesMax means the aisle is on the low-c

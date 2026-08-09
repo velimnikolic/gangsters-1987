@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ae63d352bfa1f4d93815e7e44ac8f729, type: 3}
+  m_Name: CombatConfig
+  m_EditorClassIdentifier: Assembly-CSharp::LivingCity.Gameplay.CombatConfig
+  engageRange: 4
+  aimSeconds: 1.2
+  fireInterval: 0.9
+  hitDelay: 0.12
+  lowerWeaponAfter: 1.5
+  damagePerShot: 100
+  npcMaxHealth: 100
+  corpseDespawnSeconds: 120
+  flashSeconds: 0.06
+  flashRange: 4
+  flashIntensity: 30
+  flashColour: {r: 1, g: 0.85, b: 0.55, a: 1}

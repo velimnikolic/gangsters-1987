@@ -213,6 +213,17 @@ namespace LivingCity.Generation
                     continue;
                 }
 
+                // A port keeps the plain slab - whose bordered skirt is what covers the drop
+                // to the water at the outline - and adds the quay strip and the sea itself,
+                // both on rectangles replayed from PortLayout exactly the way the works
+                // replays its carriageways.
+                if (palette != null && palette.portYard)
+                {
+                    LayPortGround(grid, cells, min, max, palette, prefabs, config,
+                                  blockId, zone, parent, spawn, rng, placed);
+                    continue;
+                }
+
                 // A palette that builds no perimeter has no lots and no alleys - a car park is
                 // one continuous surface, and seams across it would mark boundaries that are
                 // not there. It keeps the plain slab and its bay lines.
@@ -341,6 +352,72 @@ namespace LivingCity.Generation
                                      prefabs, config, parent, spawn, rng, shade: false);
                 if (tarmac)
                     placed.Add(tarmac);
+            }
+        }
+
+        /// <summary>
+        /// The quay and the sea of a port block.
+        ///
+        /// The water is the one surface in the city laid OUTSIDE the map outline, and the one
+        /// laid BELOW y=0: sunk by PortLayout.WaterDrop so the quay coping stands above it.
+        /// Unshaded and off the Ground stream for the reason LaySurface documents - and the
+        /// water especially, because a per-seed tint roll on the SEA would read as a different
+        /// ocean each city.
+        ///
+        /// The rectangles come from PortLayout with the same arguments BlockBuilder passes it -
+        /// the same replay contract LayServiceRoads holds with IndustrialLayout, and the same
+        /// failure if broken: a ship moored alongside a quay strip that is not there.
+        /// </summary>
+        static void LayPortGround(
+            CityGrid grid,
+            List<Vector2Int> cells,
+            Vector2 min,
+            Vector2 max,
+            PrefabDatabase.ZonePalette palette,
+            PrefabDatabase prefabs,
+            CityConfig config,
+            int blockId,
+            BlockZone zone,
+            Transform parent,
+            SpawnPrefab spawn,
+            System.Random rng,
+            List<GameObject> placed)
+        {
+            // The city's one waterfront side and the seam contract with the neighbouring
+            // port blocks - both derived from the grid, so this replay and BlockBuilder's
+            // agree by construction.
+            var quaySide = ZonePlanner.PortSideOf(grid);
+            var continuation = quaySide != Sides.None
+                ? PortLayout.ContinuationFor(grid, cells, quaySide,
+                                             config.sidewalkWidth, config.mainSidewalkWidth)
+                : default;
+
+            var layout = PortLayout.ForBlock(
+                min, max,
+                BlockBuilder.RoadSides(grid, cells), BlockBuilder.EdgeSides(grid, cells),
+                config.industrialWallInset, config.seed, blockId, quaySide, continuation);
+
+            if (!layout.Usable)
+                return;
+
+            var quaySurface = palette.quayGround ? palette.quayGround : prefabs.groundTile;
+            var quay = LayRect(quaySurface, layout.Quay.Min, layout.Quay.Max, PatchLift,
+                               $"port_quay_{zone}_{blockId}",
+                               prefabs, config, parent, spawn, rng, shade: false);
+            if (quay)
+                placed.Add(quay);
+
+            if (!palette.waterTile)
+                return;
+
+            for (var i = 0; i < layout.Water.Count; i++)
+            {
+                var rect = layout.Water[i];
+                var sea = LayRect(palette.waterTile, rect.Min, rect.Max, -PortLayout.WaterDrop,
+                                  $"port_water_{zone}_{blockId}_{i}",
+                                  prefabs, config, parent, spawn, rng, shade: false);
+                if (sea)
+                    placed.Add(sea);
             }
         }
 
@@ -787,22 +864,18 @@ namespace LivingCity.Generation
         }
 
         /// <summary>
-        /// One unscaled tile per cell. For tile-park, whose Tile component carries sidewalk paths
-        /// authored to the 30m cell - see the note on this class. The tiles cover only the
-        /// block's own cells, not the expanded rect the buildings use, which leaves the widest
-        /// gap of any zone between the park and the pavement: the full 10m from the pavement edge
-        /// at 5 out to the cell boundary at 15. LayApron fills it with the park palette's own
-        /// grass, so the lawn carries on to the kerb and the gap stops reading as a setback. No
-        /// shade, patch or stroke touches this branch.
+        /// One tile per cell, at the city's tile scale. The park's ground - bare grass since the
+        /// rewrite retired tile-park: the pedestrian walks are painted by ParkDresser over
+        /// ParkLayout's spines and the nav graph is authored by ParkNavBuilder, so the ground
+        /// carries no Tile component and nothing here needs relinking. The tiles cover only the
+        /// block's own cells, not the expanded rect the buildings use; LayApron fills the band
+        /// out to the kerb with the park palette's own grass, so the lawn carries on to the kerb
+        /// rather than reading as a setback. No shade, patch or stroke touches this branch.
         ///
-        /// Each tile is turned by a random QUARTER turn. Unscaled is a hard requirement, but
-        /// unrotated never was: measured out of the prefab with the parent rotation chain
-        /// applied, tile-park's twelve Path children are four rotated copies of the same three
-        /// walks, so the tile is exactly 4-fold symmetric and a quarter turn maps its path nodes
-        /// onto the same set of positions. The +/-15 edge nodes stay on the edge midpoints and
-        /// the link into the pavement network is untouched. What it does change is the grass -
-        /// and since this branch takes no shade and no patches, that quarter turn is the only
-        /// variety available to it. Without it a 3x3 park was visibly the same tile nine times.
+        /// Each tile is turned by a random QUARTER turn - with no shade and no patches that is
+        /// the only variety available to a plain grass slab, and without it a 3x3 park was
+        /// visibly the same tile nine times. The draws stay even though the tile is symmetric,
+        /// because dropping them would shift every block after the park on the Ground stream.
         /// </summary>
         static void LayPerCell(
             CityGrid grid,
@@ -815,12 +888,6 @@ namespace LivingCity.Generation
             System.Random rng,
             List<GameObject> placed)
         {
-            // tile-park carries a Tile, so these have the same Awake-runs-inside-Instantiate
-            // problem the road tiles do - see RoadNetworkBuilder.Relink. Collected and relinked
-            // as a batch below; without it a park's walks never join the pavement network and
-            // pedestrians simply never enter it.
-            var parkTiles = new List<GameObject>();
-
             foreach (var cell in cells)
             {
                 var centre = grid.CellToWorld(cell);
@@ -829,19 +896,9 @@ namespace LivingCity.Generation
                 var instance = spawn(tile, centre, Quaternion.Euler(0f, 90f * rng.Next(4), 0f), parent);
                 instance.name = $"ground_{zone}_{blockId}_{cell.x}_{cell.y}";
 
-                // tile-park carries a Tile whose sidewalk nodes are authored to its own +/-15, so
-                // it links into the pavement network only while it covers exactly one cell. On a
-                // stretched city that means it takes the same CityGrid.TileScale every road tile
-                // takes - laid at authored size it would leave its nodes short of the boundary by
-                // a whole 4.5m and shut the park to pedestrians. This is the one place the
-                // no-scaling rule for tile-park does NOT apply, because everything it links to
-                // moved with it.
                 instance.transform.localScale = Vector3.one * CityGrid.TileScale;
                 placed.Add(instance);
-                parkTiles.Add(instance);
             }
-
-            RoadNetworkBuilder.Relink(parkTiles);
         }
     }
 }

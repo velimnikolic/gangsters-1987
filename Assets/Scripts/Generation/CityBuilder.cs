@@ -19,6 +19,10 @@ namespace LivingCity.Generation
                  "build with the same defaults the asset ships with, rather than failing.")]
         [SerializeField] IndustrialLotConfig lotConfig;
 
+        [Tooltip("Tuning for the park block. Optional on the same terms as lotConfig: empty " +
+                 "builds the park with ParkLayout.Tuning.Default.")]
+        [SerializeField] ParkConfig parkConfig;
+
         [Tooltip("Leave off once the city is generated into the scene and saved - " +
                  "runtime regeneration exists for testing, not for shipping.")]
         [SerializeField] bool buildOnStart;
@@ -91,7 +95,12 @@ namespace LivingCity.Generation
 
             var buildings = buildBuildings
                 ? BlockBuilder.Build(Grid, prefabs, config, Category(root.transform, "Buildings"),
-                                     spawn, tintTargets, gateKeepOuts)
+                                     spawn, tintTargets, gateKeepOuts, parkConfig,
+                                     // The road tile instances by cell, for the park: its
+                                     // entrance anchors are read off the REAL neighbouring
+                                     // tiles, because only the instance knows which straight
+                                     // was rolled as a crosswalk.
+                                     ParkNavBuilder.IndexRoadTiles(roads.Tiles))
                 : new System.Collections.Generic.List<GameObject>();
 
             // The works yards, dressed after the compounds they stand in. Its inputs come off the
@@ -101,6 +110,14 @@ namespace LivingCity.Generation
             var yards = buildBuildings
                 ? IndustrialLotBuilder.Build(root.transform, prefabs, config, lotConfig,
                                              Category(root.transform, "Works Yards"), spawn)
+                : new System.Collections.Generic.List<GameObject>();
+
+            // The stock standing on those yards. After the ground pass because it stands ON it,
+            // and its own category rather than sharing "Works Yards" so the surface count and the
+            // prop count stay separately readable in the hierarchy and in the summary below.
+            var yardProps = buildBuildings
+                ? IndustrialYardDresser.Build(root.transform, prefabs, config, lotConfig,
+                                              Category(root.transform, "Yard Props"), spawn)
                 : new System.Collections.Generic.List<GameObject>();
 
             BuildingTinter.Apply(tintTargets, prefabs, config);
@@ -141,7 +158,7 @@ namespace LivingCity.Generation
                       $"(seed {config.seed}): {roads.Tiles.Count} tiles, " +
                       $"{roads.TrafficLights.Count} traffic lights, {Grid.BlockCount} blocks, " +
                       $"{ground.Count} ground slabs, {buildings.Count} buildings, " +
-                      $"{yards.Count} yard surfaces, " +
+                      $"{yards.Count} yard surfaces, {yardProps.Count} yard props, " +
                       $"{props.Count} props, {interactionPoints} interaction points.\n" +
                       $"[CityBuilder] Zones: {ZonePlanner.Describe(Grid)}");
 

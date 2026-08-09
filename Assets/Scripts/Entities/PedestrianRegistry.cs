@@ -293,6 +293,82 @@ namespace LivingCity.Entities
         }
 
         /// <summary>
+        /// How many visible bodies stand within <paramref name="radius"/> of a point. The
+        /// audio murmur's census. Walks the hash cells covering the circle rather than the
+        /// flat list, so the cost tracks local density, not city population.
+        /// </summary>
+        public static int CountNear(Vector3 centre, float radius)
+        {
+            var rings = Mathf.Max(1, Mathf.CeilToInt(radius / HashCellSize));
+            var cx = Mathf.FloorToInt(centre.x / HashCellSize);
+            var cz = Mathf.FloorToInt(centre.z / HashCellSize);
+            var radiusSqr = radius * radius;
+            var count = 0;
+
+            for (var dx = -rings; dx <= rings; dx++)
+            for (var dz = -rings; dz <= rings; dz++)
+            {
+                if (!Cells.TryGetValue(Key(cx + dx, cz + dz), out var cell))
+                    continue;
+
+                for (var i = 0; i < cell.Count; i++)
+                {
+                    var other = cell[i];
+                    if (other == null || !other.Tf || other.Hidden)
+                        continue;
+
+                    if (PedestrianSteering.Flat(other.Tf.position - centre).sqrMagnitude
+                        <= radiusSqr)
+                        count++;
+                }
+            }
+
+            return count;
+        }
+
+        /// <summary>
+        /// One visible body within <paramref name="radius"/> of a point, uniformly at random,
+        /// or null when nobody is there. Reservoir sampling over the same cell walk as
+        /// <see cref="CountNear"/> - one pass, no allocation, no candidate list to build.
+        /// </summary>
+        public static PedestrianBody SampleNear(Vector3 centre, float radius, System.Random rng)
+        {
+            var rings = Mathf.Max(1, Mathf.CeilToInt(radius / HashCellSize));
+            var cx = Mathf.FloorToInt(centre.x / HashCellSize);
+            var cz = Mathf.FloorToInt(centre.z / HashCellSize);
+            var radiusSqr = radius * radius;
+
+            PedestrianBody picked = null;
+            var seen = 0;
+
+            for (var dx = -rings; dx <= rings; dx++)
+            for (var dz = -rings; dz <= rings; dz++)
+            {
+                if (!Cells.TryGetValue(Key(cx + dx, cz + dz), out var cell))
+                    continue;
+
+                for (var i = 0; i < cell.Count; i++)
+                {
+                    var other = cell[i];
+                    if (other == null || !other.Tf || other.Hidden)
+                        continue;
+
+                    if (PedestrianSteering.Flat(other.Tf.position - centre).sqrMagnitude
+                        > radiusSqr)
+                        continue;
+
+                    // The nth candidate replaces the pick with probability 1/n, which is
+                    // exactly a uniform draw over however many turn up.
+                    seen++;
+                    if (rng.Next(seen) == 0)
+                        picked = other;
+                }
+            }
+
+            return picked;
+        }
+
+        /// <summary>
         /// The stall clock: armed while the walker WANTS to move and the clamp forbids it,
         /// reset the moment it moves or stops wanting to. Stationary bodies never accrue -
         /// standing in a conversation is not a jam, and letting it count would have every

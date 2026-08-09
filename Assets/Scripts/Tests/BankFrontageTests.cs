@@ -39,7 +39,148 @@ namespace LivingCity.Tests
             AGapBreaksTheHeadLine(failures);
             PaintingNothingDrawsNothing(failures);
 
+            BusBayHoldsTheBus(failures);
+            BusBayAndCarBaysNeverOverlap(failures);
+            SchoolFrontageFitsABusAndParents(failures);
+            BusBayIsPaintedAsAThreeSidedBox(failures);
+
             return failures;
+        }
+
+        // ------------------------------------------------------- the school's bus berth
+        //
+        // Measured inputs, not chosen ones: bus-school is 3.03 wide x 9.77 long and
+        // building-school is 24.90 across its frontage, both read off the pack's own FBX with a
+        // parser calibrated against tile-road-straight (30.00) and truck (6.25). If the pack is
+        // ever swapped these are the numbers to re-measure, and these assertions are what will
+        // say so.
+
+        const float BusLength = 9.77f;
+        const float BusWidth = 3.03f;
+        const float SchoolFrontage = 24.90f;
+
+        /// <summary>
+        /// The berth is big enough for the vehicle that lives in it, in both axes. The whole
+        /// reason it lies ALONG the kerb is that it is not: nosed in, 9.77m of bus against
+        /// StallDepth leaves 4.17m of it standing in the carriageway.
+        /// </summary>
+        static void BusBayHoldsTheBus(List<string> failures)
+        {
+            if (ParkingLayout.BusStallLength < BusLength)
+                failures.Add($"Bus bay: {ParkingLayout.BusStallLength}m of frontage cannot hold " +
+                             $"a {BusLength}m bus.");
+
+            if (ParkingLayout.StallDepth < BusWidth)
+                failures.Add($"Bus bay: {ParkingLayout.StallDepth}m of depth cannot hold a " +
+                             $"{BusWidth}m-wide bus lying along the kerb.");
+
+            // And the reason it is not nose-in, stated as an assertion so that anyone who
+            // "simplifies" it back into a car bay fails here rather than in a screenshot.
+            if (ParkingLayout.StallDepth >= BusLength)
+                failures.Add("Bus bay: a nose-in bay would now fit the bus - the parallel berth " +
+                             "exists only because it does not, so re-derive it.");
+        }
+
+        /// <summary>
+        /// The berth and the parents' bays share one frontage and must not share one metre of it.
+        /// They abut exactly, and Bounds.Intersects counts touching as intersecting - which is
+        /// exactly why BlockBuilder surveys both BEFORE it reserves either - so this checks the
+        /// geometry with a hair of tolerance rather than through that test.
+        /// </summary>
+        static void BusBayAndCarBaysNeverOverlap(List<string> failures)
+        {
+            var origin = new Vector3(10f, 0f, -4f);
+            var along = Vector3.right;
+            var outward = Vector3.back;
+
+            var bus = ParkingLayout.ForBusBay(origin, along, outward, 0f,
+                                              ParkingLayout.BusStallLength);
+            var cars = ParkingLayout.ForStreetBay(
+                origin, along, outward, ParkingLayout.BusStallLength,
+                SchoolFrontage - ParkingLayout.BusStallLength, paint: false);
+
+            if (bus.Stalls.Count != 1)
+            {
+                failures.Add($"Bus bay: expected one berth, got {bus.Stalls.Count}.");
+                return;
+            }
+
+            var berth = bus.Stalls[0].Centre;
+            var berthHigh = Vector3.Dot(berth - origin, along) + ParkingLayout.BusStallLength * 0.5f;
+
+            foreach (var stall in cars.Stalls)
+            {
+                var low = Vector3.Dot(stall.Centre - origin, along) - ParkingLayout.StallWidth * 0.5f;
+                if (low < berthHigh - Eps)
+                    failures.Add($"Bus bay: a car bay starts at {low:0.00}m, inside the berth " +
+                                 $"that ends at {berthHigh:0.00}m.");
+            }
+
+            // Same band, same depth: the berth and the bays must share one head line, or the
+            // forecourt reads as two schemes meeting in the middle.
+            var berthDepth = Vector3.Dot(origin - berth, outward);
+            foreach (var stall in cars.Stalls)
+            {
+                var stallDepth = Vector3.Dot(origin - stall.Centre, outward);
+                if (Mathf.Abs(stallDepth - berthDepth) > Eps)
+                    failures.Add($"Bus bay: berth sits {berthDepth:0.00}m in, car bays " +
+                                 $"{stallDepth:0.00}m - they are not in the same band.");
+            }
+
+            // The berth lies ALONG the street; the car bays nose into it. Ninety degrees apart.
+            var turn = Mathf.Abs(Mathf.DeltaAngle(bus.Stalls[0].Yaw, cars.Stalls[0].Yaw));
+            if (Mathf.Abs(turn - 90f) > 0.5f)
+                failures.Add($"Bus bay: berth and car bays are {turn:0.0} degrees apart, not 90.");
+        }
+
+        /// <summary>
+        /// The school's real frontage has room for the bus AND enough bays to be worth painting.
+        /// Three is the floor rather than one: SchoolForecourtMaxCars bakes a static car into
+        /// one of them, and a forecourt with a single live bay is not a forecourt.
+        /// </summary>
+        static void SchoolFrontageFitsABusAndParents(List<string> failures)
+        {
+            var remaining = SchoolFrontage - ParkingLayout.BusStallLength;
+            var bays = Mathf.FloorToInt(remaining / ParkingLayout.StallWidth);
+
+            if (remaining < ParkingLayout.StallWidth)
+                failures.Add($"School forecourt: the berth leaves {remaining:0.00}m, not even " +
+                             "one car bay - BlockBuilder would give the bus no berth at all.");
+            else if (bays < 3)
+                failures.Add($"School forecourt: only {bays} car bays beside the berth; one " +
+                             "takes a static bake, which leaves too few for the parents.");
+        }
+
+        /// <summary>
+        /// Three lines, not four: two sides running in from the lot edge and one across the
+        /// closed end. The fourth would be a stripe along the kerb, which no other bay in the
+        /// city draws - see PaintStreetBay, which emits exactly the same three per run.
+        /// </summary>
+        static void BusBayIsPaintedAsAThreeSidedBox(List<string> failures)
+        {
+            var origin = new Vector3(-3f, 0f, 12f);
+            var bus = ParkingLayout.ForBusBay(origin, Vector3.forward, Vector3.right, 0f,
+                                              ParkingLayout.BusStallLength);
+
+            if (bus.Markings.Count != 3)
+            {
+                failures.Add($"Bus bay: {bus.Markings.Count} lines painted, expected 3.");
+                return;
+            }
+
+            // No line may run along the kerb line itself - that is the open side.
+            foreach (var line in bus.Markings)
+            {
+                var onKerb = Mathf.Abs(line.A.x - origin.x) < Eps
+                          && Mathf.Abs(line.B.x - origin.x) < Eps;
+                if (onKerb)
+                    failures.Add("Bus bay: a line is painted across the open side.");
+            }
+
+            // A degenerate berth paints nothing rather than a dot.
+            if (ParkingLayout.ForBusBay(origin, Vector3.forward, Vector3.right, 0f, 0f)
+                             .Stalls.Count != 0)
+                failures.Add("Bus bay: a zero-length berth still produced a stall.");
         }
 
         // ------------------------------------------------------------------ fixtures

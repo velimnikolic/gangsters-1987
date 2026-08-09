@@ -259,6 +259,7 @@ namespace LivingCity.UI
             BlockZone.Hospital => new Color(1.00f, 0.45f, 0.45f),
             BlockZone.School => new Color(1.00f, 0.90f, 0.35f),
             BlockZone.Bank => new Color(1.00f, 0.85f, 0.45f),
+            BlockZone.Port => new Color(0.35f, 0.65f, 1.00f),
             _ => Color.white,
         };
 

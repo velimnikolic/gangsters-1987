@@ -94,11 +94,12 @@ namespace LivingCity.Generation
         }
 
         /// <summary>
-        /// Nobody strolls home into a factory yard or a car park. Everything else the city
-        /// builds a street wall out of - the terraces, the shops mixed into them, the civic
-        /// landmarks - is somewhere a person plausibly comes out of.
+        /// Nobody strolls home into a factory yard, a car park, or a walled container
+        /// terminal. Everything else the city builds a street wall out of - the terraces, the
+        /// shops mixed into them, the civic landmarks - is somewhere a person plausibly comes
+        /// out of.
         /// </summary>
         public static bool ZoneAdmitsVisitors(BlockZone zone) =>
-            zone != BlockZone.Industrial && zone != BlockZone.Parking;
+            zone != BlockZone.Industrial && zone != BlockZone.Parking && zone != BlockZone.Port;
     }
 }

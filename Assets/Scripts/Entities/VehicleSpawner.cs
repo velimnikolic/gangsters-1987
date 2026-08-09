@@ -61,6 +61,7 @@ namespace LivingCity.Entities
         readonly List<GameObject> active = new();
         System.Random rng;
         Generation.VehiclePicker picker;
+        Generation.VehicleTinter tinter;
         MapEdgeGates gates;
         Camera view;
 
@@ -74,6 +75,10 @@ namespace LivingCity.Entities
 
             rng = new System.Random(config.seed + Generation.SeedOffsets.Vehicles);
             picker = new Generation.VehiclePicker(prefabs.aiCarGroups, rng);
+
+            // Its own stream, not this spawner's: the colour a car is painted must not decide
+            // which car is spawned next. See SeedOffsets.VehicleTints.
+            tinter = new Generation.VehicleTinter(prefabs, config);
 
             if (picker.IsEmpty)
             {
@@ -217,6 +222,11 @@ namespace LivingCity.Entities
                 return null;
 
             var car = Instantiate(prefab, position, rotation, transform);
+
+            // Before CarBehavior gets its overrides, for no reason other than that this is the
+            // same "finish the instance the frame it is made" block. Only the models with a
+            // neutral body are eligible, so the taxi that shares this catalogue stays yellow.
+            tinter?.Paint(car, prefab);
 
             // CarBehavior.Start() has not run yet - Instantiate only fires Awake and OnEnable -
             // so both the travel distance and the first destination can still be set.

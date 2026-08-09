@@ -1,0 +1,47 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2a7be45bb307f4d4e90d0554fda416d4, type: 3}
+  m_Name: ParkConfig
+  m_EditorClassIdentifier: Assembly-CSharp::LivingCity.Data.ParkConfig
+  tuning:
+    formalWeight: 1
+    informalWeight: 1.2
+    civicWeight: 0.8
+    mainPathWidth: 3.5
+    secondaryPathWidth: 2
+    plazaRadius: 7
+    minEntrances: 2
+    maxEntrances: 4
+    gateHalfWidth: 3
+    lampSpacingMin: 12
+    lampSpacingMax: 16
+    lampMinSeparation: 8
+    beltDepth: 4
+    beltTreeSpacing: 6.5
+    groveMin: 5
+    groveMax: 12
+    groveRadius: 8
+    treeScaleMin: 0.85
+    treeScaleMax: 1.15
+    alleeSpacing: 7.8
+    accentShare: 0.1
+    maxDeadTrees: 2
+    benchMin: 2
+    benchMax: 4
+    maxBins: 4
+    knollChance: 0.5
+    knollScaleMin: 0.15
+    knollScaleMax: 0.2
+    carouselChance: 0.12
+    densityMinPer100: 0.5
+    densityMaxPer100: 1.8
+    maxStations: 220

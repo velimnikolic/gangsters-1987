@@ -19,8 +19,17 @@ namespace LivingCity.Generation
         ///
         /// Returns false when the instance carried the base material nowhere, which is how a
         /// caller can tell a genuinely untintable prefab from a successful repaint.
+        ///
+        /// `skip` excuses individual renderers. Buildings pass none - a facade is one colour.
+        /// VehicleTinter passes one for the wheels: a tyre is dark enough in the atlas that a
+        /// tint leaves it black either way, but the hub is mid-grey and takes the hue, and a
+        /// body-coloured hubcap reads as a toy rather than as a car.
         /// </summary>
-        public static bool Repaint(GameObject target, Material baseMaterial, Material tint)
+        public static bool Repaint(
+            GameObject target,
+            Material baseMaterial,
+            Material tint,
+            System.Predicate<Renderer> skip = null)
         {
             if (!target || !baseMaterial || !tint)
                 return false;
@@ -29,6 +38,9 @@ namespace LivingCity.Generation
 
             foreach (var renderer in target.GetComponentsInChildren<MeshRenderer>(true))
             {
+                if (skip != null && skip(renderer))
+                    continue;
+
                 // sharedMaterials, never materials: reading .materials instantiates a private
                 // copy per renderer, which leaks and drops the renderer out of batching. That
                 // is the existing bug in the vendor pack's TrafficLightsControl, and here it

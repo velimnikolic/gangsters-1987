@@ -190,6 +190,16 @@ namespace LivingCity.Data
                  "braking instead of the model.")]
         [Min(0.2f)] public float carHeadway = Entities.CarFollowing.DefaultHeadway;
 
+        [Range(0f, 1f)]
+        [Tooltip("Share of eligible cars that get a paint colour instead of the body the pack " +
+                 "baked in. Applies to parked and moving cars alike. Only the models with a " +
+                 "NEUTRAL body in the atlas are eligible at all - see " +
+                 "PrefabDatabase.paintableVehicles - so a taxi stays yellow whatever this says. " +
+                 "The untinted remainder is not waste: it keeps the pack's own grey-white cars " +
+                 "in the mix, which is what stops a car park reading as a colour chart. " +
+                 "0 disables car paint entirely.")]
+        public float vehicleTintChance = 0.85f;
+
         [Header("Pedestrian life")]
         [Tooltip("Master switch for the whole interaction layer: avoidance, chats, arguments, " +
                  "bench sitting, shop visits and the retargeted animations that carry them. " +
@@ -359,6 +369,42 @@ namespace LivingCity.Data
                  "when it expires walks to school on foot instead.")]
         [Min(1f)] public float schoolBusDwellSeconds = 8f;
 
+        [Tooltip("Parents' cars using the school's forecourt at once - the same trip the bank's " +
+                 "customers make, at a different building. Lower than the bank's because the " +
+                 "school yard is four bays and one of them carries a static car, the bus berth " +
+                 "having taken the rest of the frontage. 0 turns them off.")]
+        [Min(0)] public int schoolParentCount = 2;
+
+        [Tooltip("Real seconds a parent's car stays in the forecourt, shortest and longest. " +
+                 "Shorter than a bank visit on purpose: a drop-off is a drop-off.")]
+        public Vector2 schoolParentStayRange = new Vector2(20f, 60f);
+
+        [Tooltip("Real seconds between one parent's car setting off from the map edge and the " +
+                 "next, shortest and longest.")]
+        public Vector2 schoolParentGapRange = new Vector2(15f, 50f);
+
+        [Header("Docks")]
+        [Tooltip("Chance the city is a port city at all - one roll per seed, the bank's " +
+                 "mechanism. When it lands, EVERY block along one map side becomes the port " +
+                 "and the sea runs the whole length of that side; when it misses, the city " +
+                 "is landlocked and the whole system stands down. There is no in-between - " +
+                 "a single port block on an otherwise dry edge read as a diorama.")]
+        [Range(0f, 1f)] public float portChance = 0.5f;
+
+        [Tooltip("Dockers on EACH port compound's shift. A fixed, persistent roster working " +
+                 "the quay, the stacks and the warehouse doors - never spawned or destroyed, " +
+                 "not counted in pedestrianCount, and never leaving the compound. 0 disables " +
+                 "the shift; it also stands down by itself on a landlocked seed.")]
+        [Min(0)] public int dockWorkerCount = 6;
+
+        [Tooltip("Real seconds a cargo ship stays alongside before it sails, shortest and " +
+                 "longest. The forklift works the quay for as long as the ship is in.")]
+        public Vector2 portShipStayRange = new Vector2(45f, 90f);
+
+        [Tooltip("Real seconds between one ship leaving and the next appearing up the coast, " +
+                 "shortest and longest.")]
+        public Vector2 portShipGapRange = new Vector2(20f, 60f);
+
         [Header("Crowd performance")]
         [Tooltip("Fixed steps between two avoidance probes per walker. 1 probes every step, " +
                  "the original cadence; at N each walker probes every Nth step (staggered " +
@@ -412,13 +458,17 @@ namespace LivingCity.Data
         [Min(0f)] public float nightBrightness = 1f;
 
         [Header("Street lamps")]
-        [Tooltip("How many lamp bulbs burn at once, nearest the camera's look-at point first. " +
-                 "Effectively unlimited for now (early stages) - every lamp in the city " +
-                 "burns and the sort never has to choose. 0 turns them off. Note the hard " +
-                 "pipeline ceiling either way: URP Forward+ renders at most 256 additional " +
-                 "lights per frame on desktop and quietly culls the rest. If a cap returns " +
-                 "later, the plan is to derive it from camera zoom rather than a fixed number.")]
-        [Min(0)] public int litLampBudget = 100000;
+        [Tooltip("How many lamp BULBS burn at once, nearest the camera's look-at point first. " +
+                 "Bulbs, not lamps: StreetLampLights hangs a light under each of the double " +
+                 "lamp's two lanterns, so a 92-lamp city spends 184 of these. This used to be " +
+                 "effectively unlimited, which was safe only while the lamps were sparse. They " +
+                 "are not any more - they stand on every cell seam - so the ceiling is real: " +
+                 "URP Forward+ renders at most 256 additional lights per frame on desktop and " +
+                 "quietly culls the rest, and 30 cars carry 60 headlight beams into the same " +
+                 "256. 192 is sized so today's city fits entirely under it - the sort never has " +
+                 "to choose and costs nothing - while a bigger map gets trimmed by distance " +
+                 "rather than by whatever URP happens to drop. 0 turns them off.")]
+        [Min(0)] public int litLampBudget = 192;
 
         [Tooltip("Reach of one car headlight, in metres. Short on purpose - the beam is " +
                  "steeply tilted and pools right in front of the bumper, so 12 covers it " +

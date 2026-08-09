@@ -16,7 +16,7 @@ MonoBehaviour:
   gridHeight: 7
   minArterialSpacing: 2
   maxArterialSpacing: 4
-  seed: 108331815
+  seed: 1623723687
   blockFillRatio: 1
   buildingTintChance: 1
   commercialTintChance: 1
@@ -41,6 +41,7 @@ MonoBehaviour:
   carMinTravelDistance: 0
   carMaxSpeed: 45
   carHeadway: 0.9
+  vehicleTintChance: 0.85
   pedestrianInteractions: 1
   pedestrianPersonalSpace: 1.2
   pedestrianMinSeparation: 0.6
@@ -58,7 +59,7 @@ MonoBehaviour:
   buildingStayRange: {x: 20, y: 120}
   buildingSwapChance: 0.6
   policeCarCount: 4
-  policeOfficerCount: 4
+  policeOfficerCount: 10
   policeCarPatrolRoutes: {x: 2, y: 4}
   policeCarRestRange: {x: 20, y: 60}
   policeOfficerPatrolRoutes: {x: 2, y: 4}
@@ -75,16 +76,23 @@ MonoBehaviour:
   schoolAfternoonHour: 15
   schoolRunWindowHours: 1.5
   schoolBusDwellSeconds: 8
+  schoolParentCount: 2
+  schoolParentStayRange: {x: 20, y: 60}
+  schoolParentGapRange: {x: 15, y: 50}
+  portChance: 0.5
+  dockWorkerCount: 6
+  portShipStayRange: {x: 45, y: 90}
+  portShipGapRange: {x: 20, y: 60}
   pedestrianProbeInterval: 3
   pedestrianSpawnBatch: 10
   pedestrianRepathBudget: 24
   pedestrianLodMidOrtho: 45
   pedestrianLodFarOrtho: 90
   pedestrianLodMidRate: 3
-  realSecondsPerGameHour: 10
-  startHour: 21.7
+  realSecondsPerGameHour: 60
+  startHour: 7.3
   nightBrightness: 1.2
-  litLampBudget: 100000
+  litLampBudget: 192
   headlightRange: 18
   headlightIntensity: 16
   lampRange: 12

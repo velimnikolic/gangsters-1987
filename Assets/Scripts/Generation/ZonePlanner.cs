@@ -106,6 +106,36 @@ namespace LivingCity.Generation
             // pure function of the seed and does not shift when a palette's weight is edited.
             var bankOwnBlock = rng.NextDouble() < BankOwnBlockChance;
 
+            // The port, decided the bank's way: one roll per city, fulfilled by force. A port
+            // is not a block, it is a WATERFRONT - when the roll lands, every block touching
+            // one map side becomes Port and the sea is laid along the whole of that side. A
+            // single port block in the middle of an otherwise dry edge read as a diorama.
+            //
+            // Both draws are taken unconditionally, so toggling portChance or removing the
+            // palette cannot shift what any later roll in this stream produces.
+            var portRoll = rng.NextDouble();
+            var portSideRoll = rng.Next(4);
+
+            var portBlocks = new HashSet<int>();
+            var hasPortPalette = false;
+            if (prefabs.zonePalettes != null)
+                foreach (var candidate in prefabs.zonePalettes)
+                    if (candidate != null && candidate.portYard)
+                        hasPortPalette = true;
+
+            if (hasPortPalette && portRoll < config.portChance)
+            {
+                var side = portSideRoll switch
+                {
+                    0 => Sides.South,
+                    1 => Sides.East,
+                    2 => Sides.North,
+                    _ => Sides.West,
+                };
+
+                ClaimPortSide(grid, side, portBlocks);
+            }
+
             var centroids = Centroids(grid, out var cellCounts);
 
             // Cached rather than queried per roll: the neighbour probe walks the whole grid, and
@@ -121,6 +151,13 @@ namespace LivingCity.Generation
             if (grid.HasMainRoad)
                 for (var blockId = 0; blockId < grid.BlockCount; blockId++)
                     onBoulevard[blockId] = FacesMainRoad(grid, blockId);
+
+            // Which blocks touch the map boundary - the only place a requiresMapEdge zone (the
+            // port) may stand, because its water is laid beyond the outline. Cached for the
+            // same reason as the two above.
+            var onMapEdge = new bool[grid.BlockCount];
+            for (var blockId = 0; blockId < grid.BlockCount; blockId++)
+                onMapEdge[blockId] = TouchesMapEdge(grid, blockId);
 
             // Two caps, and the difference matters. maxShare scales with the city, which is what
             // parks and works want - a map twice the size should have twice the parkland.
@@ -165,6 +202,10 @@ namespace LivingCity.Generation
 
             foreach (var blockId in order)
             {
+                // Spoken for by the port route above - the weighted roll never sees it.
+                if (portBlocks.Contains(blockId))
+                    continue;
+
                 var radial = RadialPosition(centroids[blockId], grid);
 
                 var total = 0f;
@@ -176,6 +217,12 @@ namespace LivingCity.Generation
                         && (!IsSingleLandmark(palette.zone) || landmarkBudget > 0)
                         && (sizeCap[i] == 0 || cellCounts[blockId] <= sizeCap[i])
                         && (palette.zone != BlockZone.Bank || bankOwnBlock)
+
+                        // A portYard palette is assigned only by the side route above; a
+                        // weight on it must not be able to sprinkle extra port blocks down
+                        // the other edges of the map.
+                        && !palette.portYard
+                        && (!palette.requiresMapEdge || onMapEdge[blockId])
                         && !ClashesWithNeighbour(palette.zone, blockId, adjacency, grid);
 
                     weights[i] = allowed
@@ -525,6 +572,9 @@ namespace LivingCity.Generation
                 BlockZone.Industrial => 0.4f,
                 BlockZone.Park => 0.4f,
                 BlockZone.Parking => 0.4f,
+
+                // A walled compound breaks the avenue's street wall the same way a works does.
+                BlockZone.Port => 0.4f,
                 _ => 1f,
             };
         }
@@ -539,6 +589,91 @@ namespace LivingCity.Generation
             foreach (var cell in grid.CellsInBlock(blockId))
                 if (grid.IsMainRoad(cell.x, cell.y + 1) || grid.IsMainRoad(cell.x + 1, cell.y)
                     || grid.IsMainRoad(cell.x, cell.y - 1) || grid.IsMainRoad(cell.x - 1, cell.y))
+                    return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Turns every block touching one map side into Port. Whole blocks, not just the
+        /// touching cells - a block is the atom of zoning - so a deep block on the waterfront
+        /// becomes a deep compound, which is what a real port district is.
+        /// </summary>
+        static void ClaimPortSide(CityGrid grid, Sides side, HashSet<int> portBlocks)
+        {
+            for (var blockId = 0; blockId < grid.BlockCount; blockId++)
+            {
+                var touches = false;
+                foreach (var cell in grid.CellsInBlock(blockId))
+                    if (side switch
+                        {
+                            Sides.South => cell.y == 0,
+                            Sides.North => cell.y == grid.Height - 1,
+                            Sides.West => cell.x == 0,
+                            _ => cell.x == grid.Width - 1,
+                        })
+                    {
+                        touches = true;
+                        break;
+                    }
+
+                if (!touches)
+                    continue;
+
+                grid.SetZone(blockId, BlockZone.Port);
+                portBlocks.Add(blockId);
+            }
+        }
+
+        /// <summary>
+        /// The side of the map the port claimed, or None on a landlocked seed. Derived from the
+        /// finished zoning rather than stored, so a saved grid answers it as well as a fresh
+        /// one: the port side is the side on which EVERY touching block is Port. Read by the
+        /// two build passes to force each block's quay onto the city's one waterfront - a
+        /// corner block has two map-edge sides and must not pick its own.
+        /// </summary>
+        public static Sides PortSideOf(CityGrid grid)
+        {
+            foreach (var side in new[] { Sides.South, Sides.East, Sides.North, Sides.West })
+            {
+                var any = false;
+                var all = true;
+
+                for (var blockId = 0; blockId < grid.BlockCount && all; blockId++)
+                {
+                    foreach (var cell in grid.CellsInBlock(blockId))
+                        if (side switch
+                            {
+                                Sides.South => cell.y == 0,
+                                Sides.North => cell.y == grid.Height - 1,
+                                Sides.West => cell.x == 0,
+                                _ => cell.x == grid.Width - 1,
+                            })
+                        {
+                            any = true;
+                            if (grid.ZoneOf(blockId) != BlockZone.Port)
+                                all = false;
+                            break;
+                        }
+                }
+
+                if (any && all)
+                    return side;
+            }
+
+            return Sides.None;
+        }
+
+        /// <summary>
+        /// True when any of the block's cells lies on the outer ring of the grid. Cell-level
+        /// like FacesMainRoad, and for the same reason: a block that only clips the boundary
+        /// with one corner cell still has water beyond that cell.
+        /// </summary>
+        static bool TouchesMapEdge(CityGrid grid, int blockId)
+        {
+            foreach (var cell in grid.CellsInBlock(blockId))
+                if (cell.x == 0 || cell.x == grid.Width - 1
+                    || cell.y == 0 || cell.y == grid.Height - 1)
                     return true;
 
             return false;

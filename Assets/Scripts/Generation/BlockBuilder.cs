@@ -82,6 +82,14 @@ namespace LivingCity.Generation
         /// </summary>
         const int LandmarkForecourtMaxCars = 3;
 
+        /// <summary>
+        /// The school's share of the same idea, and lower because its yard is smaller in the
+        /// only way that counts: the bus berth takes 11.5m of a 24.9m frontage, leaving four
+        /// bays rather than the bank's nine. One parked car says "people drive here" and still
+        /// leaves three bays for the parents SchoolParentDirector actually drives in.
+        /// </summary>
+        const int SchoolForecourtMaxCars = 1;
+
         /// <summary>Pavement between the forecourt bays and the recessed landmark's door.
         /// Public for PoliceDirector, which reconstructs the forecourt band's depth to aim
         /// its kerb-point search past it.</summary>
@@ -117,11 +125,17 @@ namespace LivingCity.Generation
         const float AlleyPropStep = 3.5f;
 
         /// <summary>
-        /// Chance a free cell of that grid actually gets something. Well under 1: a back alley
-        /// is mostly empty tarmac with a bin against the wall, and filling every cell turns it
-        /// into a junkyard.
+        /// Chance a free cell of that grid actually gets something. Still under 1 - filling
+        /// every cell at AlleyPropStep turns the alley into a solid wall of bins - but up from
+        /// 0.32, which with the reweighted AlleyKit is what doubles the rubbish behind the
+        /// blocks rather than merely reshuffling which prop stands where.
+        ///
+        /// Global rather than per-palette, so the Hospital and Bank interiors - which draw
+        /// PocketParkKit through the same field - get correspondingly more benches and trees.
+        /// That is a bench every other cell of a courtyard, which is what a courtyard looks
+        /// like, so it is accepted rather than worked around.
         /// </summary>
-        const float AlleyPropChance = 0.32f;
+        const float AlleyPropChance = 0.50f;
 
         /// <summary>
         /// How close a placed box must start to an edge of the block rect to count as part of
@@ -157,7 +171,9 @@ namespace LivingCity.Generation
             Transform parent,
             SpawnPrefab spawn = null,
             List<BuildingTinter.Target> tintTargets = null,
-            List<Bounds> gateKeepOuts = null)
+            List<Bounds> gateKeepOuts = null,
+            ParkConfig parkConfig = null,
+            IReadOnlyDictionary<Vector2Int, GameObject> roadTilesByCell = null)
         {
             var placed = new List<GameObject>();
             spawn ??= RoadNetworkBuilder.RuntimeSpawn;
@@ -191,6 +207,14 @@ namespace LivingCity.Generation
             // PrefabDatabase.parkedCarGroups feeds marked bays only, off this block's own stream.
             var parking = new VehiclePicker(prefabs.parkedCarGroups, rng);
 
+            // The paint on those vehicles. Built here, once, and carried alongside the picker to
+            // every bay in the city so that one stream colours them all - a tinter made per lot
+            // would restart its sequence on every block and give each car park the same row of
+            // colours. It owns that stream rather than drawing from `rng`: this one is the shared
+            // Buildings stream, and a colour roll taken from it would move every building placed
+            // after it. See SeedOffsets.VehicleTints.
+            var tinter = new VehicleTinter(prefabs, config);
+
             for (var blockId = 0; blockId < grid.BlockCount; blockId++)
             {
                 var cells = new List<Vector2Int>(grid.CellsInBlock(blockId));
@@ -207,8 +231,9 @@ namespace LivingCity.Generation
 
                 var bleed = PickNeighbourPalette(grid, prefabs, blockId, zone, rng);
 
-                BuildBlock(grid, cells, blockId, palette, bleed, parking, prefabs, config,
-                           parent, spawn, rng, placed, tintTargets, gateKeepOuts);
+                BuildBlock(grid, cells, blockId, palette, bleed, parking, tinter, prefabs, config,
+                           parent, spawn, rng, placed, tintTargets, gateKeepOuts,
+                           parkConfig, roadTilesByCell);
             }
 
             return placed;
@@ -294,6 +319,31 @@ namespace LivingCity.Generation
             if (grid.IsRoad(maxCell.x + 1, maxCell.y)) sides |= Sides.East;
             if (grid.IsRoad(minCell.x, minCell.y - 1)) sides |= Sides.South;
             if (grid.IsRoad(maxCell.x, maxCell.y + 1)) sides |= Sides.North;
+            return sides;
+        }
+
+        /// <summary>
+        /// Which sides of a block lie against the map boundary - the exact complement question
+        /// to RoadSides, answered by the same four corner probes for the same single-cut
+        /// reason: whatever lies across a side covers the whole side, so off-grid on one
+        /// corner is off-grid all the way along. The port is the caller: its water goes on
+        /// these sides and its wall on the others.
+        /// </summary>
+        public static Sides EdgeSides(CityGrid grid, List<Vector2Int> cells)
+        {
+            var minCell = new Vector2Int(int.MaxValue, int.MaxValue);
+            var maxCell = new Vector2Int(int.MinValue, int.MinValue);
+            foreach (var cell in cells)
+            {
+                minCell = Vector2Int.Min(minCell, cell);
+                maxCell = Vector2Int.Max(maxCell, cell);
+            }
+
+            var sides = Sides.None;
+            if (!grid.InBounds(minCell.x - 1, minCell.y)) sides |= Sides.West;
+            if (!grid.InBounds(maxCell.x + 1, maxCell.y)) sides |= Sides.East;
+            if (!grid.InBounds(minCell.x, minCell.y - 1)) sides |= Sides.South;
+            if (!grid.InBounds(maxCell.x, maxCell.y + 1)) sides |= Sides.North;
             return sides;
         }
 
@@ -440,6 +490,7 @@ namespace LivingCity.Generation
             PrefabDatabase.ZonePalette palette,
             PrefabDatabase.ZonePalette bleedPalette,
             VehiclePicker parking,
+            VehicleTinter tinter,
             PrefabDatabase prefabs,
             CityConfig config,
             Transform parent,
@@ -447,7 +498,9 @@ namespace LivingCity.Generation
             System.Random rng,
             List<GameObject> placed,
             List<BuildingTinter.Target> tints,
-            List<Bounds> gateKeepOuts)
+            List<Bounds> gateKeepOuts,
+            ParkConfig parkConfig,
+            IReadOnlyDictionary<Vector2Int, GameObject> roadTilesByCell)
         {
             var (min, max) = BlockRect(grid, cells,
                                        ClearanceFor(palette, config),
@@ -481,14 +534,34 @@ namespace LivingCity.Generation
             if (palette.industrialYard)
             {
                 IndustrialDresser.Build(min, max, roadSides, blockId, palette, prefabs, config,
-                                        parking, parent, spawn, rng, occupied, markings, placed, tints,
-                                        gateKeepOuts);
+                                        parking, tinter, parent, spawn, rng, occupied, markings,
+                                        placed, tints, gateKeepOuts);
 
                 var works = ParkingMarkings.Emit(markings, prefabs.lineMaterial,
                                                  $"parking_lines_{grid.ZoneOf(blockId)}_{blockId}", parent);
                 if (works)
                     placed.Add(works);
 
+                return;
+            }
+
+            // A port is laid out the same way - the third whole-block replacement, after the
+            // works and the park. GroundPlacer forks on the same flag to sink the water and
+            // lay the quay on the rectangles PortLayout replays. The quay side and the water
+            // seams are grid facts, computed here and passed down, because the dresser has
+            // no grid of its own.
+            if (palette.portYard)
+            {
+                var quaySide = ZonePlanner.PortSideOf(grid);
+                var continuation = quaySide != Sides.None
+                    ? PortLayout.ContinuationFor(grid, cells, quaySide,
+                                                 config.sidewalkWidth, config.mainSidewalkWidth)
+                    : default;
+
+                PortDresser.Build(min, max, roadSides, EdgeSides(grid, cells), blockId,
+                                  palette, prefabs, config, parking, parent, spawn, rng,
+                                  occupied, markings, placed, tints, gateKeepOuts,
+                                  quaySide, continuation);
                 return;
             }
 
@@ -532,8 +605,8 @@ namespace LivingCity.Generation
                                         out state.LandmarkLot, out state.LandmarkSide);
 
                 for (var i = 0; i < lots.Count; i++)
-                    BuildLot(i, lots[i], palette, bleedPalette, state, parking, prefabs, config,
-                             parent, spawn, rng, occupied, markings, placed, tints);
+                    BuildLot(i, lots[i], palette, bleedPalette, state, parking, tinter, prefabs,
+                             config, parent, spawn, rng, occupied, markings, placed, tints);
 
                 if (placeRejections > 0)
                     Debug.LogWarning($"[BlockBuilder] Block {blockId} ({grid.ZoneOf(blockId)}): " +
@@ -543,12 +616,12 @@ namespace LivingCity.Generation
                 // After the buildings, so the pocket park's furniture and the stall occupancy
                 // tests see the finished rows beside the band.
                 if (strip.Has)
-                    BuildFeatureStrip(min, max, buildMin, buildMax, strip, palette, parking,
+                    BuildFeatureStrip(min, max, buildMin, buildMax, strip, palette, parking, tinter,
                                       prefabs, config, parent, spawn, rng, occupied, markings, placed);
             }
 
             if (palette.carRows)
-                BuildCarPark(min, max, roadSides, palette, parking, prefabs,
+                BuildCarPark(min, max, roadSides, palette, parking, tinter, prefabs,
                              parent, spawn, rng, occupied, markings, placed);
 
             // Before the scatter, so the alley furniture gets first claim on the interior and the
@@ -557,13 +630,13 @@ namespace LivingCity.Generation
                 BuildInterior(buildMin, buildMax, palette, prefabs, config,
                               parent, spawn, rng, occupied, placed);
 
-            // A park is laid out, not scattered. groundIsTilePerCell is the exact precondition
-            // ParkDresser needs - it means this zone's ground is tile-park, whose baked walk
-            // cross and centre plaza are the geometry the whole layout hangs off. Every other
+            // A park is laid out, not scattered - the fourth whole-block layout, planned by
+            // ParkLayout on its own SeedOffsets.Park stream. It takes NOTHING from this block's
+            // shared rng, so retuning the park cannot move a building anywhere else. Every other
             // zone gets the uniform scatter, which is right for a yard and wrong for a park.
             if (palette.groundIsTilePerCell)
-                ParkDresser.Build(grid, cells, palette, prefabs, config,
-                                  parent, spawn, rng, occupied, placed);
+                ParkDresser.Build(grid, cells, blockId, palette, prefabs, config, parkConfig,
+                                  roadTilesByCell, parent, spawn, occupied, placed, gateKeepOuts);
             else
                 BuildScatter(buildMin, buildMax, palette, parent, spawn, rng, occupied, placed);
 
@@ -688,6 +761,7 @@ namespace LivingCity.Generation
             PrefabDatabase.ZonePalette bleedPalette,
             BlockState state,
             VehiclePicker parking,
+            VehicleTinter tinter,
             PrefabDatabase prefabs,
             CityConfig config,
             Transform parent,
@@ -877,7 +951,8 @@ namespace LivingCity.Generation
 
                 if (sides[i].isStreet && end > startInset[i])
                     runStart[i] = PlaceLandmark(state, sides[i].origin, sides[i].along, sides[i].outward,
-                                                startInset[i], end, config.partyWallGap, palette, prefabs,
+                                                startInset[i], end, config.partyWallGap, palette,
+                                                tinter, prefabs,
                                                 spawn, parent, rng, occupied, markings, placed, tints);
 
                 // Spent whatever happened. The reserved run is a proxy measured before the corner
@@ -900,7 +975,7 @@ namespace LivingCity.Generation
                 // reserved front lands on another street run rather than in the alley.
                 if (side.isStreet && state.Landmark)
                     start = PlaceLandmark(state, side.origin, side.along, side.outward,
-                                          start, end, config.partyWallGap, palette, prefabs,
+                                          start, end, config.partyWallGap, palette, tinter, prefabs,
                                           spawn, parent, rng, occupied, markings, placed, tints);
 
                 // Placed after the landmark has claimed its head, in the middle half of what
@@ -910,7 +985,7 @@ namespace LivingCity.Generation
                     passageAt = start + (0.35f + 0.3f * (float)rng.NextDouble()) * (end - start - PassageWidth);
 
                 WalkSide(side.origin, side.along, side.outward, start, end, side.isStreet,
-                         kit, bleed, state, parking, palette, prefabs, config, parent, spawn,
+                         kit, bleed, state, parking, tinter, palette, prefabs, config, parent, spawn,
                          rng, occupied, markings, placed, tints, passageAt);
             }
         }
@@ -993,6 +1068,7 @@ namespace LivingCity.Generation
             float end,
             float partyWallGap,
             PrefabDatabase.ZonePalette palette,
+            VehicleTinter tinter,
             PrefabDatabase prefabs,
             SpawnPrefab spawn,
             Transform parent,
@@ -1017,7 +1093,7 @@ namespace LivingCity.Generation
 
             // A palette with landmark cars wants them IN FRONT of the building, so the building
             // gives up the frontage: recessed one stall depth plus a pavement, with the bay in
-            // the band it vacated. Hospital and School have no landmarkCars and stay flush.
+            // the band it vacated. The hospital has no landmarkCars and stays flush.
             var forecourt = palette.HasLandmarkCars;
             var setback = forecourt ? ParkingLayout.StallDepth + LandmarkForecourtWalkway : 0f;
 
@@ -1025,6 +1101,25 @@ namespace LivingCity.Generation
                        - outward * (depth * 0.5f + setback);
             var landmark = Place(state.Landmark, centre, yaw, width, depth, along, outward,
                                  partyWallGap, spawn, parent, occupied, placed, prefabs, scale);
+
+            if (!landmark && forecourt)
+            {
+                // Recessing costs 6.6m of depth the flush placement did not need, and the lot
+                // behind may not have it - a perimeter building or a neighbouring side's bay can
+                // be standing exactly there. Give up the forecourt rather than the landmark.
+                //
+                // This matters most for the school, which is the one zone the city PROMISES: a
+                // seed that placed no school has no SchoolMarker, and with no marker there is no
+                // bus, no stops and no schoolchildren at all. A school flush against the street
+                // with the bus back at the kerb is a far smaller loss than that. Place has no
+                // side effects on failure, so the retry starts from an untouched occupied list.
+                forecourt = false;
+                setback = 0f;
+                centre = origin + along * (start + width * 0.5f) - outward * (depth * 0.5f);
+                landmark = Place(state.Landmark, centre, yaw, width, depth, along, outward,
+                                 partyWallGap, spawn, parent, occupied, placed, prefabs, scale);
+            }
+
             if (!landmark)
                 return start;
 
@@ -1035,11 +1130,14 @@ namespace LivingCity.Generation
             // a landmark spent for a building that never stood would be the whole city's one.
             UniqueBuildings.Spend(state.Landmark);
 
-            // Outside the forecourt branch on purpose: the school has no landmarkCars, so for
-            // it that branch never runs at all. Its marker is the only thing SchoolBusDirector
-            // can find in a saved scene, and it must not depend on bays the school never has.
-            if (landmark.name.StartsWith(Entities.SchoolMarker.PrefabName))
-                MarkSchool(landmark);
+            var isSchool = landmark.name.StartsWith(Entities.SchoolMarker.PrefabName);
+
+            // Attached OUTSIDE the forecourt branch, and it has to stay that way: the marker is
+            // the only thing SchoolBusDirector can find in a saved scene, and the branch does
+            // not run on a seed where the recessed placement failed and the school stood flush.
+            // The bays and the bus berth are added to it from inside the branch when there are
+            // any - see SchoolMarker.HasBusStall for what the director does when there are not.
+            var school = isSchool ? MarkSchool(landmark) : null;
 
             if (forecourt)
             {
@@ -1060,34 +1158,91 @@ namespace LivingCity.Generation
                 // bays abut exactly (centres one StallWidth apart, bounds one StallWidth wide)
                 // and Bounds.Intersects counts touching as intersecting, so once a bay has been
                 // reserved the survey no longer answers the same question.
-                var layout = ParkingLayout.ForStreetBay(origin, along, outward, start, width,
-                                                        paint: false);
-
                 var isStation = landmark.name.StartsWith(Entities.PoliceStation.PrefabName);
                 var isBank = landmark.name.StartsWith(Entities.BankForecourt.PrefabName);
 
+                // The school gives the first stretch of its yard to the bus, which needs a berth
+                // no row of car bays can hold - see ParkingLayout.BusStallLength. The car bays
+                // then start where it ends, so the two never overlap by construction and the
+                // school's 24.9m of frontage still leaves four of them.
+                var carStart = start;
+                var carWidth = width;
+                ParkingLayout.Layout busLayout = null;
+                var busBounds = new Bounds();
+
+                if (isSchool && width >= ParkingLayout.BusStallLength + ParkingLayout.StallWidth)
+                {
+                    var candidate = ParkingLayout.ForBusBay(
+                        origin, along, outward, start, ParkingLayout.BusStallLength);
+
+                    busBounds = ParkingLayout.BayBounds(
+                        candidate.Stalls[0].Centre, along, outward,
+                        ParkingLayout.BusStallLength, ParkingLayout.StallDepth);
+
+                    // Surveyed here and RESERVED further down, after the car bays have been
+                    // surveyed too - see below.
+                    if (!Blocked(busBounds, occupied))
+                    {
+                        busLayout = candidate;
+                        carStart += ParkingLayout.BusStallLength;
+                        carWidth -= ParkingLayout.BusStallLength;
+                    }
+                }
+
+                var layout = ParkingLayout.ForStreetBay(origin, along, outward, carStart, carWidth,
+                                                        paint: false);
+
                 // The bays that are genuinely clear, surveyed BEFORE anything reserves one. Run
-                // for every forecourt now, not just the two that carry markers, because the paint
+                // for every forecourt now, not just the ones that carry markers, because the paint
                 // is drawn from it as well: a bay the survey rejects is one something else is
                 // standing in, and it must not be painted round.
+                //
+                // This is also why the bus bay is not put into `occupied` the moment it is
+                // surveyed: it abuts the first car bay exactly, and Bounds.Intersects counts
+                // touching as intersecting, so reserving it first would report that bay blocked
+                // by the bus's own berth.
                 var free = FreeStalls(layout, occupied);
 
                 ParkingLayout.PaintStreetBay(layout, along, outward, free);
                 markings.AddRange(layout.Markings);
 
+                if (busLayout != null)
+                {
+                    markings.AddRange(busLayout.Markings);
+                    occupied.Add(busBounds);
+
+                    var busStall = busLayout.Stalls[0];
+                    school.SetBusStall(
+                        landmark.transform.InverseTransformPoint(busStall.Centre),
+                        Mathf.DeltaAngle(landmark.transform.eulerAngles.y, busStall.Yaw));
+                }
+
                 if (isStation)
                     MarkPoliceStation(landmark, layout, free);
 
-                var baked = isBank ? new HashSet<int>() : null;
-                FillStalls(layout, new VehiclePicker(palette.landmarkCars, rng), spawn, parent,
-                           rng, occupied, placed, isStation ? 0 : LandmarkForecourtMaxCars, baked);
+                // The police station is the one landmark whose bays get NO static cars: its
+                // forecourt is the patrol fleet's parking, and a baked car would be a car the
+                // real fleet can never move. The school keeps ONE bake rather than the bank's
+                // three, because four bays minus the bus's berth is all it has and the parents
+                // arriving through the day are what should be filling them.
+                var maxCars = isStation ? 0
+                            : isSchool ? SchoolForecourtMaxCars
+                            : LandmarkForecourtMaxCars;
 
-                if (isBank)
+                var baked = isBank || isSchool ? new HashSet<int>() : null;
+                FillStalls(layout, new VehiclePicker(palette.landmarkCars, rng), tinter, spawn,
+                           parent, rng, occupied, placed, maxCars, baked);
+
+                if (isBank || isSchool)
                 {
                     // Painted, clear, and with no static car standing in it.
                     free.RemoveAll(baked.Contains);
-                    var stalls = StallLocals(landmark.transform, layout, free, out var bankYaw);
-                    landmark.AddComponent<Entities.BankForecourt>().SetStalls(stalls, bankYaw);
+                    var stalls = StallLocals(landmark.transform, layout, free, out var hostYaw);
+
+                    if (isBank)
+                        landmark.AddComponent<Entities.BankForecourt>().SetStalls(stalls, hostYaw);
+                    else
+                        school.SetStalls(stalls, hostYaw);
                 }
             }
 
@@ -1124,11 +1279,12 @@ namespace LivingCity.Generation
         /// rule that can decline is no basis for a population that has to arrive here every
         /// morning. See SchoolMarker.
         /// </summary>
-        static void MarkSchool(GameObject landmark)
+        static Entities.SchoolMarker MarkSchool(GameObject landmark)
         {
             var mesh = InteractionMarkers.LocalBounds(landmark.transform);
-            landmark.AddComponent<Entities.SchoolMarker>()
-                    .SetDoor(new Vector3(mesh.center.x, 0f, mesh.max.z));
+            var marker = landmark.AddComponent<Entities.SchoolMarker>();
+            marker.SetDoor(new Vector3(mesh.center.x, 0f, mesh.max.z));
+            return marker;
         }
 
         /// <summary>
@@ -1153,19 +1309,23 @@ namespace LivingCity.Generation
                         ? new Vector3(ParkingLayout.StallWidth, 1f, ParkingLayout.StallDepth)
                         : new Vector3(ParkingLayout.StallDepth, 1f, ParkingLayout.StallWidth));
 
-                var blocked = false;
-                foreach (var existing in occupied)
-                    if (existing.Intersects(bounds))
-                    {
-                        blocked = true;
-                        break;
-                    }
-
-                if (!blocked)
+                if (!Blocked(bounds, occupied))
                     free.Add(index);
             }
 
             return free;
+        }
+
+        /// <summary>Is anything already standing in this box? The survey test, pulled out so the
+        /// school's bus berth - which is not StallWidth x StallDepth and so cannot go through
+        /// FreeStalls - asks exactly the same question in exactly the same way.</summary>
+        static bool Blocked(Bounds bounds, List<Bounds> occupied)
+        {
+            foreach (var existing in occupied)
+                if (existing.Intersects(bounds))
+                    return true;
+
+            return false;
         }
 
         /// <summary>
@@ -1227,6 +1387,7 @@ namespace LivingCity.Generation
             LotKit bleed,
             BlockState state,
             VehiclePicker parking,
+            VehicleTinter tinter,
             PrefabDatabase.ZonePalette palette,
             PrefabDatabase prefabs,
             CityConfig config,
@@ -1491,7 +1652,7 @@ namespace LivingCity.Generation
 
                 if (slot.IsParking)
                 {
-                    PlaceParking(origin, along, outward, cursor, slot.Width, parking, spawn,
+                    PlaceParking(origin, along, outward, cursor, slot.Width, parking, tinter, spawn,
                                  parent, rng, occupied, markings, placed);
                 }
                 else if (slot.Prefab && slot.Build)
@@ -1566,6 +1727,7 @@ namespace LivingCity.Generation
             float cursor,
             float width,
             VehiclePicker parking,
+            VehicleTinter tinter,
             SpawnPrefab spawn,
             Transform parent,
             System.Random rng,
@@ -1590,7 +1752,7 @@ namespace LivingCity.Generation
             ParkingLayout.PaintStreetBay(layout, along, outward, free);
             markings.AddRange(layout.Markings);
 
-            FillStalls(layout, parking, spawn, parent, rng, occupied, placed);
+            FillStalls(layout, parking, tinter, spawn, parent, rng, occupied, placed);
         }
 
         /// <summary>
@@ -1608,6 +1770,7 @@ namespace LivingCity.Generation
             Sides roadSides,
             PrefabDatabase.ZonePalette palette,
             VehiclePicker parking,
+            VehicleTinter tinter,
             PrefabDatabase prefabs,
             Transform parent,
             SpawnPrefab spawn,
@@ -1625,7 +1788,7 @@ namespace LivingCity.Generation
                                     parent, spawn, occupied, placed);
 
             if (!parking.IsEmpty)
-                FillStalls(layout, parking, spawn, parent, rng, occupied, placed);
+                FillStalls(layout, parking, tinter, spawn, parent, rng, occupied, placed);
         }
 
         /// <summary>
@@ -1642,6 +1805,7 @@ namespace LivingCity.Generation
             FeatureStrip.Strip strip,
             PrefabDatabase.ZonePalette palette,
             VehiclePicker parking,
+            VehicleTinter tinter,
             PrefabDatabase prefabs,
             CityConfig config,
             Transform parent,
@@ -1708,7 +1872,7 @@ namespace LivingCity.Generation
             var free = FreeStalls(layout, occupied);
             ParkingLayout.PaintStreetBay(layout, along, outward, free);
             markings.AddRange(layout.Markings);
-            FillStalls(layout, parking, spawn, parent, rng, occupied, placed);
+            FillStalls(layout, parking, tinter, spawn, parent, rng, occupied, placed);
         }
 
         /// <summary>
@@ -1825,6 +1989,7 @@ namespace LivingCity.Generation
         static void FillStalls(
             ParkingLayout.Layout layout,
             VehiclePicker parking,
+            VehicleTinter tinter,
             SpawnPrefab spawn,
             Transform parent,
             System.Random rng,
@@ -1877,7 +2042,14 @@ namespace LivingCity.Generation
                 if (!prefab)
                     continue;
 
-                placed.Add(spawn(prefab, stall.Centre, Quaternion.Euler(0f, stall.Yaw, 0f), parent));
+                var car = spawn(prefab, stall.Centre, Quaternion.Euler(0f, stall.Yaw, 0f), parent);
+
+                // Painted here rather than in a pass over the finished city, because these cars
+                // are flagged batching-static afterwards (CityEditorUtils.MarkStaticForBatching)
+                // and a material swap has to land before that.
+                tinter?.Paint(car, prefab);
+
+                placed.Add(car);
                 baked?.Add(index);
                 cars++;
             }

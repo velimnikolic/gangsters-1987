@@ -60,7 +60,446 @@ namespace LivingCity.Tests
             SmallBlocksDegradeRatherThanCrowd(failures);
             SameSeedSameZones(failures);
 
+            PropsStayInsideTheirZone(failures);
+            PropsNeverStandOnClearGround(failures);
+            PropsNeverOverlapEachOther(failures);
+            PropsAlignToTheirZone(failures);
+            TheLotBudgetIsNeverExceeded(failures);
+            AZonedYardActuallyGetsProps(failures);
+            SameSeedSameProps(failures);
+
             return failures;
+        }
+
+        // ---------------------------------------------------------------- yard stock
+
+        /// <summary>
+        /// Footprints the packer is swept against, in metres.
+        ///
+        /// Deliberately NOT the measured art, which is the one place this differs from the Works
+        /// catalogue above. The storage pack is optional and its Epic City stand-ins are not fixed
+        /// either, so pinning these to whatever is on disk today would make the suite fail on a
+        /// palette edit rather than on a packing bug. What is being asserted is a property of the
+        /// PACKER - that it holds for any size it is handed - and a sweep proves that where one
+        /// measured tuple only samples it.
+        ///
+        /// The range is chosen to bracket the real stock: an ash can at the bottom, a shelving
+        /// rack at the top, and one deliberately long thin piece, because a square footprint hides
+        /// every axis-mapping bug there is.
+        /// </summary>
+        static readonly Vector2[] YardStock =
+        {
+            new Vector2(0.55f, 0.55f),   // barrel / ash can
+            new Vector2(1.20f, 0.80f),   // crate
+            new Vector2(2.10f, 0.60f),   // shelving rack - long and thin on purpose
+            new Vector2(0.90f, 1.60f),   // the same thing across the other axis
+        };
+
+        /// <summary>Must match IndustrialLotConfig's shipped default - see IndustrialYardDresser.</summary>
+        const int LotBudget = 120;
+
+        /// <summary>
+        /// How many yards the prop sweep visits. AllYards() runs to about seventeen hundred, and
+        /// packing each of them against four footprints is a different order of work from planning
+        /// them once. A hundred covers every block size, every side mask and several seeds, which
+        /// is what the properties below actually vary over.
+        /// </summary>
+        const int PropSweep = 100;
+
+        /// <summary>
+        /// The zone's footprint at its own yaw, which is what IndustrialYardProps.Accept uses and
+        /// therefore what the assertions have to measure against. Slots carry no size of their
+        /// own - one prefab per zone is the arrangement rule, so the size is a property of the
+        /// zone rather than of the slot.
+        /// </summary>
+        static IndustrialLayout.Rect Claim(LotZone zone, Vector2 item, Vector2 centre)
+        {
+            var yaw = IndustrialYardProps.YawFor(zone);
+            var quarter = Mathf.Abs(Mathf.DeltaAngle(yaw, 90f)) < 1f
+                       || Mathf.Abs(Mathf.DeltaAngle(yaw, -90f)) < 1f;
+
+            var half = (quarter ? new Vector2(item.y, item.x) : item) * 0.5f;
+            return new IndustrialLayout.Rect { Min = centre - half, Max = centre + half };
+        }
+
+        /// <summary>
+        /// Walks the sweep, handing back everything one Plan call needs. The footprint is passed
+        /// through PrefabBounds' quarter-turn convention here rather than in each test, so a test
+        /// that forgets it cannot pass by accident.
+        /// </summary>
+        static IEnumerable<(LotZone Zone, IndustrialYardProps.Site Site, Vector2 Item,
+                            int Quota, List<IndustrialYardProps.Slot> Slots, int Seed, int Block)>
+            AllStock()
+        {
+            var visited = 0;
+
+            foreach (var (layout, halls, seed, block) in AllYards())
+            {
+                if (++visited > PropSweep)
+                    yield break;
+
+                var zones = Plan(layout, halls, seed, block).ToArray();
+                var quotas = IndustrialYardProps.Budgets(zones, LotBudget);
+                var site = SiteFor(layout, halls);
+
+                for (var i = 0; i < zones.Length; i++)
+                {
+                    var item = YardStock[(seed + block + i) % YardStock.Length];
+                    var yaw = IndustrialYardProps.YawFor(zones[i]);
+
+                    var quarter = Mathf.Abs(Mathf.DeltaAngle(yaw, 90f)) < 1f
+                               || Mathf.Abs(Mathf.DeltaAngle(yaw, -90f)) < 1f;
+
+                    var footprint = quarter ? new Vector2(item.y, item.x) : item;
+
+                    var rng = new System.Random(seed * 7919 + block * 397 + i);
+                    var slots = IndustrialYardProps.Plan(
+                        zones[i], site, footprint, quotas[i], rng);
+
+                    yield return (zones[i], site, item, quotas[i], slots, seed, block);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The keep-outs a real yard hands the packer. Obstacles are synthesised rather than left
+        /// empty: they are the whole reason WorksYard.Obstacles was added, so a test that never
+        /// supplies one would assert nothing about the field it exists to prove.
+        /// </summary>
+        static IndustrialYardProps.Site SiteFor(
+            IndustrialLayout.Layout layout, WorksHall[] halls)
+        {
+            var obstacles = new List<IndustrialLayout.Rect>();
+
+            // Stands in for IndustrialDresser's stacks: a 4x2 box off one flank of each hall, at
+            // roughly the offset BuildStacks uses.
+            foreach (var hall in halls)
+            {
+                var lateral = Vector3.Cross(Vector3.up, hall.Outward);
+                var centre = hall.Centre + lateral * (hall.HalfWidth + 1.6f);
+
+                obstacles.Add(new IndustrialLayout.Rect
+                {
+                    Min = new Vector2(centre.x - 2f, centre.z - 1f),
+                    Max = new Vector2(centre.x + 2f, centre.z + 1f),
+                });
+            }
+
+            return new IndustrialYardProps.Site
+            {
+                Lanes = IndustrialLotPlanner.Lanes(layout),
+                Bays = IndustrialLotPlanner.Bays(layout),
+                Obstacles = obstacles.ToArray(),
+                Gate = layout.HasGate
+                    ? new Vector2(layout.GateCentre.x, layout.GateCentre.z)
+                    : layout.Wall.Centre,
+            };
+        }
+
+        /// <summary>
+        /// Nothing may hang over the edge of the zone it was planned for.
+        ///
+        /// The load-bearing one, and the reason is transitive rather than direct: combined with
+        /// ZonesNeverOverlapALane and ZonesNeverOverlapAHall, which already pass, this proves that
+        /// no prop ever reaches a carriageway or stands inside a wall. That is the property this
+        /// file's own header calls the thing there is no NavMesh to catch later - and the props
+        /// are the first thing in the compound numerous enough that finding it by eye would be
+        /// hopeless.
+        /// </summary>
+        static void PropsStayInsideTheirZone(List<string> failures)
+        {
+            foreach (var (zone, _, item, _, slots, seed, block) in AllStock())
+            foreach (var slot in slots)
+            {
+                var claim = Claim(zone, item, slot.Centre);
+
+                if (claim.Min.x >= zone.Area.Min.x - 0.001f &&
+                    claim.Min.y >= zone.Area.Min.y - 0.001f &&
+                    claim.Max.x <= zone.Area.Max.x + 0.001f &&
+                    claim.Max.y <= zone.Area.Max.y + 0.001f)
+                    continue;
+
+                failures.Add($"seed {seed} block {block}: a {zone.Kind} prop at {slot.Centre} " +
+                             $"reaches {claim.Min}..{claim.Max}, outside its zone " +
+                             $"{zone.Area.Min}..{zone.Area.Max}");
+                return;
+            }
+        }
+
+        /// <summary>
+        /// Nor on a lane, a vehicle bay, or anything IndustrialDresser already stood there.
+        ///
+        /// The lane half is belt and braces over the zone check above. The obstacle half is not:
+        /// zones are planned BEFORE the stacks and the back-yard pieces are placed, so a
+        /// stockpile is free to have been cut over ground a site hut later took, and only this
+        /// list knows.
+        /// </summary>
+        static void PropsNeverStandOnClearGround(List<string> failures)
+        {
+            foreach (var (zone, site, item, _, slots, seed, block) in AllStock())
+            foreach (var slot in slots)
+            {
+                var claim = Claim(zone, item, slot.Centre);
+
+                if (Hits(claim, site.Lanes, out var what, "lane") ||
+                    Hits(claim, site.Bays, out what, "bay") ||
+                    Hits(claim, site.Obstacles, out what, "obstacle"))
+                {
+                    failures.Add($"seed {seed} block {block}: a {zone.Kind} prop at " +
+                                 $"{slot.Centre} stands on a {what}");
+                    return;
+                }
+            }
+        }
+
+        static bool Hits(
+            IndustrialLayout.Rect claim, IndustrialLayout.Rect[] against,
+            out string what, string label)
+        {
+            what = label;
+
+            if (against == null)
+                return false;
+
+            foreach (var other in against)
+                if (Overlaps(claim, other))
+                    return true;
+
+            return false;
+        }
+
+        static void PropsNeverOverlapEachOther(List<string> failures)
+        {
+            foreach (var (zone, _, item, _, slots, seed, block) in AllStock())
+            {
+                for (var i = 0; i < slots.Count; i++)
+                for (var j = i + 1; j < slots.Count; j++)
+                {
+                    if (!Overlaps(Claim(zone, item, slots[i].Centre),
+                                  Claim(zone, item, slots[j].Centre)))
+                        continue;
+
+                    failures.Add($"seed {seed} block {block}: two {zone.Kind} props overlap at " +
+                                 $"{slots[i].Centre} and {slots[j].Centre}");
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Everything is square to its zone's facing, and only the scrap corner is allowed to be
+        /// near it rather than on it.
+        ///
+        /// The planner's own words, at the field this reads: "Props align to this - a works stacks
+        /// things square to something, never at 17 degrees." A packer that quietly started
+        /// rounding yaw differently would look fine in a screenshot of one yard and wrong across
+        /// a city, which is exactly the class of thing worth asserting instead of eyeballing.
+        /// </summary>
+        static void PropsAlignToTheirZone(List<string> failures)
+        {
+            foreach (var (zone, _, _, _, slots, seed, block) in AllStock())
+            {
+                var square = IndustrialYardProps.YawFor(zone);
+                var allowed = zone.Kind == LotZoneKind.ScrapCorner ? 15.001f : 0.001f;
+
+                foreach (var slot in slots)
+                {
+                    if (Mathf.Abs(Mathf.DeltaAngle(slot.Yaw, square)) <= allowed)
+                        continue;
+
+                    failures.Add($"seed {seed} block {block}: a {zone.Kind} prop sits at " +
+                                 $"{slot.Yaw:F1} deg against a facing of {square:F1}");
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
+        /// A yard never places more than IndustrialLotConfig.maxPropsPerLot.
+        ///
+        /// Asserted per yard rather than per zone, because the ceiling is a lot budget and the
+        /// interesting failure is arithmetic in Budgets rather than in one Plan call. Floors
+        /// rather than rounds is what makes this hold, and the sum of the floors is what would
+        /// break first if that ever changed.
+        /// </summary>
+        static void TheLotBudgetIsNeverExceeded(List<string> failures)
+        {
+            var visited = 0;
+
+            foreach (var (layout, halls, seed, block) in AllYards())
+            {
+                if (++visited > PropSweep)
+                    return;
+
+                var zones = Plan(layout, halls, seed, block).ToArray();
+                var quotas = IndustrialYardProps.Budgets(zones, LotBudget);
+                var site = SiteFor(layout, halls);
+
+                var total = 0;
+
+                for (var i = 0; i < zones.Length; i++)
+                {
+                    var rng = new System.Random(seed * 7919 + block * 397 + i);
+                    var slots = IndustrialYardProps.Plan(
+                        zones[i], site, YardStock[i % YardStock.Length], quotas[i], rng);
+
+                    if (slots.Count > quotas[i])
+                    {
+                        failures.Add($"seed {seed} block {block}: {zones[i].Kind} placed " +
+                                     $"{slots.Count} props against a quota of {quotas[i]}");
+                        return;
+                    }
+
+                    total += slots.Count;
+                }
+
+                if (total <= LotBudget)
+                    continue;
+
+                failures.Add($"seed {seed} block {block}: yard placed {total} props against a " +
+                             $"ceiling of {LotBudget}");
+                return;
+            }
+        }
+
+        /// <summary>
+        /// The floor, and the most important of these.
+        ///
+        /// Every other prop assertion is a ceiling - stay inside, do not overlap, do not exceed -
+        /// and a packer that returned an empty list would satisfy all of them. This file already
+        /// made that argument once, at ARoomyYardIsActuallyZoned, about a planner that very nearly
+        /// did emit almost nothing.
+        ///
+        /// Deliberately weak in what it demands: SOME zone of a well-zoned yard gets SOME props.
+        /// A tighter floor would be a statement about how full a works ought to look, and that is
+        /// a tuning question the config owns, not a property of the packer.
+        /// </summary>
+        static void AZonedYardActuallyGetsProps(List<string> failures)
+        {
+            // A RATE, per zone kind, over every footprint in the sweep - and all three of those
+            // words were bought with a silent test.
+            //
+            // Per KIND, because the first version aggregated over a yard and passed while truck
+            // staging and every boiler house in the city came out completely empty. Loading
+            // aprons appear in nearly every yard and carried the total on their own.
+            //
+            // A RATE rather than "more than nothing", because the second version asked only
+            // whether a kind ever placed anything, and a bug that empties a kind for two
+            // footprints out of four leaves the other two to satisfy it. Both defects this now
+            // guards were re-introduced as mutants and BOTH passed the "more than nothing"
+            // form - a band coming out exactly one item deep, so a float's last bit decided
+            // whether the row survived, and a budget whose flooring wiped out the smallest zone.
+            //
+            // Over every FOOTPRINT, because that is the axis the first of those two bugs varies
+            // along. One size per zone samples it; the cross product exercises it.
+            var placedIn = new Dictionary<LotZoneKind, int>();
+            var attempts = new Dictionary<LotZoneKind, int>();
+            var visited = 0;
+
+            foreach (var (layout, halls, seed, block) in AllYards())
+            {
+                if (++visited > PropSweep)
+                    break;
+
+                var zones = Plan(layout, halls, seed, block).ToArray();
+                var quotas = IndustrialYardProps.Budgets(zones, LotBudget);
+                var site = SiteFor(layout, halls);
+
+                for (var i = 0; i < zones.Length; i++)
+                foreach (var item in YardStock)
+                {
+                    var yaw = IndustrialYardProps.YawFor(zones[i]);
+                    var quarter = Mathf.Abs(Mathf.DeltaAngle(yaw, 90f)) < 1f
+                               || Mathf.Abs(Mathf.DeltaAngle(yaw, -90f)) < 1f;
+
+                    var rng = new System.Random(seed * 7919 + block * 397 + i);
+                    var placed = IndustrialYardProps.Plan(
+                        zones[i], site, quarter ? new Vector2(item.y, item.x) : item,
+                        quotas[i], rng).Count;
+
+                    attempts.TryGetValue(zones[i].Kind, out var a);
+                    attempts[zones[i].Kind] = a + 1;
+
+                    if (placed <= 0)
+                        continue;
+
+                    placedIn.TryGetValue(zones[i].Kind, out var p);
+                    placedIn[zones[i].Kind] = p + 1;
+                }
+            }
+
+            // Enough samples that a rate is a statement about the packer rather than about the
+            // sweep happening to miss a shape.
+            const int Enough = 40;
+
+            foreach (var kind in attempts.Keys)
+            {
+                if (attempts[kind] < Enough)
+                    continue;
+
+                placedIn.TryGetValue(kind, out var filled);
+                var rate = filled / (float)attempts[kind];
+
+                // Two tiers, because a cinder yard is MEANT to be nearly empty - Density 0.15,
+                // the lowest the planner emits - and holding it to the same floor as a loading
+                // apron would be asserting a look the config owns rather than a property of the
+                // packer. Measured healthy rates are 33% for cinder and 91-100% for the rest;
+                // the two mutants above sit at 6% and 25-50%, so both tiers clear their failure
+                // by a wide margin in both directions.
+                var floor = kind == LotZoneKind.CinderYard ? 0.20f : 0.80f;
+
+                if (rate >= floor)
+                    continue;
+
+                failures.Add($"{kind} placed props in only {filled} of {attempts[kind]} " +
+                             $"zone/footprint pairs ({rate:P0}, under the {floor:P0} floor) - " +
+                             $"the arrangement for that kind is rejecting nearly everything");
+                return;
+            }
+        }
+
+        static void SameSeedSameProps(List<string> failures)
+        {
+            var visited = 0;
+
+            foreach (var (layout, halls, seed, block) in AllYards())
+            {
+                if (++visited > 20)
+                    return;
+
+                var zones = Plan(layout, halls, seed, block).ToArray();
+                var quotas = IndustrialYardProps.Budgets(zones, LotBudget);
+                var site = SiteFor(layout, halls);
+
+                for (var i = 0; i < zones.Length; i++)
+                {
+                    var first = IndustrialYardProps.Plan(
+                        zones[i], site, YardStock[i % YardStock.Length], quotas[i],
+                        new System.Random(seed));
+
+                    var second = IndustrialYardProps.Plan(
+                        zones[i], site, YardStock[i % YardStock.Length], quotas[i],
+                        new System.Random(seed));
+
+                    if (first.Count != second.Count)
+                    {
+                        failures.Add($"seed {seed} block {block}: {zones[i].Kind} placed " +
+                                     $"{first.Count} then {second.Count} props on identical calls");
+                        return;
+                    }
+
+                    for (var s = 0; s < first.Count; s++)
+                    {
+                        if (first[s].Centre == second[s].Centre &&
+                            Mathf.Approximately(first[s].Yaw, second[s].Yaw))
+                            continue;
+
+                        failures.Add($"seed {seed} block {block}: {zones[i].Kind} prop {s} moved " +
+                                     $"between identical calls");
+                        return;
+                    }
+                }
+            }
         }
 
         /// <summary>

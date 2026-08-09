@@ -347,10 +347,10 @@ namespace LivingCity.EditorTools
 
             foreach (var transform in Object.FindObjectsByType<Transform>(FindObjectsSortMode.None))
             {
-                if (!transform.name.StartsWith(StreetLampLights.LampName, System.StringComparison.Ordinal))
-                    continue;
-
-                if (transform.parent && transform.parent.name.StartsWith(StreetLampLights.LampName, System.StringComparison.Ordinal))
+                // The wiring's own rule, so the report counts exactly what Build would wire -
+                // since the park rewrite that is a table (lamp-road-double + lamp-city), not
+                // one name.
+                if (!StreetLampLights.IsLampRoot(transform, out _))
                     continue;
 
                 lampObjects.Add(transform.gameObject);

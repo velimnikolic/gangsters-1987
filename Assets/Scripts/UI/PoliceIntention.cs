@@ -16,17 +16,13 @@ namespace LivingCity.UI
     /// </summary>
     public static class PoliceIntention
     {
-        /// <summary>Out on the street, working - the default blue.</summary>
-        static readonly Color Patrol = new Color(0.30f, 0.65f, 1f);
-
-        /// <summary>Heading home - amber, the "about to leave the street" warning tone.</summary>
-        static readonly Color Homeward = new Color(1f, 0.75f, 0.25f);
-
-        /// <summary>Off duty at the station - grey, deliberately unassertive.</summary>
-        static readonly Color Idle = new Color(0.62f, 0.62f, 0.62f);
-
-        /// <summary>The forecourt manoeuvre, both directions - teal, brief by nature.</summary>
-        static readonly Color Manoeuvre = new Color(0.25f, 0.85f, 0.80f);
+        // The four colours this map used to own now live in IntentionPalette, so that the
+        // school bus resting in its yard reads the same grey as a patrol car resting in
+        // its own. Aliased rather than inlined below to keep the switches readable.
+        static readonly Color Patrol = IntentionPalette.Working;
+        static readonly Color Homeward = IntentionPalette.Homeward;
+        static readonly Color Idle = IntentionPalette.Idle;
+        static readonly Color Manoeuvre = IntentionPalette.Manoeuvre;
 
         public static Color CarColor(PolicePatrolAgent.State state) => state switch
         {

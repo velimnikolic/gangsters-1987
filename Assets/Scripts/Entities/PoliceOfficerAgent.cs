@@ -28,15 +28,15 @@ namespace LivingCity.Entities
     /// per-instance Update - one lifecycle coroutine plus the routeCompleted subscription.
     /// </summary>
     [RequireComponent(typeof(HumanBehavior))]
-    public sealed class PoliceOfficerAgent : MonoBehaviour
+    public sealed class PoliceOfficerAgent : MonoBehaviour, UI.IOverlaySubject
     {
         /// <summary>Public because the overlay HUD colours its indicator and words its popup
         /// off it. The transitions stay this component's alone.</summary>
         public enum State { Patrolling, Returning, AtStation }
 
-        /// <summary>Every live officer, in Configure order - the overlay HUD's registry.</summary>
-        public static readonly System.Collections.Generic.List<PoliceOfficerAgent> Officers =
-            new System.Collections.Generic.List<PoliceOfficerAgent>();
+        /// <summary>Metres above the officer's origin to float the marker - the head is
+        /// ~1.9m up.</summary>
+        const float MarkerHeight = 2.3f;
 
         /// <summary>
         /// How near the station's doorstep a completed sidewalk route must end before the
@@ -95,7 +95,7 @@ namespace LivingCity.Entities
             station = home;
             rng = new System.Random(seed);
             UnitNumber = unitNumber;
-            Officers.Add(this);
+            UI.OverlayRegistry.Register(this);
             human.routeCompleted += OnRouteCompleted;
 
             if (startInside)
@@ -137,9 +137,24 @@ namespace LivingCity.Entities
             }
         }
 
+        // --------------------------------------------------------------- the overlay
+        // Explicit implementation - the HUD's plumbing, not the officer's own API.
+
+        Transform UI.IOverlaySubject.OverlayAnchor => transform;
+        float UI.IOverlaySubject.OverlayHeight => MarkerHeight;
+        bool UI.IOverlaySubject.OverlayHidden => Hidden;
+        UI.OverlayShape UI.IOverlaySubject.MarkerShape => UI.OverlayShape.Diamond;
+        Color UI.IOverlaySubject.OverlayColor => UI.PoliceIntention.OfficerColor(state);
+        string UI.IOverlaySubject.OverlayTitle => UI.PoliceIntention.OfficerTitle(UnitNumber);
+        string UI.IOverlaySubject.OverlayLine =>
+            UI.PoliceIntention.OfficerIntention(state, routesRemaining);
+        long UI.IOverlaySubject.OverlayKey => ((long)state << 32) | (uint)routesRemaining;
+
+        // ---------------------------------------------------------------------------------
+
         void OnDestroy()
         {
-            Officers.Remove(this);
+            UI.OverlayRegistry.Unregister(this);
             PedestrianRegistry.Unregister(body);
             body = null;
             if (human)

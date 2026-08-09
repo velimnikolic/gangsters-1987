@@ -193,6 +193,12 @@ namespace LivingCity.Entities
 
         public static int Count => Bodies.Count;
 
+        /// <summary>
+        /// Every live car, read-only. Exists for the audio layer's nearest-to-camera scan;
+        /// thirty bodies makes a flat pass the right tool, same as Probe's own loop.
+        /// </summary>
+        public static IReadOnlyList<TrafficBody> All => Bodies;
+
         public static TrafficBody Register(CarBehavior car)
         {
             if (!car)
@@ -556,11 +562,16 @@ namespace LivingCity.Entities
         /// <summary>
         /// The car's footprint, taken from its largest solid BoxCollider.
         ///
-        /// It has to be measured rather than assumed: the fleet runs from a 2.2m motorbike to an
-        /// 11.3m bus, and a fixed lookahead would either strand the motorbike a bus-length behind
-        /// everything or let the bus swallow whatever it is following. The trigger box is skipped -
-        /// that is the pack's forward feeler, not the body - and the largest solid one is taken
-        /// because bus-passenger_AI carries five.
+        /// It has to be measured rather than assumed: the fleet runs from a 4.72m car-passenger_AI
+        /// to the 8.85m bus-school_AI, and a fixed lookahead would either strand the car a
+        /// bus-length behind everything or let the bus swallow whatever it is following. The
+        /// trigger box is skipped - that is the pack's forward feeler, not the body - and the
+        /// largest solid one is taken.
+        ///
+        /// That last rule has no live example left. bus-passenger_AI was the only model in the
+        /// pack carrying five solid boxes, and it left with the Transit bucket; every vehicle on
+        /// the road today has exactly one. The loop stays because the rule is about the pack, not
+        /// about the current fleet - re-add a multi-box model and this keeps working.
         ///
         /// Length is local z and width local x, which is how every AI prefab in the pack is built.
         /// </summary>

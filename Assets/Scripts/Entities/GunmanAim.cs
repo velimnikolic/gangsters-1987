@@ -33,8 +33,13 @@ namespace LivingCity.Entities
         [SerializeField, Min(1f)] float turnSpeed = 360f;
 
         Animator animator;
+        WeaponSocket socket;
 
-        void Awake() => animator = GetComponent<Animator>();
+        void Awake()
+        {
+            animator = GetComponent<Animator>();
+            socket = GetComponentInChildren<WeaponSocket>();
+        }
 
         /// <summary>Weapon up. Separate from having a target - see LowerWeapon.</summary>
         public bool Aiming { get; private set; }
@@ -64,8 +69,15 @@ namespace LivingCity.Entities
         /// </summary>
         public void Fire()
         {
-            if (target)
-                animator.SetTrigger(PedestrianAnimation.ShootHash);
+            if (!target)
+                return;
+
+            animator.SetTrigger(PedestrianAnimation.ShootHash);
+
+            // The bang, from the muzzle when there is one. Chest height otherwise - the shot
+            // still has to come from the man, not from under his feet.
+            Audio.CityAudioDirector.PlayGunshot(
+                socket ? socket.Muzzle : transform.position + Vector3.up * 1.4f);
         }
 
         /// <summary>

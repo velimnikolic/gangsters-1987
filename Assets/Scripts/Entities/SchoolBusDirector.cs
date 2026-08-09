@@ -25,12 +25,18 @@ namespace LivingCity.Entities
     /// blocks, so a seed with no school at all is ordinary rather than exceptional, and this
     /// system standing down is the common path rather than an error.
     ///
-    /// Three things here cannot be proved by the headless suite and want one look in Play:
-    ///  - the school's facade orientation (building-school has no entry in BuildFacadeYawFixes,
-    ///    so "+Z is the front" is assumed; if the door is round the back the fix is one line in
-    ///    that table, which turns the whole building);
+    /// The school's facade orientation is no longer an assumption: building-school is absent
+    /// from BuildFacadeYawFixes because it does not need an entry. The pack's own City - Day
+    /// demo stands its one school with local +Z pointing exactly at the nearest road tile
+    /// (dot 1.000, 16m), and the building's Z bounds are asymmetric - -5.30 to +6.71 - because
+    /// the entrance block projects on the +Z side. A vertex-density profile disagrees, and is
+    /// the known false positive: the T prefabs paint their windows into the atlas, so a fully
+    /// glazed elevation carries no more geometry than a blank one.
+    ///
+    /// Two things here still cannot be proved by the headless suite and want one look in Play:
     ///  - what the traffic behind a halted bus actually does in a full city;
-    ///  - whether this seed's school fit its block at all.
+    ///  - whether this seed's school fit its block with the forecourt setback, or fell back to
+    ///    standing flush (which costs the bus its berth - see SchoolMarker.HasBusStall).
     /// </summary>
     public sealed class SchoolBusDirector : MonoBehaviour
     {
@@ -66,6 +72,10 @@ namespace LivingCity.Entities
         public IReadOnlyList<Stop> Stops => stops;
         public IReadOnlyList<SchoolChildAgent> Roster => roster;
 
+        /// <summary>The one bus, for the school building's own popup - which reports where it
+        /// is. Null until SpawnBus has run, and on any seed where it could not.</summary>
+        public SchoolBusAgent Bus => bus;
+
         IEnumerator Start()
         {
             if (!config || !prefabs)
@@ -95,11 +105,18 @@ namespace LivingCity.Entities
                 yield break;
             }
 
-            // The school is FLUSH against the street wall - no forecourt to look past, unlike
-            // the station and the bank - so the focus is simply out of the door and across the
-            // pavement. ForecourtKerb still answers the question: nearest road waypoint, and
-            // which way its lane runs there.
-            if (!ForecourtKerb.TryFind(school.DoorWorld + school.Facing * PavementReach,
+            // So the school's own overlay popup can report where its pupils and its bus are.
+            // Handed over here rather than looked up there: the marker is a saved-scene object
+            // and the director is not, so the marker cannot be the one that goes looking.
+            school.BindDirector(this);
+
+            // Past the forecourt to about where the near lane is, exactly as PoliceDirector
+            // aims past the station's. FocusFor is that reconstruction (stall depth plus the
+            // walkway), and it is right for the flush fallback too: 6.6m from a flush facade is
+            // 0.6m further than the old hand-written reach and still lands in the carriageway on
+            // any road the pack lays. ForecourtKerb answers the rest: nearest road waypoint,
+            // and which way its lane runs there.
+            if (!ForecourtKerb.TryFind(ForecourtKerb.FocusFor(school, school.DoorWorld),
                                        out var schoolKerb, out var schoolKerbDir))
             {
                 Debug.LogWarning("[SchoolBus] No road lane found in front of the school - the " +
@@ -121,11 +138,6 @@ namespace LivingCity.Entities
 
             SpawnChildren();
         }
-
-        /// <summary>Out of the door, across the pavement, to about where the near lane is.
-        /// CityGrid puts the kerb face at 3m and the near lane at 1.5m on a minor street, so
-        /// 6m from a flush facade lands in the carriageway on any road the pack lays.</summary>
-        const float PavementReach = 6f;
 
         // ------------------------------------------------------------------ planning
 
@@ -274,8 +286,19 @@ namespace LivingCity.Entities
                 return false;
             }
 
-            var vehicle = Instantiate(prefabs.schoolBusPrefab, schoolKerb,
-                                      Quaternion.LookRotation(schoolKerbDir, Vector3.up), transform);
+            // Which way round the bus stands in its berth. The bay lies ALONG the street, so the
+            // geometry offers two directions and only the traffic decides: a bus must pull out
+            // with the flow, not into it. BusStallOut(false) is the bay's authored direction;
+            // flip when it disagrees with the lane.
+            var berth = school.HasBusStall;
+            var flip = berth && Vector3.Dot(school.BusStallOut(false), schoolKerbDir) < 0f;
+
+            var spawnAt = berth ? school.BusStallWorld : schoolKerb;
+            var spawnRot = berth
+                ? school.BusStallRotation(flip)
+                : Quaternion.LookRotation(schoolKerbDir, Vector3.up);
+
+            var vehicle = Instantiate(prefabs.schoolBusPrefab, spawnAt, spawnRot, transform);
 
             var behaviour = vehicle.GetComponent<CarBehavior>();
             if (!behaviour)
@@ -284,6 +307,14 @@ namespace LivingCity.Entities
                 Destroy(vehicle);
                 return false;
             }
+
+            // A bus that starts in its berth is off the lane graph until its first undock, and
+            // CarBehavior must not run before then: Start() calls SetNewPath, which would put
+            // the parked bus on a lane. Disabled BEFORE the first frame, so Start never runs -
+            // the patrol fleet's start-parked trick, and it must be paired with the enable in
+            // SchoolBusAgent.Undock or the bus never moves again.
+            if (berth)
+                behaviour.enabled = false;
 
             // CarBehavior.Start() has not run yet - Instantiate only fires Awake and OnEnable -
             // so the tuning still lands. The same per-spawn overrides VehicleSpawner,
@@ -295,7 +326,7 @@ namespace LivingCity.Entities
             behaviour.headway = config.carHeadway;
 
             bus = vehicle.AddComponent<SchoolBusAgent>();
-            bus.Bind(config, this, schoolKerb);
+            bus.Bind(config, this, schoolKerb, schoolKerbDir, berth, flip);
             return true;
         }
 
@@ -345,7 +376,7 @@ namespace LivingCity.Entities
                     animator.runtimeAnimatorController = prefabs.pedestrianController;
 
                 var child = person.AddComponent<SchoolChildAgent>();
-                child.Bind(this, i % stops.Count);
+                child.Bind(this, i % stops.Count, i + 1);
                 roster.Add(child);
             }
         }

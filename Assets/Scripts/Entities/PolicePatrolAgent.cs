@@ -27,16 +27,15 @@ namespace LivingCity.Entities
     /// No per-frame Update: a coroutine runs the parked half of the cycle, and the driving
     /// half is entirely CarBehavior's - this component only hears routeCompleted.
     /// </summary>
-    public sealed class PolicePatrolAgent : MonoBehaviour
+    public sealed class PolicePatrolAgent : MonoBehaviour, UI.IOverlaySubject
     {
         /// <summary>Public because the overlay HUD colours its indicator and words its popup
         /// off it. The transitions stay this component's alone.</summary>
         public enum State { Resting, Undocking, Patrolling, Returning, Docking }
 
-        /// <summary>Every live patrol car, in Bind order - the overlay HUD's registry, the
-        /// same shape as PedestrianAgent.Agents.</summary>
-        public static readonly System.Collections.Generic.List<PolicePatrolAgent> Fleet =
-            new System.Collections.Generic.List<PolicePatrolAgent>();
+        /// <summary>Metres above the car's origin to float its marker - the roof sits ~1.6m
+        /// up and this floats a little clear of it.</summary>
+        const float MarkerHeight = 2.6f;
 
         /// <summary>
         /// How near the kerb point a completed route must end before the car docks. A route's
@@ -87,7 +86,7 @@ namespace LivingCity.Entities
             kerbDir = kerbDirection;
             rng = new System.Random(seed);
             UnitNumber = unitNumber;
-            Fleet.Add(this);
+            UI.OverlayRegistry.Register(this);
 
             car = GetComponent<CarBehavior>();
             car.routeCompleted += OnRouteCompleted;
@@ -107,9 +106,25 @@ namespace LivingCity.Entities
             }
         }
 
+        // --------------------------------------------------------------- the overlay
+        // Explicit implementation: this is the HUD's plumbing, not the car's own API, and
+        // keeping it off the public surface means nothing else can start depending on it.
+
+        Transform UI.IOverlaySubject.OverlayAnchor => transform;
+        float UI.IOverlaySubject.OverlayHeight => MarkerHeight;
+        bool UI.IOverlaySubject.OverlayHidden => false;
+        UI.OverlayShape UI.IOverlaySubject.MarkerShape => UI.OverlayShape.Diamond;
+        Color UI.IOverlaySubject.OverlayColor => UI.PoliceIntention.CarColor(state);
+        string UI.IOverlaySubject.OverlayTitle => UI.PoliceIntention.CarTitle(UnitNumber);
+        string UI.IOverlaySubject.OverlayLine =>
+            UI.PoliceIntention.CarIntention(state, routesRemaining);
+        long UI.IOverlaySubject.OverlayKey => ((long)state << 32) | (uint)routesRemaining;
+
+        // ---------------------------------------------------------------------------------
+
         void OnDestroy()
         {
-            Fleet.Remove(this);
+            UI.OverlayRegistry.Unregister(this);
             if (car != null)
                 car.routeCompleted -= OnRouteCompleted;
             if (station && stall >= 0)

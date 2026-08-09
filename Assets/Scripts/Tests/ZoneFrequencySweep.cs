@@ -48,6 +48,8 @@ namespace LivingCity.Tests
             var bankOwnBlock = 0;
             var noBank = new List<int>();
             var badStation = new List<int>();
+            var landlockedPort = new List<int>();
+            var portSeeds = new List<int>();
 
             // The two forced-landmark routes are told apart by INDEX now that there are two:
             // the bank rides requiredLandmark, the police station guaranteedLandmark, and a
@@ -127,6 +129,49 @@ namespace LivingCity.Tests
                     if (stationForced != 1)
                         badStation.Add(seed);
                 }
+
+                // The port's hard invariant since the whole-side route: a port city has ONE
+                // waterfront - a side on which every touching block is Port - and every Port
+                // block in the city touches that side. Anything else moors a ship on dry
+                // fabric or leaves a dry gap in the middle of the sea front.
+                if (seen[(int)BlockZone.Port] > 0)
+                {
+                    portSeeds.Add(seed);
+
+                    var side = ZonePlanner.PortSideOf(grid);
+                    if (side == Sides.None)
+                    {
+                        landlockedPort.Add(seed);
+                    }
+                    else
+                    {
+                        for (var blockId = 0; blockId < grid.BlockCount; blockId++)
+                        {
+                            if (grid.ZoneOf(blockId) != BlockZone.Port)
+                                continue;
+
+                            var onSide = false;
+                            foreach (var cell in grid.CellsInBlock(blockId))
+                                if (side switch
+                                    {
+                                        Sides.South => cell.y == 0,
+                                        Sides.North => cell.y == grid.Height - 1,
+                                        Sides.West => cell.x == 0,
+                                        _ => cell.x == grid.Width - 1,
+                                    })
+                                {
+                                    onSide = true;
+                                    break;
+                                }
+
+                            if (!onSide)
+                            {
+                                landlockedPort.Add(seed);
+                                break;
+                            }
+                        }
+                    }
+                }
             }
 
             if (maps == 0)
@@ -147,6 +192,13 @@ namespace LivingCity.Tests
                     $"{badStation.Count}/{maps} cities do not force exactly one police station " +
                     $"block. First offending seeds: {string.Join(", ", badStation.GetRange(0, System.Math.Min(8, badStation.Count)))}");
 
+            if (landlockedPort.Count > 0)
+                result.Failures.Add(
+                    $"{landlockedPort.Count}/{maps} cities break the waterfront invariant - a " +
+                    $"Port block off the port side, or no fully-Port side at all. First " +
+                    $"offending seeds: " +
+                    $"{string.Join(", ", landlockedPort.GetRange(0, System.Math.Min(8, landlockedPort.Count)))}");
+
             var text = new StringBuilder();
             text.AppendLine($"[ZoneFrequency] {maps} maps from {seeds} seeds, " +
                             $"{config.gridWidth}x{config.gridHeight}, spacing " +
@@ -156,6 +208,8 @@ namespace LivingCity.Tests
                             $"(own block {100f * bankOwnBlock / maps:0.0}%, " +
                             $"street wall {100f * (maps - noBank.Count - bankOwnBlock) / maps:0.0}%)");
             text.AppendLine($"  Both hospital AND school: {100f * bothCivic / maps:0.0}%");
+            if (portSeeds.Count > 0)
+                text.AppendLine($"  First port seeds: {string.Join(", ", portSeeds.GetRange(0, System.Math.Min(8, portSeeds.Count)))}");
             text.AppendLine("  zone              in >=1 city   mean blocks");
 
             for (var z = 0; z < zones.Length; z++)

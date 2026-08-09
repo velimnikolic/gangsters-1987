@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using LivingCity.Ambient;
+using LivingCity.Audio;
 using LivingCity.CameraRig;
 using LivingCity.Data;
 using LivingCity.Entities;
@@ -30,8 +31,10 @@ namespace LivingCity.EditorTools
             if (!EnsureSafeScene())
                 return;
 
-            // 1. Config assets, populated from the verified prefab paths.
+            // 1. Config assets, populated from the verified prefab paths. The sound database
+            //    rides along - its slots simply stay empty until the pack is in the project.
             CityAssetBootstrap.CreateAssets();
+            SoundAssetBootstrap.CreateSoundDatabase();
 
             var config = AssetDatabase.LoadAssetAtPath<CityConfig>(ConfigPath);
             var prefabs = AssetDatabase.LoadAssetAtPath<PrefabDatabase>("Assets/Configs/PrefabDatabase.asset");
@@ -51,6 +54,9 @@ namespace LivingCity.EditorTools
             CityEditorUtils.SetField(builder, "lotConfig",
                 AssetDatabase.LoadAssetAtPath<IndustrialLotConfig>(
                     "Assets/Configs/IndustrialLotConfig.asset"));
+            CityEditorUtils.SetField(builder, "parkConfig",
+                AssetDatabase.LoadAssetAtPath<ParkConfig>(
+                    "Assets/Configs/ParkConfig.asset"));
             CityEditorUtils.SetField(builder, "prefabs", prefabs);
             CityEditorUtils.SetBool(builder, "buildOnStart", false);
 
@@ -94,11 +100,12 @@ namespace LivingCity.EditorTools
             CityEditorUtils.SetField(bank, "config", config);
             CityEditorUtils.SetField(bank, "prefabs", prefabs);
 
-            // The police overlay: state diamonds + the click popup. Self-sufficient - it
-            // finds the camera and the police registries itself, and builds its own canvas,
-            // so there is nothing to wire.
-            if (!spawners.GetComponent<UI.PoliceOverlayHud>())
-                spawners.AddComponent<UI.PoliceOverlayHud>();
+            // The city overlay: state markers + the click popup, over every subject that puts
+            // itself in OverlayRegistry (police, school bus, children, forecourt drivers, and
+            // the school and bank buildings). Self-sufficient - it finds the camera and reads
+            // the registry itself, and builds its own canvas, so there is nothing to wire.
+            if (!spawners.GetComponent<UI.CityOverlayHud>())
+                spawners.AddComponent<UI.CityOverlayHud>();
 
             // The school run: one bus and its roster of children, homed on the SchoolMarker the
             // build above attached - if this seed drew a school at all. Runtime-only like the
@@ -107,6 +114,30 @@ namespace LivingCity.EditorTools
                       ?? spawners.AddComponent<SchoolBusDirector>();
             CityEditorUtils.SetField(school, "config", config);
             CityEditorUtils.SetField(school, "prefabs", prefabs);
+
+            // The parents using the school's forecourt - the bank customers' trip at a different
+            // building. Stands down by itself on a seed with no school, or one whose school had
+            // to be stood flush and so has no bays.
+            var parents = spawners.GetComponent<SchoolParentDirector>()
+                       ?? spawners.AddComponent<SchoolParentDirector>();
+            CityEditorUtils.SetField(parents, "config", config);
+            CityEditorUtils.SetField(parents, "prefabs", prefabs);
+
+            // The port's shift, homed on the PortMarker the build above attached - if this
+            // seed's roll produced a port at all. Runtime-only like the other spawners; it
+            // stands down by itself when there is no port.
+            var docks = spawners.GetComponent<PortDirector>()
+                     ?? spawners.AddComponent<PortDirector>();
+            CityEditorUtils.SetField(docks, "config", config);
+            CityEditorUtils.SetField(docks, "prefabs", prefabs);
+
+            // The shipping: live cargo ships in and out of every berth, and the forklift that
+            // works the quay while one is alongside. Destroys the baked preview ships on Start
+            // and replaces them in the same pose, so the first frame matches the scene view.
+            var shipping = spawners.GetComponent<PortShipDirector>()
+                        ?? spawners.AddComponent<PortShipDirector>();
+            CityEditorUtils.SetField(shipping, "config", config);
+            CityEditorUtils.SetField(shipping, "prefabs", prefabs);
 
             var clouds = spawners.GetComponent<CloudSystem>() ?? spawners.AddComponent<CloudSystem>();
             CityEditorUtils.SetField(clouds, "config", config);
@@ -138,6 +169,9 @@ namespace LivingCity.EditorTools
             // 7. The clock readout across the top of the screen. Idempotent, and it quietly does
             //    nothing on the one run where it has to import TextMeshPro's fonts first.
             CityHudSetup.EnsureHud();
+
+            // 8. Sound: the listener rig, the ambience beds and the engine/footstep systems.
+            EnsureAudio();
 
             EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
             Selection.activeGameObject = cityObject;
@@ -218,8 +252,13 @@ namespace LivingCity.EditorTools
             if (!camera.CompareTag("MainCamera"))
                 camera.tag = "MainCamera";
 
-            if (!camera.GetComponent<AudioListener>())
-                camera.gameObject.AddComponent<AudioListener>();
+            // No listener on the camera any more - CityAudioDirector carries the scene's one
+            // AudioListener on a rig at the camera's ground focus, because a listener 200m up
+            // the boom hears the whole city at the same distance. This actively REMOVES the
+            // one this method used to add, so re-running setup heals an older scene.
+            var staleListener = camera.GetComponent<AudioListener>();
+            if (staleListener)
+                Object.DestroyImmediate(staleListener);
 
             camera.orthographic = true;
             camera.orthographicSize = 60f;
@@ -358,6 +397,36 @@ namespace LivingCity.EditorTools
                 AssetDatabase.LoadAssetAtPath<VolumeProfile>(WeatherProfiles.SmogPath));
 
             return weather;
+        }
+
+        /// <summary>
+        /// Creates and wires the three audio components on the Spawners object, exactly as
+        /// EnsureWeather does for the sky. Idempotent; also reachable from its own menu item
+        /// so a scene saved before audio existed picks it up without a full regenerate.
+        /// </summary>
+        [MenuItem("Tools/City/Set Up Audio", priority = 3)]
+        public static void EnsureAudio()
+        {
+            var host = GameObject.Find("Spawners") ?? new GameObject("Spawners");
+
+            var config = AssetDatabase.LoadAssetAtPath<CityConfig>(ConfigPath);
+            var sounds = AssetDatabase.LoadAssetAtPath<SoundDatabase>(
+                "Assets/Configs/SoundDatabase.asset");
+
+            var director = host.GetComponent<CityAudioDirector>()
+                        ?? host.AddComponent<CityAudioDirector>();
+            CityEditorUtils.SetField(director, "config", config);
+            CityEditorUtils.SetField(director, "sounds", sounds);
+
+            var traffic = host.GetComponent<TrafficAudioSystem>()
+                       ?? host.AddComponent<TrafficAudioSystem>();
+            CityEditorUtils.SetField(traffic, "sounds", sounds);
+
+            var pedestrians = host.GetComponent<PedestrianAudioSystem>()
+                           ?? host.AddComponent<PedestrianAudioSystem>();
+            CityEditorUtils.SetField(pedestrians, "sounds", sounds);
+
+            EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
         }
 
         /// <summary>

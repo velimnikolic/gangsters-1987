@@ -28,6 +28,14 @@ namespace LivingCity.Entities
         /// cutting the corner over the kerbline.</summary>
         public const float MouthOffset = 5f;
 
+        /// <summary>
+        /// The school bus's mouth offset. A 9.77m vehicle swung through a 5m mouth pivots about
+        /// a point inside its own body and reads as a bus rotating on the spot; the arc has to
+        /// be long enough that the far end of it moves too. Scaled with the vehicle, near enough:
+        /// the cars this was measured for are about half the length.
+        /// </summary>
+        public const float BusMouthOffset = 9f;
+
         public struct Curve
         {
             public Vector3 A;
@@ -36,19 +44,22 @@ namespace LivingCity.Entities
         }
 
         /// <summary>Kerb to stall. <paramref name="stallOut"/> is the stall's nose-out
-        /// direction - toward the street - so the mouth point sits street-side of the bay.</summary>
-        public static Curve Dock(Vector3 from, Vector3 stall, Vector3 stallOut) => new Curve
+        /// direction - toward the street - so the mouth point sits street-side of the bay.
+        /// <paramref name="mouth"/> defaults to the car figure; see BusMouthOffset.</summary>
+        public static Curve Dock(
+            Vector3 from, Vector3 stall, Vector3 stallOut, float mouth = MouthOffset) => new Curve
         {
             A = from,
-            Control = stall + stallOut * MouthOffset,
+            Control = stall + stallOut * mouth,
             B = stall,
         };
 
         /// <summary>Stall to kerb - the same arc driven the other way.</summary>
-        public static Curve Undock(Vector3 stall, Vector3 stallOut, Vector3 kerb) => new Curve
+        public static Curve Undock(
+            Vector3 stall, Vector3 stallOut, Vector3 kerb, float mouth = MouthOffset) => new Curve
         {
             A = stall,
-            Control = stall + stallOut * MouthOffset,
+            Control = stall + stallOut * mouth,
             B = kerb,
         };
 

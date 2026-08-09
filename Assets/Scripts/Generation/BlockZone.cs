@@ -87,5 +87,18 @@ namespace LivingCity.Generation
         /// now true of every zone, the last such branch having gone with the church.
         /// </summary>
         Bank,
+
+        /// <summary>
+        /// The docks - a whole-block compound like Industrial, but asymmetric: everything in it
+        /// faces the water, and the water is not part of the city at all. It exists only on a
+        /// block touching the map boundary (ZonePalette.requiresMapEdge), because the sea is
+        /// laid OUTSIDE the grid, beyond the outline - the first and only thing out there.
+        ///
+        /// This is also the first zone authored after the setting moved from the 1920s to the
+        /// 1980s, which is why the container stacks are deliberate: ISO boxes, a container ship
+        /// at the berth, forklifts on the apron. Not a promise - one per city at most, and only
+        /// when the roll lands on an edge block (see ZonePlanner and PortLayout).
+        /// </summary>
+        Port,
     }
 }

@@ -53,6 +53,21 @@ namespace LivingCity.EditorTools
         const string Farm = Root + "Farm_T/";
 
         /// <summary>
+        /// The brokenvector Low Poly Storage Pack, dropped in as it downloads. Nothing loads from
+        /// here directly - see YardStock for why the props are re-authored first.
+        /// </summary>
+        const string StoragePack = "Assets/brokenvector/Low Poly Storage Pack/";
+
+        /// <summary>
+        /// Where the re-authored yard stock is written, and the only place the palette reads it
+        /// from. Deliberately outside the vendor folder, for both the reasons AuthoredPeople
+        /// gives: a pack update is free to overwrite its own folder, and the pack's prefabs are
+        /// not usable as they ship - they carry their own Built-in-RP shaders, which under this
+        /// project's URP Forward+ renderer draw magenta. See AuthorYardStock.
+        /// </summary>
+        const string YardStock = ConfigDir + "/YardStock/";
+
+        /// <summary>
         /// The no-border ground tiles. Same surfaces as Tiles_T, minus the kerb drawn round the
         /// edge - which is what you want for anything laid in adjoining rectangles, because two
         /// bordered tiles meeting show a seam down the join.
@@ -73,6 +88,15 @@ namespace LivingCity.EditorTools
         const string Vehicles_ = Root + "Vehicles_T/";
         const string CarsAI = Root + "Vehicles_T/Cars_AI_T/";
         const string CarsStatic = Root + "Vehicles_T/Cars_T/";
+        const string Boats = Root + "Vehicles_T/Boats_T/";
+        const string Pier = Root + "Props_T/Pier_T/";
+
+        /// <summary>
+        /// Only the working-waterside pieces are taken from here - buoys, the lifebuoy. The
+        /// rest of the folder is deckchairs and sandcastles, holiday kit a working port has
+        /// no use for.
+        /// </summary>
+        const string Beach = Root + "Beach_T/";
         const string PeopleAI = Root + "People_T/People_AI_T/";
 
         /// <summary>
@@ -179,8 +203,9 @@ namespace LivingCity.EditorTools
         };
 
         /// <summary>
-        /// What stands in a back alley. Deliberately light, and deliberately short: a bin against
-        /// the wall, a dumpster, a bench, a lamp, the odd tree.
+        /// What stands in a back alley. Still deliberately short - bins, a dumpster, a bench, the
+        /// odd tree - but no longer deliberately light: the alley is where a neglected city puts
+        /// its rubbish, so this kit is weighted to it and BlockBuilder fills half the cells.
         ///
         /// The garage, crates, pallets, timber and yard wall that used to be in here are gone.
         /// They are works-yard furniture, and behind a block of flats they read as a builder's
@@ -188,13 +213,19 @@ namespace LivingCity.EditorTools
         /// of anything: the buildings of the interior lots are the fill now, and this is only
         /// what is dropped on the tarmac between them. See BlockBuilder.BuildInterior.
         ///
-        /// bin-wheelie and trash-can are listed twice on purpose: ShuffleBag deals each entry
-        /// once per cycle, so a duplicate is how a kit weights one prop above the others.
+        /// The refuse props are listed several times on purpose: ShuffleBag deals each entry
+        /// once per cycle, so a duplicate is how a kit weights one prop above the others. Eight
+        /// of the eleven entries are now bins - up from five of eight - and BlockBuilder's
+        /// AlleyPropChance went 0.32 -> 0.50 with it, which is what actually doubles the
+        /// rubbish (0.32 x 0.63 = 0.20 per cell against 0.50 x 0.73 = 0.36). The bench and the
+        /// two plants come out of that arithmetic roughly where they were (0.12 -> 0.14): the
+        /// alley gets dirtier, not more crowded with everything.
         /// </summary>
         static GameObject[] AlleyKit() =>
-            Merge(LoadAll(CityProps, "dumpster", "bin-wheelie", "bin-wheelie",
+            Merge(LoadAll(CityProps, "dumpster", "dumpster",
+                                     "bin-wheelie", "bin-wheelie", "bin-wheelie",
                                      "bench-old"),
-                  LoadAll(Props, "trash-can", "trash-can"),
+                  LoadAll(Props, "trash-can", "trash-can", "trash-can"),
                   LoadAll(Trees, "tree-lime", "shrub-round"));
 
         /// <summary>
@@ -293,6 +324,9 @@ namespace LivingCity.EditorTools
             // asset alone, so a yard already tuned in the inspector survives every refresh.
             var lots = GetOrCreate<IndustrialLotConfig>($"{ConfigDir}/IndustrialLotConfig.asset");
 
+            // Same contract for the park's knobs.
+            GetOrCreate<ParkConfig>($"{ConfigDir}/ParkConfig.asset");
+
             // CityConfig.asset survives every refresh with its serialized values intact -
             // GetOrCreate never rewrites an existing asset - so a default changed in
             // CityConfig.cs alone never reaches a project that already has the asset. The
@@ -331,6 +365,11 @@ namespace LivingCity.EditorTools
             db.trafficLights = Load(Traffic + "traffic-lights_AI.prefab");
             db.mainTrafficLights = Load(Traffic + "traffic-lights-big_AI.prefab");
 
+            // Before the palettes, not after: the Industrial entry reads YardStock through
+            // YardKit, and unlike AuthorPedestrians - whose only reader is two hundred lines
+            // below - this output has to exist by the time the palette is built.
+            AuthorYardStock();
+
             db.zonePalettes = BuildZonePalettes();
 
             db.facadeYawFixes = BuildFacadeYawFixes();
@@ -365,10 +404,22 @@ namespace LivingCity.EditorTools
             // Period sweep of the street furniture: the bus shelter is a glass canopy, the cycle
             // stand and the cash machine are plainly modern. Post box, lantern and guidepost take
             // their place, and the hot dog stand stays because Chicago.
+            //
+            // The three refuse props are listed more than once on purpose. StreetPropPlacer.Pick
+            // draws uniformly from this array, so a duplicate is how the bag is weighted - the
+            // same idiom AlleyKit uses on ShuffleBag. Seven refuse entries against seven of
+            // everything else puts the bag at half rubbish, and StreetPropPlacer's slot chance
+            // went 0.18 -> 0.24 alongside it so that the hydrants, lanterns, post boxes and
+            // benches keep the frequency they had (0.18 x 0.70 = 0.126, 0.24 x 0.50 = 0.12) and
+            // only the rubbish doubles. A kerbside dumpster is deliberate: this city is meant to
+            // read as neglected, so the front-of-block rule the pocket park keeps does not apply
+            // to the street itself.
             db.smallProps = Merge(
-                LoadAll(CityProps, "bench-old", "bin-wheelie", "dumpster",
+                LoadAll(CityProps, "bench-old", "bin-wheelie", "bin-wheelie",
+                                   "dumpster", "dumpster",
                                    "fire-hydrant", "hot-dog-stand"),
-                LoadAll(Props, "mail-box", "trash-can", "lantern-long", "guidepost"),
+                LoadAll(Props, "mail-box", "trash-can", "trash-can", "trash-can",
+                               "lantern-long", "guidepost"),
                 LoadAll(Vehicles_, "bike-old"));
 
             db.clouds = LoadAll(Clouds, "cloud-big", "cloud-fluffy", "cloud-long", "cloud-triangle");
@@ -467,22 +518,26 @@ namespace LivingCity.EditorTools
                 Bucket("Freight", 14f, CarsAI, "truck_AI", "car-tow-truck_AI",
                          "armored-truck_AI"),
 
-                // A passenger bus is the one large body worth having: VehicleSpawner calls
-                // picker.Next() with no size limits (VehicleSpawner.cs:176), so unlike the kerb
-                // and the car parks, traffic has no length ceiling and an 11.28m vehicle is
-                // legal here. Kept to 6/100 - it is the biggest silhouette on the road and two
-                // on screen at once would own the street. bus-school stays out of THIS list for
-                // the reason it always did - a yellow American school bus is the loudest
-                // anachronism in the pack, and one wandering the city on a random route is the
-                // anachronism with nothing to justify it. It now has a job instead: it is
-                // db.schoolBusPrefab, driven only by SchoolBusDirector, only between the school
-                // and its stops, and only with children getting on and off it. Same arrangement
-                // as the police car - out of the buckets, owned by a director.
+                // There is deliberately no bus group here, and there used to be: a "Transit"
+                // bucket carrying bus-passenger_AI at 6/100. It was dropped because at 11.28m it
+                // was by far the longest thing the pack's CarBehavior had to steer through a
+                // junction - the corner-clipping suspect the comment here always named first.
+                // Traffic never rejected it (VehicleSpawner calls picker.Next() with no size
+                // limits, VehicleSpawner.cs:176, so unlike the kerb and the car parks there is no
+                // length ceiling); it simply was not worth the turn.
                 //
-                // Watch this one first if traffic starts clipping corners. It is by far the
-                // longest thing the pack's CarBehavior has to steer through a junction, and
-                // dropping this single group is the whole fix.
-                Bucket("Transit", 6f, CarsAI, "bus-passenger_AI"),
+                // So the only bus in the city is the school bus, and it is not in this list
+                // either - it is db.schoolBusPrefab, driven only by SchoolBusDirector, only
+                // between the school and its stops, and only with children getting on and off it.
+                // Same arrangement as the police car: out of the buckets, owned by a director.
+                // That was once an exception carved out of a fleet that had another bus; now it
+                // is simply how the one bus works.
+                //
+                // The weights above therefore total 94, not 100, and that is intended. Vehicle-
+                // Picker sums totalWeight over the groups it is actually given (VehiclePicker.cs
+                // :47), so the three renormalise themselves to 70.2 / 14.9 / 14.9 and keep the
+                // ratios they were tuned at. Topping Everyday back up to 72 would move that mix
+                // for no reason - leave the numbers alone.
             };
 
             // Kept as the flat fallback list PedestrianSpawner drops back to when the weighted
@@ -505,6 +560,48 @@ namespace LivingCity.EditorTools
             // BuildPedestrianGroups for why that list is now seven rather than one.
             db.schoolBusPrefab = Load(CarsAI + "bus-school_AI.prefab");
             db.schoolChildPrefabs = Children();
+
+            // Which cars VehicleTinter may repaint. Static and _AI forms of the same model both
+            // appear, because the same body is parked by BlockBuilder and driven by
+            // VehicleSpawner and both should vary.
+            //
+            // The list is short for a measured reason, not a cautious one. A tint MULTIPLIES the
+            // atlas, so it can only darken, and that is only useful where the body swatch is
+            // neutral. Sampled off atlas-albedo-LPEC.png through each model's UVs, area-weighted:
+            //
+            //   PAINTABLE                       LEAVE ALONE
+            //   car-passenger      #dbdbda 35%  car-taxi           #fdcf24 yellow
+            //   car-caravan-small  #dbdbda 37%  car-police         #384878 navy
+            //   car-tow-truck      #dbdbda 15%  bus-school         #fdcf24 yellow
+            //   car-veteran        #878282 45%  car-passenger-race #fc7d20 orange
+            //   car-pickup-modern  #878282 36%  car-hippie-van     #35ccdd cyan
+            //   armored-truck      #878282 49%  jeep-open          #cd9b60 tan
+            //   truck              #c1bcb9 37%
+            //
+            // bus-passenger was measured here too, at #dbdbda 43%, and is gone with the Transit
+            // bucket: nothing instantiates it any more, so an entry for it would only be a name
+            // the tinter can never match.
+            //
+            // The right-hand column is excluded by design, not by oversight: yellow times blue is
+            // dark green, and a repainted taxi is a taxi with the wrong livery. The police car and
+            // the school bus are absent for that reason AND because they are a director's own
+            // vehicle - the same arrangement that keeps them out of the traffic buckets.
+            //
+            // Two of the paintable models exist in one form only, and that is the pack's doing:
+            // Cars_AI_T ships no _AI variant for car-caravan-small or car-pickup-modern, so they
+            // are parked-only. Naming the missing halves here would land in the Missing warning
+            // below.
+            db.paintableVehicles = Merge(
+                LoadAll(CarsStatic, "car-passenger", "car-veteran", "car-tow-truck",
+                                    "armored-truck", "truck", "car-caravan-small",
+                                    "car-pickup-modern"),
+                LoadAll(CarsAI, "car-passenger_AI", "car-veteran_AI", "car-tow-truck_AI",
+                                "armored-truck_AI", "truck_AI"));
+
+            // The port's shift draws the same worker models the crowd's Workers group uses -
+            // a docker on the quay and a labourer on the pavement are the same city. Nothing
+            // new is authored for this; both prefabs are crowd-proven Epic City AI rigs.
+            db.dockWorkerPrefabs = LoadAll(PeopleAI, "man-worker_AI", "man-construction-worker_AI");
 
             db.pedestrianController = BuildPedestrianController();
 
@@ -554,6 +651,255 @@ namespace LivingCity.EditorTools
         /// Rebuilt on every run, same overwrite discipline as the animator controller: the
         /// output is generated, so hand-edits in the inspector do not survive and belong here.
         /// </summary>
+        /// <summary>
+        /// Who does NOT belong in a 1920s works yard, by name fragment.
+        ///
+        /// The same period rule the zone palettes enforce on buildings and OffPeriodPedestrians
+        /// enforces on the cast, applied to the storage pack. The containers are the one the
+        /// header already calls out by name - containerisation starts in 1956 - and the pallet is
+        /// the same mistake thirty years later still: the EPAL standard is 1961, and Props_T's
+        /// `palette` is already in stackProps anyway, so importing a second one defends a
+        /// marginal case at the cost of a duplicate.
+        ///
+        /// The rest are not period-wrong so much as REGISTER-wrong. A suitcase in a factory yard
+        /// reads as somebody's mistake rather than as a works, and there is no reading of an amp
+        /// rack, a giftbox or a treasure chest that survives the walk past it.
+        /// </summary>
+        static readonly string[] OffPeriodYardStock =
+        {
+            "container", "pallet", "amp", "gift", "treasure", "chest", "suitcase", "trashcan",
+        };
+
+        /// <summary>
+        /// Which of the four palette bags a storage-pack model lands in, by name fragment.
+        ///
+        /// Ordered, and first match wins - which is load bearing rather than incidental. The
+        /// pack's electric box would otherwise be a crate, on the strength of the word "box",
+        /// and would then be laid in ranks on a loading apron instead of stood against the wall
+        /// of a boiler house. Anything that matches nothing is reported and skipped rather than
+        /// swept into a default bag: an unclassified model is a name this table has not been
+        /// told about, and silently filing it as a crate is how it stops being visible.
+        /// </summary>
+        static readonly (string Role, string[] Match)[] YardStockRoles =
+        {
+            ("barrel",  new[] { "barrel" }),
+            ("fixture", new[] { "rack", "locker", "cabinet", "electric", "garbage", "can" }),
+            ("crate",   new[] { "crate", "box", "basket" }),
+            ("sack",    new[] { "bag", "sack" }),
+        };
+
+        /// <summary>
+        /// Turns the brokenvector Low Poly Storage Pack into prefabs this project can place.
+        ///
+        /// The same three problems AuthorPedestrians solves, and one more. The pack's models
+        /// carry its own materials on its own custom shaders, which are Built-in-RP and draw
+        /// MAGENTA under this project's URP Forward+ renderer - the same failure SmokeMaterial
+        /// documents, and one that reads as a bug in the generator rather than in a material. So
+        /// nothing the pack ships is referenced: the geometry is re-parented onto a prefab of
+        /// ours, wearing a material of ours.
+        ///
+        /// Rebuilt every run, same overwrite discipline as the animator controller and the
+        /// authored walkers: the output is generated, so re-downloading the pack costs one menu
+        /// click and hand-edits in the inspector do not survive.
+        ///
+        /// Silent no-op when the pack is not on disk. This has to stay true - the whole yard
+        /// stock has Epic City fallbacks behind it precisely so a project without the pack builds
+        /// the same city with less variety, rather than a different one.
+        ///
+        /// MUST run before BuildZonePalettes, unlike AuthorPedestrians, which gets away with
+        /// being called two hundred lines later because only BuildPedestrianGroups reads its
+        /// output. The Industrial palette reads YardStock, and the palettes are built first.
+        /// </summary>
+        static void AuthorYardStock()
+        {
+            if (!Directory.Exists(StoragePack))
+                return;
+
+            var material = YardStockMaterial();
+            if (!material)
+                return;
+
+            // Rebuilt rather than merged, so a model dropped from the pack disappears from the
+            // palette instead of lingering as a prefab nothing re-authors.
+            if (Directory.Exists(YardStock))
+                AssetDatabase.DeleteAsset(YardStock.TrimEnd('/'));
+
+            Directory.CreateDirectory(YardStock);
+
+            var kept = new List<string>();
+            var skipped = new List<string>();
+            var unclassified = new List<string>();
+
+            var models = AssetDatabase.FindAssets("t:Model", new[] { StoragePack.TrimEnd('/') })
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .OrderBy(p => p)
+                .ToArray();
+
+            foreach (var path in models)
+            {
+                var name = Path.GetFileNameWithoutExtension(path);
+
+                // Compared with every separator stripped, because a pack is free to call the same
+                // model "Electric Box", "electric_box" or "ElectricBox" and all three have to hit
+                // the same row of the table.
+                var key = name.ToLowerInvariant()
+                              .Replace(" ", "").Replace("_", "").Replace("-", "");
+
+                if (OffPeriodYardStock.Any(bad => key.Contains(bad)))
+                {
+                    skipped.Add(name);
+                    continue;
+                }
+
+                var role = YardStockRoles
+                    .FirstOrDefault(r => r.Match.Any(m => key.Contains(m)))
+                    .Role;
+
+                if (string.IsNullOrEmpty(role))
+                {
+                    unclassified.Add(name);
+                    continue;
+                }
+
+                var source = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (!source)
+                    continue;
+
+                if (Author(source, material, $"{YardStock}{role}-{Slug(name)}.prefab"))
+                    kept.Add($"{role}-{Slug(name)}");
+            }
+
+            AssetDatabase.SaveAssets();
+
+            Debug.Log($"[CityAssetBootstrap] Yard stock: authored {kept.Count} of {models.Length} " +
+                      $"storage-pack models -> {YardStock}\n" +
+                      $"  kept: {string.Join(", ", kept)}\n" +
+                      $"  off-period or off-register: {string.Join(", ", skipped)}");
+
+            // Separately, and as a warning, because this one is actionable: it means the pack
+            // ships a model whose name YardStockRoles has never been shown. Filing it by guess
+            // would put it in a yard at the wrong end of the compound.
+            if (unclassified.Count > 0)
+                Debug.LogWarning($"[CityAssetBootstrap] Yard stock: {unclassified.Count} model(s) " +
+                                 $"matched no role and were skipped - add a fragment to " +
+                                 $"YardStockRoles if they belong in a yard: " +
+                                 $"{string.Join(", ", unclassified)}");
+        }
+
+        /// <summary>
+        /// One model, saved as a standalone prefab wearing the project's own material.
+        ///
+        /// Unpacked completely rather than saved as a variant, for the reason AuthorPedestrians
+        /// gives: a variant inherits its materials back from the pack the moment the pack is
+        /// updated, which is exactly the link this method exists to cut.
+        /// </summary>
+        static bool Author(GameObject source, Material material, string path)
+        {
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(source);
+            if (!instance)
+                return false;
+
+            PrefabUtility.UnpackPrefabInstance(
+                instance, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
+
+            // Anything the pack put on it. A storage prop is geometry and nothing else; a script
+            // this assembly cannot even name would be a null MonoBehaviour in the saved prefab.
+            foreach (var script in instance.GetComponentsInChildren<MonoBehaviour>(true))
+                if (script)
+                    Object.DestroyImmediate(script);
+
+            // Colliders too. Nothing in a yard is walked into - the props stand on ground the
+            // pedestrians have no route across - and a few thousand stray colliders is a physics
+            // bill for nothing. See the crowd-scale work on layer costs.
+            foreach (var collider in instance.GetComponentsInChildren<Collider>(true))
+                Object.DestroyImmediate(collider);
+
+            // Every slot, not just the first: a model authored with two submeshes keeps its
+            // second material otherwise, and that second material is the magenta one.
+            foreach (var renderer in instance.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                var slots = new Material[renderer.sharedMaterials.Length];
+                for (var i = 0; i < slots.Length; i++)
+                    slots[i] = material;
+
+                renderer.sharedMaterials = slots;
+            }
+
+            var saved = PrefabUtility.SaveAsPrefabAsset(instance, path);
+            Object.DestroyImmediate(instance);
+
+            return saved;
+        }
+
+        /// <summary>
+        /// The one material every authored yard prop wears.
+        ///
+        /// Built from atlas-LPEC's SHADER rather than from a shader looked up by name, so it
+        /// cannot disagree with what the rest of the city draws with and cannot be broken by a
+        /// URP upgrade renaming a path. The map is the pack's own palette texture, which is the
+        /// same trick atlas-LPEC uses - colour baked into UVs against a small swatch sheet - and
+        /// is why one material covers the whole set.
+        ///
+        /// The importer settings are not decoration. A palette texture read with bilinear
+        /// filtering bleeds each swatch into its neighbours along every UV island edge, and on
+        /// flat-shaded low-poly props that shows up as a thin wrong-coloured rim on every face.
+        /// Point filtering with no mip chain is the fix, and it has to be applied here rather
+        /// than by hand or a reimport silently undoes it.
+        /// </summary>
+        static Material YardStockMaterial()
+        {
+            var atlas = AssetDatabase.LoadAssetAtPath<Material>(PackMaterials + "atlas-LPEC.mat");
+            if (!atlas)
+            {
+                Missing.Add(PackMaterials + "atlas-LPEC.mat");
+                return null;
+            }
+
+            var texturePath = AssetDatabase
+                .FindAssets("t:Texture2D", new[] { StoragePack.TrimEnd('/') })
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .OrderBy(p => p)
+                .FirstOrDefault();
+
+            const string Dir = "Assets/Materials/YardStock";
+            const string Path_ = Dir + "/atlas-LPSP.mat";
+
+            Directory.CreateDirectory(Dir);
+
+            var material = AssetDatabase.LoadAssetAtPath<Material>(Path_);
+            if (!material)
+            {
+                material = new Material(atlas.shader);
+                AssetDatabase.CreateAsset(material, Path_);
+            }
+
+            material.shader = atlas.shader;
+            material.SetColor("_BaseColor", Color.white);
+            material.SetFloat("_Smoothness", 0f);
+            material.SetFloat("_Metallic", 0f);
+
+            if (!string.IsNullOrEmpty(texturePath))
+            {
+                if (AssetImporter.GetAtPath(texturePath) is TextureImporter importer &&
+                    (importer.filterMode != FilterMode.Point || importer.mipmapEnabled))
+                {
+                    importer.filterMode = FilterMode.Point;
+                    importer.mipmapEnabled = false;
+                    importer.SaveAndReimport();
+                }
+
+                material.SetTexture(
+                    "_BaseMap", AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath));
+            }
+
+            EditorUtility.SetDirty(material);
+            return material;
+        }
+
+        /// <summary>Pack name to this project's lowercase-hyphen convention.</summary>
+        static string Slug(string name) =>
+            name.Trim().ToLowerInvariant().Replace(" ", "-").Replace("_", "-");
+
         static void AuthorPedestrians()
         {
             var reference = Load(PedestrianReference);
@@ -1184,8 +1530,18 @@ namespace LivingCity.EditorTools
                     pocketParkProps: PocketParkKit(),
                     // The alley furniture goes down first, so the scatter is only what fills the
                     // corners it could not reach.
-                    scatter: Merge(cityTrees, LoadAll(Props, "mail-box")),
-                    scatterDensity: 0.06f),
+                    //
+                    // Bins are in this bag now, which puts them on the FRONT of the block, not
+                    // just behind it - the one place the city used to keep clean. Deliberate:
+                    // the brief is a neglected city, and this palette is 26 of the map's weight,
+                    // so nothing else moves the look as much. Density 0.06 -> 0.09 pays for the
+                    // three new entries: four trees in a bag of five at 0.06 is 0.048 a try,
+                    // four in a bag of eight at 0.09 is 0.045, so the greenery is untouched and
+                    // the rubbish is added on top rather than swapped in.
+                    scatter: Merge(cityTrees,
+                                   LoadAll(CityProps, "bin-wheelie", "dumpster"),
+                                   LoadAll(Props, "mail-box", "trash-can")),
+                    scatterDensity: 0.09f),
 
                 // Up from 0.3: with the bungalow belt gone, ResidentialHigh and Industrial are
                 // the only two zones that fill a map, and a 30% ceiling on the works left the
@@ -1232,8 +1588,16 @@ namespace LivingCity.EditorTools
                     // The same material as before, used differently. These were thirteen entries
                     // in one scatter bag at density 0.22, so they landed anywhere at any yaw;
                     // IndustrialDresser now lays each one as a short row against a hall wall.
+                    //
+                    // The yard's share of the refuse pass comes through HERE rather than through
+                    // scatterDensity, which stays 0 for the reason given below and is skipped for
+                    // industrialYard anyway. BuildStacks picks one prefab per hall and repeats it
+                    // in a line against a side wall, so a works gets a ROW of dumpsters down its
+                    // flank - which is what a real yard looks like, and is the opposite of the
+                    // tipped-out uniform noise this pass replaced.
                     stackProps: Merge(
                         LoadAll(Props, "timber", "palette", "package-box"),
+                        LoadAll(CityProps, "dumpster", "bin-wheelie"),
                         LoadAll(Construction, "brick-plain-stack", "brick-concrete-stack",
                                               "planks-stack", "cement-bag-pile",
                                               "pipe-concrete-stack")),
@@ -1252,6 +1616,43 @@ namespace LivingCity.EditorTools
                                            "water-tower-medium"),
                         LoadAll(Farm, "farm-silo"),
                         LoadAll(Construction, "contruction-large", "restroom-portable")),
+
+                    // The yard stock, read by IndustrialYardDresser off the zones
+                    // IndustrialLotPlanner cuts. Each list is the storage pack FIRST and this
+                    // pack's own stand-ins second, and both halves are always present: the
+                    // storage pack is a variety layer, so an absent or unlicensed one costs
+                    // choice and never the feature. YardKit returns empty in silence when the
+                    // authored folder does not exist, which is what keeps a project that has not
+                    // imported the pack out of the missing-prefab report.
+                    //
+                    // Barrels are the one role with NO stand-in in Epic City - there is not a
+                    // barrel or a drum anywhere in the pack, which is exactly why this is the
+                    // half worth importing. Concrete rings and pipe rolls carry the role until
+                    // it arrives: they are stockyard goods that come in ranks, which is the
+                    // property the arrangement depends on.
+                    yardBarrels: Merge(
+                        YardKit("barrel"),
+                        LoadAll(Construction, "concrete-ring-small", "concrete-ring-medium",
+                                              "pipe-roll", "pipe-concrete")),
+
+                    yardCrates: Merge(
+                        YardKit("crate"),
+                        LoadAll(Props, "package-box", "package-box-open"),
+                        LoadAll(Construction, "case-tool")),
+
+                    yardSacks: Merge(
+                        YardKit("sack"),
+                        LoadAll(Construction, "cement-bag-pile", "cement-bag", "cement-bag-open")),
+
+                    // Edge pieces: things with their backs to something. trash-can is the ash
+                    // can the cinder yard wants, and the dumpster and the folded ladder are the
+                    // two other pieces in the pack that read as standing against a wall rather
+                    // than as having been dropped.
+                    yardFixtures: Merge(
+                        YardKit("fixture"),
+                        LoadAll(Props, "trash-can"),
+                        LoadAll(CityProps, "dumpster"),
+                        LoadAll(Construction, "ladder-folded", "steel-prop-stack")),
                     // A works runs lorries and a forklift, not saloons - the same idea as the
                     // police car outside the police station. `truck` at 6.25m is rejected by
                     // every marked bay, which is why IndustrialLayout keeps its own deeper
@@ -1335,7 +1736,24 @@ namespace LivingCity.EditorTools
                                    LoadAll(Fences, "fence-picket"),
                                    LoadAll(CityProps, "bench-old")),
                     scatterDensity: 0.16f,
-                    parkingChance: 0.1f),
+                    parkingChance: 0.1f,
+                    // The school's forecourt, and the reason it has one at all:
+                    // palette.HasLandmarkCars is the flag PlaceLandmark tests before it recesses
+                    // a landmark and cuts bays in the frontage it vacates. Without this list the
+                    // school stood flush against the street wall with nowhere to park, which is
+                    // why the school bus used to spend its whole life stopped IN the lane.
+                    //
+                    // Parents' cars, so no taxi and no armored-truck: this bay is the school
+                    // run, not a rank. The bays these bakes leave empty are not spare -
+                    // SchoolParentDirector drives live cars into them, exactly as the bank's
+                    // customers use the bank's - and the first BusStallLength metres of the
+                    // frontage are not in this layout at all, being the bus's own bay.
+                    landmarkCars: new[]
+                    {
+                        Bucket("Parents", 1f, CarsStatic,
+                                 "car-passenger", "car-pickup-modern", "car-veteran",
+                                 "jeep-open", "car-caravan-small"),
+                    }),
 
                 // There was a fourth civic zone here, the fire station, and it is gone rather than
                 // turned down: it was a whole block - the city's scarcest thing at about ten of
@@ -1367,7 +1785,12 @@ namespace LivingCity.EditorTools
                 // in the block.
                 Palette(BlockZone.Park, weight: 8f, maxShare: 1f, maxBlocks: 1,
                     groups: System.Array.Empty<PrefabDatabase.WeightedGroup>(),
-                    ground: park,
+                    // Bare grass, not tile-park: the rewrite paints its own walks over
+                    // ParkLayout's spines and authors its own nav tiles, and tile-park's baked
+                    // 4-fold cross was both the sameness of every old park and a nav island -
+                    // its edge-midpoint endpoints never matched an ordinary road tile's
+                    // corner sidewalk nodes.
+                    ground: grass,
                     groundPerCell: true,
                     // The one palette that does not want a concrete apron - see LayApron.
                     apronGround: grass,
@@ -1405,20 +1828,28 @@ namespace LivingCity.EditorTools
                     parkBenches: Merge(
                         LoadAll(Props, "bench-forest"),
                         LoadAll(CityProps, "bench-old")),
-                    // The one centred mound in the pack - see ParkDresser.PlaceMounds for why
-                    // none of the tile-hill kit can join it.
+                    // The knoll - the one centred mound in the pack, and none of the tile-hill
+                    // kit can join it: those rise at an EDGE and hang a 6m skirt.
                     parkMounds: LoadAll(Tiles, "tile-plain-hump"),
-                    // Nature_T/Stones_T had a named constant in this file and nothing behind it,
-                    // the same orphan Grass_T was. rock-terrasse is 6.04 x 7.97 and only 1.88
-                    // tall, which is an outcrop rather than a boulder; rock-pillar (6.77 tall)
-                    // and rock-sharp are left out as alpine. The deadwood is here rather than in
-                    // the undergrowth because a standing dead tree is a feature, not a filler.
-                    parkFeatures: Merge(
-                        LoadAll(Stones, "rock-terrasse", "stone-round", "stone-flat",
-                                        "stone-pointy", "stone-oval", "stone-small", "rocks-small"),
-                        LoadAll(Trees, "stump", "stump-small", "tree-dead", "tree-dry")),
-                    parkLawnPatch: grass,
-                    fenceSegment: Load(Fences + "fence-shrub.prefab")),
+                    fenceSegment: Load(Fences + "fence-shrub.prefab"),
+                    // The rewrite's kinds. lamp-city is the 6.7m cast-iron post - the street's
+                    // lamp-road-double is a 9.5m double-arm carriageway fixture that clumped
+                    // around the old fountain. The monument is rock-pillar standing in for the
+                    // statue the pack never shipped; the boulders are the naturally SMALL
+                    // stones at authored scale (rock-terrasse, 6x8m, stays out as an outcrop);
+                    // the deadwood is its own list so only the informal archetype can draw it.
+                    parkLamps: LoadAll(CityProps, "lamp-city"),
+                    parkBins: LoadAll(Props, "trash-can"),
+                    parkMonuments: LoadAll(Stones, "rock-pillar"),
+                    parkBoulders: LoadAll(Stones, "stone-round", "stone-flat", "stone-oval",
+                                                  "stone-small", "rocks-small"),
+                    parkDeadTrees: LoadAll(Trees, "tree-dead", "tree-dry", "stump", "stump-small"),
+                    // Borderless so the stretched pond patch has no baked rim of its own.
+                    parkWaterTile: Load(NoBorder + "tile-water-nb.prefab"),
+                    parkGatePiers: Load(Fences + "fence-stone-tower.prefab"),
+                    // A carousel was a fixture of a 1920s American park; the informal
+                    // archetype rolls one rarely.
+                    parkAmusement: LoadAll(Amusement, "carousel-coaster")),
 
                 // The bank's other shape. It is usually ResidentialHigh's landmark - see the
                 // requiredLandmark up there - and about one city in four it takes a block of its
@@ -1511,12 +1942,94 @@ namespace LivingCity.EditorTools
                     groups: System.Array.Empty<PrefabDatabase.WeightedGroup>(),
                     ground: asphalt,
                     carRows: true,
-                    scatter: Merge(LoadAll(CityProps, "bin-wheelie"),
-                                   LoadAll(Props, "mail-box")),
-                    scatterDensity: 0.1f,
+                    // The dumpster and the second bin joined the bag, and the density went 0.1 ->
+                    // 0.14 with them: a car park's aisles and fence line are exactly where a
+                    // city leaves its skips, and the bays are reserved in the occupancy list so
+                    // the extra props cannot land in a car.
+                    scatter: Merge(LoadAll(CityProps, "bin-wheelie", "dumpster"),
+                                   LoadAll(Props, "mail-box", "trash-can")),
+                    scatterDensity: 0.14f,
                     fenceSegment: Load(Fences + "fence-classic.prefab"),
                     fencePost: Load(Fences + "fence-stone-tower.prefab"),
                     parkingBooth: Load(Amusement + "ticket-ride-booth.prefab")),
+
+                // The docks. The fourth whole-block replacement (works, park, car park, port)
+                // and the first zone authored since the setting moved to the 1980s - which is
+                // why the ISO containers, the container ship and the speedboat are deliberate
+                // rather than anachronisms to apologise for.
+                //
+                // WEIGHT ZERO, and that is the design, not a disabled palette: a port is not
+                // a block, it is a waterfront. ZonePlanner rolls CityConfig.portChance once
+                // per city and, when it lands, hands EVERY block along one map side to this
+                // palette - the same fulfil-by-force shape as the bank's route. The weighted
+                // roll never sees portYard palettes at all (guarded in Assign), so the
+                // per-block caps below are vestigial and kept only so the asset reads sanely.
+                // A landlocked seed is ordinary; every port system stands down on it.
+                Palette(BlockZone.Port, weight: 0f, maxShare: 1f, maxBlocks: 0,
+                    requiresMapEdge: true,
+                    portYard: true,
+                    groups: new[]
+                    {
+                        // The pieces that read as dockside at the measured pad sizes:
+                        // industry-warehouse 17.6 x 17.5, industry-storage 6 x 16.4.
+                        // airport-hangar (43m) and sea-refinery (32 x 37) are deliberately
+                        // absent for the Industrial palette's reason - a prefab that can
+                        // never be placed is worse than an absent one.
+                        Detached("Docks", 100f, 2f, 6f, 0f, false,
+                            "industry-warehouse", "industry-storage"),
+                    },
+                    // building-port-sea, 27.2 x 20 and 24m tall - the terminal building, and
+                    // the reason RowDepth is 22. PortDresser gives it the widest pad rather
+                    // than rolling landmarkChance, so the chance stays 0 here.
+                    landmarks: LoadAll(Buildings, "building-port-sea"),
+                    // The BORDERED concrete on purpose, twice over: the slab's 6m skirt is
+                    // what covers the drop from the quay coping to the sunken water, and the
+                    // quay strip's does the same where it overhangs. The -nb discipline every
+                    // yard patch follows does not apply at the one edge that is supposed to
+                    // show a face.
+                    ground: concrete,
+                    quayGround: concrete,
+                    // The -nb water: the bordered tile-water carries the road tiles' kerb ring,
+                    // and a kerb round the open sea is exactly the seam the -nb set exists to
+                    // avoid. It is stretched into slabs, which its missing Tile component makes
+                    // legal - same rule as every plain ground.
+                    waterTile: Load(NoBorder + "tile-water-nb.prefab"),
+                    pierSegment: Load(Pier + "pier-tile-straight.prefab"),
+                    // crane-port only: 20.9 x 4.4 and 11.6m tall, a quay crane. crane-docks
+                    // (33m, mid-height pivot) and crane-tower (72m) would dwarf the block.
+                    portCranes: LoadAll(Props, "crane-port"),
+                    portContainers: LoadAll(Props,
+                        "cargo-shipping_blue", "cargo-shipping_green", "cargo-shipping_orange",
+                        "cargo-shipping_red", "cargo-shipping_white"),
+                    // ship-cargo, 82m - longer than its berth, which is correct; the water
+                    // runs a cell past each end of the block to hold the overhang.
+                    portShips: LoadAll(Boats, "ship-cargo"),
+                    portBoats: LoadAll(Boats, "boat-fishing", "boat-speed"),
+                    portProps: Merge(
+                        LoadAll(Props, "anchor", "palette", "timber", "package-box"),
+                        LoadAll(Beach, "buoy", "lifebuoy")),
+                    portQuayLamp: Load(Props + "lantern-long.prefab"),
+                    // The apron stock the forklift is nominally moving: rowed against the
+                    // warehouse flanks by the dresser, the works' BuildStacks picture.
+                    stackProps: Merge(
+                        LoadAll(Props, "timber", "palette", "package-box", "cargo-smple"),
+                        LoadAll(Construction, "planks-stack", "cement-bag-pile")),
+                    // The works wall vocabulary, unchanged: concrete wall, stone piers, the
+                    // military gate stretched to the same 9m opening.
+                    fenceSegment: Load(Props + "wall-concrete.prefab"),
+                    fencePost: Load(Fences + "fence-stone-tower.prefab"),
+                    gatePrefab: Load(Military + "military-gate.prefab"),
+                    // Working vehicles only, the works' own reasoning: the lorry stand and
+                    // any bay this block ever grows draw from here, not from the city's
+                    // saloons.
+                    parkedCars: new[]
+                    {
+                        Bucket("Docks", 1f, CarsStatic,
+                               "truck", "forklift", "car-truck-dump"),
+                    },
+                    // Nothing is scattered - the fourth zone to say so, for the works' reason.
+                    scatterDensity: 0f,
+                    parkingChance: 0f),
             };
         }
 
@@ -1702,6 +2215,40 @@ namespace LivingCity.EditorTools
             // ash-coloured entry there would turn up under residential terraces. This one is
             // aimed by hand, at the ring round a boiler house and the most worn yard patches.
             db.cinderTint = Tint(atlas, "atlas-LPEC-cinder", new Color(0.42f, 0.40f, 0.38f));
+
+            // Car paint. The one palette in this file that may run at FULL strength, and it is
+            // worth saying why, because every other set here is deliberately timid.
+            //
+            // A facade tint is capped by the atlas already being coloured - multiply can only
+            // darken, so a brick wall times a strong blue is mud. A car body is not: measured off
+            // atlas-albedo-LPEC.png through each model's own UVs, area-weighted per face, the
+            // paint on car-passenger and car-caravan-small is #dbdbda and on car-veteran and
+            // car-pickup-modern #878282. Near-white. So #dbdbda x (0.85, 0.18, 0.16) lands on
+            // rgb(186, 40, 36) - a genuinely red car, not a brownish one. The comments below give
+            // the resulting body colour on #dbdbda; the two greyer swatches take the same tints
+            // darker, which is free variety rather than a defect - car-veteran (#878282) comes
+            // out a deep maroon on the red and rgb(30, 30, 33) on the charcoal. That last one is
+            // the entry to watch if any of these read wrong: it is the darkest combination in the
+            // set, and a black car whose glass is darker still has very little shape left.
+            //
+            // Plain Tint(), never FacadeTint(): the facade shader masks the tint off up-facing
+            // normals to spare the roofs, and on a car the roof and the bonnet are exactly the
+            // parts you are painting. Nothing else needs a mask either - the glass (#16252d), the
+            // trim (#292929) and the 31% pure black are already dark, and dark stays dark under a
+            // multiply. The atlas luminance does the masking the shader would have had to.
+            //
+            // Cream goes over 1 to brighten, the same trick atlas-LPEC-ground-pale uses above.
+            db.vehicleTints = new[]
+            {
+                Tint(atlas, "atlas-LPEC-car-red",      new Color(0.85f, 0.18f, 0.16f)),  // rgb(186,  38,  33)
+                Tint(atlas, "atlas-LPEC-car-blue",     new Color(0.20f, 0.36f, 0.79f)),  // rgb( 44,  79, 173)
+                Tint(atlas, "atlas-LPEC-car-green",    new Color(0.17f, 0.54f, 0.29f)),  // rgb( 38, 118,  63)
+                Tint(atlas, "atlas-LPEC-car-mustard",  new Color(0.94f, 0.74f, 0.21f)),  // rgb(206, 163,  46)
+                Tint(atlas, "atlas-LPEC-car-brown",    new Color(0.53f, 0.35f, 0.21f)),  // rgb(116,  76,  45)
+                Tint(atlas, "atlas-LPEC-car-cream",    new Color(1.04f, 1.01f, 0.89f)),  // rgb(228, 222, 196)
+                Tint(atlas, "atlas-LPEC-car-silver",   new Color(0.78f, 0.79f, 0.81f)),  // rgb(170, 173, 178)
+                Tint(atlas, "atlas-LPEC-car-charcoal", new Color(0.26f, 0.27f, 0.29f)),  // rgb( 58,  60,  64)
+            };
         }
 
         /// <summary>
@@ -2034,9 +2581,7 @@ namespace LivingCity.EditorTools
             GameObject ground = null,
             bool groundPerCell = false,
             GameObject apronGround = null,
-            GameObject parkLawnPatch = null,
             GameObject[] parkMounds = null,
-            GameObject[] parkFeatures = null,
             PrefabDatabase.WeightedPrefabs[] grounds = null,
             GameObject[] courtyardGrounds = null,
             float groundPatchChance = 1f,
@@ -2057,7 +2602,34 @@ namespace LivingCity.EditorTools
             GameObject yardDirt = null,
             GameObject[] stackProps = null,
             GameObject[] chimneyProps = null,
-            GameObject[] auxBuildings = null) =>
+            GameObject[] auxBuildings = null,
+            // Appended rather than inserted, so no existing call site's argument list shifts.
+            GameObject[] yardBarrels = null,
+            GameObject[] yardCrates = null,
+            GameObject[] yardSacks = null,
+            GameObject[] yardFixtures = null,
+            // The docks - appended for the same reason.
+            bool requiresMapEdge = false,
+            bool portYard = false,
+            GameObject waterTile = null,
+            GameObject quayGround = null,
+            GameObject pierSegment = null,
+            GameObject[] portCranes = null,
+            GameObject[] portContainers = null,
+            GameObject[] portShips = null,
+            GameObject[] portBoats = null,
+            GameObject[] portProps = null,
+            // The park rewrite's kinds - appended for the reason the docks were.
+            GameObject[] parkLamps = null,
+            GameObject[] parkBins = null,
+            GameObject[] parkMonuments = null,
+            GameObject[] parkBoulders = null,
+            GameObject[] parkDeadTrees = null,
+            GameObject parkWaterTile = null,
+            GameObject parkGatePiers = null,
+            GameObject[] parkAmusement = null,
+            // Appended after the park rewrite's block, same discipline.
+            GameObject portQuayLamp = null) =>
             new()
             {
                 zone = zone,
@@ -2088,9 +2660,7 @@ namespace LivingCity.EditorTools
                 ground = ground,
                 groundIsTilePerCell = groundPerCell,
                 apronGround = apronGround,
-                parkLawnPatch = parkLawnPatch,
                 parkMounds = parkMounds ?? System.Array.Empty<GameObject>(),
-                parkFeatures = parkFeatures ?? System.Array.Empty<GameObject>(),
                 grounds = grounds ?? System.Array.Empty<PrefabDatabase.WeightedPrefabs>(),
                 courtyardGrounds = courtyardGrounds ?? System.Array.Empty<GameObject>(),
                 groundPatchChance = groundPatchChance,
@@ -2110,6 +2680,29 @@ namespace LivingCity.EditorTools
                 stackProps = stackProps ?? System.Array.Empty<GameObject>(),
                 chimneyProps = chimneyProps ?? System.Array.Empty<GameObject>(),
                 auxBuildings = auxBuildings ?? System.Array.Empty<GameObject>(),
+                yardBarrels = yardBarrels ?? System.Array.Empty<GameObject>(),
+                yardCrates = yardCrates ?? System.Array.Empty<GameObject>(),
+                yardSacks = yardSacks ?? System.Array.Empty<GameObject>(),
+                yardFixtures = yardFixtures ?? System.Array.Empty<GameObject>(),
+                requiresMapEdge = requiresMapEdge,
+                portYard = portYard,
+                waterTile = waterTile,
+                quayGround = quayGround,
+                pierSegment = pierSegment,
+                portCranes = portCranes ?? System.Array.Empty<GameObject>(),
+                portContainers = portContainers ?? System.Array.Empty<GameObject>(),
+                portShips = portShips ?? System.Array.Empty<GameObject>(),
+                portBoats = portBoats ?? System.Array.Empty<GameObject>(),
+                portProps = portProps ?? System.Array.Empty<GameObject>(),
+                portQuayLamp = portQuayLamp,
+                parkLamps = parkLamps ?? System.Array.Empty<GameObject>(),
+                parkBins = parkBins ?? System.Array.Empty<GameObject>(),
+                parkMonuments = parkMonuments ?? System.Array.Empty<GameObject>(),
+                parkBoulders = parkBoulders ?? System.Array.Empty<GameObject>(),
+                parkDeadTrees = parkDeadTrees ?? System.Array.Empty<GameObject>(),
+                parkWaterTile = parkWaterTile,
+                parkGatePiers = parkGatePiers,
+                parkAmusement = parkAmusement ?? System.Array.Empty<GameObject>(),
             };
 
         /// <summary>Modular kit whose pieces abut flush, split by street / alley / corner role.</summary>
@@ -2189,6 +2782,36 @@ namespace LivingCity.EditorTools
             return AssetDatabase.FindAssets("t:Prefab", new[] { folder.TrimEnd('/') })
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .Where(p => !exclude.Contains(Path.GetFileNameWithoutExtension(p)))
+                .OrderBy(p => p)
+                .Select(AssetDatabase.LoadAssetAtPath<GameObject>)
+                .Where(p => p)
+                .ToArray();
+        }
+
+        /// <summary>
+        /// The re-authored storage-pack props of one role, by filename prefix.
+        ///
+        /// A prefix glob rather than a list of names, which is the opposite of the rule the header
+        /// states for every other load here ("every prefab path was read off disk"). The reason it
+        /// is right in this one case: these prefabs do not exist until AuthorYardStock writes
+        /// them, and it is what names them - so the prefix is a contract this file has with
+        /// itself, not a guess about somebody else's pack. Getting it wrong is a compile-time-ish
+        /// error you see in the authoring log, not a silent empty list.
+        ///
+        /// Silent when the folder is absent, and that is deliberate. Routing this through Load
+        /// would put eighteen paths into the missing-prefab report on every run of a project that
+        /// simply has not imported the pack - which would train the reader to ignore the one
+        /// report that catches a real rename.
+        /// </summary>
+        static GameObject[] YardKit(string prefix)
+        {
+            if (!Directory.Exists(YardStock))
+                return System.Array.Empty<GameObject>();
+
+            return AssetDatabase.FindAssets("t:Prefab", new[] { YardStock.TrimEnd('/') })
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .Where(p => Path.GetFileNameWithoutExtension(p)
+                                .StartsWith(prefix + "-", System.StringComparison.Ordinal))
                 .OrderBy(p => p)
                 .Select(AssetDatabase.LoadAssetAtPath<GameObject>)
                 .Where(p => p)

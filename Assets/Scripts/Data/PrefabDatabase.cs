@@ -205,6 +205,14 @@ namespace LivingCity.Data
                      "both deliberately - see the comment on the pass itself.")]
             public bool guaranteed;
 
+            [Tooltip("Only blocks touching the map boundary qualify for this zone. The port is " +
+                     "why this exists: its water is laid OUTSIDE the grid, beyond the outline, " +
+                     "so a port in the middle of the fabric would stand on a sea that is not " +
+                     "there. Note the geometry makes this cheap to promise-by-weight - the BSP " +
+                     "never cuts at the boundary, so the outer ring of cells is always block " +
+                     "land and most blocks on a small map qualify.")]
+            public bool requiresMapEdge;
+
             [Header("Ground")]
             [Tooltip("Slab under the block. Empty falls back to the shared concrete groundTile.")]
             public GameObject ground;
@@ -236,24 +244,12 @@ namespace LivingCity.Data
                      "the apron is stretched over the whole rect.")]
             public GameObject apronGround;
 
-            [Tooltip("Patches of a second surface laid over a per-cell ground and tinted off " +
-                     "groundTints, one per quadrant - the park's stand-in for the mosaic a " +
-                     "built-up block gets, whose seams would read as mistakes on a lawn. Use the " +
-                     "same grass tile as the apron. Must carry no Tile component: it is stretched.")]
-            public GameObject parkLawnPatch;
-
             [Tooltip("Landform dropped on the lawn - tile-plain-hump is the pack's only centred " +
                      "mound, 30m across and 5.8m tall with all four edges flush, so scaled down " +
                      "it is a knoll that needs no skirt. Do NOT put the tile-hill pieces here: " +
                      "they rise at an EDGE and hang a 6m skirt below it, so one on its own leaves " +
                      "a cliff on three sides.")]
             public GameObject[] parkMounds = Array.Empty<GameObject>();
-
-            [Tooltip("Boulders, stumps and deadwood, scattered singly after the planting to fill " +
-                     "what it left. Kept apart from parkUndergrowth because that list is drawn " +
-                     "from uniformly - a boulder in among the grass tufts would come up as often " +
-                     "as a tuft.")]
-            public GameObject[] parkFeatures = Array.Empty<GameObject>();
 
             [Range(0f, 1f)]
             [Tooltip("How often a yard patch rolls its own surface instead of repeating its " +
@@ -362,6 +358,41 @@ namespace LivingCity.Data
                      "tell that a park was generated rather than laid out.")]
             public GameObject[] parkBenches = Array.Empty<GameObject>();
 
+            [Tooltip("Lamps stood along the park walks, cast-iron height not carriageway " +
+                     "height - the street's lamp-road-double is a 9.5m double-arm that reads " +
+                     "as a road fixture on a garden path. Empty falls back to the shared " +
+                     "streetLamps list.")]
+            public GameObject[] parkLamps = Array.Empty<GameObject>();
+
+            [Tooltip("Litter bins by the benches and the path junctions. One per two benches, " +
+                     "capped by ParkConfig - a park is not a depot.")]
+            public GameObject[] parkBins = Array.Empty<GameObject>();
+
+            [Tooltip("The civic square's centre monument - the pack has no statue, so the " +
+                     "standing-stone rock-pillar reads as the memorial obelisk.")]
+            public GameObject[] parkMonuments = Array.Empty<GameObject>();
+
+            [Tooltip("Boulders for the informal archetype's unkempt corners. Naturally small " +
+                     "stones at authored scale, drawn from the shared atlas - never a scaled-up " +
+                     "one-off in its own colour.")]
+            public GameObject[] parkBoulders = Array.Empty<GameObject>();
+
+            [Tooltip("Dead and bare trees, informal archetype only, capped by ParkConfig. Kept " +
+                     "off the parkTrees buckets so a formal allee can never draw one.")]
+            public GameObject[] parkDeadTrees = Array.Empty<GameObject>();
+
+            [Tooltip("Water surface for the informal pond, stretched over the pond rect the way " +
+                     "the apron is - so it must carry no Tile component.")]
+            public GameObject parkWaterTile;
+
+            [Tooltip("Piers flanking each hedge gate. The hedge has no fencePost of its own, " +
+                     "which is why the old gates read as accidental holes.")]
+            public GameObject parkGatePiers;
+
+            [Tooltip("The rare period fairground piece - a carousel was a fixture of a 1920s " +
+                     "American park - rolled by the informal archetype at ParkConfig's chance.")]
+            public GameObject[] parkAmusement = Array.Empty<GameObject>();
+
             [Tooltip("Chance a street-facing slot becomes a surface car park instead of a building.")]
             [Range(0f, 1f)] public float parkingChance = 0.12f;
 
@@ -433,6 +464,97 @@ namespace LivingCity.Data
                      "back of every row. Keep these under about 14m on their long side or they " +
                      "will not fit that strip.")]
             public GameObject[] auxBuildings = Array.Empty<GameObject>();
+
+            // The yard stock: what stands on the zones IndustrialLotPlanner cuts out of the
+            // compound, read by IndustrialYardDresser.
+            //
+            // Four arrays named for what the thing IS, rather than six named for the zone kinds
+            // they go on. The zone mapping is a switch in IndustrialYardDresser, for the same
+            // reason IndustrialLotBuilder.SurfaceFor is a switch over yardConcrete/yardDirt
+            // instead of six ground fields: the palette holds art, and the code holds the
+            // decision about which art goes where, where it can carry its argument and be read
+            // in one place. Keyed by zone, barrels would have to be listed three times over and
+            // nothing would keep the copies in step.
+            //
+            // These are additions, not replacements. stackProps above is unchanged and is still
+            // read by IndustrialDresser AND by the raw-material yards here - and its LENGTH must
+            // stay unchanged, because BlockBuilder draws from one shared rng stream for the whole
+            // city and ShuffleBag consumes n-1 draws to shuffle, so re-sizing an existing bag
+            // relayouts every building placed after it.
+
+            [Tooltip("Barrels. The stock that comes in RANKS, which is the strongest picture a " +
+                     "works yard has, and why the raw-material zone is the one the planner lets " +
+                     "repeat. Laid on a grid at a fixed pitch, never scattered.")]
+            public GameObject[] yardBarrels = Array.Empty<GameObject>();
+
+            [Tooltip("Crates, boxes and baskets - the square stock that stacks. Goes on the " +
+                     "loading aprons, where it reads as goods waiting to go in or just come out.")]
+            public GameObject[] yardCrates = Array.Empty<GameObject>();
+
+            [Tooltip("Sacks: coal, cement, sand. The sagging shapes, which is what stops a yard " +
+                     "of boxes and cylinders reading as a warehouse shelf.")]
+            public GameObject[] yardSacks = Array.Empty<GameObject>();
+
+            [Tooltip("The things that stand with their backs to something and never stack: " +
+                     "shelving racks, lockers, cabinets, the ash can, the switch box. Placed " +
+                     "along an EDGE only - free-standing in an open yard a locker reads as a " +
+                     "shop fitting rather than as works furniture.")]
+            public GameObject[] yardFixtures = Array.Empty<GameObject>();
+
+            [Header("Docks (portYard zones only)")]
+            [Tooltip("Lay the block out as a working port instead of a terrace: quay along the " +
+                     "map edge, warehouses facing the water, container stacks on the apron, a " +
+                     "ship at the berth. Replaces the whole perimeter path and the scatter, the " +
+                     "way industrialYard does - a port is arranged around its water the way a " +
+                     "works is arranged around its roads. Only meaningful together with " +
+                     "requiresMapEdge: the water is laid beyond the outline, and PortLayout " +
+                     "refuses a block that does not touch it.")]
+            public bool portYard;
+
+            [Tooltip("tile-water - stretched into slabs beyond the map outline, sunk so the " +
+                     "quay stands above it. Safe to stretch: it carries no Tile component, " +
+                     "same as every tile-plain. Empty leaves the sea unrendered, which reads " +
+                     "as the void it is.")]
+            public GameObject waterTile;
+
+            [Tooltip("The quay strip along the water edge - the BORDERED tile-plain_concrete, " +
+                     "not the -nb variant every other yard patch wants: its 6m skirt is what " +
+                     "covers the vertical face down to the sunken water, so the quay edge " +
+                     "needs no authored wall. Empty falls back to the block slab.")]
+            public GameObject quayGround;
+
+            [Tooltip("pier-tile-straight - the pack's ONE pier piece, a 4m module on legs. " +
+                     "Tiled out from the quay into the water as a finger for the small boats. " +
+                     "Empty builds no pier.")]
+            public GameObject pierSegment;
+
+            [Tooltip("crane-port - stood on the quay strip facing the berth. crane-docks and " +
+                     "crane-tower are deliberately absent from the shipped list: 33m tall with " +
+                     "a mid-height pivot, and 72m, against a block whose whole quay is ~60m.")]
+            public GameObject[] portCranes = Array.Empty<GameObject>();
+
+            [Tooltip("cargo-shipping_* - the ISO boxes, stacked in rows of one colour per " +
+                     "stack. Modern on purpose: the setting is the 1980s now, and the " +
+                     "container stack is the single strongest picture a modern dock has.")]
+            public GameObject[] portContainers = Array.Empty<GameObject>();
+
+            [Tooltip("ship-cargo - moored parallel to the quay, in the water. At 82m it is " +
+                     "longer than the block; that is correct, ships outsize their berths, and " +
+                     "the water runs a cell past each end of the block to hold the overhang.")]
+            public GameObject[] portShips = Array.Empty<GameObject>();
+
+            [Tooltip("boat-fishing, boat-speed - moored along the pier finger, drawn flat.")]
+            public GameObject[] portBoats = Array.Empty<GameObject>();
+
+            [Tooltip("Quayside dressing placed singly along the quay and apron: anchor, buoys, " +
+                     "the lifebuoy, pallets, timber. The stacked stock goes through yardCrates " +
+                     "and stackProps, which the port reads the same way the works does.")]
+            public GameObject[] portProps = Array.Empty<GameObject>();
+
+            [Tooltip("lantern-long - stood at a fixed pitch along the inland edge of the quay " +
+                     "strip. Its own slot rather than a portProps entry because a working quay " +
+                     "is LIT AT INTERVALS, and a bag draw cannot promise an interval.")]
+            public GameObject portQuayLamp;
 
             [Header("Boundary")]
             [Tooltip("One length of boundary, tiled round the edge and stretched slightly to " +
@@ -645,8 +767,31 @@ namespace LivingCity.Data
         public WeightedPrefabs[] parkedCarGroups = Array.Empty<WeightedPrefabs>();
 
         [Tooltip("Vehicles_T/Cars_AI_T - carries CarBehavior + PathFinding. Traffic tolerates the " +
-                 "occasional bus or lorry that parking does not; they are passing through.")]
+                 "occasional lorry that parking does not; it is passing through. No bus, though: " +
+                 "the passenger bus was dropped for the corners it clipped, and the school bus " +
+                 "is SchoolBusDirector's own vehicle - see schoolBusPrefab.")]
         public WeightedPrefabs[] aiCarGroups = Array.Empty<WeightedPrefabs>();
+
+        [Tooltip("The models VehicleTinter is allowed to repaint, static and _AI forms alike. " +
+                 "Not every car may be: the pack bakes colour into UVs and a tint MULTIPLIES the " +
+                 "atlas, so it can only ever darken. That works on the models whose body swatch " +
+                 "is neutral - car-passenger and car-caravan-small at #dbdbda, car-veteran and " +
+                 "car-pickup-modern at #878282 - and ruins the ones already painted, because " +
+                 "yellow times blue is dark green. A taxi, a police car, a school bus, the race " +
+                 "car, the hippie van and jeep-open are therefore absent by design, not by " +
+                 "oversight. Authored in CityAssetBootstrap, which carries the measured table.\n\n" +
+                 "A flat list rather than a flag on the groups above because paintability cuts " +
+                 "ACROSS them - Everyday holds both car-passenger and car-hippie-van - and " +
+                 "splitting the buckets would change their ShuffleBag lengths, which are drawn " +
+                 "from BlockBuilder's shared Buildings stream and would re-lay the whole city.")]
+        public GameObject[] paintableVehicles = Array.Empty<GameObject>();
+
+        [Tooltip("Body colours for the cars in paintableVehicles: variants of atlas-LPEC whose " +
+                 "_BaseColor multiplies the atlas. Unlike buildingTints these may run at full " +
+                 "strength, because a car's paint swatch is near-white where a facade's is " +
+                 "already coloured - see BuildTintPalette. Empty disables car paint, which is " +
+                 "not a fault: every car then keeps the body the pack baked in.")]
+        public Material[] vehicleTints = Array.Empty<Material>();
 
         [Header("People")]
         [Tooltip("The crowd mix, weighted the way traffic is: a group is rolled by weight, then " +
@@ -691,6 +836,13 @@ namespace LivingCity.Data
                  "SchoolBusDirector; the SAME models also carry the crowd's Children group, " +
                  "so a child on the pavement and a child at the bus stop are the same city.")]
         public GameObject[] schoolChildPrefabs = Array.Empty<GameObject>();
+
+        [Header("Docks")]
+        [Tooltip("The rigs the port's shift is drawn from - the worker models the bootstrap " +
+                 "already authors for the crowd (man-worker_AI, man-construction-worker_AI). " +
+                 "Drawn from by PortDirector. Same models as the crowd's Workers group, so a " +
+                 "docker on the quay and a labourer on the pavement are the same city.")]
+        public GameObject[] dockWorkerPrefabs = Array.Empty<GameObject>();
 
         [Header("Ambient (Nature_T/Clouds_T)")]
         public GameObject[] clouds = Array.Empty<GameObject>();

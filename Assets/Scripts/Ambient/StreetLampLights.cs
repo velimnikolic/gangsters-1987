@@ -24,15 +24,12 @@ namespace LivingCity.Ambient
     /// </summary>
     public sealed class StreetLampLights : MonoBehaviour
     {
-        /// <summary>
-        /// The FULL prefab name of the one street lamp the placers spawn, not a prefix.
-        /// Matching used to be by "lamp-" prefix and that caught more than the lamps: an odd
-        /// bulb total (133 in one city) and a stray light floating beside a parked car both
-        /// traced to lamp-flavoured names that were never street lamps. StartsWith rather than
-        /// equality only so Unity's own suffixes still match - "(Clone)" at runtime, " (1)" on
-        /// a duplicate. Public because the Lamp Report diagnostic must count by the same rule.
-        /// </summary>
-        public const string LampName = "lamp-road-double";
+        /// <summary>One lamp prefab the wiring recognises: its FULL name and its bulb points.</summary>
+        public struct LampKind
+        {
+            public string Name;
+            public Vector3[] Bulbs;
+        }
 
         /// <summary>
         /// Name of the light holder objects. Public because the Lamp Report diagnostic filters
@@ -56,22 +53,57 @@ namespace LivingCity.Ambient
         const float BulbHeight = 2.5f;
 
         /// <summary>
-        /// Where the two bulbs hang in the lamp's own local space: one under each lantern
-        /// head, measured off the prefab's FBX (arms reach +/-3.60 along local X, head glass
-        /// centres at +/-3.10; local space, so the placer's yaw is followed for free).
+        /// The lamps the placers spawn, by FULL prefab name - matching used to be by "lamp-"
+        /// prefix and that caught more than the lamps: an odd bulb total (133 in one city) and
+        /// a stray light beside a parked car both traced to lamp-flavoured names that were
+        /// never street lamps. StartsWith against each full name only so Unity's own suffixes
+        /// still match - "(Clone)" at runtime, " (1)" on a duplicate. Public because the Lamp
+        /// Report diagnostic must count by the same rule (see IsLampRoot).
         ///
-        /// FIXED offsets, deliberately NOT measured off the instance's mesh at runtime. The
-        /// generator marks lamp geometry batching-static, and static batching REPLACES
+        /// Bulb points are in the lamp's own local space (the placer's yaw is followed for
+        /// free), FIXED rather than measured off the instance's mesh at runtime: the generator
+        /// marks lamp geometry batching-static, and static batching REPLACES
         /// MeshFilter.sharedMesh with the combined mesh when Play starts - so measuring the
-        /// instance put bulbs at 0.86 x the bounds of half the city: pools at completely
-        /// random spots, arbitrary bulb counts per lamp, and all of it only in Play. One
-        /// known prefab needs no measuring.
+        /// instance put bulbs at 0.86 x the bounds of half the city. Known prefabs need no
+        /// measuring:
+        ///  - lamp-road-double: arms reach +/-3.60 along local X, head glass centres +/-3.10.
+        ///  - lamp-city: the park rewrite's 6.7m cast-iron post, head symmetric about the
+        ///    axis (+/-0.41 across), so one centred bulb is right.
         /// </summary>
-        static readonly Vector3[] BulbOffsets =
+        public static readonly LampKind[] LampKinds =
         {
-            new(-3.10f, BulbHeight, 0f),
-            new(3.10f, BulbHeight, 0f),
+            new()
+            {
+                Name = "lamp-road-double",
+                Bulbs = new Vector3[] { new(-3.10f, BulbHeight, 0f), new(3.10f, BulbHeight, 0f) },
+            },
+            new()
+            {
+                Name = "lamp-city",
+                Bulbs = new Vector3[] { new(0f, BulbHeight, 0f) },
+            },
         };
+
+        /// <summary>
+        /// Whether this transform is the root of a recognised lamp instance - the shared rule
+        /// for the wiring here and the Lamp Report diagnostic. Children of a lamp are excluded
+        /// so a holder or a lamp somehow standing under another lamp is not double-counted.
+        /// </summary>
+        public static bool IsLampRoot(Transform transform, out Vector3[] bulbs)
+        {
+            bulbs = null;
+            foreach (var kind in LampKinds)
+            {
+                if (!transform.name.StartsWith(kind.Name, System.StringComparison.Ordinal))
+                    continue;
+                if (transform.parent
+                    && transform.parent.name.StartsWith(kind.Name, System.StringComparison.Ordinal))
+                    return false;
+                bulbs = kind.Bulbs;
+                return true;
+            }
+            return false;
+        }
 
         /// <summary>
         /// Cone of the down-facing spot. A point at bulb height spends most of itself sideways
@@ -141,16 +173,10 @@ namespace LivingCity.Ambient
 
             foreach (var transform in FindObjectsByType<Transform>(FindObjectsSortMode.None))
             {
-                if (!transform.name.StartsWith(LampName, System.StringComparison.Ordinal))
+                if (!IsLampRoot(transform, out var bulbs))
                     continue;
 
-                // Only the lamp root, not anything parented under one. The holders can no
-                // longer collide with the full-name match ("lamp-light" is not a lamp name),
-                // so this guard is only against a lamp somehow standing under another lamp.
-                if (transform.parent && transform.parent.name.StartsWith(LampName, System.StringComparison.Ordinal))
-                    continue;
-
-                for (var b = 0; b < BulbOffsets.Length; b++)
+                for (var b = 0; b < bulbs.Length; b++)
                 {
                     var holder = new GameObject(HolderName);
 
@@ -163,7 +189,7 @@ namespace LivingCity.Ambient
                         holder.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
 
                     holder.transform.SetParent(transform, false);
-                    holder.transform.localPosition = BulbOffsets[b];
+                    holder.transform.localPosition = bulbs[b];
                     holder.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);   // cone straight down
 
                     var light = holder.AddComponent<Light>();

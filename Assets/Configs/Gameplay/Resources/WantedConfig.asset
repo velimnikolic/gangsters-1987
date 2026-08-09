@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 16ff5310fa1874afb8b0bb54e51a4535, type: 3}
+  m_Name: WantedConfig
+  m_EditorClassIdentifier: Assembly-CSharp::LivingCity.Gameplay.WantedConfig
+  starThresholds:
+  - 10
+  - 25
+  - 45
+  - 70
+  - 100
+  murderHeat: 30
+  gunshotHeat: 4
+  bodyDiscoveredHeat: 12
+  assaultOfficerHeat: 35
+  witnessMultiplier: 0.25
+  decayDelaySeconds: 20
+  decayPerSecond: 1.5
+  contactHeatPerSecond: 0.6
+  sightRadius: 25
+  soundRadius: 50
+  viewConeDot: 0.4
+  reportDelayRange: {x: 2, y: 5}
+  soundWitnessCallChance: 0.5
+  fleeSecondsRange: {x: 7, y: 12}
+  fleeSpeedMultiplier: 1.7
+  corpseDiscoveryRadius: 6

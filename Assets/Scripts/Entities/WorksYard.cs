@@ -76,6 +76,16 @@ namespace LivingCity.Entities
                  "the one part of the compound that cannot be rebuilt from the wall rect alone.")]
         [SerializeField] IndustrialLayout.Rect[] bays = System.Array.Empty<IndustrialLayout.Rect>();
 
+        [Tooltip("What IndustrialDresser stood inside the wall AFTER the zones were planned: " +
+                 "the stacks against each hall, the chimneys and the outbuildings in the back " +
+                 "bands. Published for the same reason Bays is - it came out of BlockBuilder's " +
+                 "shared Buildings stream and nothing can replay it. The partition does not " +
+                 "know about any of it, so a stockpile is free to have been seeded over a site " +
+                 "hut; the prop pass is what would otherwise discover that the hard way.\n\n" +
+                 "Empty on a city generated before this field existed. That degrades to the old " +
+                 "behaviour rather than failing, and regenerating the city fills it in.")]
+        [SerializeField] IndustrialLayout.Rect[] obstacles = System.Array.Empty<IndustrialLayout.Rect>();
+
         public int BlockId => blockId;
         public Vector2 WallMin => wallMin;
         public Vector2 WallMax => wallMax;
@@ -86,6 +96,7 @@ namespace LivingCity.Entities
         public LotZone[] Zones => zones;
         public IndustrialLayout.Rect[] Lanes => lanes;
         public IndustrialLayout.Rect[] Bays => bays;
+        public IndustrialLayout.Rect[] Obstacles => obstacles;
 
         /// <summary>The wall line, as the rect type the rest of the industrial code speaks.</summary>
         public IndustrialLayout.Rect Wall =>
@@ -94,9 +105,11 @@ namespace LivingCity.Entities
         public void SetCompound(
             int block, IndustrialLayout.Rect wall, bool gate, Vector3 centre, Vector3 outward,
             WorksHall[] placedHalls, IndustrialLayout.Rect[] clearLanes,
-            IndustrialLayout.Rect[] vehicleBays)
+            IndustrialLayout.Rect[] vehicleBays,
+            IndustrialLayout.Rect[] standing = null)
         {
             bays = vehicleBays ?? System.Array.Empty<IndustrialLayout.Rect>();
+            obstacles = standing ?? System.Array.Empty<IndustrialLayout.Rect>();
             blockId = block;
             wallMin = wall.Min;
             wallMax = wall.Max;
@@ -151,6 +164,14 @@ namespace LivingCity.Entities
             if (lanes != null)
                 foreach (var lane in lanes)
                     DrawRect(lane.Min, lane.Max, 0.25f);
+
+            // Dull, because these are not part of the design - they are what happens to be in the
+            // way. Drawn at all because "why is there a barrel inside the site hut" is otherwise
+            // a bug you can only find by walking the yard.
+            Gizmos.color = new Color(0.55f, 0.55f, 0.50f, 0.7f);
+            if (obstacles != null)
+                foreach (var taken in obstacles)
+                    DrawRect(taken.Min, taken.Max, 0.28f);
 
             if (halls != null)
             {

@@ -71,6 +71,12 @@ namespace LivingCity.Generation
         /// Lays the boundary. <paramref name="min"/> and <paramref name="max"/> are the fence
         /// line itself, already inset by the caller - what that inset should be depends on what
         /// stands outside it, which is the caller's business and not this one's.
+        ///
+        /// <paramref name="openSides"/> leaves whole sides unbuilt - not a gate but an absence,
+        /// for the boundary that stops at something which is its own edge. The port is the
+        /// caller: its quay side ends at the water, and a wall along it would fence the port
+        /// off from the one thing it exists to touch. Defaults to none, so every existing call
+        /// keeps its closed rectangle.
         /// </summary>
         public static void Build(
             Vector2 min,
@@ -80,7 +86,8 @@ namespace LivingCity.Generation
             GameObject post,
             Transform parent,
             SpawnPrefab spawn,
-            List<GameObject> placed)
+            List<GameObject> placed,
+            Sides openSides = Sides.None)
         {
             if (!segment)
                 return;
@@ -97,9 +104,13 @@ namespace LivingCity.Generation
             };
 
             var outwards = new[] { Vector3.back, Vector3.right, Vector3.forward, Vector3.left };
+            var sideFlags = new[] { Sides.South, Sides.East, Sides.North, Sides.West };
 
             for (var i = 0; i < 4; i++)
             {
+                if ((openSides & sideFlags[i]) != 0)
+                    continue;
+
                 var from = corners[i];
                 var to = corners[(i + 1) % 4];
                 var span = to - from;
@@ -130,8 +141,17 @@ namespace LivingCity.Generation
                 Pier(post, from + along * gapTo, parent, spawn, placed);
             }
 
-            foreach (var corner in corners)
-                Pier(post, corner, parent, spawn, placed);
+            // A corner pier belongs to its two runs; with both of them open it would stand
+            // alone on the quay coping, a bollard-shaped question mark. With one open it
+            // stays - that is where the wall run terminates.
+            for (var i = 0; i < 4; i++)
+            {
+                var before = sideFlags[(i + 3) % 4];
+                if ((openSides & sideFlags[i]) != 0 && (openSides & before) != 0)
+                    continue;
+
+                Pier(post, corners[i], parent, spawn, placed);
+            }
         }
 
         static void Pier(

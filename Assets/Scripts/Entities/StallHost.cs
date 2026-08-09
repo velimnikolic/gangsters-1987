@@ -34,6 +34,31 @@ namespace LivingCity.Entities
 
         public int StallCount => stallLocalPositions.Length;
 
+        /// <summary>
+        /// Bays nobody has claimed. For the building's own popup, which reports whether a driver
+        /// arriving now would find room - so it counts CLAIMS, not parked cars: a bay claimed by
+        /// a car still swinging in off the kerb is not free, and one released by a car still
+        /// hand-driving its way out is.
+        ///
+        /// The claim array is allocated lazily by TryClaimStall, so a host nobody has parked at
+        /// yet has none - and every bay is free, which is exactly what StallCount says.
+        /// </summary>
+        public int FreeStallCount
+        {
+            get
+            {
+                if (stallClaimed == null)
+                    return StallCount;
+
+                var free = 0;
+                for (var i = 0; i < stallClaimed.Length; i++)
+                    if (!stallClaimed[i])
+                        free++;
+
+                return free;
+            }
+        }
+
         public Vector3 StallWorld(int stall) =>
             transform.TransformPoint(stallLocalPositions[stall]);
 

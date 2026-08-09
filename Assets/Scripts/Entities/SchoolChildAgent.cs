@@ -31,9 +31,16 @@ namespace LivingCity.Entities
     /// PedestrianRepathQueue via HumanBehavior; no per-instance Update.
     /// </summary>
     [RequireComponent(typeof(HumanBehavior))]
-    public sealed class SchoolChildAgent : MonoBehaviour
+    public sealed class SchoolChildAgent : MonoBehaviour, UI.IOverlaySubject
     {
+        /// <summary>Public because the overlay HUD colours the marker and words the popup off
+        /// it. The transitions stay this component's alone.</summary>
         public enum State { Waiting, Boarding, Riding, Alighting, InSchool, WalkingToSchool }
+
+        /// <summary>Metres above the child's origin to float the marker. Lower than the
+        /// officer's 2.3 because a child is shorter, and because a queue of them at a stop
+        /// would otherwise be a row of markers floating over nothing.</summary>
+        const float MarkerHeight = 1.9f;
 
         /// <summary>How near the school a walking child must get before the off-graph legs take
         /// over. The officer's number for the officer's reason: a sidewalk route's A*
@@ -110,14 +117,39 @@ namespace LivingCity.Entities
 
         void OnDestroy()
         {
+            UI.OverlayRegistry.Unregister(this);
             PedestrianRegistry.Unregister(body);
             body = null;
         }
 
-        public void Bind(SchoolBusDirector owner, int stop)
+        // --------------------------------------------------------------- the overlay
+        // Explicit implementation - the HUD's plumbing, not the child's own API.
+
+        Transform UI.IOverlaySubject.OverlayAnchor => transform;
+        float UI.IOverlaySubject.OverlayHeight => MarkerHeight;
+
+        /// <summary>Riding inside the bus or sat in class: still a live subject, just not
+        /// anywhere to point at. Read off the body rather than off the state, because IsVisible
+        /// is what actually decides whether there is a child on screen.</summary>
+        bool UI.IOverlaySubject.OverlayHidden => !IsVisible;
+
+        UI.OverlayShape UI.IOverlaySubject.MarkerShape => UI.OverlayShape.Diamond;
+        Color UI.IOverlaySubject.OverlayColor => UI.SchoolIntention.ChildColor(state);
+        string UI.IOverlaySubject.OverlayTitle => UI.SchoolIntention.ChildTitle(Number);
+        string UI.IOverlaySubject.OverlayLine => UI.SchoolIntention.ChildIntention(state);
+        long UI.IOverlaySubject.OverlayKey => (long)state;
+
+        // ---------------------------------------------------------------------------------
+
+        /// <summary>1-based, set by the director - "Schoolchild 3" on the popup.</summary>
+        public int Number { get; private set; }
+
+        public void Bind(SchoolBusDirector owner, int stop, int number)
         {
             director = owner;
             HomeStop = stop;
+            Number = number;
+            UI.OverlayRegistry.Register(this);
 
             // Standing at the stop with the follower off. Nothing here wanders: the child is
             // either waiting, being driven by a coroutine, or hidden.
