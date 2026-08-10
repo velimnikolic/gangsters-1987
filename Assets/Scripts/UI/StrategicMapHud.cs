@@ -154,6 +154,9 @@ namespace LivingCity.UI
         RectTransform dotRoot;
         int dotCursor;
 
+        readonly List<Image> territoryTiles = new List<Image>();
+        RectTransform territoryRoot;
+
         readonly Dictionary<int, Block> blocks = new Dictionary<int, Block>();
         readonly List<(int blockId, Vector3 position)> slabCentres =
             new List<(int, Vector3)>();
@@ -446,6 +449,12 @@ namespace LivingCity.UI
             // Everything toggles through this one child; the canvas itself stays alive.
             page = new GameObject("Page", typeof(RectTransform));
             page.transform.SetParent(go.transform, false);
+
+            // Territory first of all - the families' turf wash is ground, and every
+            // highlight and dot must read over it.
+            var turf = new GameObject("Territory", typeof(RectTransform));
+            turf.transform.SetParent(page.transform, false);
+            territoryRoot = (RectTransform)turf.transform;
 
             // Hierarchy order is draw order: highlights under the dots, card over both.
             highlight = BuildRectImage("Highlight", page.transform);
@@ -797,6 +806,7 @@ namespace LivingCity.UI
             if (!IsOpen)
                 return;
 
+            PaintTerritory();
             SyncTrackedPeople();
 
             // No eyes anywhere (the playable-mafioso layer is parked, so there may be no
@@ -990,6 +1000,48 @@ namespace LivingCity.UI
             cardDirty = false;
             paintedPropertyVersion = PropertyRegistry.Version;
             PaintCard(block);
+        }
+
+        /// <summary>
+        /// The families' turf, washed over their blocks in their gang colour - the
+        /// diplomacy page's territory counts made visible on the same ground they
+        /// count. Reprojected every frame like every rect on this canvas (the camera
+        /// pans and zooms); the tile pool grows to the claim count and the tail idles
+        /// disabled. Territory itself seeds lazily through OutfitDirector once the
+        /// gang layer is up - until then there is nothing to paint and no cost.
+        /// </summary>
+        void PaintTerritory()
+        {
+            var outfit = Gameplay.OutfitDirector.Instance;
+            if (!outfit || (!outfit.Territory.Seeded && !outfit.EnsureTerritory()))
+            {
+                for (var i = 0; i < territoryTiles.Count; i++)
+                    if (territoryTiles[i].enabled)
+                        territoryTiles[i].enabled = false;
+                return;
+            }
+
+            var used = 0;
+            foreach (var claim in outfit.Territory.Claims)
+            {
+                var block = Gameplay.CityBlocks.Get(claim.Key);
+                if (block == null)
+                    continue;
+
+                if (used == territoryTiles.Count)
+                    territoryTiles.Add(BuildRectImage("Turf", territoryRoot));
+                var tile = territoryTiles[used++];
+
+                var colour = GangPalette.Of(claim.Value);
+                colour.a = 0.16f;
+                if (tile.color != colour)
+                    tile.color = colour;
+                ProjectRect(tile, block.Union);
+            }
+
+            for (var i = used; i < territoryTiles.Count; i++)
+                if (territoryTiles[i].enabled)
+                    territoryTiles[i].enabled = false;
         }
 
         void ProjectRect(Image image, Rect worldRect)

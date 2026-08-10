@@ -276,12 +276,19 @@ namespace LivingCity.UI
             if (cursor)
                 cursor.enabled = Time.unscaledTime % 1.06f < 0.6f;
 
+            // Turf seeds lazily once the gang layer is up - reading the page is what
+            // pays the one-time cost, and the Version bump repaints it.
+            if (currentPage == LedgerPage.Diplomacy && outfit && !outfit.Territory.Seeded)
+                outfit.EnsureTerritory();
+
             var outfitVersion = outfit ? outfit.Version : 0;
             if (dirty || paintedVersion != director.Version ||
-                paintedOutfitVersion != outfitVersion)
+                paintedOutfitVersion != outfitVersion ||
+                paintedGangVersion != Gangs.GangRegistry.Version)
             {
                 paintedVersion = director.Version;
                 paintedOutfitVersion = outfitVersion;
+                paintedGangVersion = Gangs.GangRegistry.Version;
                 dirty = false;
                 switch (currentPage)
                 {
@@ -295,12 +302,16 @@ namespace LivingCity.UI
                     case LedgerPage.Armory:
                         RebuildArmory();
                         break;
+                    case LedgerPage.Diplomacy:
+                        RebuildDiplomacy();
+                        break;
                 }
                 UpdateBarLabels();
             }
         }
 
         int paintedOutfitVersion = -1;
+        int paintedGangVersion = -1;
 
         void Open()
         {
@@ -477,7 +488,7 @@ namespace LivingCity.UI
             BuildNewspaperPage(paper);
             BuildFinancesPage(paper);
             BuildArmoryPage(paper);
-            BuildComingPage(paper, LedgerPage.Diplomacy, "DIPLOMACY");
+            BuildDiplomacyPage(paper);
             BuildComingPage(paper, LedgerPage.Orders, "ORDERS");
 
             SetPage(LedgerPage.Newspaper);
@@ -1251,6 +1262,168 @@ namespace LivingCity.UI
             var maxScroll = Mathf.Max(0f, armoryInventoryContent.sizeDelta.y - viewportHeight);
             armoryScrollY = Mathf.Clamp(armoryScrollY, 0f, maxScroll);
             armoryInventoryContent.anchoredPosition = new Vector2(0f, armoryScrollY);
+        }
+
+        // ------------------------------------------------------------ the diplomacy page
+
+        RectTransform diplomacyContent;
+
+        void BuildDiplomacyPage(RectTransform paper)
+        {
+            var root = NewPageRoot(paper, LedgerPage.Diplomacy);
+            diplomacyContent = NewRect("Families", root);
+            diplomacyContent.anchorMin = Vector2.zero;
+            diplomacyContent.anchorMax = Vector2.one;
+            diplomacyContent.offsetMin = diplomacyContent.offsetMax = Vector2.zero;
+        }
+
+        void RebuildDiplomacy()
+        {
+            foreach (Transform old in diplomacyContent)
+                Destroy(old.gameObject);
+
+            var heading = NewText("Heading", diplomacyContent, 20f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(heading.rectTransform, ListLeft, PageTop, 700f, 32f);
+            heading.fontStyle = FontStyles.Bold;
+            heading.characterSpacing = 3f;
+            heading.text = "FAMILIES OF THE CITY";
+
+            var gangs = Gangs.GangRegistry.Gangs;
+            if (gangs.Count == 0)
+            {
+                var waiting = NewText("Waiting", diplomacyContent, 14f,
+                    LedgerPalette.PhosphorDim, TextAlignmentOptions.MidlineLeft);
+                PlaceTopLeft(waiting.rectTransform, ListLeft, PageTop - 48f, 800f, 24f);
+                waiting.text = "The families have not shown themselves yet.";
+                return;
+            }
+
+            var territory = outfit ? outfit.Territory : null;
+            var y = PageTop - 52f;
+
+            // The player's own line first - the yardstick every rival row reads against.
+            foreach (var gang in gangs)
+            {
+                if (!gang.IsPlayer)
+                    continue;
+                DiplomacySwatch(gang.Id, ListLeft, y);
+                var you = NewText("You", diplomacyContent, 16f, LedgerPalette.Phosphor,
+                    TextAlignmentOptions.MidlineLeft);
+                PlaceTopLeft(you.rectTransform, ListLeft + 28f, y, 700f, 26f);
+                you.fontStyle = FontStyles.Bold;
+                you.text = gang.Name.ToUpperInvariant() + " — YOURS" +
+                    (territory != null && territory.Seeded
+                        ? "  ·  " + territory.CountOf(gang.Id) + " BLOCK" +
+                          (territory.CountOf(gang.Id) == 1 ? "" : "S")
+                        : "");
+                y -= 44f;
+            }
+
+            foreach (var gang in gangs)
+            {
+                if (gang.IsPlayer)
+                    continue;
+                y = DiplomacyRow(gang, territory, y);
+            }
+
+            // The legend, right column - the page must never be the opaque system.
+            var legend = NewParagraph("Legend", diplomacyContent, 13f,
+                LedgerPalette.PhosphorDim);
+            PlaceTopLeft(legend.rectTransform, DetailLeft, PageTop - 52f, DetailWidth, 500f);
+            legend.text = ":: WHAT A STANCE DOES\n\n" +
+                LedgerText.StanceEffect(Outfit.Stance.Peace) + "\n\n" +
+                LedgerText.StanceEffect(Outfit.Stance.Truce) + "\n\n" +
+                LedgerText.StanceEffect(Outfit.Stance.War) + "\n\n" +
+                LedgerText.StanceTakesEffect + "\n\n" +
+                "Strength reads UNKNOWN until you have eyes inside a family - " +
+                "reconnaissance is work, not a birthright. Their turf shows on the " +
+                "map in their colour; the streets are not a secret.";
+        }
+
+        float DiplomacyRow(Gangs.Gang gang, Outfit.TerritoryMap territory, float y)
+        {
+            DiplomacySwatch(gang.Id, ListLeft, y);
+
+            var name = NewText("Name", diplomacyContent, 16f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(name.rectTransform, ListLeft + 28f, y, 400f, 26f);
+            name.fontStyle = FontStyles.Bold;
+            name.text = gang.Name.ToUpperInvariant();
+
+            var front = Gangs.GangRegistry.FrontBusinessOf(gang.Id);
+            var frontText = NewText("Front", diplomacyContent, 13f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(frontText.rectTransform, ListLeft + 28f, y - 26f, 500f, 20f);
+            frontText.text = front
+                ? "Front: " + front.BusinessName
+                : "Front: unknown";
+
+            var strength = NewText("Strength", diplomacyContent, 13f,
+                LedgerPalette.PhosphorDim, TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(strength.rectTransform, ListLeft + 28f, y - 46f, 500f, 20f);
+            strength.text = "Strength: " + LedgerText.StrengthUnknown;
+
+            var turf = NewText("Turf", diplomacyContent, 13f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(turf.rectTransform, ListLeft + 28f, y - 66f, 500f, 20f);
+            turf.text = territory != null && territory.Seeded
+                ? "Territory: " + territory.CountOf(gang.Id) + " blocks"
+                : "Territory: unknown";
+
+            var current = outfit ? outfit.Relations.StanceWith(gang.Id) : Outfit.Stance.Peace;
+            var pending = Outfit.Stance.Peace;
+            var hasPending = outfit && outfit.Relations.TryGetPending(gang.Id, out pending);
+
+            var stanceText = NewText("Stance", diplomacyContent, 14f,
+                hasPending ? LedgerPalette.Amber : LedgerPalette.Phosphor,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(stanceText.rectTransform, ListLeft + 560f, y, 420f, 26f);
+            stanceText.fontStyle = FontStyles.Bold;
+            stanceText.text = "STANCE: " + LedgerText.StanceLabel(current).ToUpperInvariant() +
+                (hasPending
+                    ? "  >  " + LedgerText.StanceLabel(pending).ToUpperInvariant() +
+                      " FROM NEXT WEEK"
+                    : "");
+
+            var effective = hasPending ? pending : current;
+            for (var s = 0; s < 3; s++)
+            {
+                var stance = (Outfit.Stance)s;
+                var label = LedgerText.StanceLabel(stance).ToUpperInvariant();
+                var chosen = stance == effective;
+                var gangId = gang.Id;
+                NewButton(diplomacyContent, chosen ? "= " + label + " =" : label,
+                    ListLeft + 560f + s * 132f, y - 34f, 124f, 28f, () =>
+                    {
+                        if (outfit)
+                            outfit.SetStance(gangId, stance);
+                        dirty = true;
+                    });
+            }
+
+            var hairline = NewRect("Rule", diplomacyContent);
+            PlaceTopLeft(hairline, ListLeft, y - 84f, 1080f, 1f);
+            var hairImage = hairline.gameObject.AddComponent<Image>();
+            hairImage.sprite = null;
+            hairImage.color = LedgerPalette.HairLine;
+            hairImage.raycastTarget = false;
+
+            return y - 100f;
+        }
+
+        void DiplomacySwatch(int gangId, float x, float y)
+        {
+            var swatch = NewRect("Swatch", diplomacyContent);
+            swatch.anchorMin = new Vector2(0f, 1f);
+            swatch.anchorMax = new Vector2(0f, 1f);
+            swatch.pivot = new Vector2(0f, 1f);
+            swatch.anchoredPosition = new Vector2(x, y - 5f);
+            swatch.sizeDelta = new Vector2(16f, 16f);
+            var image = swatch.gameObject.AddComponent<Image>();
+            image.sprite = null;
+            image.color = GangPalette.Of(gangId);
+            image.raycastTarget = false;
         }
 
         void BuildScanlines(RectTransform paper)

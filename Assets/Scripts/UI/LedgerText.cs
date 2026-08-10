@@ -129,6 +129,40 @@ namespace LivingCity.UI
         public static string TommyGunWarning(string name) =>
             name + " is a poor shot - in his hands the tommy gun sprays the street.";
 
+        // ---------------------------------------------------------------- diplomacy
+
+        public static string StanceLabel(Outfit.Stance stance) => stance switch
+        {
+            Outfit.Stance.Peace => "Peace",
+            Outfit.Stance.Truce => "Truce",
+            Outfit.Stance.War => "War",
+            _ => "",
+        };
+
+        /// <summary>The system most likely to kill a crew unexplained - so the page
+        /// says outright what each stance does, in one sentence each.</summary>
+        public static string StanceEffect(Outfit.Stance stance) => stance switch
+        {
+            Outfit.Stance.Peace =>
+                "PEACE — no engagement. Your men and theirs pass in the street, " +
+                "claimed ground or not.",
+            Outfit.Stance.Truce =>
+                "TRUCE — territorial. Their men engage yours caught inside THEIR " +
+                "territory, and yours engage theirs on YOURS. Neutral ground stays quiet.",
+            Outfit.Stance.War =>
+                "WAR — on sight. Their men engage yours anywhere in the city, and " +
+                "yours theirs.",
+            _ => "",
+        };
+
+        public const string StanceTakesEffect =
+            "Stance changes take effect when the week is committed - never mid-plan.";
+
+        public const string StrengthUnknown = "Unknown — no eyes inside";
+
+        public const string ReasonOwnOutfit =
+            "You cannot take a stance toward your own outfit.";
+
         public static string DemoteConfirm(string name, int hoodCount) => hoodCount switch
         {
             0 => "Disband " + name + "'s crew? It has no men.",
