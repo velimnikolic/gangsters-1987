@@ -276,6 +276,23 @@ namespace LivingCity.Data
                  "one you watched go in. At 0 everyone returns to their own doorstep.")]
         [Range(0f, 1f)] public float buildingSwapChance = 0.6f;
 
+        [Tooltip("Personal hour work begins - the morning commute window opens here. Each " +
+                 "walker's own clock is shifted by up to commuteStaggerHours, so the city " +
+                 "leaves for work as a tide, not a stampede.")]
+        [Range(0f, 24f)] public float workMorningHour = 8.5f;
+
+        [Tooltip("Personal hour work ends - the evening commute window opens here.")]
+        [Range(0f, 24f)] public float workEveningHour = 17.5f;
+
+        [Tooltip("Personal hour everyone still out heads home for the night. The streets " +
+                 "thin out after this and refill at the morning hour.")]
+        [Range(0f, 24f)] public float nightHomeHour = 22.5f;
+
+        [Tooltip("Width of the band each walker's personal clock is shifted within, hours. " +
+                 "The first of the stagger layers that keep an hour boundary from moving " +
+                 "the whole city on one frame.")]
+        [Range(0f, 6f)] public float commuteStaggerHours = 1.5f;
+
         [Header("Police")]
         [Tooltip("Patrol cars in the station's fleet. These are persistent GameObjects - the " +
                  "same cars drive out, patrol, park in the forecourt and drive out again; " +

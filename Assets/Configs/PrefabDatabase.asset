@@ -82,6 +82,7 @@ MonoBehaviour:
       - {fileID: 1337751412371152, guid: 40409888e44cb7849831b4a62a38977d, type: 3}
       - {fileID: 6429483452423246840, guid: 37eb2303145119844a10fe5567cc3b1d, type: 3}
       - {fileID: 1089356905447394778, guid: 616b874272f2c464d902290c933c9c4f, type: 3}
+      - {fileID: 4578258170708362516, guid: 693a323a480508c4590ac56c309776bf, type: 3}
       rearPrefabs: []
       cornerPrefabs: []
       layout: 0
@@ -753,6 +754,111 @@ MonoBehaviour:
       - {fileID: 1956382211681866053, guid: fd8dd763d494a264a931d21328366124, type: 3}
       - {fileID: 8111836784205290034, guid: da7730d243803724899f803fd14577ef, type: 3}
     landmarkCars: []
+  - zone: 9
+    weight: 10
+    maxShare: 1
+    maxBlocks: 1
+    maxBlockCells: 1
+    guaranteed: 0
+    requiresMapEdge: 0
+    ground: {fileID: 0}
+    grounds: []
+    courtyardGrounds: []
+    groundIsTilePerCell: 0
+    apronGround: {fileID: 0}
+    parkMounds: []
+    groundPatchChance: 0.25
+    paveJoints: 1
+    groups:
+    - label: Bank neighbours
+      weight: 100
+      prefabs:
+      - {fileID: 1503676966882326081, guid: f64c1829f5061a246a7e4201faf04259, type: 3}
+      - {fileID: 4262399113899048206, guid: cb459f4c3c7f04847888c6c46ebfea15, type: 3}
+      rearPrefabs: []
+      cornerPrefabs: []
+      layout: 1
+      minGap: 3
+      maxGap: 6
+      maxSetback: 2
+      cornerPreferred: 0
+      commercial: 0
+    uniformStreetRuns: 0
+    maxLotsPerAxis: 1
+    maxPerimeterBuildings: 2
+    landmarks:
+    - {fileID: 5811599271651202093, guid: e67774501b00f3f44b3c86d511ec6774, type: 3}
+    landmarkChance: 1
+    requiredLandmark: -1
+    guaranteedLandmark: -1
+    landmarkScale: 1
+    alleyProps:
+    - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
+    - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
+    - {fileID: 1000011078951186, guid: 2559aa2d368562248aea8c62e35ac2fd, type: 3}
+    - {fileID: 1000012061500174, guid: 09aab8a904970484d99ec36c27b8bb13, type: 3}
+    - {fileID: 1000011627327490, guid: 235a3b6b70c054bd3b893913a74c8b48, type: 3}
+    alleyParkingChance: 0.35
+    scatter:
+    - {fileID: 1000012061500174, guid: 09aab8a904970484d99ec36c27b8bb13, type: 3}
+    - {fileID: 1000011078951186, guid: 2559aa2d368562248aea8c62e35ac2fd, type: 3}
+    - {fileID: 1000010764393110, guid: 15cf8c13b0c302746a6e3eb78510226d, type: 3}
+    - {fileID: 1000011627327490, guid: 235a3b6b70c054bd3b893913a74c8b48, type: 3}
+    - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
+    scatterDensity: 0.12
+    parkTrees: []
+    parkUndergrowth: []
+    parkBenches: []
+    parkLamps: []
+    parkBins: []
+    parkMonuments: []
+    parkBoulders: []
+    parkDeadTrees: []
+    parkWaterTile: {fileID: 0}
+    parkGatePiers: {fileID: 0}
+    parkAmusement: []
+    parkingChance: 0.5
+    featureStrip: 0
+    kioskPrefabs: []
+    pocketParkProps: []
+    carRows: 0
+    industrialYard: 0
+    gatePrefab: {fileID: 0}
+    serviceRoadGround: {fileID: 0}
+    yardConcrete: {fileID: 0}
+    yardDirt: {fileID: 0}
+    stackProps: []
+    chimneyProps: []
+    auxBuildings: []
+    yardBarrels: []
+    yardCrates: []
+    yardSacks: []
+    yardFixtures: []
+    portYard: 0
+    waterTile: {fileID: 0}
+    quayGround: {fileID: 0}
+    pierSegment: {fileID: 0}
+    portCranes: []
+    portContainers: []
+    portShips: []
+    portBoats: []
+    portProps: []
+    portQuayLamp: {fileID: 0}
+    fenceSegment: {fileID: 0}
+    fencePost: {fileID: 0}
+    parkingBooth: {fileID: 0}
+    parkedCars: []
+    landmarkCars:
+    - label: Showroom stock
+      weight: 3
+      prefabs:
+      - {fileID: 1155766505344668, guid: 8e79e3b3e7ad3447f8a9d49dee037068, type: 3}
+      - {fileID: 8111836784205290034, guid: da7730d243803724899f803fd14577ef, type: 3}
+    - label: Showroom heroes
+      weight: 1
+      prefabs:
+      - {fileID: 1431148830624662, guid: bd2801b2828014647b11544d1931c9bb, type: 3}
+      - {fileID: 4515918606261576059, guid: 25726768bd8e0e54396429130cee1e1c, type: 3}
   - zone: 6
     weight: 5
     maxShare: 1
@@ -947,11 +1053,14 @@ MonoBehaviour:
     extraYaw: 180
   - prefab: {fileID: 4262399113899048206, guid: cb459f4c3c7f04847888c6c46ebfea15, type: 3}
     extraYaw: 90
+  - prefab: {fileID: 5811599271651202093, guid: e67774501b00f3f44b3c86d511ec6774, type: 3}
+    extraYaw: 270
   uniqueBuildings:
   - {fileID: 6429483452423246840, guid: 37eb2303145119844a10fe5567cc3b1d, type: 3}
   - {fileID: 1089356905447394778, guid: 616b874272f2c464d902290c933c9c4f, type: 3}
   - {fileID: 8092912279846532118, guid: 898c82c37dd2ab647b1c4a22856d9f56, type: 3}
   - {fileID: 915700779621246890, guid: ef9d84d2731dcef4fba0d78e0cb8f40e, type: 3}
+  - {fileID: 4578258170708362516, guid: 693a323a480508c4590ac56c309776bf, type: 3}
   buildingBaseMaterial: {fileID: 2100000, guid: 03ddc7e460b33402eb7640fab3881ac9, type: 2}
   buildingTints:
   - {fileID: 2100000, guid: 351d36b1c52cf4639b283e90c7f08483, type: 2}
@@ -1076,10 +1185,6 @@ MonoBehaviour:
     - {fileID: 6914005777242037173, guid: ceecad09732a62e43a031e93a92aa67d, type: 3}
     - {fileID: 4686496548483734671, guid: b947f77e7757aab478b957faa739e612, type: 3}
     - {fileID: 5200892472465562799, guid: 22ba476abc453744a9e7f12ced9c00a6, type: 3}
-  - label: Transit
-    weight: 6
-    prefabs:
-    - {fileID: 4555875449808149645, guid: 7028db554f494cf48a1057edb343adcf, type: 3}
   paintableVehicles:
   - {fileID: 1155766505344668, guid: 8e79e3b3e7ad3447f8a9d49dee037068, type: 3}
   - {fileID: 8111836784205290034, guid: da7730d243803724899f803fd14577ef, type: 3}
@@ -1093,7 +1198,9 @@ MonoBehaviour:
   - {fileID: 4686496548483734671, guid: b947f77e7757aab478b957faa739e612, type: 3}
   - {fileID: 5200892472465562799, guid: 22ba476abc453744a9e7f12ced9c00a6, type: 3}
   - {fileID: 6914005777242037173, guid: ceecad09732a62e43a031e93a92aa67d, type: 3}
-  - {fileID: 4555875449808149645, guid: 7028db554f494cf48a1057edb343adcf, type: 3}
+  rareVehicleNames:
+  - car-caravan-small
+  rareVehicleKeepChance: 0.1
   vehicleTints:
   - {fileID: 2100000, guid: ddb556b2da30449699e8a993a5c69448, type: 2}
   - {fileID: 2100000, guid: 0d3d2721c465944089fcc89cfe7f37d5, type: 2}

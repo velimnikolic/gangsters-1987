@@ -110,6 +110,13 @@ namespace LivingCity.Generation
                 if (IsShopFront(name))
                     attached += AddShop(tf);
 
+                // The gun shop is a Shops-group storefront like the post office, but its
+                // marker is the PLAYER's counter (right-click target + overlay face), not a
+                // pedestrian ShopEntrance - see GunShopMarker. Same corner exclusion, same
+                // door derivation.
+                if (name.StartsWith(GunShopMarker.PrefabName) && !name.Contains("corner"))
+                    attached += AddGunShop(tf);
+
                 if (BuildingDoorRule.NameQualifies(name))
                     attached += AddDoor(tf, grid);
             }
@@ -159,6 +166,17 @@ namespace LivingCity.Generation
             // rather than assumed, so a deeper prefab still gets its door on the wall.
             var bounds = LocalBounds(tf);
             tf.gameObject.AddComponent<ShopEntrance>()
+                .SetDoor(new Vector3(bounds.center.x, 0f, bounds.max.z));
+            return 1;
+        }
+
+        static int AddGunShop(Transform tf)
+        {
+            if (tf.GetComponent<GunShopMarker>())
+                return 0;
+
+            var bounds = LocalBounds(tf);
+            tf.gameObject.AddComponent<GunShopMarker>()
                 .SetDoor(new Vector3(bounds.center.x, 0f, bounds.max.z));
             return 1;
         }

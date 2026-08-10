@@ -52,6 +52,10 @@ namespace LivingCity.Gameplay
             /// <summary>Nearest interactable pedestrian along the ray, dead or alive.</summary>
             public InteractableNpc Npc;
 
+            /// <summary>Nearest menu-worthy thing along the ray - a pedestrian counts here
+            /// too (InteractableNpc implements it), but so does a marked building.</summary>
+            public IContextTarget Target;
+
             /// <summary>The nearest raw hit resolves to something selectable - the player,
             /// an officer, a marked building. Selection's business, never movement's.</summary>
             public bool OnSubject;
@@ -128,10 +132,10 @@ namespace LivingCity.Gameplay
             if (input.SecondaryPressed)
             {
                 var pick = PickAt(input.PointerPosition);
-                if (pick.Npc && !pick.Npc.IsDead && menu)
+                if (pick.Target != null && pick.Target.ContextAvailable && menu)
                 {
                     SetHovered(null);
-                    menu.Open(player, pick.Npc, input.PointerPosition);
+                    menu.Open(player, pick.Target, input.PointerPosition);
                 }
                 return;
             }
@@ -168,6 +172,7 @@ namespace LivingCity.Gameplay
                 ray, PickRadius, Hits, PickDistance, PickMask, QueryTriggerInteraction.Ignore);
 
             var bestNpcDistance = float.MaxValue;
+            var bestTargetDistance = float.MaxValue;
             var bestHitDistance = float.MaxValue;
 
             for (var i = 0; i < count; i++)
@@ -181,9 +186,11 @@ namespace LivingCity.Gameplay
                     bestHitDistance = hit.distance;
                     result.HasSurface = true;
                     result.SurfacePoint = hit.point;
+                    // A hidden subject (a shopper indoors, capsule still at the door) is not
+                    // pickable by the overlay either - the click must stay a move order.
                     result.OnSubject =
                         hit.collider.GetComponentInParent<PlayerMafioso>() ||
-                        hit.collider.GetComponentInParent<IOverlaySubject>() != null;
+                        hit.collider.GetComponentInParent<IOverlaySubject>() is { OverlayHidden: false };
                 }
 
                 if (hit.distance < bestNpcDistance)
@@ -193,6 +200,16 @@ namespace LivingCity.Gameplay
                     {
                         bestNpcDistance = hit.distance;
                         result.Npc = npc;
+                    }
+                }
+
+                if (hit.distance < bestTargetDistance)
+                {
+                    var target = hit.collider.GetComponentInParent<IContextTarget>();
+                    if (target != null)
+                    {
+                        bestTargetDistance = hit.distance;
+                        result.Target = target;
                     }
                 }
             }

@@ -11,10 +11,10 @@ namespace LivingCity.Gameplay
 
         public int SortOrder => 0;
 
-        public bool IsAvailable(PlayerMafioso actor, InteractableNpc target) =>
-            actor && target && !target.IsDead;
+        public bool IsAvailable(PlayerMafioso actor, IContextTarget target) =>
+            actor && target is InteractableNpc npc && npc && !npc.IsDead;
 
-        public void Execute(PlayerMafioso actor, InteractableNpc target) =>
-            actor.OrderKill(target);
+        public void Execute(PlayerMafioso actor, IContextTarget target) =>
+            actor.OrderKill((InteractableNpc)target);
     }
 }

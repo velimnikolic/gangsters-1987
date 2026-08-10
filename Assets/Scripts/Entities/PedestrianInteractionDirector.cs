@@ -69,6 +69,38 @@ namespace LivingCity.Entities
         float nextTickAt;
         int rollCursor;
 
+        Ambient.CityClock clock;
+        float nextClockSearchAt;
+
+        /// <summary>
+        /// Whether a CityClock exists to drive the daily routine. Without one the schedule
+        /// layer is simply inert and the crowd lives its old timeless life. Lazy with a 1s
+        /// throttle rather than a one-shot Start lookup: a clock that enters the scene
+        /// after this director (a rebuilt city, a runtime-installed rig) must wake the
+        /// routine up, not leave it dead for the session - and when there genuinely is no
+        /// clock, a hundred agents asking per second must not each pay a scene scan.
+        /// </summary>
+        public bool HasClock
+        {
+            get
+            {
+                if (clock)
+                    return true;
+                if (Time.time < nextClockSearchAt)
+                    return false;
+
+                nextClockSearchAt = Time.time + 1f;
+                clock = FindAnyObjectByType<Ambient.CityClock>();
+                return clock;
+            }
+        }
+
+        /// <summary>The city's hour, read once here so ten thousand agents do not each
+        /// hold a scene lookup. Callers gate on HasClock.</summary>
+        public float HourNow => clock ? clock.Hour : 0f;
+
+        public int DayNow => clock ? clock.Day : 0;
+
         void Awake()
         {
             Instance = this;
@@ -82,9 +114,38 @@ namespace LivingCity.Entities
 
         void Start()
         {
+            // Self-heal the wiring, the CityClock pattern: the editor menu assigns config
+            // into the saved scene, but this component is also installed at Play by
+            // GameplayBootstrap into a scene the menu never touched - and with a null
+            // config Update() returns forever and the whole interaction layer is silently
+            // dead. Borrow the builder's config rather than sit there being useless.
+            if (!config)
+            {
+                var builder = FindAnyObjectByType<Generation.CityBuilder>();
+                if (builder)
+                    config = builder.Config;
+            }
+
             benches = FindObjectsByType<BenchSeats>(FindObjectsSortMode.None);
             shops = FindObjectsByType<ShopEntrance>(FindObjectsSortMode.None);
             doors = FindObjectsByType<BuildingDoor>(FindObjectsSortMode.None);
+
+            // Sorted by world position before anything indexes into them, because
+            // FindObjectsByType's order is whatever the scene graph felt like -
+            // DoorByHash assigns homes and workplaces off the index, and the same seed
+            // must house the same person at the same door every session. The ownership
+            // layer learned this rule first: sort by position, never child order.
+            System.Array.Sort(doors, (a, b) =>
+            {
+                if (!a || !b)
+                    return (a ? 1 : 0) - (b ? 1 : 0);
+                var pa = a.transform.position;
+                var pb = b.transform.position;
+                var byX = pa.x.CompareTo(pb.x);
+                return byX != 0 ? byX : pa.z.CompareTo(pb.z);
+            });
+
+            clock = FindAnyObjectByType<Ambient.CityClock>();
 
             for (var i = 0; i < benches.Length; i++)
                 if (benches[i])
@@ -317,6 +378,15 @@ namespace LivingCity.Entities
 
             return false;
         }
+
+        /// <summary>
+        /// A door picked by hash - the home and workplace assignment. Deterministic per
+        /// city because the array is position-sorted at Start; a walker's hash lands on
+        /// the same door every session of the same seed. Null only when the city has no
+        /// doors at all.
+        /// </summary>
+        public BuildingDoor DoorByHash(int hash) =>
+            doors.Length == 0 ? null : doors[(int)((uint)hash % (uint)doors.Length)];
 
         static List<int> CellFor(Dictionary<long, List<int>> cells, Vector3 position)
         {

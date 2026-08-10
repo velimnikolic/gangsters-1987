@@ -35,6 +35,13 @@ namespace LivingCity.Gameplay
             if (!player)
                 return; // No prefab in Resources either - Phase 1 assets were never built.
 
+            // The arsenal rides the player, not the Gameplay host - WeaponController and
+            // PlayerMafioso resolve it with GetComponent on themselves.
+            if (!player.GetComponent<PlayerArsenal>())
+                player.gameObject.AddComponent<PlayerArsenal>();
+
+            RegisterShopActions();
+
             var host = GameObject.Find("Gameplay") ?? new GameObject("Gameplay");
 
             Ensure<GameplayRuntime>(host);
@@ -44,12 +51,43 @@ namespace LivingCity.Gameplay
             Ensure<WitnessSystem>(host);
             Ensure<PoliceResponseDirector>(host);
             Ensure<WantedHud>(host);
+            Ensure<PropertyDirector>(host);
+            Ensure<PlayerOcclusionHider>(host);
+
+            // The pedestrian life layer. Historically added only by the editor menu
+            // (Tools/City/Set Up City Scene) - the exact class of silent absence this
+            // bootstrap exists for: without the director there are no chats, sits, shop
+            // visits or daily routine, and every civilian popup reads "Out for a walk"
+            // forever. Scene-wide checks, not host-local ones, because the menu parks
+            // these on the Spawners object - a scene the menu DID wire must not get a
+            // second director pacing every roll twice.
+            EnsureUnique<PedestrianInteractionDirector>(host);
+            EnsureUnique<UI.CityOverlayHud>(host);
         }
 
         static void Ensure<T>(GameObject host) where T : Component
         {
             if (!host.GetComponent<T>())
                 host.AddComponent<T>();
+        }
+
+        static void EnsureUnique<T>(GameObject host) where T : Component
+        {
+            if (!Object.FindAnyObjectByType<T>())
+                host.AddComponent<T>();
+        }
+
+        /// <summary>
+        /// One buy row per non-starting catalog entry. Safe to run every Play: the
+        /// registry re-seeds itself at SubsystemRegistration, which is before this, so
+        /// these are fresh registrations, never duplicates.
+        /// </summary>
+        static void RegisterShopActions()
+        {
+            var weapons = WeaponCatalog.Instance.weapons;
+            for (var i = 0; i < weapons.Length; i++)
+                if (weapons[i] != null && !weapons[i].starting)
+                    ContextActionRegistry.Register(new BuyWeaponAction(weapons[i], i));
         }
 
         static PlayerMafioso SpawnPlayer()

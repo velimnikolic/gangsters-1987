@@ -17,7 +17,7 @@ namespace LivingCity.Gameplay
     /// </summary>
     [RequireComponent(typeof(NpcHealth))]
     [RequireComponent(typeof(PedestrianDeath))]
-    public sealed class InteractableNpc : MonoBehaviour
+    public sealed class InteractableNpc : MonoBehaviour, IContextTarget
     {
         HumanBehavior human;
         NpcHealth health;
@@ -36,6 +36,11 @@ namespace LivingCity.Gameplay
         /// pedestrians are never hovered.
         /// </summary>
         public Renderer[] Renderers => renderers ??= GetComponentsInChildren<Renderer>(true);
+
+        public Transform TargetTransform => transform;
+
+        /// <summary>A corpse gets no menu - the same rule the right-click used to hardcode.</summary>
+        public bool ContextAvailable => !IsDead;
 
         void Awake()
         {

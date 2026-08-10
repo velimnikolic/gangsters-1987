@@ -150,6 +150,23 @@ namespace LivingCity.Generation
         /// retuning one must not re-time the other.
         /// </summary>
         public const int PortShips = 25_000;
+
+        /// <summary>
+        /// Read by PropertyDirector: the boss name pool, which boss runs each block, and every
+        /// business's flavour name and takings. Its own offset for the list's standing reason -
+        /// and because this one runs at PLAY over the saved hierarchy, it draws in an order
+        /// derived from sorted world positions, never from generation-time state it cannot see.
+        /// </summary>
+        public const int Ownership = 26_000;
+
+        /// <summary>
+        /// Read by RareVehicleFilter for the keep-or-substitute roll that makes the camper
+        /// (car-caravan-small) rare. The filter rides along with pickers that deal off
+        /// BlockBuilder's SHARED Buildings stream - the VehicleTints situation exactly - so
+        /// a rarity roll taken from that stream would move every building placed after it.
+        /// Retuning how rare the camper is must not be able to re-lay the city.
+        /// </summary>
+        public const int RareVehicles = 27_000;
     }
 
     /// <summary>

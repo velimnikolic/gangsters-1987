@@ -102,6 +102,14 @@ namespace LivingCity.UI
         long shownPopupKey;
         bool popupDirty;
 
+        /// <summary>
+        /// The one marker that does not come from the registry: built when the selection is
+        /// a subject that never registered. Civilians are the case - at crowd scale a
+        /// permanent marker Image each is exactly the cost OverlayRegistry must not carry -
+        /// so the marker exists only while one of them is the selection, and dies with it.
+        /// </summary>
+        Marker ephemeral;
+
         void Start()
         {
             cam = Camera.main ? Camera.main : FindAnyObjectByType<Camera>();
@@ -219,13 +227,16 @@ namespace LivingCity.UI
             Select(Pick(mouse.position.ReadValue()));
         }
 
-        Marker Pick(Vector2 screenPosition)
+        IOverlaySubject Pick(Vector2 screenPosition)
         {
             var ray = cam.ScreenPointToRay(screenPosition);
             var hits = Physics.SphereCastAll(
                 ray, PickRadius, PickDistance, ~0, QueryTriggerInteraction.Ignore);
 
-            Marker best = null;
+            // The subject itself, not its marker: a subject need not be registered to be
+            // clickable. Civilians never register - a marker is built for whichever one is
+            // selected - and every registered subject picks exactly as it always did.
+            IOverlaySubject best = null;
             var bestDistance = float.MaxValue;
             foreach (var hit in hits)
             {
@@ -236,29 +247,62 @@ namespace LivingCity.UI
                 if (subject == null || subject.OverlayHidden)
                     continue;
 
-                foreach (var marker in markers)
-                {
-                    if (marker.Subject != subject)
-                        continue;
-
-                    best = marker;
-                    bestDistance = hit.distance;
-                    break;
-                }
+                best = subject;
+                bestDistance = hit.distance;
             }
 
             return best;
         }
 
-        void Select(Marker marker)
+        void Select(IOverlaySubject subject)
         {
-            if (selected == marker)
+            if (selected != null ? selected.Subject == subject : subject == null)
                 return;
+
+            Marker marker = null;
+            var offRegistry = false;
+            if (subject != null)
+            {
+                foreach (var m in markers)
+                {
+                    if (m.Subject != subject)
+                        continue;
+                    marker = m;
+                    break;
+                }
+
+                if (marker == null)
+                {
+                    var anchor = subject.OverlayAnchor;
+                    if (anchor)
+                    {
+                        marker = BuildMarker(subject, anchor);
+                        offRegistry = true;
+                    }
+                }
+            }
+
+            // The outgoing selection may have owned the ephemeral - it goes with it.
+            DropEphemeral();
+            if (offRegistry)
+                ephemeral = marker;
 
             selected = marker;
             popupDirty = true;
             if (popup)
                 popup.SetActive(marker != null);
+        }
+
+        void DropEphemeral()
+        {
+            if (ephemeral == null)
+                return;
+
+            if (ephemeral.Image)
+                Destroy(ephemeral.Image.gameObject);
+            if (selected == ephemeral)
+                selected = null;
+            ephemeral = null;
         }
 
         void LateUpdate()
@@ -269,9 +313,31 @@ namespace LivingCity.UI
             var height = Screen.height;
 
             foreach (var marker in markers)
+                UpdateMarker(marker, width, height);
+
+            // The off-registry selection's marker rides the same pass - it is a Marker like
+            // any other, just owned by the selection instead of the registry.
+            if (ephemeral != null)
+                UpdateMarker(ephemeral, width, height);
+
+            UpdatePopup(width, height);
+        }
+
+        void UpdateMarker(Marker marker, float width, float height)
+        {
             {
                 if (!marker.Target)
-                    continue;
+                    return;
+
+                // A SelectedOnly marker earns its pixels only as the selection; unselected it
+                // pays nothing either - the early-out is before the WorldToScreenPoint and the
+                // OverlayColor read, so a hundred quiet businesses cost this loop nothing.
+                if (marker.Style.SelectedOnly && marker != selected)
+                {
+                    if (marker.Image.enabled)
+                        marker.Image.enabled = false;
+                    return;
+                }
 
                 var hidden = marker.Subject.OverlayHidden;
                 var screen = cam.WorldToScreenPoint(
@@ -332,8 +398,6 @@ namespace LivingCity.UI
                         Vector3.one * (beat * (wantSelected ? SelectedScale : 1f));
                 }
             }
-
-            UpdatePopup(width, height);
         }
 
         void UpdatePopup(float width, float height)
@@ -426,6 +490,18 @@ namespace LivingCity.UI
 
                 if (subject == wasSelected)
                     selected = marker;
+            }
+
+            // The ephemeral is not in the registry, so the rebuild above cannot re-find it -
+            // an off-registry selection (a civilian) has to survive registry churn by hand,
+            // or every bank customer arriving would close the popup. If its subject somehow
+            // joined the registry, the registry marker just won the selection: one marker.
+            if (ephemeral != null)
+            {
+                if (selected == null && wasSelected == ephemeral.Subject)
+                    selected = ephemeral;
+                else
+                    DropEphemeral();
             }
 
             // Dropped rather than kept: the thing being described has gone.

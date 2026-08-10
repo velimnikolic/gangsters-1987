@@ -90,6 +90,14 @@ namespace LivingCity.UI
         /// </summary>
         public bool AlwaysVisible;
 
+        /// <summary>
+        /// Draw the marker only while this subject is the selection. For subjects that exist
+        /// in the dozens - every business in the city - a permanent square over each roof is
+        /// noise, not information. Picking is physics-based and never consults the Image, so
+        /// a subject with its marker off is exactly as clickable as one without.
+        /// </summary>
+        public bool SelectedOnly;
+
         public static MarkerStyle Default => new MarkerStyle { SizeScale = 1f };
     }
 

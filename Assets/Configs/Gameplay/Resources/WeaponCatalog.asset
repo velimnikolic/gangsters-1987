@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dfe9b0d01047d43629acdb4fec92a6d7, type: 3}
+  m_Name: WeaponCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::LivingCity.Gameplay.WeaponCatalog
+  weapons:
+  - id: revolver
+    displayName: Revolver
+    price: 0
+    damagePerShot: 0
+    fireInterval: 0
+    engageRange: 0
+    prefab: {fileID: 0}
+    starting: 1
+  - id: magnum
+    displayName: Magnum
+    price: 450
+    damagePerShot: 250
+    fireInterval: 0.5
+    engageRange: 6
+    prefab: {fileID: 0}
+    starting: 0

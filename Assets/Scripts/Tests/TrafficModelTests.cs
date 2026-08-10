@@ -49,6 +49,7 @@ namespace LivingCity.Tests
             PoliceIntentionCoversEveryState(failures);
             SchoolIntentionCoversEveryState(failures);
             ForecourtIntentionCoversEveryState(failures);
+            BusinessIntentionCoversEveryCase(failures);
             SchoolLineNamesEveryPupil(failures);
             StallClaimsAreExclusiveAndReleasable(failures);
             NoCrosswalkHoldIsPermanent(failures);
@@ -483,6 +484,76 @@ namespace LivingCity.Tests
                 if (UI.SchoolIntention.ChildColor(state) == Color.white)
                     failures.Add($"SchoolIntention: child state {state} has no colour.");
             }
+        }
+
+        /// <summary>
+        /// The business overlay's words. No states here - businesses are places, not agents -
+        /// so what is asserted instead are the table traps: every roster prefab resolves to a
+        /// title (including the longest-prefix rule that keeps "industry-factory" from
+        /// swallowing the old works and the hall, and the "(Clone)" a runtime rebuild
+        /// appends), the null-owner frame between AddComponent and Init has a sentence, the
+        /// money format is invariant-culture, and the WIDEST line the boss tables can roll
+        /// fits the popup - walked over PropertyDirector's real tables, so a name added there
+        /// that breaks the budget fails here instead of on screen.
+        /// </summary>
+        static void BusinessIntentionCoversEveryCase(List<string> failures)
+        {
+            var industrial = new (string prefab, string word)[]
+            {
+                ("industry-factory-old", "Old Factory"),
+                ("industry-factory-hall", "Factory Hall"),
+                ("industry-factory", "Factory"),
+                ("industry-warehouse", "Warehouse"),
+                ("industry-storage", "Storage Yard"),
+                ("industry-refinery", "Refinery"),
+                ("industry-building", "Works"),
+            };
+            foreach (var (prefab, word) in industrial)
+            {
+                var title = UI.BusinessIntention.IndustrialTitle(prefab, 7);
+                if (string.IsNullOrEmpty(title) || !title.StartsWith(word))
+                    failures.Add($"BusinessIntention: {prefab} titles as '{title}', " +
+                                 $"wanted '{word}'.");
+            }
+
+            if (!UI.BusinessIntention.IndustrialTitle("industry-warehouse(Clone)", 3)
+                    .StartsWith("Warehouse"))
+                failures.Add("BusinessIntention: '(Clone)' suffix breaks the industrial title.");
+
+            // A building the slabs could not place drops the block clause rather than
+            // printing 'Block -1'.
+            if (UI.BusinessIntention.IndustrialTitle("industry-warehouse", -1).Contains("-1"))
+                failures.Add("BusinessIntention: unknown block leaks '-1' into the title.");
+
+            foreach (var prefab in new[]
+                     { "building-cafe", "building-restaurant", "building-post" })
+                for (var roll = 0; roll < 12; roll++)
+                    if (string.IsNullOrEmpty(UI.BusinessIntention.CommercialTitle(prefab, roll)))
+                        failures.Add($"BusinessIntention: {prefab} roll {roll} has no name.");
+
+            if (string.IsNullOrEmpty(UI.BusinessIntention.Line(null, 0, false)))
+                failures.Add("BusinessIntention: null owner has no sentence.");
+
+            if (UI.BusinessIntention.Money(850) != "$850" ||
+                UI.BusinessIntention.Money(1200) != "$1.2k" ||
+                UI.BusinessIntention.Money(5000) != "$5k")
+                failures.Add("BusinessIntention: money format drifted " +
+                             $"({UI.BusinessIntention.Money(850)}, " +
+                             $"{UI.BusinessIntention.Money(1200)}, " +
+                             $"{UI.BusinessIntention.Money(5000)}).");
+
+            // 44 characters is the 280px popup at the line's 13px font with nothing to spare;
+            // NoWrap means an overflow draws past the background rather than wrapping.
+            var widestName = "";
+            foreach (var first in Gameplay.PropertyDirector.BossFirstNames)
+                foreach (var last in Gameplay.PropertyDirector.BossLastNames)
+                    if (first.Length + last.Length + 1 > widestName.Length)
+                        widestName = first + " " + last;
+
+            var widest = UI.BusinessIntention.Line(widestName, 2400, false);
+            if (widest.Length > 44)
+                failures.Add($"BusinessIntention: widest line is {widest.Length} chars " +
+                             $"('{widest}') - it will draw past the popup.");
         }
 
         /// <summary>

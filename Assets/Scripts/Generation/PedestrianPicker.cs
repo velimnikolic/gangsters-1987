@@ -54,19 +54,32 @@ namespace LivingCity.Generation
         /// handing a null to Instantiate. Bounded by the group count: a catalogue whose every
         /// entry is broken returns null instead of spinning.
         /// </summary>
-        public GameObject Next()
+        public GameObject Next() => Next(out _);
+
+        /// <summary>
+        /// As Next(), reporting WHICH group dealt the model - the label is the crowd's
+        /// occupation signal ("Suits", "Workers"...), and the spawner hands it to the
+        /// pedestrian's identity. Same draws in the same order as the plain overload, so
+        /// the pedestrian stream is byte-identical whichever one is called.
+        /// </summary>
+        public GameObject Next(out string groupLabel)
         {
             for (var attempt = 0; attempt < groups.Count; attempt++)
             {
-                var bag = bags[PickGroupIndex()];
+                var index = PickGroupIndex();
+                var bag = bags[index];
 
                 var prefab = bag.Peek();
                 bag.Advance();
 
                 if (prefab)
+                {
+                    groupLabel = groups[index].label;
                     return prefab;
+                }
             }
 
+            groupLabel = null;
             return null;
         }
 

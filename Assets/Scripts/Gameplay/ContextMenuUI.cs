@@ -39,7 +39,7 @@ namespace LivingCity.Gameplay
         bool tmpReady;
 
         PlayerMafioso actor;
-        InteractableNpc target;
+        IContextTarget target;
 
         readonly List<IContextAction> available = new List<IContextAction>();
 
@@ -116,7 +116,7 @@ namespace LivingCity.Gameplay
         /// menu opens a few times a minute, and rebuilding is what makes the registry the
         /// single source of truth.
         /// </summary>
-        public void Open(PlayerMafioso menuActor, InteractableNpc menuTarget, Vector2 screenPosition)
+        public void Open(PlayerMafioso menuActor, IContextTarget menuTarget, Vector2 screenPosition)
         {
             if (!tmpReady || !panel)
                 return;

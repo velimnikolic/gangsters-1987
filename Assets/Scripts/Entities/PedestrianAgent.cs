@@ -26,8 +26,27 @@ namespace LivingCity.Entities
     /// detour to a bench steers around people exactly like the pavement walk does.
     /// </summary>
     [RequireComponent(typeof(HumanBehavior))]
-    public sealed class PedestrianAgent : MonoBehaviour
+    public sealed class PedestrianAgent : MonoBehaviour, UI.IOverlaySubject
     {
+        /// <summary>
+        /// What this walker is doing, as a fact the popup can read. The activities
+        /// themselves are coroutines - this is set at the top of each and cleared in
+        /// Restore(), the one choke point every exit path already runs through, so no
+        /// coroutine can leak a stale state. Every value must have a sentence and a colour
+        /// in PedestrianIntention; the headless suite asserts it.
+        /// </summary>
+        public enum Activity
+        {
+            Strolling, Chatting, Arguing, Sitting, Shopping, Visiting, Idling,
+
+            // The daily routine's states. CommutingToWork/HeadingHome/AtHome are set by the
+            // commute routine; AtWork and EveningStroll exist only in EffectiveActivity -
+            // schedule flavour over plain strolling, never stored in Current.
+            CommutingToWork, AtWork, HeadingHome, AtHome, EveningStroll,
+
+            Dead,
+        }
+
         /// <summary>Live agents, maintained alongside registry membership. Read by the director.</summary>
         public static readonly List<PedestrianAgent> Agents = new List<PedestrianAgent>();
 
@@ -68,8 +87,32 @@ namespace LivingCity.Entities
         Animator animator;
         Renderer[] renderers;
         PedestrianBody body;
+        PedestrianDeath death;
         bool hasSpeedParam;
         bool hasActivityParam;
+
+        // Identity: ints at spawn, a string only on the first popup read. Derived from the
+        // seed by hashing, never from the live rng - see PedestrianIdentity.
+        int identitySeed;
+        bool female;
+        PedestrianOccupation occupation;
+        string title;
+
+        /// <summary>Which errand the current shop visit is - an index into
+        /// PedestrianIntention.Errands, varied per visit without touching the rng stream.</summary>
+        int errandIndex;
+        int shopVisits;
+
+        // The daily routine. Home and workplace are doors picked by hash off the
+        // position-sorted door array - lazy, and re-resolved if the city is rebuilt.
+        // The latches are per-day, the SchoolBusAgent pattern: a window is served once
+        // and re-arms at midnight, however fast the clock runs.
+        BuildingDoor homeDoor;
+        BuildingDoor workDoor;
+        float scheduleOffset;
+        bool worksDays;
+        int commutedDay = -1;
+        int homewardDay = -1;
 
         Coroutine activity;
         float cooldownUntil;
@@ -91,21 +134,80 @@ namespace LivingCity.Entities
             && human && human.enabled && human.IsMoving
             && !RoadSurface.IsOnRoad(transform.position);
 
-        public void Configure(CityConfig cityConfig, int seed)
+        public void Configure(CityConfig cityConfig, int seed,
+                              string groupLabel = null, string prefabName = null)
         {
             config = cityConfig;
             rng = new System.Random(seed);
+
+            identitySeed = seed;
+            female = PedestrianIdentity.IsFemale(prefabName);
+            occupation = PedestrianIdentity.Occupation(groupLabel, prefabName, female, seed);
+
+            // Children have school (its own system), the fringe have nowhere to be.
+            worksDays = occupation != PedestrianOccupation.Schoolkid
+                     && occupation != PedestrianOccupation.Drifter
+                     && occupation != PedestrianOccupation.Unemployed
+                     && occupation != PedestrianOccupation.Punk;
+            scheduleOffset = PedestrianSchedule.OffsetHours(seed, config.commuteStaggerHours);
 
             // Staggered grace period so a freshly spawned crowd does not all decide to
             // perform in the same second.
             cooldownUntil = Time.time + Range(new Vector2(5f, config.interactionCooldownRange.y * 0.5f));
         }
 
+        /// <summary>What this walker is doing right now. Written by the activity routines.</summary>
+        public Activity Current { get; private set; } = Activity.Strolling;
+
+        /// <summary>
+        /// Current, with death and the day's phase folded in. A corpse reports Dead
+        /// whatever came before (death disables this component, but property reads still
+        /// work). Plain strolling is flavoured by the schedule - "on the clock", "out for
+        /// the evening" - which is how every coroutine path gets routine-aware words
+        /// without any routine touching them: they all Finish() back into Strolling and
+        /// the phase does the rest. Read only for the selected subject.
+        /// </summary>
+        Activity EffectiveActivity
+        {
+            get
+            {
+                if (death && death.IsDead)
+                    return Activity.Dead;
+                if (Current != Activity.Strolling)
+                    return Current;
+
+                var director = PedestrianInteractionDirector.Instance;
+                if (!director || !director.HasClock || config == null)
+                    return Activity.Strolling;
+
+                return PhaseNow(director) switch
+                {
+                    DayPhase.MorningCommute when worksDays =>
+                        commutedDay == director.DayNow ? Activity.AtWork : Activity.CommutingToWork,
+                    DayPhase.WorkDay when worksDays => Activity.AtWork,
+                    DayPhase.EveningCommute when worksDays =>
+                        homewardDay == director.DayNow ? Activity.EveningStroll : Activity.HeadingHome,
+                    DayPhase.EveningOut => Activity.EveningStroll,
+                    // Still on the street after the night hour: honestly, trying to get home.
+                    DayPhase.AtHomeNight => Activity.HeadingHome,
+                    _ => Activity.Strolling,
+                };
+            }
+        }
+
+        DayPhase PhaseNow(PedestrianInteractionDirector director) =>
+            PedestrianSchedule.PhaseFor(director.HourNow, scheduleOffset, worksDays,
+                config.workMorningHour, config.workEveningHour, config.nightHomeHour);
+
         void Awake()
         {
             human = GetComponent<HumanBehavior>();
             animator = GetComponent<Animator>();
             renderers = GetComponentsInChildren<Renderer>(true);
+
+            // Added by the spawner before this component (InteractableNpc pulls it in), so
+            // it is there to find - but never assumed: a bare prefab has no death to report.
+            death = GetComponent<PedestrianDeath>();
         }
 
         void Start()
@@ -157,7 +259,7 @@ namespace LivingCity.Entities
         {
             if (activity != null || rng == null || body == null)
                 return;
-            if (Time.time < cooldownUntil || Time.time < nextRollAt)
+            if (Time.time < nextRollAt)
                 return;
 
             nextRollAt = Time.time + RollInterval;
@@ -172,6 +274,16 @@ namespace LivingCity.Entities
                 return;
 
             var director = PedestrianInteractionDirector.Instance;
+
+            // The clock outranks both the dice and the after-activity cooldown: a commute
+            // window is a duty, not a leisure roll, and a 90s cooldown would eat most of
+            // one. Ordered before the cooldown gate on purpose; the leisure rolls below
+            // keep their old pacing exactly.
+            if (director && TickSchedule(director))
+                return;
+
+            if (Time.time < cooldownUntil)
+                return;
 
             // The roll comes BEFORE the search on purpose: a failed roll must not claim (and
             // then have to release) a seat somebody else could have taken this tick.
@@ -209,6 +321,87 @@ namespace LivingCity.Entities
                 Begin(IdleRoutine());
         }
 
+        /// <summary>
+        /// The daily-routine check, living inside the director's sliced roll so an hour
+        /// boundary can never move the whole city on one frame. The commute windows carry
+        /// per-day latches (the SchoolBusAgent pattern - edge-triggered, tolerant of any
+        /// clock speed); the night has none, because "get indoors" should retry every roll
+        /// until it lands, and ends naturally when the morning exit happens. A window that
+        /// closes unserved is simply surrendered - EffectiveActivity carries the intention
+        /// as words over ordinary strolling, so the popup stays honest and nobody sticks.
+        /// </summary>
+        bool TickSchedule(PedestrianInteractionDirector director)
+        {
+            if (!director.HasClock || config == null)
+                return false;
+
+            var phase = PhaseNow(director);
+
+            // The night branch alone respects the cooldown: it is level-triggered and
+            // retries for hours, so the delay is invisible - and at a pre-dawn startHour
+            // the whole fresh crowd is already "up past bedtime", where the staggered
+            // spawn cooldown is the only thing spreading two hundred simultaneous door
+            // trips over the first minute of Play.
+            if (phase == DayPhase.AtHomeNight
+                && Time.time >= cooldownUntil
+                && TryStartCommute(ResolveHomeDoor(director), Activity.HeadingHome, night: true))
+                return true;
+
+            if (worksDays && phase == DayPhase.MorningCommute && commutedDay != director.DayNow
+                && TryStartCommute(ResolveWorkDoor(director), Activity.CommutingToWork, night: false))
+            {
+                commutedDay = director.DayNow;
+                return true;
+            }
+
+            if (worksDays && phase == DayPhase.EveningCommute && homewardDay != director.DayNow
+                && TryStartCommute(ResolveHomeDoor(director), Activity.HeadingHome, night: false))
+            {
+                homewardDay = director.DayNow;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// A commute is a building visit wearing a purpose: enter the nearest street door -
+        /// the same 9m detour every visit already pays, because no city-wide pedestrian
+        /// pathfinding exists and none is needed - and come out at the assigned door across
+        /// town. False when no door is in reach or its step is taken; the next roll
+        /// retries for as long as the phase lasts.
+        /// </summary>
+        bool TryStartCommute(BuildingDoor destination, Activity intent, bool night)
+        {
+            var director = PedestrianInteractionDirector.Instance;
+            if (!director || !destination)
+                return false;
+
+            if (!director.TryPickDoor(transform.position, OpportunityRange, out var entry)
+                || !entry.TryClaimStep())
+                return false;
+
+            claimedDoor = entry;
+            Begin(BuildingRoutine(entry, destination, intent, night));
+            return true;
+        }
+
+        // Lazy and re-resolved when a rebuilt city destroys the old door. The multipliers
+        // key the two draws apart, the way PedestrianIdentity's salts do.
+        BuildingDoor ResolveHomeDoor(PedestrianInteractionDirector director)
+        {
+            if (!homeDoor)
+                homeDoor = director.DoorByHash(unchecked(identitySeed * 40503 + 7));
+            return homeDoor;
+        }
+
+        BuildingDoor ResolveWorkDoor(PedestrianInteractionDirector director)
+        {
+            if (!workDoor)
+                workDoor = director.DoorByHash(unchecked(identitySeed * 69069 + 13));
+            return workDoor;
+        }
+
         /// <summary>Director's command. Both members of the pair receive it on the same tick.</summary>
         public void BeginConversation(Vector3 partnerPos, float duration, bool argue)
         {
@@ -227,6 +420,9 @@ namespace LivingCity.Entities
 
         IEnumerator ConversationRoutine(Vector3 partnerPos, float duration, bool argue)
         {
+            // Set at the top of every routine, so the approach legs read as part of the
+            // activity - walking over to a partner IS the chat, to the popup's eye.
+            Current = argue ? Activity.Arguing : Activity.Chatting;
             Halt();
 
             // Close the gap a little first - pairs are found within earshot, not within
@@ -256,6 +452,7 @@ namespace LivingCity.Entities
 
         IEnumerator SitRoutine(BenchSeats bench, int seat)
         {
+            Current = Activity.Sitting;
             Halt();
             departure = transform.position;
 
@@ -319,6 +516,10 @@ namespace LivingCity.Entities
 
         IEnumerator ShopRoutine(ShopEntrance shop)
         {
+            Current = Activity.Shopping;
+            // A fresh errand per visit, hashed rather than drawn - the rng stream is part
+            // of the crowd's determinism contract and this must not consume from it.
+            errandIndex = (identitySeed ^ shopVisits++) & 7;
             Halt();
             departure = transform.position;
 
@@ -367,8 +568,20 @@ namespace LivingCity.Entities
         /// out three streets away has no departure to walk back to. HumanBehavior.ResetRoute
         /// is the patch that covers it.
         /// </summary>
-        IEnumerator BuildingRoutine(BuildingDoor door)
+        IEnumerator BuildingRoutine(BuildingDoor door) =>
+            BuildingRoutine(door, null, Activity.Visiting, night: false);
+
+        /// <summary>
+        /// The parameterised heart the commute reuses: <paramref name="forcedExit"/> makes
+        /// "come out somewhere else" into "come out at YOUR door" - home in the evening,
+        /// work in the morning - and <paramref name="night"/> swaps the drawn stay for
+        /// staying in until the personal morning, which is what empties the streets after
+        /// the night hour and refills them at dawn.
+        /// </summary>
+        IEnumerator BuildingRoutine(BuildingDoor door, BuildingDoor forcedExit,
+                                    Activity intent, bool night)
         {
+            Current = intent;
             Halt();
             departure = transform.position;
 
@@ -394,9 +607,42 @@ namespace LivingCity.Entities
             door.Entered();
             ReleaseDoor();
 
-            yield return new WaitForSeconds(Range(config.buildingStayRange));
+            if (night)
+            {
+                // Indoors until the personal morning: a phase equality on a slow poll,
+                // never a duration - the clock can be scrubbed or run at any speed and
+                // the exit still lands in the right window (or skips a night entirely).
+                Current = Activity.AtHome;
+                var director = PedestrianInteractionDirector.Instance;
 
-            var exit = PickExit(door);
+                if (director && director.HasClock)
+                    while (director && director.HasClock && PhaseNow(director) == DayPhase.AtHomeNight)
+                        yield return ReappearPoll;
+                else
+                    yield return new WaitForSeconds(Range(config.buildingStayRange));
+
+                // A worker steps from the doorstep straight into the day's first duty -
+                // the morning exit IS the commute, no second building trip to serve.
+                if (worksDays && director && director.HasClock
+                    && PhaseNow(director) == DayPhase.MorningCommute)
+                {
+                    var work = ResolveWorkDoor(director);
+                    if (work)
+                        forcedExit = work;
+                    commutedDay = director.DayNow;
+                    Current = Activity.CommutingToWork;
+                }
+            }
+            else
+            {
+                yield return new WaitForSeconds(Range(config.buildingStayRange));
+            }
+
+            // The forced door first - that is the whole commute - with the random pick as
+            // the fallback for a door that was destroyed or whose step never frees.
+            var exit = ForceExit(forcedExit);
+            if (!exit)
+                exit = PickExit(door);
 
             if (!exit)
             {
@@ -446,6 +692,18 @@ namespace LivingCity.Entities
         /// but always with a fallback to the way in, which can never fail and so can never
         /// leave somebody stuck indoors.
         /// </summary>
+        /// <summary>The commute's exit: the assigned door, claimed like any other. Null -
+        /// never a destroyed reference - when there is nothing to force or the step is
+        /// taken, so the caller's fallback test stays a plain truthiness check.</summary>
+        BuildingDoor ForceExit(BuildingDoor forced)
+        {
+            if (!forced || !forced.TryClaimStep())
+                return null;
+
+            claimedDoor = forced;
+            return forced;
+        }
+
         BuildingDoor PickExit(BuildingDoor entered)
         {
             var director = PedestrianInteractionDirector.Instance;
@@ -471,6 +729,7 @@ namespace LivingCity.Entities
 
         IEnumerator IdleRoutine()
         {
+            Current = Activity.Idling;
             Halt();
             SetStationary(true);
             yield return new WaitForSeconds(Range(config.idleDurationRange));
@@ -574,6 +833,7 @@ namespace LivingCity.Entities
         /// <summary>Every hold this component can have on the pedestrian, released. Idempotent.</summary>
         void Restore()
         {
+            Current = Activity.Strolling;
             ReleaseSeat();
             ReleaseDoor();
             LeaveBuilding();
@@ -645,6 +905,37 @@ namespace LivingCity.Entities
             if (hasActivityParam)
                 animator.SetInteger(PedestrianAnimation.ActivityHash, value);
         }
+
+        // --------------------------------------------------------------- the overlay
+        // Explicit implementation - the HUD's plumbing, not the agent's own API.
+        //
+        // Civilians are the one subject type that NEVER registers in OverlayRegistry: at
+        // crowd scale (the design target is ten thousand) a marker Image each would have
+        // SyncMarkers destroying and rebuilding the lot every time a bank customer spawns.
+        // Picking is physics-based and the HUD builds one ephemeral marker for an
+        // off-registry selection, so a civilian is exactly as clickable as a registered
+        // subject and costs the overlay nothing until clicked.
+
+        Transform UI.IOverlaySubject.OverlayAnchor => transform;
+        float UI.IOverlaySubject.OverlayHeight => 2.2f;
+
+        /// <summary>Inside a shop or a building: still a live subject, just nowhere to
+        /// point at - and not pickable, which keeps the doorway click a move order.</summary>
+        bool UI.IOverlaySubject.OverlayHidden => body != null && body.Hidden;
+
+        UI.OverlayShape UI.IOverlaySubject.MarkerShape => UI.OverlayShape.Diamond;
+        Color UI.IOverlaySubject.OverlayColor => UI.PedestrianIntention.ActivityColor(EffectiveActivity);
+        string UI.IOverlaySubject.OverlayTitle =>
+            title ??= PedestrianIdentity.ComposeTitle(identitySeed, female, occupation);
+        string UI.IOverlaySubject.OverlayLine => UI.PedestrianIntention.Line(EffectiveActivity, errandIndex);
+
+        /// <summary>Errand above the activity - changes exactly when the popup's words
+        /// would. EffectiveActivity already folds in death and the day's phase, so a
+        /// selected walker's popup rewrites itself as the schedule turns over.</summary>
+        long UI.IOverlaySubject.OverlayKey =>
+            ((long)errandIndex << 16) | (long)EffectiveActivity;
+
+        // ---------------------------------------------------------------------------------
 
         float Range(Vector2 range) =>
             range.x + (float)rng.NextDouble() * Mathf.Max(0f, range.y - range.x);

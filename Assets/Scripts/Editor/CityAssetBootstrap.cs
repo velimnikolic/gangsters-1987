@@ -391,8 +391,12 @@ namespace LivingCity.EditorTools
             // fires. This list is the belt to that braces: if the roll is ever bypassed, or a
             // seed finds a corner of it nobody thought about, the city still ends up with one
             // bank rather than two.
+            // The gun shop joins by the post office's exact reasoning: a storefront in the
+            // Shops bag that nothing in the zoning can reach, so this list is its entire cap.
+            // A ceiling, not a promise - a seed may come up without one, per the user's call.
             db.uniqueBuildings = LoadAll(Buildings, "building-post", "building-firestation",
-                                                    "building-policestation", "building-bank");
+                                                    "building-policestation", "building-bank",
+                                                    "building-shop-china");
 
             // Only the double lantern. lamp-road is a motorway lantern on a plain steel pole,
             // and lamp-city is out of the city entirely - dropped from the streets first and
@@ -480,6 +484,15 @@ namespace LivingCity.EditorTools
                 // the whole reason this city has a police station in it.
                 Bucket("Trade", 22f, CarsStatic, "truck", "car-tow-truck", "armored-truck"),
             };
+
+            // The camper stays in Everyday - pulling it out would resize the bag, and the bags
+            // draw from BlockBuilder's shared Buildings stream, so any length change re-lays the
+            // whole city (the paintableVehicles constraint). Instead RareVehicleFilter swaps
+            // ~9 in 10 of its deals for another Everyday body, on its own stream
+            // (SeedOffsets.RareVehicles), which takes it from a guaranteed bag seat (~12% of
+            // placed cars) down to roughly one camper in eighty.
+            db.rareVehicleNames = new[] { "car-caravan-small" };
+            db.rareVehicleKeepChance = 0.1f;
 
             // motorbike_AI is deliberately absent from Everyday. Every vehicle in the pack is
             // an empty shell - there is not one SkinnedMeshRenderer in Cars_AI_T - and a car
@@ -1926,6 +1939,57 @@ namespace LivingCity.EditorTools
                         Bucket("Bullion", 1f, CarsStatic, "armored-truck", "car-veteran"),
                     }),
 
+                // The car dealership - building-carwash standing in for the showroom, the pack
+                // having no dealership of its own. Measured 19.70 x 17.00 and 6.00m tall: an
+                // office block on its local -X half and an OPEN CANOPY on pillars over the +X
+                // half, mouth on +X - which is why it carries a 270 entry in facadeYawFixes
+                // (see BuildFacadeYawFixes) and fronts the street with its canopy and a 17.0m
+                // frontage, not the 19.7m office axis.
+                //
+                // The bank's one-cell discipline, but landmarkCars rather than parkedCars ON
+                // PURPOSE even though the block is the salon's own: HasLandmarkCars is the flag
+                // PlaceLandmark tests before it recesses the landmark 6.6m and cuts the
+                // forecourt bay across the vacated frontage - and the forecourt IS the
+                // dealership. BlockBuilder's isSalon branch then fills every bay with no
+                // empty-bay roll: a gap in the rank reads as a business failing.
+                //
+                // Fourth zone competing for the map's handful of one-cell blocks - see the
+                // note on the bank above; expect the hospital measurably less often, and tune
+                // this weight against ZoneFrequencySweep, not intuition.
+                Palette(BlockZone.CarSalon, weight: 10f, maxShare: 1f, maxBlocks: 1,
+                    maxBlockCells: 1,
+                    maxLotsPerAxis: 1,
+                    maxPerimeterBuildings: 2,
+                    // BankNeighbours(), not Outbuildings(), for the bank's reason: a police
+                    // garage in the salon's yard would be visibly orphaned. Non-empty keeps
+                    // this zone out of BlockBuilder's zone branches entirely.
+                    groups: new[] { BankNeighbours() },
+                    landmarks: LoadAll(Buildings, "building-carwash"),
+                    landmarkChance: 1f,
+                    groundPatchChance: 0.25f,
+                    paveJoints: true,
+                    alleyProps: PocketParkKit(),
+                    scatter: Merge(cityTrees,
+                                   LoadAll(CityProps, "bench-old")),
+                    // Lower than the bank's 0.18: the full forecourt rank is this block's
+                    // dressing, and props crowding it would say car park, not showroom.
+                    scatterDensity: 0.12f,
+                    parkingChance: 0.5f,
+                    // The stock. car-passenger and car-veteran are in paintableVehicles, so
+                    // VehicleTinter gives each bake its own colour - a rank of one body in
+                    // many colours is what a dealership's line-up looks like, where a rank
+                    // of identical bakes would read as a fleet depot. The hero bucket keeps
+                    // its baked colours: car-formula is referenced nowhere else in the city,
+                    // and a formula car on the apron is exactly what an 80s dealer parked
+                    // in the window. All four fit VehiclePicker's 5.6 x 2.4 stall test.
+                    landmarkCars: new[]
+                    {
+                        Bucket("Showroom stock", 3f, CarsStatic,
+                               "car-passenger", "car-veteran"),
+                        Bucket("Showroom heroes", 1f, CarsStatic,
+                               "car-formula", "car-passenger-race"),
+                    }),
+
                 // The scatter density is up from 0.04 now that the bays register in the block's
                 // occupancy list. Before, a lamp could be dropped inside a car - BuildCarRows read
                 // that list and never wrote to it - so the only defence was scattering almost
@@ -2074,9 +2138,15 @@ namespace LivingCity.EditorTools
                 // reading, and if it ever looks like a shopfront the fix is to move that one
                 // prefab into the Terrace group's street list, which takes the mild tier.
                 commercial = true,
+                // The gun shop rides this bag by the fire station's logic exactly: a small
+                // storefront built INTO the street wall, capped at one per city through
+                // uniqueBuildings, and absorbed by a five-prefab bag once spent. A CEILING,
+                // not a promise - per the user's call, a seed may come up without one. The
+                // name sweep gives the placed instance its GunShopMarker (the player's
+                // counter), not a ShopEntrance - see InteractionMarkers.
                 prefabs = LoadAll(Buildings,
                     "building-cafe", "building-restaurant", "building-post",
-                    "building-firestation"),
+                    "building-firestation", "building-shop-china"),
             };
 
         /// <summary>
@@ -2422,6 +2492,15 @@ namespace LivingCity.EditorTools
                 YawFix(Buildings + "building-block-5floor.prefab", 180f),
                 YawFix(Buildings + "building-apartment-china.prefab", 180f),
                 YawFix(Buildings + "building-house-block-big.prefab", 90f),
+
+                // The salon. Measured from the FBX, not the demo (the pack's Models scene
+                // drops every building at yaw 0, fronts be damned, and the carwash is in no
+                // city scene): the mesh is an office block on its -X half and an open canopy
+                // on pillars over the +X half, Z-symmetric, mouth on +X. With extra yaw e the
+                // wall facing the street is local (-sin e, 0, cos e), so 270 puts +X - the
+                // canopy mouth - to the street, a rank of stock in front of an open pavilion.
+                // 90 would show the office's back windows; 0/180 its blind gable ends.
+                YawFix(Buildings + "building-carwash.prefab", 270f),
             };
 
             // Kept only for the case where the measurement will not commit - a mesh it cannot

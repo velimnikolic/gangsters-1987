@@ -14,10 +14,12 @@ namespace LivingCity.Gameplay
         /// <summary>Menu position - lower first. Cancel pins itself last with int.MaxValue.</summary>
         int SortOrder { get; }
 
-        /// <summary>Whether this action appears for this actor/target pair right now.</summary>
-        bool IsAvailable(PlayerMafioso actor, InteractableNpc target);
+        /// <summary>Whether this action appears for this actor/target pair right now. The
+        /// target is any IContextTarget - an action serving one kind pattern-matches and
+        /// says no to the rest.</summary>
+        bool IsAvailable(PlayerMafioso actor, IContextTarget target);
 
         /// <summary>Do it. The menu has already closed itself by the time this runs.</summary>
-        void Execute(PlayerMafioso actor, InteractableNpc target);
+        void Execute(PlayerMafioso actor, IContextTarget target);
     }
 }

@@ -57,6 +57,7 @@ namespace LivingCity.Gameplay
         PathFinding pathFinding;
         GunmanAim gunman;
         WeaponController weapon;
+        PlayerArsenal arsenal;
         PedestrianBody body;
         bool hasSpeedParam;
         bool hasActivityParam;
@@ -92,6 +93,11 @@ namespace LivingCity.Gameplay
         CombatConfig Combat => GameplayRuntime.Combat;
 
         float WalkSpeed { get { var c = Config; return c ? c.walkSpeed : 3f; } }
+
+        /// <summary>Resolved lazily, NOT in Awake: GameplayBootstrap AddComponents the
+        /// arsenal after this object already exists, so an Awake-time cache would be a
+        /// permanent null.</summary>
+        PlayerArsenal Arsenal => arsenal ? arsenal : arsenal = GetComponent<PlayerArsenal>();
 
         void Awake()
         {
@@ -265,9 +271,15 @@ namespace LivingCity.Gameplay
         IEnumerator KillOrder(InteractableNpc target)
         {
             var combat = Combat;
-            var engageRange = combat ? combat.engageRange : 4f;
+            // Range and cadence come through the arsenal - a bought weapon changes the
+            // engagement, not just the damage. Absent (the bootstrap never ran), the old
+            // CombatConfig numbers apply untouched.
+            var arms = Arsenal;
+            var engageRange = arms ? arms.EngageRange(combat)
+                                   : combat ? combat.engageRange : 4f;
             var aimWait = new WaitForSeconds(combat ? combat.aimSeconds : 1.2f);
-            var fireWait = new WaitForSeconds(combat ? combat.fireInterval : 0.9f);
+            var fireWait = new WaitForSeconds(arms ? arms.FireInterval(combat)
+                                                   : combat ? combat.fireInterval : 0.9f);
 
             bool InRange() =>
                 target && !target.IsDead

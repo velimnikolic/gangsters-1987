@@ -118,11 +118,14 @@ namespace LivingCity.Entities
         /// whose PrefabDatabase was written before they existed has only the flat list, and an
         /// unpopulated pavement is a much louder failure than an unweighted one.
         /// </summary>
-        GameObject PickPrefab()
+        GameObject PickPrefab(out string groupLabel)
         {
             if (picker != null)
-                return picker.Next();
+                return picker.Next(out groupLabel);
 
+            // The flat list knows no groups; a null label sends the identity to its
+            // generic townsperson pool rather than an empty title.
+            groupLabel = null;
             var flat = prefabs.aiPedestrians;
             return flat is { Length: > 0 } ? flat[rng.Next(flat.Length)] : null;
         }
@@ -150,7 +153,7 @@ namespace LivingCity.Entities
 
             var position = SidewalkPoint(tile, side, alongStreet);
 
-            var prefab = PickPrefab();
+            var prefab = PickPrefab(out var groupLabel);
             if (!prefab)
                 return;
 
@@ -182,7 +185,9 @@ namespace LivingCity.Entities
                 // The agent subsumes PedestrianIdler: idling is one of its activities, with
                 // its odds owned by CityConfig rather than a per-spawn fraction here.
                 var agent = person.AddComponent<PedestrianAgent>();
-                agent.Configure(config, rng.Next());
+                // Same single rng.Next() as before the identity existed - the pedestrian
+                // stream must not shift under an old seed.
+                agent.Configure(config, rng.Next(), groupLabel, prefab.name);
             }
             else if (behaviour && rng.NextDouble() < idlerFraction)
             {

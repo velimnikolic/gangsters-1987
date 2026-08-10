@@ -29,7 +29,7 @@ namespace LivingCity.Gameplay
         /// allocates nothing beyond its buttons.
         /// </summary>
         public static void GetAvailable(
-            PlayerMafioso actor, InteractableNpc target, List<IContextAction> buffer)
+            PlayerMafioso actor, IContextTarget target, List<IContextAction> buffer)
         {
             buffer.Clear();
             foreach (var action in actions)

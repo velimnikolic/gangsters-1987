@@ -46,6 +46,11 @@ namespace LivingCity.Tests
             CrowdWeightsAreTheSharesTheyClaim(failures);
             CrowdSkipsGroupsThatCannotDeal(failures);
             CrowdIsDeterministicForASeed(failures);
+            PedestrianIntentionCoversEveryActivity(failures);
+            IdentityIsDeterministicAndTotal(failures);
+            TitleFitsThePopup(failures);
+            SchedulePhasesTileTheDay(failures);
+            ScheduleOffsetsAreBoundedAndDeterministic(failures);
             RoadCrossSectionsClassifyAsMeasured(failures);
             RoadTileNamesRoundTrip(failures);
             CurveBandCoversAsphaltAndSparesPavement(failures);
@@ -175,6 +180,246 @@ namespace LivingCity.Tests
                     failures.Add("Crowd rolls diverge between two pickers built on the same seed.");
                     break;
                 }
+        }
+
+        // ------------------------------------------------------------------ identity
+
+        /// <summary>Char budgets against the 280px NoWrap popup: the line's 44 is the
+        /// business overlay's measured rule at 13px; the title runs 16px bold, so
+        /// proportionally less. Restated here rather than imported - the table rule.</summary>
+        const int TitleBudget = 35;
+        const int LineBudget = 44;
+
+        /// <summary>
+        /// Every activity a civilian can be in has a sentence and a colour - the police
+        /// overlay's exhaustiveness guarantee, extended to the crowd. Nothing at runtime
+        /// complains about a gap; it ships as a white diamond over an empty popup.
+        /// </summary>
+        static void PedestrianIntentionCoversEveryActivity(List<string> failures)
+        {
+            foreach (PedestrianAgent.Activity activity in
+                     System.Enum.GetValues(typeof(PedestrianAgent.Activity)))
+            {
+                if (UI.PedestrianIntention.ActivityColor(activity) == Color.white)
+                    failures.Add($"PedestrianIntention: activity {activity} has no colour.");
+
+                for (var errand = 0; errand < UI.PedestrianIntention.Errands.Count; errand++)
+                {
+                    var line = UI.PedestrianIntention.Line(activity, errand);
+                    if (string.IsNullOrEmpty(line))
+                        failures.Add($"PedestrianIntention: activity {activity} errand " +
+                                     $"{errand} has no sentence.");
+                    else if (line.Length > LineBudget)
+                        failures.Add($"PedestrianIntention: '{line}' overflows the popup " +
+                                     $"({line.Length} > {LineBudget}).");
+                }
+            }
+
+            // Out-of-range errand indices arrive whenever the hash mask and the table
+            // length are edited apart - they must clamp into the table, never throw.
+            if (string.IsNullOrEmpty(
+                    UI.PedestrianIntention.Line(PedestrianAgent.Activity.Shopping, -3)))
+                failures.Add("PedestrianIntention: a negative errand index broke the shop line.");
+            if (string.IsNullOrEmpty(
+                    UI.PedestrianIntention.Line(PedestrianAgent.Activity.Shopping, 99)))
+                failures.Add("PedestrianIntention: an oversized errand index broke the shop line.");
+        }
+
+        /// <summary>
+        /// Identity is a pure function of (group, prefab, seed): same inputs, same person,
+        /// and every input the crowd can produce maps to a real name and a real job. The
+        /// pins matter most - the judge's robe must outrank the group roll - and so does
+        /// the woman/man substring trap: every "woman" contains "man".
+        /// </summary>
+        static void IdentityIsDeterministicAndTotal(List<string> failures)
+        {
+            foreach (var (label, _, _) in Crowd)
+                for (var seed = 0; seed < 100; seed++)
+                    foreach (var female in new[] { false, true })
+                    {
+                        var occupation = PedestrianIdentity.Occupation(label, null, female, seed);
+                        if (string.IsNullOrEmpty(PedestrianIdentity.OccupationLabel(occupation)))
+                            failures.Add($"Identity: group {label} seed {seed} rolled " +
+                                         $"{occupation}, which has no label.");
+                    }
+
+            foreach (PedestrianOccupation occupation in
+                     System.Enum.GetValues(typeof(PedestrianOccupation)))
+                if (string.IsNullOrEmpty(PedestrianIdentity.OccupationLabel(occupation)))
+                    failures.Add($"Identity: occupation {occupation} has no label.");
+
+            // The flat-list fallback hands a null group; it must still be somebody.
+            if (string.IsNullOrEmpty(PedestrianIdentity.OccupationLabel(
+                    PedestrianIdentity.Occupation(null, null, false, 7))))
+                failures.Add("Identity: the null-group fallback produced no occupation.");
+
+            foreach (var (prefab, expected) in new[]
+                     {
+                         ("man_judge_AI", PedestrianOccupation.Judge),
+                         ("man_butler_AI", PedestrianOccupation.Butler),
+                         ("man-mafia_AI", PedestrianOccupation.Wiseguy),
+                         ("man_homeless_AI", PedestrianOccupation.Drifter),
+                         ("woman_homeless_AI", PedestrianOccupation.Drifter),
+                         ("woman_punk_AI", PedestrianOccupation.Punk),
+                         ("man-soldier_AI", PedestrianOccupation.Veteran),
+                         ("man-farm_AI", PedestrianOccupation.Farmhand),
+                         ("woman-farm_AI", PedestrianOccupation.Farmhand),
+                         ("man-golf_AI", PedestrianOccupation.Salesman),
+                         ("man-construction-worker_AI", PedestrianOccupation.Bricklayer),
+                         ("boy_casual_cap_AI", PedestrianOccupation.Schoolkid),
+                         ("girl-large_AI", PedestrianOccupation.Schoolkid),
+                     })
+                if (PedestrianIdentity.Occupation("Suits", prefab, false, 3) != expected)
+                    failures.Add($"Identity: {prefab} is not pinned to {expected}.");
+
+            foreach (var (prefab, female) in new[]
+                     {
+                         ("woman_business_AI", true), ("woman-ginger_AI", true),
+                         ("girl_coat_winter_AI", true),
+                         ("man-casual_AI", false), ("boy-large_AI", false),
+                         ((string)null, false),
+                     })
+                if (PedestrianIdentity.IsFemale(prefab) != female)
+                    failures.Add($"Identity: IsFemale('{prefab}') is not {female}.");
+
+            for (var seed = -5; seed < 50; seed++)
+            {
+                var occupation = PedestrianIdentity.Occupation("Workers", "man-worker_AI", false, seed);
+                var once = PedestrianIdentity.ComposeTitle(seed, seed % 2 == 0, occupation);
+                var again = PedestrianIdentity.ComposeTitle(seed, seed % 2 == 0, occupation);
+                if (once != again)
+                    failures.Add($"Identity: seed {seed} composed two different titles.");
+                if (string.IsNullOrEmpty(once) || once.StartsWith(" ") || once.EndsWith(" "))
+                    failures.Add($"Identity: seed {seed} composed a malformed title '{once}'.");
+            }
+        }
+
+        /// <summary>
+        /// The widest name the tables can deal has to fit the popup - walked over the REAL
+        /// tables, so a name added there that breaks the budget fails here instead of on
+        /// screen. Nine letters per name is the cap ("Marcheselli" broke the business one).
+        /// </summary>
+        static void TitleFitsThePopup(List<string> failures)
+        {
+            var maxFirst = 0;
+            foreach (var table in new[]
+                     { PedestrianIdentity.AllMaleNames, PedestrianIdentity.AllFemaleNames })
+                foreach (var name in table)
+                {
+                    if (string.IsNullOrEmpty(name))
+                        failures.Add("Identity: an empty first name in the tables.");
+                    else
+                        maxFirst = Mathf.Max(maxFirst, name.Length);
+                }
+
+            var maxSurname = 0;
+            foreach (var name in PedestrianIdentity.AllSurnames)
+            {
+                if (string.IsNullOrEmpty(name))
+                    failures.Add("Identity: an empty surname in the tables.");
+                else
+                    maxSurname = Mathf.Max(maxSurname, name.Length);
+            }
+
+            var maxJob = 0;
+            foreach (PedestrianOccupation occupation in
+                     System.Enum.GetValues(typeof(PedestrianOccupation)))
+                maxJob = Mathf.Max(maxJob, PedestrianIdentity.OccupationLabel(occupation).Length);
+
+            // "First Last — Job", at its widest.
+            var widest = maxFirst + 1 + maxSurname + 3 + maxJob;
+            if (widest > TitleBudget)
+                failures.Add($"Identity: the widest possible title runs {widest} chars " +
+                             $"(first {maxFirst}, surname {maxSurname}, job {maxJob}), " +
+                             $"over the {TitleBudget} budget.");
+        }
+
+        // ------------------------------------------------------------------ schedule
+
+        /// <summary>The shipped thresholds, restated (the table rule).</summary>
+        const float WorkStart = 8.5f, WorkEnd = 17.5f, NightHome = 22.5f;
+
+        /// <summary>
+        /// Every hour of the day maps to exactly one phase, the phases appear in the
+        /// day's canonical order, and a non-worker never commutes or clocks in. The whole
+        /// routine layer is edge-triggered off this map, so a gap or an overlap here is a
+        /// walker who never leaves home - or never arrives.
+        /// </summary>
+        static void SchedulePhasesTileTheDay(List<string> failures)
+        {
+            foreach (var offset in new[] { -0.75f, -0.3f, 0f, 0.42f, 0.75f })
+            {
+                var seenCommute = false;
+
+                for (var hour = 0f; hour < 24f; hour += 1f / 60f)
+                {
+                    var worker = PedestrianSchedule.PhaseFor(
+                        hour, offset, true, WorkStart, WorkEnd, NightHome);
+                    var idler = PedestrianSchedule.PhaseFor(
+                        hour, offset, false, WorkStart, WorkEnd, NightHome);
+
+                    if (idler != DayPhase.AtHomeNight && idler != DayPhase.EveningOut)
+                        failures.Add($"Schedule: a non-worker at {hour:F2}+{offset:F2} is " +
+                                     $"{idler} - they have nowhere to be.");
+
+                    // The worker's arc, keyed off the personal hour so the offset cannot
+                    // fake a violation at the midnight seam.
+                    var p = Mathf.Repeat(hour - offset, 24f);
+                    var expected =
+                        p >= NightHome || p < WorkStart ? DayPhase.AtHomeNight
+                        : p < WorkStart + PedestrianSchedule.CommuteWindowHours ? DayPhase.MorningCommute
+                        : p < WorkEnd ? DayPhase.WorkDay
+                        : p < WorkEnd + PedestrianSchedule.CommuteWindowHours ? DayPhase.EveningCommute
+                        : DayPhase.EveningOut;
+
+                    if (worker != expected)
+                    {
+                        failures.Add($"Schedule: worker at {hour:F2}+{offset:F2} is {worker}, " +
+                                     $"the arc says {expected}.");
+                        return;
+                    }
+
+                    seenCommute |= worker == DayPhase.MorningCommute;
+                }
+
+                if (!seenCommute)
+                    failures.Add($"Schedule: offset {offset:F2} never opens a morning window.");
+            }
+        }
+
+        /// <summary>Same seed, same shift; every shift inside the band; and a thousand
+        /// seeds spread across it rather than piling on one edge - a degenerate hash
+        /// would put the whole city on the same personal clock and the stagger layer
+        /// would silently do nothing.</summary>
+        static void ScheduleOffsetsAreBoundedAndDeterministic(List<string> failures)
+        {
+            const float Band = 1.5f;
+
+            var min = float.PositiveInfinity;
+            var max = float.NegativeInfinity;
+            for (var seed = -500; seed < 500; seed++)
+            {
+                var offset = PedestrianSchedule.OffsetHours(seed, Band);
+                if (offset != PedestrianSchedule.OffsetHours(seed, Band))
+                {
+                    failures.Add($"Schedule: seed {seed} drew two different offsets.");
+                    return;
+                }
+
+                if (offset < -Band * 0.5f - 1e-4f || offset > Band * 0.5f + 1e-4f)
+                    failures.Add($"Schedule: seed {seed} offset {offset:F3} is outside " +
+                                 $"±{Band * 0.5f:F2}.");
+
+                min = Mathf.Min(min, offset);
+                max = Mathf.Max(max, offset);
+            }
+
+            if (max - min < Band * 0.5f)
+                failures.Add($"Schedule: a thousand seeds span only {max - min:F3}h of the " +
+                             $"{Band:F1}h band - the stagger is degenerate.");
+
+            if (PedestrianSchedule.OffsetHours(123, 0f) != 0f)
+                failures.Add("Schedule: a zero band still shifts somebody.");
         }
 
         /// <summary>

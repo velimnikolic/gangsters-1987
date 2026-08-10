@@ -16,7 +16,7 @@ MonoBehaviour:
   gridHeight: 7
   minArterialSpacing: 2
   maxArterialSpacing: 4
-  seed: 1623723687
+  seed: 1189049744
   blockFillRatio: 1
   buildingTintChance: 1
   commercialTintChance: 1
@@ -58,6 +58,10 @@ MonoBehaviour:
   buildingVisitChance: 0.22
   buildingStayRange: {x: 20, y: 120}
   buildingSwapChance: 0.6
+  workMorningHour: 8.5
+  workEveningHour: 17.5
+  nightHomeHour: 22.5
+  commuteStaggerHours: 1.5
   policeCarCount: 4
   policeOfficerCount: 10
   policeCarPatrolRoutes: {x: 2, y: 4}

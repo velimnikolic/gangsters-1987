@@ -786,6 +786,24 @@ namespace LivingCity.Data
                  "from BlockBuilder's shared Buildings stream and would re-lay the whole city.")]
         public GameObject[] paintableVehicles = Array.Empty<GameObject>();
 
+        [Tooltip("Prefab NAMES the ShuffleBags deal as normal but RareVehicleFilter then mostly " +
+                 "swaps for an ordinary body from the same group - car-caravan-small, whose bag " +
+                 "seat otherwise guarantees it once per Everyday cycle (~12% of placed cars). " +
+                 "Names rather than prefab references so the list can never change a bag's " +
+                 "length: the bags draw from BlockBuilder's shared Buildings stream and resizing " +
+                 "one re-lays the whole city - which is also why the camper cannot simply be " +
+                 "removed from parkedCarGroups.")]
+        public string[] rareVehicleNames = { "car-caravan-small" };
+
+        [Tooltip("Chance a rare deal is KEPT rather than substituted. 0.1 turns the camper's " +
+                 "guaranteed bag seat into roughly one parked camper in eighty. The roll runs " +
+                 "on its own stream (SeedOffsets.RareVehicles), so retuning this cannot move a " +
+                 "building. Field initialisers matter here: an older PrefabDatabase.asset that " +
+                 "predates these two fields deserialises to these defaults, no bootstrap re-run " +
+                 "needed.")]
+        [Range(0f, 1f)]
+        public float rareVehicleKeepChance = 0.1f;
+
         [Tooltip("Body colours for the cars in paintableVehicles: variants of atlas-LPEC whose " +
                  "_BaseColor multiplies the atlas. Unlike buildingTints these may run at full " +
                  "strength, because a car's paint swatch is near-white where a facade's is " +

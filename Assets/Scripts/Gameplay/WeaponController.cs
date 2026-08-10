@@ -38,6 +38,14 @@ namespace LivingCity.Gameplay
         WeaponSocket socket;
         Light flash;
 
+        /// <summary>The player's bought-weapon numbers; stays null on every police rig,
+        /// which is what keeps a purchase from arming the whole force. Resolved lazily,
+        /// not in Awake - GameplayBootstrap AddComponents the arsenal after this component
+        /// already ran its Awake.</summary>
+        PlayerArsenal arsenal;
+
+        PlayerArsenal Arsenal => arsenal ? arsenal : arsenal = GetComponent<PlayerArsenal>();
+
         CombatConfig Combat => GameplayRuntime.Combat;
 
         void Awake()
@@ -106,6 +114,7 @@ namespace LivingCity.Gameplay
         IEnumerator ShotRoutine(InteractableNpc target)
         {
             var combat = Combat;
+            var arms = Arsenal;
 
             StartCoroutine(FlashOnce(combat));
 
@@ -116,7 +125,11 @@ namespace LivingCity.Gameplay
 
             // The shot is re-judged at impact time: still roughly in range, still a clear
             // line. A target that made a corner during the delay is missed, not homed onto.
-            var engageRange = (combat ? combat.engageRange : 4f) + ImpactRangeSlack;
+            // The range comes through the arsenal when there is one - a longer-reaching
+            // weapon must be re-judged at ITS reach, or every shot fired past the global
+            // range would be silently voided here.
+            var engageRange = (arms ? arms.EngageRange(combat)
+                                    : combat ? combat.engageRange : 4f) + ImpactRangeSlack;
             var flat = PedestrianSteering.Flat(target.transform.position - transform.position);
             if (flat.sqrMagnitude > engageRange * engageRange || !HasLineOfSight(target))
                 yield break;
@@ -125,7 +138,8 @@ namespace LivingCity.Gameplay
             if (!health)
                 yield break;
 
-            health.TakeDamage(combat ? combat.damagePerShot : 50f);
+            health.TakeDamage(arms ? arms.DamagePerShot(combat)
+                                   : combat ? combat.damagePerShot : 50f);
 
             if (target.IsDead)
                 CrimeFeed.Report(new CrimeEvent(

@@ -100,5 +100,20 @@ namespace LivingCity.Generation
         /// when the roll lands on an edge block (see ZonePlanner and PortLayout).
         /// </summary>
         Port,
+
+        /// <summary>
+        /// The car dealership - building-carwash standing in for the showroom, the pack having
+        /// no dealership of its own. The piece sat unreferenced as "too modern for the 1920s";
+        /// the setting is the 1980s now, and it is the pack's one glass-fronted commercial
+        /// pavilion. The bank's shape exactly - a single-cell block, one landmark, masonry
+        /// perimeter - but recessed behind a forecourt bay that FillStalls fills WALL TO WALL
+        /// with stock, because a dealership's frontage IS its inventory and a gap in the rank
+        /// reads as a business failing.
+        ///
+        /// A ceiling, never a promise: at most one per city, and deliberately NOT in
+        /// SingleLandmarkZones for the bank's reason - a showroom must not be able to cost
+        /// the city its hospital.
+        /// </summary>
+        CarSalon,
     }
 }

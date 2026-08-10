@@ -32,6 +32,7 @@ namespace LivingCity.EditorTools
         const string PlayerConfigPath = GameplayConfigDir + "/PlayerConfig.asset";
         const string WantedConfigPath = GameplayConfigDir + "/WantedConfig.asset";
         const string PoliceConfigPath = GameplayConfigDir + "/PoliceConfig.asset";
+        const string WeaponCatalogPath = GameplayConfigDir + "/WeaponCatalog.asset";
         const string PlayerPrefabPath = GameplayConfigDir + "/PlayerMafioso.prefab";
         const string PrefabDatabasePath = "Assets/Configs/PrefabDatabase.asset";
 
@@ -49,6 +50,8 @@ namespace LivingCity.EditorTools
             GetOrCreate<PlayerConfig>(PlayerConfigPath);
             GetOrCreate<WantedConfig>(WantedConfigPath);
             GetOrCreate<PoliceConfig>(PoliceConfigPath);
+            // Seeded by its own field initializer - the revolver and the shop stock.
+            GetOrCreate<WeaponCatalog>(WeaponCatalogPath);
 
             AuthorPlayerPrefab();
 

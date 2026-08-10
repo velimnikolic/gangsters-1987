@@ -11,9 +11,9 @@ namespace LivingCity.Gameplay
 
         public int SortOrder => int.MaxValue;
 
-        public bool IsAvailable(PlayerMafioso actor, InteractableNpc target) => true;
+        public bool IsAvailable(PlayerMafioso actor, IContextTarget target) => true;
 
-        public void Execute(PlayerMafioso actor, InteractableNpc target)
+        public void Execute(PlayerMafioso actor, IContextTarget target)
         {
             // Deliberately nothing.
         }

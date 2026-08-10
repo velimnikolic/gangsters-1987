@@ -90,6 +90,13 @@ namespace LivingCity.Generation
         /// </summary>
         const int SchoolForecourtMaxCars = 1;
 
+        /// <summary>
+        /// The dealership's showroom stand-in. A name test like the station's and the bank's,
+        /// but a local const rather than an Entities marker: the forecourt is static stock,
+        /// nothing at runtime ever needs to find it.
+        /// </summary>
+        const string SalonPrefabName = "building-carwash";
+
         /// <summary>Pavement between the forecourt bays and the recessed landmark's door.
         /// Public for PoliceDirector, which reconstructs the forecourt band's depth to aim
         /// its kerb-point search past it.</summary>
@@ -205,7 +212,14 @@ namespace LivingCity.Generation
 
             // Every parked vehicle in the city now comes from here - kerbside parking is gone, so
             // PrefabDatabase.parkedCarGroups feeds marked bays only, off this block's own stream.
-            var parking = new VehiclePicker(prefabs.parkedCarGroups, rng);
+            //
+            // The filter that keeps the camper rare, built ONCE and handed to every picker in the
+            // build for the reason the tinter below is: made per lot or per landmark it would
+            // restart its stream and deal every forecourt the same first roll. It owns that
+            // stream (SeedOffsets.RareVehicles) rather than drawing from `rng` for the same
+            // reason the tinter owns VehicleTints - see the comment on it.
+            var rare = new RareVehicleFilter(prefabs, config);
+            var parking = new VehiclePicker(prefabs.parkedCarGroups, rng, rare);
 
             // The paint on those vehicles. Built here, once, and carried alongside the picker to
             // every bay in the city so that one stream colours them all - a tinter made per lot
@@ -512,7 +526,7 @@ namespace LivingCity.Generation
             // A zone may keep its own vehicles - the police car outside the police station is
             // what identifies the building at a glance. Falls back to the city-wide list.
             if (palette.HasOwnParkedCars)
-                parking = new VehiclePicker(palette.parkedCars, rng);
+                parking = new VehiclePicker(palette.parkedCars, rng, parking.Rare);
 
             // Block-scoped rather than per-lot so the scatter pass can see every building, and
             // so two lots either side of an alley cannot overlap each other's corners.
@@ -952,7 +966,7 @@ namespace LivingCity.Generation
                 if (sides[i].isStreet && end > startInset[i])
                     runStart[i] = PlaceLandmark(state, sides[i].origin, sides[i].along, sides[i].outward,
                                                 startInset[i], end, config.partyWallGap, palette,
-                                                tinter, prefabs,
+                                                parking.Rare, tinter, prefabs,
                                                 spawn, parent, rng, occupied, markings, placed, tints);
 
                 // Spent whatever happened. The reserved run is a proxy measured before the corner
@@ -975,7 +989,8 @@ namespace LivingCity.Generation
                 // reserved front lands on another street run rather than in the alley.
                 if (side.isStreet && state.Landmark)
                     start = PlaceLandmark(state, side.origin, side.along, side.outward,
-                                          start, end, config.partyWallGap, palette, tinter, prefabs,
+                                          start, end, config.partyWallGap, palette, parking.Rare,
+                                          tinter, prefabs,
                                           spawn, parent, rng, occupied, markings, placed, tints);
 
                 // Placed after the landmark has claimed its head, in the middle half of what
@@ -1068,6 +1083,7 @@ namespace LivingCity.Generation
             float end,
             float partyWallGap,
             PrefabDatabase.ZonePalette palette,
+            RareVehicleFilter rare,
             VehicleTinter tinter,
             PrefabDatabase prefabs,
             SpawnPrefab spawn,
@@ -1160,6 +1176,7 @@ namespace LivingCity.Generation
                 // reserved the survey no longer answers the same question.
                 var isStation = landmark.name.StartsWith(Entities.PoliceStation.PrefabName);
                 var isBank = landmark.name.StartsWith(Entities.BankForecourt.PrefabName);
+                var isSalon = landmark.name.StartsWith(SalonPrefabName);
 
                 // The school gives the first stretch of its yard to the bus, which needs a berth
                 // no row of car bays can hold - see ParkingLayout.BusStallLength. The car bays
@@ -1224,14 +1241,18 @@ namespace LivingCity.Generation
                 // forecourt is the patrol fleet's parking, and a baked car would be a car the
                 // real fleet can never move. The school keeps ONE bake rather than the bank's
                 // three, because four bays minus the bus's berth is all it has and the parents
-                // arriving through the day are what should be filling them.
+                // arriving through the day are what should be filling them. The salon is the
+                // opposite extreme - every bay filled and no empty-bay roll, because its
+                // forecourt is the showroom floor.
                 var maxCars = isStation ? 0
                             : isSchool ? SchoolForecourtMaxCars
+                            : isSalon ? int.MaxValue
                             : LandmarkForecourtMaxCars;
 
                 var baked = isBank || isSchool ? new HashSet<int>() : null;
-                FillStalls(layout, new VehiclePicker(palette.landmarkCars, rng), tinter, spawn,
-                           parent, rng, occupied, placed, maxCars, baked);
+                FillStalls(layout, new VehiclePicker(palette.landmarkCars, rng, rare), tinter, spawn,
+                           parent, rng, occupied, placed, maxCars, baked,
+                           emptyChance: isSalon ? 0f : EmptyBayChance);
 
                 if (isBank || isSchool)
                 {
@@ -1996,7 +2017,8 @@ namespace LivingCity.Generation
             List<Bounds> occupied,
             List<GameObject> placed,
             int maxCars = int.MaxValue,
-            HashSet<int> baked = null)
+            HashSet<int> baked = null,
+            float emptyChance = EmptyBayChance)
         {
             var cars = 0;
             for (var index = 0; index < layout.Stalls.Count; index++)
@@ -2032,7 +2054,9 @@ namespace LivingCity.Generation
                 if (cars >= maxCars)
                     continue;
 
-                if (rng.NextDouble() < EmptyBayChance)
+                // The roll is drawn even when emptyChance is 0 (the salon), so the rng stream
+                // consumes the same count per stall on every branch.
+                if (rng.NextDouble() < emptyChance)
                     continue;
 
                 var prefab = parking.Next(
