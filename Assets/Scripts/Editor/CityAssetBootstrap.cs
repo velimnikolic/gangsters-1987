@@ -4,10 +4,10 @@ using System.Linq;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
-// Aliased rather than a whole `using PolyPerfect.City`: that namespace has a Path type of its
+// Aliased rather than a whole `using LivingCity.City`: that namespace has a Path type of its
 // own, which collides with System.IO.Path in LoadFolder.
-using HumanBehavior = PolyPerfect.City.HumanBehavior;
-using PathFinding = PolyPerfect.City.PathFinding;
+using HumanBehavior = LivingCity.City.HumanBehavior;
+using PathFinding = LivingCity.City.PathFinding;
 using LivingCity.Data;
 using LivingCity.Entities;
 using LivingCity.Generation;

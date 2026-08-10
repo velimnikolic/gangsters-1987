@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace PolyPerfect.City
+namespace LivingCity.City
 {
     [RequireComponent(typeof(PathFinding)), RequireComponent(typeof(Rigidbody))]
     public class CarBehavior : MonoBehaviour

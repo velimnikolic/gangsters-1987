@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
 using UnityEditor;
 using UnityEditorInternal;
-namespace PolyPerfect.City
+namespace LivingCity.City
 {
     [CustomEditor(typeof(CarBehavior))]
     [CanEditMultipleObjects]

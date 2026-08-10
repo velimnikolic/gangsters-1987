@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-namespace PolyPerfect.City
+namespace LivingCity.City
 {
     [RequireComponent(typeof(PathFinding))]
     public class TrainController : MonoBehaviour

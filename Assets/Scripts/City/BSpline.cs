@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace PolyPerfect.City
+namespace LivingCity.City
 {
     [System.Serializable]
     public class BSpline

@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace PolyPerfect.City
+namespace LivingCity.City
 {
     [Serializable]
     public class BinaryHeap

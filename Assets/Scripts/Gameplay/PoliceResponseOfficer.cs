@@ -1,6 +1,6 @@
 using System.Collections;
 using UnityEngine;
-using PolyPerfect.City;
+using LivingCity.City;
 using LivingCity.Entities;
 
 namespace LivingCity.Gameplay

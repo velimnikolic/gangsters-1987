@@ -5,7 +5,7 @@ using UnityEngine;
 using UnityEditor;
 #endif
 
-namespace PolyPerfect.City
+namespace LivingCity.City
 {
 
     public class PathFinding : MonoBehaviour

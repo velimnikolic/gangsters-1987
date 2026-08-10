@@ -202,7 +202,7 @@ namespace LivingCity.Generation
                 if (!instance)
                     continue;
 
-                var tile = instance.GetComponent<PolyPerfect.City.Tile>();
+                var tile = instance.GetComponent<LivingCity.City.Tile>();
                 if (tile)
                     tile.UpdateNeighbors();
             }

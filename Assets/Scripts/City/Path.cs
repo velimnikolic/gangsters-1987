@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEditor;
 using UnityEditorInternal;
 #endif
-namespace PolyPerfect
+namespace LivingCity
 {
     namespace City
     {

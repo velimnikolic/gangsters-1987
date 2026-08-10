@@ -335,9 +335,9 @@ namespace LivingCity.Tests
 
             for (var held = 0f; held <= 60f; held += 0.1f)
             {
-                var stillHeld = !PolyPerfect.City.CarBehavior.CrosswalkHoldExpired(true, held);
+                var stillHeld = !LivingCity.City.CarBehavior.CrosswalkHoldExpired(true, held);
 
-                if (held > PolyPerfect.City.CarBehavior.CrosswalkPatience && stillHeld)
+                if (held > LivingCity.City.CarBehavior.CrosswalkPatience && stillHeld)
                 {
                     failures.Add($"Crosswalk hold: still holding after {held}s of a crossing " +
                                  "that never clears.");
@@ -352,8 +352,8 @@ namespace LivingCity.Tests
                 }
                 wasHeld = stillHeld;
 
-                var clearedHold = !PolyPerfect.City.CarBehavior.CrosswalkHoldExpired(false, held);
-                if (held > PolyPerfect.City.CarBehavior.HoldWatchdog && clearedHold)
+                var clearedHold = !LivingCity.City.CarBehavior.CrosswalkHoldExpired(false, held);
+                if (held > LivingCity.City.CarBehavior.HoldWatchdog && clearedHold)
                 {
                     failures.Add($"Crosswalk hold: a crossing reporting nobody still held a " +
                                  $"car at {held}s.");
@@ -362,7 +362,7 @@ namespace LivingCity.Tests
             }
 
             // And the yield is real: a car must not drive off the instant it arrives.
-            if (PolyPerfect.City.CarBehavior.CrosswalkHoldExpired(true, 0f))
+            if (LivingCity.City.CarBehavior.CrosswalkHoldExpired(true, 0f))
                 failures.Add("Crosswalk hold: a car released immediately, so nobody is yielded to.");
         }
 
@@ -398,7 +398,7 @@ namespace LivingCity.Tests
                 wasCrossing = crossing;
             }
 
-            if (Crosswalk.StaleAfter >= PolyPerfect.City.CarBehavior.CrosswalkPatience)
+            if (Crosswalk.StaleAfter >= LivingCity.City.CarBehavior.CrosswalkPatience)
                 failures.Add("Crossing: StaleAfter does not beat the car's patience, so the cap " +
                              "is doing the work the occupancy rule is supposed to do.");
         }

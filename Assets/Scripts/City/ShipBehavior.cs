@@ -2,10 +2,9 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-
-namespace PolyPerfect.City
+namespace LivingCity.City
 {
-    public class PlaneBehavior : MonoBehaviour
+    public class ShipBehavior : MonoBehaviour
     {
 
         public Path trajectory;
@@ -14,14 +13,12 @@ namespace PolyPerfect.City
         private float currentMaxSpeed;
         [HideInInspector]
         public float speed;
-        [Range(0f, 1f)]
         public float acceleration;
-        [Range(0f, 5f)]
-        public float brakePower;
         int activepoint = 0;
         private Vector3 targetDrivePoint;
         private bool isMoving;
-        
+        [Range(0f,40f)]
+        public float shipTipping = 0;
 
         // Start is called before the first frame update
         void Start()
@@ -33,22 +30,21 @@ namespace PolyPerfect.City
 
         private void FixedUpdate()
         {
-            if (isMoving)
+            if(isMoving)
             {
-                if (Vector3.Dot(targetDrivePoint - transform.position, transform.forward) < 0 && Vector3.Distance(targetDrivePoint, transform.position) < 20)
+               /* float realT = trajectory.spline.GetTime(distance);
+                transform.position = trajectory.spline.GetPoint(realT);
+                transform.rotation = Quaternion.LookRotation(trajectory.spline.GetNormal(realT));
+                distance += Time.fixedDeltaTime * maxspeed;
+                if(distance >= trajectory.spline.splineLength)
+                {
+                    distance = 0;
+                }*/
+                if (Vector3.Dot(targetDrivePoint - transform.position, transform.forward) <= 0)
                 {
                     MoveToNextPoint();
                 }
                 Vector3 direction = targetDrivePoint - transform.position;
-
-                if(transform.position.y < 150 && activepoint > 5 && transform.position.y > 20)
-                {
-                    currentMaxSpeed = maxspeed * (transform.position.y) * 0.0075f;
-                }
-                else if(activepoint == trajectory.pathPositions.Count-1)
-                {
-                    currentMaxSpeed = 50;
-                }
 
                 if (speed < currentMaxSpeed)
                 {
@@ -56,31 +52,19 @@ namespace PolyPerfect.City
                 }
                 else
                 {
-                    speed = Mathf.Lerp(speed, currentMaxSpeed, brakePower * Time.deltaTime);
+                    speed = Mathf.Lerp(speed, currentMaxSpeed, 10 * Time.deltaTime);
                 }
 
+                
 
-
-               // if (direction != Vector3.zero)
-               // {
-                    
-                    direction = direction.normalized;
-                float angle = Vector3.SignedAngle(transform.forward, direction, transform.up);
-                    //direction.y = speed / maxspeed * shipTipping;
-                    if (activepoint == 0)
-                    {
-                        transform.rotation = Quaternion.LookRotation(direction, Vector3.up);
-                    }
-                    else
-                        transform.rotation = Quaternion.RotateTowards(transform.rotation, Quaternion.LookRotation(direction, Quaternion.AngleAxis(-(angle > 10 ? angle : 0f), transform.forward) * Vector3.up), 1.75f);
-                if(transform.localRotation.eulerAngles.x < 180)
+                if (direction != Vector3.zero)
                 {
-                    transform.GetChild(0).localRotation = Quaternion.Euler(-transform.localRotation.eulerAngles.x*1.5f,0f,0f);
+                    direction = direction.normalized;
+                    direction.y = speed/maxspeed * shipTipping*0.015f;
+                    transform.rotation = Quaternion.RotateTowards(transform.rotation, Quaternion.LookRotation(direction, Vector3.up),1f);
                 }
-                else
-                    transform.GetChild(0).localRotation = Quaternion.identity;
-                //  }
                 direction = transform.forward;
+                direction.y = 0;
                 Vector3 newPosition = transform.position + (direction * speed * KMHTOMS * Time.deltaTime);
                 transform.position = newPosition;
             }
@@ -95,7 +79,6 @@ namespace PolyPerfect.City
             if (activepoint == trajectory.pathPositions.Count - 1)
             {
                 activepoint = 0;
-                currentMaxSpeed = maxspeed;
                 speed = 0;
             }
             else

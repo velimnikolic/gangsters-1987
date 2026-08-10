@@ -1,5 +1,5 @@
 using UnityEngine;
-using PolyPerfect.City;
+using LivingCity.City;
 
 namespace LivingCity.Generation
 {

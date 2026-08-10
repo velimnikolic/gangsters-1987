@@ -1,4 +1,4 @@
-﻿namespace PolyPerfect.City
+﻿namespace LivingCity.City
 {
     [System.Serializable]
     public class PathNode

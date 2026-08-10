@@ -364,10 +364,10 @@ namespace LivingCity.CameraRig
                 return;
             }
 
-            if (PolyPerfect.City.Tile.Tiles.Count > 0)
+            if (LivingCity.City.Tile.Tiles.Count > 0)
             {
-                var bounds = new Bounds(PolyPerfect.City.Tile.Tiles[0].transform.position, Vector3.zero);
-                foreach (var tile in PolyPerfect.City.Tile.Tiles)
+                var bounds = new Bounds(LivingCity.City.Tile.Tiles[0].transform.position, Vector3.zero);
+                foreach (var tile in LivingCity.City.Tile.Tiles)
                     if (tile)
                         bounds.Encapsulate(tile.transform.position);
 
