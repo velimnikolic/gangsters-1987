@@ -29,21 +29,21 @@ namespace LivingCity.Gangs
         /// <summary>Indexed by gang id.</summary>
         public static readonly string[] SoldierModels =
         {
-            "man-mafia_AI",        // the classic crew in suits and fedoras
-            "man_business_AI",     // Falcone - grey-suit corporate mob
-            "man_coat_winter_AI",  // Santoro - long-coat muscle
-            "man_punk_AI",         // Lucchese - a 1980s street crew gone made
-            "man-shirt_AI",        // DeMarco - open-collar working outfit
+            "SM_Chr_Gang_Male_01_AI",      // The Outfit - the classic crew
+            "SM_Chr_Gang_Male_02_AI",      // Falcone
+            "SM_Chr_Goon_01_AI",           // Santoro - heavy muscle
+            "SM_Chr_Criminal_Male_01_AI",  // Lucchese - street crew
+            "SM_Gen_Chr_Street_Male_02_AI",// DeMarco - working outfit
         };
 
         /// <summary>Indexed by gang id.</summary>
         public static readonly string[] LieutenantModels =
         {
-            "man-tie_AI",
-            "man-mafia_AI",
-            "man_business_AI",
-            "man_coat_winter_AI",
-            "man-casual_AI",
+            "SM_Chr_Detective_Male_01_AI",
+            "SM_Chr_Gang_Male_01_AI",
+            "SM_Gen_Chr_Business_Male_01_AI",
+            "SM_Chr_Goon_01_AI",
+            "SM_Chr_City_Male_01_AI",
         };
     }
 }

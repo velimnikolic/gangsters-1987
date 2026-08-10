@@ -173,26 +173,56 @@ namespace LivingCity.EditorTools
         /// </summary>
         static readonly string[] AnimatedPeopleWalkers =
         {
-            "man_business", "woman_business",
-            "man_coat_winter", "woman_coat_winter",
-            "man_butler", "man_judge",
-            "man_punk", "woman_punk",
-            "man_homeless", "woman_homeless",
-
-            // The children. Epic City has exactly one child left once the beach models are
-            // gone, and this pack has six on a shared rig - so unlike every name above, these
-            // are here to fix a HOLE rather than to widen a silhouette range. They carry both
-            // the crowd's Children group and the school run's roster; the school run is what
-            // made the hole worth fixing, because a bus full of the same boy is worse than the
-            // pavement version of the same problem.
+            // Only the children survive the Synty swap: no POLYGON pack in the project ships
+            // a child, so these six stay on the Animated People rigs until a kids pack is
+            // bought (PENDING SYNTY PACKS). Style clash accepted by the user. Everything
+            // adult converts from the Synty character prefabs below instead.
             "boy_casual_cap", "boy_coat_winter", "boy-large",
             "girl_casual_shorts", "girl_coat_winter", "girl-large",
+        };
 
-            // The beat officer - authored through the same conversion but NEVER in the crowd:
-            // BuildPedestrianGroups draws from AuthoredPeople by name and does not list him,
-            // so the only route onto the street is PoliceDirector via policeOfficerPrefab.
-            // Male model only, per design - woman_police is referenced nowhere.
-            "man_police",
+        const string PalmChars = "Assets/Synty/PolygonPalmCity/Prefabs/Characters/";
+        const string PoliceChars = "Assets/Synty/PolygonPoliceStation/Prefabs/Characters/";
+        const string GenChars = "Assets/Synty/PolygonGeneric/Prefabs/Characters/";
+
+        /// <summary>
+        /// The Synty cast, by full prefab path. Every one is Humanoid with an Avatar and no
+        /// controller, so the conversion is the same as the Animated People one - strip,
+        /// capsule, rigidbody, HumanBehavior - plus a controller hand-off the pack models
+        /// never needed (their authored prefabs shipped one; these ship none).
+        ///
+        /// The officer is authored here but NEVER in the crowd - BuildPedestrianGroups does
+        /// not list him, and the only route onto the street is PoliceDirector via
+        /// policeOfficerPrefab, exactly the man_police arrangement before it.
+        /// </summary>
+        static readonly string[] SyntyWalkers =
+        {
+            PalmChars + "SM_Chr_City_Male_01.prefab",
+            PalmChars + "SM_Chr_City_Male_02.prefab",
+            PalmChars + "SM_Chr_City_Female_01.prefab",
+            PalmChars + "SM_Chr_City_Female_02.prefab",
+            PalmChars + "SM_Chr_Rich_Male_01.prefab",
+            PalmChars + "SM_Chr_Rich_Female_01.prefab",
+            PalmChars + "SM_Chr_Salesman_01.prefab",
+            PalmChars + "SM_Chr_Surfer_Male_01.prefab",
+            PalmChars + "SM_Chr_Surfer_Female_01.prefab",
+            PalmChars + "SM_Chr_Gang_Male_01.prefab",
+            PalmChars + "SM_Chr_Gang_Male_02.prefab",
+            PalmChars + "SM_Chr_Gang_Female_01.prefab",
+            PalmChars + "SM_Chr_Goon_01.prefab",
+            PalmChars + "SM_Chr_Detective_Male_01.prefab",
+            PalmChars + "SM_Chr_SeaCaptain_Male_01.prefab",
+            PoliceChars + "SM_Chr_Criminal_Male_01.prefab",
+            PoliceChars + "SM_Chr_Criminal_Female_01.prefab",
+            PoliceChars + "SM_Chr_Officer_Male_01.prefab",
+            GenChars + "SM_Gen_Chr_Street_Male_01.prefab",
+            GenChars + "SM_Gen_Chr_Street_Male_02.prefab",
+            GenChars + "SM_Gen_Chr_Street_Female_01.prefab",
+            GenChars + "SM_Gen_Chr_Street_Female_02.prefab",
+            GenChars + "SM_Gen_Chr_Business_Male_01.prefab",
+            GenChars + "SM_Gen_Chr_Business_Female_01.prefab",
+            GenChars + "SM_Gen_Chr_Jumpsuit_Male_01.prefab",
+            GenChars + "SM_Gen_Chr_Jumpsuit_Female_01.prefab",
         };
 
         /// <summary>
@@ -602,7 +632,7 @@ namespace LivingCity.EditorTools
             // every traffic bucket above - the patrol fleet is the only source of one), the
             // officer the authored man_police conversion that AuthorPedestrians just wrote.
             db.policeCarPrefab = Load(AuthoredVehicles + "SM_Veh_Car_01_AI.prefab");
-            db.policeOfficerPrefab = Load(AuthoredPeople + "man_police_AI.prefab");
+            db.policeOfficerPrefab = Load(AuthoredPeople + "SM_Chr_Officer_Male_01_AI.prefab");
 
             // The school run. The bus is the pack's own AI school bus, absent from every
             // traffic bucket above for the same reason the police car is. The roster draws
@@ -651,7 +681,8 @@ namespace LivingCity.EditorTools
             // The port's shift draws the same worker models the crowd's Workers group uses -
             // a docker on the quay and a labourer on the pavement are the same city. Nothing
             // new is authored for this; both prefabs are crowd-proven Epic City AI rigs.
-            db.dockWorkerPrefabs = LoadAll(PeopleAI, "man-worker_AI", "man-construction-worker_AI");
+            db.dockWorkerPrefabs = LoadAll(AuthoredPeople, "SM_Gen_Chr_Jumpsuit_Male_01_AI",
+                                                           "SM_Gen_Chr_Jumpsuit_Female_01_AI");
 
             db.pedestrianController = BuildPedestrianController();
 
@@ -981,12 +1012,28 @@ namespace LivingCity.EditorTools
 
             Directory.CreateDirectory(AuthoredPeople);
 
+            var sources = new List<GameObject>();
             foreach (var name in AnimatedPeopleWalkers)
             {
-                var source = Load($"{AnimatedPeople}{name}.prefab");
-                if (!source)
-                    continue;
+                var child = Load($"{AnimatedPeople}{name}.prefab");
+                if (child) sources.Add(child);
+            }
+            foreach (var path in SyntyWalkers)
+            {
+                var walker = Load(path);
+                if (walker) sources.Add(walker);
+            }
 
+            // The generated controller from the previous refresh; this run rebuilds it later
+            // at the same GUID, so a stale link still resolves to the fresh asset. Synty
+            // characters ship with NO controller at all, so without this hand-off a portrait
+            // subject or any walker missed by PedestrianSpawner's runtime swap would T-pose.
+            var interactionController =
+                AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(PedestrianControllerPath);
+
+            foreach (var source in sources)
+            {
+                var name = source.name;
                 var instance = (GameObject)PrefabUtility.InstantiatePrefab(source);
 
                 // Unpacked completely, not just at the root: what is saved has to be a
@@ -1020,6 +1067,8 @@ namespace LivingCity.EditorTools
                     animator.applyRootMotion = false;
                     if (referenceAnimator)
                         animator.cullingMode = referenceAnimator.cullingMode;
+                    if (!animator.runtimeAnimatorController && interactionController)
+                        animator.runtimeAnimatorController = interactionController;
                 }
 
                 // Copied off the reference like everything else - "Human" in practice, and
@@ -1081,23 +1130,28 @@ namespace LivingCity.EditorTools
         static PrefabDatabase.WeightedPrefabs[] BuildPedestrianGroups() => new[]
         {
             Crowd("Suits", 3f,
-                LoadAll(PeopleAI, "man-mafia_AI", "man-tie_AI"),
-                LoadAll(AuthoredPeople, "man_business_AI", "man_butler_AI", "man_judge_AI")),
+                LoadAll(AuthoredPeople, "SM_Chr_Rich_Male_01_AI", "SM_Chr_Rich_Female_01_AI",
+                        "SM_Chr_Salesman_01_AI", "SM_Chr_Detective_Male_01_AI",
+                        "SM_Gen_Chr_Business_Male_01_AI", "SM_Gen_Chr_Business_Female_01_AI")),
 
             Crowd("Civilians", 4f,
-                LoadAll(PeopleAI, "man-casual_AI", "man-shirt_AI",
-                        "woman-casual_AI", "woman-dress_AI", "woman-ginger_AI"),
-                LoadAll(AuthoredPeople, "man_coat_winter_AI", "woman_coat_winter_AI",
-                        "woman_business_AI")),
+                LoadAll(AuthoredPeople, "SM_Chr_City_Male_01_AI", "SM_Chr_City_Male_02_AI",
+                        "SM_Chr_City_Female_01_AI", "SM_Chr_City_Female_02_AI",
+                        "SM_Gen_Chr_Street_Male_01_AI", "SM_Gen_Chr_Street_Female_01_AI",
+                        "SM_Chr_Surfer_Male_01_AI", "SM_Chr_Surfer_Female_01_AI")),
 
             Crowd("Workers", 2f,
-                LoadAll(PeopleAI, "man-worker_AI", "man-construction-worker_AI",
-                        "man-farm_AI", "woman-farm_AI", "man-golf_AI")),
+                LoadAll(AuthoredPeople, "SM_Gen_Chr_Jumpsuit_Male_01_AI",
+                        "SM_Gen_Chr_Jumpsuit_Female_01_AI", "SM_Chr_SeaCaptain_Male_01_AI",
+                        "SM_Gen_Chr_Street_Male_02_AI")),
 
+            // The gang models ride the crowd on purpose: GangCatalog resolves its soldiers
+            // and lieutenants against these groups by name, the man-mafia arrangement.
             Crowd("Fringe", 1f,
-                LoadAll(PeopleAI, "man-soldier_AI"),
-                LoadAll(AuthoredPeople, "man_homeless_AI", "woman_homeless_AI",
-                        "man_punk_AI", "woman_punk_AI")),
+                LoadAll(AuthoredPeople, "SM_Chr_Criminal_Male_01_AI", "SM_Chr_Criminal_Female_01_AI",
+                        "SM_Chr_Gang_Male_01_AI", "SM_Chr_Gang_Male_02_AI",
+                        "SM_Chr_Gang_Female_01_AI", "SM_Chr_Goon_01_AI",
+                        "SM_Gen_Chr_Street_Female_02_AI")),
 
             Crowd("Children", 1.5f, Children()),
         };

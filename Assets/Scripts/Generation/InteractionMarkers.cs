@@ -23,48 +23,45 @@ namespace LivingCity.Generation
     public static class InteractionMarkers
     {
         /// <summary>
-        /// Bench seat geometry by prefab, measured off the FBXs rather than eyeballed:
+        /// Bench seat geometry by prefab, measured off the binary FBXs rather than eyeballed
+        /// (vertex y-histogram; the seat plane is the densest horizontal band):
         ///
-        ///                      bench-old              bench-forest
-        ///   bounds             1.669 x 0.811 x 0.707  2.928 x 0.401 x 0.579
-        ///   seat top Y         0.428                  0.401
-        ///   seat slab Z        -0.245 .. +0.242       -0.234 .. +0.234
-        ///   backrest           y 0.45-0.81 on -Z      none
+        ///                SM_Prop_Bench_Seat_01   SM_Prop_Bench_Seat_02   SM_Prop_Bench_Seat_03
+        ///   bounds       2.21 x 1.04 x 0.58      2.21 x 1.05 x 0.69      2.07 x 0.47 x 0.61
+        ///   seat top Y   0.50                    0.50                    0.42
+        ///   seat slab Z  -0.23 .. +0.26          -0.36 .. +0.30          -0.30 .. +0.30
+        ///   backrest     on -Z                   on -Z                   none
         ///
-        /// The backrest being on -Z is what confirms front = +Z, which is the convention
-        /// BenchSeats.Facing already assumes.
-        ///
-        /// X spreads sitters along the slats. Y is the seat TOP, not the ground - the agent
-        /// subtracts PedestrianAnimation.SitContactHeight scaled to the rig, which is what
-        /// lets a child rig reach an adult bench. Z is derived, not tuned: the seated pelvis
-        /// sits SitPelvisBack behind the root, so the root goes that far in FRONT of wherever
-        /// the pelvis has to land. The old flat 0.35 predates the measurement and put the
-        /// pelvis at z -0.088 - the front third of the slats, with a 0.15 gap behind a pose
-        /// that leans back into a backrest.
+        /// The backrest on -Z confirms front = +Z, the same convention the polyperfect
+        /// benches carried. X spreads sitters along the slats (2.2 m carries two adults).
+        /// Y is the seat TOP, not the ground - the agent subtracts
+        /// PedestrianAnimation.SitContactHeight scaled to the rig (a CLIP-derived constant,
+        /// unchanged by the bench swap). Z is derived, not tuned: the seated pelvis sits
+        /// SitPelvisBack behind the root, so the root goes that far in FRONT of wherever
+        /// the pelvis has to land.
         /// </summary>
-        const float OldSeatTop = 0.428f;
-        const float ForestSeatTop = 0.401f;
+        const float SeatTop = 0.50f;
+        const float BacklessSeatTop = 0.42f;
 
-        /// <summary>Just clear of bench-old's backrest, whose base is the slab's back edge.</summary>
-        const float OldPelvisZ = -0.20f;
+        /// <summary>Just clear of the backed benches' rest, whose base is the slab's back edge.</summary>
+        const float BackedPelvisZ = -0.18f;
 
-        /// <summary>Centred on bench-forest's backless slab - nothing behind to keep clear of.</summary>
-        const float ForestPelvisZ = 0f;
+        /// <summary>Centred on Bench_Seat_03's backless slab - nothing behind to keep clear of.</summary>
+        const float BacklessPelvisZ = 0f;
 
-        const float OldSeatForward = PedestrianAnimation.SitPelvisBack + OldPelvisZ;
-        const float ForestSeatForward = PedestrianAnimation.SitPelvisBack + ForestPelvisZ;
+        const float BackedSeatForward = PedestrianAnimation.SitPelvisBack + BackedPelvisZ;
+        const float BacklessSeatForward = PedestrianAnimation.SitPelvisBack + BacklessPelvisZ;
 
         static readonly Vector3[] TwoSeats =
         {
-            new Vector3(-0.42f, OldSeatTop, OldSeatForward),
-            new Vector3(0.42f, OldSeatTop, OldSeatForward),
+            new Vector3(-0.55f, SeatTop, BackedSeatForward),
+            new Vector3(0.55f, SeatTop, BackedSeatForward),
         };
 
-        static readonly Vector3[] ThreeSeats =
+        static readonly Vector3[] TwoSeatsBackless =
         {
-            new Vector3(-0.95f, ForestSeatTop, ForestSeatForward),
-            new Vector3(0f, ForestSeatTop, ForestSeatForward),
-            new Vector3(0.95f, ForestSeatTop, ForestSeatForward),
+            new Vector3(-0.55f, BacklessSeatTop, BacklessSeatForward),
+            new Vector3(0.55f, BacklessSeatTop, BacklessSeatForward),
         };
 
         /// <summary>
@@ -83,10 +80,13 @@ namespace LivingCity.Generation
         /// </summary>
         public static Vector3[] SeatsFor(string prefabName)
         {
-            if (prefabName.StartsWith("bench-old"))
+            // Bench_Seat_01/02 share a slab length and a backrest; _03 is the backless one.
+            // Planter_Bench and Pier_Bench are deliberately NOT here - they dress the park
+            // visually but have not been measured for sitters yet.
+            if (prefabName.StartsWith("SM_Prop_Bench_Seat_03"))
+                return TwoSeatsBackless;
+            if (prefabName.StartsWith("SM_Prop_Bench_Seat_"))
                 return TwoSeats;
-            if (prefabName.StartsWith("bench-forest"))
-                return ThreeSeats;
             return null;
         }
 

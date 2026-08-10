@@ -123,7 +123,11 @@ namespace LivingCity.Entities
                 return false;
 
             var name = prefabName.ToLowerInvariant();
-            return name.Contains("woman") || name.Contains("girl");
+            // "female" first: the Synty convention (SM_Chr_City_Female_01) contains neither
+            // "woman" nor "girl", and its male counterpart contains "male" - which is also a
+            // substring of "female", the same trap "woman"/"man" sets, stepped over the same
+            // way.
+            return name.Contains("female") || name.Contains("woman") || name.Contains("girl");
         }
 
         /// <summary>
@@ -135,7 +139,14 @@ namespace LivingCity.Entities
         {
             var name = prefabName == null ? string.Empty : prefabName.ToLowerInvariant();
 
-            // "construction" before "worker": one contains the other.
+            // Model pins for the Synty cast; the old polyperfect pins stay for the
+            // children, the one set still on Animated People rigs.
+            if (name.Contains("gang") || name.Contains("goon") || name.Contains("criminal"))
+                return PedestrianOccupation.Wiseguy;
+            if (name.Contains("detective")) return PedestrianOccupation.Butler;
+            if (name.Contains("salesman")) return PedestrianOccupation.Salesman;
+            if (name.Contains("jumpsuit")) return PedestrianOccupation.Bricklayer;
+            if (name.Contains("seacaptain")) return PedestrianOccupation.Veteran;
             if (name.Contains("judge")) return PedestrianOccupation.Judge;
             if (name.Contains("butler")) return PedestrianOccupation.Butler;
             if (name.Contains("mafia")) return PedestrianOccupation.Wiseguy;

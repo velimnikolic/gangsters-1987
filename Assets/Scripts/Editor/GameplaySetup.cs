@@ -13,9 +13,9 @@ namespace LivingCity.EditorTools
     /// first, scene wiring second, both idempotent.
     ///
     /// "Create or Refresh Gameplay Assets" makes the two config assets (GetOrCreate, so
-    /// tuned values survive every refresh) and AUTHORS the player prefab from man-mafia_Rig
-    /// - the rig, not the _AI prefab, because the rig carries no HumanBehavior baggage to
-    /// strip and is the exact skeleton WeaponSocket's grip constants were calibrated on.
+    /// tuned values survive every refresh) and AUTHORS the player prefab from SM_Chr_Kingpin_01
+    /// - the plain Synty character, which carries no behaviour to strip at all. The grip
+    /// constants in WeaponSocket were calibrated on the OLD rig and need re-doing in-editor.
     ///
     /// "Add Player To Scene" puts a Gameplay object (GameplayRuntime + InteractionController
     /// + ContextMenuUI) and one player instance on a pavement near the camera into the open
@@ -38,8 +38,13 @@ namespace LivingCity.EditorTools
 
         const string ControllerPath = "Assets/Configs/People Interaction Controller.controller";
         const string RevolverPath = "Assets/Weapons/Revolver.obj";
-        const string RigPath = "Assets/polyperfect/Low Poly Epic City/T/- Prefabs_T/People_T/" +
-                               "Rigs_T/man-mafia_Rig.prefab";
+        // The Kingpin: the one Synty character that reads as the playable mafioso. A
+        // plain character prefab (Humanoid, Avatar, no controller), which suits this pass
+        // even better than the old rig did - nothing to strip but the modular-part toggles.
+        // NOTE: WeaponSocket's grip constants were calibrated on the man-mafia skeleton;
+        // the Synty hand bone is oriented differently, so the grip needs the in-editor
+        // gizmo pass again (WeaponSocket.cs doc) - flagged, cannot be derived offline.
+        const string RigPath = "Assets/Synty/PolygonPalmCity/Prefabs/Characters/SM_Chr_Kingpin_01.prefab";
 
         [MenuItem("Tools/City/Create or Refresh Gameplay Assets", priority = 21)]
         public static void CreateAssets()
@@ -69,8 +74,8 @@ namespace LivingCity.EditorTools
             var rig = AssetDatabase.LoadAssetAtPath<GameObject>(RigPath);
             if (!rig)
             {
-                Debug.LogError($"[GameplaySetup] No man-mafia rig at {RigPath} - is the Epic " +
-                               "City pack imported?");
+                Debug.LogError($"[GameplaySetup] No Kingpin prefab at {RigPath} - is the " +
+                               "PolygonPalmCity pack imported?");
                 return;
             }
 
