@@ -24,5 +24,8 @@ namespace LivingCity.Personnel
         public EquipmentKind Kind;
         public string DisplayName = "";
         public int HolderId = Unheld;
+
+        /// <summary>Book value - what it cost, what the Assets line counts.</summary>
+        public int Value;
     }
 }

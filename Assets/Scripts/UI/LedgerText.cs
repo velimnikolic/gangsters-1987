@@ -64,6 +64,30 @@ namespace LivingCity.UI
             _ => "",
         };
 
+        /// <summary>
+        /// The balance sheet's exact figure: "$1,247", "-$300", "$0". Deliberately NOT
+        /// BusinessIntention.Money, which abbreviates to "$1.2k" for 280px popups - an
+        /// accounting column that rounds is worse than no column.
+        /// </summary>
+        public static string Cash(int amount)
+        {
+            var magnitude = amount < 0 ? -amount : amount;
+            var figure = "$" + magnitude.ToString("N0", CultureInfo.InvariantCulture);
+            return amount < 0 ? "-" + figure : figure;
+        }
+
+        public static string RiskLabel(Outfit.RiskRating risk) => risk switch
+        {
+            Outfit.RiskRating.None => "None",
+            Outfit.RiskRating.Low => "Low",
+            Outfit.RiskRating.Moderate => "Moderate",
+            Outfit.RiskRating.High => "High",
+            _ => "",
+        };
+
+        public static string InsufficientFunds(int price, int safe) =>
+            "The safe holds " + Cash(safe) + "; that costs " + Cash(price) + ".";
+
         /// <summary>"3" or "3.5" - halves only when earned, invariant culture so the
         /// ledger reads the same whatever the machine's locale.</summary>
         public static string Stars(int halfSteps)

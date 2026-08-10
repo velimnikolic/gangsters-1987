@@ -1,5 +1,6 @@
 using UnityEngine;
 using LivingCity.Outfit;
+using LivingCity.Personnel;
 
 namespace LivingCity.Gameplay
 {
@@ -17,7 +18,37 @@ namespace LivingCity.Gameplay
 
         public Campaign Campaign { get; private set; } = new Campaign();
 
+        public Accounts Accounts { get; private set; } = new Accounts();
+
         public int Version { get; private set; }
+
+        void Start()
+        {
+            if (Accounts.Sheets.Count == 0)
+                Accounts.Sheets.Add(new WeekSheet { Week = Campaign.Week });
+            Version++;
+        }
+
+        /// <summary>
+        /// The one purchase gate: refuses with the shortfall spelled out, or moves the
+        /// money and books it on the open week's Purchases line - so the Armory click
+        /// and the Finances row can never disagree.
+        /// </summary>
+        public OpResult Purchase(int price, string what)
+        {
+            if (price < 0)
+                return OpResult.Fail(UI.LedgerText.ReasonNoSuchItem);
+            if (Accounts.Safe < price)
+                return OpResult.Fail(UI.LedgerText.InsufficientFunds(price, Accounts.Safe));
+
+            Accounts.Safe -= price;
+            if (Accounts.Current != null)
+                Accounts.Current.Purchases += price;
+            Version++;
+            Debug.Log("[Outfit] Bought " + what + " for " + UI.LedgerText.Cash(price) +
+                      "; safe at " + UI.LedgerText.Cash(Accounts.Safe) + ".");
+            return OpResult.Success;
+        }
 
         void Awake()
         {

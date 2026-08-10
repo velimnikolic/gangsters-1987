@@ -271,18 +271,28 @@ namespace LivingCity.UI
             if (cursor)
                 cursor.enabled = Time.unscaledTime % 1.06f < 0.6f;
 
-            if (dirty || paintedVersion != director.Version)
+            var outfitVersion = outfit ? outfit.Version : 0;
+            if (dirty || paintedVersion != director.Version ||
+                paintedOutfitVersion != outfitVersion)
             {
                 paintedVersion = director.Version;
+                paintedOutfitVersion = outfitVersion;
                 dirty = false;
-                if (currentPage == LedgerPage.Personnel)
+                switch (currentPage)
                 {
-                    RebuildList();
-                    RebuildDetail();
+                    case LedgerPage.Personnel:
+                        RebuildList();
+                        RebuildDetail();
+                        break;
+                    case LedgerPage.Finances:
+                        RebuildFinances();
+                        break;
                 }
                 UpdateBarLabels();
             }
         }
+
+        int paintedOutfitVersion = -1;
 
         void Open()
         {
@@ -433,7 +443,7 @@ namespace LivingCity.UI
 
             // ---- the other sheets ----
             BuildNewspaperPage(paper);
-            BuildComingPage(paper, LedgerPage.Finances, "FINANCES");
+            BuildFinancesPage(paper);
             BuildComingPage(paper, LedgerPage.Armory, "ARMORY");
             BuildComingPage(paper, LedgerPage.Diplomacy, "DIPLOMACY");
             BuildComingPage(paper, LedgerPage.Orders, "ORDERS");
@@ -686,6 +696,235 @@ namespace LivingCity.UI
         }
 
         TMP_Text newspaperDateline;
+
+        // ------------------------------------------------------------- the finances page
+
+        RectTransform financesContent;
+
+        /// <summary>How many weeks back the sheet is turned; 0 = the open week.</summary>
+        int financeWeekBack;
+
+        void BuildFinancesPage(RectTransform paper)
+        {
+            var root = NewPageRoot(paper, LedgerPage.Finances);
+
+            NewButton(root, "< EARLIER", DetailLeft + 180f, PageTop, 130f, 32f, () =>
+            {
+                var sheets = outfit ? outfit.Accounts.Sheets.Count : 1;
+                if (financeWeekBack < sheets - 1)
+                {
+                    financeWeekBack++;
+                    dirty = true;
+                }
+            });
+            NewButton(root, "LATER >", DetailLeft + 326f, PageTop, 130f, 32f, () =>
+            {
+                if (financeWeekBack > 0)
+                {
+                    financeWeekBack--;
+                    dirty = true;
+                }
+            });
+
+            financesContent = NewRect("Sheet", root);
+            financesContent.anchorMin = Vector2.zero;
+            financesContent.anchorMax = Vector2.one;
+            financesContent.offsetMin = financesContent.offsetMax = Vector2.zero;
+        }
+
+        /// <summary>
+        /// Paints the balance sheet. EVERY figure is derived at this moment from game
+        /// state - wages from the live roster via Wages.WeeklyPayroll, totals through
+        /// BalanceMath - never a stored display string; hire a man and this page moves
+        /// the same frame. Historical sheets are closed records and say so.
+        /// </summary>
+        void RebuildFinances()
+        {
+            foreach (Transform old in financesContent)
+                Destroy(old.gameObject);
+
+            if (!outfit)
+                return;
+
+            var accounts = outfit.Accounts;
+            var index = accounts.Sheets.Count - 1 - financeWeekBack;
+            if (index < 0)
+                index = 0;
+            var sheet = accounts.Sheets.Count > 0 ? accounts.Sheets[index] : null;
+            var roster = director.Roster;
+
+            var report = Outfit.FinanceReport.For(
+                sheet,
+                Outfit.Wages.WeeklyPayroll(roster),
+                accounts.Safe,
+                accounts.RiskyMoney,
+                Outfit.BalanceMath.AssetsOf(roster));
+
+            var heading = NewText("Heading", financesContent, 20f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(heading.rectTransform, ListLeft, PageTop, 700f, 32f);
+            heading.fontStyle = FontStyles.Bold;
+            heading.characterSpacing = 3f;
+            heading.text = "WEEKLY BALANCE SHEET — WEEK " + report.Week +
+                           (report.Closed ? "  [CLOSED]" : "");
+
+            // ---- income left, outgoings right ----
+            var y = PageTop - 48f;
+
+            FinanceRow(ListLeft, y, ":: INCOME", "", LedgerPalette.PhosphorDim, false);
+            FinanceRow(ListLeft + 580f, y, ":: OUTGOINGS", "", LedgerPalette.PhosphorDim,
+                false);
+            y -= 30f;
+
+            FinanceRow(ListLeft, y, "Legal", LedgerText.Cash(report.LegalIncome),
+                LedgerPalette.Phosphor, false);
+            FinanceRow(ListLeft + 580f, y, "Wages",
+                LedgerText.Cash(report.Wages), LedgerPalette.Phosphor, false);
+            y -= 26f;
+
+            FinanceRow(ListLeft, y, "Illegal", LedgerText.Cash(report.IllegalIncome),
+                LedgerPalette.Phosphor, false);
+            // The payroll breakdown, right where the biggest number is born - the
+            // player going broke must SEE that the wage bill is his own roster.
+            var hoods = 0;
+            var lieutenants = 0;
+            var specialists = 0;
+            var hoodWages = 0;
+            var lieutenantWages = 0;
+            var specialistWages = 0;
+            if (roster != null)
+                foreach (var member in roster.Members)
+                {
+                    var wage = Outfit.Wages.WageFor(member);
+                    if (member.Specialty != Specialty.None)
+                    {
+                        specialists++;
+                        specialistWages += wage;
+                    }
+                    else if (member.Rank == Rank.Lieutenant)
+                    {
+                        lieutenants++;
+                        lieutenantWages += wage;
+                    }
+                    else
+                    {
+                        hoods++;
+                        hoodWages += wage;
+                    }
+                }
+
+            FinanceRow(ListLeft + 580f, y, "   " + hoods + " hoods",
+                LedgerText.Cash(hoodWages), LedgerPalette.PhosphorDim, false);
+            y -= 26f;
+
+            FinanceRow(ListLeft, y, "Sales", LedgerText.Cash(report.SalesIncome),
+                LedgerPalette.Phosphor, false);
+            FinanceRow(ListLeft + 580f, y, "   " + lieutenants + " lieutenants",
+                LedgerText.Cash(lieutenantWages), LedgerPalette.PhosphorDim, false);
+            y -= 26f;
+
+            if (specialists > 0)
+            {
+                FinanceRow(ListLeft + 580f, y, "   " + specialists + " on retainer",
+                    LedgerText.Cash(specialistWages), LedgerPalette.PhosphorDim, false);
+                y -= 26f;
+            }
+
+            FinanceRow(ListLeft + 580f, y, "Bribes", LedgerText.Cash(report.Bribes),
+                LedgerPalette.Phosphor, false);
+            y -= 26f;
+            FinanceRow(ListLeft + 580f, y, "Purchases", LedgerText.Cash(report.Purchases),
+                LedgerPalette.Phosphor, false);
+            y -= 26f;
+            FinanceRow(ListLeft + 580f, y, "Other costs", LedgerText.Cash(report.OtherCosts),
+                LedgerPalette.Phosphor, false);
+            y -= 34f;
+
+            FinanceRow(ListLeft, y, "TOTAL IN", LedgerText.Cash(report.TotalIncome),
+                LedgerPalette.Phosphor, true);
+            FinanceRow(ListLeft + 580f, y, "TOTAL OUT", LedgerText.Cash(report.TotalOutgoings),
+                LedgerPalette.Phosphor, true);
+            y -= 40f;
+
+            // ---- the derived run, full width ----
+            var profitColor = report.Profit < 0 ? LedgerPalette.Amber : LedgerPalette.Phosphor;
+            FinanceRow(ListLeft, y, "PROFIT", LedgerText.Cash(report.Profit), profitColor,
+                true);
+            y -= 28f;
+            FinanceRow(ListLeft, y, "Tax due (" + Outfit.BalanceMath.TaxRatePercent + "%)",
+                LedgerText.Cash(report.TaxDue), LedgerPalette.Phosphor, false);
+            y -= 26f;
+            FinanceRow(ListLeft, y, "Tax paid", LedgerText.Cash(report.TaxPaid),
+                LedgerPalette.Phosphor, false);
+            y -= 26f;
+            FinanceRow(ListLeft, y, "TOTAL PROFIT (after tax)",
+                LedgerText.Cash(report.TotalProfit), profitColor, true);
+            y -= 36f;
+
+            // Stocks are NOW-figures; a closed week's page keeps to its flows.
+            if (!report.Closed)
+            {
+                var riskColor = report.Risk >= Outfit.RiskRating.Moderate
+                    ? LedgerPalette.Amber
+                    : LedgerPalette.Phosphor;
+                FinanceRow(ListLeft, y, "Risky money (unlaundered)",
+                    LedgerText.Cash(report.RiskyMoney), riskColor, false);
+                y -= 26f;
+                FinanceRow(ListLeft, y, "Risk",
+                    LedgerText.RiskLabel(report.Risk).ToUpperInvariant(), riskColor,
+                    report.Risk >= Outfit.RiskRating.Moderate);
+                y -= 36f;
+
+                FinanceRow(ListLeft, y, "MONEY IN SAFE", LedgerText.Cash(report.Safe),
+                    LedgerPalette.Phosphor, true);
+                y -= 28f;
+                FinanceRow(ListLeft, y, "Assets (stock at book value)",
+                    LedgerText.Cash(report.Assets), LedgerPalette.Phosphor, false);
+                y -= 28f;
+                FinanceRow(ListLeft, y, "TOTAL WEALTH", LedgerText.Cash(report.TotalWealth),
+                    LedgerPalette.Phosphor, true);
+            }
+            else
+            {
+                var stamp = NewText("ClosedStamp", financesContent, 14f,
+                    LedgerPalette.PhosphorDim, TextAlignmentOptions.TopLeft);
+                PlaceTopLeft(stamp.rectTransform, ListLeft, y, 900f, 40f);
+                stamp.text = "A closed week - the record of what moved. Current holdings " +
+                             "live on the open sheet.";
+            }
+
+            // ---- the plain-language note, right column ----
+            var note = NewParagraph("Note", financesContent, 13f, LedgerPalette.PhosphorDim);
+            PlaceTopLeft(note.rectTransform, DetailLeft, PageTop - 64f, DetailWidth, 400f);
+            note.text =
+                "Every figure on this sheet is computed from the books as they stand " +
+                "this instant. Wages are the whole roster, week in, week out - the " +
+                "jailed and the hospitalized stay on the payroll; only the dead come " +
+                "off. Recruit a man on the PERSONNEL page and the wage line moves " +
+                "before you can turn back to look at it.\n\n" +
+                "A big crew with no income is the classic way an outfit dies.";
+        }
+
+        void FinanceRow(float x, float y, string label, string value, Color color,
+            bool bold)
+        {
+            var labelText = NewText("Label", financesContent, bold ? 15f : 14f, color,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(labelText.rectTransform, x, y, 380f, 24f);
+            if (bold)
+                labelText.fontStyle = FontStyles.Bold;
+            labelText.text = label;
+
+            if (value.Length == 0)
+                return;
+
+            var valueText = NewText("Value", financesContent, bold ? 15f : 14f, color,
+                TextAlignmentOptions.MidlineRight);
+            PlaceTopLeft(valueText.rectTransform, x + 340f, y, 180f, 24f);
+            if (bold)
+                valueText.fontStyle = FontStyles.Bold;
+            valueText.text = value;
+        }
 
         void BuildScanlines(RectTransform paper)
         {

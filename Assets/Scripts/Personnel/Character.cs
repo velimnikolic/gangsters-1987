@@ -62,6 +62,15 @@ namespace LivingCity.Personnel
 
         public int GetHalfSteps(CharacterAttribute attribute) => halfSteps[(int)attribute];
 
+        /// <summary>Sum across all eleven attributes - the wage table's talent measure.</summary>
+        public int TotalHalfSteps()
+        {
+            var total = 0;
+            for (var i = 0; i < halfSteps.Length; i++)
+                total += halfSteps[i];
+            return total;
+        }
+
         public void SetHalfSteps(CharacterAttribute attribute, int value) =>
             halfSteps[(int)attribute] = AttributeScale.Clamp(value);
     }

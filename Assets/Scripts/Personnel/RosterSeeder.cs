@@ -61,6 +61,7 @@ namespace LivingCity.Personnel
                     Id = roster.NextEquipmentId(),
                     Kind = EquipmentKind.Pistol,
                     DisplayName = ".38 Pistol",
+                    Value = 100,
                 });
 
             roster.Equipment.Add(new RosterEquipment
@@ -68,6 +69,7 @@ namespace LivingCity.Personnel
                 Id = roster.NextEquipmentId(),
                 Kind = EquipmentKind.Vehicle,
                 DisplayName = vehicleName,
+                Value = 1500,
             });
 
             return roster;
@@ -116,6 +118,7 @@ namespace LivingCity.Personnel
                 Id = roster.NextEquipmentId(),
                 Kind = EquipmentKind.Vehicle,
                 DisplayName = VehicleNames[rng.Next(VehicleNames.Length)],
+                Value = 1500,
             });
 
             return roster;
