@@ -17,20 +17,28 @@ namespace LivingCity.EditorTools
     /// <summary>
     /// Creates and fills in Configs/CityConfig.asset and Configs/PrefabDatabase.asset.
     ///
-    /// Every prefab path here was read off disk rather than taken from documentation - the
-    /// package's prefab FILES carry no "_T" suffix (the T is on the folder), and the props are
-    /// split across Props_T and its City_T and Fence_T subfolders rather than sitting in one
-    /// place. Anything that fails to load is reported rather than silently skipped, so a package
-    /// update that renames assets surfaces immediately.
+    /// The city is 1980s and builds from the Synty POLYGON packs: buildings and street
+    /// visuals come out of Assets/CityKit (materialised at the top of CreateAssets by the
+    /// extractor / kit-bash / road-tile passes), props and vegetation straight from the
+    /// pack prefab folders. Every prefab path here was read off disk rather than taken from
+    /// documentation, and anything that fails to load is reported rather than silently
+    /// skipped, so a pack update that renames assets surfaces immediately.
     ///
-    /// The zone palettes below are also where the PERIOD is enforced. The city is Chicago in the
-    /// 1920s, so every office tower in the pack is excluded - they run from 39m to 92m and all
-    /// of them read as glass. The tallest thing here is the 5-storey terrace kit at 23.8m, which
-    /// is the right measure for a street of the era outside the Loop. Also out: the mall, the
-    /// burger joint, the car wash, the data centre, the modern houses - and the cargo containers,
-    /// which are the easy one to miss because they suit an industrial yard perfectly well and are
-    /// thirty years early (containerisation starts in 1956). Construction_T's timber, brick
-    /// stacks and cement bags stand in for them.
+    /// PENDING SYNTY PACKS - what still loads from Assets/polyperfect and why, so the day
+    /// the missing packs are bought this list IS the work order:
+    ///   - the INDUSTRIAL zone: whole works catalogue (industry-*), its yard props, fences
+    ///     and chimney vents - no Synty industrial pack owned yet (user will buy one);
+    ///   - the SCHOOL BUS (bus-school_AI) - no Synty bus exists in any owned pack;
+    ///   - the CHILDREN (six Animated People conversions + boy-sport) - no POLYGON pack
+    ///     ships a child; style clash accepted until a kids pack lands;
+    ///   - park accents: tile-plain-hump knolls and the -nb water tile;
+    ///   - the pedestrian conversion REFERENCE (man-mafia_AI - values only, never placed)
+    ///     and the AI-car reference (car-passenger_AI, same deal);
+    ///   - crowd-walking.ogg (SoundAssetBootstrap) off the Animated People folder;
+    ///   - the baked people clips refresh from the pack FBXs while they exist (the .anim
+    ///     copies under Assets/Animations/People serve once they are gone).
+    /// The PORT palette is dead (portChance 0) rather than swapped - a marina rework is a
+    /// future task of its own.
     /// </summary>
     public static class CityAssetBootstrap
     {

@@ -255,17 +255,13 @@ namespace LivingCity.Tests
 
             foreach (var (prefab, expected) in new[]
                      {
-                         ("man_judge_AI", PedestrianOccupation.Judge),
-                         ("man_butler_AI", PedestrianOccupation.Butler),
-                         ("man-mafia_AI", PedestrianOccupation.Wiseguy),
-                         ("man_homeless_AI", PedestrianOccupation.Drifter),
-                         ("woman_homeless_AI", PedestrianOccupation.Drifter),
-                         ("woman_punk_AI", PedestrianOccupation.Punk),
-                         ("man-soldier_AI", PedestrianOccupation.Veteran),
-                         ("man-farm_AI", PedestrianOccupation.Farmhand),
-                         ("woman-farm_AI", PedestrianOccupation.Farmhand),
-                         ("man-golf_AI", PedestrianOccupation.Salesman),
-                         ("man-construction-worker_AI", PedestrianOccupation.Bricklayer),
+                         ("SM_Chr_Gang_Male_01_AI", PedestrianOccupation.Wiseguy),
+                         ("SM_Chr_Goon_01_AI", PedestrianOccupation.Wiseguy),
+                         ("SM_Chr_Criminal_Female_01_AI", PedestrianOccupation.Wiseguy),
+                         ("SM_Chr_Detective_Male_01_AI", PedestrianOccupation.Butler),
+                         ("SM_Chr_Salesman_01_AI", PedestrianOccupation.Salesman),
+                         ("SM_Gen_Chr_Jumpsuit_Male_01_AI", PedestrianOccupation.Bricklayer),
+                         ("SM_Chr_SeaCaptain_Male_01_AI", PedestrianOccupation.Veteran),
                          ("boy_casual_cap_AI", PedestrianOccupation.Schoolkid),
                          ("girl-large_AI", PedestrianOccupation.Schoolkid),
                      })
@@ -274,9 +270,11 @@ namespace LivingCity.Tests
 
             foreach (var (prefab, female) in new[]
                      {
-                         ("woman_business_AI", true), ("woman-ginger_AI", true),
+                         ("SM_Chr_City_Female_01_AI", true), ("SM_Chr_Gang_Female_01_AI", true),
+                         ("SM_Gen_Chr_Street_Female_02_AI", true),
                          ("girl_coat_winter_AI", true),
-                         ("man-casual_AI", false), ("boy-large_AI", false),
+                         ("SM_Chr_City_Male_01_AI", false), ("SM_Chr_Goon_01_AI", false),
+                         ("boy-large_AI", false),
                          ((string)null, false),
                      })
                 if (PedestrianIdentity.IsFemale(prefab) != female)
@@ -440,11 +438,15 @@ namespace LivingCity.Tests
 
         static readonly BenchShape[] Benches =
         {
-            new BenchShape { Prefab = "bench-old", SeatTop = 0.428f,
-                             SlabBack = -0.245f, SlabFront = 0.242f, HalfWidth = 0.834f,
+            // Measured off the Synty FBXs (vertex y-histogram, seat plane = densest band).
+            new BenchShape { Prefab = "SM_Prop_Bench_Seat_01", SeatTop = 0.50f,
+                             SlabBack = -0.23f, SlabFront = 0.26f, HalfWidth = 1.10f,
                              Backrest = true },
-            new BenchShape { Prefab = "bench-forest", SeatTop = 0.401f,
-                             SlabBack = -0.234f, SlabFront = 0.234f, HalfWidth = 1.464f,
+            new BenchShape { Prefab = "SM_Prop_Bench_Seat_02", SeatTop = 0.50f,
+                             SlabBack = -0.36f, SlabFront = 0.30f, HalfWidth = 1.11f,
+                             Backrest = true },
+            new BenchShape { Prefab = "SM_Prop_Bench_Seat_03", SeatTop = 0.42f,
+                             SlabBack = -0.30f, SlabFront = 0.30f, HalfWidth = 1.03f,
                              Backrest = false },
         };
 
@@ -1231,7 +1233,7 @@ namespace LivingCity.Tests
         {
             foreach (var name in new[]
                      {
-                         "building-block-4floor", "building-block-5floor-front(Clone)",
+                         "building-apartment-01", "building-apartment-03(Clone)",
                          "building-house-block-big", "building-cafe", "building-school",
                      })
                 if (!BuildingDoorRule.NameQualifies(name))
@@ -1246,7 +1248,7 @@ namespace LivingCity.Tests
                          // building-*.
                          "industry-factory", "industry-warehouse", "building-policestation-garage",
                          // Not buildings at all.
-                         "bench-old", "tree-conifer", "tile-park", "", null,
+                         "SM_Prop_Bench_Seat_01", "SM_Env_Tree_Palm_01", "tile-park", "", null,
                      })
                 if (BuildingDoorRule.NameQualifies(name))
                     failures.Add($"Door rule: '{name}' must not carry a street door.");

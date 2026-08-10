@@ -29,6 +29,15 @@ namespace LivingCity.Ambient
         static readonly int EmissionColor = Shader.PropertyToID("_EmissionColor");
         static readonly int EmissionMap = Shader.PropertyToID("_EmissionMap");
 
+        // The Synty Shader Graph convention (Generic_Basic and friends): its own property
+        // trio beside the Unity-standard pair. Their stock materials ship with emission
+        // disabled and no map, so today these only fire for emissive Alts variants - but
+        // matching the convention now means a re-dressed window material lights up without
+        // this file needing to be told.
+        static readonly int SyntyEmissionColor = Shader.PropertyToID("_Emission_Color");
+        static readonly int SyntyEmissionMap = Shader.PropertyToID("_Emission_Map");
+        static readonly int SyntyEnableEmission = Shader.PropertyToID("_Enable_Emission");
+
         [Tooltip("Reads the hour. Left empty, the first clock in the scene is used.")]
         [SerializeField] CityClock clock;
 
@@ -120,7 +129,10 @@ namespace LivingCity.Ambient
         /// catches the next tint someone generates without this needing to be told about it.
         /// </summary>
         static bool IsEmissive(Material material) =>
-            material.HasProperty(EmissionMap) && material.GetTexture(EmissionMap);
+            (material.HasProperty(EmissionMap) && material.GetTexture(EmissionMap))
+            || (material.HasProperty(SyntyEmissionMap) && material.GetTexture(SyntyEmissionMap))
+            || (material.HasProperty(SyntyEnableEmission)
+                && material.GetFloat(SyntyEnableEmission) > 0.5f);
 
         void LateUpdate()
         {
@@ -136,8 +148,13 @@ namespace LivingCity.Ambient
             var emission = litColour * litIntensity * night;
 
             foreach (var material in instances)
-                if (material)
-                    material.SetColor(EmissionColor, emission);
+            {
+                if (!material)
+                    continue;
+                material.SetColor(EmissionColor, emission);
+                if (material.HasProperty(SyntyEmissionColor))
+                    material.SetColor(SyntyEmissionColor, emission);
+            }
         }
 
         void OnDestroy()

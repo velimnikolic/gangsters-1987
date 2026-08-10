@@ -21,7 +21,7 @@ namespace LivingCity.EditorTools
     /// </summary>
     public static class CitySceneSetup
     {
-        const string BirdsPrefabPath = "Assets/polyperfect/Low Poly Animated People/- Particles/birds.prefab";
+        const string BirdsPrefabPath = "Assets/Synty/PolygonPalmCity/Prefabs/FX/FX_Birds_01.prefab";
         const string ConfigPath = "Assets/Configs/CityConfig.asset";
         const string VolumeProfilePath = "Assets/Settings/SampleSceneProfile.asset";
 
