@@ -205,6 +205,40 @@ namespace LivingCity.Generation
                 cuts[s] = thinned;
             }
 
+            // A spine that ENDS on another spine is a junction by construction - the secondary
+            // join and the loop trail both do it. The sweep above only guarantees that SOME
+            // sample cut the other spine near the touch, and the thinning may then keep a
+            // sample too far from this spine's endpoint for the weld to bridge (measured 2.43
+            // against the 2.3 weld when the city went to TileScale 1.56, which left the loop
+            // a cul-de-sac: reachable at one end, so no route could pass THROUGH it and the
+            // scenic detour silently collapsed onto the main path). Cut the other spine at its
+            // sample NEAREST the endpoint - that sample is at most half a step away along the
+            // other spine, which the weld always bridges.
+            for (var s = 0; s < plan.Spines.Count; s++)
+            {
+                var points = plan.Spines[s].Points;
+                foreach (var index in new[] { 0, points.Length - 1 })
+                for (var o = 0; o < plan.Spines.Count; o++)
+                {
+                    if (o == s)
+                        continue;
+                    var other = plan.Spines[o].Points;
+                    if (ParkLayout.DistanceToPolyline(points[index], other) >= 1.6f)
+                        continue;
+                    var best = 0;
+                    var bestSq = float.MaxValue;
+                    for (var i = 0; i < other.Length; i++)
+                    {
+                        var apart = (other[i] - points[index]).sqrMagnitude;
+                        if (apart >= bestSq)
+                            continue;
+                        bestSq = apart;
+                        best = i;
+                    }
+                    cuts[o].Add(best);
+                }
+            }
+
             for (var s = 0; s < plan.Spines.Count; s++)
             {
                 var points = plan.Spines[s].Points;

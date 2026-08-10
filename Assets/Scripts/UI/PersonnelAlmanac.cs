@@ -557,14 +557,20 @@ namespace LivingCity.UI
             hint.textWrappingMode = TextWrappingModes.Normal;
         }
 
+        /// <summary>
+        /// The entry page: a wire-service front page on the tube. One static edition for
+        /// now, laid out in the parts a generated weekly front page will fill later -
+        /// the named rects (Lead, Photo, Column 0..2) ARE the reservation, so the
+        /// generator slots into this layout instead of redesigning it.
+        /// </summary>
         void BuildNewspaperPage(RectTransform paper)
         {
             var root = NewPageRoot(paper, LedgerPage.Newspaper);
+            var fullWidth = PageWidth - ListLeft - 36f;
 
             var masthead = NewText("Masthead", root, 44f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.Center);
-            PlaceTopLeft(masthead.rectTransform, ListLeft, PageTop - 8f,
-                PageWidth - ListLeft - 36f, 64f);
+            PlaceTopLeft(masthead.rectTransform, ListLeft, PageTop - 8f, fullWidth, 64f);
             masthead.fontStyle = FontStyles.Bold;
             masthead.characterSpacing = 10f;
             masthead.text = "THE CITY WIRE";
@@ -572,15 +578,111 @@ namespace LivingCity.UI
             newspaperDateline = NewText("Dateline", root, 14f, LedgerPalette.PhosphorDim,
                 TextAlignmentOptions.Center);
             PlaceTopLeft(newspaperDateline.rectTransform, ListLeft, PageTop - 76f,
-                PageWidth - ListLeft - 36f, 22f);
+                fullWidth, 22f);
             newspaperDateline.characterSpacing = 3f;
 
             var rule = NewRect("MastheadRule", root);
-            PlaceTopLeft(rule, ListLeft, PageTop - 102f, PageWidth - ListLeft - 36f, 2f);
+            PlaceTopLeft(rule, ListLeft, PageTop - 102f, fullWidth, 2f);
             var ruleImage = rule.gameObject.AddComponent<Image>();
             ruleImage.sprite = null;
             ruleImage.color = LedgerPalette.Phosphor;
             ruleImage.raycastTarget = false;
+
+            // ---- lead story, left of the photo ----
+            const float leadWidth = 1120f;
+            var lead = NewRect("Lead", root);
+            PlaceTopLeft(lead, ListLeft, PageTop - 116f, leadWidth, 320f);
+
+            var headline = NewText("Headline", lead, 32f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.TopLeft);
+            PlaceTopLeft(headline.rectTransform, 0f, 0f, leadWidth, 46f);
+            headline.fontStyle = FontStyles.Bold;
+            headline.characterSpacing = 2f;
+            headline.text = "CRIME COMES TO THE CITY";
+
+            var subhead = NewText("Subhead", lead, 16f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.TopLeft);
+            PlaceTopLeft(subhead.rectTransform, 0f, -50f, leadWidth, 24f);
+            subhead.fontStyle = FontStyles.Italic;
+            subhead.text =
+                "New outfit takes a front on the waterfront — City Hall says nothing";
+
+            var body = NewParagraph("LeadBody", lead, 14.5f, LedgerPalette.Phosphor);
+            PlaceTopLeft(body.rectTransform, 0f, -84f, leadWidth, 220f);
+            body.text =
+                "By a Staff Correspondent — Something has changed on the avenues. Men " +
+                "in good coats keep hours no shopkeeper keeps, and the cafes pour for " +
+                "strangers who pay from fresh rolls of bills. Deliveries arrive after " +
+                "dark at addresses that order nothing. Asked whether an organization " +
+                "has taken root in the city, the police commissioner said only that " +
+                "the matter is receiving attention, and that honest citizens have " +
+                "nothing to fear. On the waterfront, nobody laughed.";
+
+            // ---- wirephoto, right column ----
+            var photo = NewRect("Photo", root);
+            PlaceTopLeft(photo, DetailLeft, PageTop - 116f, DetailWidth, 340f);
+            var photoImage = photo.gameObject.AddComponent<Image>();
+            photoImage.sprite = null;
+            photoImage.color = LedgerPalette.PhotoBack;
+            photoImage.raycastTarget = false;
+            Frame(photo, 1f, LedgerPalette.PhosphorDim);
+
+            var photoMark = NewText("Mark", photo, 18f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.Center);
+            photoMark.rectTransform.anchorMin = Vector2.zero;
+            photoMark.rectTransform.anchorMax = Vector2.one;
+            photoMark.rectTransform.offsetMin = photoMark.rectTransform.offsetMax =
+                Vector2.zero;
+            photoMark.characterSpacing = 8f;
+            photoMark.text = "W I R E P H O T O";
+
+            var caption = NewText("Caption", root, 12.5f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.TopLeft);
+            PlaceTopLeft(caption.rectTransform, DetailLeft, PageTop - 462f,
+                DetailWidth, 40f);
+            caption.fontStyle = FontStyles.Italic;
+            caption.textWrappingMode = TextWrappingModes.Normal;
+            caption.text = "The waterfront at dusk, where the new money drinks.";
+
+            // ---- body columns under the lead ----
+            const float columnGap = 28f;
+            var columnWidth = (leadWidth - 2f * columnGap) / 3f;
+            var columnTexts = new[]
+            {
+                "MARKETS — Dock tonnage is up for the third week running; the port " +
+                "authority credits mild weather and says nothing about the new " +
+                "warehouse leases. Wholesale prices firm. Three builders' merchants " +
+                "report a shortage of copper pipe nobody can quite explain.",
+
+                "CITY DESK — The school board voted funds for a crossing guard at the " +
+                "elementary. Complaints of noise on the ring road continue. A camper " +
+                "van, twice reported stolen this month, was twice found parked " +
+                "outside the same tavern; the owner declines to press charges.",
+
+                "WEATHER — Smog expected to sit over the harbor through the weekend; " +
+                "visibility poor on the water after dark. ADVERTISEMENT — MARLOWE'S " +
+                "FINE TAILORING: suits cut for the discreet professional. Fittings " +
+                "by appointment only.",
+            };
+
+            for (var i = 0; i < 3; i++)
+            {
+                var column = NewParagraph("Column " + i, root, 13f,
+                    LedgerPalette.PhosphorDim);
+                PlaceTopLeft(column.rectTransform,
+                    ListLeft + i * (columnWidth + columnGap),
+                    PageTop - 452f, columnWidth, 380f);
+                column.text = columnTexts[i];
+            }
+        }
+
+        static TextMeshProUGUI NewParagraph(string name, Transform parent, float size,
+            Color color)
+        {
+            var text = NewText(name, parent, size, color, TextAlignmentOptions.TopLeft);
+            text.textWrappingMode = TextWrappingModes.Normal;
+            text.lineSpacing = 8f;
+            return text;
         }
 
         TMP_Text newspaperDateline;

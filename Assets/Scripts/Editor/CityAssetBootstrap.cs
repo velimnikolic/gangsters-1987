@@ -492,11 +492,11 @@ namespace LivingCity.EditorTools
             // The camper stays in Everyday - pulling it out would resize the bag, and the bags
             // draw from BlockBuilder's shared Buildings stream, so any length change re-lays the
             // whole city (the paintableVehicles constraint). Instead RareVehicleFilter swaps
-            // ~9 in 10 of its deals for another Everyday body, on its own stream
-            // (SeedOffsets.RareVehicles), which takes it from a guaranteed bag seat (~12% of
-            // placed cars) down to roughly one camper in eighty.
+            // every one of its deals for another Everyday body, on its own stream
+            // (SeedOffsets.RareVehicles): keep chance 0 retires the camper outright while its
+            // bag seat keeps dealing draw-for-draw as before.
             db.rareVehicleNames = new[] { "car-caravan-small" };
-            db.rareVehicleKeepChance = 0.1f;
+            db.rareVehicleKeepChance = 0f;
 
             // motorbike_AI is deliberately absent from Everyday. Every vehicle in the pack is
             // an empty shell - there is not one SkinnedMeshRenderer in Cars_AI_T - and a car

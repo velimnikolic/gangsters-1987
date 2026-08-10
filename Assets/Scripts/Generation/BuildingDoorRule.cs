@@ -35,9 +35,15 @@ namespace LivingCity.Generation
     {
         /// <summary>
         /// How far behind the door to sample for "there is a building's own block back here".
-        /// Comfortably past the facade line (7m) and short of the far cell boundary.
+        ///
+        /// Half a cell, DERIVED rather than tuned: a street facade stands at sidewalkWidth
+        /// (a fraction of CellSize/2) inside the road cell, so the sample lands at
+        /// sidewalkWidth + CellSize/2 - always past the near cell boundary into the first
+        /// block cell, never out of its far side. The old hand-tuned 10 silently stopped
+        /// clearing the boundary once TileScale grew the cell (9.1 + 10 = 19.1 against a
+        /// boundary at 19.5 was already a miss), which made every street door ineligible.
         /// </summary>
-        public const float BehindDepth = 10f;
+        public const float BehindDepth = CityGrid.CellSize * 0.5f;
 
         /// <summary>
         /// Prefab-name gate, run before any geometry. "building-" also does the work of

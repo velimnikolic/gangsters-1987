@@ -1030,8 +1030,9 @@ namespace LivingCity.Tests
 
         /// <summary>
         /// The whole geometric claim BuildingDoorRule rests on, checked against real generated
-        /// cities: a facade that fronts a street stands INSIDE the road cell (facades are 7m
-        /// from the centreline, 10m on the avenue, and the cell boundary is at 15), while a
+        /// cities: a facade that fronts a street stands INSIDE the road cell (facades sit at
+        /// sidewalkWidth from the centreline, mainSidewalkWidth on the avenue, both well short
+        /// of the cell boundary at CellSize/2), while a
         /// facade turned toward the interior of its block stands in a block cell. If that ever
         /// stops holding, doors appear on alley walls and pedestrians walk into brickwork.
         ///
@@ -1257,8 +1258,15 @@ namespace LivingCity.Tests
             new Vector2Int(0, 1), new Vector2Int(0, -1),
         };
 
-        /// <summary>Facade distance from the road centreline: ordinary street, then avenue.</summary>
-        static readonly float[] FacadeSetbacks = { 7f, 10f };
+        /// <summary>
+        /// Facade distance from the road centreline: ordinary street, then avenue - the live
+        /// CityConfig.sidewalkWidth / mainSidewalkWidth values, restated (the bench-table rule).
+        /// </summary>
+        static readonly float[] FacadeSetbacks =
+        {
+            7.6667f * CityGrid.TileScale,
+            10.625f * CityGrid.TileScale,
+        };
 
         static void RegistryCellKeysDoNotCollide(List<string> failures)
         {

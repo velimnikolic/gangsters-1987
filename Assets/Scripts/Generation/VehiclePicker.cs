@@ -122,13 +122,14 @@ namespace LivingCity.Generation
     }
 
     /// <summary>
-    /// Demotes the camper: a ShuffleBag guarantees every member once per cycle, which made
+    /// Retires the camper: a ShuffleBag guarantees every member once per cycle, which made
     /// car-caravan-small ~12% of all placed parked cars, and neither removing it nor duplicating
     /// its neighbours is on the table - the bags draw from BlockBuilder's shared Buildings stream
     /// and any length change re-lays the whole city (see PrefabDatabase.paintableVehicles for
     /// the same constraint stated first). So the bag deals exactly as before, draw for draw, and
     /// this filter afterwards swaps a rare deal for an ordinary body from the same group, keeping
-    /// it only rareVehicleKeepChance of the time.
+    /// it only rareVehicleKeepChance of the time - at 0 (the current setting) the camper never
+    /// places at all, its only remaining role being the bag seat that keeps the stream aligned.
     ///
     /// The rolls come off their own stream (SeedOffsets.RareVehicles), the VehicleTints move:
     /// alongside a picker on the Buildings stream, a rarity roll taken from THAT stream would
