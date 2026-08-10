@@ -1126,10 +1126,20 @@ namespace LivingCity.EditorTools
         const string PedestrianControllerPath = ConfigDir + "/People Interaction Controller.controller";
 
         /// <summary>
-        /// The animator for interaction-enabled pedestrians: the pack's own People Controller
-        /// (whose walk/idle tuning is copied wholesale rather than rebuilt) plus talk, argue
-        /// and bench-sit states retargeted from the Animated People pack. Both packs' rigs are
-        /// Humanoid already, so retargeting is just clip assignment.
+        /// Project-owned copies of every pack animation the pedestrian controller uses, plus a
+        /// one-time snapshot of the pack's People Controller to build from. The packs are on
+        /// their way out (Synty swap); the .anim bakes are the assets of record, refreshed from
+        /// the pack FBXs while those still exist and simply USED once they are gone.
+        /// </summary>
+        const string BakedPeopleAnimDir = "Assets/Animations/People";
+        const string ControllerBasePath = BakedPeopleAnimDir + "/People Controller Base.controller";
+
+        /// <summary>
+        /// The animator for interaction-enabled pedestrians: the committed snapshot of the
+        /// pack's People Controller (whose walk/idle tuning was worth keeping) plus talk,
+        /// argue and bench-sit states, every motion rebound to the baked .anim copies in
+        /// Assets/Animations/People. Everything involved is Humanoid, so retargeting - onto
+        /// the old rigs or the Synty ones - is just clip assignment.
         ///
         /// Rebuilt from scratch on every run - the copy is deleted first - which is the same
         /// overwrite discipline as every list in CreateAssets: hand-edits to the generated
@@ -1146,12 +1156,14 @@ namespace LivingCity.EditorTools
         /// </summary>
         static RuntimeAnimatorController BuildPedestrianController()
         {
-            if (!AssetDatabase.LoadAssetAtPath<AnimatorController>(PackPeopleController))
+            if (!EnsureControllerBase())
             {
-                Missing.Add(PackPeopleController);
+                Missing.Add(ControllerBasePath);
                 return null;
             }
 
+            // Pack clips when the pack is still installed, empty otherwise - BakeClip falls
+            // back to the committed .anim in that case.
             var clips = AssetDatabase.LoadAllAssetsAtPath(AnimatedPeopleClips)
                 .OfType<AnimationClip>()
                 .Where(clip => !clip.name.StartsWith("__preview"))
@@ -1159,10 +1171,11 @@ namespace LivingCity.EditorTools
 
             AnimationClip Clip(string name)
             {
-                if (clips.TryGetValue(name, out var clip))
-                    return clip;
-                Missing.Add($"{AnimatedPeopleClips} :: {name}");
-                return null;
+                clips.TryGetValue(name, out var packClip);
+                var baked = BakeClip(packClip, name);
+                if (!baked)
+                    Missing.Add($"{BakedPeopleAnimDir}/{name}.anim (and no pack source at {AnimatedPeopleClips})");
+                return baked;
             }
 
             var talkClip = Clip("Standing_Talking");
@@ -1171,11 +1184,12 @@ namespace LivingCity.EditorTools
             var sittingClip = Clip("Sitting_Bench_Idle");
             var standUpClip = Clip("Sitting-Idle");
 
-            var deathClip = AssetDatabase.LoadAllAssetsAtPath(DeathClipAsset)
+            var deathSource = AssetDatabase.LoadAllAssetsAtPath(DeathClipAsset)
                 .OfType<AnimationClip>()
                 .FirstOrDefault(clip => !clip.name.StartsWith("__preview"));
+            var deathClip = BakeClip(deathSource, "Death");
             if (!deathClip)
-                Missing.Add($"{DeathClipAsset} :: death take");
+                Missing.Add($"{BakedPeopleAnimDir}/Death.anim (and no pack source at {DeathClipAsset})");
 
             EnsureAnimationLibraryIsHumanoid();
             var pistolIdleClip = PistolClip("Pistol_Idle_Loop");
@@ -1185,13 +1199,14 @@ namespace LivingCity.EditorTools
             if (!talkClip || !argueClip || !sitDownClip || !sittingClip || !standUpClip || !deathClip)
                 return null;
 
-            if (!ResetControllerFromPack())
+            if (!ResetControllerFromBase())
             {
                 Missing.Add(PedestrianControllerPath);
                 return null;
             }
 
             var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(PedestrianControllerPath);
+            RebindPackMotions(controller);
             controller.AddParameter(PedestrianAnimation.ActivityParam, AnimatorControllerParameterType.Int);
 
             // OnAnimatorIK is never called unless the LAYER asks for it, and a gunman aims by IK
@@ -1269,8 +1284,8 @@ namespace LivingCity.EditorTools
         }
 
         /// <summary>
-        /// Puts a clean copy of the pack controller at PedestrianControllerPath, KEEPING the
-        /// asset's GUID.
+        /// Puts a clean copy of the base controller snapshot at PedestrianControllerPath,
+        /// KEEPING the asset's GUID.
         ///
         /// DeleteAsset followed by CopyAsset - what this used to do - mints a brand new GUID
         /// every run, and every scene that referenced the old one silently loses its animator.
@@ -1281,20 +1296,101 @@ namespace LivingCity.EditorTools
         /// carries the GUID. Sub-object file IDs do change, but nothing references a state
         /// directly - an Animator points at the controller's main object, whose ID is fixed.
         /// </summary>
-        static bool ResetControllerFromPack()
+        static bool ResetControllerFromBase()
         {
             if (!AssetDatabase.LoadAssetAtPath<AnimatorController>(PedestrianControllerPath))
-                return AssetDatabase.CopyAsset(PackPeopleController, PedestrianControllerPath);
+                return AssetDatabase.CopyAsset(ControllerBasePath, PedestrianControllerPath);
 
-            var pack = Path.GetFullPath(PackPeopleController);
+            var basePath = Path.GetFullPath(ControllerBasePath);
             var target = Path.GetFullPath(PedestrianControllerPath);
-            if (!File.Exists(pack))
+            if (!File.Exists(basePath))
                 return false;
 
-            File.Copy(pack, target, overwrite: true);
+            File.Copy(basePath, target, overwrite: true);
             AssetDatabase.ImportAsset(PedestrianControllerPath, ImportAssetOptions.ForceUpdate);
 
             return AssetDatabase.LoadAssetAtPath<AnimatorController>(PedestrianControllerPath);
+        }
+
+        /// <summary>
+        /// The committed snapshot the pedestrian controller is rebuilt from. Taken from the
+        /// pack's People Controller exactly once (its walk/idle tuning is the part worth
+        /// keeping); after that the snapshot is the source and the pack file is never read
+        /// again, so deleting the pack cannot break the build.
+        /// </summary>
+        static bool EnsureControllerBase()
+        {
+            if (AssetDatabase.LoadAssetAtPath<AnimatorController>(ControllerBasePath))
+                return true;
+            if (!AssetDatabase.LoadAssetAtPath<AnimatorController>(PackPeopleController))
+                return false;
+
+            Directory.CreateDirectory(BakedPeopleAnimDir);
+            AssetDatabase.Refresh();
+            return AssetDatabase.CopyAsset(PackPeopleController, ControllerBasePath);
+        }
+
+        /// <summary>
+        /// A project-owned copy of a pack animation clip, at BakedPeopleAnimDir/name.anim.
+        ///
+        /// While the pack clip still exists it is re-copied over the baked asset every run
+        /// (CopySerialized keeps the .anim's GUID), same overwrite discipline as everything
+        /// else in CreateAssets. Once the pack is deleted the baked copy simply serves as-is.
+        /// Humanoid muscle curves survive the duplication, which is what lets one .anim drive
+        /// both the polyperfect and the Synty rigs.
+        /// </summary>
+        static AnimationClip BakeClip(AnimationClip source, string name)
+        {
+            var path = $"{BakedPeopleAnimDir}/{name}.anim";
+            var existing = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+            if (!source)
+                return existing;
+
+            if (existing)
+            {
+                EditorUtility.CopySerialized(source, existing);
+                existing.name = name;
+                EditorUtility.SetDirty(existing);
+                return existing;
+            }
+
+            Directory.CreateDirectory(BakedPeopleAnimDir);
+            var copy = Object.Instantiate(source);
+            copy.name = name;
+            AssetDatabase.CreateAsset(copy, path);
+            return copy;
+        }
+
+        /// <summary>
+        /// Repoints every state in the generated controller whose motion still lives in a pack
+        /// (or whose motion reference is already dead because the pack was deleted) at the
+        /// baked .anim copy instead.
+        ///
+        /// Bake names follow the STATE name, not the clip name: the state name is the only
+        /// stable key left once the pack - and with it the clip - is gone. The base snapshot's
+        /// two states (Breathing Idle, Standard Walk) are what this catches in practice.
+        /// </summary>
+        static void RebindPackMotions(AnimatorController controller)
+        {
+            foreach (var layer in controller.layers)
+            {
+                foreach (var child in layer.stateMachine.states)
+                {
+                    var state = child.state;
+                    if (!state || state.motion is BlendTree)
+                        continue;
+
+                    var clip = state.motion as AnimationClip;
+                    if (clip && !AssetDatabase.GetAssetPath(clip).StartsWith("Assets/polyperfect/"))
+                        continue;
+
+                    var baked = BakeClip(clip, state.name);
+                    if (baked)
+                        state.motion = baked;
+                    else
+                        Missing.Add($"{BakedPeopleAnimDir}/{state.name}.anim (controller state '{state.name}')");
+                }
+            }
         }
 
         /// <summary>
