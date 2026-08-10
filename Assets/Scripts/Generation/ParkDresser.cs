@@ -421,7 +421,7 @@ namespace LivingCity.Generation
         /// (InteractionMarkers finds its benches the same way); the fallback is the whole list,
         /// which reads as a mixed bed rather than as nothing.
         /// </summary>
-        static readonly string[] FlowerNames = { "roses", "carnations", "sunflower" };
+        static readonly string[] FlowerNames = { "SM_Env_Flowers" };
 
         static GameObject Flower(PrefabDatabase.ZonePalette palette, int index)
         {

@@ -65,21 +65,22 @@ namespace LivingCity.Ambient
         /// marks lamp geometry batching-static, and static batching REPLACES
         /// MeshFilter.sharedMesh with the combined mesh when Play starts - so measuring the
         /// instance put bulbs at 0.86 x the bounds of half the city. Known prefabs need no
-        /// measuring:
-        ///  - lamp-road-double: arms reach +/-3.60 along local X, head glass centres +/-3.10.
-        ///  - lamp-city: the park rewrite's 6.7m cast-iron post, head symmetric about the
-        ///    axis (+/-0.41 across), so one centred bulb is right.
+        /// measuring (Synty numbers off the binary FBX, like everything else):
+        ///  - SM_Prop_Street_Lamp_01: 5.4m post, single arm reaching +Z 1.66, head glass
+        ///    centred about z 1.3 - one bulb under the head.
+        ///  - SM_Prop_Street_Lamp_08: the 3.1m park post, symmetric about the axis, so one
+        ///    centred bulb is right (the lamp-city deal exactly).
         /// </summary>
         public static readonly LampKind[] LampKinds =
         {
             new()
             {
-                Name = "lamp-road-double",
-                Bulbs = new Vector3[] { new(-3.10f, BulbHeight, 0f), new(3.10f, BulbHeight, 0f) },
+                Name = "SM_Prop_Street_Lamp_01",
+                Bulbs = new Vector3[] { new(0f, BulbHeight, 1.3f) },
             },
             new()
             {
-                Name = "lamp-city",
+                Name = "SM_Prop_Street_Lamp_08",
                 Bulbs = new Vector3[] { new(0f, BulbHeight, 0f) },
             },
         };

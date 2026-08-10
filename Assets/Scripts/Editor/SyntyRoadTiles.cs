@@ -90,6 +90,13 @@ namespace LivingCity.EditorTools
 
             BuildGroundTile("tile-plain_concrete");
 
+            // The plain surfaces the palettes mix into yards and the park lawn. No Synty
+            // pack ships a flat ground tile for these, so they are generated quads carrying
+            // a Synty material - the low-poly look is a flat colour anyway.
+            BuildMaterialTile("tile-plain_asphalt", "Assets/Synty/PolygonPalmCity/Materials/Buildings/Road_Grey_01.mat");
+            BuildMaterialTile("tile-plain_dirt", "Assets/Synty/PolygonGeneric/Materials/Generic_Dirt.mat");
+            BuildMaterialTile("tile-plain_grass", "Assets/Synty/PolygonGeneric/Materials/Generic_Grass.mat");
+
             System.IO.File.WriteAllText(VersionPath, Version.ToString());
             AssetDatabase.ImportAsset(VersionPath);
             AssetDatabase.SaveAssets();
@@ -176,6 +183,64 @@ namespace LivingCity.EditorTools
             finally
             {
                 Object.DestroyImmediate(staging);
+                Object.DestroyImmediate(root);
+            }
+        }
+
+        /// <summary>
+        /// A 30-unit ground tile as a single generated quad with a Synty material. Same
+        /// authored-frame contract as every other tile here (content spans 45 local metres
+        /// under the 30/45 child), no logic components - the polyperfect plain tiles were
+        /// bare meshes too.
+        /// </summary>
+        static void BuildMaterialTile(string name, string materialPath)
+        {
+            var material = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+            if (!material)
+            {
+                Debug.LogWarning($"SyntyRoadTiles: material '{materialPath}' not found, '{name}' skipped");
+                return;
+            }
+
+            var mesh = new Mesh { name = name };
+            mesh.vertices = new[]
+            {
+                new Vector3(-Half, 0f, -Half), new Vector3(Half, 0f, -Half),
+                new Vector3(Half, 0f, Half), new Vector3(-Half, 0f, Half),
+            };
+            mesh.uv = new[] { Vector2.zero, new Vector2(18f, 0f), new Vector2(18f, 18f), new Vector2(0f, 18f) };
+            mesh.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
+            mesh.triangles = new[] { 0, 2, 1, 0, 3, 2 };
+            mesh.RecalculateBounds();
+
+            var meshPath = $"{MeshDir}/{name}.asset";
+            var existing = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
+            if (existing)
+            {
+                existing.Clear();
+                EditorUtility.CopySerialized(mesh, existing);
+                existing.name = name;
+            }
+            else
+            {
+                AssetDatabase.CreateAsset(mesh, meshPath);
+                existing = mesh;
+            }
+
+            var root = new GameObject(name);
+            try
+            {
+                var visual = new GameObject("SyntyVisual");
+                visual.transform.SetParent(root.transform, false);
+                visual.transform.localScale = Vector3.one * VisualScale;
+                visual.AddComponent<MeshFilter>().sharedMesh = existing;
+                visual.AddComponent<MeshRenderer>().sharedMaterial = material;
+
+                PrefabUtility.SaveAsPrefabAsset(root, $"{TilesDir}/{name}.prefab");
+                Debug.Log($"SyntyRoadTiles: baked '{name}'");
+            }
+            finally
+            {
                 Object.DestroyImmediate(root);
             }
         }

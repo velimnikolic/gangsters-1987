@@ -41,6 +41,24 @@ namespace LivingCity.EditorTools
         const string Root = "Assets/polyperfect/Low Poly Epic City/T/- Prefabs_T/";
         const string PackMaterials = "Assets/polyperfect/Low Poly Epic City/- Materials/";
 
+        /// <summary>
+        /// The Synty city kit: buildings extracted/kit-bashed from the POLYGON packs and the
+        /// composite road tiles, materialised by SyntyKitExtractor/SyntyKitBash/SyntyRoadTiles
+        /// at the top of CreateAssets. The city's building and street VISUALS load from here;
+        /// the polyperfect folders below survive only for what has no Synty replacement yet
+        /// (see the PENDING SYNTY PACKS notes): the industrial works catalogue, the school
+        /// bus, the child pedestrians - and, until phases C/D land, vehicles and people.
+        /// </summary>
+        const string KitBuildings = SyntyKitExtractor.BuildingsDir + "/";
+        const string KitTiles = SyntyRoadTiles.TilesDir + "/";
+        const string PalmProps = "Assets/Synty/PolygonPalmCity/Prefabs/Props/";
+        const string PalmEnv = "Assets/Synty/PolygonPalmCity/Prefabs/Environment/";
+        const string PalmBuildings = "Assets/Synty/PolygonPalmCity/Prefabs/Buildings/";
+        const string PalmVehicles = "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/";
+        const string PoliceProps = "Assets/Synty/PolygonPoliceStation/Prefabs/Props/";
+        const string PoliceEnv = "Assets/Synty/PolygonPoliceStation/Prefabs/Environment/";
+        const string GenEnv = "Assets/Synty/PolygonGeneric/Prefabs/Environment/";
+
         const string Roads = Root + "Tiles_T/Roads_T/";
         const string Tiles = Root + "Tiles_T/";
         const string Traffic = Root + "Traffic_T/";
@@ -189,17 +207,21 @@ namespace LivingCity.EditorTools
         /// Monotonous, but it is a blind wall nobody sees; the alternative is a shopfront facing
         /// the bins.
         /// </summary>
+        // The Synty street stock: the demo-extracted apartments and small commercial pieces
+        // (15-35 m frontages, finished on every elevation - so the same bag serves street,
+        // rear and corner and the ShuffleBag alternation still steps the silhouette). All
+        // from KitBuildings.
         static readonly string[] TerraceStreet =
         {
-            "building-block-4floor-front", "building-block-4floor-short",
-            "building-block-5floor", "building-block-5floor-front", "building-block-5floor-short",
+            "building-apartment-01", "building-apartment-02", "building-apartment-03",
+            "building-hotel-small", "building-store-01",
         };
 
-        static readonly string[] TerraceRear = { "building-block-4floor-back" };
+        static readonly string[] TerraceRear = { "building-apartment-02", "building-house-block-big" };
 
         static readonly string[] TerraceCorner =
         {
-            "building-block-4floor-corner", "building-block-5floor-corner",
+            "building-apartment-01", "building-hotel-small",
         };
 
         /// <summary>
@@ -222,11 +244,13 @@ namespace LivingCity.EditorTools
         /// alley gets dirtier, not more crowded with everything.
         /// </summary>
         static GameObject[] AlleyKit() =>
-            Merge(LoadAll(CityProps, "dumpster", "dumpster",
-                                     "bin-wheelie", "bin-wheelie", "bin-wheelie",
-                                     "bench-old"),
-                  LoadAll(Props, "trash-can", "trash-can", "trash-can"),
-                  LoadAll(Trees, "tree-lime", "shrub-round"));
+            Merge(LoadAll(PoliceProps, "SM_Prop_Dumpster_01", "SM_Prop_Dumpster_01"),
+                  LoadAll(PalmProps, "SM_Prop_Trash_Bin_01", "SM_Prop_Trash_Bin_02",
+                                     "SM_Prop_Trash_Bin_01",
+                                     "SM_Prop_RubbishPile_01", "SM_Prop_RubbishPile_01",
+                                     "SM_Prop_Junk_Cardboard_01",
+                                     "SM_Prop_Bench_Seat_01"),
+                  LoadAll(PalmEnv, "SM_Env_Tree_Palm_Small_02", "SM_Env_Bush_01"));
 
         /// <summary>
         /// What furnishes a pocket-park feature strip: seating first - benches twice, so the
@@ -234,8 +258,9 @@ namespace LivingCity.EditorTools
         /// the block's front, not its back.
         /// </summary>
         static GameObject[] PocketParkKit() =>
-            Merge(LoadAll(CityProps, "bench-old", "bench-old"),
-                  LoadAll(Trees, "tree-lime", "tree-oak", "shrub-round"));
+            Merge(LoadAll(PalmProps, "SM_Prop_Bench_Seat_01", "SM_Prop_Bench_Seat_02"),
+                  LoadAll(PalmEnv, "SM_Env_Tree_Palm_02", "SM_Env_Tree_Palm_05",
+                                   "SM_Env_Hedge_Topiary_01"));
 
         /// <summary>
         /// The trafika. hot-dog-stand and marketplace-stand-simple are the pack's two pieces
@@ -243,8 +268,8 @@ namespace LivingCity.EditorTools
         /// the amusement park set and says so.
         /// </summary>
         static GameObject[] KioskKit() =>
-            Merge(LoadAll(CityProps, "hot-dog-stand"),
-                  LoadAll(Props, "marketplace-stand-simple"));
+            Merge(LoadAll(PalmVehicles, "SM_Veh_Hot_Dog_Cart_01", "SM_Veh_Juice_Cart_01"),
+                  LoadAll(PalmProps, "SM_Prop_Shop_Stand_01"));
 
         static readonly List<string> Missing = new();
 
@@ -340,14 +365,20 @@ namespace LivingCity.EditorTools
 
             NamePedestrianLayer();
 
-            // Road tiles. tileShape values verified in the prefab files:
-            // straight=Straight, curve=Turn, intersection-t=T, intersection=Cross, end=End.
-            db.straight = Load(Roads + "tile-road-straight.prefab");
-            db.curve = Load(Roads + "tile-road-curve.prefab");
-            db.tJunction = Load(Roads + "tile-road-intersection-t.prefab");
-            db.cross = Load(Roads + "tile-road-intersection.prefab");
-            db.end = Load(Roads + "tile-road-end.prefab");
-            db.straightCrosswalk = Load(Roads + "tile-road-straight-crosswalk.prefab");
+            // The Synty city kit has to exist before anything below loads from it. All three
+            // passes are versioned no-ops once their output is current.
+            SyntyKitExtractor.ExtractIfStale();
+            SyntyKitBash.BuildIfStale();
+            SyntyRoadTiles.BuildIfStale();
+
+            // Road tiles: the composite bakes - polyperfect Tile/Path logic under Synty
+            // visuals - under the same names and tileShapes the pack originals carried.
+            db.straight = Load(KitTiles + "tile-road-straight.prefab");
+            db.curve = Load(KitTiles + "tile-road-curve.prefab");
+            db.tJunction = Load(KitTiles + "tile-road-intersection-t.prefab");
+            db.cross = Load(KitTiles + "tile-road-intersection.prefab");
+            db.end = Load(KitTiles + "tile-road-end.prefab");
+            db.straightCrosswalk = Load(KitTiles + "tile-road-straight-crosswalk.prefab");
 
             // The dual carriageway. Same three tileShapes as the minor road above - verified in
             // the prefab files the same way - so RoadTileTable reuses the same rotations.
@@ -359,13 +390,13 @@ namespace LivingCity.EditorTools
             // main crossroads, for the cell where two boulevards cross. The pack also ships
             // mainroad curves, tapers and three-way mainroad junctions; those stay unwired
             // because CityGenerator proves a full-span boulevard can never need one.
-            db.mainStraight = Load(Roads + "tile-mainroad-straight.prefab");
-            db.mainStraightCrosswalk = Load(Roads + "tile-mainroad-straight-crosswalk.prefab");
-            db.mainCross = Load(Roads + "tile-road-mainroad-intersection.prefab");
-            db.mainTJunction = Load(Roads + "tile-road-mainroad-intersection-t.prefab");
-            db.mainMainCross = Load(Roads + "tile-mainroad-intersection.prefab");
+            db.mainStraight = Load(KitTiles + "tile-mainroad-straight.prefab");
+            db.mainStraightCrosswalk = Load(KitTiles + "tile-mainroad-straight-crosswalk.prefab");
+            db.mainCross = Load(KitTiles + "tile-road-mainroad-intersection.prefab");
+            db.mainTJunction = Load(KitTiles + "tile-road-mainroad-intersection-t.prefab");
+            db.mainMainCross = Load(KitTiles + "tile-mainroad-intersection.prefab");
 
-            db.groundTile = Load(Root + "Tiles_T/tile-plain_concrete.prefab");
+            db.groundTile = Load(KitTiles + "tile-plain_concrete.prefab");
             db.trafficLights = Load(Traffic + "traffic-lights_AI.prefab");
             db.mainTrafficLights = Load(Traffic + "traffic-lights-big_AI.prefab");
 
@@ -402,16 +433,17 @@ namespace LivingCity.EditorTools
             // A ceiling, not a promise - a seed may come up without one, per the user's call.
             // The casino takes the same deal down the landmark path: it rides ResidentialHigh's
             // bag beside the bank, and this list keeps the city to at most one house.
-            db.uniqueBuildings = LoadAll(Buildings, "building-post", "building-firestation",
-                                                    "building-bank", "building-shop-china",
-                                                    "building-casino");
+            db.uniqueBuildings = LoadAll(KitBuildings, "building-post", "building-firestation",
+                                                      "building-bank", "building-shop-china",
+                                                      "building-casino");
 
-            // Only the double lantern. lamp-road is a motorway lantern on a plain steel pole,
-            // and lamp-city is out of the city entirely - dropped from the streets first and
-            // then from every scatter bag too, so the double lantern is the one lamp there is.
-            db.streetLamps = LoadAll(CityProps, "lamp-road-double");
-            db.trees = LoadAll(Trees, "tree-oak", "tree-birch", "tree-lime", "tree-round",
-                                      "tree-poplar", "shrub", "shrub-round");
+            // One street lamp model, as before: the single-arm road lantern (5.4 m post, head
+            // hung over the carriageway). StreetLampLights' kinds table knows its head
+            // geometry by name - see the SyntyLamp entry there.
+            db.streetLamps = LoadAll(PalmProps, "SM_Prop_Street_Lamp_01");
+            db.trees = LoadAll(PalmEnv, "SM_Env_Tree_Palm_01", "SM_Env_Tree_Palm_02",
+                                        "SM_Env_Tree_Palm_04", "SM_Env_Tree_Palm_05",
+                                        "SM_Env_Tree_Palm_Small_01", "SM_Env_Tree_Palm_Small_03");
 
             // Period sweep of the street furniture: the bus shelter is a glass canopy, the cycle
             // stand and the cash machine are plainly modern. Post box, lantern and guidepost take
@@ -427,12 +459,12 @@ namespace LivingCity.EditorTools
             // read as neglected, so the front-of-block rule the pocket park keeps does not apply
             // to the street itself.
             db.smallProps = Merge(
-                LoadAll(CityProps, "bench-old", "bin-wheelie", "bin-wheelie",
-                                   "dumpster", "dumpster",
-                                   "fire-hydrant", "hot-dog-stand"),
-                LoadAll(Props, "mail-box", "trash-can", "trash-can", "trash-can",
-                               "lantern-long", "guidepost"),
-                LoadAll(Vehicles_, "bike-old"));
+                LoadAll(PalmProps, "SM_Prop_Bench_Seat_01", "SM_Prop_Trash_Bin_01",
+                                   "SM_Prop_Trash_Bin_01", "SM_Prop_Fire_Hydrant_01",
+                                   "SM_Prop_Mailbox_01", "SM_Prop_Pay_Phone_01",
+                                   "SM_Prop_Parking_Meter_01"),
+                LoadAll(PoliceProps, "SM_Prop_Dumpster_01", "SM_Prop_Dumpster_01"),
+                LoadAll(PalmVehicles, "SM_Veh_Hot_Dog_Cart_01"));
 
             db.clouds = LoadAll(Clouds, "cloud-big", "cloud-fluffy", "cloud-long", "cloud-triangle");
 
@@ -1507,18 +1539,19 @@ namespace LivingCity.EditorTools
         static PrefabDatabase.ZonePalette[] BuildZonePalettes()
         {
             var park = Load(Tiles + "tile-park.prefab");
-            var asphalt = Load(Tiles + "tile-plain_asphalt.prefab");
-            var concrete = Load(Tiles + "tile-plain_concrete.prefab");
-            var dirt = Load(Tiles + "tile-plain_dirt.prefab");
+            var asphalt = Load(KitTiles + "tile-plain_asphalt.prefab");
+            var concrete = Load(KitTiles + "tile-plain_concrete.prefab");
+            var dirt = Load(KitTiles + "tile-plain_dirt.prefab");
             // Grass is the park's APRON only - the band from the kerb in to its own tiles, which
             // is 10m wide and was concrete, leaving the park looking set back behind a ring while
             // every building on the street stood 8m further forward. It is not a block surface:
             // grass was the bungalow belt's ground and there is no bungalow belt any more.
             // tile-plain_sand is still omitted on purpose - sand in 1920s Chicago reads as a bug,
             // not as variety. Do not "complete the set".
-            var grass = Load(Tiles + "tile-plain_grass.prefab");
+            var grass = Load(KitTiles + "tile-plain_grass.prefab");
 
-            var cityTrees = LoadAll(Trees, "tree-oak", "tree-lime", "tree-poplar", "shrub-round");
+            var cityTrees = LoadAll(PalmEnv, "SM_Env_Tree_Palm_01", "SM_Env_Tree_Palm_03",
+                                    "SM_Env_Tree_Palm_Small_02", "SM_Env_Bush_02");
 
             return new[]
             {
@@ -1551,8 +1584,8 @@ namespace LivingCity.EditorTools
                     // for free. Appended so the two load-bearing indices stay where they are;
                     // db.uniqueBuildings keeps the city to at most one house, a ceiling the
                     // 0.45 roll may leave unspent on an unlucky seed - the gun shop's deal.
-                    landmarks: LoadAll(Buildings, "building-policestation", "building-bank",
-                                                  "building-casino"),
+                    landmarks: LoadBuildings("building-policestation", "building-bank",
+                                             "building-casino"),
                     // This roll serves only the CASINO now: the bank is forced by its route,
                     // and the station's index is refused on the random path (PickLandmark) so
                     // its spread marks cannot be beaten to the allowance by whatever corner
@@ -1672,8 +1705,9 @@ namespace LivingCity.EditorTools
                     // four in a bag of eight at 0.09 is 0.045, so the greenery is untouched and
                     // the rubbish is added on top rather than swapped in.
                     scatter: Merge(cityTrees,
-                                   LoadAll(CityProps, "bin-wheelie", "dumpster"),
-                                   LoadAll(Props, "mail-box", "trash-can")),
+                                   LoadAll(PalmProps, "SM_Prop_Trash_Bin_01", "SM_Prop_Mailbox_01",
+                                                      "SM_Prop_RubbishPile_01"),
+                                   LoadAll(PoliceProps, "SM_Prop_Dumpster_01")),
                     scatterDensity: 0.09f),
 
                 // Up from 0.3: with the bungalow belt gone, ResidentialHigh and Industrial are
@@ -1821,7 +1855,7 @@ namespace LivingCity.EditorTools
                     maxLotsPerAxis: 1,
                     maxPerimeterBuildings: 2,
                     groups: new[] { Outbuildings() },
-                    landmarks: LoadAll(Buildings, "building-hospital"),
+                    landmarks: LoadBuildings("building-hospital"),
                     landmarkChance: 1f,
                     // An institution's forecourt is laid, swept and uniform - joints on, surface
                     // re-roll low. The opposite end of the dial from the works yard.
@@ -1834,7 +1868,7 @@ namespace LivingCity.EditorTools
                     // reason.
                     alleyProps: PocketParkKit(),
                     scatter: Merge(cityTrees,
-                                   LoadAll(CityProps, "bench-old")),
+                                   LoadAll(PalmProps, "SM_Prop_Bench_Seat_01")),
                     scatterDensity: 0.22f,
                     // Higher than the civic default: with the perimeter this short a 0.35 roll
                     // too often leaves the ambulance nowhere to stand.
@@ -1858,16 +1892,17 @@ namespace LivingCity.EditorTools
                     maxLotsPerAxis: 1,
                     maxPerimeterBuildings: 2,
                     groups: new[] { Outbuildings() },
-                    landmarks: LoadAll(Buildings, "building-school"),
+                    landmarks: LoadBuildings("building-school"),
                     landmarkChance: 1f,
                     // An institution's forecourt is laid, swept and uniform - joints on, surface
                     // re-roll low. The opposite end of the dial from the works yard.
                     groundPatchChance: 0.25f,
                     paveJoints: true,
                     scatter: Merge(cityTrees,
-                                   LoadAll(Props, "soccer-gate", "basketball-stand"),
-                                   LoadAll(Fences, "fence-picket"),
-                                   LoadAll(CityProps, "bench-old")),
+                                   LoadAll(PalmEnv, "SM_Env_Court_BasketBall_01",
+                                                    "SM_Env_Hedge_Topiary_02"),
+                                   LoadAll(PalmProps, "SM_Prop_Bench_Seat_01",
+                                                      "SM_Prop_Bench_Seat_03")),
                     scatterDensity: 0.16f,
                     parkingChance: 0.1f,
                     // The school's forecourt, and the reason it has one at all:
@@ -1927,7 +1962,7 @@ namespace LivingCity.EditorTools
                     groundPerCell: true,
                     // The one palette that does not want a concrete apron - see LayApron.
                     apronGround: grass,
-                    landmarks: LoadAll(Props, "fountain"),
+                    landmarks: LoadAll(PalmProps, "SM_Prop_Fountain_01"),
                     landmarkChance: 1f,
                     parkTrees: new[]
                     {
@@ -1935,54 +1970,51 @@ namespace LivingCity.EditorTools
                         // from ONE group, and a quadrant is about 11m across: tree-lime at 7.07m
                         // wide fills one on its own, so it stays an occasional specimen while the
                         // 2-4m species carry the avenues.
-                        Bucket("Park street trees", 5f, Trees,
-                            "tree-oak", "tree-birch", "tree-beech", "tree-round", "tree"),
-                        Bucket("Park uprights", 3f, Trees,
-                            "tree-poplar", "tree-tall", "tree-birch-tall", "tree-elipse"),
+                        Bucket("Park street trees", 5f, PoliceEnv,
+                            "SM_Env_Tree_01", "SM_Env_Tree_02", "SM_Env_Tree_03"),
+                        Bucket("Park uprights", 3f, PalmEnv,
+                            "SM_Env_Tree_Palm_01", "SM_Env_Tree_Palm_04", "SM_Env_Tree_Palm_06"),
                         // tree-conifer and tree-spruce were in Trees_T the whole time with no
                         // code path behind them. At 2.4-3.1m across they are exactly the size a
                         // stand wants, and evergreens are what makes a grove read as woodland
                         // rather than as an orchard - so this bucket is up from 2 to 4.
-                        Bucket("Park evergreens", 4f, Trees,
-                            "tree-fir", "tree-forest", "tree-old", "tree-conifer", "tree-spruce"),
-                        Bucket("Park specimens", 1f, Trees, "tree-lime", "tree-bonsai"),
+                        Bucket("Park palms", 4f, PalmEnv,
+                            "SM_Env_Tree_Palm_02", "SM_Env_Tree_Palm_03", "SM_Env_Tree_Palm_05"),
+                        Bucket("Park specimens", 1f, PalmEnv,
+                            "SM_Env_Tree_Palm_Small_04", "SM_Env_Tree_Palm_Small_05"),
                     },
                     parkUndergrowth: Merge(
-                        LoadAll(Trees, "shrub", "shrub-round"),
-                        // A sapling among the shrubs is what an unmanaged corner of a park grows,
-                        // and at 1.11m across it sits in the undergrowth layer, not the canopy.
-                        LoadAll(Trees, "tree-little"),
-                        LoadAll(Flowers, "roses", "carnations", "sunflower"),
-                        // Nature_T/Grass_T was in the pack the whole time and no code path had
-                        // ever referenced it. Tufts at 0.4-2.0m are exactly what a lawn between
-                        // tree rows was missing.
-                        LoadAll(Grass, "grass", "grass-basic", "grass-clumb",
-                                       "grass-long", "grass-tall")),
-                    parkBenches: Merge(
-                        LoadAll(Props, "bench-forest"),
-                        LoadAll(CityProps, "bench-old")),
+                        LoadAll(PalmEnv, "SM_Env_Bush_01", "SM_Env_Bush_02", "SM_Env_Bush_03",
+                                         "SM_Env_Tree_Palm_Sapling_01", "SM_Env_Tree_Palm_Sapling_02",
+                                         "SM_Env_Grass_Clump_01"),
+                        LoadAll(PoliceEnv, "SM_Env_Flowers_01", "SM_Env_Flowers_02",
+                                           "SM_Env_Flowers_03", "SM_Env_Flowers_04",
+                                           "SM_Env_Grass_01", "SM_Env_Grass_02", "SM_Env_Grass_03")),
+                    parkBenches: LoadAll(PalmProps, "SM_Prop_Bench_Seat_02",
+                                                    "SM_Prop_Bench_Seat_03",
+                                                    "SM_Prop_Planter_Bench_01"),
                     // The knoll - the one centred mound in the pack, and none of the tile-hill
                     // kit can join it: those rise at an EDGE and hang a 6m skirt.
                     parkMounds: LoadAll(Tiles, "tile-plain-hump"),
-                    fenceSegment: Load(Fences + "fence-shrub.prefab"),
+                    fenceSegment: Load(PalmEnv + "SM_Env_Hedge_03.prefab"),
                     // The rewrite's kinds. lamp-city is the 6.7m cast-iron post - the street's
                     // lamp-road-double is a 9.5m double-arm carriageway fixture that clumped
                     // around the old fountain. The monument is rock-pillar standing in for the
                     // statue the pack never shipped; the boulders are the naturally SMALL
                     // stones at authored scale (rock-terrasse, 6x8m, stays out as an outcrop);
                     // the deadwood is its own list so only the informal archetype can draw it.
-                    parkLamps: LoadAll(CityProps, "lamp-city"),
-                    parkBins: LoadAll(Props, "trash-can"),
-                    parkMonuments: LoadAll(Stones, "rock-pillar"),
-                    parkBoulders: LoadAll(Stones, "stone-round", "stone-flat", "stone-oval",
-                                                  "stone-small", "rocks-small"),
-                    parkDeadTrees: LoadAll(Trees, "tree-dead", "tree-dry", "stump", "stump-small"),
+                    parkLamps: LoadAll(PalmProps, "SM_Prop_Street_Lamp_08"),
+                    parkBins: LoadAll(PalmProps, "SM_Prop_Trash_Bin_02"),
+                    parkMonuments: LoadAll(PalmBuildings, "SM_Bld_Statue_Corner_01"),
+                    parkBoulders: LoadAll(GenEnv, "SM_Gen_Env_Rock_01", "SM_Gen_Env_Rock_02",
+                                                  "SM_Gen_Env_Rock_03"),
+                    parkDeadTrees: System.Array.Empty<GameObject>(),
                     // Borderless so the stretched pond patch has no baked rim of its own.
                     parkWaterTile: Load(NoBorder + "tile-water-nb.prefab"),
-                    parkGatePiers: Load(Fences + "fence-stone-tower.prefab"),
+                    parkGatePiers: Load("Assets/Synty/PolygonPoliceStation/Prefabs/Buildings/SM_Bld_Fence_Pillar_01.prefab"),
                     // A carousel was a fixture of a 1920s American park; the informal
                     // archetype rolls one rarely.
-                    parkAmusement: LoadAll(Amusement, "carousel-coaster")),
+                    parkAmusement: LoadAll(PalmProps, "SM_Prop_Ferris_Wheel_01")),
 
                 // The bank's other shape. It is usually ResidentialHigh's landmark - see the
                 // requiredLandmark up there - and about one city in four it takes a block of its
@@ -2032,7 +2064,7 @@ namespace LivingCity.EditorTools
                     // is what keeps this zone out of BlockBuilder entirely - no zone branch, no
                     // dresser of its own.
                     groups: new[] { BankNeighbours() },
-                    landmarks: LoadAll(Buildings, "building-bank"),
+                    landmarks: LoadBuildings("building-bank"),
                     landmarkChance: 1f,
                     // An institution's forecourt is laid, swept and uniform - joints on, surface
                     // re-roll low. The opposite end of the dial from the works yard.
@@ -2044,7 +2076,7 @@ namespace LivingCity.EditorTools
                     // which is the one thing a bank frontage must not say.
                     alleyProps: PocketParkKit(),
                     scatter: Merge(cityTrees,
-                                   LoadAll(CityProps, "bench-old")),
+                                   LoadAll(PalmProps, "SM_Prop_Bench_Seat_01")),
                     scatterDensity: 0.18f,
                     // Higher than the civic default for the hospital's reason again: with the
                     // perimeter this short, a 0.35 roll too often leaves the forecourt empty.
@@ -2084,13 +2116,13 @@ namespace LivingCity.EditorTools
                     // garage in the salon's yard would be visibly orphaned. Non-empty keeps
                     // this zone out of BlockBuilder's zone branches entirely.
                     groups: new[] { BankNeighbours() },
-                    landmarks: LoadAll(Buildings, "building-carwash"),
+                    landmarks: LoadBuildings("building-carwash"),
                     landmarkChance: 1f,
                     groundPatchChance: 0.25f,
                     paveJoints: true,
                     alleyProps: PocketParkKit(),
                     scatter: Merge(cityTrees,
-                                   LoadAll(CityProps, "bench-old")),
+                                   LoadAll(PalmProps, "SM_Prop_Bench_Seat_01")),
                     // Lower than the bank's 0.18: the full forecourt rank is this block's
                     // dressing, and props crowding it would say car park, not showroom.
                     scatterDensity: 0.12f,
@@ -2130,12 +2162,13 @@ namespace LivingCity.EditorTools
                     // 0.14 with them: a car park's aisles and fence line are exactly where a
                     // city leaves its skips, and the bays are reserved in the occupancy list so
                     // the extra props cannot land in a car.
-                    scatter: Merge(LoadAll(CityProps, "bin-wheelie", "dumpster"),
-                                   LoadAll(Props, "mail-box", "trash-can")),
+                    scatter: Merge(LoadAll(PalmProps, "SM_Prop_Trash_Bin_01", "SM_Prop_Parking_Meter_01"),
+                                   LoadAll(PoliceProps, "SM_Prop_Dumpster_01")),
                     scatterDensity: 0.14f,
-                    fenceSegment: Load(Fences + "fence-classic.prefab"),
-                    fencePost: Load(Fences + "fence-stone-tower.prefab"),
-                    parkingBooth: Load(Amusement + "ticket-ride-booth.prefab")),
+                    fenceSegment: Load("Assets/Synty/PolygonPoliceStation/Prefabs/Buildings/SM_Bld_Fence_01.prefab"),
+                    fencePost: Load("Assets/Synty/PolygonPoliceStation/Prefabs/Buildings/SM_Bld_Fence_Pillar_01.prefab"),
+                    // The one standalone kiosk-sized building any Synty pack ships whole.
+                    parkingBooth: Load(PalmBuildings + "SM_Bld_Beach_Shop_03.prefab")),
 
                 // The docks. The fourth whole-block replacement (works, park, car park, port)
                 // and the first zone authored since the setting moved to the 1980s - which is
@@ -2269,7 +2302,7 @@ namespace LivingCity.EditorTools
                 // are the point rather than a bug. At 16.40 x 15.60 it is the bag's widest
                 // piece but still inside a lot run's 35-46m, and its 4.8m single storey
                 // breaks the terrace wall exactly the way a drive-in should.
-                prefabs = LoadAll(Buildings,
+                prefabs = LoadBuildings(
                     "building-cafe", "building-restaurant", "building-post",
                     "building-firestation", "building-shop-china",
                     "building-burger-joint"),
@@ -2290,7 +2323,7 @@ namespace LivingCity.EditorTools
 
         static PrefabDatabase.WeightedGroup Outbuildings() =>
             Detached("Outbuildings", 100f, 3f, 6f, 2f, false,
-                "building-policestation-garage", "building-house-block",
+                "building-house-block", "building-house-block",
                 "building-house-block-big");
 
         /// <summary>
@@ -2611,55 +2644,18 @@ namespace LivingCity.EditorTools
         /// the nearest-road oracle that produced the rest of this list cannot be used; see
         /// CornerFacing for what replaces it.
         /// </summary>
+        /// <summary>
+        /// Empty in the Synty era, and that is the design rather than an omission: every kit
+        /// building goes through SyntyKitExtractor/SyntyKitBash, which normalise the pivot
+        /// and put the measured front on local +Z at bake time - the correction happens where
+        /// the asset is made instead of being tabulated after the fact. The old polyperfect
+        /// entries (5floor 180, apartment-china 180, house-block-big 90, carwash 270) and the
+        /// CornerFacing measurement runs are preserved in git history for the day a prefab
+        /// that cannot be re-baked needs a fix again; the industrial keeps have no entries
+        /// and never did.
+        /// </summary>
         static PrefabDatabase.FacadeYawFix[] BuildFacadeYawFixes()
-        {
-            var fixes = new List<PrefabDatabase.FacadeYawFix>
-            {
-                YawFix(Buildings + "building-block-5floor.prefab", 180f),
-                YawFix(Buildings + "building-apartment-china.prefab", 180f),
-                YawFix(Buildings + "building-house-block-big.prefab", 90f),
-
-                // The salon. Measured from the FBX, not the demo (the pack's Models scene
-                // drops every building at yaw 0, fronts be damned, and the carwash is in no
-                // city scene): the mesh is an office block on its -X half and an open canopy
-                // on pillars over the +X half, Z-symmetric, mouth on +X. With extra yaw e the
-                // wall facing the street is local (-sin e, 0, cos e), so 270 puts +X - the
-                // canopy mouth - to the street, a rank of stock in front of an open pavilion.
-                // 90 would show the office's back windows; 0/180 its blind gable ends.
-                YawFix(Buildings + "building-carwash.prefab", 270f),
-            };
-
-            // Kept only for the case where the measurement will not commit - a mesh it cannot
-            // read, or a piece whose four elevations are too alike to call. Better a value that
-            // was at least once looked at than a silent 0.
-            var fallback = new Dictionary<string, float>
-            {
-                ["building-block-4floor-corner"] = 90f,
-                ["building-block-5floor-corner"] = -90f,
-            };
-
-            foreach (var name in TerraceCorner)
-            {
-                var prefab = Load(Buildings + name + ".prefab");
-                if (!prefab)
-                    continue;
-
-                var measured = CornerFacing.Measure(prefab, out var report);
-                Debug.Log($"[CityAssetBootstrap] {name}: {report}");
-
-                var extraYaw = measured ?? fallback.GetValueOrDefault(name, 0f);
-                if (!measured.HasValue)
-                    Debug.LogWarning($"[CityAssetBootstrap] {name}: falling back to the " +
-                                     $"hand-entered {extraYaw:F0} degrees.");
-
-                // 0 is the convention, not a correction - no entry needed, and leaving it out
-                // keeps the table to the pieces that actually deviate.
-                if (!Mathf.Approximately(extraYaw, 0f))
-                    fixes.Add(new PrefabDatabase.FacadeYawFix { prefab = prefab, extraYaw = extraYaw });
-            }
-
-            return fixes.ToArray();
-        }
+            => System.Array.Empty<PrefabDatabase.FacadeYawFix>();
 
         /// <summary>
         /// Every works prefab that has been measured to carry a chimney mouth, derived each run
@@ -2912,6 +2908,21 @@ namespace LivingCity.EditorTools
                 parkAmusement = parkAmusement ?? System.Array.Empty<GameObject>(),
             };
 
+        /// <summary>
+        /// A building by name, wherever it lives now: the Synty city kit first, the
+        /// polyperfect Buildings_T folder as the fallback. One resolver so the shared group
+        /// helpers serve both worlds - building-apartment-01 is a kit bake while
+        /// industry-warehouse is still the pack's, and neither caller has to know.
+        /// </summary>
+        static GameObject LoadBuilding(string name)
+        {
+            var kit = AssetDatabase.LoadAssetAtPath<GameObject>(KitBuildings + name + ".prefab");
+            return kit ? kit : Load(Buildings + name + ".prefab");
+        }
+
+        static GameObject[] LoadBuildings(params string[] names) =>
+            names.Select(LoadBuilding).Where(p => p).ToArray();
+
         /// <summary>Modular kit whose pieces abut flush, split by street / alley / corner role.</summary>
         static PrefabDatabase.WeightedGroup Terrace(
             string label, float weight, string[] street, string[] rear, string[] corner) =>
@@ -2920,9 +2931,9 @@ namespace LivingCity.EditorTools
                 label = label,
                 weight = weight,
                 layout = PrefabDatabase.PieceLayout.Terrace,
-                prefabs = LoadAll(Buildings, street),
-                rearPrefabs = LoadAll(Buildings, rear),
-                cornerPrefabs = LoadAll(Buildings, corner),
+                prefabs = LoadBuildings(street),
+                rearPrefabs = LoadBuildings(rear),
+                cornerPrefabs = LoadBuildings(corner),
             };
 
         /// <summary>
@@ -2941,7 +2952,7 @@ namespace LivingCity.EditorTools
                 maxGap = maxGap,
                 maxSetback = maxSetback,
                 cornerPreferred = cornerPreferred,
-                prefabs = LoadAll(Buildings, names),
+                prefabs = LoadBuildings(names),
             };
 
         static GameObject[] Merge(params GameObject[][] lists) =>
