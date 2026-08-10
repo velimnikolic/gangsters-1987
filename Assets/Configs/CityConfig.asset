@@ -85,7 +85,7 @@ MonoBehaviour:
   schoolParentCount: 4
   schoolParentStayRange: {x: 20, y: 60}
   schoolParentGapRange: {x: 15, y: 50}
-  portChance: 0.5
+  portChance: 0
   dockWorkerCount: 12
   portShipStayRange: {x: 45, y: 90}
   portShipGapRange: {x: 20, y: 60}
