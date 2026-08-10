@@ -122,9 +122,9 @@ namespace LivingCity.EditorTools
         /// </summary>
         static void SeedTrims(SoundDatabase db)
         {
-            db.cityDayBed.volume = 0.35f;
-            db.cityNightBed.volume = 0.35f;
-            db.smogLayer.volume = 0.08f;
+            db.cityDayBed.volume = 0.18f;
+            db.cityNightBed.volume = 0.18f;
+            db.smogLayer.volume = 0.04f;
 
             db.engineVolume = 0.4f;
             db.enginePitchMin = 0.95f;
@@ -132,7 +132,7 @@ namespace LivingCity.EditorTools
 
             db.gunshotVolume = 1f;
             db.footstepVolume = 0.35f;
-            db.murmurVolume = 0.5f;
+            db.murmurVolume = 0.13f;
             db.masterVolume = 1f;
         }
 

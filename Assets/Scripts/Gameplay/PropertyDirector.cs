@@ -47,12 +47,17 @@ namespace LivingCity.Gameplay
         };
 
         /// <summary>InteractionMarkers.ShopFronts' judgement exactly: the fire station has
-        /// engine doors nobody pops in through, and corner variants are facade filler.</summary>
+        /// engine doors nobody pops in through, and corner variants are facade filler.
+        /// The casino is the one entry ShopFronts does not carry - it arrives down the
+        /// landmark path, not the Shops bag, but a door the player can put money through
+        /// is this list's whole test and a casino passes it better than anything on it.</summary>
         static readonly string[] CommercialNames =
         {
             "building-cafe",
             "building-restaurant",
             "building-post",
+            "building-burger-joint",
+            "building-casino",
         };
 
         /// <summary>Chance in a hundred that a business's civilian owner is a woman - it is
@@ -140,6 +145,12 @@ namespace LivingCity.Gameplay
                                 candidate.Name, rng.Next(1000));
                         owner = civicPost ? civic : DrawCivilianOwner(rng, takenNames);
                         income = rng.Next(6, 25) * 50;
+
+                        // A multiplier on the SAME roll, not an extra draw - the draw order
+                        // per candidate is frozen (see above), and the house always wins:
+                        // $1.5k-6k/wk puts the city's one casino above every factory.
+                        if (candidate.Name.StartsWith("building-casino"))
+                            income *= 5;
                         break;
 
                     default:

@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0b2fc2d09ed24c65aa83e1c0f798d623, type: 3}
+  m_Name: LedgerModelSet
+  m_EditorClassIdentifier: Assembly-CSharp::LivingCity.UI.LedgerModelSet
+  pistol: {fileID: 919132149155446097, guid: ccadba93d0384faceae8fb77812b1f4e, type: 3}
+  shotgun: {fileID: 919132149155446097, guid: 52c402cc6787795b3f6cdb7041df029c, type: 3}
+  rifle: {fileID: 919132149155446097, guid: a5ab3d8e6063677f091d22479077e97f, type: 3}
+  tommyGun: {fileID: 919132149155446097, guid: 4d420969986fcb77331cebca0e11ee5e, type: 3}

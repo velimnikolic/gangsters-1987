@@ -58,6 +58,7 @@ namespace LivingCity.Tests
             var bankIndex = -1;
             var stationIndex = -1;
             var stationZone = BlockZone.ResidentialHigh;
+            var stationEvery = 0;
             if (prefabs.zonePalettes != null)
                 foreach (var palette in prefabs.zonePalettes)
                 {
@@ -69,6 +70,7 @@ namespace LivingCity.Tests
                     {
                         stationIndex = palette.guaranteedLandmark;
                         stationZone = palette.zone;
+                        stationEvery = palette.guaranteedLandmarkEvery;
                     }
                 }
 
@@ -114,10 +116,12 @@ namespace LivingCity.Tests
                 if (!ownBlock && !HasForcedLandmark(grid, bankIndex))
                     noBank.Add(seed);
 
-                // The station's guarantee: exactly ONE block of the owning zone marked with
-                // its index. Zero means FulfilGuaranteedLandmarks found no host; two means a
-                // double-mark bug. (Whether the prefab then FITS the block is a placement
-                // question this data-only sweep cannot see - the in-editor pass covers it.)
+                // The station's guarantee, scaled: exactly max(1, blocks/every) blocks of the
+                // owning zone marked with its index - the marks are the station's only source
+                // now, so the count IS the city's station count. Fewer means
+                // FulfilGuaranteedLandmarks ran out of hosts; more means a double-mark bug.
+                // (Whether each prefab then FITS its block is a placement question this
+                // data-only sweep cannot see - the in-editor pass covers it.)
                 if (stationIndex >= 0 && stationIndex != bankIndex)
                 {
                     var stationForced = 0;
@@ -126,7 +130,10 @@ namespace LivingCity.Tests
                             && grid.ZoneOf(blockId) == stationZone)
                             stationForced++;
 
-                    if (stationForced != 1)
+                    var owed = stationEvery > 0
+                        ? System.Math.Max(1, grid.BlockCount / stationEvery)
+                        : 1;
+                    if (stationForced != owed)
                         badStation.Add(seed);
                 }
 
@@ -189,8 +196,8 @@ namespace LivingCity.Tests
 
             if (badStation.Count > 0)
                 result.Failures.Add(
-                    $"{badStation.Count}/{maps} cities do not force exactly one police station " +
-                    $"block. First offending seeds: {string.Join(", ", badStation.GetRange(0, System.Math.Min(8, badStation.Count)))}");
+                    $"{badStation.Count}/{maps} cities do not force the owed number of police " +
+                    $"station blocks. First offending seeds: {string.Join(", ", badStation.GetRange(0, System.Math.Min(8, badStation.Count)))}");
 
             if (landlockedPort.Count > 0)
                 result.Failures.Add(

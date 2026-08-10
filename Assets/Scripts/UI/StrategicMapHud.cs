@@ -21,8 +21,9 @@ namespace LivingCity.UI
     /// player's fog of war (MapVisionRegistry): police blue, civilians white, the player
     /// a gold square. MapAffiliation is the seam a future gang layer colours dots through.
     ///
-    /// Clicking a block selects it and fills the right-rail card with exactly what is in
-    /// it: zone, every business with its owner and weekly take, and the landmarks.
+    /// Clicking a BUILDING selects it - building by building, never a whole block - and
+    /// fills the right-rail card: what it is, which family controls the ground it stands
+    /// on (the territory ledger, in gang colour), its business or civic role, its block.
     ///
     /// Block identity comes from the ground slab names ("ground_{zone}_{blockId}"), the
     /// one trace of CityGrid that survives into a saved scene - the BlockOverlayHud parse,
@@ -94,6 +95,10 @@ namespace LivingCity.UI
         const float DotSize = 6f;
 
         const float PlayerDotSize = 10f;
+
+        /// <summary>The outfit's front reads as a place, not a person - bigger than any
+        /// dot, with the family name floating over it.</summary>
+        const float HqMarkerSize = 16f;
 
         /// <summary>Hard ceiling on drawn dots. Every dot is a uGUI Image and moving one
         /// re-batches the canvas - fine in the hundreds, a stutter machine in the
@@ -179,11 +184,19 @@ namespace LivingCity.UI
 
         Canvas canvas;
         GameObject page;
-        Image highlight;
+
+        /// <summary>The screen region the map owns: the whole screen on M, the right
+        /// half while the ledger stands open beside it. Every overlay layer lives under
+        /// it, and its RectMask2D keeps dots and washes from bleeding onto the book.</summary>
+        RectTransform mapArea;
+        bool docked;
+
         Image buildingHighlight;
         RectTransform cardRect;
         TMP_Text cardTitle;
         TMP_Text cardBody;
+        TMP_Text hqLabel;
+        TMP_Text hintText;
         bool tmpReady;
 
         readonly List<Image> dotPool = new List<Image>();
@@ -191,6 +204,7 @@ namespace LivingCity.UI
         int dotCursor;
 
         readonly List<Image> territoryTiles = new List<Image>();
+        readonly List<Outfit.Turf.Holding> holdingsScratch = new List<Outfit.Turf.Holding>();
         RectTransform territoryRoot;
 
         readonly List<Rect> targetRects = new List<Rect>();
@@ -219,6 +233,7 @@ namespace LivingCity.UI
         Transform buildingsRoot;
         bool cardDirty;
         int paintedPropertyVersion = -1;
+        int paintedOutfitVersion = -1;
         bool visionUnrestricted;
 
         readonly List<Tracked> policeDots = new List<Tracked>();
@@ -267,9 +282,18 @@ namespace LivingCity.UI
                 return;
 
             if (Targeting != null)
+            {
                 HandleTargeting(mouse);
+            }
             else if (mouse.leftButton.wasPressedThisFrame)
-                PickBlock(mouse.position.ReadValue());
+            {
+                // The clock bar now carries real buttons over this map (pause, HQ) - a
+                // click the EventSystem already gave to one of them is not a map click.
+                var overUi = UnityEngine.EventSystems.EventSystem.current &&
+                    UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject();
+                if (!overUi)
+                    PickBlock(mouse.position.ReadValue());
+            }
         }
 
         // ------------------------------------------------------- order targeting input
@@ -369,11 +393,17 @@ namespace LivingCity.UI
                 targetFocus += new Vector3(input.x * speed, 0f, input.y * speed);
             }
 
+            var pixels = ViewportPixels;
             var mouse = Mouse.current;
             if (mouse != null)
             {
+                var pointer = mouse.position.ReadValue();
                 var scroll = mouse.scroll.ReadValue().y;
-                if (Mathf.Abs(scroll) >= 0.01f)
+
+                // Only while the pointer is over the map's own region - docked beside
+                // the book, the wheel over a roster list must scroll the list, not zoom
+                // the city. Fullscreen this is the whole screen, exactly the old rule.
+                if (Mathf.Abs(scroll) >= 0.01f && pixels.Contains(pointer))
                 {
                     var direction = Mathf.Sign(scroll);
                     var previous = targetOrtho;
@@ -381,12 +411,11 @@ namespace LivingCity.UI
                         targetOrtho * (1f - direction * ZoomStep), MinOrtho, maxOrtho);
 
                     // Pin the ground point under the pointer while the size changes - the
-                    // map grows toward what is being looked at, not the screen centre.
-                    if (!Mathf.Approximately(previous, targetOrtho) && Screen.height > 0)
+                    // map grows toward what is being looked at, not the viewport centre.
+                    if (!Mathf.Approximately(previous, targetOrtho) && pixels.height > 0f)
                     {
-                        var offset = mouse.position.ReadValue() -
-                                     new Vector2(Screen.width, Screen.height) * 0.5f;
-                        var worldPerPixel = targetOrtho * 2f / Screen.height;
+                        var offset = pointer - pixels.center;
+                        var worldPerPixel = targetOrtho * 2f / pixels.height;
                         targetFocus += new Vector3(offset.x * worldPerPixel, 0f,
                                                    offset.y * worldPerPixel) *
                                        (previous / targetOrtho - 1f);
@@ -396,7 +425,7 @@ namespace LivingCity.UI
 
             // The view never leaves the city; zoomed past the city's own proportions the
             // short axis just centres.
-            var aspect = Screen.height > 0 ? Screen.width / (float)Screen.height : 1.78f;
+            var aspect = pixels.height > 0f ? pixels.width / pixels.height : 1.78f;
             targetFocus = new Vector3(
                 ClampAxis(targetFocus.x, cityBounds.min.x, cityBounds.max.x,
                     targetOrtho * aspect),
@@ -417,10 +446,30 @@ namespace LivingCity.UI
             return Mathf.Clamp(value, min + halfView, max - halfView);
         }
 
-        public void Open()
+        public void Open() => OpenAs(beside: false);
+
+        /// <summary>The ledger's war-room mode: the same live map, docked into the right
+        /// half of the screen while the book fills the left. Re-docks (or un-docks) an
+        /// already-open map instead of reopening it.</summary>
+        public void OpenBeside() => OpenAs(beside: true);
+
+        void OpenAs(bool beside)
         {
-            if (IsOpen || !EnsureBuilt())
+            if (IsOpen)
+            {
+                if (docked == beside)
+                    return;
+                docked = beside;
+                ApplyViewport();
+                FrameCamera();
                 return;
+            }
+
+            if (!EnsureBuilt())
+                return;
+
+            docked = beside;
+            ApplyViewport();
 
             // Clouds respawn as they drift off the map, so the sweep repeats per open -
             // a handful of objects, not worth tracking spawns for.
@@ -447,13 +496,32 @@ namespace LivingCity.UI
             IsOpen = true;
         }
 
+        /// <summary>The camera's viewport and the overlay container, agreeing on the
+        /// same normalized region - WorldToScreenPoint and ScreenPointToRay are
+        /// viewport-aware, so every projection stays honest in both modes. The hint
+        /// drops the close-gesture line while docked: Esc there belongs to the book.</summary>
+        void ApplyViewport()
+        {
+            mapCamera.rect = docked
+                ? new Rect(0.5f, 0f, 0.5f, 1f)
+                : new Rect(0f, 0f, 1f, 1f);
+            mapArea.anchorMin = docked ? new Vector2(0.5f, 0f) : Vector2.zero;
+            mapArea.anchorMax = Vector2.one;
+            mapArea.offsetMin = mapArea.offsetMax = Vector2.zero;
+            if (hintText)
+                hintText.text = (docked ? "" : "M / Esc - close map    ") +
+                    "LMB - inspect a building    scroll - zoom    WASD - pan";
+        }
+
         public void Close()
         {
             if (!IsOpen)
                 return;
 
+            docked = false;
             page.SetActive(false);
             mapCamera.enabled = false;
+            mapCamera.rect = new Rect(0f, 0f, 1f, 1f);
             if (isoCamera) isoCamera.enabled = true;
             if (isoController) isoController.enabled = true;
             if (occlusionHider) occlusionHider.enabled = true;
@@ -542,16 +610,41 @@ namespace LivingCity.UI
             data.renderShadows = false;
         }
 
+        /// <summary>The camera's own viewport in pixels - the whole screen on M, the
+        /// right half docked. All screen-bounds tests and per-pixel math go through
+        /// this so both modes share one geometry.</summary>
+        Rect ViewportPixels => mapCamera.pixelRect;
+
         void FrameCamera()
         {
             // Recomputed per open - the window may have been resized. Every open starts
             // back at the whole city; the strategic view IS the overview.
-            var aspect = Screen.height > 0 ? Screen.width / (float)Screen.height : 1.78f;
+            var pixels = ViewportPixels;
+            var aspect = pixels.height > 0f ? pixels.width / pixels.height : 1.78f;
             fitOrtho = Mathf.Max(cityBounds.extents.z, cityBounds.extents.x / aspect) * 1.02f;
 
             var centre = cityBounds.center;
             focus = targetFocus = new Vector3(centre.x, 0f, centre.z);
             orthoSize = targetOrtho = fitOrtho;
+            mapCamera.transform.position = new Vector3(focus.x, CameraHeight, focus.z);
+            mapCamera.orthographicSize = orthoSize;
+        }
+
+        /// <summary>
+        /// Snap the open map to a world point at the given zoom - the clock bar's HQ
+        /// button. Smoothed state moves WITH the targets (no glide - the user chose the
+        /// cut over the flight), and the camera is placed this same frame so even a
+        /// paused game shows the base immediately. HandleNavigation's clamp re-applies
+        /// next frame, so this still cannot leave the city.
+        /// </summary>
+        public void FocusOn(Vector3 world, float ortho)
+        {
+            if (!IsOpen)
+                return;
+
+            focus = targetFocus = new Vector3(world.x, 0f, world.z);
+            orthoSize = targetOrtho =
+                Mathf.Clamp(ortho, MinOrtho, Mathf.Max(fitOrtho, MinOrtho));
             mapCamera.transform.position = new Vector3(focus.x, CameraHeight, focus.z);
             mapCamera.orthographicSize = orthoSize;
         }
@@ -575,35 +668,66 @@ namespace LivingCity.UI
             page = new GameObject("Page", typeof(RectTransform));
             page.transform.SetParent(go.transform, false);
 
+            // The map's own screen region - fullscreen on M, the right half beside the
+            // ledger. Its mask clips every overlay layer to whatever the region is, so
+            // a dot or a turf wash can never bleed over the book.
+            var area = new GameObject("Map Area", typeof(RectTransform));
+            area.transform.SetParent(page.transform, false);
+            mapArea = (RectTransform)area.transform;
+            mapArea.anchorMin = Vector2.zero;
+            mapArea.anchorMax = Vector2.one;
+            mapArea.offsetMin = mapArea.offsetMax = Vector2.zero;
+            area.AddComponent<RectMask2D>();
+
             // Territory first of all - the families' turf wash is ground, and every
             // highlight and dot must read over it.
             var turf = new GameObject("Territory", typeof(RectTransform));
-            turf.transform.SetParent(page.transform, false);
+            turf.transform.SetParent(mapArea, false);
             territoryRoot = (RectTransform)turf.transform;
 
             // Hierarchy order is draw order: highlights under the dots, card over both.
-            highlight = BuildRectImage("Highlight", page.transform);
-            highlight.enabled = false;
-
-            buildingHighlight = BuildRectImage("Building Highlight", page.transform);
+            buildingHighlight = BuildRectImage("Building Highlight", mapArea);
             buildingHighlight.color = new Color(1f, 1f, 1f, 0.35f);
             buildingHighlight.enabled = false;
 
             // Order targets over the highlights, under the dots - a selected block must
             // not hide the men standing on it.
             var targets = new GameObject("Targets", typeof(RectTransform));
-            targets.transform.SetParent(page.transform, false);
+            targets.transform.SetParent(mapArea, false);
             targetRoot = (RectTransform)targets.transform;
 
             var dots = new GameObject("Dots", typeof(RectTransform));
-            dots.transform.SetParent(page.transform, false);
+            dots.transform.SetParent(mapArea, false);
             dotRoot = (RectTransform)dots.transform;
 
-            dragBox = BuildRectImage("Drag Box", page.transform);
+            dragBox = BuildRectImage("Drag Box", mapArea);
             dragBox.color = new Color(1f, 1f, 1f, 0.16f);
             dragBox.enabled = false;
 
             BuildCard();
+
+            // The outfit's name tag, floating over the HQ marker - above the dots in
+            // draw order, repositioned per frame with them. Created straight under the
+            // still-ACTIVE map area, never via BuildCardText: that helper parents new
+            // text under the card, which BuildCard has just closed, and a TMP component
+            // added below an inactive parent is the null-material crash that takes every
+            // canvas on screen down with it (the runtime-HUD trap).
+            if (tmpReady)
+            {
+                var tag = new GameObject("HQ Label", typeof(RectTransform));
+                tag.transform.SetParent(mapArea, false);
+                hqLabel = tag.AddComponent<TextMeshProUGUI>();
+                hqLabel.fontSize = 12f;
+                hqLabel.fontStyle = FontStyles.Bold;
+                hqLabel.color = PlayerGold;
+                hqLabel.alignment = TextAlignmentOptions.Center;
+                hqLabel.textWrappingMode = TextWrappingModes.NoWrap;
+                hqLabel.raycastTarget = false;
+                var rect = hqLabel.rectTransform;
+                rect.pivot = new Vector2(0.5f, 0f);
+                rect.sizeDelta = new Vector2(200f, 16f);
+                hqLabel.gameObject.SetActive(false);
+            }
 
             // Built ACTIVE then hidden - the BlockOverlayHud trick: TMP loads its font in
             // OnEnable, which never runs under an inactive parent.
@@ -633,7 +757,7 @@ namespace LivingCity.UI
             }
 
             var card = new GameObject("Card", typeof(RectTransform));
-            card.transform.SetParent(page.transform, false);
+            card.transform.SetParent(mapArea, false);
 
             cardRect = (RectTransform)card.transform;
             cardRect.anchorMin = new Vector2(1f, 1f);
@@ -646,6 +770,7 @@ namespace LivingCity.UI
             background.sprite = null;
             background.color = new Color(0f, 0f, 0f, 0.78f);
             background.raycastTarget = false;
+            UiSkin.TryDress(background, UiSkin.PanelDark);
 
             cardTitle = BuildCardText("Title", 18f);
             cardTitle.fontStyle = FontStyles.Bold;
@@ -667,17 +792,15 @@ namespace LivingCity.UI
             cardBody.alignment = TextAlignmentOptions.TopLeft;
             cardBody.textWrappingMode = TextWrappingModes.Normal;
 
-            var hint = BuildCardText("Hint", 12f);
-            hint.transform.SetParent(page.transform, false);
-            hint.color = new Color(1f, 1f, 1f, 0.55f);
-            var hintRect = hint.rectTransform;
+            hintText = BuildCardText("Hint", 12f);
+            hintText.transform.SetParent(mapArea, false);
+            hintText.color = new Color(1f, 1f, 1f, 0.55f);
+            var hintRect = hintText.rectTransform;
             hintRect.anchorMin = new Vector2(0f, 0f);
             hintRect.anchorMax = new Vector2(0f, 0f);
             hintRect.pivot = new Vector2(0f, 0f);
             hintRect.anchoredPosition = new Vector2(16f, 12f);
             hintRect.sizeDelta = new Vector2(700f, 20f);
-            hint.text = "M / Esc - close map    LMB - inspect a block    " +
-                        "scroll - zoom    WASD - pan";
 
             card.SetActive(false);
         }
@@ -855,10 +978,21 @@ namespace LivingCity.UI
                 selectedBuilding = BuildingRootOf(hit.collider.transform);
             }
 
-            if (selectedBuilding)
-                selectedBuildingRect = BuildingFootprint(selectedBuilding);
+            // Selection is building-by-building - a click that lands on ground, street
+            // or props selects NOTHING. The turf wash already tells the block story;
+            // the card exists to tell the building's.
+            if (!selectedBuilding)
+            {
+                selectedBlockId = -1;
+                cardDirty = true;
+                return;
+            }
 
-            // Orthographic top-down: the near-plane point already has the right X and Z.
+            selectedBuildingRect = BuildingFootprint(selectedBuilding);
+
+            // The building's block, for context and control: the slab under the click,
+            // or - a building can overhang the sidewalk the slab stops at - the nearest
+            // slab to the building, the PropertyDirector rule.
             var world = mapCamera.ScreenToWorldPoint(
                 new Vector3(screenPosition.x, screenPosition.y, 0f));
             var point = new Vector2(world.x, world.z);
@@ -881,12 +1015,9 @@ namespace LivingCity.UI
                     break;
             }
 
-            // A building can overhang the sidewalk the slab stops at - its block is then
-            // the nearest slab's, the PropertyDirector rule.
-            if (hitBlock < 0 && selectedBuilding)
+            if (hitBlock < 0)
                 hitBlock = NearestBlock(selectedBuilding.position);
 
-            // A road or the water: the selection clears - same gesture as the overlay.
             selectedBlockId = hitBlock;
             cardDirty = true;
         }
@@ -957,6 +1088,9 @@ namespace LivingCity.UI
             if (player)
                 EmitDot(player.transform.position, PlayerGold, PlayerDotSize, square: true);
 
+            // The outfit's base, before police - the MaxDots cap must never swallow it.
+            PaintHeadquarters();
+
             // Police before civilians: the MaxDots cap swallows from the tail, and a lost
             // blue dot is information lost - a lost white one is crowd texture.
             EmitTracked(policeDots, PoliceBlue);
@@ -998,6 +1132,44 @@ namespace LivingCity.UI
 
             TrimDots();
             UpdateSelection();
+        }
+
+        /// <summary>
+        /// The outfit's headquarters: a gold square at its front premise with the family
+        /// name over it - "our base", legible at every zoom where a footprint is not.
+        /// Absent until GangDirector has seated the families, like the turf wash.
+        /// </summary>
+        void PaintHeadquarters()
+        {
+            var outfit = Gameplay.OutfitDirector.Instance;
+            if (!outfit || !outfit.TryGetHeadquarters(out var hq, out _))
+            {
+                if (hqLabel && hqLabel.gameObject.activeSelf)
+                    hqLabel.gameObject.SetActive(false);
+                return;
+            }
+
+            EmitDot(hq, PlayerGold, HqMarkerSize, square: true);
+
+            if (!hqLabel)
+                return;
+
+            // Named here, not at build time - the registry is empty until GangDirector
+            // installs the families, and a front existing proves that has happened.
+            // IsNullOrEmpty, not .Length: a fresh TextMeshProUGUI's text is NULL until
+            // the first assignment, and this line runs before any.
+            if (string.IsNullOrEmpty(hqLabel.text))
+                hqLabel.text = Gangs.GangRegistry.NameOf(Gangs.GangCatalog.PlayerGangId);
+
+            var screen = mapCamera.WorldToScreenPoint(hq);
+            var pixels = ViewportPixels;
+            var visible = screen.x >= pixels.xMin && screen.x <= pixels.xMax &&
+                          screen.y >= pixels.yMin && screen.y <= pixels.yMax;
+            if (hqLabel.gameObject.activeSelf != visible)
+                hqLabel.gameObject.SetActive(visible);
+            if (visible)
+                hqLabel.transform.position =
+                    new Vector3(screen.x, screen.y + HqMarkerSize * 0.75f, 0f);
         }
 
         /// <summary>Officers, response officers, school children and forecourt visitors
@@ -1060,8 +1232,9 @@ namespace LivingCity.UI
                 return;
 
             var screen = mapCamera.WorldToScreenPoint(world);
-            if (screen.x < 0f || screen.x > Screen.width ||
-                screen.y < 0f || screen.y > Screen.height)
+            var pixels = ViewportPixels;
+            if (screen.x < pixels.xMin || screen.x > pixels.xMax ||
+                screen.y < pixels.yMin || screen.y > pixels.yMax)
                 return;
 
             Image dot;
@@ -1101,10 +1274,10 @@ namespace LivingCity.UI
 
         void UpdateSelection()
         {
-            if (selectedBlockId < 0 || !blocks.TryGetValue(selectedBlockId, out var block))
+            // A destroyed building (city regenerated in Play) drops the selection too.
+            if (!selectedBuilding || selectedBlockId < 0 ||
+                !blocks.TryGetValue(selectedBlockId, out var block))
             {
-                if (highlight.enabled)
-                    highlight.enabled = false;
                 if (buildingHighlight.enabled)
                     buildingHighlight.enabled = false;
                 if (cardRect && cardRect.gameObject.activeSelf)
@@ -1112,17 +1285,11 @@ namespace LivingCity.UI
                 return;
             }
 
-            // The camera moves under zoom and pan, so both rectangles reproject every
-            // frame - the same rule as the dots.
-            ProjectRect(highlight, block.Union);
-            var zone = BlockOverlayHud.ZoneColour(block.Zone);
-            zone.a = 0.22f;
-            highlight.color = zone;
-
-            if (selectedBuilding)
-                ProjectRect(buildingHighlight, selectedBuildingRect);
-            else if (buildingHighlight.enabled)
-                buildingHighlight.enabled = false;
+            // The camera moves under zoom and pan, so the footprint reprojects every
+            // frame - the same rule as the dots. Only the BUILDING is outlined; its
+            // block is card context, never a wash of its own (the turf layer owns
+            // block-level colour).
+            ProjectRect(buildingHighlight, selectedBuildingRect);
 
             if (!tmpReady)
                 return;
@@ -1130,54 +1297,68 @@ namespace LivingCity.UI
             if (!cardRect.gameObject.activeSelf)
                 cardRect.gameObject.SetActive(true);
 
-            if (!cardDirty && paintedPropertyVersion == PropertyRegistry.Version)
+            var outfit = Gameplay.OutfitDirector.Instance;
+            var outfitVersion = outfit ? outfit.Version : -1;
+            if (!cardDirty && paintedPropertyVersion == PropertyRegistry.Version &&
+                paintedOutfitVersion == outfitVersion)
                 return;
 
             cardDirty = false;
             paintedPropertyVersion = PropertyRegistry.Version;
+            paintedOutfitVersion = outfitVersion;
             PaintCard(block);
         }
 
         /// <summary>
-        /// The families' turf, washed over their blocks in their gang colour - the
-        /// diplomacy page's territory counts made visible on the same ground they
-        /// count. Reprojected every frame like every rect on this canvas (the camera
-        /// pans and zooms); the tile pool grows to the claim count and the tail idles
-        /// disabled. Territory itself seeds lazily through OutfitDirector once the
-        /// gang layer is up - until then there is nothing to paint and no cost.
+        /// The families' holdings, washed over the buildings they hold in their gang
+        /// colour. Ground is taken premise by premise, so the wash covers exactly the
+        /// premises: a family's front tints its own footprint, never the block around
+        /// it. Ownership reads straight off the markers (BusinessMarker.GangId, the
+        /// single source) - nothing seeds, so before the gang layer stamps the fronts
+        /// there is simply nothing to paint and no cost. Reprojected every frame like
+        /// every rect on this canvas (the camera pans and zooms); the tile pool grows
+        /// to the holding count and the tail idles disabled.
         /// </summary>
         void PaintTerritory()
         {
-            var outfit = Gameplay.OutfitDirector.Instance;
-            if (!outfit || (!outfit.Territory.Seeded && !outfit.EnsureTerritory()))
-            {
-                for (var i = 0; i < territoryTiles.Count; i++)
-                    if (territoryTiles[i].enabled)
-                        territoryTiles[i].enabled = false;
-                return;
-            }
-
             var used = 0;
-            foreach (var claim in outfit.Territory.Claims)
+            foreach (var business in Gameplay.PropertyRegistry.Businesses)
             {
-                var block = Gameplay.CityBlocks.Get(claim.Key);
-                if (block == null)
+                if (!business || business.GangId < 0)
                     continue;
 
                 if (used == territoryTiles.Count)
                     territoryTiles.Add(BuildRectImage("Turf", territoryRoot));
                 var tile = territoryTiles[used++];
 
-                var colour = GangPalette.Of(claim.Value);
-                colour.a = 0.16f;
+                var colour = GangPalette.Of(business.GangId);
+                // Our own ground reads a shade stronger than the rivals' - the map is
+                // the player's, and "mine" should be findable at the full-city zoom.
+                colour.a = business.GangId == Gangs.GangCatalog.PlayerGangId ? 0.62f : 0.45f;
                 if (tile.color != colour)
                     tile.color = colour;
-                ProjectRect(tile, block.Union);
+                ProjectRect(tile, FootprintOf(business));
             }
 
             for (var i = used; i < territoryTiles.Count; i++)
                 if (territoryTiles[i].enabled)
                     territoryTiles[i].enabled = false;
+        }
+
+        /// <summary>World-XZ footprint of one held building, off its own collider (the
+        /// pack prefab keeps its MeshCollider on the marker's transform). A bare
+        /// transform degrades to a small square - never to the block around it.</summary>
+        static Rect FootprintOf(Entities.BusinessMarker business)
+        {
+            var collider = business.GetComponent<Collider>();
+            if (collider)
+            {
+                var bounds = collider.bounds;
+                return new Rect(bounds.min.x, bounds.min.z, bounds.size.x, bounds.size.z);
+            }
+
+            var position = business.transform.position;
+            return new Rect(position.x - 4f, position.z - 4f, 8f, 8f);
         }
 
         /// <summary>
@@ -1227,53 +1408,58 @@ namespace LivingCity.UI
                 image.enabled = true;
         }
 
+        /// <summary>One building, one card: what it is (title), who controls the ground
+        /// it stands on, what goes on inside, and where it stands. Only called with a
+        /// building selected - there is no block-only card anymore.</summary>
         void PaintCard(Block block)
         {
             text.Clear();
 
-            if (selectedBuilding)
-            {
-                cardTitle.text = FriendlyBuildingName(selectedBuilding.name);
-                cardTitle.color = BlockOverlayHud.ZoneColour(block.Zone);
-                AppendBuildingLines(selectedBuilding, block);
-                text.Append('\n')
-                    .Append(BlockOverlayHud.DisplayName(block.Zone))
-                    .Append(" block #").Append(block.Id).Append('\n').Append('\n');
-            }
-            else
-            {
-                cardTitle.text = $"{BlockOverlayHud.DisplayName(block.Zone)}  #{block.Id}";
-                cardTitle.color = BlockOverlayHud.ZoneColour(block.Zone);
-            }
+            cardTitle.text = FriendlyBuildingName(selectedBuilding.name);
+            cardTitle.color = BlockOverlayHud.ZoneColour(block.Zone);
 
-            foreach (var landmark in block.Landmarks)
-                text.Append("▪ ").Append(landmark).Append('\n');
-            if (block.Landmarks.Count > 0)
-                text.Append('\n');
+            AppendControlLine(block);
+            text.Append('\n');
 
-            var businesses = 0;
-            foreach (var business in PropertyRegistry.Businesses)
-            {
-                if (!business || business.BlockId != block.Id)
-                    continue;
+            AppendBuildingLines(selectedBuilding, block);
 
-                businesses++;
-                text.Append("▪ ").Append(business.BusinessName);
-                if (business.Owner != null)
-                    text.Append("  —  ").Append(business.Owner.DisplayName);
-                text.Append('\n');
-                text.Append("   $").Append(business.WeeklyIncome).Append("/wk");
-                if (business.Protected)
-                    text.Append("  ·  protected");
-                text.Append('\n');
-            }
-
-            if (businesses == 0 && block.Landmarks.Count == 0)
-                text.Append("Nothing of note.");
+            text.Append('\n')
+                .Append(BlockOverlayHud.DisplayName(block.Zone))
+                .Append(" block #").Append(block.Id).Append('\n');
 
             // .text, not SetText: the sentences themselves change, and only on selection
             // or ownership change - rare, so the allocation is affordable.
             cardBody.text = text.ToString();
+        }
+
+        /// <summary>Who holds ground here: ground is taken premise by premise, so the
+        /// honest unit is the building - the line names the family holding the most
+        /// premises on the block and how many. Nobody holding one, or a shared lead
+        /// (contested ground has no controller), reads as open ground.</summary>
+        void AppendControlLine(Block block)
+        {
+            var outfit = Gameplay.OutfitDirector.Instance;
+            if (outfit)
+                outfit.CollectHoldings(holdingsScratch);
+            else
+                holdingsScratch.Clear();
+
+            var gangId = Outfit.Turf.DominantIn(holdingsScratch, block.Id);
+            if (gangId >= 0)
+            {
+                var held = Outfit.Turf.CountIn(holdingsScratch, block.Id, gangId);
+                text.Append("<color=#")
+                    .Append(ColorUtility.ToHtmlStringRGB(GangPalette.Of(gangId)))
+                    .Append('>')
+                    .Append(Gangs.GangRegistry.NameOf(gangId))
+                    .Append("</color> holds ")
+                    .Append(held == 1 ? "a business" : held + " businesses")
+                    .Append(" here\n");
+            }
+            else
+            {
+                text.Append("No family holds ground here\n");
+            }
         }
 
         /// <summary>What THIS building is: its business (name, owner, take), its civic

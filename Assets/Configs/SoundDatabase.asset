@@ -14,10 +14,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::LivingCity.Data.SoundDatabase
   cityDayBed:
     clip: {fileID: 8300000, guid: 862a27a88209c4bb2b228fdce5190849, type: 3}
-    volume: 0.35
+    volume: 0.18
   cityNightBed:
     clip: {fileID: 0}
-    volume: 0.35
+    volume: 0.18
   clearDuskLayer:
     clip: {fileID: 0}
     volume: 1
@@ -26,7 +26,7 @@ MonoBehaviour:
     volume: 1
   smogLayer:
     clip: {fileID: 8300000, guid: bf87262ad37ca4adbbdbb60ef4c3f840, type: 3}
-    volume: 0.08
+    volume: 0.04
   engineLoops:
   - {fileID: 8300000, guid: caed81ea692d4cce9db6db45d72545dc, type: 3}
   - {fileID: 8300000, guid: a084fa909537457bb5d9e1f2d9e7d0d0, type: 3}
@@ -44,7 +44,7 @@ MonoBehaviour:
   footstepVolume: 0.04
   crowdMurmurLoops:
   - {fileID: 8300000, guid: ddec8cf93b66b4785985c0c49e5816a5, type: 3}
-  murmurVolume: 0.259
+  murmurVolume: 0.13
   masterVolume: 1
   detailMaxDistance: 60
   oneShotVoices: 16

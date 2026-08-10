@@ -307,16 +307,18 @@ namespace LivingCity.Data
         [Range(0f, 6f)] public float commuteStaggerHours = 1.5f;
 
         [Header("Police")]
-        [Tooltip("Patrol cars in the station's fleet. These are persistent GameObjects - the " +
-                 "same cars drive out, patrol, park in the forecourt and drive out again; " +
-                 "none of the traffic system's spawn/exit churn applies to them. 0 disables " +
-                 "car patrols. The forecourt has floor(width/2.7) stalls, so counts above " +
-                 "that simply keep more of the fleet out on the street at once.")]
+        [Tooltip("Patrol cars in EACH station's fleet - the city has one station per ~40 " +
+                 "blocks now (guaranteedLandmarkEvery on the residential palette), and every " +
+                 "precinct runs a fleet of this size. Persistent GameObjects - the same cars " +
+                 "drive out, patrol, park in the forecourt and drive out again; none of the " +
+                 "traffic system's spawn/exit churn applies to them. 0 disables car patrols. " +
+                 "A forecourt has floor(width/2.7) stalls, so counts above that simply keep " +
+                 "more of the fleet out on the street at once.")]
         [Min(0)] public int policeCarCount = 4;
 
-        [Tooltip("Officers walking the beat. Persistent like the cars: they patrol the " +
-                 "pavements and periodically return to the station through its door. Not " +
-                 "counted in pedestrianCount. 0 disables foot patrols.")]
+        [Tooltip("Officers walking the beat, per station like the cars. Persistent: they " +
+                 "patrol the pavements and periodically return to their own station through " +
+                 "its door. Not counted in pedestrianCount. 0 disables foot patrols.")]
         [Min(0)] public int policeOfficerCount = 4;
 
         [Tooltip("Random routes a patrol car serves before it heads back to the station, " +

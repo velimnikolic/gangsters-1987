@@ -405,6 +405,25 @@ namespace LivingCity.CameraRig
             targetFocus.y = 0f;
         }
 
+        /// <summary>
+        /// Cut straight to a world point - the clock bar's HQ and lieutenant focus while
+        /// the city view is up (the strategic map handles its own). Instant on purpose,
+        /// the same choice as the map's FocusOn: the user asked for the cut, not the
+        /// flight. Zoom pulls in only if currently wider - a close-up stays a close-up.
+        /// </summary>
+        public void FocusOn(Vector3 world)
+        {
+            const float focusOrtho = 30f;
+
+            targetFocus = new Vector3(world.x, 0f, world.z);
+            if (targetOrthoSize > focusOrtho)
+                orthoSize = targetOrthoSize = Mathf.Max(minOrthoSize, focusOrtho);
+
+            ClampFocus();
+            focusPoint = targetFocus;
+            ApplyTransform();
+        }
+
         void SmoothToTargets()
         {
             var dt = Time.unscaledDeltaTime;

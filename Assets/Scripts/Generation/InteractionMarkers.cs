@@ -72,7 +72,8 @@ namespace LivingCity.Generation
         /// also contains building-firestation - engine doors, nobody pops in - and corner
         /// pieces are excluded below because their forward aligns a quadrant, not a facade.
         /// </summary>
-        static readonly string[] ShopFronts = { "building-cafe", "building-restaurant", "building-post" };
+        static readonly string[] ShopFronts =
+            { "building-cafe", "building-restaurant", "building-post", "building-burger-joint" };
 
         /// <summary>
         /// The seat table for a bench by prefab name, or null if the name is not a bench.

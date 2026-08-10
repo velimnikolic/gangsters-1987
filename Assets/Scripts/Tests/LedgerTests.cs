@@ -30,7 +30,7 @@ namespace LivingCity.Tests
             CataloguePricesMatchTheSheet(failures);
             NewStockEntersThePoolUnheld(failures);
             StancesTurnOverAtCommit(failures);
-            TerritorySeedsFromTheFronts(failures);
+            TurfIsHeldPerBuilding(failures);
             StanceWordingIsExhaustive(failures);
             OrderTableCoversEveryType(failures);
             TravelDrivesTheCapacity(failures);
@@ -175,44 +175,37 @@ namespace LivingCity.Tests
                 failures.Add("StancesTurnOverAtCommit: the commit did not turn the stance.");
         }
 
-        static void TerritorySeedsFromTheFronts(List<string> failures)
+        static void TurfIsHeldPerBuilding(List<string> failures)
         {
-            // A 6x6 grid of blocks, ids 0..35, centres 10 apart.
-            var blocks = new List<TerritorySeeder.BlockPoint>();
-            for (var z = 0; z < 6; z++)
-                for (var x = 0; x < 6; x++)
-                    blocks.Add(new TerritorySeeder.BlockPoint(z * 6 + x, x * 10f, z * 10f));
-
-            var fronts = new List<TerritorySeeder.FrontPoint>
+            // Day one, as the markers would present it: each family holds exactly its
+            // own front premise - one BUILDING, never the block around it.
+            var holdings = new List<Turf.Holding>
             {
-                new TerritorySeeder.FrontPoint(0, 0, 0f, 0f),      // the player, corner
-                new TerritorySeeder.FrontPoint(1, 35, 50f, 50f),   // far corner
-                new TerritorySeeder.FrontPoint(2, 5, 50f, 0f),     // third corner
+                new Turf.Holding(0, 12),   // the player's front
+                new Turf.Holding(1, 30),
+                new Turf.Holding(2, 4),
             };
 
-            var map = new TerritoryMap();
-            TerritorySeeder.Seed(map, blocks, fronts, playerGangId: 0);
+            for (var gang = 0; gang <= 2; gang++)
+                if (Turf.CountOf(holdings, gang) != 1)
+                    failures.Add($"TurfIsHeldPerBuilding: gang {gang} holds " +
+                                 $"{Turf.CountOf(holdings, gang)} buildings day one.");
 
-            if (map.CountOf(0) != 1)
-                failures.Add($"TerritorySeedsFromTheFronts: player holds {map.CountOf(0)}.");
-            if (map.CountOf(1) != TerritorySeeder.RivalBlocks ||
-                map.CountOf(2) != TerritorySeeder.RivalBlocks)
-                failures.Add("TerritorySeedsFromTheFronts: a rival missed his four.");
+            if (Turf.DominantIn(holdings, 12) != 0 || Turf.DominantIn(holdings, 30) != 1)
+                failures.Add("TurfIsHeldPerBuilding: a front premise answers for the wrong family.");
+            if (Turf.DominantIn(holdings, 7) != -1)
+                failures.Add("TurfIsHeldPerBuilding: empty ground found a controller.");
 
-            if (map.OwnerOf(0) != 0 || map.OwnerOf(35) != 1 || map.OwnerOf(5) != 2)
-                failures.Add("TerritorySeedsFromTheFronts: a front block went to the wrong gang.");
+            // The takeover arithmetic ahead of its mechanic: premises are counted one
+            // by one, two beat one, and a shared lead is contested - no controller.
+            holdings.Add(new Turf.Holding(1, 12));
+            holdings.Add(new Turf.Holding(1, 12));
+            if (Turf.CountIn(holdings, 12, 1) != 2 || Turf.DominantIn(holdings, 12) != 1)
+                failures.Add("TurfIsHeldPerBuilding: two premises did not out-hold one.");
 
-            // Growth is nearest-first: gang 1's turf must stay in its corner.
-            foreach (var claim in map.Claims)
-                if (claim.Value == 1 && claim.Key < 22)
-                    failures.Add($"TerritorySeedsFromTheFronts: gang 1 leapt to block {claim.Key}.");
-
-            // Same inputs, same turf - byte-for-byte.
-            var again = new TerritoryMap();
-            TerritorySeeder.Seed(again, blocks, fronts, playerGangId: 0);
-            foreach (var claim in map.Claims)
-                if (again.OwnerOf(claim.Key) != claim.Value)
-                    failures.Add("TerritorySeedsFromTheFronts: reseeding disagreed.");
+            holdings.Add(new Turf.Holding(0, 12));
+            if (Turf.DominantIn(holdings, 12) != -1)
+                failures.Add("TurfIsHeldPerBuilding: contested ground found a controller.");
         }
 
         static void StanceWordingIsExhaustive(List<string> failures)

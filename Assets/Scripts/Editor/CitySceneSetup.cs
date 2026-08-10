@@ -86,8 +86,9 @@ namespace LivingCity.EditorTools
                         ?? spawners.AddComponent<PedestrianInteractionDirector>();
             CityEditorUtils.SetField(director, "config", config);
 
-            // The police: patrol fleet + beat officers, homed on the PoliceStation marker the
-            // build above just attached. Runtime-only like the other spawners.
+            // The police: a patrol fleet + beat officers homed on EACH PoliceStation marker
+            // the build above just attached - one precinct per station, and the map now owes
+            // one station per ~40 blocks. Runtime-only like the other spawners.
             var police = spawners.GetComponent<PoliceDirector>() ?? spawners.AddComponent<PoliceDirector>();
             CityEditorUtils.SetField(police, "config", config);
             CityEditorUtils.SetField(police, "prefabs", prefabs);

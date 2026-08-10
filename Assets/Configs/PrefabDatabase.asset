@@ -84,6 +84,7 @@ MonoBehaviour:
       - {fileID: 6429483452423246840, guid: 37eb2303145119844a10fe5567cc3b1d, type: 3}
       - {fileID: 1089356905447394778, guid: 616b874272f2c464d902290c933c9c4f, type: 3}
       - {fileID: 4578258170708362516, guid: 693a323a480508c4590ac56c309776bf, type: 3}
+      - {fileID: 4139870223031347861, guid: dbed46da692717e43be88cb94de25a9c, type: 3}
       rearPrefabs: []
       cornerPrefabs: []
       layout: 0
@@ -98,9 +99,11 @@ MonoBehaviour:
     landmarks:
     - {fileID: 8092912279846532118, guid: 898c82c37dd2ab647b1c4a22856d9f56, type: 3}
     - {fileID: 915700779621246890, guid: ef9d84d2731dcef4fba0d78e0cb8f40e, type: 3}
-    landmarkChance: 0.45
+    - {fileID: 972373096617651945, guid: 77bc047d381c3b0418a767c1331400b8, type: 3}
+    landmarkChance: 0.09
     requiredLandmark: 1
     guaranteedLandmark: 0
+    guaranteedLandmarkEvery: 40
     landmarkScale: 1
     alleyProps:
     - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
@@ -239,6 +242,7 @@ MonoBehaviour:
     landmarkChance: 0
     requiredLandmark: -1
     guaranteedLandmark: -1
+    guaranteedLandmarkEvery: 0
     landmarkScale: 1
     alleyProps: []
     alleyParkingChance: 0.35
@@ -364,6 +368,7 @@ MonoBehaviour:
     landmarkChance: 1
     requiredLandmark: -1
     guaranteedLandmark: -1
+    guaranteedLandmarkEvery: 0
     landmarkScale: 1
     alleyProps:
     - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
@@ -464,6 +469,7 @@ MonoBehaviour:
     landmarkChance: 1
     requiredLandmark: -1
     guaranteedLandmark: -1
+    guaranteedLandmarkEvery: 0
     landmarkScale: 1
     alleyProps: []
     alleyParkingChance: 0.35
@@ -553,6 +559,7 @@ MonoBehaviour:
     landmarkChance: 1
     requiredLandmark: -1
     guaranteedLandmark: -1
+    guaranteedLandmarkEvery: 0
     landmarkScale: 1
     alleyProps: []
     alleyParkingChance: 0.35
@@ -692,6 +699,7 @@ MonoBehaviour:
     landmarkChance: 1
     requiredLandmark: -1
     guaranteedLandmark: -1
+    guaranteedLandmarkEvery: 0
     landmarkScale: 1
     alleyProps:
     - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
@@ -792,6 +800,7 @@ MonoBehaviour:
     landmarkChance: 1
     requiredLandmark: -1
     guaranteedLandmark: -1
+    guaranteedLandmarkEvery: 0
     landmarkScale: 1
     alleyProps:
     - {fileID: 1498183096941358, guid: 2d588fa2556e045d3ae5cf74ae54dd36, type: 3}
@@ -883,6 +892,7 @@ MonoBehaviour:
     landmarkChance: 0
     requiredLandmark: -1
     guaranteedLandmark: -1
+    guaranteedLandmarkEvery: 0
     landmarkScale: 1
     alleyProps: []
     alleyParkingChance: 0.35
@@ -972,6 +982,7 @@ MonoBehaviour:
     landmarkChance: 0
     requiredLandmark: -1
     guaranteedLandmark: -1
+    guaranteedLandmarkEvery: 0
     landmarkScale: 1
     alleyProps: []
     alleyParkingChance: 0.35
@@ -1059,9 +1070,9 @@ MonoBehaviour:
   uniqueBuildings:
   - {fileID: 6429483452423246840, guid: 37eb2303145119844a10fe5567cc3b1d, type: 3}
   - {fileID: 1089356905447394778, guid: 616b874272f2c464d902290c933c9c4f, type: 3}
-  - {fileID: 8092912279846532118, guid: 898c82c37dd2ab647b1c4a22856d9f56, type: 3}
   - {fileID: 915700779621246890, guid: ef9d84d2731dcef4fba0d78e0cb8f40e, type: 3}
   - {fileID: 4578258170708362516, guid: 693a323a480508c4590ac56c309776bf, type: 3}
+  - {fileID: 972373096617651945, guid: 77bc047d381c3b0418a767c1331400b8, type: 3}
   buildingBaseMaterial: {fileID: 2100000, guid: 03ddc7e460b33402eb7640fab3881ac9, type: 2}
   buildingTints:
   - {fileID: 2100000, guid: 351d36b1c52cf4639b283e90c7f08483, type: 2}
@@ -1201,7 +1212,7 @@ MonoBehaviour:
   - {fileID: 6914005777242037173, guid: ceecad09732a62e43a031e93a92aa67d, type: 3}
   rareVehicleNames:
   - car-caravan-small
-  rareVehicleKeepChance: 0.1
+  rareVehicleKeepChance: 0
   vehicleTints:
   - {fileID: 2100000, guid: ddb556b2da30449699e8a993a5c69448, type: 2}
   - {fileID: 2100000, guid: 0d3d2721c465944089fcc89cfe7f37d5, type: 2}

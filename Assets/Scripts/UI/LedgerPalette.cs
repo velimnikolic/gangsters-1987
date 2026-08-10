@@ -74,5 +74,9 @@ namespace LivingCity.UI
         public static readonly Color ButtonNormal = new Color(0.78f, 0.78f, 0.78f);
         public static readonly Color ButtonHover = Color.white;
         public static readonly Color ButtonPressed = new Color(0.5f, 0.5f, 0.5f);
+
+        /// <summary>The multiply that keeps the tube green when UiSkin dresses it - the
+        /// sheet's charcoal well times this reads as a warmed-up CRT, not a grey box.</summary>
+        public static readonly Color ScreenCast = new Color(0.75f, 1f, 0.82f);
     }
 }

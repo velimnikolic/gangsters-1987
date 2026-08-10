@@ -26,6 +26,12 @@ namespace LivingCity.Ambient
         [Tooltip("Untick to freeze the clock where it is - useful for judging one particular hour.")]
         [SerializeField] bool running = true;
 
+        /// <summary>The game-speed ladder the HUD's buttons step through. Index 1 is normal.</summary>
+        static readonly float[] Speeds = { 0.5f, 1f, 2f, 4f };
+
+        int speedIndex = 1;
+        bool paused;
+
         /// <summary>Hour of the day in [0, 24). Fractional: 8.5 is half past eight.</summary>
         public float Hour { get; private set; }
 
@@ -37,6 +43,41 @@ namespace LivingCity.Ambient
             get => running;
             set => running = value;
         }
+
+        /// <summary>
+        /// The pause button's state. Drives Time.timeScale, so the WHOLE city freezes with
+        /// the clock - traffic, pedestrians, smoke. The strategic map and both camera rigs
+        /// pan on unscaled time on purpose, so the player can still look around a paused
+        /// city.
+        /// </summary>
+        public bool Paused
+        {
+            get => paused;
+            set
+            {
+                paused = value;
+                ApplySpeed();
+            }
+        }
+
+        /// <summary>Current step on the speed ladder - what the HUD prints as "2x".</summary>
+        public float SpeedMultiplier => Speeds[speedIndex];
+
+        public void SpeedUp()
+        {
+            if (speedIndex < Speeds.Length - 1)
+                speedIndex++;
+            ApplySpeed();
+        }
+
+        public void SlowDown()
+        {
+            if (speedIndex > 0)
+                speedIndex--;
+            ApplySpeed();
+        }
+
+        void ApplySpeed() => Time.timeScale = paused ? 0f : Speeds[speedIndex];
 
         /// <summary>Hour as "HH:MM", for logs and any on-screen clock.</summary>
         public string Display => $"{Mathf.FloorToInt(Hour):00}:{Mathf.FloorToInt(Hour % 1f * 60f):00}";
@@ -67,9 +108,10 @@ namespace LivingCity.Ambient
             if (!running)
                 return;
 
-            // unscaledDeltaTime on purpose: the clock is wall time for the city, and a pause or a
-            // slow-motion effect should not quietly change what "an hour" means.
-            var advanced = Hour + Time.unscaledDeltaTime / SecondsPerHour;
+            // deltaTime, not unscaled: the HUD's speed buttons drive Time.timeScale, and the
+            // whole point of them is that pause and fast-forward move the city AND its clock
+            // together - a paused city whose hour kept walking would desync every routine.
+            var advanced = Hour + Time.deltaTime / SecondsPerHour;
 
             if (advanced >= HoursPerDay)
                 Day += Mathf.FloorToInt(advanced / HoursPerDay);
@@ -79,5 +121,12 @@ namespace LivingCity.Ambient
 
         /// <summary>Jumps the clock. Used by the editor scrubber and by anything that skips ahead.</summary>
         public void SetHour(float hour) => Hour = Mathf.Repeat(hour, HoursPerDay);
+
+        void OnDestroy()
+        {
+            // In the Editor, Time.timeScale SURVIVES leaving Play mode - a city paused at
+            // stop would leave the next Play session frozen with no button on screen yet.
+            Time.timeScale = 1f;
+        }
     }
 }

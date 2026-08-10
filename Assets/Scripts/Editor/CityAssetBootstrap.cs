@@ -383,12 +383,14 @@ namespace LivingCity.EditorTools
             // The post office and the fire station are storefronts in the residential Shops group,
             // not the landmarks of zones, so nothing in the zoning can reach them: every block in
             // the city is free to build another, and the per-lot bag that stops repeats has no
-            // memory across lots. This list is the entire cap for all three. The police station
-            // joined them when its zone went: it is ResidentialHigh's landmark now, and with
-            // maxBlocks no longer capping it, PickLandmark's IsSpent test against this list is
-            // the only thing keeping the city to one station. Hospital and school are still not
-            // here - they are one block each by quota already - and adding them would change
-            // nothing but the reason.
+            // memory across lots. This list is the entire cap for both. Hospital and school are
+            // still not here - they are one block each by quota already - and adding them would
+            // change nothing but the reason.
+            // The police station LEFT this list when the city stopped owing exactly one: its
+            // count scales with the map now (guaranteedLandmarkEvery on the residential
+            // palette), every copy is a ZonePlanner forced mark, and PickLandmark's random path
+            // refuses the guaranteed index - so the mark count IS the cap, and an IsSpent test
+            // here would kill every station after the first-built one.
             // The bank is here for a reason none of the others have: it is the one building the
             // city reaches for down TWO paths - ResidentialHigh's landmark bag and its own Bank
             // zone - and ZonePlanner's route roll picks between them precisely so that only one
@@ -398,9 +400,11 @@ namespace LivingCity.EditorTools
             // The gun shop joins by the post office's exact reasoning: a storefront in the
             // Shops bag that nothing in the zoning can reach, so this list is its entire cap.
             // A ceiling, not a promise - a seed may come up without one, per the user's call.
+            // The casino takes the same deal down the landmark path: it rides ResidentialHigh's
+            // bag beside the bank, and this list keeps the city to at most one house.
             db.uniqueBuildings = LoadAll(Buildings, "building-post", "building-firestation",
-                                                    "building-policestation", "building-bank",
-                                                    "building-shop-china");
+                                                    "building-bank", "building-shop-china",
+                                                    "building-casino");
 
             // Only the double lantern. lamp-road is a motorway lantern on a plain steel pole,
             // and lamp-city is out of the city entirely - dropped from the streets first and
@@ -1438,22 +1442,32 @@ namespace LivingCity.EditorTools
                     // was - but through the landmark path, not the Shops bag: it is too wide
                     // for a terrace slot, and a landmark is placed before uniformStreetRuns
                     // locks the side, so the single-prefab-group trap (see StreetShops) does
-                    // not apply. db.uniqueBuildings caps it at one per city.
+                    // not apply. Its count scales with the map - see guaranteedLandmarkEvery.
                     // The bank rides in beside the station for the same reason the station is
                     // here at all - 17.10 x 20.53, too wide for a terrace slot and finished on
                     // all four elevations - and this is where it usually ends up. Its other
                     // shape is a Bank block of its own; ZonePlanner rolls once per city between
                     // the two so that exactly one of them happens. Index 1 in this array is
                     // therefore load-bearing: requiredLandmark below points at it.
-                    landmarks: LoadAll(Buildings, "building-policestation", "building-bank"),
-                    // Under 1 on purpose, unlike the civic zones where the landmark IS the
-                    // block: at 1 the station would stand in the first-built residential block
-                    // every time, i.e. the same corner of every map. At 0.45 across the six-plus
-                    // blocks this zone gets, which block hosts it varies by seed. Since the
-                    // station became guaranteed (below), this roll only decides whether an
-                    // EARLIER block beats the forced one to it - either way the city has
-                    // exactly one, the variety in WHERE is what the 0.45 still buys.
-                    landmarkChance: 0.45f,
+                    // The casino is the bank's argument again - 18.00 x 14.00, wider than the
+                    // bank's own face, finished all round, and the one building in the pack
+                    // that WANTS a forecourt of customers' cars, which the landmark path cuts
+                    // for free. Appended so the two load-bearing indices stay where they are;
+                    // db.uniqueBuildings keeps the city to at most one house, a ceiling the
+                    // 0.45 roll may leave unspent on an unlucky seed - the gun shop's deal.
+                    landmarks: LoadAll(Buildings, "building-policestation", "building-bank",
+                                                  "building-casino"),
+                    // This roll serves only the CASINO now: the bank is forced by its route,
+                    // and the station's index is refused on the random path (PickLandmark) so
+                    // its spread marks cannot be beaten to the allowance by whatever corner
+                    // builds first. Retuned 0.45 -> 0.09 when the map grew: blocks build in
+                    // flood-fill order, so a rare one-per-city landmark lands where the first
+                    // few winners are - at 0.45 the casino would stand in the same corner of
+                    // every seed. 0.09 across a hundred-odd residential blocks (a third of
+                    // draws are the casino's) spreads the winner over most of the map and
+                    // leaves ~5% of seeds without one - a ceiling, not a promise, exactly the
+                    // gun shop's deal.
+                    landmarkChance: 0.09f,
                     // The bank, which is NOT a ceiling: the city has one, always. A chance can
                     // deliver a station nineteen times in twenty and that is fine for a station;
                     // it is not fine for the building the whole period turns on. ZonePlanner
@@ -1469,6 +1483,12 @@ namespace LivingCity.EditorTools
                     // this AFTER the bank's route, on the largest unclaimed block of the zone -
                     // see FulfilGuaranteedLandmarks for the ordering and the fallbacks.
                     guaranteedLandmark: 0,
+                    // One station per ~40 blocks, at least one. Anchored at both ends: the old
+                    // 16x7 map ran ~18 blocks and one station was right for it, the 34x33 map
+                    // runs an order of magnitude more and one station made the police a rumour.
+                    // Each copy is a farthest-spread forced mark and PoliceDirector homes a
+                    // fleet on every one, so precincts cover the map rather than the corner.
+                    guaranteedLandmarkEvery: 40,
                     // Forecourt cars, NOT parkedCars: parkedCars swaps the picker for the WHOLE
                     // block (BlockBuilder.BuildBlock), which here would fill every bay of every
                     // residential block with patrol cars. landmarkCars reaches only the bay
@@ -2144,13 +2164,19 @@ namespace LivingCity.EditorTools
                 commercial = true,
                 // The gun shop rides this bag by the fire station's logic exactly: a small
                 // storefront built INTO the street wall, capped at one per city through
-                // uniqueBuildings, and absorbed by a five-prefab bag once spent. A CEILING,
+                // uniqueBuildings, and absorbed by a six-prefab bag once spent. A CEILING,
                 // not a promise - per the user's call, a seed may come up without one. The
                 // name sweep gives the placed instance its GunShopMarker (the player's
                 // counter), not a ShopEntrance - see InteractionMarkers.
+                // The burger joint is UNCAPPED, like the cafe and the restaurant it stands
+                // between: it is 1980 and a burger joint is a chain, so repeats across town
+                // are the point rather than a bug. At 16.40 x 15.60 it is the bag's widest
+                // piece but still inside a lot run's 35-46m, and its 4.8m single storey
+                // breaks the terrace wall exactly the way a drive-in should.
                 prefabs = LoadAll(Buildings,
                     "building-cafe", "building-restaurant", "building-post",
-                    "building-firestation", "building-shop-china"),
+                    "building-firestation", "building-shop-china",
+                    "building-burger-joint"),
             };
 
         /// <summary>
@@ -2712,7 +2738,8 @@ namespace LivingCity.EditorTools
             GameObject parkGatePiers = null,
             GameObject[] parkAmusement = null,
             // Appended after the park rewrite's block, same discipline.
-            GameObject portQuayLamp = null) =>
+            GameObject portQuayLamp = null,
+            int guaranteedLandmarkEvery = 0) =>
             new()
             {
                 zone = zone,
@@ -2729,6 +2756,7 @@ namespace LivingCity.EditorTools
                 landmarkChance = landmarkChance,
                 requiredLandmark = requiredLandmark,
                 guaranteedLandmark = guaranteedLandmark,
+                guaranteedLandmarkEvery = guaranteedLandmarkEvery,
                 landmarkScale = landmarkScale,
                 scatter = scatter ?? System.Array.Empty<GameObject>(),
                 scatterDensity = scatterDensity,

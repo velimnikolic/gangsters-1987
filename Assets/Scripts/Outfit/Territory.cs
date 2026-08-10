@@ -3,113 +3,78 @@ using System.Collections.Generic;
 namespace LivingCity.Outfit
 {
     /// <summary>
-    /// Which gang holds which block. One dictionary, exclusive by construction - a
-    /// block has one owner or none - the Personnel layer's single-source rule applied
-    /// to ground. Unclaimed blocks simply have no entry.
+    /// Turf arithmetic over the outfit's holdings - one entry per gang-held BUILDING,
+    /// because ground is taken premise by premise, never block by block. The ownership
+    /// fact itself lives on BusinessMarker.GangId - the Personnel layer's single-source
+    /// rule applied to ground - so there is nothing here to seed or store: callers
+    /// collect the live holdings (OutfitDirector.CollectHoldings) and this class only
+    /// counts them. Day one every family holds exactly its own front premise, the
+    /// player included; more ground is earned building by building, and that mechanic
+    /// belongs to a later iteration.
     /// </summary>
-    public sealed class TerritoryMap
+    public static class Turf
     {
-        readonly Dictionary<int, int> ownerByBlock = new Dictionary<int, int>();
+        public readonly struct Holding
+        {
+            public readonly int GangId;
+            public readonly int BlockId;
 
-        public bool Seeded => ownerByBlock.Count > 0;
+            public Holding(int gangId, int blockId)
+            {
+                GangId = gangId;
+                BlockId = blockId;
+            }
+        }
 
-        /// <summary>-1 = unclaimed ground.</summary>
-        public int OwnerOf(int blockId) =>
-            ownerByBlock.TryGetValue(blockId, out var gangId) ? gangId : -1;
-
-        public void Claim(int blockId, int gangId) => ownerByBlock[blockId] = gangId;
-
-        public int CountOf(int gangId)
+        /// <summary>Buildings the family holds city-wide.</summary>
+        public static int CountOf(IReadOnlyList<Holding> holdings, int gangId)
         {
             var count = 0;
-            foreach (var entry in ownerByBlock)
-                if (entry.Value == gangId)
+            for (var i = 0; i < holdings.Count; i++)
+                if (holdings[i].GangId == gangId)
                     count++;
             return count;
         }
 
-        /// <summary>The map tint enumerates every claim in one pass.</summary>
-        public IReadOnlyDictionary<int, int> Claims => ownerByBlock;
-    }
-
-    /// <summary>
-    /// Day-one turf, derived - no rng. Every gang's front block is its first claim;
-    /// each rival then grows to <see cref="RivalBlocks"/> by repeatedly taking the
-    /// nearest unclaimed block to its front, ties to the lower block id. The player
-    /// starts with the front block alone: territory is earned at the planning table,
-    /// not dealt. Deterministic in the inputs, which are deterministic in the seed.
-    /// </summary>
-    public static class TerritorySeeder
-    {
-        public const int RivalBlocks = 4;
-
-        public readonly struct BlockPoint
+        /// <summary>Buildings the family holds on one block.</summary>
+        public static int CountIn(IReadOnlyList<Holding> holdings, int blockId, int gangId)
         {
-            public readonly int Id;
-            public readonly float X;
-            public readonly float Z;
-
-            public BlockPoint(int id, float x, float z)
-            {
-                Id = id;
-                X = x;
-                Z = z;
-            }
+            var count = 0;
+            for (var i = 0; i < holdings.Count; i++)
+                if (holdings[i].BlockId == blockId && holdings[i].GangId == gangId)
+                    count++;
+            return count;
         }
 
-        public readonly struct FrontPoint
+        /// <summary>The family holding the most buildings on the block; -1 when nobody
+        /// holds one or the lead is shared - contested ground has no controller.</summary>
+        public static int DominantIn(IReadOnlyList<Holding> holdings, int blockId)
         {
-            public readonly int GangId;
-            public readonly int BlockId;
-            public readonly float X;
-            public readonly float Z;
+            var best = -1;
+            var bestCount = 0;
+            var tied = false;
 
-            public FrontPoint(int gangId, int blockId, float x, float z)
+            for (var i = 0; i < holdings.Count; i++)
             {
-                GangId = gangId;
-                BlockId = blockId;
-                X = x;
-                Z = z;
-            }
-        }
-
-        public static void Seed(TerritoryMap map, IReadOnlyList<BlockPoint> blocks,
-            IReadOnlyList<FrontPoint> fronts, int playerGangId)
-        {
-            // Front blocks first, in list order - a front block is never contested
-            // because GangFronts spreads the families across distinct blocks.
-            foreach (var front in fronts)
-                if (front.BlockId >= 0 && map.OwnerOf(front.BlockId) < 0)
-                    map.Claim(front.BlockId, front.GangId);
-
-            foreach (var front in fronts)
-            {
-                if (front.GangId == playerGangId)
+                if (holdings[i].BlockId != blockId || holdings[i].GangId < 0)
+                    continue;
+                if (holdings[i].GangId == best)
                     continue;
 
-                while (map.CountOf(front.GangId) < RivalBlocks)
+                var count = CountIn(holdings, blockId, holdings[i].GangId);
+                if (count > bestCount)
                 {
-                    var best = -1;
-                    var bestSqr = float.MaxValue;
-                    foreach (var block in blocks)
-                    {
-                        if (map.OwnerOf(block.Id) >= 0)
-                            continue;
-                        var dx = block.X - front.X;
-                        var dz = block.Z - front.Z;
-                        var sqr = dx * dx + dz * dz;
-                        if (sqr < bestSqr || (sqr == bestSqr && best >= 0 && block.Id < best))
-                        {
-                            bestSqr = sqr;
-                            best = block.Id;
-                        }
-                    }
-
-                    if (best < 0)
-                        return; // city smaller than the families - claim what exists
-                    map.Claim(best, front.GangId);
+                    best = holdings[i].GangId;
+                    bestCount = count;
+                    tied = false;
+                }
+                else if (count == bestCount)
+                {
+                    tied = true;
                 }
             }
+
+            return tied ? -1 : best;
         }
     }
 }

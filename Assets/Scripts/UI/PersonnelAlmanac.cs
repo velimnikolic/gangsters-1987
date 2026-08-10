@@ -31,9 +31,9 @@ namespace LivingCity.UI
     /// Construction follows ContextMenuUI to the letter: same scaler, page built ACTIVE
     /// then hidden (a TextMeshProUGUI only loads its font in OnEnable, which never runs
     /// under an inactive parent), TMP_Settings guarded, reference-pixel sizes. Stars are
-    /// the WantedHud trick - sprite-less Images stood on their corner - because the TMP
-    /// default font has no star glyph to trust; a half star is the same diamond behind a
-    /// half-width RectMask2D.
+    /// UiSkin's baked gold sprites (full / half / empty - the half is baked, no masks)
+    /// because the TMP default font has no star glyph to trust. Mugshots and armory
+    /// photos come from PortraitStudio, which photographs the city's own prefabs.
     ///
     /// Repaint is the versioned rebuild the HUDs use: the list and detail card are torn
     /// down and rebuilt when PersonnelDirector.Version or any local view state moves.
@@ -44,21 +44,26 @@ namespace LivingCity.UI
     {
         const int SortingOrder = 110;
 
-        const float PageWidth = 1840f;
-        const float PageHeight = 1020f;
+        /// <summary>The sheet is the LEFT HALF of the screen now - the strategic map
+        /// owns the right half while the book is open. 960 is half the 1920-reference
+        /// canvas; on wider screens the paper stretches and the extra stays margin.</summary>
+        const float PageWidth = 960f;
 
         const float ListLeft = 40f;
-        const float ListWidth = 1120f;
+        const float ListWidth = 470f;
 
         /// <summary>Pages start below the masthead, the tab strip and their rules.</summary>
         const float PageTop = -128f;
 
         /// <summary>The personnel list sits under its own filter bar inside the page.</summary>
         const float ListTop = -176f;
-        const float ListHeight = 812f;
+        const float ListHeight = 860f;
 
-        const float DetailLeft = 1180f;
+        const float DetailLeft = 522f;
         const float DetailWidth = PageWidth - DetailLeft - 36f;
+
+        /// <summary>Right edge of usable page content, mirroring ListLeft's margin.</summary>
+        const float PageRight = PageWidth - 36f;
 
         const float CrewHeaderHeight = 44f;
         const float SectionHeaderHeight = 38f;
@@ -70,7 +75,9 @@ namespace LivingCity.UI
         /// same.</summary>
         const float WheelStep = 30f;
 
-        const float StarSize = 15f;
+        // The gold star sprite carries its own empty margin, so it runs a little larger
+        // than the diamond it replaced without crowding the pitch.
+        const float StarSize = 21f;
         const float StarPitch = 24f;
 
         /// <summary>True while the book is open. Every world-input reader checks this -
@@ -83,12 +90,10 @@ namespace LivingCity.UI
         /// the close would otherwise act on the very press that closed the book.</summary>
         public static bool ClaimsEsc => IsOpen || Time.frameCount == lastCloseFrame;
 
-        /// <summary>True while the book stands open at the ORDERS page - the one page
-        /// that works AGAINST the map: the ledger shrinks to a side panel, and the
-        /// strategic map underneath stays live for target selection.</summary>
-        public static bool MapInteractive => IsOpen && pageIsOrders;
-
-        static bool pageIsOrders;
+        /// <summary>True while the book stands open: the strategic map is docked into
+        /// the right half the whole time, live for panning, zooming, inspection and -
+        /// on the ORDERS page - target selection.</summary>
+        public static bool MapInteractive => IsOpen;
 
         static int lastCloseFrame = -1;
 
@@ -98,7 +103,6 @@ namespace LivingCity.UI
         {
             IsOpen = false;
             lastCloseFrame = -1;
-            pageIsOrders = false;
         }
 
         enum Confirm
@@ -124,9 +128,7 @@ namespace LivingCity.UI
         Canvas canvas;
         GameObject page;
         Image shadeImage;
-        GameObject casingGo;
         GameObject paperGo;
-        Image cursor;
         TMP_Text titleText;
 
         LedgerPage currentPage = LedgerPage.Newspaper;
@@ -147,6 +149,10 @@ namespace LivingCity.UI
         OutfitDirector outfit;
         PlayerMafioso player;
         bool tmpReady;
+
+        /// <summary>Scratch for Turf reads - refilled from the markers on use.</summary>
+        readonly System.Collections.Generic.List<Outfit.Turf.Holding> holdings =
+            new System.Collections.Generic.List<Outfit.Turf.Holding>();
 
         ViewOptions options;
         int selectedId = -1;
@@ -287,16 +293,6 @@ namespace LivingCity.UI
 
             UpdateScroll();
 
-            // The prompt's heartbeat: 0.6s on, 0.46s off - the asymmetry is what real
-            // terminal cursors did, and a 50/50 blink reads oddly mechanical next to one.
-            if (cursor)
-                cursor.enabled = Time.unscaledTime % 1.06f < 0.6f;
-
-            // Turf seeds lazily once the gang layer is up - reading the page is what
-            // pays the one-time cost, and the Version bump repaints it.
-            if (currentPage == LedgerPage.Diplomacy && outfit && !outfit.Territory.Seeded)
-                outfit.EnsureTerritory();
-
             var outfitVersion = outfit ? outfit.Version : 0;
             if (dirty || paintedVersion != director.Version ||
                 paintedOutfitVersion != outfitVersion ||
@@ -339,6 +335,11 @@ namespace LivingCity.UI
 
             page.SetActive(true);
             IsOpen = true;
+            // The war room assembles: the strategic map docks into the right half for
+            // as long as the book is open. No city yet = the map declines quietly and
+            // the right half just shows the world.
+            if (StrategicMapHud.Instance)
+                StrategicMapHud.Instance.OpenBeside();
             // The book always opens on the newspaper - the week's narrative frame -
             // and the working pages keep their state for when the player turns to them.
             SetPage(LedgerPage.Newspaper);
@@ -349,11 +350,15 @@ namespace LivingCity.UI
             if (page)
                 page.SetActive(false);
             IsOpen = false;
-            pageIsOrders = false;
             if (StrategicMapHud.Targeting == (IMapTargetingConsumer)this)
                 StrategicMapHud.Targeting = null;
             if (StrategicMapHud.Instance)
+            {
                 StrategicMapHud.Instance.SetTargetHighlights(null, Color.clear);
+                // The map came up with the book; it goes down with it.
+                if (StrategicMapHud.IsOpen)
+                    StrategicMapHud.Instance.Close();
+            }
             lastCloseFrame = Time.frameCount;
             assignMode = false;
             pendingConfirm = Confirm.None;
@@ -453,37 +458,32 @@ namespace LivingCity.UI
             pageRect.anchorMax = Vector2.one;
             pageRect.offsetMin = pageRect.offsetMax = Vector2.zero;
 
-            // The modal shield: the ONE non-button raycast target in the project. With it
-            // under the pointer, IsPointerOverGameObject is true everywhere on screen.
-            // The ORDERS page disables it - there the map below must see the pointer.
-            shadeImage = page.AddComponent<Image>();
+            // The modal shield for the BOOK's half only: an opaque backing that also
+            // makes IsPointerOverGameObject true over the whole left half. The right
+            // half carries the docked strategic map and must see the pointer - so the
+            // page root itself has no Image and no raycast presence there.
+            var shade = NewRect("Shade", page.transform);
+            shade.anchorMin = Vector2.zero;
+            shade.anchorMax = new Vector2(0.5f, 1f);
+            shade.offsetMin = shade.offsetMax = Vector2.zero;
+            shadeImage = shade.gameObject.AddComponent<Image>();
             shadeImage.sprite = null;
             shadeImage.color = LedgerPalette.Room;
             shadeImage.raycastTarget = true;
 
-            // The monitor's beige plastic case, raised off the desk; the tube sits
-            // sunken inside it - two bevels, opposite ways, and it reads as hardware.
-            var casing = NewRect("Case", page.transform);
-            casingGo = casing.gameObject;
-            casing.anchorMin = casing.anchorMax = new Vector2(0.5f, 0.5f);
-            casing.pivot = new Vector2(0.5f, 0.5f);
-            casing.sizeDelta = new Vector2(PageWidth + 76f, PageHeight + 76f);
-            var casingImage = casing.gameObject.AddComponent<Image>();
-            casingImage.sprite = null;
-            casingImage.color = LedgerPalette.Case;
-            casingImage.raycastTarget = false;
-            Bevel(casing, 3f, raised: true);
-
+            // The tube fills the whole left half, edge to edge - no casing, no black
+            // margins. Its mask clips anything a page lays past the fold, so nothing
+            // ever bleeds over the map beside it.
             var paper = NewRect("Paper", page.transform);
             paperGo = paper.gameObject;
-            paper.anchorMin = paper.anchorMax = new Vector2(0.5f, 0.5f);
-            paper.pivot = new Vector2(0.5f, 0.5f);
-            paper.sizeDelta = new Vector2(PageWidth, PageHeight);
+            paper.anchorMin = Vector2.zero;
+            paper.anchorMax = new Vector2(0.5f, 1f);
+            paper.offsetMin = paper.offsetMax = Vector2.zero;
             var paperImage = paper.gameObject.AddComponent<Image>();
             paperImage.sprite = null;
             paperImage.color = LedgerPalette.Screen;
             paperImage.raycastTarget = false;
-            Bevel(paper, 3f, raised: false);
+            paper.gameObject.AddComponent<RectMask2D>();
 
             BuildTitleBar(paper);
             BuildRule(paper, -66f);
@@ -527,9 +527,9 @@ namespace LivingCity.UI
             BuildFinancesPage(paper);
             BuildArmoryPage(paper);
             BuildDiplomacyPage(paper);
-            // Orders lives OUTSIDE the paper: its page is a side panel over the live
-            // map, and the paper (with its casing, shade and scanlines) steps aside.
-            BuildOrdersPage((RectTransform)page.transform);
+            // Orders is a page of the book like the rest - the strategic map it aims
+            // at stands permanently open in the right half of the screen.
+            BuildOrdersPage(paper);
 
             SetPage(LedgerPage.Newspaper);
 
@@ -559,7 +559,7 @@ namespace LivingCity.UI
         {
             var names = new[]
                 { "NEWSPAPER", "PERSONNEL", "FINANCES", "ARMORY", "DIPLOMACY", "ORDERS" };
-            const float width = 176f;
+            const float width = 139f;
             const float gap = 8f;
 
             for (var i = 0; i < names.Length; i++)
@@ -575,14 +575,18 @@ namespace LivingCity.UI
 
                 var button = rect.gameObject.AddComponent<Button>();
                 button.targetGraphic = face;
-                var colours = button.colors;
-                colours.normalColor = LedgerPalette.ButtonNormal;
-                colours.highlightedColor = LedgerPalette.ButtonHover;
-                colours.pressedColor = LedgerPalette.ButtonPressed;
-                button.colors = colours;
+                // Skinned, a tab is a pack button and RefreshTabs presses the active one
+                // in; sprite-less, the old phosphor block and its frame carry the strip.
+                if (!UiSkin.TryDressButton(button, face))
+                {
+                    var colours = button.colors;
+                    colours.normalColor = LedgerPalette.ButtonNormal;
+                    colours.highlightedColor = LedgerPalette.ButtonHover;
+                    colours.pressedColor = LedgerPalette.ButtonPressed;
+                    button.colors = colours;
+                    Frame(rect, 1f, LedgerPalette.PhosphorDim);
+                }
                 button.onClick.AddListener(() => SetPage(kind));
-
-                Frame(rect, 1f, LedgerPalette.PhosphorDim);
 
                 var label = NewText("Label", rect, 13f, LedgerPalette.Phosphor,
                     TextAlignmentOptions.Center);
@@ -605,8 +609,21 @@ namespace LivingCity.UI
                 if (!tabFaces[i])
                     continue;
                 var active = i == (int)currentPage;
-                tabFaces[i].color = active ? LedgerPalette.Phosphor : LedgerPalette.ButtonGlow;
-                tabLabels[i].color = active ? LedgerPalette.Screen : LedgerPalette.Phosphor;
+                // Skinned tabs say "selected" by sitting pressed into the case; the
+                // sprite-less fallback keeps the terminal's inverse video.
+                if (tabFaces[i].sprite != null)
+                {
+                    tabFaces[i].sprite = active ? UiSkin.Sunken : UiSkin.ButtonNormal;
+                    tabLabels[i].color = active
+                        ? LedgerPalette.Phosphor : LedgerPalette.PhosphorDim;
+                }
+                else
+                {
+                    tabFaces[i].color = active
+                        ? LedgerPalette.Phosphor : LedgerPalette.ButtonGlow;
+                    tabLabels[i].color = active
+                        ? LedgerPalette.Screen : LedgerPalette.Phosphor;
+                }
             }
         }
 
@@ -623,19 +640,9 @@ namespace LivingCity.UI
                 if (pageRoots[i])
                     pageRoots[i].SetActive(i == (int)pageKind);
 
-            // ORDERS steps out of the book: the paper, its case and the modal shade
-            // hide, the map opens underneath, and the page becomes a side panel.
-            var onMap = pageKind == LedgerPage.Orders;
-            pageIsOrders = onMap;
-            if (shadeImage)
-                shadeImage.enabled = !onMap;
-            if (casingGo)
-                casingGo.SetActive(!onMap);
-            if (paperGo)
-                paperGo.SetActive(!onMap);
-            if (onMap && StrategicMapHud.Instance && !StrategicMapHud.IsOpen)
-                StrategicMapHud.Instance.Open();
-            if (!onMap)
+            // The map stands open beside the book the whole time - ORDERS just arms
+            // targeting on it. Leaving the page clears its highlight layer.
+            if (pageKind != LedgerPage.Orders)
             {
                 pendingCommit = false;
                 if (StrategicMapHud.Instance)
@@ -707,11 +714,11 @@ namespace LivingCity.UI
             ruleImage.raycastTarget = false;
 
             // ---- lead story, left of the photo ----
-            const float leadWidth = 1120f;
+            const float leadWidth = 560f;
             var lead = NewRect("Lead", root);
             PlaceTopLeft(lead, ListLeft, PageTop - 116f, leadWidth, 320f);
 
-            var headline = NewText("Headline", lead, 32f, LedgerPalette.Phosphor,
+            var headline = NewText("Headline", lead, 26f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.TopLeft);
             PlaceTopLeft(headline.rectTransform, 0f, 0f, leadWidth, 46f);
             headline.fontStyle = FontStyles.Bold;
@@ -737,8 +744,10 @@ namespace LivingCity.UI
                 "nothing to fear. On the waterfront, nobody laughed.";
 
             // ---- wirephoto, right column ----
+            const float photoLeft = 624f;
+            const float photoWidth = PageRight - photoLeft;
             var photo = NewRect("Photo", root);
-            PlaceTopLeft(photo, DetailLeft, PageTop - 116f, DetailWidth, 340f);
+            PlaceTopLeft(photo, photoLeft, PageTop - 116f, photoWidth, 300f);
             var photoImage = photo.gameObject.AddComponent<Image>();
             photoImage.sprite = null;
             photoImage.color = LedgerPalette.PhotoBack;
@@ -756,15 +765,15 @@ namespace LivingCity.UI
 
             var caption = NewText("Caption", root, 12.5f, LedgerPalette.PhosphorDim,
                 TextAlignmentOptions.TopLeft);
-            PlaceTopLeft(caption.rectTransform, DetailLeft, PageTop - 462f,
-                DetailWidth, 40f);
+            PlaceTopLeft(caption.rectTransform, photoLeft, PageTop - 422f,
+                photoWidth, 40f);
             caption.fontStyle = FontStyles.Italic;
             caption.textWrappingMode = TextWrappingModes.Normal;
             caption.text = "The waterfront at dusk, where the new money drinks.";
 
-            // ---- body columns under the lead ----
+            // ---- body columns under the lead, full page width ----
             const float columnGap = 28f;
-            var columnWidth = (leadWidth - 2f * columnGap) / 3f;
+            var columnWidth = (fullWidth - 2f * columnGap) / 3f;
             var columnTexts = new[]
             {
                 "MARKETS — Dock tonnage is up for the third week running; the port " +
@@ -789,7 +798,7 @@ namespace LivingCity.UI
                     LedgerPalette.PhosphorDim);
                 PlaceTopLeft(column.rectTransform,
                     ListLeft + i * (columnWidth + columnGap),
-                    PageTop - 452f, columnWidth, 380f);
+                    PageTop - 472f, columnWidth, 380f);
                 column.text = columnTexts[i];
             }
         }
@@ -816,7 +825,7 @@ namespace LivingCity.UI
         {
             var root = NewPageRoot(paper, LedgerPage.Finances);
 
-            NewButton(root, "< EARLIER", DetailLeft + 180f, PageTop, 130f, 32f, () =>
+            NewButton(root, "< EARLIER", PageRight - 276f, PageTop, 130f, 32f, () =>
             {
                 var sheets = outfit ? outfit.Accounts.Sheets.Count : 1;
                 if (financeWeekBack < sheets - 1)
@@ -825,7 +834,7 @@ namespace LivingCity.UI
                     dirty = true;
                 }
             });
-            NewButton(root, "LATER >", DetailLeft + 326f, PageTop, 130f, 32f, () =>
+            NewButton(root, "LATER >", PageRight - 130f, PageTop, 130f, 32f, () =>
             {
                 if (financeWeekBack > 0)
                 {
@@ -868,11 +877,11 @@ namespace LivingCity.UI
                 accounts.RiskyMoney,
                 Outfit.BalanceMath.AssetsOf(roster));
 
-            var heading = NewText("Heading", financesContent, 20f, LedgerPalette.Phosphor,
+            var heading = NewText("Heading", financesContent, 18f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(heading.rectTransform, ListLeft, PageTop, 700f, 32f);
+            PlaceTopLeft(heading.rectTransform, ListLeft, PageTop, 600f, 32f);
             heading.fontStyle = FontStyles.Bold;
-            heading.characterSpacing = 3f;
+            heading.characterSpacing = 2f;
             heading.text = "WEEKLY BALANCE SHEET — WEEK " + report.Week +
                            (report.Closed ? "  [CLOSED]" : "");
 
@@ -880,13 +889,13 @@ namespace LivingCity.UI
             var y = PageTop - 48f;
 
             FinanceRow(ListLeft, y, ":: INCOME", "", LedgerPalette.PhosphorDim, false);
-            FinanceRow(ListLeft + 580f, y, ":: OUTGOINGS", "", LedgerPalette.PhosphorDim,
+            FinanceRow(ListLeft + 460f, y, ":: OUTGOINGS", "", LedgerPalette.PhosphorDim,
                 false);
             y -= 30f;
 
             FinanceRow(ListLeft, y, "Legal", LedgerText.Cash(report.LegalIncome),
                 LedgerPalette.Phosphor, false);
-            FinanceRow(ListLeft + 580f, y, "Wages",
+            FinanceRow(ListLeft + 460f, y, "Wages",
                 LedgerText.Cash(report.Wages), LedgerPalette.Phosphor, false);
             y -= 26f;
 
@@ -921,36 +930,36 @@ namespace LivingCity.UI
                     }
                 }
 
-            FinanceRow(ListLeft + 580f, y, "   " + hoods + " hoods",
+            FinanceRow(ListLeft + 460f, y, "   " + hoods + " hoods",
                 LedgerText.Cash(hoodWages), LedgerPalette.PhosphorDim, false);
             y -= 26f;
 
             FinanceRow(ListLeft, y, "Sales", LedgerText.Cash(report.SalesIncome),
                 LedgerPalette.Phosphor, false);
-            FinanceRow(ListLeft + 580f, y, "   " + lieutenants + " lieutenants",
+            FinanceRow(ListLeft + 460f, y, "   " + lieutenants + " lieutenants",
                 LedgerText.Cash(lieutenantWages), LedgerPalette.PhosphorDim, false);
             y -= 26f;
 
             if (specialists > 0)
             {
-                FinanceRow(ListLeft + 580f, y, "   " + specialists + " on retainer",
+                FinanceRow(ListLeft + 460f, y, "   " + specialists + " on retainer",
                     LedgerText.Cash(specialistWages), LedgerPalette.PhosphorDim, false);
                 y -= 26f;
             }
 
-            FinanceRow(ListLeft + 580f, y, "Bribes", LedgerText.Cash(report.Bribes),
+            FinanceRow(ListLeft + 460f, y, "Bribes", LedgerText.Cash(report.Bribes),
                 LedgerPalette.Phosphor, false);
             y -= 26f;
-            FinanceRow(ListLeft + 580f, y, "Purchases", LedgerText.Cash(report.Purchases),
+            FinanceRow(ListLeft + 460f, y, "Purchases", LedgerText.Cash(report.Purchases),
                 LedgerPalette.Phosphor, false);
             y -= 26f;
-            FinanceRow(ListLeft + 580f, y, "Other costs", LedgerText.Cash(report.OtherCosts),
+            FinanceRow(ListLeft + 460f, y, "Other costs", LedgerText.Cash(report.OtherCosts),
                 LedgerPalette.Phosphor, false);
             y -= 34f;
 
             FinanceRow(ListLeft, y, "TOTAL IN", LedgerText.Cash(report.TotalIncome),
                 LedgerPalette.Phosphor, true);
-            FinanceRow(ListLeft + 580f, y, "TOTAL OUT", LedgerText.Cash(report.TotalOutgoings),
+            FinanceRow(ListLeft + 460f, y, "TOTAL OUT", LedgerText.Cash(report.TotalOutgoings),
                 LedgerPalette.Phosphor, true);
             y -= 40f;
 
@@ -996,14 +1005,16 @@ namespace LivingCity.UI
             {
                 var stamp = NewText("ClosedStamp", financesContent, 14f,
                     LedgerPalette.PhosphorDim, TextAlignmentOptions.TopLeft);
-                PlaceTopLeft(stamp.rectTransform, ListLeft, y, 900f, 40f);
+                PlaceTopLeft(stamp.rectTransform, ListLeft, y, 860f, 40f);
                 stamp.text = "A closed week - the record of what moved. Current holdings " +
                              "live on the open sheet.";
+                y -= 44f;
             }
 
-            // ---- the plain-language note, right column ----
+            // ---- the plain-language note, under the sheet ----
             var note = NewParagraph("Note", financesContent, 13f, LedgerPalette.PhosphorDim);
-            PlaceTopLeft(note.rectTransform, DetailLeft, PageTop - 64f, DetailWidth, 400f);
+            PlaceTopLeft(note.rectTransform, ListLeft, y - 40f,
+                PageRight - ListLeft, 240f);
             note.text =
                 "Every figure on this sheet is computed from the books as they stand " +
                 "this instant. Wages are the whole roster, week in, week out - the " +
@@ -1018,7 +1029,7 @@ namespace LivingCity.UI
         {
             var labelText = NewText("Label", financesContent, bold ? 15f : 14f, color,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(labelText.rectTransform, x, y, 380f, 24f);
+            PlaceTopLeft(labelText.rectTransform, x, y, 290f, 24f);
             if (bold)
                 labelText.fontStyle = FontStyles.Bold;
             labelText.text = label;
@@ -1028,7 +1039,7 @@ namespace LivingCity.UI
 
             var valueText = NewText("Value", financesContent, bold ? 15f : 14f, color,
                 TextAlignmentOptions.MidlineRight);
-            PlaceTopLeft(valueText.rectTransform, x + 340f, y, 180f, 24f);
+            PlaceTopLeft(valueText.rectTransform, x + 250f, y, 170f, 24f);
             if (bold)
                 valueText.fontStyle = FontStyles.Bold;
             valueText.text = value;
@@ -1040,6 +1051,14 @@ namespace LivingCity.UI
         RectTransform armoryInventoryViewport;
         RectTransform armoryInventoryContent;
         float armoryScrollY;
+
+        /// <summary>The stock sits UNDER the catalogue now - the half-width page has no
+        /// second column. The catalogue's eight rows end near -694; the stock header and
+        /// its scrolling viewport take the rest of the sheet.</summary>
+        const float StockHeaderY = -700f;
+        const float StockTop = -732f;
+        const float StockHeight = 304f;
+        const float StockWidth = PageRight - ListLeft;
 
         /// <summary>The item a GIVE click is finding a holder for; -1 = browsing.</summary>
         int givePickerItemId = -1;
@@ -1058,8 +1077,8 @@ namespace LivingCity.UI
             // The inventory scrolls on its own - a sixty-man outfit's stock outgrows
             // the sheet, and the mask is built once so the scroll survives rebuilds.
             armoryInventoryViewport = NewRect("Inventory", root);
-            PlaceTopLeft(armoryInventoryViewport, 700f, PageTop - 76f,
-                PageWidth - 700f - 36f, ListHeight - 76f);
+            PlaceTopLeft(armoryInventoryViewport, ListLeft, StockTop,
+                StockWidth, StockHeight);
             armoryInventoryViewport.gameObject.AddComponent<RectMask2D>();
 
             armoryInventoryContent = NewRect("Rows", armoryInventoryViewport);
@@ -1067,7 +1086,7 @@ namespace LivingCity.UI
             armoryInventoryContent.anchorMax = new Vector2(1f, 1f);
             armoryInventoryContent.pivot = new Vector2(0f, 1f);
             armoryInventoryContent.anchoredPosition = Vector2.zero;
-            armoryInventoryContent.sizeDelta = new Vector2(0f, ListHeight - 76f);
+            armoryInventoryContent.sizeDelta = new Vector2(0f, StockHeight);
         }
 
         void RebuildArmory()
@@ -1100,7 +1119,7 @@ namespace LivingCity.UI
             {
                 var note = NewText("Note", armoryContent, 13f, LedgerPalette.Amber,
                     TextAlignmentOptions.MidlineLeft);
-                PlaceTopLeft(note.rectTransform, ListLeft, PageTop - 34f, 1200f, 22f);
+                PlaceTopLeft(note.rectTransform, ListLeft, PageTop - 34f, StockWidth, 22f);
                 note.text = armoryNote;
             }
 
@@ -1175,6 +1194,25 @@ namespace LivingCity.UI
             PlaceTopLeft(note.rectTransform, ListLeft, y - 22f, 560f, 20f);
             note.text = item.Note;
 
+            // The merchandise itself, photographed by PortraitStudio: guns through the
+            // LedgerModelSet bridge, cars straight from the city's own PrefabDatabase.
+            // The square print is cropped to its middle band by uvRect - the subject is
+            // centred, so a 2:1 window keeps it whole. No model, no photo, row unchanged.
+            var thumb = NewRect("Thumb", armoryContent);
+            PlaceTopLeft(thumb, ListLeft + 562f, y + 2f, 96f, 48f);
+            var thumbImage = thumb.gameObject.AddComponent<RawImage>();
+            thumbImage.raycastTarget = false;
+            thumbImage.enabled = false;
+            thumbImage.uvRect = new Rect(0f, 0.26f, 1f, 0.48f);
+            var vehicle = item.Kind == Personnel.EquipmentKind.Vehicle;
+            var model = vehicle
+                ? PortraitStudio.FindVehiclePrefab(
+                    PortraitStudio.VehicleModelFor(item.DisplayName))
+                : LedgerModelSet.WeaponModelFor(item.Kind);
+            PortraitStudio.Request(model,
+                vehicle ? PortraitStudio.Framing.Vehicle : PortraitStudio.Framing.Item,
+                thumbImage);
+
             return y - 52f;
         }
 
@@ -1182,7 +1220,7 @@ namespace LivingCity.UI
         {
             var header = NewText("InvHeader", armoryContent, 14f, LedgerPalette.PhosphorDim,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(header.rectTransform, 700f, PageTop - 46f, 500f, 24f);
+            PlaceTopLeft(header.rectTransform, ListLeft, StockHeaderY, 500f, 24f);
             header.fontStyle = FontStyles.Bold;
             header.characterSpacing = 2f;
             header.text = ":: STOCK — " + roster.Equipment.Count + " ITEMS";
@@ -1192,7 +1230,7 @@ namespace LivingCity.UI
             {
                 var item = roster.Equipment[i];
                 var row = NewRect("Item", armoryInventoryContent);
-                PlaceTopLeft(row, 0f, y, PageWidth - 700f - 36f, 28f);
+                PlaceTopLeft(row, 0f, y, StockWidth, 28f);
 
                 var kind = NewText("Kind", row, 12f, LedgerPalette.PhosphorDim,
                     TextAlignmentOptions.MidlineLeft);
@@ -1213,7 +1251,7 @@ namespace LivingCity.UI
 
                 var itemId = item.Id;
                 if (holder != null)
-                    NewButton(row, "[ RETURN ]", PageWidth - 700f - 36f - 120f, -2f,
+                    NewButton(row, "[ RETURN ]", StockWidth - 120f, -2f,
                         116f, 24f, () =>
                         {
                             var result = director.ReturnEquipment(itemId);
@@ -1221,7 +1259,7 @@ namespace LivingCity.UI
                             dirty = true;
                         });
                 else
-                    NewButton(row, "[ GIVE ]", PageWidth - 700f - 36f - 120f, -2f,
+                    NewButton(row, "[ GIVE ]", StockWidth - 120f, -2f,
                         116f, 24f, () =>
                         {
                             givePickerItemId = itemId;
@@ -1253,11 +1291,11 @@ namespace LivingCity.UI
 
             var header = NewText("PickHeader", armoryContent, 14f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(header.rectTransform, 700f, PageTop - 46f, 700f, 24f);
+            PlaceTopLeft(header.rectTransform, ListLeft, StockHeaderY, 600f, 24f);
             header.fontStyle = FontStyles.Bold;
             header.text = "GIVE " + item.DisplayName.ToUpperInvariant() + " TO:";
 
-            NewButton(armoryContent, "[ CANCEL ]", PageWidth - 396f, PageTop - 46f,
+            NewButton(armoryContent, "[ CANCEL ]", PageRight - 120f, StockHeaderY,
                 120f, 24f, () =>
                 {
                     givePickerItemId = -1;
@@ -1273,7 +1311,7 @@ namespace LivingCity.UI
                     continue;
 
                 var row = NewRect("Pick", armoryInventoryContent);
-                PlaceTopLeft(row, 0f, y, PageWidth - 700f - 36f, 28f);
+                PlaceTopLeft(row, 0f, y, StockWidth, 28f);
 
                 var poorShot = tommy && member.GetHalfSteps(CharacterAttribute.Firearms) <
                     Outfit.ArmoryCatalog.TommyGunFirearmsFloor;
@@ -1316,7 +1354,7 @@ namespace LivingCity.UI
 
         void SizeInventoryContent(float height)
         {
-            var viewportHeight = ListHeight - 76f;
+            const float viewportHeight = StockHeight;
             armoryInventoryContent.sizeDelta =
                 new Vector2(0f, Mathf.Max(viewportHeight, height + 8f));
             var maxScroll = Mathf.Max(0f, armoryInventoryContent.sizeDelta.y - viewportHeight);
@@ -1359,7 +1397,10 @@ namespace LivingCity.UI
                 return;
             }
 
-            var territory = outfit ? outfit.Territory : null;
+            if (outfit)
+                outfit.CollectHoldings(holdings);
+            else
+                holdings.Clear();
             var y = PageTop - 52f;
 
             // The player's own line first - the yardstick every rival row reads against.
@@ -1372,10 +1413,10 @@ namespace LivingCity.UI
                     TextAlignmentOptions.MidlineLeft);
                 PlaceTopLeft(you.rectTransform, ListLeft + 28f, y, 700f, 26f);
                 you.fontStyle = FontStyles.Bold;
+                var held = Outfit.Turf.CountOf(holdings, gang.Id);
                 you.text = gang.Name.ToUpperInvariant() + " — YOURS" +
-                    (territory != null && territory.Seeded
-                        ? "  ·  " + territory.CountOf(gang.Id) + " BLOCK" +
-                          (territory.CountOf(gang.Id) == 1 ? "" : "S")
+                    (outfit
+                        ? "  ·  " + held + " BUILDING" + (held == 1 ? "" : "S")
                         : "");
                 y -= 44f;
             }
@@ -1384,13 +1425,14 @@ namespace LivingCity.UI
             {
                 if (gang.IsPlayer)
                     continue;
-                y = DiplomacyRow(gang, territory, y);
+                y = DiplomacyRow(gang, y);
             }
 
-            // The legend, right column - the page must never be the opaque system.
+            // The legend, under the families - the page must never be the opaque system.
             var legend = NewParagraph("Legend", diplomacyContent, 13f,
                 LedgerPalette.PhosphorDim);
-            PlaceTopLeft(legend.rectTransform, DetailLeft, PageTop - 52f, DetailWidth, 500f);
+            PlaceTopLeft(legend.rectTransform, ListLeft, y - 10f,
+                PageRight - ListLeft, 420f);
             legend.text = ":: WHAT A STANCE DOES\n\n" +
                 LedgerText.StanceEffect(Outfit.Stance.Peace) + "\n\n" +
                 LedgerText.StanceEffect(Outfit.Stance.Truce) + "\n\n" +
@@ -1401,7 +1443,7 @@ namespace LivingCity.UI
                 "map in their colour; the streets are not a secret.";
         }
 
-        float DiplomacyRow(Gangs.Gang gang, Outfit.TerritoryMap territory, float y)
+        float DiplomacyRow(Gangs.Gang gang, float y)
         {
             DiplomacySwatch(gang.Id, ListLeft, y);
 
@@ -1414,31 +1456,32 @@ namespace LivingCity.UI
             var front = Gangs.GangRegistry.FrontBusinessOf(gang.Id);
             var frontText = NewText("Front", diplomacyContent, 13f, LedgerPalette.PhosphorDim,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(frontText.rectTransform, ListLeft + 28f, y - 26f, 500f, 20f);
+            PlaceTopLeft(frontText.rectTransform, ListLeft + 28f, y - 26f, 380f, 20f);
             frontText.text = front
                 ? "Front: " + front.BusinessName
                 : "Front: unknown";
 
             var strength = NewText("Strength", diplomacyContent, 13f,
                 LedgerPalette.PhosphorDim, TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(strength.rectTransform, ListLeft + 28f, y - 46f, 500f, 20f);
+            PlaceTopLeft(strength.rectTransform, ListLeft + 28f, y - 46f, 380f, 20f);
             strength.text = "Strength: " + LedgerText.StrengthUnknown;
 
             var turf = NewText("Turf", diplomacyContent, 13f, LedgerPalette.PhosphorDim,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(turf.rectTransform, ListLeft + 28f, y - 66f, 500f, 20f);
-            turf.text = territory != null && territory.Seeded
-                ? "Territory: " + territory.CountOf(gang.Id) + " blocks"
+            PlaceTopLeft(turf.rectTransform, ListLeft + 28f, y - 66f, 380f, 20f);
+            var held = Outfit.Turf.CountOf(holdings, gang.Id);
+            turf.text = outfit
+                ? "Territory: " + held + (held == 1 ? " building" : " buildings")
                 : "Territory: unknown";
 
             var current = outfit ? outfit.Relations.StanceWith(gang.Id) : Outfit.Stance.Peace;
             var pending = Outfit.Stance.Peace;
             var hasPending = outfit && outfit.Relations.TryGetPending(gang.Id, out pending);
 
-            var stanceText = NewText("Stance", diplomacyContent, 14f,
+            var stanceText = NewText("Stance", diplomacyContent, 13f,
                 hasPending ? LedgerPalette.Amber : LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(stanceText.rectTransform, ListLeft + 560f, y, 420f, 26f);
+            PlaceTopLeft(stanceText.rectTransform, ListLeft + 440f, y, 444f, 26f);
             stanceText.fontStyle = FontStyles.Bold;
             stanceText.text = "STANCE: " + LedgerText.StanceLabel(current).ToUpperInvariant() +
                 (hasPending
@@ -1454,7 +1497,7 @@ namespace LivingCity.UI
                 var chosen = stance == effective;
                 var gangId = gang.Id;
                 NewButton(diplomacyContent, chosen ? "= " + label + " =" : label,
-                    ListLeft + 560f + s * 132f, y - 34f, 124f, 28f, () =>
+                    ListLeft + 440f + s * 132f, y - 34f, 124f, 28f, () =>
                     {
                         if (outfit)
                             outfit.SetStance(gangId, stance);
@@ -1463,7 +1506,7 @@ namespace LivingCity.UI
             }
 
             var hairline = NewRect("Rule", diplomacyContent);
-            PlaceTopLeft(hairline, ListLeft, y - 84f, 1080f, 1f);
+            PlaceTopLeft(hairline, ListLeft, y - 84f, PageRight - ListLeft, 1f);
             var hairImage = hairline.gameObject.AddComponent<Image>();
             hairImage.sprite = null;
             hairImage.color = LedgerPalette.HairLine;
@@ -1488,8 +1531,9 @@ namespace LivingCity.UI
 
         // --------------------------------------------------------------- the orders page
 
-        const float OrdersPanelWidth = 470f;
-        const float OrdersInner = OrdersPanelWidth - 28f;
+        /// <summary>Inner content width of the orders panel - the panel itself now
+        /// fills the page below the tabs, since the map lives beside the book.</summary>
+        const float OrdersInner = PageRight - ListLeft - 28f;
 
         RectTransform ordersViewport;
         RectTransform ordersContent;
@@ -1515,19 +1559,24 @@ namespace LivingCity.UI
         {
             var root = NewPageRoot(pageRect, LedgerPage.Orders);
 
+            // A page like any other now: the panel fills the sheet below the tab strip,
+            // and target picking happens on the map already standing to the right.
+            // Fixed page width, stretched vertically from under the tab strip to a
+            // bottom margin: anchored to the paper's left-top column like every sheet.
             var panel = NewRect("Panel", root);
-            panel.anchorMin = new Vector2(1f, 0f);
-            panel.anchorMax = new Vector2(1f, 1f);
-            panel.pivot = new Vector2(1f, 0.5f);
-            panel.anchoredPosition = Vector2.zero;
-            panel.sizeDelta = new Vector2(OrdersPanelWidth, 0f);
+            panel.anchorMin = new Vector2(0f, 0f);
+            panel.anchorMax = new Vector2(0f, 1f);
+            panel.pivot = new Vector2(0f, 1f);
+            panel.anchoredPosition = new Vector2(ListLeft, PageTop - 8f);
+            panel.sizeDelta = new Vector2(PageRight - ListLeft, PageTop - 8f - 36f);
 
             var back = panel.gameObject.AddComponent<Image>();
             back.sprite = null;
             back.color = new Color(LedgerPalette.Screen.r, LedgerPalette.Screen.g,
                 LedgerPalette.Screen.b, 0.94f);
-            back.raycastTarget = true; // the panel is UI; the map ignores clicks on it
-            Frame(panel, 1f, LedgerPalette.PhosphorDim);
+            back.raycastTarget = true;
+            if (!UiSkin.TryDress(back, UiSkin.PanelDark))
+                Frame(panel, 1f, LedgerPalette.PhosphorDim);
 
             var title = NewText("Title", panel, 17f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
@@ -1535,9 +1584,6 @@ namespace LivingCity.UI
             title.fontStyle = FontStyles.Bold;
             title.characterSpacing = 3f;
             title.text = "ORDERS";
-
-            NewButton(panel, "[ THE BOOK ]", OrdersPanelWidth - 150f, -12f, 136f, 28f,
-                () => SetPage(LedgerPage.Newspaper));
 
             ordersViewport = NewRect("Viewport", panel);
             ordersViewport.anchorMin = new Vector2(0f, 0f);
@@ -1706,21 +1752,29 @@ namespace LivingCity.UI
 
         string EligibleBlockReason(Outfit.OrderType type, int blockId)
         {
-            var territory = outfit ? outfit.Territory : null;
-            var owner = territory != null ? territory.OwnerOf(blockId) : -1;
+            if (outfit)
+                outfit.CollectHoldings(holdings);
+            else
+                holdings.Clear();
 
             switch (type)
             {
                 case Outfit.OrderType.Extort:
                     if (!BlockHasBusiness(blockId))
                         return "no businesses";
-                    if (owner > 0)
-                        return "held by " + Gangs.GangRegistry.NameOf(owner);
+                    // A rival premise on the block shields it - you do not squeeze a
+                    // street another family is standing on. Building-held, not block-held.
+                    for (var gang = 0; gang < Gangs.GangCatalog.GangCount; gang++)
+                        if (gang != Gangs.GangCatalog.PlayerGangId &&
+                            Outfit.Turf.CountIn(holdings, blockId, gang) > 0)
+                            return "held by " + Gangs.GangRegistry.NameOf(gang);
                     return null;
 
                 case Outfit.OrderType.CollectProtection:
                 case Outfit.OrderType.Patrol:
-                    return owner == Gangs.GangCatalog.PlayerGangId ? null : "not your turf";
+                    return Outfit.Turf.CountIn(
+                        holdings, blockId, Gangs.GangCatalog.PlayerGangId) > 0
+                        ? null : "not your turf";
 
                 default:
                     return null;
@@ -2291,10 +2345,16 @@ namespace LivingCity.UI
             root.anchorMax = Vector2.one;
             root.offsetMin = root.offsetMax = Vector2.zero;
 
-            for (var y = 3f; y < PageHeight; y += 6f)
+            // Full-width lines hung from the top, laid past the tallest screen the
+            // Expand scaler can produce - the paper's mask clips the overshoot.
+            for (var y = 3f; y < 1300f; y += 6f)
             {
                 var line = NewRect("Scan", root);
-                PlaceTopLeft(line, 0f, -y, PageWidth, 1f);
+                line.anchorMin = new Vector2(0f, 1f);
+                line.anchorMax = new Vector2(1f, 1f);
+                line.pivot = new Vector2(0f, 1f);
+                line.anchoredPosition = new Vector2(0f, -y);
+                line.sizeDelta = new Vector2(0f, 1f);
                 var image = line.gameObject.AddComponent<Image>();
                 image.sprite = null;
                 image.color = LedgerPalette.ScanLine;
@@ -2304,37 +2364,28 @@ namespace LivingCity.UI
 
         void BuildTitleBar(RectTransform paper)
         {
-            titleText = NewText("Title", paper, 26f, LedgerPalette.Phosphor,
+            titleText = NewText("Title", paper, 22f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(titleText.rectTransform, ListLeft, -14f, 900f, 46f);
+            PlaceTopLeft(titleText.rectTransform, ListLeft, -14f, 560f, 46f);
             titleText.fontStyle = FontStyles.Bold;
-            titleText.characterSpacing = 6f;
+            titleText.characterSpacing = 3f;
             // The date is written by UpdateBarLabels from the campaign calendar - the
             // year was a hard-coded literal here once, and only once.
 
-            // The block cursor at the prompt's end - Update blinks it. Nothing says
-            // "1980 terminal" for fewer objects than one square going on and off.
-            var cursorRect = NewRect("Cursor", paper);
-            PlaceTopLeft(cursorRect, ListLeft + 480f, -26f, 14f, 24f);
-            cursor = cursorRect.gameObject.AddComponent<Image>();
-            cursor.sprite = null;
-            cursor.color = LedgerPalette.Phosphor;
-            cursor.raycastTarget = false;
-
-            titleCount = NewText("Count", paper, 15f, LedgerPalette.PhosphorDim,
+            titleCount = NewText("Count", paper, 13f, LedgerPalette.PhosphorDim,
                 TextAlignmentOptions.MidlineRight);
-            PlaceTopLeft(titleCount.rectTransform, PageWidth - 560f, -20f, 380f, 36f);
+            PlaceTopLeft(titleCount.rectTransform, PageRight - 440f, -20f, 300f, 36f);
             titleCount.characterSpacing = 2f;
 
-            NewButton(paper, "[ CLOSE ]", PageWidth - 156f, -18f, 120f, 34f, Close);
+            NewButton(paper, "[ CLOSE ]", PageRight - 120f, -18f, 120f, 34f, Close);
         }
 
         void BuildFilterBar(RectTransform parent)
         {
-            sortLabel = NewButton(parent, "", ListLeft, PageTop, 360f, 36f, ToggleSortMenu);
-            rankLabel = NewButton(parent, "", ListLeft + 380f, PageTop, 230f, 36f, CycleRank);
-            postLabel = NewButton(parent, "", ListLeft + 630f, PageTop, 210f, 36f, CyclePost);
-            showLabel = NewButton(parent, "", ListLeft + 860f, PageTop, 210f, 36f, CycleShow);
+            sortLabel = NewButton(parent, "", ListLeft, PageTop, 240f, 36f, ToggleSortMenu);
+            rankLabel = NewButton(parent, "", ListLeft + 248f, PageTop, 200f, 36f, CycleRank);
+            postLabel = NewButton(parent, "", ListLeft + 456f, PageTop, 200f, 36f, CyclePost);
+            showLabel = NewButton(parent, "", ListLeft + 664f, PageTop, 200f, 36f, CycleShow);
             UpdateBarLabels();
         }
 
@@ -2365,7 +2416,8 @@ namespace LivingCity.UI
             back.sprite = null;
             back.color = LedgerPalette.Screen;
             back.raycastTarget = true; // The menu's own body must swallow stray clicks.
-            Frame(rect, 1f, LedgerPalette.PhosphorDim);
+            if (!UiSkin.TryDress(back, UiSkin.PanelDark))
+                Frame(rect, 1f, LedgerPalette.PhosphorDim);
 
             for (var i = 0; i < entries; i++)
             {
@@ -2678,12 +2730,12 @@ namespace LivingCity.UI
                 : dim ? LedgerPalette.Disabled
                 : LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
-            FillRow(name.rectTransform, x, 320f);
+            FillRow(name.rectTransform, x, 250f - x);
             if (lieutenantRow)
                 name.fontStyle = FontStyles.Bold;
             name.text = member.FullName.ToUpperInvariant();
 
-            BuildRowCells(rect, member, 360f, dim: dim, inverse: inverse);
+            BuildRowCells(rect, member, 258f, dim: dim, inverse: inverse);
         }
 
         /// <summary>The scan columns every character-bearing row shares: rank tag, status
@@ -2698,20 +2750,21 @@ namespace LivingCity.UI
                 : dim ? LedgerPalette.Disabled
                 : LedgerPalette.PhosphorDim;
 
-            var rank = NewText("Rank", rect, 12f, muted, TextAlignmentOptions.MidlineLeft);
-            FillRow(rank.rectTransform, x, 110f);
+            var rank = NewText("Rank", rect, 11.5f, muted,
+                TextAlignmentOptions.MidlineLeft);
+            FillRow(rank.rectTransform, x, 92f);
             rank.text = (member.Specialty != Specialty.None
                 ? LedgerText.SpecialtyLabel(member.Specialty)
                 : LedgerText.RankLabel(member.Rank)).ToUpperInvariant();
 
             if (member.Status != CharacterStatus.Active)
             {
-                var status = NewText("Status", rect, 12f,
+                var status = NewText("Status", rect, 10.5f,
                     inverse ? LedgerPalette.Screen
                     : dim ? LedgerPalette.Disabled
                     : LedgerPalette.Amber,
                     TextAlignmentOptions.MidlineLeft);
-                FillRow(status.rectTransform, x + 120f, 120f);
+                FillRow(status.rectTransform, x + 96f, 74f);
                 status.fontStyle = FontStyles.Bold;
                 status.text = LedgerText.StatusLabel(member.Status).ToUpperInvariant();
             }
@@ -2722,7 +2775,7 @@ namespace LivingCity.UI
                 diamond.anchorMin = new Vector2(0f, 0.5f);
                 diamond.anchorMax = new Vector2(0f, 0.5f);
                 diamond.pivot = new Vector2(0.5f, 0.5f);
-                diamond.anchoredPosition = new Vector2(x + 256f, 0f);
+                diamond.anchoredPosition = new Vector2(x + 184f, 0f);
                 diamond.sizeDelta = new Vector2(10f, 10f);
                 diamond.localRotation = Quaternion.Euler(0f, 0f, 45f);
                 var image = diamond.gameObject.AddComponent<Image>();
@@ -2731,21 +2784,14 @@ namespace LivingCity.UI
                 image.raycastTarget = false;
             }
 
-            var count = director.Roster.HeldCount(member.Id);
-            if (count > 0)
-            {
-                var items = NewText("Items", rect, 12f, muted,
-                    TextAlignmentOptions.MidlineLeft);
-                FillRow(items.rectTransform, x + 280f, 90f);
-                items.text = count == 1 ? "1 item" : count + " items";
-            }
-
+            // The items-count cell is gone with the narrow list: what a man carries
+            // reads off his card, one click away.
             if (options.Sort != SortKey.Roster && !assignMode)
             {
                 var value = NewText("Value", rect, 15f,
                     inverse ? LedgerPalette.Screen : LedgerPalette.Phosphor,
                     TextAlignmentOptions.MidlineRight);
-                FillRow(value.rectTransform, ListWidth - 92f, 80f);
+                FillRow(value.rectTransform, ListWidth - 70f, 62f);
                 value.fontStyle = FontStyles.Bold;
                 value.text = options.Sort == SortKey.Loyalty
                     ? member.Loyalty.ToString()
@@ -2770,6 +2816,14 @@ namespace LivingCity.UI
 
         // ---------------------------------------------------------------- the detail
 
+        /// <summary>The street model this member wears - the mugshot photographs what
+        /// the city fields. The Outfit mirrors the roster (GangSeeder), so rank picks
+        /// between GangCatalog's player-gang bodies exactly the way SpawnCrew does.</summary>
+        static GameObject MemberModel(Character member) =>
+            PortraitStudio.FindPeoplePrefab(member.Rank == Rank.Lieutenant
+                ? Gangs.GangCatalog.LieutenantModels[Gangs.GangCatalog.PlayerGangId]
+                : Gangs.GangCatalog.SoldierModels[Gangs.GangCatalog.PlayerGangId]);
+
         void RebuildDetail()
         {
             foreach (Transform old in detailContent)
@@ -2788,8 +2842,9 @@ namespace LivingCity.UI
                 return;
             }
 
-            // The mugshot corner: no portrait art exists, so the placeholder is the
-            // organizer's photo slot - a sunken dark square with the man's initials.
+            // The mugshot corner. The initials are the placeholder AND the fallback:
+            // PortraitStudio photographs the member's street model a frame later and its
+            // opaque print covers them; when no model resolves, they simply stay.
             var photo = NewRect("Photo", detailContent);
             PlaceTopLeft(photo, 20f, -18f, 84f, 84f);
             var photoImage = photo.gameObject.AddComponent<Image>();
@@ -2807,7 +2862,17 @@ namespace LivingCity.UI
             initials.text = (member.FirstName.Length > 0 ? member.FirstName[0].ToString() : "") +
                             (member.Surname.Length > 0 ? member.Surname[0].ToString() : "");
 
-            var name = NewText("Name", detailContent, 22f, LedgerPalette.Phosphor,
+            var mugshot = NewRect("Mugshot", photo);
+            mugshot.anchorMin = Vector2.zero;
+            mugshot.anchorMax = Vector2.one;
+            mugshot.offsetMin = mugshot.offsetMax = Vector2.zero;
+            var mugshotImage = mugshot.gameObject.AddComponent<RawImage>();
+            mugshotImage.raycastTarget = false;
+            mugshotImage.enabled = false; // Show() flips it on when the print lands
+            PortraitStudio.Request(MemberModel(member),
+                PortraitStudio.Framing.Bust, mugshotImage);
+
+            var name = NewText("Name", detailContent, 19f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
             PlaceTopLeft(name.rectTransform, 118f, -20f, DetailWidth - 138f, 32f);
             name.fontStyle = FontStyles.Bold;
@@ -2874,7 +2939,7 @@ namespace LivingCity.UI
             label.text = "Loyalty";
 
             var back = NewRect("Bar", detailContent);
-            PlaceTopLeft(back, 140f, y - 4f, 260f, 12f);
+            PlaceTopLeft(back, 140f, y - 4f, 160f, 12f);
             var backImage = back.gameObject.AddComponent<Image>();
             backImage.sprite = null;
             backImage.color = LedgerPalette.PhosphorFaint;
@@ -2885,7 +2950,7 @@ namespace LivingCity.UI
             fill.anchorMax = new Vector2(0f, 1f);
             fill.pivot = new Vector2(0f, 0.5f);
             fill.anchoredPosition = Vector2.zero;
-            fill.sizeDelta = new Vector2(260f * (member.Loyalty / 100f), 0f);
+            fill.sizeDelta = new Vector2(160f * (member.Loyalty / 100f), 0f);
             var fillImage = fill.gameObject.AddComponent<Image>();
             fillImage.sprite = null;
             fillImage.color = LedgerPalette.Phosphor;
@@ -2903,11 +2968,11 @@ namespace LivingCity.UI
         {
             var label = NewText("Label", detailContent, 14f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(label.rectTransform, 20f, y, 160f, 22f);
+            PlaceTopLeft(label.rectTransform, 20f, y, 150f, 22f);
             label.text = LedgerText.AttributeLabel(attribute);
 
             var halfSteps = member.GetHalfSteps(attribute);
-            BuildStarStrip(190f, y - 11f, halfSteps);
+            BuildStarStrip(178f, y - 11f, halfSteps);
 
             var value = NewText("Value", detailContent, 13f, LedgerPalette.PhosphorDim,
                 TextAlignmentOptions.MidlineRight);
@@ -2918,63 +2983,30 @@ namespace LivingCity.UI
         }
 
         /// <summary>
-        /// Five diamond slots. A full star is the WantedHud diamond; a HALF star is the
-        /// same diamond centred on the slot but parented under a RectMask2D covering only
-        /// the slot's left half, which clips it to a left-pointing wedge. The mask spans
-        /// the diamond's rotated bounding box (side * sqrt2), not the sprite size - masking
-        /// to the unrotated size would shave the wedge's point off.
+        /// Five real stars - UiSkin's baked gold (full / half / dim empty). The half is
+        /// baked into its sprite, so the RectMask2D wedge trick this used to need is
+        /// gone; one Image per slot, no rotation.
         /// </summary>
         void BuildStarStrip(float x, float centreY, int halfSteps)
         {
-            var span = StarSize * 1.41421f;
-
             for (var slot = 0; slot < 5; slot++)
             {
-                var cx = x + slot * StarPitch + StarPitch * 0.5f;
+                var sprite = halfSteps >= (slot + 1) * 2 ? UiSkin.StarFull
+                    : halfSteps == slot * 2 + 1 ? UiSkin.StarHalf
+                    : UiSkin.StarEmpty;
 
-                BuildDiamond(detailContent, cx, centreY, LedgerPalette.PhosphorFaint);
-
-                if (halfSteps >= (slot + 1) * 2)
-                {
-                    BuildDiamond(detailContent, cx, centreY, LedgerPalette.Phosphor);
-                }
-                else if (halfSteps == slot * 2 + 1)
-                {
-                    var mask = NewRect("Half", detailContent);
-                    mask.anchorMin = new Vector2(0f, 1f);
-                    mask.anchorMax = new Vector2(0f, 1f);
-                    mask.pivot = new Vector2(0.5f, 0.5f);
-                    mask.anchoredPosition = new Vector2(cx - span * 0.25f, centreY);
-                    mask.sizeDelta = new Vector2(span * 0.5f, span);
-                    mask.gameObject.AddComponent<RectMask2D>();
-
-                    var star = NewRect("Star", mask);
-                    star.anchorMin = star.anchorMax = new Vector2(0.5f, 0.5f);
-                    star.pivot = new Vector2(0.5f, 0.5f);
-                    star.anchoredPosition = new Vector2(span * 0.25f, 0f);
-                    star.sizeDelta = new Vector2(StarSize, StarSize);
-                    star.localRotation = Quaternion.Euler(0f, 0f, 45f);
-                    var image = star.gameObject.AddComponent<Image>();
-                    image.sprite = null;
-                    image.color = LedgerPalette.Phosphor;
-                    image.raycastTarget = false;
-                }
+                var rect = NewRect("Star", detailContent);
+                rect.anchorMin = new Vector2(0f, 1f);
+                rect.anchorMax = new Vector2(0f, 1f);
+                rect.pivot = new Vector2(0.5f, 0.5f);
+                rect.anchoredPosition =
+                    new Vector2(x + slot * StarPitch + StarPitch * 0.5f, centreY);
+                rect.sizeDelta = new Vector2(StarSize, StarSize);
+                var image = rect.gameObject.AddComponent<Image>();
+                image.sprite = sprite;
+                image.color = Color.white;
+                image.raycastTarget = false;
             }
-        }
-
-        void BuildDiamond(Transform parent, float cx, float cy, Color color)
-        {
-            var rect = NewRect("Diamond", parent);
-            rect.anchorMin = new Vector2(0f, 1f);
-            rect.anchorMax = new Vector2(0f, 1f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = new Vector2(cx, cy);
-            rect.sizeDelta = new Vector2(StarSize, StarSize);
-            rect.localRotation = Quaternion.Euler(0f, 0f, 45f);
-            var image = rect.gameObject.AddComponent<Image>();
-            image.sprite = null;
-            image.color = color;
-            image.raycastTarget = false;
         }
 
         float BuildEquipmentSection(Roster roster, Character member, float y)
@@ -3215,14 +3247,19 @@ namespace LivingCity.UI
 
             var button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = background;
-            var colours = button.colors;
-            colours.normalColor = LedgerPalette.ButtonNormal;
-            colours.highlightedColor = LedgerPalette.ButtonHover;
-            colours.pressedColor = LedgerPalette.ButtonPressed;
-            button.colors = colours;
+            // A pack button when the sheet is there; the phosphor block in its 1px frame
+            // otherwise. The label stays phosphor either way - green text on the pack's
+            // charcoal face is the skin-era soft-key.
+            if (!UiSkin.TryDressButton(button, background))
+            {
+                var colours = button.colors;
+                colours.normalColor = LedgerPalette.ButtonNormal;
+                colours.highlightedColor = LedgerPalette.ButtonHover;
+                colours.pressedColor = LedgerPalette.ButtonPressed;
+                button.colors = colours;
+                Frame(rect, 1f, LedgerPalette.PhosphorDim);
+            }
             button.onClick.AddListener(onClick);
-
-            Frame(rect, 1f, LedgerPalette.PhosphorDim);
 
             var text = NewText("Label", rect, 13f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.Center);
@@ -3244,22 +3281,6 @@ namespace LivingCity.UI
             BevelEdge(rect, new Vector2(0f, 0f), new Vector2(0f, 1f), thickness, color);
             BevelEdge(rect, new Vector2(0f, 0f), new Vector2(1f, 0f), thickness, color);
             BevelEdge(rect, new Vector2(1f, 0f), new Vector2(1f, 1f), thickness, color);
-        }
-
-        /// <summary>
-        /// The 90s bevel: four strips along the edges. Raised = lit top/left, shaded
-        /// bottom/right; sunken swaps them. Reserved for the monitor's case and tube -
-        /// the hardware; everything on the screen uses Frame.
-        /// </summary>
-        static void Bevel(RectTransform rect, float thickness, bool raised)
-        {
-            var light = raised ? LedgerPalette.BevelLight : LedgerPalette.BevelDark;
-            var dark = raised ? LedgerPalette.BevelDark : LedgerPalette.BevelLight;
-
-            BevelEdge(rect, new Vector2(0f, 1f), new Vector2(1f, 1f), thickness, light);
-            BevelEdge(rect, new Vector2(0f, 0f), new Vector2(0f, 1f), thickness, light);
-            BevelEdge(rect, new Vector2(0f, 0f), new Vector2(1f, 0f), thickness, dark);
-            BevelEdge(rect, new Vector2(1f, 0f), new Vector2(1f, 1f), thickness, dark);
         }
 
         static void BevelEdge(RectTransform parent, Vector2 anchorMin, Vector2 anchorMax,

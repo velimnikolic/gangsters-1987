@@ -578,7 +578,8 @@ namespace LivingCity.Tests
                 failures.Add("BusinessIntention: unknown block leaks '-1' into the title.");
 
             foreach (var prefab in new[]
-                     { "building-cafe", "building-restaurant", "building-post" })
+                     { "building-cafe", "building-restaurant", "building-post",
+                       "building-burger-joint", "building-casino" })
                 for (var roll = 0; roll < 12; roll++)
                     if (string.IsNullOrEmpty(UI.BusinessIntention.CommercialTitle(prefab, roll)))
                         failures.Add($"BusinessIntention: {prefab} roll {roll} has no name.");

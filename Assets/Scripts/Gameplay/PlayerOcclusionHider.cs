@@ -66,6 +66,8 @@ namespace LivingCity.Gameplay
             public GameObject Stub;
         }
 
+        static PlayerOcclusionHider instance;
+
         PlayerMafioso player;
         Camera cam;
         Transform buildingsRoot;
@@ -79,6 +81,37 @@ namespace LivingCity.Gameplay
 
         bool zoomReveal; // zoom-gate hysteresis state
         int gridRow;     // round-robin row cursor - the grid is swept a few rows per frame
+
+        /// <summary>
+        /// True when this collider belongs to a building the sweeps are currently
+        /// hiding and the point sits above its visible stub rim - i.e. the click
+        /// landed on invisible air. The collider deliberately stays solid while
+        /// hidden (bullets, sightlines, movement), but a PICK must not let a wall
+        /// nobody can see swallow the person visible behind it: callers skip such
+        /// hits, so only the stub - the footprint the building still shows on the
+        /// ground - keeps catching clicks. A building whose mesh could not be
+        /// clipped has no stub and nothing visible at all, so every point of it
+        /// is click-through.
+        /// </summary>
+        public static bool InvisibleAt(Collider collider, Vector3 worldPoint)
+        {
+            var self = instance;
+            if (!self || self.hidden.Count == 0 || !collider)
+                return false;
+
+            var renderer = collider.GetComponent<MeshRenderer>();
+            if (!renderer || !self.hidden.TryGetValue(renderer, out var entry))
+                return false;
+            if (!entry.Stub)
+                return true;
+
+            // The stub is cut at StubFraction of the mesh's local height; buildings
+            // only ever yaw, so the same fraction of the world AABB is the same rim.
+            var bounds = renderer.bounds;
+            return worldPoint.y > bounds.min.y + StubFraction * bounds.size.y;
+        }
+
+        void OnEnable() => instance = this;
 
         void Update()
         {
@@ -420,6 +453,8 @@ namespace LivingCity.Gameplay
 
         void OnDisable()
         {
+            if (instance == this)
+                instance = null;
             zoomReveal = false;
             gridRow = 0;
             foreach (var pair in hidden)

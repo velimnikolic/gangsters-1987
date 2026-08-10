@@ -36,6 +36,28 @@ namespace LivingCity.UI
             "The Brass Rail",
         };
 
+        static readonly string[] BurgerNames =
+        {
+            "Big Al's Burgers",
+            "Charcoal King",
+            "The Patty Wagon",
+            "Star Burger Drive-In",
+            "Duke's Char-Grill",
+            "Boulevard Burgers",
+        };
+
+        /// <summary>One casino per city (uniqueBuildings' ceiling), so the table buys
+        /// variety ACROSS campaigns rather than across town.</summary>
+        static readonly string[] CasinoNames =
+        {
+            "The Golden Ace",
+            "Lucky Seven Casino",
+            "The Roulette Room",
+            "Club Paradiso",
+            "The Velvet Dice",
+            "Starlight Casino",
+        };
+
         /// <summary>Longest prefix first, so "industry-factory" cannot swallow the hall and
         /// the old works before they are told apart.</summary>
         static readonly (string prefix, string word)[] IndustrialWords =
@@ -70,6 +92,10 @@ namespace LivingCity.UI
                 return CafeNames[roll % CafeNames.Length];
             if (prefabName.StartsWith("building-restaurant"))
                 return RestaurantNames[roll % RestaurantNames.Length];
+            if (prefabName.StartsWith("building-burger-joint"))
+                return BurgerNames[roll % BurgerNames.Length];
+            if (prefabName.StartsWith("building-casino"))
+                return CasinoNames[roll % CasinoNames.Length];
 
             return "Post Office";
         }

@@ -200,6 +200,12 @@ namespace LivingCity.Gameplay
                 if (!hit.collider)
                     continue;
 
+                // A building hidden down to its ground stub keeps its full collider,
+                // but a pick on its invisible upper floors must fall through to
+                // whatever is actually visible behind - person, ground or target.
+                if (PlayerOcclusionHider.InvisibleAt(hit.collider, hit.point))
+                    continue;
+
                 if (hit.distance < bestHitDistance)
                 {
                     bestHitDistance = hit.distance;

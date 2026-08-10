@@ -7,19 +7,23 @@ using LivingCity.Generation;
 namespace LivingCity.Entities
 {
     /// <summary>
-    /// Owns the city's police: a fixed fleet of patrol cars homed on the station's forecourt
-    /// and a fixed handful of beat officers homed on its door. Everything police is spawned
-    /// here, parented here and persistent - none of it passes through VehicleSpawner or
-    /// PedestrianSpawner's populations, counts or sweeps, and none of it ever despawns.
+    /// Owns the city's police: a fixed fleet of patrol cars homed on each station's forecourt
+    /// and a fixed handful of beat officers homed on its door. The city runs several stations
+    /// now - ZonePlanner spreads one per ~40 blocks - and every one is a precinct of its own:
+    /// its cars and officers are bound to IT and return to IT, so coverage follows the marks'
+    /// spread rather than pooling at whichever station happened to be found first. Everything
+    /// police is spawned here, parented here and persistent - none of it passes through
+    /// VehicleSpawner or PedestrianSpawner's populations, counts or sweeps, and none of it
+    /// ever despawns.
     ///
-    /// The session opens MID-SHIFT on purpose: most of the fleet is already out on random
+    /// The session opens MID-SHIFT on purpose: most of each fleet is already out on random
     /// roads and most officers already mid-beat on random pavements, with every timer and
     /// route budget drawn independently, so the city arrives looking like the patrol has
     /// been running for hours rather than like a depot emptying. How many start at base is
-    /// config (policeCarsStartAtStation / policeOfficersStartAtStation).
+    /// config (policeCarsStartAtStation / policeOfficersStartAtStation), per station.
     ///
     /// Home is the PoliceStation marker BlockBuilder attached at generation. A scene
-    /// generated before the marker existed - or a pathological seed whose station never fit
+    /// generated before the marker existed - or a pathological seed whose stations never fit
     /// - has none, and the whole system stands down with one warning rather than guessing:
     /// regenerating the city (Tools/City) is the fix.
     /// </summary>
@@ -32,8 +36,12 @@ namespace LivingCity.Entities
         /// runtime, so a scene that predates PoliceResponseDirector still fields one.</summary>
         public PrefabDatabase Prefabs => prefabs;
 
-        PoliceStation station;
         System.Random rng;
+
+        // City-wide, not per-precinct: "Car 3" in the overlay must name one car however
+        // many stations share the streets.
+        int nextCarNumber = 1;
+        int nextOfficerNumber = 1;
 
         IEnumerator Start()
         {
@@ -52,38 +60,53 @@ namespace LivingCity.Entities
             // nothing here may touch a lane or pavement before that.
             yield return null;
 
-            station = FindFirstObjectByType<PoliceStation>();
-            if (!station)
+            var stations = FindObjectsByType<PoliceStation>(FindObjectsSortMode.None);
+            if (stations.Length == 0)
             {
                 Debug.LogWarning(
                     "[PoliceDirector] No PoliceStation marker in the scene - the city predates " +
-                    "the police rework or this seed's station never fit. Police stand down; " +
+                    "the police rework or this seed's stations never fit. Police stand down; " +
                     "regenerate the city (Tools/City/Set Up Scene) to fix.", this);
                 yield break;
             }
 
-            if (!FindKerb(out var kerbPos, out var kerbDir))
+            // Find order is engine whim, and one rng stream serves every precinct - sorted by
+            // position so the same seed staffs the same stations with the same draws.
+            System.Array.Sort(stations, (a, b) =>
             {
-                Debug.LogWarning("[PoliceDirector] No road lane found near the station's " +
-                                 "forecourt - police stand down.", this);
-                yield break;
-            }
+                var ax = Mathf.RoundToInt(a.transform.position.x * 10f);
+                var bx = Mathf.RoundToInt(b.transform.position.x * 10f);
+                return ax != bx
+                    ? ax.CompareTo(bx)
+                    : Mathf.RoundToInt(a.transform.position.z * 10f)
+                        .CompareTo(Mathf.RoundToInt(b.transform.position.z * 10f));
+            });
 
-            SpawnFleet(kerbPos, kerbDir);
-            SpawnOfficers();
+            foreach (var station in stations)
+            {
+                if (!FindKerb(station, out var kerbPos, out var kerbDir))
+                {
+                    Debug.LogWarning("[PoliceDirector] No road lane found near a station's " +
+                                     "forecourt - that precinct stands down.", station);
+                    continue;
+                }
+
+                SpawnFleet(station, kerbPos, kerbDir);
+                SpawnOfficers(station);
+            }
         }
 
         /// <summary>
-        /// The fleet's junction with the lane graph. The search itself is ForecourtKerb's,
+        /// A fleet's junction with the lane graph. The search itself is ForecourtKerb's,
         /// shared with the bank; what is police here is only where to look from - out of the
         /// DOOR rather than off the building's origin, because that is the elevation the bays
         /// were cut in front of.
         /// </summary>
-        bool FindKerb(out Vector3 kerbPos, out Vector3 kerbDir) =>
+        static bool FindKerb(PoliceStation station, out Vector3 kerbPos, out Vector3 kerbDir) =>
             ForecourtKerb.TryFind(
                 ForecourtKerb.FocusFor(station, station.DoorWorld), out kerbPos, out kerbDir);
 
-        void SpawnFleet(Vector3 kerbPos, Vector3 kerbDir)
+        void SpawnFleet(PoliceStation station, Vector3 kerbPos, Vector3 kerbDir)
         {
             if (config.policeCarCount <= 0)
                 return;
@@ -115,7 +138,7 @@ namespace LivingCity.Entities
                     // road, and traffic has nothing to brake for.
                     car.GetComponent<CarBehavior>().enabled = false;
                     car.AddComponent<PolicePatrolAgent>()
-                       .Bind(config, station, kerbPos, kerbDir, rng.Next(), stall, i + 1);
+                       .Bind(config, station, kerbPos, kerbDir, rng.Next(), stall, nextCarNumber++);
                 }
                 else
                 {
@@ -128,7 +151,7 @@ namespace LivingCity.Entities
                         continue;
 
                     car.AddComponent<PolicePatrolAgent>()
-                       .Bind(config, station, kerbPos, kerbDir, rng.Next(), -1, i + 1);
+                       .Bind(config, station, kerbPos, kerbDir, rng.Next(), -1, nextCarNumber++);
                 }
             }
         }
@@ -156,7 +179,7 @@ namespace LivingCity.Entities
             return car;
         }
 
-        void SpawnOfficers()
+        void SpawnOfficers(PoliceStation station)
         {
             if (config.policeOfficerCount <= 0)
                 return;
@@ -216,7 +239,7 @@ namespace LivingCity.Entities
                     animator.runtimeAnimatorController = prefabs.pedestrianController;
 
                 person.AddComponent<PoliceOfficerAgent>()
-                      .Configure(config, station, rng.Next(), startInside, i + 1);
+                      .Configure(config, station, rng.Next(), startInside, nextOfficerNumber++);
             }
         }
 

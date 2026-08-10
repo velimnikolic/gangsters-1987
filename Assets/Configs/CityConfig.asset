@@ -18,7 +18,7 @@ MonoBehaviour:
   maxArterialSpacing: 4
   minBoulevards: 2
   maxBoulevards: 4
-  seed: 1189049744
+  seed: 1963060478
   blockFillRatio: 1
   buildingTintChance: 1
   commercialTintChance: 1

@@ -29,7 +29,10 @@ namespace LivingCity.Gameplay
     {
         const float RowWidth = 180f;
         const float RowHeight = 30f;
-        const float Padding = 4f;
+
+        // Room for the skin's drawn frame plus a hair of air; without the skin the extra
+        // padding just reads as a slightly roomier menu.
+        const float Padding = 4f + UI.UiSkin.FrameInset;
 
         /// <summary>Above the clock bar's 100 - a menu outranks every readout.</summary>
         const int SortingOrder = 120;
@@ -107,6 +110,7 @@ namespace LivingCity.Gameplay
             background.sprite = null;
             background.color = new Color(0.06f, 0.06f, 0.07f, 0.94f);
             background.raycastTarget = false;
+            UI.UiSkin.TryDress(background, UI.UiSkin.PanelDark);
 
             panel.gameObject.SetActive(false);
         }
@@ -170,11 +174,17 @@ namespace LivingCity.Gameplay
 
             var button = go.AddComponent<Button>();
             button.targetGraphic = background;
-            var colours = button.colors;
-            colours.normalColor = new Color(0.85f, 0.85f, 0.85f);
-            colours.highlightedColor = Color.white;
-            colours.pressedColor = new Color(0.7f, 0.7f, 0.7f);
-            button.colors = colours;
+
+            // The skin swaps whole button faces per state; the tint block below is the
+            // pre-skin feedback and only survives when the sheet is missing.
+            if (!UI.UiSkin.TryDressButton(button, background))
+            {
+                var colours = button.colors;
+                colours.normalColor = new Color(0.85f, 0.85f, 0.85f);
+                colours.highlightedColor = Color.white;
+                colours.pressedColor = new Color(0.7f, 0.7f, 0.7f);
+                button.colors = colours;
+            }
 
             var captured = action;
             // Close BEFORE execute: the action may open UI of its own, and a menu that

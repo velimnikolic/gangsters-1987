@@ -313,7 +313,7 @@ namespace LivingCity.Generation
             }
 
             FulfilBankRoute(grid, palettes, placed, order, cellCounts, adjacency, bankOwnBlock);
-            FulfilGuaranteedLandmarks(grid, palettes, order, cellCounts);
+            FulfilGuaranteedLandmarks(grid, palettes, order, cellCounts, centroids);
         }
 
         /// <summary>
@@ -321,57 +321,94 @@ namespace LivingCity.Generation
         /// police station, which the patrol fleet and the beat officers both treat as home and
         /// which therefore stopped being allowed to lose its 45% roll. Runs AFTER
         /// FulfilBankRoute on purpose: the bank is the older promise and picks its host first,
-        /// and a block holds at most one forced landmark, so the station takes the largest
-        /// block of the zone that the bank left unclaimed.
+        /// and a block holds at most one forced landmark, so the station takes from the blocks
+        /// the bank left unclaimed.
         ///
-        /// Largest rather than smallest for the same reason as the bank: a landmark with a
-        /// forecourt wants frontage, not economy. Preference order is blocks of two cells and
-        /// up, then any block of the zone - the station's ~17m face fits even a single-cell
-        /// block's street run, so an all-singles map still gets its station rather than none.
+        /// These marks are the landmark's ONLY source now, which is what makes the count a
+        /// count. It used to be one mark plus the 45% roll, capped by uniqueBuildings - fine
+        /// while the cap was one, but with several stations owed, the roll would spend the
+        /// whole allowance in whatever corner of the map builds first: blocks build in id
+        /// order, ids come from a flood fill, and a ~15% per-block hit rate exhausts any small
+        /// cap a few dozen blocks in. So PickLandmark refuses the guaranteed index on its
+        /// random path, the prefab left uniqueBuildings, and how many marks are laid here is
+        /// the entire policy: guaranteedLandmarkEvery blocks per copy (0 = exactly one).
         ///
-        /// This only marks the block; the build can still come up empty if every street run on
-        /// it is shorter than the prefab (PlaceLandmark returns unchanged and the landmark is
-        /// dropped), or the 45% roll can deliver the station on an earlier-built block first,
-        /// in which case the forced draw is refused by UniqueBuildings and the mark is a no-op.
-        /// Either way the city ends with at most one station, and only a pathological seed
-        /// with none - PoliceDirector logs and stands down when that happens.
+        /// The first host is the LARGEST block of two cells and up - a landmark with a
+        /// forecourt wants frontage, not economy - and each later host maximises the least
+        /// centroid distance to those already chosen, so the stations spread over the map
+        /// instead of clustering. Single-cell blocks are the last resort only: the station's
+        /// face fits even a single-cell block's street run, so an all-singles map still gets
+        /// stations rather than none.
+        ///
+        /// A mark only marks; the build can still come up empty on a block whose every street
+        /// run is shorter than the prefab (PlaceLandmark returns unchanged and that copy is
+        /// dropped). The city then has fewer stations, and in the pathological limit none -
+        /// PoliceDirector logs and stands down when that happens.
         /// </summary>
         static void FulfilGuaranteedLandmarks(
             CityGrid grid,
             List<PrefabDatabase.ZonePalette> palettes,
             int[] order,
-            int[] cellCounts)
+            int[] cellCounts,
+            Vector2[] centroids)
         {
             foreach (var palette in palettes)
             {
                 if (palette.guaranteedLandmark < 0)
                     continue;
 
-                var host = -1;
-                var hostSmall = -1;
-                foreach (var blockId in order)
-                {
-                    if (grid.ZoneOf(blockId) != palette.zone)
-                        continue;
-                    if (grid.ForcedLandmarkOf(blockId) >= 0)
-                        continue;
+                var target = palette.guaranteedLandmarkEvery > 0
+                    ? Mathf.Max(1, grid.BlockCount / palette.guaranteedLandmarkEvery)
+                    : 1;
 
-                    if (cellCounts[blockId] >= 2)
+                var chosen = new List<int>();
+                for (var copy = 0; copy < target; copy++)
+                {
+                    var host = -1;
+                    var hostSmall = -1;
+                    foreach (var blockId in order)
                     {
-                        if (host < 0 || cellCounts[blockId] > cellCounts[host])
+                        if (grid.ZoneOf(blockId) != palette.zone)
+                            continue;
+                        if (grid.ForcedLandmarkOf(blockId) >= 0)
+                            continue;
+
+                        if (cellCounts[blockId] < 2)
+                        {
+                            if (hostSmall < 0)
+                                hostSmall = blockId;
+                            continue;
+                        }
+
+                        // First copy: the largest block. Later copies: the block farthest
+                        // from every station already placed, by least centroid distance -
+                        // strictly greater, so ties fall to the seed's visit order.
+                        if (host < 0
+                            || (chosen.Count == 0
+                                ? cellCounts[blockId] > cellCounts[host]
+                                : SpreadOf(blockId, chosen, centroids)
+                                  > SpreadOf(host, chosen, centroids)))
                             host = blockId;
                     }
-                    else if (hostSmall < 0)
-                    {
-                        hostSmall = blockId;
-                    }
-                }
 
-                if (host < 0)
-                    host = hostSmall;
-                if (host >= 0)
+                    if (host < 0)
+                        host = hostSmall;
+                    if (host < 0)
+                        break;
+
                     grid.SetForcedLandmark(host, palette.guaranteedLandmark);
+                    chosen.Add(host);
+                }
             }
+        }
+
+        /// <summary>Least squared centroid distance from this block to any chosen host.</summary>
+        static float SpreadOf(int blockId, List<int> chosen, Vector2[] centroids)
+        {
+            var least = float.MaxValue;
+            foreach (var host in chosen)
+                least = Mathf.Min(least, (centroids[blockId] - centroids[host]).sqrMagnitude);
+            return least;
         }
 
         /// <summary>

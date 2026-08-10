@@ -22,49 +22,21 @@ namespace LivingCity.Gameplay
 
         public GangRelations Relations { get; } = new GangRelations();
 
-        public TerritoryMap Territory { get; } = new TerritoryMap();
-
         public int Version { get; private set; }
 
         /// <summary>
-        /// Seeds day-one turf once the gang layer and the block table are both up.
-        /// Lazy because Start order across directors is arbitrary: whoever reads
-        /// territory first (the map tint, the diplomacy page) pays the one-time cost.
-        /// False = not ready yet, ask again next frame.
+        /// The live holdings, one entry per gang-held BUILDING, read straight off the
+        /// markers - BusinessMarker.GangId is the single source of ownership, and day
+        /// one GangDirector stamps exactly one front premise per family. Derived on
+        /// every call: nothing seeds and no cache can go stale when the takeover layer
+        /// starts flipping GangId building by building.
         /// </summary>
-        public bool EnsureTerritory()
+        public void CollectHoldings(System.Collections.Generic.List<Turf.Holding> into)
         {
-            if (Territory.Seeded)
-                return true;
-
-            var gangs = Gangs.GangRegistry.Gangs;
-            if (gangs.Count == 0 || CityBlocks.Blocks.Count == 0)
-                return false;
-
-            var blocks = new System.Collections.Generic.List<TerritorySeeder.BlockPoint>();
-            foreach (var block in CityBlocks.Blocks)
-                blocks.Add(new TerritorySeeder.BlockPoint(
-                    block.Id, block.Center.x, block.Center.y));
-
-            var fronts = new System.Collections.Generic.List<TerritorySeeder.FrontPoint>();
-            foreach (var gang in gangs)
-            {
-                var marker = Gangs.GangRegistry.FrontBusinessOf(gang.Id);
-                if (!marker)
-                    continue;
-                var position = marker.transform.position;
-                fronts.Add(new TerritorySeeder.FrontPoint(
-                    gang.Id, marker.BlockId, position.x, position.z));
-            }
-
-            if (fronts.Count == 0)
-                return false;
-
-            TerritorySeeder.Seed(Territory, blocks, fronts, Gangs.GangCatalog.PlayerGangId);
-            Version++;
-            Debug.Log("[Outfit] Day-one turf seeded: " + Territory.Claims.Count +
-                      " blocks claimed across " + fronts.Count + " families.");
-            return true;
+            into.Clear();
+            foreach (var business in PropertyRegistry.Businesses)
+                if (business && business.GangId >= 0)
+                    into.Add(new Turf.Holding(business.GangId, business.BlockId));
         }
 
         public WeekPlan Plan { get; private set; } = new WeekPlan();

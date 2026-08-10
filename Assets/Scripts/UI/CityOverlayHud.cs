@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LivingCity.Gameplay;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -173,6 +174,7 @@ namespace LivingCity.UI
             background.sprite = null;
             background.color = new Color(0f, 0f, 0f, 0.78f);
             background.raycastTarget = false;
+            UiSkin.TryDress(background, UiSkin.PanelDark);
 
             popupTitle = BuildPopupText("Title", top: true);
             popupTitle.fontSize = 16f;
@@ -250,6 +252,12 @@ namespace LivingCity.UI
             foreach (var hit in hits)
             {
                 if (hit.distance >= bestDistance || !hit.collider)
+                    continue;
+
+                // A building the occlusion sweep has dropped to its ground stub is
+                // still a solid collider, but only the stub is visible - a click on
+                // its invisible upper floors belongs to whoever stands behind them.
+                if (PlayerOcclusionHider.InvisibleAt(hit.collider, hit.point))
                     continue;
 
                 var subject = hit.collider.GetComponentInParent<IOverlaySubject>();

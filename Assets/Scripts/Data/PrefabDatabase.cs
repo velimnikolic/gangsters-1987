@@ -311,6 +311,15 @@ namespace LivingCity.Data
                      "own block, since a block holds at most one landmark.")]
             public int guaranteedLandmark = -1;
 
+            [Tooltip("Blocks of city per copy of the guaranteed landmark, or 0 for exactly " +
+                     "one per city. The police station is why this exists: one station was " +
+                     "right for a ~18-block map and is a token on a ~170-block one, and a flat " +
+                     "count would be wrong again on the next resize. ZonePlanner marks " +
+                     "max(1, blockCount / this) hosts, farthest-spread so coverage follows " +
+                     "the map rather than the flood fill's corner. Ignored when " +
+                     "guaranteedLandmark is -1.")]
+            [Min(0)] public int guaranteedLandmarkEvery;
+
             [Tooltip("Uniform scale on the landmark instance. The civic landmarks are the " +
                      "pack's biggest pieces and their block is already the smallest the map " +
                      "offers, so this is the one size lever left - 0.5 halves the building. " +

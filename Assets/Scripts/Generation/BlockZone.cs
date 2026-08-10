@@ -40,7 +40,8 @@ namespace LivingCity.Generation
     /// The police station followed it, by the other door: too wide for a terrace slot, it is
     /// ResidentialHigh's LANDMARK rather than one of its shop prefabs - recessed off the street
     /// wall behind a forecourt bay of patrol cars (see BlockBuilder.PlaceLandmark and
-    /// ZonePalette.landmarkCars), with the same uniqueBuildings cap keeping it to one per city.
+    /// ZonePalette.landmarkCars). It is no longer capped at one: the city owes a station per
+    /// ~40 blocks, each a farthest-spread ZonePlanner mark - see ZonePalette.guaranteedLandmarkEvery.
     /// </summary>
     public enum BlockZone
     {

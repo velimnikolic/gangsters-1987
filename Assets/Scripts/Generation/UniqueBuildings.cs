@@ -8,12 +8,14 @@ namespace LivingCity.Generation
     /// The prefabs a city gets exactly one of, and which of them have been used.
     ///
     /// Every other "only one" rule in the generator is a rule about BLOCKS: ZonePlanner spends a
-    /// per-zone quota, and a block places its landmark once. That covers the hospital, the police
-    /// station and the school, because each of those is the landmark of a zone of its own. It does
-    /// not cover the post office or the fire station. Both are prefabs in the residential Shops
-    /// group - a storefront between the flats - so they are chosen per SLOT, and the only thing
-    /// that stops a prefab repeating is a ShuffleBag whose scope is one lot. A bag that is rebuilt
-    /// for every lot in the city cannot know the city already has a post office.
+    /// per-zone quota, and a block places its landmark once. That covers the hospital and the
+    /// school, because each of those is the landmark of a zone of its own. It does not cover the
+    /// post office or the fire station. Both are prefabs in the residential Shops group - a
+    /// storefront between the flats - so they are chosen per SLOT, and the only thing that stops
+    /// a prefab repeating is a ShuffleBag whose scope is one lot. A bag that is rebuilt for every
+    /// lot in the city cannot know the city already has a post office. (The police station is
+    /// deliberately NOT here: its count scales with the map, every copy is a ZonePlanner forced
+    /// mark, and an entry in this list would kill every station after the first-built one.)
     ///
     /// The fire station arrived here by demotion: it used to be a zone of its own, and a whole
     /// block for one fire house was the city's scarcest thing spent on its least. Nothing about

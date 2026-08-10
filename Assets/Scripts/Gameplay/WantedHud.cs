@@ -118,6 +118,14 @@ namespace LivingCity.Gameplay
             }
         }
 
+        // The trough's drawn frame is FrameInset thick, so the bar is tall enough to keep a
+        // readable band of red between the frames, and the fill starts past them. Without
+        // the skin the same geometry just reads as a red bar in a roomier black box.
+        const float HealthBarWidth = 220f;
+        const float HealthBarHeight = 18f;
+        const float HealthFillInset = UI.UiSkin.FrameInset;
+        const float HealthFillMax = HealthBarWidth - 2f * HealthFillInset;
+
         void BuildHealthBar()
         {
             var back = new GameObject("Health", typeof(RectTransform));
@@ -127,12 +135,13 @@ namespace LivingCity.Gameplay
             backRect.anchorMin = backRect.anchorMax = new Vector2(0f, 0f);
             backRect.pivot = new Vector2(0f, 0f);
             backRect.anchoredPosition = new Vector2(16f, 16f);
-            backRect.sizeDelta = new Vector2(220f, 14f);
+            backRect.sizeDelta = new Vector2(HealthBarWidth, HealthBarHeight);
 
             healthBack = back.AddComponent<Image>();
             healthBack.sprite = null;
             healthBack.color = new Color(0f, 0f, 0f, 0.6f);
             healthBack.raycastTarget = false;
+            UI.UiSkin.TryDress(healthBack, UI.UiSkin.Sunken);
 
             var fill = new GameObject("Fill", typeof(RectTransform));
             fill.transform.SetParent(back.transform, false);
@@ -141,8 +150,8 @@ namespace LivingCity.Gameplay
             fillRect.anchorMin = new Vector2(0f, 0f);
             fillRect.anchorMax = new Vector2(0f, 1f);
             fillRect.pivot = new Vector2(0f, 0.5f);
-            fillRect.anchoredPosition = new Vector2(2f, 0f);
-            fillRect.sizeDelta = new Vector2(216f, -4f);
+            fillRect.anchoredPosition = new Vector2(HealthFillInset, 0f);
+            fillRect.sizeDelta = new Vector2(HealthFillMax, -2f * HealthFillInset);
 
             healthFill = fill.AddComponent<Image>();
             healthFill.sprite = null;
@@ -181,6 +190,7 @@ namespace LivingCity.Gameplay
             back.sprite = null;
             back.color = new Color(0f, 0f, 0f, 0.66f);
             back.raycastTarget = false;
+            UI.UiSkin.TryDress(back, UI.UiSkin.PanelDark);
 
             debugText = BuildText("Text", debugPanel.transform);
             var textRect = debugText.rectTransform;
@@ -275,7 +285,7 @@ namespace LivingCity.Gameplay
                 return;
 
             var fraction = player.MaxHealth > 0f ? player.Health / player.MaxHealth : 0f;
-            var width = 216f * Mathf.Clamp01(fraction);
+            var width = HealthFillMax * Mathf.Clamp01(fraction);
             var size = healthFill.rectTransform.sizeDelta;
             if (!Mathf.Approximately(size.x, width))
                 healthFill.rectTransform.sizeDelta = new Vector2(width, size.y);

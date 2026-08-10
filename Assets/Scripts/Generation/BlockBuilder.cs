@@ -689,7 +689,17 @@ namespace LivingCity.Generation
             // landmark once - and kept anyway, because it puts the ceiling on the PREFAB. Raise a
             // maxBlocks, or list one building as the landmark of two palettes, and the zoning
             // rule quietly stops holding while this one still does.
-            var pick = palette.landmarks[rng.Next(palette.landmarks.Length)];
+            var index = rng.Next(palette.landmarks.Length);
+
+            // The guaranteed landmark is placed ONLY by ZonePlanner's forced marks, whose count
+            // and spread are the whole policy - see FulfilGuaranteedLandmarks. Letting the
+            // random draw deliver it too would spend the allowance in build order, which is
+            // flood-fill order, which is one corner of the map. Refused after the draw, so the
+            // rng sequence is the same whether the index is guaranteed or not.
+            if (index == palette.guaranteedLandmark)
+                return null;
+
+            var pick = palette.landmarks[index];
             return UniqueBuildings.IsSpent(pick) ? null : pick;
         }
 
