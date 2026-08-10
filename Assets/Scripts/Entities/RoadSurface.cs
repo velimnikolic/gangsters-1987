@@ -113,6 +113,7 @@ namespace LivingCity.Entities
                 case RoadTileKind.Cross: return new RoadShape(SurfaceShape.Bands, street, street);
                 case RoadTileKind.MainTJunction: return new RoadShape(SurfaceShape.Bands, street, main);
                 case RoadTileKind.MainCross: return new RoadShape(SurfaceShape.Bands, main, street);
+                case RoadTileKind.MainMainCross: return new RoadShape(SurfaceShape.Bands, main, main);
                 case RoadTileKind.Curve: return new RoadShape(SurfaceShape.Curve, street, street);
                 case RoadTileKind.End: return new RoadShape(SurfaceShape.DeadEnd, street, 0f);
                 default: return new RoadShape(SurfaceShape.NotRoad, 0f, 0f);

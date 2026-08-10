@@ -40,6 +40,15 @@ namespace LivingCity.Data
         [Min(2)] public int minArterialSpacing = 2;
         [Min(2)] public int maxArterialSpacing = 4;
 
+        [Tooltip("How many boulevards - full-map-span dual carriageways - the city carves, " +
+                 "drawn per seed from this range. Each picks its own axis at random and two " +
+                 "may cross, which places the main-by-main crossroads tile. 0 both disables " +
+                 "them. The count and positions come from their own rng stream, so retuning " +
+                 "this cannot shift where the ordinary streets land - though adding or " +
+                 "removing a boulevard reshapes the blocks it cuts through either way.")]
+        [Min(0)] public int minBoulevards = 2;
+        [Min(0)] public int maxBoulevards = 4;
+
         [Header("Determinism")]
         [Tooltip("Same seed must always produce the same city. Each subsystem derives its own " +
                  "System.Random from this so that one subsystem's draw count cannot shift another's.")]
@@ -91,15 +100,19 @@ namespace LivingCity.Data
                  "BlockRect expands a block into its adjacent road tiles by (half a cell - this), " +
                  "so raising it pulls every facade back off the kerb at once. World units, so " +
                  "the default carries CityGrid.TileScale - the tile the wall stands beside is " +
-                 "stretched by it and the pavement it must clear moved out with it.")]
-        [Min(0f)] public float sidewalkWidth = 7f * Generation.CityGrid.TileScale;
+                 "stretched by it and the pavement it must clear moved out with it. The 7.6667 " +
+                 "is not a pavement measurement: it is what puts the kerb-to-wall band at 1.4x " +
+                 "the width the old 7 gave, on top of the tiles' own +20% stretch.")]
+        [Min(0f)] public float sidewalkWidth = 7.6667f * Generation.CityGrid.TileScale;
 
         [Tooltip("The same distance where a block faces the dual carriageway, which is a wider " +
                  "road: its pavements sit at 7.25 from the centreline against a street's 4, so " +
-                 "at the ordinary 7 the facades would stand ON the avenue's pavement. 10 clears " +
-                 "it and still leaves a verge. Resolved per side, so a block between the avenue " +
-                 "and a side street gets both setbacks. World units - see sidewalkWidth.")]
-        [Min(0f)] public float mainSidewalkWidth = 10f * Generation.CityGrid.TileScale;
+                 "at the ordinary 7.6667 the facades would stand ON the avenue's pavement. " +
+                 "10.625 clears it and stands in the same 1.4x-band relation to the avenue's " +
+                 "kerb that sidewalkWidth does to a street's. Resolved per side, so a block " +
+                 "between the avenue and a side street gets both setbacks. World units - see " +
+                 "sidewalkWidth.")]
+        [Min(0f)] public float mainSidewalkWidth = 10.625f * Generation.CityGrid.TileScale;
 
         [Tooltip("Service alley down the long axis of a block interior. Wide enough to read as a " +
                  "passage and to park a truck across, narrow enough that it never reads as a street.")]
@@ -450,10 +463,11 @@ namespace LivingCity.Data
         [Min(0f)] public float pedestrianLodMidOrtho = 45f;
 
         [Tooltip("Orthographic size above which pedestrian animators freeze entirely and " +
-                 "their shadows turn off. At 90 a person is a few pixels; the transform " +
-                 "still moves, so the crowd still flows, it just stops pumping arms nobody " +
-                 "can see.")]
-        [Min(0f)] public float pedestrianLodFarOrtho = 90f;
+                 "their shadows turn off. The transform still moves, so the crowd still " +
+                 "flows, it just stops pumping arms. Must sit BELOW the camera's " +
+                 "maxOrthoSize (84) or the tier is unreachable; at 60 a person is ~20 " +
+                 "pixels and the freeze covers the widest, most crowded views.")]
+        [Min(0f)] public float pedestrianLodFarOrtho = 60f;
 
         [Tooltip("Animator slowdown factor in the mid LOD band: each animator is advanced " +
                  "once every this many frames, round-robin, so the cost drops by the same " +

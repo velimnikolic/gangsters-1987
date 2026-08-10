@@ -335,6 +335,8 @@ namespace LivingCity.EditorTools
             // are left alone.
             config.minArterialSpacing = 2;
             config.maxArterialSpacing = 4;
+            config.minBoulevards = 2;
+            config.maxBoulevards = 4;
 
             NamePedestrianLayer();
 
@@ -353,13 +355,15 @@ namespace LivingCity.EditorTools
             // Which arms carry four lanes was measured, not read off the file name, because the
             // names do not say: tile-road-mainroad-intersection puts the carriageway North-South
             // while tile-road-mainroad-intersection-t puts it East-WEST, with its odd arm being
-            // the minor branch. The pack also ships mainroad curves, tapers and three-way
-            // mainroad junctions; none is wired up because CityGenerator.Subdivide proves the
-            // boulevard can never need one.
+            // the minor branch. tile-mainroad-intersection (no "road-" infix) is the main-by-
+            // main crossroads, for the cell where two boulevards cross. The pack also ships
+            // mainroad curves, tapers and three-way mainroad junctions; those stay unwired
+            // because CityGenerator proves a full-span boulevard can never need one.
             db.mainStraight = Load(Roads + "tile-mainroad-straight.prefab");
             db.mainStraightCrosswalk = Load(Roads + "tile-mainroad-straight-crosswalk.prefab");
             db.mainCross = Load(Roads + "tile-road-mainroad-intersection.prefab");
             db.mainTJunction = Load(Roads + "tile-road-mainroad-intersection-t.prefab");
+            db.mainMainCross = Load(Roads + "tile-mainroad-intersection.prefab");
 
             db.groundTile = Load(Root + "Tiles_T/tile-plain_concrete.prefab");
             db.trafficLights = Load(Traffic + "traffic-lights_AI.prefab");

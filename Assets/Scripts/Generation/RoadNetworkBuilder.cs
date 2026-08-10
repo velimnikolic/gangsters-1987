@@ -75,7 +75,7 @@ namespace LivingCity.Generation
                 var onBoulevard = buildBoulevard && grid.IsMainRoad(cell.x, cell.y);
 
                 var placement = onBoulevard
-                    ? RoadTileTable.LookupMain(sides, grid.MainRoadNorthSouth)
+                    ? RoadTileTable.LookupMain(sides, grid.MainRoadAxisAt(cell.x, cell.y))
                     : RoadTileTable.Lookup(sides);
 
                 if (!placement.IsValid)
@@ -124,11 +124,14 @@ namespace LivingCity.Generation
                 result.Tiles.Add(tile);
 
                 var crossroads = placement.Kind == RoadTileKind.Cross
-                                 || placement.Kind == RoadTileKind.MainCross;
+                                 || placement.Kind == RoadTileKind.MainCross
+                                 || placement.Kind == RoadTileKind.MainMainCross;
 
                 // The gantry set on the avenue, the post elsewhere; either falls back to the
                 // other so a half-filled asset still lights its junctions.
-                var lightsPrefab = placement.Kind == RoadTileKind.MainCross && prefabs.mainTrafficLights
+                var mainJunction = placement.Kind == RoadTileKind.MainCross
+                                   || placement.Kind == RoadTileKind.MainMainCross;
+                var lightsPrefab = mainJunction && prefabs.mainTrafficLights
                     ? prefabs.mainTrafficLights
                     : prefabs.trafficLights;
 

@@ -38,9 +38,10 @@ namespace LivingCity.Generation
         /// How far past the hedge line a painted walk may run - to the kerb, so an entrance
         /// reads as a walk meeting the street rather than stopping dead at the hedge. The verge
         /// past the kerb belongs to the road tile's own raised pavement, which would hide paint
-        /// anyway. clearance - PavementEdge on an ordinary street, near enough on the avenue.
+        /// anyway. clearance - PavementEdge on an ordinary street (11.96 - 7.8, rounded out -
+        /// over-length hides under the raised pavement), near enough on the avenue.
         /// </summary>
-        const float PaintStub = 2.8f;
+        const float PaintStub = 4.2f;
 
         /// <summary>Water sits above the block slab and below the patch layer - see GroundPlacer's ladder.</summary>
         const float PondLift = 0.04f;

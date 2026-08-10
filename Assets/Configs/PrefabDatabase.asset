@@ -22,6 +22,7 @@ MonoBehaviour:
   mainStraightCrosswalk: {fileID: 1607678906302817890, guid: 5fdccc78e3d92e34588ccd5cab804915, type: 3}
   mainCross: {fileID: 1787298353693480, guid: 175bcd8413dc44d0292008b9d8c431a3, type: 3}
   mainTJunction: {fileID: 1305797639775256, guid: fa1ef74917d664d27afb9d392137032c, type: 3}
+  mainMainCross: {fileID: 1721442606046008, guid: cb83295557e044daab2ba7069b78f880, type: 3}
   groundTile: {fileID: 1870627807777496, guid: 694c23563628a4178bcd3bf91226687b, type: 3}
   trafficLights: {fileID: 4508453612489127794, guid: 00e16a692dcdc0e4aaf17f63939c5f96, type: 3}
   mainTrafficLights: {fileID: 2771972179784003025, guid: 0dde3fd85494af3439592d8398332fad, type: 3}

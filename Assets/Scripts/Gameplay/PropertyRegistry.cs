@@ -14,9 +14,10 @@ namespace LivingCity.Gameplay
 
     /// <summary>
     /// A gazda. Plain data, not a component: owners are not places or agents, they are names
-    /// that businesses point at, and several dozen businesses point at the same five of them -
-    /// a district boss owning whole blocks reads more gangster than a unique stranger per door,
-    /// and it is the seed of faction play later.
+    /// that businesses point at. Since the gangs layer took over the underworld they are
+    /// ordinary civilians, one per door - the two exceptions are the institutions, City Hall
+    /// and the Harbor Company. The future buy/racket verbs act on the BUSINESS (its Owner
+    /// swaps, its Protected flips); the owner itself stays a name on a deed.
     ///
     /// Index is the owner's stable position in the registry pool - cheap enough for a popup
     /// change key, which is exactly what BusinessMarker packs it into.

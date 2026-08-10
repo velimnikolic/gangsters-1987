@@ -15,8 +15,16 @@ namespace LivingCity.Gameplay
     ///
     /// Determinism is the contract the whole Generation layer holds and this pass keeps at Play:
     /// one rng stream (seed + SeedOffsets.Ownership), drawn in one fixed order over candidates
-    /// sorted by world position - never by child order - so every session names the same bosses
+    /// sorted by world position - never by child order - so every session names the same owners
     /// over the same doors.
+    ///
+    /// Owners are ordinary CIVILIANS, one per building - the gangs layer carries the underworld
+    /// now, and a mafia name on every deed would make the five families read as wallpaper.
+    /// (This replaced the original five-bosses-own-blocks scheme, deliberately re-rolling every
+    /// campaign's owners once; the draw order below is frozen from that change on.) The two
+    /// named institutions draw nothing from the stream: City Hall up front, and the Harbor
+    /// Company created lazily on the first port shed, so a seed without a port cannot shift
+    /// the civilian names.
     ///
     /// The one classification trap is the port: its palette places the SAME warehouse prefabs
     /// as the industrial blocks, so names alone would misfile them. Buildings inside a
@@ -47,23 +55,9 @@ namespace LivingCity.Gameplay
             "building-post",
         };
 
-        // Public for the headless suite: the popup-width assertion walks every combination
-        // these tables can roll, so a name added here that breaks the line budget fails the
-        // tests instead of the popup.
-        public static readonly string[] BossFirstNames =
-        {
-            "Sal", "Vito", "Carmine", "Rocco", "Enzo", "Frankie", "Tony", "Nico",
-        };
-
-        // Surnames capped at nine letters: the popup line carries a full name, takings and a
-        // protection word in 280px, and "Marcheselli" was the char that broke the budget.
-        public static readonly string[] BossLastNames =
-        {
-            "Petrosino", "Falcone", "Greco", "Bonanno",
-            "Rizzo", "Lombardi", "Caruso", "Moretti",
-        };
-
-        const int BossCount = 5;
+        /// <summary>Chance in a hundred that a business's civilian owner is a woman - it is
+        /// 1980 and the ledgers skew male, but not absurdly so.</summary>
+        const int FemaleOwnerChance = 45;
 
         /// <summary>Metres of slack around the port wall rect - a shed whose origin sits on
         /// the wall line is still the port's.</summary>
@@ -114,34 +108,13 @@ namespace LivingCity.Gameplay
 
             var rng = new System.Random(builder.Config.seed + SeedOffsets.Ownership);
 
-            // Draw 1: the boss pool. Distinct surnames - two bosses out of five sharing one
-            // would read as a typo, not a family.
-            var bosses = new PropertyOwner[BossCount];
-            var surnames = new List<string>(BossLastNames);
-            for (var i = 0; i < BossCount; i++)
-            {
-                var first = BossFirstNames[rng.Next(BossFirstNames.Length)];
-                var lastIndex = rng.Next(surnames.Count);
-                bosses[i] = PropertyRegistry.AddOwner(first + " " + surnames[lastIndex]);
-                surnames.RemoveAt(lastIndex);
-            }
             var civic = PropertyRegistry.AddOwner("City Hall", civic: true);
+            PropertyOwner harbor = null;
+            var takenNames = new HashSet<string>();
 
-            // Draw 2: the docks boss - the whole waterfront is one racket.
-            var docksBoss = bosses[rng.Next(BossCount)];
-
-            // Draw 3: a boss per block, ascending block id. Every business on a block shares
-            // its gazda - a district boss, not a stranger per door.
-            var blockIds = new SortedSet<int>();
-            foreach (var candidate in candidates)
-                if (candidate.Category != BusinessCategory.Port && candidate.BlockId >= 0)
-                    blockIds.Add(candidate.BlockId);
-
-            var blockBoss = new Dictionary<int, PropertyOwner>();
-            foreach (var blockId in blockIds)
-                blockBoss[blockId] = bosses[rng.Next(BossCount)];
-
-            // Draw 4: per business, in the sorted order.
+            // Per business, in the sorted order. Draw order per candidate is FROZEN
+            // (title roll where the title varies, then the owner's gender/first/surname,
+            // then takings) - inserting a draw here reshuffles every campaign.
             foreach (var candidate in candidates)
             {
                 string title;
@@ -151,8 +124,11 @@ namespace LivingCity.Gameplay
                 switch (candidate.Category)
                 {
                     case BusinessCategory.Port:
+                        // One company for the whole waterfront: clicking any shed inside
+                        // the wall means "the port", and one business means one owner.
+                        harbor ??= PropertyRegistry.AddOwner("Harbor Company");
                         title = UI.BusinessIntention.PortTitle();
-                        owner = docksBoss;
+                        owner = harbor;
                         income = 5000;
                         break;
 
@@ -162,14 +138,14 @@ namespace LivingCity.Gameplay
                             ? UI.BusinessIntention.CommercialTitle(candidate.Name, 0)
                             : UI.BusinessIntention.CommercialTitle(
                                 candidate.Name, rng.Next(1000));
-                        owner = civicPost ? civic : BossFor(blockBoss, candidate.BlockId);
+                        owner = civicPost ? civic : DrawCivilianOwner(rng, takenNames);
                         income = rng.Next(6, 25) * 50;
                         break;
 
                     default:
                         title = UI.BusinessIntention.IndustrialTitle(
                             candidate.Name, candidate.BlockId);
-                        owner = BossFor(blockBoss, candidate.BlockId);
+                        owner = DrawCivilianOwner(rng, takenNames);
                         income = rng.Next(16, 49) * 50;
                         break;
                 }
@@ -178,12 +154,36 @@ namespace LivingCity.Gameplay
                     .Init(candidate.Category, title, candidate.BlockId, owner, income);
             }
 
-            Debug.Log($"[PropertyDirector] {candidates.Count} businesses under " +
-                      $"{BossCount} bosses (seed {builder.Config.seed}).");
+            Debug.Log($"[PropertyDirector] {candidates.Count} businesses, " +
+                      $"{PropertyRegistry.Owners.Count} owners (seed {builder.Config.seed}).");
         }
 
-        static PropertyOwner BossFor(Dictionary<int, PropertyOwner> blockBoss, int blockId) =>
-            blockBoss.TryGetValue(blockId, out var owner) ? owner : null;
+        /// <summary>
+        /// One civilian per door, from the same name tables the crowd draws its identities
+        /// from - a gangster and a grocer can share a name across town, exactly as two
+        /// civilians already can. The redraw keeps DEED names unique while it has luck;
+        /// after fifty collisions a duplicate beats an unbounded loop (RosterSeeder's guard).
+        /// </summary>
+        static PropertyOwner DrawCivilianOwner(System.Random rng, HashSet<string> takenNames)
+        {
+            var fullName = "";
+            for (var guard = 0; guard < 50; guard++)
+            {
+                var female = rng.Next(100) < FemaleOwnerChance;
+                var firstNames = female
+                    ? PedestrianIdentity.AllFemaleNames
+                    : PedestrianIdentity.AllMaleNames;
+                var first = firstNames[rng.Next(firstNames.Count)];
+                var surname =
+                    PedestrianIdentity.AllSurnames[rng.Next(PedestrianIdentity.AllSurnames.Count)];
+
+                fullName = first + " " + surname;
+                if (takenNames.Add(fullName))
+                    break;
+            }
+
+            return PropertyRegistry.AddOwner(fullName);
+        }
 
         /// <summary>
         /// Block ids read back from the ground slab names, BlockOverlayHud's parse exactly:

@@ -170,9 +170,9 @@ namespace LivingCity.Generation
         /// Picks a gate to bring a car in through, preferring one the player cannot see.
         ///
         /// A car appearing at the boundary is only convincing while the boundary is off screen.
-        /// At the camera's maximum zoom the whole 240x180 city fits in the frame and no gate is
-        /// hidden, so the fallback takes the one furthest from the centre of the view - still
-        /// the least obtrusive place on screen for a car to arrive.
+        /// With the 34x33 map and maxOrthoSize 70 the edges are usually outside the frame, so
+        /// the hidden-gate branch is the common case; the fallback - the gate furthest from the
+        /// centre of the view - only fires when the camera is parked against a map edge.
         /// </summary>
         public bool TryPickEntry(Camera view, System.Random rng, out Gate gate)
         {

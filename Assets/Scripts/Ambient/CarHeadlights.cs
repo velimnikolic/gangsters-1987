@@ -15,10 +15,13 @@ namespace LivingCity.Ambient
     /// die with their car (they are plain children), so despawn needs no bookkeeping beyond
     /// dropping dead references.
     ///
-    /// Deliberately no budget: lights are unlimited for now (early stages - the cap, if one
-    /// ever returns, will come from camera zoom rather than a fixed number). URP Forward+
-    /// still renders at most 256 additional lights per frame on desktop; past that the
-    /// pipeline culls quietly, which at current city sizes does not come up.
+    /// Budgeted since the 10x city: at carCount 300 an unlimited fleet is up to 600 spot
+    /// lights, and URP Forward+ renders at most 256 additional lights per frame on desktop -
+    /// past that the pipeline culls quietly, and what it culled first in practice was the
+    /// street lamps the player was looking at. So the nearest <see cref="LitBeamBudget"/>
+    /// beams to the camera's ground focus burn and the rest wait, same scheme and same
+    /// focus-projection as StreetLampLights.Resort: 192 lamps + 48 beams = 240, under the
+    /// ceiling with headroom for the odd extra light.
     ///
     /// Only CarBehavior cars qualify. Parked cars are static set dressing and stay dark -
     /// a parking lot of burning headlights at 3am would be its own bug report.
@@ -34,6 +37,20 @@ namespace LivingCity.Ambient
 
         /// <summary>Seconds between rescans for newly spawned cars.</summary>
         const float RescanInterval = 1f;
+
+        /// <summary>
+        /// Beams allowed to burn at once: 24 cars' worth. Counted in BEAMS, sorted by the CAR's
+        /// position - a pair shares one sort key, so the cut falls between cars, not between one
+        /// car's left and right light. Sized against the shared URP ceiling, see the class note.
+        /// </summary>
+        const int LitBeamBudget = 48;
+
+        /// <summary>
+        /// Seconds between re-picks of the burning set. Cars move, so this is the lamp system's
+        /// 0.4s rather than the 1s rescan: at 45km/h a car covers 5m per re-pick, which is
+        /// within the beams' own throw and reads as continuous.
+        /// </summary>
+        const float ResortInterval = 0.4f;
 
         /// <summary>Period tungsten yellow - selenium-bulb headlights, not modern white.</summary>
         static readonly Color BeamColour = new(1f, 0.85f, 0.45f);
@@ -79,6 +96,7 @@ namespace LivingCity.Ambient
         readonly List<Beam> beams = new();
 
         float nextScan;
+        float nextResort;
         float lit = -1f;
 
         void Start()
@@ -112,11 +130,15 @@ namespace LivingCity.Ambient
             }
 
             // Once the hour alone decided this, so the pass could be skipped whenever the night
-            // was steady. Parked-ness changes under a steady night - a car docks at 2am - so the
-            // pass now also rides the rescan tick. A car that stops or pulls away goes dark or
-            // lights up within RescanInterval, which at a walking-pace manoeuvre is not a frame
-            // anyone can catch, and the cost is one walk of the list a second.
-            if (!scanned && Mathf.Approximately(target, lit))
+            // was steady. Parked-ness changes under a steady night - a car docks at 2am - and
+            // since the budget, WHICH cars deserve their lights changes whenever the camera or
+            // the traffic moves, so the pass also rides the resort tick. A car that stops,
+            // pulls away, or drives into frame reacts within ResortInterval.
+            var resortDue = Time.unscaledTime >= nextResort;
+            if (resortDue)
+                nextResort = Time.unscaledTime + ResortInterval;
+
+            if (!scanned && !resortDue && Mathf.Approximately(target, lit))
                 return;
 
             lit = target;
@@ -128,15 +150,42 @@ namespace LivingCity.Ambient
             var burn = target > 0.001f;
 
             for (var i = beams.Count - 1; i >= 0; i--)
+                if (!beams[i].Light)
+                    beams.RemoveAt(i);   // its car despawned
+
+            // Only rank when the budget actually has to choose, and only when there is a camera
+            // to rank against - without one the existing order stands and the budget comes off
+            // the front of it, arbitrary but lit (the lamp system's rule, for the same reason).
+            var camera = Camera.main;
+            if (burn && camera && beams.Count > LitBeamBudget)
+            {
+                // Where the camera LOOKS, not where it stands - the boom parks it 200m back.
+                var eye = camera.transform.position;
+                var forward = camera.transform.forward;
+                if (forward.y < -0.05f && eye.y > 0f)
+                    eye += forward * (eye.y / -forward.y);
+
+                beams.Sort((a, b) =>
+                {
+                    if (!a.Car || !b.Car)
+                        return 0;
+
+                    return (a.Car.transform.position - eye).sqrMagnitude
+                           .CompareTo((b.Car.transform.position - eye).sqrMagnitude);
+                });
+            }
+
+            var on = 0;
+            for (var i = 0; i < beams.Count; i++)
             {
                 var beam = beams[i];
-                if (!beam.Light)
-                {
-                    beams.RemoveAt(i);   // its car despawned
-                    continue;
-                }
+                // Parked cars stay dark AND stay out of the count - a full station forecourt
+                // must not spend the budget the moving traffic in front of it needs.
+                var burns = burn && on < LitBeamBudget && !Parked(beam.Car);
+                if (burns)
+                    on++;
 
-                beam.Light.enabled = burn && !Parked(beam.Car);
+                beam.Light.enabled = burns;
                 beam.Light.intensity = target;
             }
         }

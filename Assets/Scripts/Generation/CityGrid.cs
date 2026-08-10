@@ -15,6 +15,25 @@ namespace LivingCity.Generation
         All = North | East | South | West,
     }
 
+    /// <summary>
+    /// Which way the dual carriageway runs through a road cell. Recorded when a boulevard is
+    /// carved rather than re-derived from the road mask, because the tile lookup needs the
+    /// axis for the END cells too - and there the mask alone cannot tell, since a cell with
+    /// only a North neighbour is the same shape whether the avenue runs N-S or the map simply
+    /// sliced an E-W one.
+    ///
+    /// Flags, because two boulevards may cross: the shared cell accumulates Both, which is
+    /// RoadTileTable's cue for the main-by-main crossroads tile.
+    /// </summary>
+    [Flags]
+    public enum MainRoadAxis : byte
+    {
+        None = 0,
+        NorthSouth = 1 << 0,
+        EastWest = 1 << 1,
+        Both = NorthSouth | EastWest,
+    }
+
     public enum CellType
     {
         /// <summary>
@@ -58,7 +77,8 @@ namespace LivingCity.Generation
         /// the park's per-cell ground. The streets are the pack's own two-lane pieces stretched,
         /// not a wider family: at authored size the lane centres are 3m apart, which is 0.15m of
         /// air between two buses, and two opposing left-turners at a crossroads pass at 2.41m
-        /// while the widest body in the fleet is 2.854m across. At 1.3 that becomes 3.13m.
+        /// while the widest body in the fleet is 2.854m across. At 1.3 that became 3.13m;
+        /// the current 1.56 (the 10x city's +20% on top of it) puts the pass at 3.76m.
         ///
         /// The whole lattice scales with it, and it has to: a tile stretched on one axis only
         /// still works for a straight, but a junction must stretch on both, and then its path
@@ -78,7 +98,7 @@ namespace LivingCity.Generation
         /// Nothing else scales. Cars, people, buildings and street furniture keep their authored
         /// size, which is the entire point: the road gets wider around vehicles that do not.
         /// </summary>
-        public const float TileScale = 1.3f;
+        public const float TileScale = 1.56f;
 
         /// <summary>
         /// The tile module in WORLD units - what CellToWorld steps by and what every placer
@@ -155,17 +175,21 @@ namespace LivingCity.Generation
         readonly int[,] blockIds;
 
         /// <summary>
-        /// Which road cells belong to the city's one dual carriageway.
+        /// Which road cells belong to a dual carriageway, and which way it runs there.
         ///
         /// A parallel mask rather than a third CellType on purpose. Every consumer of the grid
         /// asks "is this a road?" - RoadsAreConnected, AssignBlockIds, NeighbourBlocks,
-        /// BlockBuilder.RoadSides, MapEdgeGates - and the boulevard IS a road to all of them.
+        /// BlockBuilder.RoadSides, MapEdgeGates - and a boulevard IS a road to all of them.
         /// A new CellType would have meant auditing each one to add it back, and any that was
         /// missed would fail silently: a boulevard cell read as unbuildable land, blocks flood
         /// -filled through it, buildings dropped on the avenue. The mask can only be wrong in
         /// the one place that reads it.
+        ///
+        /// Per-cell axis rather than the single flag it used to be, because the city now
+        /// carves several boulevards and they need not agree: an N-S and an E-W avenue can
+        /// coexist, and the cell where they cross carries Both.
         /// </summary>
-        readonly bool[,] mainRoad;
+        readonly MainRoadAxis[,] mainRoad;
 
         /// <summary>
         /// What each block is for, indexed by block id. Lives here rather than being threaded
@@ -192,17 +216,7 @@ namespace LivingCity.Generation
         public int Height { get; }
         public int BlockCount { get; private set; }
 
-        /// <summary>
-        /// Which way the boulevard runs. Recorded when it is carved rather than re-derived from
-        /// the mask, because the tile lookup needs the axis for the END cells too - and there
-        /// the mask alone cannot tell, since a cell with only a North neighbour is the same
-        /// shape whether the avenue runs N-S or the map simply sliced an E-W one.
-        ///
-        /// Meaningless while HasMainRoad is false.
-        /// </summary>
-        public bool MainRoadNorthSouth { get; private set; }
-
-        /// <summary>False on a map too small to be subdivided at all - see CityGenerator.</summary>
+        /// <summary>False on a map too small to hold any boulevard - see CityGenerator.</summary>
         public bool HasMainRoad { get; private set; }
 
         public CityGrid(int width, int height)
@@ -211,7 +225,7 @@ namespace LivingCity.Generation
             Height = height;
             cells = new CellType[width, height];
             blockIds = new int[width, height];
-            mainRoad = new bool[width, height];
+            mainRoad = new MainRoadAxis[width, height];
 
             for (var x = 0; x < width; x++)
             for (var z = 0; z < height; z++)
@@ -235,16 +249,25 @@ namespace LivingCity.Generation
         /// buildings in a traffic lane, and that is not a failure worth leaving open.
         /// </summary>
         public bool IsMainRoad(int x, int z) =>
-            InBounds(x, z) && cells[x, z] == CellType.Road && mainRoad[x, z];
+            InBounds(x, z) && cells[x, z] == CellType.Road && mainRoad[x, z] != MainRoadAxis.None;
 
-        /// <summary>Marks one cell of the boulevard. CityGenerator carves the whole line in one pass.</summary>
+        /// <summary>
+        /// The axis recorded for a boulevard cell - None off the boulevard, Both where two
+        /// boulevards cross. Guarded the same way as IsMainRoad, for the same reason.
+        /// </summary>
+        public MainRoadAxis MainRoadAxisAt(int x, int z) =>
+            InBounds(x, z) && cells[x, z] == CellType.Road ? mainRoad[x, z] : MainRoadAxis.None;
+
+        /// <summary>
+        /// Marks one cell of a boulevard. CityGenerator carves each whole line in one pass;
+        /// axes accumulate, so the cell two crossing boulevards share ends up as Both.
+        /// </summary>
         public void SetMainRoad(int x, int z, bool northSouth)
         {
             if (!InBounds(x, z))
                 return;
 
-            mainRoad[x, z] = true;
-            MainRoadNorthSouth = northSouth;
+            mainRoad[x, z] |= northSouth ? MainRoadAxis.NorthSouth : MainRoadAxis.EastWest;
             HasMainRoad = true;
         }
 

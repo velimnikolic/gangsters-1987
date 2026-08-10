@@ -24,8 +24,8 @@ namespace LivingCity.Tests
         // World distances, so they carry CityGrid.TileScale exactly as CityConfig.sidewalkWidth
         // and ParkDresser's own (CellHalf - HedgeInset) do. Written as the authored figure times
         // the scale rather than as 9.1, so stretching the city cannot silently orphan them.
-        const float Clearance = 7f * CityGrid.TileScale;
-        const float MainClearance = 10f * CityGrid.TileScale;
+        const float Clearance = 7.6667f * CityGrid.TileScale;
+        const float MainClearance = 10.625f * CityGrid.TileScale;
         const float MapEdge = CityGrid.CellSize * 0.5f - 0.8f;
         const float GateHalf = 3f;
         const float Lift = 0.02f;

@@ -29,6 +29,11 @@ namespace LivingCity.Entities
         public PropertyOwner Owner { get; set; }
         public bool Protected { get; set; }
 
+        /// <summary>The gang whose front this building is; -1 for the honest majority. Set
+        /// by GangDirector at Play, mutable for the same reason Owner is - a future takeover
+        /// re-flags the building, and OverlayKey covers it so the popup follows.</summary>
+        public int GangId { get; set; } = -1;
+
         float markerHeight = -1f;
 
         public void Init(
@@ -75,10 +80,14 @@ namespace LivingCity.Entities
         string UI.IOverlaySubject.OverlayTitle => BusinessName ?? name;
 
         string UI.IOverlaySubject.OverlayLine =>
-            UI.BusinessIntention.Line(Owner?.DisplayName, WeeklyIncome, Protected);
+            UI.BusinessIntention.Line(Owner?.DisplayName, WeeklyIncome, Protected,
+                Gangs.GangRegistry.NameOf(GangId));
 
+        // Gang bits sit at 48+, clear of the owner's at 32+ (owner counts stay far below
+        // 2^16 - one per building); +2 keeps unflagged (-1) distinct from gang 0.
         long UI.IOverlaySubject.OverlayKey =>
-            ((long)((Owner?.Index ?? -1) + 1) << 32)
+            ((long)(GangId + 2) << 48)
+            | ((long)((Owner?.Index ?? -1) + 1) << 32)
             | ((uint)WeeklyIncome << 1)
             | (Protected ? 1u : 0u);
 

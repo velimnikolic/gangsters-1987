@@ -66,6 +66,10 @@ namespace LivingCity.Tests
             config.gridHeight = height;
             config.minArterialSpacing = 2;
             config.maxArterialSpacing = 4;
+            // Set explicitly - GetUninitializedObject skips field initializers, and 0 would
+            // mean a city with no boulevard and no main-verge coverage in the sweep.
+            config.minBoulevards = 1;
+            config.maxBoulevards = 2;
             config.seed = seed;
 
             return CityGenerator.Generate(config);

@@ -32,6 +32,14 @@ namespace LivingCity.Generation
         /// the carriageway runs North-South.
         /// </summary>
         MainCross,
+
+        /// <summary>
+        /// tile-mainroad-intersection: two boulevards crossing each other. tileShape is Cross
+        /// (probes all four sides), and its lanes run at +/-1.75 and +/-4.75 on BOTH axes -
+        /// read from the prefab's Path nodes - so unlike MainCross it is symmetric under
+        /// rotation and its yaw is free. Fixed at 0.
+        /// </summary>
+        MainMainCross,
     }
 
     public readonly struct RoadTilePlacement
@@ -152,12 +160,25 @@ namespace LivingCity.Generation
         /// That is the pack's convention, not a mistake here: the T's odd arm is its "forward",
         /// and the odd arm is the BRANCH, so the carriageway has to lie across it.
         ///
-        /// Only five masks can reach this function - see CityGenerator.Subdivide, which explains
-        /// why the boulevard can never curve, taper or dead-end inside the city. Anything else
-        /// is a layout bug rather than a shape to draw, so it returns None and the caller warns.
+        /// Only six shapes can reach this function - five per single axis, plus exactly one for
+        /// MainRoadAxis.Both. See CityGenerator.CarveBoulevards and Subdivide, which explain why
+        /// a boulevard can never curve, taper or dead-end inside the city, and why two
+        /// boulevards can only ever meet at a full crossroads: both span the whole map and both
+        /// sit at least a block off every edge, so all four of the shared cell's neighbours are
+        /// road. Anything else is a layout bug rather than a shape to draw, so it returns None
+        /// and the caller warns.
         /// </summary>
-        public static RoadTilePlacement LookupMain(Sides sides, bool northSouth)
+        public static RoadTilePlacement LookupMain(Sides sides, MainRoadAxis axis)
         {
+            // Two boulevards crossing. The tile carries four lanes on both axes and is
+            // 90-degree symmetric, so no rotation choice exists to make.
+            if (axis == MainRoadAxis.Both)
+                return sides == Sides.All
+                    ? new RoadTilePlacement(RoadTileKind.MainMainCross, 0f)
+                    : new RoadTilePlacement(RoadTileKind.None, 0f);
+
+            var northSouth = axis == MainRoadAxis.NorthSouth;
+
             // Along-axis neighbours are the carriageway; the other two are side streets.
             var along = northSouth ? Sides.North | Sides.South : Sides.East | Sides.West;
             var across = northSouth ? Sides.East | Sides.West : Sides.North | Sides.South;

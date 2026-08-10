@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using LivingCity.Data;
 
@@ -167,6 +168,33 @@ namespace LivingCity.Generation
         /// Retuning how rare the camper is must not be able to re-lay the city.
         /// </summary>
         public const int RareVehicles = 27_000;
+
+        /// <summary>
+        /// Read by RosterSeeder for the personnel ledger's starting six - names, all
+        /// sixty-six attribute rolls, loyalties, and which car sits out back. Its own
+        /// offset for the list's standing reason: retuning the outfit's opening hand must
+        /// not be able to re-lay the city, and a new prop pass must not reshuffle the men.
+        /// </summary>
+        public const int Personnel = 28_000;
+
+        /// <summary>
+        /// Read by CityGenerator.CarveBoulevards - how many avenues the city gets, each one's
+        /// axis and each one's position. Its own stream rather than Roads because the draw
+        /// count varies with the config's boulevard range and with separation retries, and a
+        /// varying draw count inside the Roads stream would re-lay every street in the city
+        /// each time the range was retuned. (Introducing this stream at all re-laid every seed
+        /// once - the boulevards now precede the BSP and reshape its input rectangles - which
+        /// is the same one-time reshuffle SeedOffsets.Park records the precedent for.)
+        /// </summary>
+        public const int Boulevards = 29_000;
+
+        /// <summary>
+        /// Read by GangSeeder for the city's gangs: the player front's pick, each gang's
+        /// child seed, and the AI crews' sizes and names. Its own offset for the list's
+        /// standing reason - and each gang also draws a child seed up front, so deepening
+        /// one gang later can never reshuffle another.
+        /// </summary>
+        public const int Gangs = 30_000;
     }
 
     /// <summary>
@@ -194,7 +222,15 @@ namespace LivingCity.Generation
             var minBlock = Mathf.Max(1, config.minArterialSpacing - 1);
             var maxBlock = Mathf.Max(minBlock, config.maxArterialSpacing - 1);
 
-            Subdivide(grid, 0, 0, grid.Width - 1, grid.Height - 1, minBlock, maxBlock, rng, depth: 0);
+            // The boulevards come first and from their OWN stream - see SeedOffsets.Boulevards.
+            // They are full-map-span cuts, so to the BSP below they are simply cuts that have
+            // already been made: it runs once per rectangle of land they leave behind.
+            var boulevardRng = new System.Random(config.seed + SeedOffsets.Boulevards);
+            CarveBoulevards(grid, config, minBlock, boulevardRng, out var columns, out var rows);
+
+            foreach (var (x0, x1) in Intervals(columns, grid.Width))
+            foreach (var (z0, z1) in Intervals(rows, grid.Height))
+                Subdivide(grid, x0, z0, x1, z1, minBlock, maxBlock, rng);
 
             grid.AssignBlockIds();
 
@@ -220,6 +256,113 @@ namespace LivingCity.Generation
         }
 
         /// <summary>
+        /// Parallel avenues closer than this read as a divided highway with a strip of city
+        /// caught in the median, so positions are rejected against it. Structurally any gap of
+        /// one cell is legal - this is an aesthetic floor, not a constraint the tiles need.
+        /// </summary>
+        const int MinBoulevardSeparation = 4;
+
+        /// <summary>
+        /// Carves the city's boulevards: full-map-span dual carriageways, a per-seed count drawn
+        /// from config.minBoulevards..maxBoulevards, each on its own randomly chosen axis. Two
+        /// on opposite axes cross, and the shared cell accumulates MainRoadAxis.Both - the cue
+        /// for the main-by-main crossroads tile.
+        ///
+        /// Full-span is a load-bearing choice, not a flourish. Because every boulevard runs
+        /// edge to edge, its ends are always the map-edge slice case, it can never curve or
+        /// taper, and two boulevards can only ever meet at a full crossroads - which is what
+        /// keeps RoadTileTable.LookupMain's closed shape set closed. (The single boulevard this
+        /// replaces got the same guarantees by being the BSP's depth-0 cut; several boulevards
+        /// cannot all be the first cut, so they are carved up front instead and the BSP fills
+        /// in the rectangles they leave.)
+        ///
+        /// Positions are drawn from [minBlock, size-1-minBlock], the same bounds Subdivide uses
+        /// for its cuts, so the outer ring stays unpaved and the four corner cells are never
+        /// road - MapEdgeGates needs both, see Subdivide's doc.
+        ///
+        /// Every draw here is from the Boulevards stream, whose count MAY vary (it retries a
+        /// position that lands too close to a parallel neighbour) - that is exactly why it is
+        /// not the Roads stream, where a varying draw count would re-lay the whole city.
+        /// </summary>
+        static void CarveBoulevards(CityGrid grid, CityConfig config, int minBlock,
+                                    System.Random rng, out List<int> columns, out List<int> rows)
+        {
+            columns = new List<int>();
+            rows = new List<int>();
+
+            var lo = Mathf.Max(0, config.minBoulevards);
+            var count = rng.Next(lo, Mathf.Max(lo, config.maxBoulevards) + 1);
+
+            for (var i = 0; i < count; i++)
+            {
+                var placed = false;
+                for (var attempt = 0; attempt < 16 && !placed; attempt++)
+                {
+                    var northSouth = rng.Next(2) == 0;
+                    var taken = northSouth ? columns : rows;
+                    var size = northSouth ? grid.Width : grid.Height;
+
+                    // No legal position on this axis at all - a map too narrow to keep the
+                    // outer ring unpaved. The retry may still land on the other axis.
+                    if (size - minBlock <= minBlock)
+                        continue;
+
+                    var position = rng.Next(minBlock, size - minBlock);
+
+                    var clear = true;
+                    foreach (var other in taken)
+                        if (Mathf.Abs(other - position) < MinBoulevardSeparation)
+                            clear = false;
+                    if (!clear)
+                        continue;
+
+                    if (northSouth)
+                        for (var z = 0; z < grid.Height; z++)
+                        {
+                            grid[position, z] = CellType.Road;
+                            grid.SetMainRoad(position, z, northSouth: true);
+                        }
+                    else
+                        for (var x = 0; x < grid.Width; x++)
+                        {
+                            grid[x, position] = CellType.Road;
+                            grid.SetMainRoad(x, position, northSouth: false);
+                        }
+
+                    taken.Add(position);
+                    placed = true;
+                }
+
+                if (!placed)
+                    Debug.LogWarning($"[CityGenerator] Could not place boulevard {i + 1} of {count} - " +
+                                     "no position clears the separation rule on this map. Carved " +
+                                     $"{columns.Count + rows.Count} instead.");
+            }
+        }
+
+        /// <summary>
+        /// The maximal runs of un-carved indices between the sorted cuts - the rectangles of
+        /// land, per axis, that the boulevards leave for the BSP. No cuts yields the whole
+        /// [0, size-1], so a config with zero boulevards degenerates to the old single-call
+        /// Subdivide over the full map.
+        /// </summary>
+        static IEnumerable<(int lo, int hi)> Intervals(List<int> cuts, int size)
+        {
+            cuts.Sort();
+
+            var start = 0;
+            foreach (var cut in cuts)
+            {
+                if (cut > start)
+                    yield return (start, cut - 1);
+                start = cut + 1;
+            }
+
+            if (start <= size - 1)
+                yield return (start, size - 1);
+        }
+
+        /// <summary>
         /// Cuts one rectangle of buildable land in two with a street, then cuts each half
         /// independently, until every piece left is a block.
         ///
@@ -242,8 +385,11 @@ namespace LivingCity.Generation
         ///    rectangle this block was carved out of, so it covers this block's side completely.
         ///    BlockBuilder.RoadSides relies on this - it probes one corner and generalises.
         /// 3. The street network is connected. A cut runs the full width or height of its
-        ///    rectangle, so both its ends land on that rectangle's boundary, and after the very
-        ///    first cut every rectangle has at least one street on its boundary.
+        ///    rectangle, so both its ends land on that rectangle's boundary - which is map edge,
+        ///    an earlier cut, or one of the boulevards CarveBoulevards laid before any of this
+        ///    ran. A cut that only meets the map edge is still reached: the strips it leaves
+        ///    are longer than maxBlock on the perpendicular axis, so mustSplit forces a
+        ///    perpendicular cut whose ends meet both, and RoadsAreConnected backstops the lot.
         /// 4. A road cell with only ONE connection occurs only on the map boundary. That case is
         ///    RoadTileTable's "the map edge sliced this street", drawn as a straight running off
         ///    the map; anywhere inside the city it would read as a road that simply stops. By (3)
@@ -255,24 +401,31 @@ namespace LivingCity.Generation
         /// corner cells in particular are never road, which MapEdgeGates needs because a lane
         /// standing on two edges at once cannot be classified as an entry or an exit.
         ///
-        /// THE FIRST CUT IS THE BOULEVARD (depth 0). It is the only cut that spans the whole
-        /// map, which is exactly what the city's main axis has to do, so it costs nothing to
-        /// take: no extra draw from rng, no change to where anything lands. Every existing seed
-        /// produces the identical layout it did before and simply gains a dual carriageway on
-        /// the line it was already cutting.
+        /// THE BOULEVARDS ARE ALREADY CARVED when this runs - CarveBoulevards lays them as
+        /// full-map-span cuts first, and this recursion is then run once per rectangle of land
+        /// they leave (the single boulevard used to be this recursion's own depth-0 cut, which
+        /// worked because exactly one cut spans the whole map; several boulevards cannot all be
+        /// that cut). To the four properties above the boulevards are simply cuts that happened
+        /// earlier: each rectangle handed in here is bounded by boulevard, map edge or nothing
+        /// beyond it, never part-way through one.
         ///
-        /// That choice also CLOSES the set of tile shapes the boulevard can need, which is why
-        /// RoadTileTable.LookupMain has no curve or taper case:
+        /// That division of labour CLOSES the set of tile shapes a boulevard can need, which is
+        /// why RoadTileTable.LookupMain has no curve or taper case:
         ///
-        /// - It spans the map, so a boulevard cell always has both of its along-axis neighbours
+        /// - A boulevard spans the map, so its cells always have both along-axis neighbours
         ///   except at the two ends, where property (4) above applies - the map edge slices it.
-        /// - No later cut can be parallel-adjacent to it: every recursion happens strictly
-        ///   inside one of the two halves, and a cut needs minBlock >= 1 cells of land before it.
-        /// - No later cut can touch its end cells either, since no cut lands at index 0 or
-        ///   size-1. So an end cell has no side street, and the boulevard never has to turn.
+        /// - No cut made here can be parallel-adjacent to one: every recursion happens strictly
+        ///   inside a rectangle the boulevards bound, and a cut needs minBlock >= 1 cells of
+        ///   land before it.
+        /// - No cut can touch a boulevard's end cells either, since neither cuts nor boulevards
+        ///   land at index 0 or size-1. So an end cell has no side street and never turns.
+        /// - Two boulevards can only meet at a full crossroads: both span the map and both sit
+        ///   at least minBlock off every edge, so all four neighbours of the shared cell are
+        ///   road. That cell carries MainRoadAxis.Both and is the ONE shape this recursion
+        ///   never makes - the main-by-main cross.
         /// </summary>
         static void Subdivide(CityGrid grid, int x0, int z0, int x1, int z1,
-                              int minBlock, int maxBlock, System.Random rng, int depth)
+                              int minBlock, int maxBlock, System.Random rng)
         {
             var width = x1 - x0 + 1;
             var height = z1 - z0 + 1;
@@ -305,25 +458,19 @@ namespace LivingCity.Generation
                 // draw is the whole source of "one wide, one narrow".
                 var column = rng.Next(x0 + minBlock, x1 - minBlock + 1);
                 for (var z = z0; z <= z1; z++)
-                {
                     grid[column, z] = CellType.Road;
-                    if (depth == 0) grid.SetMainRoad(column, z, northSouth: true);
-                }
 
-                Subdivide(grid, x0, z0, column - 1, z1, minBlock, maxBlock, rng, depth + 1);
-                Subdivide(grid, column + 1, z0, x1, z1, minBlock, maxBlock, rng, depth + 1);
+                Subdivide(grid, x0, z0, column - 1, z1, minBlock, maxBlock, rng);
+                Subdivide(grid, column + 1, z0, x1, z1, minBlock, maxBlock, rng);
             }
             else
             {
                 var row = rng.Next(z0 + minBlock, z1 - minBlock + 1);
                 for (var x = x0; x <= x1; x++)
-                {
                     grid[x, row] = CellType.Road;
-                    if (depth == 0) grid.SetMainRoad(x, row, northSouth: false);
-                }
 
-                Subdivide(grid, x0, z0, x1, row - 1, minBlock, maxBlock, rng, depth + 1);
-                Subdivide(grid, x0, row + 1, x1, z1, minBlock, maxBlock, rng, depth + 1);
+                Subdivide(grid, x0, z0, x1, row - 1, minBlock, maxBlock, rng);
+                Subdivide(grid, x0, row + 1, x1, z1, minBlock, maxBlock, rng);
             }
         }
     }

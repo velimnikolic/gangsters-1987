@@ -16,8 +16,8 @@ namespace LivingCity.Tests
     /// </summary>
     public static class ParkLayoutTests
     {
-        const float Clearance = 7f * CityGrid.TileScale;
-        const float MainClearance = 10f * CityGrid.TileScale;
+        const float Clearance = 7.6667f * CityGrid.TileScale;
+        const float MainClearance = 10.625f * CityGrid.TileScale;
         const float MapEdge = CityGrid.CellSize * 0.5f - 0.8f;
         const int SpeciesPool = 4;
         const float Eps = 1e-3f;

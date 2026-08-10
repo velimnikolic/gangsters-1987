@@ -1,0 +1,711 @@
+using System;
+using System.Collections.Generic;
+using LivingCity.Entities;
+using LivingCity.Personnel;
+using LivingCity.UI;
+
+namespace LivingCity.Tests
+{
+    /// <summary>
+    /// The personnel ledger's model: seeding determinism, the derived-pool assignment
+    /// rules, promotion and demotion, equipment exclusivity, and the RosterView shape the
+    /// almanac paints. Same discipline as <see cref="GateTests"/>: a plain static class,
+    /// failures returned as data, no UnityEngine anywhere - the whole Personnel core is
+    /// engine-free on purpose, so this suite runs in a bare .NET host.
+    /// </summary>
+    public static class PersonnelTests
+    {
+        public static List<string> Run()
+        {
+            var failures = new List<string>();
+
+            SameSeedSameRoster(failures);
+            DifferentSeedsDiffer(failures);
+            SeedShapeInvariants(failures);
+            NamesComeFromTheSharedTables(failures);
+            HalfStepScaleRoundTrips(failures);
+            AssignmentOfIsExclusive(failures);
+            PromoteCreatesEmptyCrew(failures);
+            PromoteLowStatWarnsButAllows(failures);
+            PromoteRefusals(failures);
+            PromoteFromCrewLeavesTheCrew(failures);
+            DemoteDisbandsToPool(failures);
+            AssignMovesBetweenCrews(failures);
+            AssignToFrontSwapsTheManager(failures);
+            LieutenantCannotBeClickAssigned(failures);
+            EquipmentIsExclusive(failures);
+            DeadReceiveNothing(failures);
+            ViewGroupsInLedgerOrder(failures);
+            ViewSortsWithinGroups(failures);
+            ViewFiltersCompose(failures);
+            ViewScalesToSixty(failures);
+            LieutenantHasOwnRow(failures);
+            LargeRosterShape(failures);
+            LedgerTextIsExhaustive(failures);
+            LabelsFitTheLedgerColumns(failures);
+
+            return failures;
+        }
+
+        // ------------------------------------------------------------------ fixtures
+
+        /// <summary>A hand-built member with every attribute at 3.0 stars unless bent.</summary>
+        static Character Make(Roster roster, string first, string last,
+            Rank rank = Rank.Hood, Specialty specialty = Specialty.None,
+            CharacterStatus status = CharacterStatus.Active)
+        {
+            var member = new Character
+            {
+                Id = roster.NextCharacterId(),
+                FirstName = first,
+                Surname = last,
+                Rank = rank,
+                Specialty = specialty,
+                Status = status,
+            };
+            for (var a = 0; a < AttributeScale.Count; a++)
+                member.SetHalfSteps((CharacterAttribute)a, 6);
+            roster.Members.Add(member);
+            return member;
+        }
+
+        static Crew MakeCrew(Roster roster, Character lieutenant, params Character[] hoods)
+        {
+            lieutenant.Rank = Rank.Lieutenant;
+            var crew = new Crew { Id = roster.NextCrewId(), LieutenantId = lieutenant.Id };
+            foreach (var hood in hoods)
+                crew.HoodIds.Add(hood.Id);
+            roster.Crews.Add(crew);
+            return crew;
+        }
+
+        static RosterEquipment MakeItem(Roster roster, EquipmentKind kind)
+        {
+            var item = new RosterEquipment
+            {
+                Id = roster.NextEquipmentId(),
+                Kind = kind,
+                DisplayName = kind.ToString(),
+            };
+            roster.Equipment.Add(item);
+            return item;
+        }
+
+        // -------------------------------------------------------------- determinism
+
+        static void SameSeedSameRoster(List<string> failures)
+        {
+            var a = RosterSeeder.Generate(42);
+            var b = RosterSeeder.Generate(42);
+
+            if (a.Members.Count != b.Members.Count)
+            {
+                failures.Add("SameSeedSameRoster: member counts differ.");
+                return;
+            }
+
+            for (var i = 0; i < a.Members.Count; i++)
+            {
+                var ma = a.Members[i];
+                var mb = b.Members[i];
+                if (ma.FullName != mb.FullName || ma.Rank != mb.Rank ||
+                    ma.Loyalty != mb.Loyalty)
+                    failures.Add($"SameSeedSameRoster: member {i} differs.");
+                for (var s = 0; s < AttributeScale.Count; s++)
+                    if (ma.GetHalfSteps((CharacterAttribute)s) !=
+                        mb.GetHalfSteps((CharacterAttribute)s))
+                        failures.Add($"SameSeedSameRoster: member {i} attribute {s} differs.");
+            }
+
+            if (a.FrontId != b.FrontId)
+                failures.Add("SameSeedSameRoster: fronts differ.");
+            if (a.Crews.Count != b.Crews.Count ||
+                a.Crews[0].LieutenantId != b.Crews[0].LieutenantId)
+                failures.Add("SameSeedSameRoster: crews differ.");
+            for (var i = 0; i < a.Equipment.Count && i < b.Equipment.Count; i++)
+                if (a.Equipment[i].DisplayName != b.Equipment[i].DisplayName)
+                    failures.Add("SameSeedSameRoster: equipment differs.");
+        }
+
+        static void DifferentSeedsDiffer(List<string> failures)
+        {
+            var a = RosterSeeder.Generate(1);
+            var b = RosterSeeder.Generate(2);
+
+            var same = true;
+            for (var i = 0; i < a.Members.Count; i++)
+            {
+                if (a.Members[i].FullName != b.Members[i].FullName)
+                    same = false;
+                for (var s = 0; s < AttributeScale.Count; s++)
+                    if (a.Members[i].GetHalfSteps((CharacterAttribute)s) !=
+                        b.Members[i].GetHalfSteps((CharacterAttribute)s))
+                        same = false;
+            }
+
+            if (same)
+                failures.Add("DifferentSeedsDiffer: seeds 1 and 2 rolled an identical six.");
+        }
+
+        static void SeedShapeInvariants(List<string> failures)
+        {
+            for (var seed = 0; seed < 100; seed++)
+            {
+                var roster = RosterSeeder.Generate(seed);
+                var tag = $"SeedShapeInvariants(seed {seed})";
+
+                if (roster.Members.Count != RosterSeeder.MemberCount)
+                {
+                    failures.Add($"{tag}: {roster.Members.Count} members.");
+                    continue;
+                }
+
+                var names = new HashSet<string>();
+                var lieutenants = 0;
+                foreach (var member in roster.Members)
+                {
+                    if (!names.Add(member.FullName))
+                        failures.Add($"{tag}: duplicate name {member.FullName}.");
+                    if (member.Rank == Rank.Lieutenant)
+                        lieutenants++;
+                    if (member.Specialty != Specialty.None)
+                        failures.Add($"{tag}: specialist in the starting six.");
+                    if (member.Status != CharacterStatus.Active || member.Wanted)
+                        failures.Add($"{tag}: not everyone starts clean and active.");
+                    if (member.Loyalty < 35 || member.Loyalty > 85)
+                        failures.Add($"{tag}: loyalty {member.Loyalty} out of band.");
+                    for (var a = 0; a < AttributeScale.Count; a++)
+                    {
+                        var v = member.GetHalfSteps((CharacterAttribute)a);
+                        if (v < AttributeScale.MinHalfSteps || v > AttributeScale.MaxHalfSteps)
+                            failures.Add($"{tag}: attribute {a} at {v} half-steps.");
+                    }
+                }
+
+                if (lieutenants != 1)
+                    failures.Add($"{tag}: {lieutenants} lieutenants.");
+                if (roster.Crews.Count != 1)
+                    failures.Add($"{tag}: {roster.Crews.Count} crews.");
+                else
+                {
+                    var crew = roster.Crews[0];
+                    if (crew.HoodIds.Count != 2)
+                        failures.Add($"{tag}: crew of {crew.HoodIds.Count} hoods.");
+                    var lieutenant = roster.Find(crew.LieutenantId);
+                    if (lieutenant == null || lieutenant.Rank != Rank.Lieutenant)
+                        failures.Add($"{tag}: the crew's head is not a lieutenant.");
+                }
+
+                var front = roster.FrontId >= 0 ? roster.Find(roster.FrontId) : null;
+                if (front == null)
+                    failures.Add($"{tag}: no front.");
+                else if (front.Rank != Rank.Hood ||
+                         roster.AssignmentOf(front.Id).Kind != AssignmentKind.Front)
+                    failures.Add($"{tag}: the front is not a plain hood at the desk.");
+
+                var pool = new List<int>();
+                roster.PoolIds(pool);
+                if (pool.Count != 2)
+                    failures.Add($"{tag}: pool of {pool.Count}.");
+
+                var pistols = 0;
+                var vehicles = 0;
+                foreach (var item in roster.Equipment)
+                {
+                    if (item.HolderId != RosterEquipment.Unheld)
+                        failures.Add($"{tag}: starting stock already signed out.");
+                    if (item.Kind == EquipmentKind.Pistol)
+                        pistols++;
+                    else
+                        vehicles++;
+                }
+                if (pistols != RosterSeeder.PistolCount || vehicles != 1)
+                    failures.Add($"{tag}: stock is {pistols} pistols / {vehicles} vehicles.");
+            }
+        }
+
+        static void NamesComeFromTheSharedTables(List<string> failures)
+        {
+            var firsts = new HashSet<string>(PedestrianIdentity.AllMaleNames);
+            var surnames = new HashSet<string>(PedestrianIdentity.AllSurnames);
+
+            var roster = RosterSeeder.Generate(7);
+            foreach (var member in roster.Members)
+            {
+                if (!firsts.Contains(member.FirstName))
+                    failures.Add($"NamesComeFromTheSharedTables: {member.FirstName}.");
+                if (!surnames.Contains(member.Surname))
+                    failures.Add($"NamesComeFromTheSharedTables: {member.Surname}.");
+            }
+        }
+
+        // -------------------------------------------------------------------- model
+
+        static void HalfStepScaleRoundTrips(List<string> failures)
+        {
+            if (AttributeScale.Stars(2) != 1f || AttributeScale.Stars(5) != 2.5f ||
+                AttributeScale.Stars(10) != 5f)
+                failures.Add("HalfStepScaleRoundTrips: Stars() misconverts.");
+
+            var roster = new Roster();
+            var member = Make(roster, "Test", "Case");
+            member.SetHalfSteps(CharacterAttribute.Fists, 0);
+            if (member.GetHalfSteps(CharacterAttribute.Fists) != AttributeScale.MinHalfSteps)
+                failures.Add("HalfStepScaleRoundTrips: no floor clamp.");
+            member.SetHalfSteps(CharacterAttribute.Fists, 12);
+            if (member.GetHalfSteps(CharacterAttribute.Fists) != AttributeScale.MaxHalfSteps)
+                failures.Add("HalfStepScaleRoundTrips: no ceiling clamp.");
+        }
+
+        static void AssignmentOfIsExclusive(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(11);
+            foreach (var member in roster.Members)
+            {
+                var assignment = roster.AssignmentOf(member.Id);
+                var isFront = member.Id == roster.FrontId;
+                var inCrews = 0;
+                foreach (var crew in roster.Crews)
+                    if (crew.LieutenantId == member.Id || crew.HoodIds.Contains(member.Id))
+                        inCrews++;
+
+                if (inCrews > 1)
+                    failures.Add($"AssignmentOfIsExclusive: {member.FullName} in {inCrews} crews.");
+                if (isFront && inCrews > 0)
+                    failures.Add($"AssignmentOfIsExclusive: the front is also crewed.");
+
+                var expected = isFront ? AssignmentKind.Front
+                    : inCrews > 0 ? AssignmentKind.Crew
+                    : AssignmentKind.Pool;
+                if (assignment.Kind != expected)
+                    failures.Add($"AssignmentOfIsExclusive: {member.FullName} reads " +
+                                 $"{assignment.Kind}, expected {expected}.");
+            }
+        }
+
+        // --------------------------------------------------------------- operations
+
+        static void PromoteCreatesEmptyCrew(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(3);
+            var pool = new List<int>();
+            roster.PoolIds(pool);
+            var id = pool[0];
+
+            var result = RosterOps.Promote(roster, id, out var newCrewId);
+            if (!result.Ok)
+            {
+                failures.Add("PromoteCreatesEmptyCrew: refused - " + result.Reason);
+                return;
+            }
+
+            var crew = roster.FindCrew(newCrewId);
+            if (crew == null || crew.LieutenantId != id || crew.HoodIds.Count != 0)
+                failures.Add("PromoteCreatesEmptyCrew: no empty crew under the new man.");
+            if (roster.Find(id).Rank != Rank.Lieutenant)
+                failures.Add("PromoteCreatesEmptyCrew: rank unchanged.");
+
+            roster.PoolIds(pool);
+            if (pool.Contains(id))
+                failures.Add("PromoteCreatesEmptyCrew: still in the pool.");
+        }
+
+        static void PromoteLowStatWarnsButAllows(List<string> failures)
+        {
+            var roster = new Roster();
+            var hood = Make(roster, "Dim", "Fella");
+            hood.SetHalfSteps(CharacterAttribute.Intelligence, 4); // 2.0 stars
+
+            var check = RosterOps.CheckPromote(roster, hood.Id);
+            if (!check.CanPromote || !check.LowStatWarning)
+                failures.Add("PromoteLowStatWarnsButAllows: expected a warned-but-allowed check.");
+
+            if (!RosterOps.Promote(roster, hood.Id, out _).Ok)
+                failures.Add("PromoteLowStatWarnsButAllows: the player's mistake was blocked.");
+        }
+
+        static void PromoteRefusals(List<string> failures)
+        {
+            var roster = new Roster();
+            var lieutenant = Make(roster, "Already", "Boss", Rank.Lieutenant);
+            MakeCrew(roster, lieutenant);
+            var accountant = Make(roster, "Book", "Keeper", specialty: Specialty.Accountant);
+            var corpse = Make(roster, "Late", "Fella", status: CharacterStatus.Dead);
+
+            foreach (var id in new[] { lieutenant.Id, accountant.Id, corpse.Id })
+            {
+                var check = RosterOps.CheckPromote(roster, id);
+                if (check.CanPromote || check.Reason.Length == 0)
+                    failures.Add($"PromoteRefusals: id {id} not refused with a reason.");
+                if (RosterOps.Promote(roster, id, out _).Ok)
+                    failures.Add($"PromoteRefusals: id {id} promoted anyway.");
+            }
+        }
+
+        static void PromoteFromCrewLeavesTheCrew(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(5);
+            var oldCrew = roster.Crews[0];
+            var id = oldCrew.HoodIds[0];
+
+            if (!RosterOps.Promote(roster, id, out _).Ok)
+            {
+                failures.Add("PromoteFromCrewLeavesTheCrew: refused.");
+                return;
+            }
+            if (oldCrew.HoodIds.Contains(id))
+                failures.Add("PromoteFromCrewLeavesTheCrew: still on the old crew's list.");
+        }
+
+        static void DemoteDisbandsToPool(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(9);
+            var crew = roster.Crews[0];
+            var lieutenantId = crew.LieutenantId;
+            var hoods = new List<int>(crew.HoodIds);
+
+            var result = RosterOps.Demote(roster, lieutenantId);
+            if (!result.Ok)
+            {
+                failures.Add("DemoteDisbandsToPool: refused - " + result.Reason);
+                return;
+            }
+
+            if (roster.Crews.Count != 0)
+                failures.Add("DemoteDisbandsToPool: the crew survived.");
+            if (roster.Find(lieutenantId).Rank != Rank.Hood)
+                failures.Add("DemoteDisbandsToPool: rank kept.");
+
+            foreach (var id in hoods)
+                if (roster.AssignmentOf(id).Kind != AssignmentKind.Pool)
+                    failures.Add($"DemoteDisbandsToPool: hood {id} not pooled.");
+            if (roster.AssignmentOf(lieutenantId).Kind != AssignmentKind.Pool)
+                failures.Add("DemoteDisbandsToPool: the ex-lieutenant not pooled.");
+        }
+
+        static void AssignMovesBetweenCrews(List<string> failures)
+        {
+            var roster = new Roster();
+            var ltA = Make(roster, "Head", "Alpha", Rank.Lieutenant);
+            var ltB = Make(roster, "Head", "Bravo", Rank.Lieutenant);
+            var hood = Make(roster, "Foot", "Soldier");
+            var crewA = MakeCrew(roster, ltA, hood);
+            var crewB = MakeCrew(roster, ltB);
+
+            var result = RosterOps.AssignToCrew(roster, hood.Id, crewB.Id);
+            if (!result.Ok)
+            {
+                failures.Add("AssignMovesBetweenCrews: refused - " + result.Reason);
+                return;
+            }
+            if (crewA.HoodIds.Contains(hood.Id))
+                failures.Add("AssignMovesBetweenCrews: still in crew A.");
+            if (!crewB.HoodIds.Contains(hood.Id))
+                failures.Add("AssignMovesBetweenCrews: never arrived in crew B.");
+        }
+
+        static void AssignToFrontSwapsTheManager(List<string> failures)
+        {
+            var roster = new Roster();
+            var first = Make(roster, "Old", "Desk");
+            var second = Make(roster, "New", "Desk");
+            roster.FrontId = first.Id;
+
+            var result = RosterOps.AssignToFront(roster, second.Id);
+            if (!result.Ok)
+            {
+                failures.Add("AssignToFrontSwapsTheManager: refused - " + result.Reason);
+                return;
+            }
+            if (roster.FrontId != second.Id)
+                failures.Add("AssignToFrontSwapsTheManager: front unchanged.");
+            if (roster.AssignmentOf(first.Id).Kind != AssignmentKind.Pool)
+                failures.Add("AssignToFrontSwapsTheManager: the old manager vanished.");
+        }
+
+        static void LieutenantCannotBeClickAssigned(List<string> failures)
+        {
+            var roster = new Roster();
+            var lieutenant = Make(roster, "Head", "Crew", Rank.Lieutenant);
+            var crew = MakeCrew(roster, lieutenant);
+
+            if (RosterOps.AssignToCrew(roster, lieutenant.Id, crew.Id).Ok ||
+                RosterOps.AssignToPool(roster, lieutenant.Id).Ok ||
+                RosterOps.AssignToFront(roster, lieutenant.Id).Ok)
+                failures.Add("LieutenantCannotBeClickAssigned: an assignment went through.");
+        }
+
+        static void EquipmentIsExclusive(List<string> failures)
+        {
+            var roster = new Roster();
+            var a = Make(roster, "First", "Holder");
+            var b = Make(roster, "Second", "Holder");
+            var pistol = MakeItem(roster, EquipmentKind.Pistol);
+
+            if (!RosterOps.GiveEquipment(roster, pistol.Id, a.Id).Ok)
+                failures.Add("EquipmentIsExclusive: first grant refused.");
+            if (RosterOps.GiveEquipment(roster, pistol.Id, b.Id).Ok)
+                failures.Add("EquipmentIsExclusive: one pistol, two holders.");
+            if (!RosterOps.ReturnEquipment(roster, pistol.Id).Ok)
+                failures.Add("EquipmentIsExclusive: return refused.");
+            if (!RosterOps.GiveEquipment(roster, pistol.Id, b.Id).Ok)
+                failures.Add("EquipmentIsExclusive: refused after a clean return.");
+        }
+
+        static void DeadReceiveNothing(List<string> failures)
+        {
+            var roster = new Roster();
+            var corpse = Make(roster, "Late", "Fella", status: CharacterStatus.Dead);
+            var lieutenant = Make(roster, "Head", "Crew", Rank.Lieutenant);
+            var crew = MakeCrew(roster, lieutenant);
+            var pistol = MakeItem(roster, EquipmentKind.Pistol);
+
+            if (RosterOps.AssignToCrew(roster, corpse.Id, crew.Id).Ok ||
+                RosterOps.AssignToFront(roster, corpse.Id).Ok ||
+                RosterOps.GiveEquipment(roster, pistol.Id, corpse.Id).Ok)
+                failures.Add("DeadReceiveNothing: the dead man got something.");
+        }
+
+        // --------------------------------------------------------------------- view
+
+        static void ViewGroupsInLedgerOrder(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(13);
+            var rows = new List<LedgerRow>();
+            RosterView.Build(roster, new ViewOptions(), rows);
+
+            var expected = new[]
+            {
+                RowKind.CrewHeader, RowKind.Lieutenant, RowKind.Character, RowKind.Character,
+                RowKind.FrontHeader, RowKind.Character,
+                RowKind.PoolHeader, RowKind.Character, RowKind.Character,
+            };
+
+            if (rows.Count != expected.Length)
+            {
+                failures.Add($"ViewGroupsInLedgerOrder: {rows.Count} rows, " +
+                             $"expected {expected.Length}.");
+                return;
+            }
+            for (var i = 0; i < expected.Length; i++)
+                if (rows[i].Kind != expected[i])
+                    failures.Add($"ViewGroupsInLedgerOrder: row {i} is {rows[i].Kind}.");
+        }
+
+        static void ViewSortsWithinGroups(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(17);
+            var rows = new List<LedgerRow>();
+            var options = new ViewOptions
+            {
+                Sort = SortKey.Attribute,
+                SortAttribute = CharacterAttribute.Firearms,
+            };
+            RosterView.Build(roster, options, rows);
+
+            // Grouping must survive the sort untouched, the lieutenant pinned first.
+            var kinds = new List<RowKind>();
+            foreach (var row in rows)
+                kinds.Add(row.Kind);
+            if (kinds.Count != 9 || kinds[0] != RowKind.CrewHeader ||
+                kinds[1] != RowKind.Lieutenant)
+                failures.Add("ViewSortsWithinGroups: grouping did not survive the sort.");
+
+            // Character runs between headers must descend, ties broken by ascending id.
+            var previous = int.MaxValue;
+            var previousId = -1;
+            foreach (var row in rows)
+            {
+                if (row.Kind != RowKind.Character)
+                {
+                    previous = int.MaxValue;
+                    previousId = -1;
+                    continue;
+                }
+
+                var value = roster.Find(row.CharacterId)
+                    .GetHalfSteps(CharacterAttribute.Firearms);
+                if (value > previous ||
+                    (value == previous && row.CharacterId < previousId))
+                    failures.Add("ViewSortsWithinGroups: out of order within a group.");
+                previous = value;
+                previousId = row.CharacterId;
+            }
+        }
+
+        static void ViewFiltersCompose(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(21);
+            var pool = new List<int>();
+            roster.PoolIds(pool);
+
+            var rows = new List<LedgerRow>();
+            RosterView.Build(roster, new ViewOptions
+            {
+                Rank = RankFilter.Hoods,
+                Assignment = AssignmentFilter.Pool,
+            }, rows);
+
+            if (rows.Count != 1 + pool.Count)
+            {
+                failures.Add($"ViewFiltersCompose: {rows.Count} rows for the pool view.");
+                return;
+            }
+            if (rows[0].Kind != RowKind.PoolHeader)
+                failures.Add("ViewFiltersCompose: no pool header first.");
+            for (var i = 1; i < rows.Count; i++)
+                if (!pool.Contains(rows[i].CharacterId))
+                    failures.Add("ViewFiltersCompose: a non-pool man slipped through.");
+
+            // A filter that matches nobody leaves no orphan headers behind.
+            RosterView.Build(roster, new ViewOptions
+            {
+                Availability = AvailabilityFilter.Unavailable,
+            }, rows);
+            if (rows.Count != 0)
+                failures.Add("ViewFiltersCompose: empty groups kept their headers.");
+        }
+
+        static void ViewScalesToSixty(List<string> failures)
+        {
+            var roster = new Roster();
+            for (var i = 0; i < 60; i++)
+                Make(roster, "Man", "Number" + i);
+
+            // Six crews of four, one front, the rest pooled - built through the ops so
+            // the fixture cannot disagree with the rules.
+            for (var c = 0; c < 6; c++)
+            {
+                var lieutenantId = roster.Members[c * 5].Id;
+                RosterOps.Promote(roster, lieutenantId, out var crewId);
+                for (var h = 1; h <= 4; h++)
+                    RosterOps.AssignToCrew(roster, roster.Members[c * 5 + h].Id, crewId);
+            }
+            RosterOps.AssignToFront(roster, roster.Members[30].Id);
+
+            var rows = new List<LedgerRow>();
+            RosterView.Build(roster, new ViewOptions(), rows);
+
+            // Every man exactly once: hoods/front/pool as Character rows, each
+            // lieutenant as his own Lieutenant row under his crew's header.
+            var seen = new HashSet<int>();
+            var headers = 0;
+            foreach (var row in rows)
+            {
+                if (row.Kind == RowKind.Character || row.Kind == RowKind.Lieutenant)
+                {
+                    if (!seen.Add(row.CharacterId))
+                        failures.Add($"ViewScalesToSixty: id {row.CharacterId} listed twice.");
+                }
+                else if (row.Kind == RowKind.CrewHeader)
+                    headers++;
+            }
+
+            if (headers != 6 || seen.Count != 60)
+                failures.Add($"ViewScalesToSixty: {headers} crews / {seen.Count} men shown.");
+        }
+
+        static void LieutenantHasOwnRow(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(29);
+            var rows = new List<LedgerRow>();
+            RosterView.Build(roster, new ViewOptions(), rows);
+
+            if (rows.Count < 2 || rows[0].Kind != RowKind.CrewHeader ||
+                rows[1].Kind != RowKind.Lieutenant)
+            {
+                failures.Add("LieutenantHasOwnRow: no Lieutenant row under the header.");
+                return;
+            }
+            if (rows[1].CharacterId != roster.Crews[0].LieutenantId)
+                failures.Add("LieutenantHasOwnRow: the row is not the crew's lieutenant.");
+
+            // Filtered to lieutenants only, the crew shrinks to header + his row -
+            // and the front/pool sections (all hoods) drop their headers entirely.
+            RosterView.Build(roster, new ViewOptions { Rank = RankFilter.Lieutenants }, rows);
+            if (rows.Count != 2 || rows[1].Kind != RowKind.Lieutenant)
+                failures.Add($"LieutenantHasOwnRow: lieutenant filter shows {rows.Count} rows.");
+        }
+
+        static void LargeRosterShape(List<string> failures)
+        {
+            var a = RosterSeeder.GenerateLarge(42, 60);
+            var b = RosterSeeder.GenerateLarge(42, 60);
+
+            if (a.Members.Count != 60 || a.Crews.Count != 6)
+            {
+                failures.Add($"LargeRosterShape: {a.Members.Count} men / {a.Crews.Count} crews.");
+                return;
+            }
+
+            foreach (var crew in a.Crews)
+                if (crew.HoodIds.Count != 4)
+                    failures.Add($"LargeRosterShape: crew {crew.Id} has {crew.HoodIds.Count} hoods.");
+
+            if (a.FrontId < 0)
+                failures.Add("LargeRosterShape: no front.");
+
+            var pool = new List<int>();
+            a.PoolIds(pool);
+            if (pool.Count != 60 - 6 - 24 - 1)
+                failures.Add($"LargeRosterShape: pool of {pool.Count}.");
+
+            for (var i = 0; i < a.Members.Count; i++)
+                if (a.Members[i].FullName != b.Members[i].FullName)
+                    failures.Add("LargeRosterShape: same seed rolled different men.");
+        }
+
+        // ------------------------------------------------------------------ wording
+
+        static void LedgerTextIsExhaustive(List<string> failures)
+        {
+            foreach (CharacterAttribute a in Enum.GetValues(typeof(CharacterAttribute)))
+                if (LedgerText.AttributeLabel(a).Length == 0)
+                    failures.Add($"LedgerTextIsExhaustive: attribute {a} has no label.");
+            foreach (Rank r in Enum.GetValues(typeof(Rank)))
+                if (LedgerText.RankLabel(r).Length == 0)
+                    failures.Add($"LedgerTextIsExhaustive: rank {r} has no label.");
+            foreach (CharacterStatus s in Enum.GetValues(typeof(CharacterStatus)))
+                if (LedgerText.StatusLabel(s).Length == 0)
+                    failures.Add($"LedgerTextIsExhaustive: status {s} has no label.");
+            foreach (EquipmentKind k in Enum.GetValues(typeof(EquipmentKind)))
+                if (LedgerText.EquipmentLabel(k).Length == 0)
+                    failures.Add($"LedgerTextIsExhaustive: kind {k} has no label.");
+            foreach (Specialty s in Enum.GetValues(typeof(Specialty)))
+                if (s != Specialty.None && LedgerText.SpecialtyLabel(s).Length == 0)
+                    failures.Add($"LedgerTextIsExhaustive: specialty {s} has no label.");
+
+            for (var half = AttributeScale.MinHalfSteps;
+                 half <= AttributeScale.MaxHalfSteps; half++)
+            {
+                var text = LedgerText.Stars(half);
+                if (text.Length == 0)
+                    failures.Add($"LedgerTextIsExhaustive: Stars({half}) is empty.");
+                if (half % 2 == 1 && !text.EndsWith(".5"))
+                    failures.Add($"LedgerTextIsExhaustive: Stars({half}) lost its half.");
+            }
+
+            if (LedgerText.PromoteWarning("X").Length == 0 ||
+                LedgerText.DemoteConfirm("X", 0).Length == 0 ||
+                LedgerText.DemoteConfirm("X", 1).Length == 0 ||
+                LedgerText.DemoteConfirm("X", 3).Length == 0 ||
+                LedgerText.HeldByLine("X").Length == 0 ||
+                LedgerText.MemberCount(1).Length == 0)
+                failures.Add("LedgerTextIsExhaustive: a composed line came back empty.");
+        }
+
+        static void LabelsFitTheLedgerColumns(List<string> failures)
+        {
+            // The detail card's label cell is 160px at 14pt; 13 characters is the proven
+            // fit ("Intelligence" and "Organization" at 12 set the budget).
+            foreach (CharacterAttribute a in Enum.GetValues(typeof(CharacterAttribute)))
+                if (LedgerText.AttributeLabel(a).Length > 13)
+                    failures.Add($"LabelsFitTheLedgerColumns: {a} overflows the label cell.");
+
+            // The roster row's status stamp cell is 120px at 12pt bold caps: 12 chars.
+            foreach (CharacterStatus s in Enum.GetValues(typeof(CharacterStatus)))
+                if (LedgerText.StatusLabel(s).Length > 12)
+                    failures.Add($"LabelsFitTheLedgerColumns: {s} overflows the stamp cell.");
+        }
+    }
+}

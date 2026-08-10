@@ -12,10 +12,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 42c7a6e183ace48838f51cde888f32db, type: 3}
   m_Name: CityConfig
   m_EditorClassIdentifier: Assembly-CSharp::LivingCity.Data.CityConfig
-  gridWidth: 16
-  gridHeight: 7
+  gridWidth: 34
+  gridHeight: 33
   minArterialSpacing: 2
   maxArterialSpacing: 4
+  minBoulevards: 2
+  maxBoulevards: 4
   seed: 1189049744
   blockFillRatio: 1
   buildingTintChance: 1
@@ -23,8 +25,8 @@ MonoBehaviour:
   groundPatchSize: 18
   groundTintChance: 0.85
   groundPaint: 1
-  sidewalkWidth: 9.1
-  mainSidewalkWidth: 13
+  sidewalkWidth: 11.96
+  mainSidewalkWidth: 16.575
   alleyWidth: 6
   partyWallGap: 0.05
   maxFillerGap: 0.8
@@ -34,8 +36,8 @@ MonoBehaviour:
   serviceRoadWidth: 8
   industrialWallInset: 1
   chimneySmoke: 1
-  carCount: 30
-  pedestrianCount: 200
+  carCount: 300
+  pedestrianCount: 2000
   entitySpawnInterval: 0.1
   wanderRoutesBeforeExit: {x: 1, y: 2}
   carMinTravelDistance: 0
@@ -62,36 +64,36 @@ MonoBehaviour:
   workEveningHour: 17.5
   nightHomeHour: 22.5
   commuteStaggerHours: 1.5
-  policeCarCount: 4
-  policeOfficerCount: 10
+  policeCarCount: 12
+  policeOfficerCount: 100
   policeCarPatrolRoutes: {x: 2, y: 4}
   policeCarRestRange: {x: 20, y: 60}
   policeOfficerPatrolRoutes: {x: 2, y: 4}
   policeOfficerStationStayRange: {x: 20, y: 90}
   policeCarsStartAtStation: 1
   policeOfficersStartAtStation: 1
-  bankVisitorCount: 2
+  bankVisitorCount: 4
   bankVisitStayRange: {x: 30, y: 90}
   bankVisitorGapRange: {x: 10, y: 40}
-  schoolChildCount: 8
+  schoolChildCount: 16
   schoolBusStops: 3
   schoolStopDistance: {x: 60, y: 160}
   schoolMorningHour: 7.5
   schoolAfternoonHour: 15
   schoolRunWindowHours: 1.5
   schoolBusDwellSeconds: 8
-  schoolParentCount: 2
+  schoolParentCount: 4
   schoolParentStayRange: {x: 20, y: 60}
   schoolParentGapRange: {x: 15, y: 50}
   portChance: 0.5
-  dockWorkerCount: 6
+  dockWorkerCount: 12
   portShipStayRange: {x: 45, y: 90}
   portShipGapRange: {x: 20, y: 60}
   pedestrianProbeInterval: 3
   pedestrianSpawnBatch: 10
-  pedestrianRepathBudget: 24
+  pedestrianRepathBudget: 100
   pedestrianLodMidOrtho: 45
-  pedestrianLodFarOrtho: 90
+  pedestrianLodFarOrtho: 60
   pedestrianLodMidRate: 3
   realSecondsPerGameHour: 60
   startHour: 7.3

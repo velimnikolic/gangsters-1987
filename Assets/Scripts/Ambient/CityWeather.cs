@@ -158,6 +158,19 @@ namespace LivingCity.Ambient
         /// <summary>The weather in force. Only meaningful once Apply has run.</summary>
         public WeatherKind Current { get; private set; }
 
+        /// <summary>
+        /// True while the strategic map's top-down camera is rendering: a lens 300m up is
+        /// deep inside the smog, so the map sets this and the fog stands down. A gate
+        /// rather than a save/restore because LateUpdate re-applies the density every
+        /// frame - anything saved would be re-clobbered one frame later. Colour, ambient
+        /// and the sun are untouched; the map keeps the weather's light, just not its haze.
+        /// </summary>
+        public static bool FogSuppressed;
+
+        // Static state outlives Play when domain reload is off - same fix as OverlayRegistry.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetForPlay() => FogSuppressed = false;
+
         void Start()
         {
             AdoptMissingWiring();
@@ -418,7 +431,9 @@ namespace LivingCity.Ambient
             // different matter: there the colour has to travel too, or a sepia haze hangs over a
             // blue city.
             RenderSettings.fogColor = Color.Lerp(look.FogColor, NightFog, night);
-            RenderSettings.fogDensity = look.FogDensity * Strength * Mathf.Lerp(1f, NightFogScale, night);
+            RenderSettings.fogDensity = FogSuppressed
+                ? 0f
+                : look.FogDensity * Strength * Mathf.Lerp(1f, NightFogScale, night);
 
             var camera = Camera.main;
             if (camera)

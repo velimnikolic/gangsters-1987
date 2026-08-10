@@ -19,8 +19,8 @@ namespace LivingCity.Tests
     /// </summary>
     public static class ParkRealGridSweepTests
     {
-        const float Clearance = 7f * CityGrid.TileScale;
-        const float MainClearance = 10f * CityGrid.TileScale;
+        const float Clearance = 7.6667f * CityGrid.TileScale;
+        const float MainClearance = 10.625f * CityGrid.TileScale;
         const float MapEdge = CityGrid.CellSize * 0.5f - 0.8f;
 
         public static List<string> Run()
@@ -33,6 +33,10 @@ namespace LivingCity.Tests
             typeof(CityConfig).GetField("gridHeight").SetValue(config, 10);
             typeof(CityConfig).GetField("minArterialSpacing").SetValue(config, 2);
             typeof(CityConfig).GetField("maxArterialSpacing").SetValue(config, 4);
+            // Explicit because GetUninitializedObject skips field initializers - 0 would sweep
+            // cities with no avenue and never exercise the main-road clearances below.
+            typeof(CityConfig).GetField("minBoulevards").SetValue(config, 1);
+            typeof(CityConfig).GetField("maxBoulevards").SetValue(config, 2);
 
             for (var seed = 1; seed <= 8; seed++)
             {

@@ -32,7 +32,8 @@ namespace LivingCity.Generation
     {
         /// <summary>
         /// Closest a building may sit to the road centreline. Pavements are at 4 and street
-        /// props at 5.5, so 7 puts walls just behind the lamps without overlapping them.
+        /// props at 5.5, so 7.6667 puts walls behind the lamps without overlapping them - the
+        /// odd figure is the 40%-wider kerb-to-wall band, see CityConfig.sidewalkWidth.
         ///
         /// This is the DEFAULT, not the live value - ClearanceFor is what BlockBuilder and
         /// GroundPlacer actually hand to BlockRect, and it answers CityConfig.sidewalkWidth for
@@ -40,14 +41,14 @@ namespace LivingCity.Generation
         /// road centreline and does not depend on it; moving the building line only widens the
         /// gap between the props and the wall, which GroundPlacer's apron paves either way.
         /// </summary>
-        public const float SidewalkClearance = 7f * CityGrid.TileScale;
+        public const float SidewalkClearance = 7.6667f * CityGrid.TileScale;
 
         /// <summary>
         /// The same default for a side facing the dual carriageway. Its pavements are at 7.25
-        /// and its props at 8.5, so 10 stands in the same relation to them that 7 does to a
-        /// street's 4 and 5.5. Mirrors CityConfig.mainSidewalkWidth, which is the live value.
+        /// and its props at 8.5, so 10.625 stands in the same relation to them that 7.6667
+        /// does to a street's 4 and 5.5. Mirrors CityConfig.mainSidewalkWidth, the live value.
         /// </summary>
-        public const float MainSidewalkClearance = 10f * CityGrid.TileScale;
+        public const float MainSidewalkClearance = 10.625f * CityGrid.TileScale;
 
         /// <summary>
         /// Gap left in a whole-block street wall so the courtyard is reachable. A subdivided

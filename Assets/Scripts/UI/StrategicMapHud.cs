@@ -1,0 +1,1117 @@
+using System.Collections.Generic;
+using System.Text;
+using TMPro;
+using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.Rendering.Universal;
+using UnityEngine.UI;
+using LivingCity.Ambient;
+using LivingCity.Entities;
+using LivingCity.Gameplay;
+using LivingCity.Generation;
+
+namespace LivingCity.UI
+{
+    /// <summary>
+    /// The strategic map: press M and the whole city is under you, live. Not a painted
+    /// chart - the actual city, rendered by a second top-down orthographic camera while
+    /// the isometric rig sits disabled, so every block shows exactly what stands on it
+    /// and the traffic keeps moving. People are NOT rendered (their layer is culled);
+    /// they appear as dots on a screen-space canvas instead, and only while inside the
+    /// player's fog of war (MapVisionRegistry): police blue, civilians white, the player
+    /// a gold square. MapAffiliation is the seam a future gang layer colours dots through.
+    ///
+    /// Clicking a block selects it and fills the right-rail card with exactly what is in
+    /// it: zone, every business with its owner and weekly take, and the landmarks.
+    ///
+    /// Block identity comes from the ground slab names ("ground_{zone}_{blockId}"), the
+    /// one trace of CityGrid that survives into a saved scene - the BlockOverlayHud parse,
+    /// here kept with each slab's renderer bounds so blocks are clickable rectangles.
+    ///
+    /// Modality follows the personnel ledger's convention, not its mechanism: this canvas
+    /// has NO GraphicRaycaster (nothing on it is a button), so the pointer half of the
+    /// shield is InputBlocked, which InteractionController and CityOverlayHud check the
+    /// way they check the almanac. Esc is polled and cannot be consumed, so InputBlocked
+    /// stays true through the closing frame - the ClaimsEsc rule - and this reader in
+    /// turn yields to PersonnelAlmanac, which sorts above (110 over this 105).
+    ///
+    /// While open, Camera.main is null on purpose - the map camera is untagged, and every
+    /// Camera.main consumer in the project caches its camera or tolerates null. The fog
+    /// CityWeather re-applies per frame is gated by CityWeather.FogSuppressed (a camera
+    /// 300m up would otherwise be inside the smog); clouds and birds move to a cull-only
+    /// layer because they live exactly between this camera and the ground.
+    /// </summary>
+    public sealed class StrategicMapHud : MonoBehaviour
+    {
+        /// <summary>Above the clock bar's 100, below the personnel ledger's 110 - the
+        /// book must stay readable if P is pressed over the map.</summary>
+        const int SortingOrder = 105;
+
+        /// <summary>Well above the tallest roof and the 50-100m cloud band's old home;
+        /// the far plane still reaches the ground with margin.</summary>
+        const float CameraHeight = 300f;
+
+        /// <summary>Closest the map zooms, metres of half-height - street level, where
+        /// individual forecourts read. The far limit is whatever fits the whole city.</summary>
+        const float MinOrtho = 15f;
+
+        /// <summary>Proportional zoom step per scroll EVENT, sign-only - raw scroll deltas
+        /// are wildly platform-dependent (the iso rig documents this), so a fixed fraction
+        /// per event behaves the same on a wheel notch and a trackpad flick.</summary>
+        const float ZoomStep = 0.06f;
+
+        /// <summary>Reference pan speed at ortho 40, scaled with zoom so the city drifts
+        /// past at a consistent visual rate - the iso rig's keyboardPanSpeed rule.</summary>
+        const float PanSpeed = 60f;
+
+        const float MoveSmoothing = 12f;
+        const float ZoomSmoothing = 10f;
+
+        /// <summary>Runtime-only layer the map camera culls; clouds and birds are moved
+        /// here on open so they stop floating between the lens and the city. Unnamed in
+        /// the project's layer table - nothing else uses it.</summary>
+        const int HiddenAmbientLayer = 30;
+
+        /// <summary>Reference pixels. A person at city scale is under a pixel; the dot is
+        /// deliberately a beacon, not a portrait.</summary>
+        const float DotSize = 6f;
+
+        const float PlayerDotSize = 10f;
+
+        /// <summary>Hard ceiling on drawn dots. Every dot is a uGUI Image and moving one
+        /// re-batches the canvas - fine in the hundreds, a stutter machine in the
+        /// thousands, and the crowd can BE thousands when no vision source restricts the
+        /// map. Police are emitted before civilians so the cap never swallows a blue.</summary>
+        const int MaxDots = 600;
+
+        const float CardWidth = 360f;
+        const float CardHeight = 660f;
+        const float CardMargin = 16f;
+
+        static readonly Color PoliceBlue = new Color(0.25f, 0.55f, 1f);
+        static readonly Color CivilianWhite = Color.white;
+        static readonly Color PlayerGold = new Color(1f, 0.84f, 0.25f);
+        static readonly Color MapBackdrop = new Color(0.045f, 0.055f, 0.075f);
+
+        /// <summary>True while the map is open - the keyboard half of the modal shield,
+        /// same convention as PersonnelAlmanac.IsOpen.</summary>
+        public static bool IsOpen { get; private set; }
+
+        /// <summary>True while open AND on the frame the map closes: polled input cannot
+        /// be consumed and Update order is arbitrary, so the click or Esc that closed the
+        /// map must not also act in the world - the almanac's ClaimsEsc rule.</summary>
+        public static bool InputBlocked => IsOpen || Time.frameCount == lastCloseFrame;
+
+        static int lastCloseFrame = -1;
+
+        // Static state outlives Play when domain reload is off - same fix as OverlayRegistry.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetForPlay()
+        {
+            IsOpen = false;
+            lastCloseFrame = -1;
+        }
+
+        sealed class Block
+        {
+            public int Id;
+            public BlockZone Zone;
+
+            /// <summary>World-XZ union of the block's slabs - the highlight rectangle.</summary>
+            public Rect Union;
+
+            /// <summary>One rect per slab. Ordinary blocks have one; the park lays a slab
+            /// per cell, and a click anywhere on any of them must land.</summary>
+            public readonly List<Rect> Slabs = new List<Rect>();
+
+            public readonly List<string> Landmarks = new List<string>();
+        }
+
+        struct Tracked
+        {
+            public IOverlaySubject Subject;
+            public Component Body;
+        }
+
+        // ------------------------------------------------------------------ wiring
+
+        Camera isoCamera;
+        Behaviour isoController;
+        Behaviour occlusionHider;
+        Gameplay.PlayerMafioso player;
+        Camera mapCamera;
+
+        Canvas canvas;
+        GameObject page;
+        Image highlight;
+        Image buildingHighlight;
+        RectTransform cardRect;
+        TMP_Text cardTitle;
+        TMP_Text cardBody;
+        bool tmpReady;
+
+        readonly List<Image> dotPool = new List<Image>();
+        RectTransform dotRoot;
+        int dotCursor;
+
+        readonly Dictionary<int, Block> blocks = new Dictionary<int, Block>();
+        readonly List<(int blockId, Vector3 position)> slabCentres =
+            new List<(int, Vector3)>();
+        Bounds cityBounds;
+        bool built;
+        bool warnedEmpty;
+
+        // Map navigation state - the iso rig's target/smoothed pair, without the yaw.
+        float fitOrtho;
+        float orthoSize;
+        float targetOrtho;
+        Vector3 focus;
+        Vector3 targetFocus;
+
+        int selectedBlockId = -1;
+        Transform selectedBuilding;
+        Rect selectedBuildingRect;
+        Transform buildingsRoot;
+        bool cardDirty;
+        int paintedPropertyVersion = -1;
+        bool visionUnrestricted;
+
+        readonly List<Tracked> policeDots = new List<Tracked>();
+        readonly List<Tracked> extraDots = new List<Tracked>();
+        int overlayVersion = -1;
+        DockWorkerAgent[] dockWorkers = System.Array.Empty<DockWorkerAgent>();
+
+        readonly StringBuilder text = new StringBuilder(512);
+
+        // ------------------------------------------------------------------- input
+
+        void Update()
+        {
+            var keyboard = Keyboard.current;
+            if (keyboard == null)
+                return;
+
+            // The personnel ledger is modal above everything - while it reads, M belongs
+            // to nobody, exactly as InteractionController stands down for it.
+            if (PersonnelAlmanac.IsOpen)
+                return;
+
+            if (keyboard.mKey.wasPressedThisFrame)
+            {
+                if (IsOpen) Close();
+                else Open();
+            }
+
+            if (!IsOpen)
+                return;
+
+            // Yield on ClaimsEsc, not IsOpen: the book may have closed THIS frame, and
+            // that press already belonged to it.
+            if (keyboard.escapeKey.wasPressedThisFrame && !PersonnelAlmanac.ClaimsEsc)
+            {
+                Close();
+                return;
+            }
+
+            HandleNavigation(keyboard);
+
+            var mouse = Mouse.current;
+            if (mouse != null && mouse.leftButton.wasPressedThisFrame)
+                PickBlock(mouse.position.ReadValue());
+        }
+
+        /// <summary>
+        /// Scroll zooms toward the cursor, WASD/arrows pan - the same gestures as the iso
+        /// rig, which is disabled while the map is up, so the keys are free. Straight-down
+        /// camera means no pitch foreshortening: the iso rig's zoom-anchor algebra holds
+        /// with a plain world-per-pixel scale, and pan axes are literally +X/+Z.
+        /// </summary>
+        void HandleNavigation(Keyboard keyboard)
+        {
+            var maxOrtho = Mathf.Max(fitOrtho, MinOrtho);
+
+            var input = Vector2.zero;
+            if (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed) input.y += 1f;
+            if (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed) input.y -= 1f;
+            if (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed) input.x += 1f;
+            if (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed) input.x -= 1f;
+            if (input != Vector2.zero)
+            {
+                var speed = PanSpeed * (targetOrtho / 40f) * Time.unscaledDeltaTime;
+                targetFocus += new Vector3(input.x * speed, 0f, input.y * speed);
+            }
+
+            var mouse = Mouse.current;
+            if (mouse != null)
+            {
+                var scroll = mouse.scroll.ReadValue().y;
+                if (Mathf.Abs(scroll) >= 0.01f)
+                {
+                    var direction = Mathf.Sign(scroll);
+                    var previous = targetOrtho;
+                    targetOrtho = Mathf.Clamp(
+                        targetOrtho * (1f - direction * ZoomStep), MinOrtho, maxOrtho);
+
+                    // Pin the ground point under the pointer while the size changes - the
+                    // map grows toward what is being looked at, not the screen centre.
+                    if (!Mathf.Approximately(previous, targetOrtho) && Screen.height > 0)
+                    {
+                        var offset = mouse.position.ReadValue() -
+                                     new Vector2(Screen.width, Screen.height) * 0.5f;
+                        var worldPerPixel = targetOrtho * 2f / Screen.height;
+                        targetFocus += new Vector3(offset.x * worldPerPixel, 0f,
+                                                   offset.y * worldPerPixel) *
+                                       (previous / targetOrtho - 1f);
+                    }
+                }
+            }
+
+            // The view never leaves the city; zoomed past the city's own proportions the
+            // short axis just centres.
+            var aspect = Screen.height > 0 ? Screen.width / (float)Screen.height : 1.78f;
+            targetFocus = new Vector3(
+                ClampAxis(targetFocus.x, cityBounds.min.x, cityBounds.max.x,
+                    targetOrtho * aspect),
+                0f,
+                ClampAxis(targetFocus.z, cityBounds.min.z, cityBounds.max.z, targetOrtho));
+
+            var dt = Time.unscaledDeltaTime;
+            focus = Vector3.Lerp(focus, targetFocus, 1f - Mathf.Exp(-MoveSmoothing * dt));
+            orthoSize = Mathf.Lerp(orthoSize, targetOrtho, 1f - Mathf.Exp(-ZoomSmoothing * dt));
+            mapCamera.transform.position = new Vector3(focus.x, CameraHeight, focus.z);
+            mapCamera.orthographicSize = orthoSize;
+        }
+
+        static float ClampAxis(float value, float min, float max, float halfView)
+        {
+            if (max - min <= halfView * 2f)
+                return (min + max) * 0.5f;
+            return Mathf.Clamp(value, min + halfView, max - halfView);
+        }
+
+        public void Open()
+        {
+            if (IsOpen || !EnsureBuilt())
+                return;
+
+            // Clouds respawn as they drift off the map, so the sweep repeats per open -
+            // a handful of objects, not worth tracking spawns for.
+            HideAmbientFlyers();
+            FrameCamera();
+
+            // A context menu drawn over the city makes no sense over the map.
+            var menu = FindAnyObjectByType<Gameplay.ContextMenuUI>();
+            if (menu && menu.IsOpen)
+                menu.Close();
+
+            if (isoController) isoController.enabled = false;
+            if (isoCamera) isoCamera.enabled = false;
+            if (occlusionHider) occlusionHider.enabled = false;
+            mapCamera.enabled = true;
+            CityWeather.FogSuppressed = true;
+
+            // Typed caches and the dock roster refresh against the live scene.
+            overlayVersion = -1;
+            dockWorkers = FindObjectsByType<DockWorkerAgent>(FindObjectsSortMode.None);
+            cardDirty = true;
+
+            page.SetActive(true);
+            IsOpen = true;
+        }
+
+        public void Close()
+        {
+            if (!IsOpen)
+                return;
+
+            page.SetActive(false);
+            mapCamera.enabled = false;
+            if (isoCamera) isoCamera.enabled = true;
+            if (isoController) isoController.enabled = true;
+            if (occlusionHider) occlusionHider.enabled = true;
+            CityWeather.FogSuppressed = false;
+
+            IsOpen = false;
+            lastCloseFrame = Time.frameCount;
+        }
+
+        void OnDestroy()
+        {
+            // Play-stop (or a scene tear-down) mid-map: the world must get its camera,
+            // its fog and its occlusion hider back.
+            if (IsOpen)
+                Close();
+        }
+
+        // ------------------------------------------------------------- construction
+
+        bool EnsureBuilt()
+        {
+            if (built)
+                return true;
+
+            if (!CollectBlocks())
+                return false;
+
+            // The iso rig by its controller, not by tag - the map camera stays untagged,
+            // so Camera.main simply goes null while the map is up rather than flipping.
+            var controller = FindAnyObjectByType<CameraRig.IsometricCameraController>();
+            isoController = controller;
+            isoCamera = controller ? controller.GetComponent<Camera>() : Camera.main;
+            occlusionHider = FindAnyObjectByType<Gameplay.PlayerOcclusionHider>();
+            player = FindAnyObjectByType<Gameplay.PlayerMafioso>();
+
+            BuildCamera();
+            BuildCanvas();
+            CollectLandmarks();
+
+            built = true;
+            return true;
+        }
+
+        void BuildCamera()
+        {
+            var go = new GameObject("Strategic Map Camera");
+            go.transform.SetParent(transform, false);
+
+            mapCamera = go.AddComponent<Camera>();
+            mapCamera.enabled = false;
+            mapCamera.orthographic = true;
+            mapCamera.clearFlags = CameraClearFlags.SolidColor;
+            mapCamera.backgroundColor = MapBackdrop;
+            mapCamera.nearClipPlane = 10f;
+            mapCamera.farClipPlane = CameraHeight + 200f;
+            mapCamera.cullingMask =
+                ~((1 << PedestrianSpawner.PedestrianLayer) | (1 << HiddenAmbientLayer));
+
+            // Straight down with screen-up = world +Z: the map reads north-up no matter
+            // where the iso rig's yaw was left.
+            mapCamera.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+
+            // Occlusion culling is pure waste from straight above - nothing occludes
+            // anything - and top-down the whole city is in frustum, so the queries cost
+            // without ever culling.
+            mapCamera.useOcclusionCulling = false;
+
+            // URP quality settings are PER CAMERA - a fresh camera gets none of them,
+            // which is exactly the "pixelated" complaint: no SMAA, no grade. Inherit the
+            // iso camera's look so the map renders the same city the same way.
+            var data = mapCamera.GetUniversalAdditionalCameraData();
+            if (isoCamera)
+            {
+                mapCamera.allowHDR = isoCamera.allowHDR;
+                var isoData = isoCamera.GetUniversalAdditionalCameraData();
+                data.renderPostProcessing = isoData.renderPostProcessing;
+                data.antialiasing = isoData.antialiasing;
+                data.antialiasingQuality = isoData.antialiasingQuality;
+            }
+            if (data.antialiasing == AntialiasingMode.None)
+                data.antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing;
+
+            // Shadows off per-camera, so the URP asset (which FitShadows owns) is never
+            // touched - and a noon-length shadow under every building would only smear
+            // the very footprints this view exists to show.
+            data.renderShadows = false;
+        }
+
+        void FrameCamera()
+        {
+            // Recomputed per open - the window may have been resized. Every open starts
+            // back at the whole city; the strategic view IS the overview.
+            var aspect = Screen.height > 0 ? Screen.width / (float)Screen.height : 1.78f;
+            fitOrtho = Mathf.Max(cityBounds.extents.z, cityBounds.extents.x / aspect) * 1.02f;
+
+            var centre = cityBounds.center;
+            focus = targetFocus = new Vector3(centre.x, 0f, centre.z);
+            orthoSize = targetOrtho = fitOrtho;
+            mapCamera.transform.position = new Vector3(focus.x, CameraHeight, focus.z);
+            mapCamera.orthographicSize = orthoSize;
+        }
+
+        void BuildCanvas()
+        {
+            var go = new GameObject("Strategic Map", typeof(RectTransform));
+            go.transform.SetParent(transform, false);
+
+            canvas = go.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = SortingOrder;
+
+            var scaler = go.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 1f;
+
+            // Everything toggles through this one child; the canvas itself stays alive.
+            page = new GameObject("Page", typeof(RectTransform));
+            page.transform.SetParent(go.transform, false);
+
+            // Hierarchy order is draw order: highlights under the dots, card over both.
+            highlight = BuildRectImage("Highlight", page.transform);
+            highlight.enabled = false;
+
+            buildingHighlight = BuildRectImage("Building Highlight", page.transform);
+            buildingHighlight.color = new Color(1f, 1f, 1f, 0.35f);
+            buildingHighlight.enabled = false;
+
+            var dots = new GameObject("Dots", typeof(RectTransform));
+            dots.transform.SetParent(page.transform, false);
+            dotRoot = (RectTransform)dots.transform;
+
+            BuildCard();
+
+            // Built ACTIVE then hidden - the BlockOverlayHud trick: TMP loads its font in
+            // OnEnable, which never runs under an inactive parent.
+            page.SetActive(false);
+        }
+
+        static Image BuildRectImage(string name, Transform parent)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+
+            var image = go.AddComponent<Image>();
+            image.sprite = null;
+            image.raycastTarget = false;
+            return image;
+        }
+
+        void BuildCard()
+        {
+            tmpReady = TMP_Settings.instance != null && TMP_Settings.defaultFontAsset != null;
+            if (!tmpReady)
+            {
+                // The map itself still works - camera and dots owe TMP nothing.
+                Debug.LogWarning("[StrategicMap] No TMP default font - the block card is " +
+                                 "disabled until TMP essentials are imported.", this);
+                return;
+            }
+
+            var card = new GameObject("Card", typeof(RectTransform));
+            card.transform.SetParent(page.transform, false);
+
+            cardRect = (RectTransform)card.transform;
+            cardRect.anchorMin = new Vector2(1f, 1f);
+            cardRect.anchorMax = new Vector2(1f, 1f);
+            cardRect.pivot = new Vector2(1f, 1f);
+            cardRect.anchoredPosition = new Vector2(-CardMargin, -CardMargin);
+            cardRect.sizeDelta = new Vector2(CardWidth, CardHeight);
+
+            var background = card.AddComponent<Image>();
+            background.sprite = null;
+            background.color = new Color(0f, 0f, 0f, 0.78f);
+            background.raycastTarget = false;
+
+            cardTitle = BuildCardText("Title", 18f);
+            cardTitle.fontStyle = FontStyles.Bold;
+            var titleRect = cardTitle.rectTransform;
+            titleRect.anchorMin = new Vector2(0f, 1f);
+            titleRect.anchorMax = new Vector2(1f, 1f);
+            titleRect.pivot = new Vector2(0f, 1f);
+            titleRect.anchoredPosition = new Vector2(14f, -12f);
+            titleRect.sizeDelta = new Vector2(-28f, 26f);
+
+            cardBody = BuildCardText("Body", 13f);
+            cardBody.color = new Color(0.88f, 0.88f, 0.88f);
+            var bodyRect = cardBody.rectTransform;
+            bodyRect.anchorMin = new Vector2(0f, 0f);
+            bodyRect.anchorMax = new Vector2(1f, 1f);
+            bodyRect.pivot = new Vector2(0f, 1f);
+            bodyRect.offsetMin = new Vector2(14f, 12f);
+            bodyRect.offsetMax = new Vector2(-14f, -46f);
+            cardBody.alignment = TextAlignmentOptions.TopLeft;
+            cardBody.textWrappingMode = TextWrappingModes.Normal;
+
+            var hint = BuildCardText("Hint", 12f);
+            hint.transform.SetParent(page.transform, false);
+            hint.color = new Color(1f, 1f, 1f, 0.55f);
+            var hintRect = hint.rectTransform;
+            hintRect.anchorMin = new Vector2(0f, 0f);
+            hintRect.anchorMax = new Vector2(0f, 0f);
+            hintRect.pivot = new Vector2(0f, 0f);
+            hintRect.anchoredPosition = new Vector2(16f, 12f);
+            hintRect.sizeDelta = new Vector2(700f, 20f);
+            hint.text = "M / Esc - close map    LMB - inspect a block    " +
+                        "scroll - zoom    WASD - pan";
+
+            card.SetActive(false);
+        }
+
+        TMP_Text BuildCardText(string name, float size)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(cardRect ? cardRect.transform : page.transform, false);
+
+            var text = go.AddComponent<TextMeshProUGUI>();
+            text.fontSize = size;
+            text.color = new Color(0.96f, 0.96f, 0.96f);
+            text.alignment = TextAlignmentOptions.MidlineLeft;
+            text.textWrappingMode = TextWrappingModes.NoWrap;
+            text.raycastTarget = false;
+            return text;
+        }
+
+        // -------------------------------------------------------------- block table
+
+        /// <summary>The BlockOverlayHud parse, kept with geometry: each slab's renderer
+        /// bounds becomes a clickable rect, their union the block's highlight and the
+        /// whole city's frame.</summary>
+        bool CollectBlocks()
+        {
+            var builder = FindAnyObjectByType<CityBuilder>();
+            var root = builder ? builder.GeneratedRoot : null;
+            var ground = root ? root.Find("Ground") : null;
+
+            if (!ground)
+            {
+                if (!warnedEmpty)
+                {
+                    warnedEmpty = true;
+                    Debug.LogWarning("[StrategicMap] No generated city found - " +
+                                     "the strategic map has nothing to show.", this);
+                }
+                return false;
+            }
+
+            buildingsRoot = root.Find("Buildings");
+
+            blocks.Clear();
+            slabCentres.Clear();
+            var union = new Bounds();
+            var any = false;
+
+            foreach (Transform child in ground)
+            {
+                // "ground_{zone}_{blockId}" or "ground_{zone}_{blockId}_{x}_{y}" (park).
+                // Paint/patch decorations fail the enum parse at parts[1] and drop out.
+                var parts = child.name.Split('_');
+                if (parts.Length < 3 || parts[0] != "ground")
+                    continue;
+                if (!System.Enum.TryParse(parts[1], out BlockZone zone))
+                    continue;
+                if (!int.TryParse(parts[2], out var blockId))
+                    continue;
+
+                var renderer = child.GetComponentInChildren<Renderer>();
+                if (!renderer)
+                    continue;
+
+                var b = renderer.bounds;
+                var rect = Rect.MinMaxRect(b.min.x, b.min.z, b.max.x, b.max.z);
+
+                if (!blocks.TryGetValue(blockId, out var block))
+                {
+                    block = new Block { Id = blockId, Zone = zone, Union = rect };
+                    blocks.Add(blockId, block);
+                }
+
+                block.Slabs.Add(rect);
+                block.Union = Rect.MinMaxRect(
+                    Mathf.Min(block.Union.xMin, rect.xMin),
+                    Mathf.Min(block.Union.yMin, rect.yMin),
+                    Mathf.Max(block.Union.xMax, rect.xMax),
+                    Mathf.Max(block.Union.yMax, rect.yMax));
+                slabCentres.Add((blockId, child.position));
+
+                if (!any)
+                {
+                    any = true;
+                    union = b;
+                }
+                else
+                {
+                    union.Encapsulate(b);
+                }
+            }
+
+            if (!any)
+                return false;
+
+            // Slabs stop at the sidewalks; the streets around the outer blocks are half a
+            // cell deep each side, so one whole cell of padding shows the city's edge.
+            union.Expand(new Vector3(CityGrid.CellSize, 0f, CityGrid.CellSize));
+            cityBounds = union;
+            return true;
+        }
+
+        void CollectLandmarks()
+        {
+            // These carry their block id from generation.
+            foreach (var park in FindObjectsByType<ParkGrounds>(FindObjectsSortMode.None))
+                AddLandmark(park.BlockId, "Park");
+            foreach (var yard in FindObjectsByType<WorksYard>(FindObjectsSortMode.None))
+                AddLandmark(yard.BlockId, "Works yard");
+            foreach (var port in FindObjectsByType<PortMarker>(FindObjectsSortMode.None))
+                AddLandmark(port.BlockId, "Docks");
+
+            // These do not - resolve by nearest slab, the PropertyDirector rule.
+            foreach (var school in FindObjectsByType<SchoolMarker>(FindObjectsSortMode.None))
+                AddLandmark(NearestBlock(school.transform.position), "School");
+            foreach (var station in FindObjectsByType<PoliceStation>(FindObjectsSortMode.None))
+                AddLandmark(NearestBlock(station.transform.position), "Police station");
+            foreach (var bank in FindObjectsByType<BankForecourt>(FindObjectsSortMode.None))
+                AddLandmark(NearestBlock(bank.transform.position), "Bank");
+            foreach (var shop in FindObjectsByType<GunShopMarker>(FindObjectsSortMode.None))
+                AddLandmark(NearestBlock(shop.transform.position), "Gun shop");
+        }
+
+        void AddLandmark(int blockId, string label)
+        {
+            if (blockId < 0 || !blocks.TryGetValue(blockId, out var block))
+                return;
+            if (!block.Landmarks.Contains(label))
+                block.Landmarks.Add(label);
+        }
+
+        int NearestBlock(Vector3 position)
+        {
+            var best = -1;
+            var bestSqr = float.MaxValue;
+            foreach (var (blockId, slab) in slabCentres)
+            {
+                var dx = slab.x - position.x;
+                var dz = slab.z - position.z;
+                var sqr = dx * dx + dz * dz;
+                if (sqr >= bestSqr)
+                    continue;
+
+                bestSqr = sqr;
+                best = blockId;
+            }
+
+            return best;
+        }
+
+        // ---------------------------------------------------------------- picking
+
+        void PickBlock(Vector2 screenPosition)
+        {
+            // A click on the card is reading, not re-selecting the block behind it.
+            if (cardRect && cardRect.gameObject.activeSelf &&
+                RectTransformUtility.RectangleContainsScreenPoint(cardRect, screenPosition))
+                return;
+
+            // A building first: straight-down ray against the real colliders, triggers
+            // ignored (the AI cars tow feeler boxes - the CityOverlayHud trap), the crowd
+            // layer ignored (a dot is not a roof). Whatever the nearest hit resolves to
+            // under Generated City/Buildings is the building; a hit on ground or props
+            // falls through to plain block selection.
+            selectedBuilding = null;
+            var ray = mapCamera.ScreenPointToRay(screenPosition);
+            var hits = Physics.RaycastAll(
+                ray, CameraHeight + 100f,
+                ~(1 << PedestrianSpawner.PedestrianLayer), QueryTriggerInteraction.Ignore);
+            var bestDistance = float.MaxValue;
+            foreach (var hit in hits)
+            {
+                if (hit.distance >= bestDistance || !hit.collider)
+                    continue;
+                bestDistance = hit.distance;
+                selectedBuilding = BuildingRootOf(hit.collider.transform);
+            }
+
+            if (selectedBuilding)
+                selectedBuildingRect = BuildingFootprint(selectedBuilding);
+
+            // Orthographic top-down: the near-plane point already has the right X and Z.
+            var world = mapCamera.ScreenToWorldPoint(
+                new Vector3(screenPosition.x, screenPosition.y, 0f));
+            var point = new Vector2(world.x, world.z);
+
+            var hitBlock = -1;
+            foreach (var block in blocks.Values)
+            {
+                if (!block.Union.Contains(point))
+                    continue;
+
+                foreach (var slab in block.Slabs)
+                {
+                    if (!slab.Contains(point))
+                        continue;
+                    hitBlock = block.Id;
+                    break;
+                }
+
+                if (hitBlock >= 0)
+                    break;
+            }
+
+            // A building can overhang the sidewalk the slab stops at - its block is then
+            // the nearest slab's, the PropertyDirector rule.
+            if (hitBlock < 0 && selectedBuilding)
+                hitBlock = NearestBlock(selectedBuilding.position);
+
+            // A road or the water: the selection clears - same gesture as the overlay.
+            selectedBlockId = hitBlock;
+            cardDirty = true;
+        }
+
+        /// <summary>The ancestor that is a direct child of Generated City/Buildings -
+        /// null for ground, props, yards, anything that is not a building.</summary>
+        Transform BuildingRootOf(Transform node)
+        {
+            if (!buildingsRoot)
+                return null;
+            while (node && node.parent != buildingsRoot)
+                node = node.parent;
+            return node;
+        }
+
+        static Rect BuildingFootprint(Transform building)
+        {
+            var renderers = building.GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0)
+            {
+                var p = building.position;
+                return new Rect(p.x - 4f, p.z - 4f, 8f, 8f);
+            }
+
+            var bounds = renderers[0].bounds;
+            for (var i = 1; i < renderers.Length; i++)
+                bounds.Encapsulate(renderers[i].bounds);
+            return Rect.MinMaxRect(bounds.min.x, bounds.min.z, bounds.max.x, bounds.max.z);
+        }
+
+        /// <summary>"building-shop-china(Clone)" reads as "Shop china" - the prefab name
+        /// IS the building's type, it just needs the plumbing stripped off.</summary>
+        static string FriendlyBuildingName(string prefabName)
+        {
+            var name = prefabName;
+            var clone = name.IndexOf('(');
+            if (clone >= 0)
+                name = name.Substring(0, clone);
+            name = name.Trim();
+            if (name.StartsWith("building-"))
+                name = name.Substring("building-".Length);
+            name = name.Replace('-', ' ').Replace('_', ' ');
+            if (name.Length > 0)
+                name = char.ToUpperInvariant(name[0]) + name.Substring(1);
+            return name.Length > 0 ? name : "Building";
+        }
+
+        // ------------------------------------------------------------------- paint
+
+        void LateUpdate()
+        {
+            if (!IsOpen)
+                return;
+
+            SyncTrackedPeople();
+
+            // No eyes anywhere (the playable-mafioso layer is parked, so there may be no
+            // player to register) means no fog yet - the map shows everyone rather than
+            // no one. Decided once per frame, not per dot.
+            visionUnrestricted = !MapVisionRegistry.HasActiveSources;
+
+            dotCursor = 0;
+
+            // The player is his own vision source - always on the map, and the anchor
+            // the white circle of dots visibly forms around.
+            if (player)
+                EmitDot(player.transform.position, PlayerGold, PlayerDotSize, square: true);
+
+            // Police before civilians: the MaxDots cap swallows from the tail, and a lost
+            // blue dot is information lost - a lost white one is crowd texture.
+            EmitTracked(policeDots, PoliceBlue);
+
+            // Civilians: the one list that is exactly "every ordinary pedestrian".
+            var agents = PedestrianAgent.Agents;
+            for (var i = 0; i < agents.Count; i++)
+            {
+                var agent = agents[i];
+                if (!agent)
+                    continue;
+
+                IOverlaySubject subject = agent;
+                if (subject.OverlayHidden)
+                    continue;
+
+                var position = agent.transform.position;
+                if (!visionUnrestricted && !MapVisionRegistry.IsVisible(position))
+                    continue;
+
+                EmitDot(position, MapAffiliation.ColorFor(agent) ?? CivilianWhite, DotSize);
+            }
+
+            EmitTracked(extraDots, CivilianWhite);
+
+            // Dock workers register nowhere and never hide - a fixed roster per open.
+            for (var i = 0; i < dockWorkers.Length; i++)
+            {
+                var worker = dockWorkers[i];
+                if (!worker)
+                    continue;
+
+                var position = worker.transform.position;
+                if (!visionUnrestricted && !MapVisionRegistry.IsVisible(position))
+                    continue;
+
+                EmitDot(position, MapAffiliation.ColorFor(worker) ?? CivilianWhite, DotSize);
+            }
+
+            TrimDots();
+            UpdateSelection();
+        }
+
+        /// <summary>Officers, response officers, school children and forecourt visitors
+        /// all keep themselves in OverlayRegistry - filtered into typed lists once per
+        /// registry change, the CityOverlayHud versioning convention.</summary>
+        void SyncTrackedPeople()
+        {
+            if (OverlayRegistry.Version == overlayVersion)
+                return;
+
+            overlayVersion = OverlayRegistry.Version;
+            policeDots.Clear();
+            extraDots.Clear();
+
+            foreach (var subject in OverlayRegistry.Subjects)
+            {
+                switch (subject)
+                {
+                    case PoliceOfficerAgent officer:
+                        policeDots.Add(new Tracked { Subject = subject, Body = officer });
+                        break;
+                    case Gameplay.PoliceResponseOfficer officer:
+                        policeDots.Add(new Tracked { Subject = subject, Body = officer });
+                        break;
+                    case SchoolChildAgent child:
+                        extraDots.Add(new Tracked { Subject = subject, Body = child });
+                        break;
+                    case ForecourtVisitorAgent visitor:
+                        extraDots.Add(new Tracked { Subject = subject, Body = visitor });
+                        break;
+                    case GangMemberAgent member:
+                        // Colour arrives through MapAffiliation - GangDirector installs
+                        // the provider - so the white fallback never actually shows.
+                        extraDots.Add(new Tracked { Subject = subject, Body = member });
+                        break;
+                }
+            }
+        }
+
+        void EmitTracked(List<Tracked> people, Color fallback)
+        {
+            for (var i = 0; i < people.Count; i++)
+            {
+                var tracked = people[i];
+                var anchor = tracked.Subject?.OverlayAnchor;
+                if (!anchor || tracked.Subject.OverlayHidden)
+                    continue;
+
+                var position = anchor.position;
+                if (!visionUnrestricted && !MapVisionRegistry.IsVisible(position))
+                    continue;
+
+                EmitDot(position, MapAffiliation.ColorFor(tracked.Body) ?? fallback, DotSize);
+            }
+        }
+
+        void EmitDot(Vector3 world, Color color, float size, bool square = false)
+        {
+            if (dotCursor >= MaxDots)
+                return;
+
+            var screen = mapCamera.WorldToScreenPoint(world);
+            if (screen.x < 0f || screen.x > Screen.width ||
+                screen.y < 0f || screen.y > Screen.height)
+                return;
+
+            Image dot;
+            if (dotCursor < dotPool.Count)
+            {
+                dot = dotPool[dotCursor];
+            }
+            else
+            {
+                dot = BuildRectImage("dot", dotRoot);
+                dotPool.Add(dot);
+            }
+            dotCursor++;
+
+            if (!dot.enabled)
+                dot.enabled = true;
+
+            screen.z = 0f;
+            dot.transform.position = screen;
+            if (dot.color != color)
+                dot.color = color;
+
+            var rect = dot.rectTransform;
+            if (!Mathf.Approximately(rect.sizeDelta.x, size))
+                rect.sizeDelta = new Vector2(size, size);
+            // The overlay's visual language: agents stand on their corner, places sit flat.
+            rect.localRotation = Quaternion.Euler(0f, 0f, square ? 0f : 45f);
+        }
+
+        void TrimDots()
+        {
+            // Same off-screen rule as every HUD here: toggle the Graphic, never SetActive.
+            for (var i = dotCursor; i < dotPool.Count; i++)
+                if (dotPool[i].enabled)
+                    dotPool[i].enabled = false;
+        }
+
+        void UpdateSelection()
+        {
+            if (selectedBlockId < 0 || !blocks.TryGetValue(selectedBlockId, out var block))
+            {
+                if (highlight.enabled)
+                    highlight.enabled = false;
+                if (buildingHighlight.enabled)
+                    buildingHighlight.enabled = false;
+                if (cardRect && cardRect.gameObject.activeSelf)
+                    cardRect.gameObject.SetActive(false);
+                return;
+            }
+
+            // The camera moves under zoom and pan, so both rectangles reproject every
+            // frame - the same rule as the dots.
+            ProjectRect(highlight, block.Union);
+            var zone = BlockOverlayHud.ZoneColour(block.Zone);
+            zone.a = 0.22f;
+            highlight.color = zone;
+
+            if (selectedBuilding)
+                ProjectRect(buildingHighlight, selectedBuildingRect);
+            else if (buildingHighlight.enabled)
+                buildingHighlight.enabled = false;
+
+            if (!tmpReady)
+                return;
+
+            if (!cardRect.gameObject.activeSelf)
+                cardRect.gameObject.SetActive(true);
+
+            if (!cardDirty && paintedPropertyVersion == PropertyRegistry.Version)
+                return;
+
+            cardDirty = false;
+            paintedPropertyVersion = PropertyRegistry.Version;
+            PaintCard(block);
+        }
+
+        void ProjectRect(Image image, Rect worldRect)
+        {
+            var min = mapCamera.WorldToScreenPoint(
+                new Vector3(worldRect.xMin, 0f, worldRect.yMin));
+            var max = mapCamera.WorldToScreenPoint(
+                new Vector3(worldRect.xMax, 0f, worldRect.yMax));
+
+            image.rectTransform.position =
+                new Vector3((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f, 0f);
+            image.rectTransform.sizeDelta =
+                new Vector2(max.x - min.x, max.y - min.y) / canvas.scaleFactor;
+            if (!image.enabled)
+                image.enabled = true;
+        }
+
+        void PaintCard(Block block)
+        {
+            text.Clear();
+
+            if (selectedBuilding)
+            {
+                cardTitle.text = FriendlyBuildingName(selectedBuilding.name);
+                cardTitle.color = BlockOverlayHud.ZoneColour(block.Zone);
+                AppendBuildingLines(selectedBuilding, block);
+                text.Append('\n')
+                    .Append(BlockOverlayHud.DisplayName(block.Zone))
+                    .Append(" block #").Append(block.Id).Append('\n').Append('\n');
+            }
+            else
+            {
+                cardTitle.text = $"{BlockOverlayHud.DisplayName(block.Zone)}  #{block.Id}";
+                cardTitle.color = BlockOverlayHud.ZoneColour(block.Zone);
+            }
+
+            foreach (var landmark in block.Landmarks)
+                text.Append("▪ ").Append(landmark).Append('\n');
+            if (block.Landmarks.Count > 0)
+                text.Append('\n');
+
+            var businesses = 0;
+            foreach (var business in PropertyRegistry.Businesses)
+            {
+                if (!business || business.BlockId != block.Id)
+                    continue;
+
+                businesses++;
+                text.Append("▪ ").Append(business.BusinessName);
+                if (business.Owner != null)
+                    text.Append("  —  ").Append(business.Owner.DisplayName);
+                text.Append('\n');
+                text.Append("   $").Append(business.WeeklyIncome).Append("/wk");
+                if (business.Protected)
+                    text.Append("  ·  protected");
+                text.Append('\n');
+            }
+
+            if (businesses == 0 && block.Landmarks.Count == 0)
+                text.Append("Nothing of note.");
+
+            // .text, not SetText: the sentences themselves change, and only on selection
+            // or ownership change - rare, so the allocation is affordable.
+            cardBody.text = text.ToString();
+        }
+
+        /// <summary>What THIS building is: its business (name, owner, take), its civic
+        /// role, or - for the plain stock - just its type, which the title already
+        /// carries. Components sit on the building root; one GetComponent each.</summary>
+        void AppendBuildingLines(Transform building, Block block)
+        {
+            var business = building.GetComponent<Entities.BusinessMarker>();
+            if (business)
+            {
+                text.Append(business.Category).Append(" business\n");
+                text.Append(business.BusinessName);
+                if (business.Owner != null)
+                    text.Append("  —  ").Append(business.Owner.DisplayName);
+                text.Append('\n');
+                text.Append('$').Append(business.WeeklyIncome).Append("/wk");
+                if (business.Protected)
+                    text.Append("  ·  protected");
+                text.Append('\n');
+            }
+
+            if (building.GetComponent<SchoolMarker>())
+                text.Append("The city's school\n");
+            if (building.GetComponent<PoliceStation>())
+                text.Append("The police station\n");
+            if (building.GetComponent<BankForecourt>())
+                text.Append("The bank\n");
+            if (building.GetComponent<GunShopMarker>())
+                text.Append("Gun shop - sells under the counter\n");
+
+            if (!business && !building.GetComponent<SchoolMarker>() &&
+                !building.GetComponent<PoliceStation>() &&
+                !building.GetComponent<BankForecourt>() &&
+                !building.GetComponent<GunShopMarker>())
+            {
+                text.Append(block.Zone == BlockZone.ResidentialHigh
+                    ? "Residential building\n"
+                    : "No registered business\n");
+            }
+        }
+
+        // ------------------------------------------------------------------ ambient
+
+        void HideAmbientFlyers()
+        {
+            foreach (var clouds in FindObjectsByType<CloudSystem>(FindObjectsSortMode.None))
+                PedestrianSpawner.SetLayerRecursively(clouds.transform, HiddenAmbientLayer);
+            foreach (var birds in FindObjectsByType<BirdFlockSystem>(FindObjectsSortMode.None))
+                PedestrianSpawner.SetLayerRecursively(birds.transform, HiddenAmbientLayer);
+
+            // Smoke plumes are transparent overdraw, and top-down the WHOLE city's plumes
+            // are in frustum at once - at native Retina resolution that alone stutters.
+            // The iso camera renders every layer, so parking them on the cull layer costs
+            // the normal view nothing and needs no restore.
+            foreach (var stacks in FindObjectsByType<SmokeStackSystem>(FindObjectsSortMode.None))
+                PedestrianSpawner.SetLayerRecursively(stacks.transform, HiddenAmbientLayer);
+            foreach (var vent in FindObjectsByType<SmokeVent>(FindObjectsSortMode.None))
+                PedestrianSpawner.SetLayerRecursively(vent.transform, HiddenAmbientLayer);
+        }
+    }
+}

@@ -72,6 +72,10 @@ namespace LivingCity.UI
 
         void Update()
         {
+            // The strategic map owns the screen while open - O waits.
+            if (StrategicMapHud.InputBlocked)
+                return;
+
             var kb = Keyboard.current;
             if (kb == null)
                 return;
@@ -128,6 +132,16 @@ namespace LivingCity.UI
         {
             if (!visible)
                 return;
+
+            // Label positions come from the iso camera the strategic map has disabled -
+            // they would float at stale screen points over the map. The overlay simply
+            // drops while the map is up; O can bring it back afterwards.
+            if (StrategicMapHud.IsOpen)
+            {
+                labelRoot.SetActive(false);
+                visible = false;
+                return;
+            }
 
             var width = Screen.width;
             var height = Screen.height;
@@ -244,13 +258,15 @@ namespace LivingCity.UI
             return text;
         }
 
-        static string DisplayName(BlockZone zone) => zone switch
+        /// <summary>Public because the strategic map's block card names zones the same
+        /// way - one wording, one palette, whichever screen is doing the naming.</summary>
+        public static string DisplayName(BlockZone zone) => zone switch
         {
             BlockZone.ResidentialHigh => "Residential",
             _ => zone.ToString(),
         };
 
-        static Color ZoneColour(BlockZone zone) => zone switch
+        public static Color ZoneColour(BlockZone zone) => zone switch
         {
             BlockZone.ResidentialHigh => new Color(0.95f, 0.95f, 0.95f),
             BlockZone.Industrial => new Color(1.00f, 0.62f, 0.25f),

@@ -1,0 +1,140 @@
+using UnityEngine;
+using LivingCity.Generation;
+using LivingCity.Personnel;
+
+namespace LivingCity.Gameplay
+{
+    /// <summary>
+    /// The scene's one owner of the outfit's roster. Seeds it from the city's seed at
+    /// Start, then routes every mutation the almanac (and later, the weekly order system)
+    /// makes through thin wrappers that bump <see cref="Version"/> on success - the dirty
+    /// key the UI repaints on, same convention as OverlayRegistry and PropertyRegistry.
+    ///
+    /// The UI never calls RosterOps directly: a mutation that skipped this class would
+    /// change the books without moving Version, and the almanac would sit on a stale page
+    /// until the next unrelated click. Routing everything here is what makes the
+    /// versioned-repaint convention safe rather than merely customary.
+    /// </summary>
+    public sealed class PersonnelDirector : MonoBehaviour
+    {
+        public static PersonnelDirector Instance { get; private set; }
+
+        /// <summary>The scene the demo scenes get: no CityBuilder, no config, still a
+        /// deterministic roster rather than a null one.</summary>
+        const int FallbackSeed = 42;
+
+        public Roster Roster { get; private set; }
+        public int Version { get; private set; }
+
+        void Awake()
+        {
+            if (Instance && Instance != this)
+                return;
+            Instance = this;
+        }
+
+        void OnDestroy()
+        {
+            if (Instance == this)
+                Instance = null;
+        }
+
+        // Static state outlives Play when domain reload is off - same fix as OverlayRegistry.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetForPlay() => Instance = null;
+
+        void Start()
+        {
+            var builder = FindAnyObjectByType<CityBuilder>();
+            seed = builder && builder.Config ? builder.Config.seed : FallbackSeed;
+            if (!builder || !builder.Config)
+                Debug.LogWarning("[Personnel] No CityBuilder config in the scene - the " +
+                                 "roster runs on the fallback seed.", this);
+
+            Roster = RosterSeeder.Generate(seed);
+            Version++;
+        }
+
+        int seed = FallbackSeed;
+
+        /// <summary>
+        /// Swaps in the sixty-man scale roster (F2 in the almanac). Debug-only by
+        /// nature but shipped in the build path on purpose: the ledger is specified to
+        /// stay usable at sixty men, and a reviewer must be able to see that in Play
+        /// without editor wiring. Deterministic off the same city seed.
+        /// </summary>
+        public void DebugSeedLarge(int memberCount)
+        {
+            Roster = RosterSeeder.GenerateLarge(seed, memberCount);
+            Version++;
+            Debug.Log("[Personnel] Debug roster: " + memberCount + " men on the books.");
+        }
+
+        // ------------------------------------------------------------------ mutations
+
+        public PromoteCheck CheckPromote(int id) =>
+            Roster == null
+                ? new PromoteCheck(false, false, LivingCity.UI.LedgerText.ReasonNoSuchMember)
+                : RosterOps.CheckPromote(Roster, id);
+
+        public OpResult Promote(int id, out int newCrewId)
+        {
+            newCrewId = -1;
+            return Roster == null
+                ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
+                : Commit(RosterOps.Promote(Roster, id, out newCrewId), "promoted", id);
+        }
+
+        public OpResult Demote(int id) =>
+            Apply(RosterOps.Demote, id, "demoted");
+
+        public OpResult AssignToPool(int id) =>
+            Apply(RosterOps.AssignToPool, id, "sent to the pool");
+
+        public OpResult AssignToFront(int id) =>
+            Apply(RosterOps.AssignToFront, id, "put on the front");
+
+        public OpResult AssignToCrew(int id, int crewId)
+        {
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+            return Commit(RosterOps.AssignToCrew(Roster, id, crewId), "reassigned", id);
+        }
+
+        public OpResult GiveEquipment(int itemId, int id)
+        {
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+            return Commit(RosterOps.GiveEquipment(Roster, itemId, id), "armed", id);
+        }
+
+        public OpResult ReturnEquipment(int itemId)
+        {
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchItem);
+            var result = RosterOps.ReturnEquipment(Roster, itemId);
+            if (result.Ok)
+                Version++;
+            return result;
+        }
+
+        OpResult Apply(System.Func<Roster, int, OpResult> op, int id, string verb)
+        {
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+            return Commit(op(Roster, id), verb, id);
+        }
+
+        OpResult Commit(OpResult result, string verb, int id)
+        {
+            if (!result.Ok)
+                return result;
+
+            Version++;
+            var member = Roster.Find(id);
+            Debug.Log("[Personnel] " + (member != null ? member.FullName : "#" + id) +
+                      " " + verb + ".");
+            return result;
+        }
+    }
+}

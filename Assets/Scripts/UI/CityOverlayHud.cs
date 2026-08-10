@@ -206,8 +206,17 @@ namespace LivingCity.UI
 
         void Update()
         {
+            // The strategic map is modal: its Esc closes the map, its clicks pick blocks,
+            // and neither may leak here - InputBlocked covers the closing frame too.
+            if (StrategicMapHud.InputBlocked)
+                return;
+
+            // Polled Esc cannot be consumed, so every reader yields explicitly: while the
+            // personnel ledger claims it (open, or closing on this very frame - Update
+            // order is arbitrary), the press must not also drop the overlay selection.
             var keyboard = Keyboard.current;
-            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame &&
+                !PersonnelAlmanac.ClaimsEsc)
                 Select(null);
 
             var mouse = Mouse.current;
@@ -307,6 +316,22 @@ namespace LivingCity.UI
 
         void LateUpdate()
         {
+            // Marker positions come from the iso camera, which the strategic map has
+            // disabled - projecting through it would scatter stale markers over the map.
+            // Hide whatever is lit and stand down; the normal pass re-enables everything
+            // the first frame after the map closes.
+            if (StrategicMapHud.IsOpen)
+            {
+                foreach (var marker in markers)
+                    if (marker.Image && marker.Image.enabled)
+                        marker.Image.enabled = false;
+                if (ephemeral != null && ephemeral.Image && ephemeral.Image.enabled)
+                    ephemeral.Image.enabled = false;
+                if (popup && popup.activeSelf)
+                    popup.SetActive(false);
+                return;
+            }
+
             SyncMarkers();
 
             var width = Screen.width;

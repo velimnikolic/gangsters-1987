@@ -24,6 +24,11 @@ namespace LivingCity.Gameplay
     /// handful of stubs) and shown by a pooled stand-in renderer wearing the
     /// building's own materials, so tint and night windows carry over. The stub
     /// casts no shadow - the hidden original still casts the full one.
+    ///
+    /// Below ZoomRevealEnter a second sweep (ZoomSweep) extends the same hiding
+    /// to every building occluding visible street space, so a close-up camera
+    /// can watch sidewalks and pedestrians behind the foreground row. Both
+    /// sweeps share one dictionary - a renderer is hidden once, restored once.
     /// </summary>
     public sealed class PlayerOcclusionHider : MonoBehaviour
     {
@@ -36,6 +41,19 @@ namespace LivingCity.Gameplay
         const float KeepHiddenSeconds = 0.25f; // hysteresis so skirting a facade edge does not flicker
         const float MinOccluderHeight = 5f;    // parked cars and kiosks live in the same flat category
         const float StubFraction = 0.2f;       // how much of the building stays standing while hidden
+
+        // Zoomed in, foreground buildings wall off the very street the player is
+        // trying to watch, so below this ortho size a second sweep hides every
+        // building that occludes visible ground - not just the player's occluder.
+        const float ZoomRevealEnter = 26f;      // grid sweep turns on below this ortho size (zoom range 10..70)
+        const float ZoomRevealExit = 30f;       // ...and off above this; the gap kills dither while scroll-zooming
+        const float SampleStrideDepth = 4f;     // < MinOccluderHeight, so no qualifying occluder's shadow band is skipped
+        const float SampleStrideWidth = 6f;     // < the narrowest facade
+        const float GridCastDistance = 90f;     // tallest building * sqrt(2) + margin; an occluder sits near its sample
+        const float GridRefreshSeconds = 0.15f; // full-grid revisit budget; MUST stay < KeepHiddenSeconds or hidden flickers
+        const int MaxGridRows = 32;             // defensive caps should the thresholds ever be raised
+        const int MaxGridColumns = 32;
+        const float FootprintProbeRadius = 0.4f;
 
         // Everything except pedestrians (the player himself) and the park-nav
         // proxy roots on layer 10 - the same idiom as PlayerMafioso.WallMask.
@@ -53,14 +71,19 @@ namespace LivingCity.Gameplay
         Transform buildingsRoot;
 
         readonly RaycastHit[] hits = new RaycastHit[64];
+        readonly Collider[] overlaps = new Collider[8];
         readonly Dictionary<MeshRenderer, HiddenEntry> hidden = new();
         readonly List<MeshRenderer> scratch = new();
         readonly List<GameObject> stubPool = new();
         readonly Dictionary<Mesh, Mesh> stubMeshes = new();
 
+        bool zoomReveal; // zoom-gate hysteresis state
+        int gridRow;     // round-robin row cursor - the grid is swept a few rows per frame
+
         void Update()
         {
             Sweep();
+            ZoomSweep();
             Restore();
         }
 
@@ -85,6 +108,98 @@ namespace LivingCity.Gameplay
             var count = Physics.SphereCastNonAlloc(origin, CastRadius, -forward, hits,
                                                    CastDistance + BackOffset, Mask,
                                                    QueryTriggerInteraction.Ignore);
+            HideOccluders(count);
+        }
+
+        /// <summary>
+        /// The player sweep reveals him behind one facade, but zoomed in the whole
+        /// foreground row of buildings walls off the street the camera is aimed
+        /// at. Below ZoomRevealEnter this samples a grid of ground points across
+        /// the visible rectangle and casts each toward the camera, feeding the
+        /// same hidden dictionary - so any building occluding watchable street
+        /// space drops to its stub while the zoom stays close. Rows are swept
+        /// round-robin, scaled so a full pass fits in GridRefreshSeconds; the
+        /// shared Restore hysteresis then handles zoom-out with no extra code.
+        /// </summary>
+        void ZoomSweep()
+        {
+            if (!cam || !buildingsRoot)
+                return; // Sweep resolves both lazily; no player needed here
+
+            var size = cam.orthographicSize;
+            if (zoomReveal ? size > ZoomRevealExit : size >= ZoomRevealEnter)
+            {
+                if (zoomReveal)
+                {
+                    zoomReveal = false;
+                    gridRow = 0;
+                }
+                return;
+            }
+            zoomReveal = true;
+
+            var forward = cam.transform.forward;
+            if (forward.y >= -0.01f)
+                return;
+
+            // The rig keeps focus at y=0, so projecting the camera down its own
+            // forward recovers the ground focus without touching the controller.
+            var focus = cam.transform.position + forward * (cam.transform.position.y / -forward.y);
+            var right = cam.transform.right; // horizontal: the rig has no roll
+            var depthAxis = new Vector3(forward.x, 0f, forward.z).normalized;
+            var halfWidth = size * cam.aspect;
+            var halfDepth = size / -forward.y; // ground depth foreshortens by sin(pitch)
+
+            var cols = Mathf.Min(MaxGridColumns, Mathf.FloorToInt(2f * halfWidth / SampleStrideWidth) + 1);
+            var rows = Mathf.Min(MaxGridRows, Mathf.FloorToInt(2f * halfDepth / SampleStrideDepth) + 1);
+
+            // Enough rows this frame that a full pass takes GridRefreshSeconds:
+            // a slow frame sweeps more rows instead of stretching the revisit
+            // period past the restore hysteresis (which would read as flicker).
+            var rowsPerFrame = Mathf.Clamp(Mathf.CeilToInt(rows * Time.deltaTime / GridRefreshSeconds), 1, rows);
+            for (var r = 0; r < rowsPerFrame; r++)
+            {
+                var z = (gridRow - (rows - 1) * 0.5f) * SampleStrideDepth;
+                for (var c = 0; c < cols; c++)
+                {
+                    var x = (c - (cols - 1) * 0.5f) * SampleStrideWidth;
+                    var chest = focus + right * x + depthAxis * z + Vector3.up * ChestHeight;
+
+                    // A cast started inside building B silently skips B and would
+                    // hide whatever stands in front of it - cascading over ground
+                    // nobody can walk on. Samples under a footprint carry no
+                    // sidewalk, so drop them instead.
+                    if (InsideBuilding(chest))
+                        continue;
+
+                    var origin = chest + forward * BackOffset;
+                    var count = Physics.SphereCastNonAlloc(origin, CastRadius, -forward, hits,
+                                                           GridCastDistance + BackOffset, Mask,
+                                                           QueryTriggerInteraction.Ignore);
+                    HideOccluders(count);
+                }
+                gridRow = (gridRow + 1) % rows;
+            }
+        }
+
+        bool InsideBuilding(Vector3 point)
+        {
+            var found = Physics.OverlapSphereNonAlloc(point, FootprintProbeRadius, overlaps, Mask,
+                                                      QueryTriggerInteraction.Ignore);
+            for (var i = 0; i < found; i++)
+            {
+                var collider = overlaps[i];
+                if (!collider || collider.transform.parent != buildingsRoot)
+                    continue;
+                var renderer = collider.GetComponent<MeshRenderer>();
+                if (renderer && renderer.bounds.size.y >= MinOccluderHeight)
+                    return true;
+            }
+            return false;
+        }
+
+        void HideOccluders(int count)
+        {
             for (var i = 0; i < count; i++)
             {
                 var collider = hits[i].collider;
@@ -305,6 +420,8 @@ namespace LivingCity.Gameplay
 
         void OnDisable()
         {
+            zoomReveal = false;
+            gridRow = 0;
             foreach (var pair in hidden)
             {
                 if (pair.Key)

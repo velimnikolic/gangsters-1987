@@ -652,6 +652,11 @@ namespace LivingCity.Data
                  "0 degrees the BRANCH is North and the carriageway runs East-West.")]
         public GameObject mainTJunction;
 
+        [Tooltip("tile-mainroad-intersection - two avenues crossing each other. Four lanes at " +
+                 "+/-1.75 and +/-4.75 on BOTH axes, so it is symmetric under rotation and is " +
+                 "always placed at 0 degrees.")]
+        public GameObject mainMainCross;
+
         [Header("Ground (Tiles_T)")]
         [Tooltip("tile-plain_concrete - laid under each block so courtyards and alleys are " +
                  "paved rather than showing the road tiles' grass verge. Carries no Tile " +
@@ -932,6 +937,7 @@ namespace LivingCity.Data
             RoadTileKind.MainStraight => mainStraight,
             RoadTileKind.MainCross => mainCross,
             RoadTileKind.MainTJunction => mainTJunction,
+            RoadTileKind.MainMainCross => mainMainCross,
             _ => null,
         };
 
@@ -965,6 +971,7 @@ namespace LivingCity.Data
             if (!mainStraight) gaps += " mainStraight";
             if (!mainCross) gaps += " mainCross";
             if (!mainTJunction) gaps += " mainTJunction";
+            if (!mainMainCross) gaps += " mainMainCross";
 
             missing = gaps.Trim();
             return missing.Length == 0;

@@ -155,7 +155,7 @@ MonoBehaviour:
   yaw: 45
   boomLength: 200
   minOrthoSize: 10
-  maxOrthoSize: 200
+  maxOrthoSize: 84
   orthoSize: 40
   scrollZoomSpeed: 6
   pinchZoomSpeed: 0.05

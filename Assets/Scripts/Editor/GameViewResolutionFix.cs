@@ -11,8 +11,8 @@ namespace LivingCity.EditorTools
     /// On a Retina display that toggle makes the Game view render at logical point size and
     /// upscale 2x to the physical panel - a quarter of the pixels it displays. The city reads as
     /// low resolution in Play mode while the Scene view stays sharp, which is what gives the bug
-    /// its confusing shape. It hurts most at wide zoom: at orthographicSize 200 one rendered pixel
-    /// covers 0.52 m of world, so kerbs and the generated parking-line quads fall below a pixel.
+    /// its confusing shape. It hurts most at wide zoom: at orthographicSize 70 one rendered pixel
+    /// covers 0.18 m of world, so kerbs and the generated parking-line quads sit near a pixel.
     ///
     /// This is an editor window preference, not a project setting. It lives in
     /// UserSettings/Layouts/*.dwlt, which Unity rewrites from memory on quit - editing that file

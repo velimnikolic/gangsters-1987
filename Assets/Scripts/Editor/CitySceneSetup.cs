@@ -287,9 +287,13 @@ namespace LivingCity.EditorTools
             // explicit makes the intended values readable in one place - if you change one, change
             // it in IsometricCameraController.cs and in SampleScene.unity too.
             //
-            // maxOrthoSize 200: the city is 16x7 cells = 480x210 m of bounds, which needs 183 to
-            // frame entirely at 4:3. The old 80 showed less than half of it.
-            CityEditorUtils.SetFloat(controller, "maxOrthoSize", 200f);
+            // maxOrthoSize 84: deliberately a neighbourhood-sized frame, not the whole city. The
+            // map is 34x33 cells (~1591x1544 m of bounds at TileScale 1.56) and would need ~700
+            // to frame entirely. First halved from 200 to 100 with the 10x city, then cut to 70
+            // for performance - the frame's area (and with it the on-screen entity/light bill)
+            // is quadratic in this value. 84 is that same 70 rescaled for the +20% wider cell
+            // (70 x 1.2), so the frame holds the SAME number of cells and entities 70 paid for.
+            CityEditorUtils.SetFloat(controller, "maxOrthoSize", 84f);
             CityEditorUtils.SetFloat(controller, "scrollZoomSpeed", 6f);
             CityEditorUtils.SetFloat(controller, "keyboardPanSpeed", 60f);
             // dragPanSpeed 3: a mouse drag is limited by how far the hand travels in one stroke,

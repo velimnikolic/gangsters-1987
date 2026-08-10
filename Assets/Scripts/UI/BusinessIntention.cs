@@ -86,6 +86,14 @@ namespace LivingCity.UI
             $"{owner ?? "Unknown owner"} · {Money(weeklyIncome)}/wk · " +
             (isProtected ? "Protected" : "Unprotected");
 
+        /// <summary>A gang front's line: the gang name REPLACES the protection word rather
+        /// than joining it - the fourth clause would blow the 44-char budget, and a family
+        /// name standing where "Protected" stands says the same thing better.</summary>
+        public static string Line(string owner, int weeklyIncome, bool isProtected, string gang) =>
+            string.IsNullOrEmpty(gang)
+                ? Line(owner, weeklyIncome, isProtected)
+                : $"{owner ?? "Unknown owner"} · {Money(weeklyIncome)}/wk · {gang}";
+
         /// <summary>$850, then $1.2k from a thousand up. Invariant culture: a popup that says
         /// $1,2k on one machine and $1.2k on another is the same bug twice.</summary>
         public static string Money(int perWeek) =>

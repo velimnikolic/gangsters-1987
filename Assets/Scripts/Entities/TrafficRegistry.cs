@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using LivingCity.Generation;
 using PolyPerfect.City;
 
 namespace LivingCity.Entities
@@ -154,10 +155,12 @@ namespace LivingCity.Entities
     /// OnTriggerEnter, and disabled outright on the first lane of every route. Cars therefore
     /// drove through each other, which is what this replaces.
     ///
-    /// A flat list, scanned in full. carCount is 30, so a probe is 30 comparisons and a frame is
-    /// 900 - far below the cost of the transform reads around it. If the population ever reaches
-    /// the high hundreds, bucket the list on a uniform grid keyed to CityGrid.CellSize; nothing
-    /// outside this file would need to change.
+    /// Bodies live in a uniform grid of CityGrid.CellSize buckets, rebuilt at most once per
+    /// frame. The flat list was right at carCount 30 (a probe was 30 comparisons); at 300 it is
+    /// 90k SAT tests a frame, which is exactly the "high hundreds" case the old comment promised
+    /// to bucket for. The buckets only choose CANDIDATES - every geometric decision still reads
+    /// the live transform - so the ring has to cover the worst question ever asked of it:
+    /// MaxLookahead plus both bodies' half-lengths. See CollectCandidates.
     /// </summary>
     public static class TrafficRegistry
     {
@@ -191,6 +194,40 @@ namespace LivingCity.Entities
 
         static readonly List<TrafficBody> Bodies = new List<TrafficBody>();
 
+        /// <summary>
+        /// The spatial buckets: XZ grid of <see cref="CityGrid.CellSize"/>-metre cells, same
+        /// long-key idiom as <see cref="PedestrianRegistry"/>. A body sits in exactly one bucket
+        /// (keyed on its centre), so a cell sweep never visits anybody twice.
+        /// </summary>
+        static readonly Dictionary<long, List<TrafficBody>> Buckets =
+            new Dictionary<long, List<TrafficBody>>();
+
+        /// <summary>Recycled cell lists, so a moving fleet does not churn the heap every rebuild.</summary>
+        static readonly Stack<List<TrafficBody>> BucketPool = new Stack<List<TrafficBody>>();
+
+        /// <summary>
+        /// Frame the buckets were last built for. Rebuilt lazily on the first query of a frame:
+        /// cars move inside a frame, but at 45km/h that is 0.2m per frame against the whole
+        /// spare cell of ring slack, so membership staleness within a frame cannot push a
+        /// relevant body out of the swept ring. Register/Unregister invalidate outright - a
+        /// just-removed body must stop existing NOW, not at the next frame boundary.
+        /// </summary>
+        static int bucketsBuiltFrame = -1;
+
+        /// <summary>
+        /// Longest half-length ever registered. Grows monotonically (the bus pins it at 4.43m)
+        /// and feeds the candidate ring: a blocker's RELEVANCE is judged from our centre, but
+        /// its bucket is keyed on ITS centre, up to its own half-length further away.
+        /// </summary>
+        static float maxHalfLength = FallbackHalfLength;
+
+        /// <summary>
+        /// Lateral allowance added to every candidate ring. The corridor tests reach sideways as
+        /// well as forward - two half-widths plus the probe's own slop - and 4m comfortably
+        /// exceeds the widest pairing in the fleet (a bus is 1.43m to the midline).
+        /// </summary>
+        const float WidthSlack = 4f;
+
         public static int Count => Bodies.Count;
 
         /// <summary>
@@ -208,14 +245,112 @@ namespace LivingCity.Entities
 
             var body = new TrafficBody(car, halfLength, halfWidth, StallJitterRange);
             Bodies.Add(body);
+            if (halfLength > maxHalfLength)
+                maxHalfLength = halfLength;
+            bucketsBuiltFrame = -1;
             return body;
         }
 
         public static void Unregister(TrafficBody body)
         {
-            if (body != null)
-                Bodies.Remove(body);
+            if (body != null && Bodies.Remove(body))
+                bucketsBuiltFrame = -1;
         }
+
+        /// <summary>
+        /// Puts every live body in its bucket, once per frame at most. Clearing and refilling
+        /// 300 entries is cheaper than maintaining incremental membership from code this file
+        /// does not own - cars are moved by CarBehavior writing transform.position directly, so
+        /// there is no move event to hook.
+        /// </summary>
+        static void SyncBuckets()
+        {
+            if (Time.frameCount == bucketsBuiltFrame)
+                return;
+            bucketsBuiltFrame = Time.frameCount;
+
+            foreach (var pair in Buckets)
+            {
+                pair.Value.Clear();
+                BucketPool.Push(pair.Value);
+            }
+            Buckets.Clear();
+
+            for (var i = 0; i < Bodies.Count; i++)
+            {
+                var body = Bodies[i];
+                if (body == null || !body.Tf)
+                    continue;
+
+                var key = KeyFor(body.Tf.position);
+                if (!Buckets.TryGetValue(key, out var cell))
+                {
+                    cell = BucketPool.Count > 0 ? BucketPool.Pop() : new List<TrafficBody>();
+                    Buckets.Add(key, cell);
+                }
+                cell.Add(body);
+            }
+        }
+
+        static long KeyFor(Vector3 position) =>
+            Key(Mathf.FloorToInt(position.x / CityGrid.CellSize),
+                Mathf.FloorToInt(position.z / CityGrid.CellSize));
+
+        static long Key(int cx, int cz) => ((long)cx << 32) | (uint)cz;
+
+        /// <summary>
+        /// The cell rectangle that provably contains every body whose CENTRE could matter to a
+        /// query of this range about this point. Pure maths, exercised headlessly - the covering
+        /// guarantee is the whole correctness argument for the buckets, so it gets its own test
+        /// (TrafficModelTests.BucketRingCoversItsRange).
+        /// </summary>
+        internal static void CellRange(Vector3 centre, float range,
+                                       out int minX, out int maxX, out int minZ, out int maxZ)
+        {
+            // Ceil, not round: a centre flush against its cell wall still has to reach `range`
+            // past it, and ring*CellSize is exactly the guaranteed reach beyond any wall.
+            var ring = Mathf.Max(1, Mathf.CeilToInt(range / CityGrid.CellSize));
+            var cx = Mathf.FloorToInt(centre.x / CityGrid.CellSize);
+            var cz = Mathf.FloorToInt(centre.z / CityGrid.CellSize);
+            minX = cx - ring;
+            maxX = cx + ring;
+            minZ = cz - ring;
+            maxZ = cz + ring;
+        }
+
+        /// <summary>
+        /// Every body other than <paramref name="self"/> whose centre lies in a bucket the query
+        /// ring touches, into <paramref name="into"/>. The caller states its range honestly -
+        /// lookahead or required room, PLUS its own half-length (the corridor starts at its
+        /// bumper, buckets are keyed on centres) PLUS <see cref="maxHalfLength"/> (the blocker's
+        /// centre trails its bumper by the same argument) - and the width slack covers the rest.
+        /// </summary>
+        static void CollectCandidates(TrafficBody self, Vector3 centre, float range,
+                                      List<TrafficBody> into)
+        {
+            SyncBuckets();
+            into.Clear();
+
+            CellRange(centre, range + WidthSlack, out var minX, out var maxX, out var minZ, out var maxZ);
+            for (var cz = minZ; cz <= maxZ; cz++)
+            {
+                for (var cx = minX; cx <= maxX; cx++)
+                {
+                    if (!Buckets.TryGetValue(Key(cx, cz), out var cell))
+                        continue;
+
+                    for (var i = 0; i < cell.Count; i++)
+                    {
+                        var other = cell[i];
+                        if (other != self)
+                            into.Add(other);
+                    }
+                }
+            }
+        }
+
+        /// <summary>Scratch for the query methods. Single-threaded, never re-entered.</summary>
+        static readonly List<TrafficBody> Candidates = new List<TrafficBody>();
 
         /// <summary>
         /// The nearest thing in the way of <paramref name="self"/>, and whether it is something to
@@ -242,10 +377,12 @@ namespace LivingCity.Entities
             var blocked = false;
             var blockedByCrossing = false;
 
-            for (var i = 0; i < Bodies.Count; i++)
+            CollectCandidates(self, box.Position, lookahead + self.HalfLength + maxHalfLength,
+                              Candidates);
+            for (var i = 0; i < Candidates.Count; i++)
             {
-                var other = Bodies[i];
-                if (other == self || other == null || !other.Tf)
+                var other = Candidates[i];
+                if (other == null || !other.Tf)
                     continue;
 
                 var otherBox = other.Box;
@@ -486,10 +623,12 @@ namespace LivingCity.Entities
 
             var exitBox = new TrafficBox(exitPos, exitDir, self.HalfLength, self.HalfWidth);
 
-            for (var i = 0; i < Bodies.Count; i++)
+            CollectCandidates(self, exitPos, requiredRoom + self.HalfLength + maxHalfLength,
+                              Candidates);
+            for (var i = 0; i < Candidates.Count; i++)
             {
-                var other = Bodies[i];
-                if (other == self || other == null || !other.Tf)
+                var other = Candidates[i];
+                if (other == null || !other.Tf)
                     continue;
 
                 if (other.SpeedMs >= ExitBlockerSpeed)
@@ -528,10 +667,12 @@ namespace LivingCity.Entities
 
             var box = new TrafficBox(position, forward, self.HalfLength, self.HalfWidth);
 
-            for (var i = 0; i < Bodies.Count; i++)
+            CollectCandidates(self, position, self.HalfLength + maxHalfLength + margin,
+                              Candidates);
+            for (var i = 0; i < Candidates.Count; i++)
             {
-                var other = Bodies[i];
-                if (other == self || other == null || !other.Tf)
+                var other = Candidates[i];
+                if (other == null || !other.Tf)
                     continue;
 
                 if (TrafficGeometry.Overlaps(box, other.Box, margin))
@@ -546,9 +687,10 @@ namespace LivingCity.Entities
         {
             var box = new TrafficBox(position, forward, halfLength, halfWidth);
 
-            for (var i = 0; i < Bodies.Count; i++)
+            CollectCandidates(null, position, halfLength + maxHalfLength + margin, Candidates);
+            for (var i = 0; i < Candidates.Count; i++)
             {
-                var other = Bodies[i];
+                var other = Candidates[i];
                 if (other == null || !other.Tf)
                     continue;
 

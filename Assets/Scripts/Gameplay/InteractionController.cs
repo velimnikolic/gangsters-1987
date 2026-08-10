@@ -86,6 +86,25 @@ namespace LivingCity.Gameplay
 
         void Update()
         {
+            // The personnel ledger is modal. Its full-page raycast target already blocks
+            // the pointer through the overUi path below; this line covers the KEYS - H
+            // must not raise the player's hands while he is reading the books - and spares
+            // the 10Hz hover cast under a closed world.
+            if (PersonnelAlmanac.IsOpen)
+            {
+                SetHovered(null);
+                return;
+            }
+
+            // The strategic map has no raycaster - InputBlocked IS its pointer shield,
+            // and it holds through the closing frame so the click or Esc that shut the
+            // map is never also a move order or a menu.
+            if (StrategicMapHud.InputBlocked)
+            {
+                SetHovered(null);
+                return;
+            }
+
             // H = hands up. Harmless when nobody is pointing a gun at him; decisive when
             // somebody is - the engage window reads IsSurrendering.
             if (input.SurrenderPressed)

@@ -1330,6 +1330,13 @@ namespace LivingCity.Tests
             RoadCheck(failures, "minor street", RoadTileKind.MainCross, 12f, 1.5f, true);
             RoadCheck(failures, "corner", RoadTileKind.MainCross, 8f, 5f, false);
 
+            // MainMainCross: two boulevards crossing - four lanes on BOTH axes, so the
+            // avenue band applies each way and only the far corner quadrants are pavement.
+            RoadCheck(failures, "avenue N-S", RoadTileKind.MainMainCross, 5.5f, 12f, true);
+            RoadCheck(failures, "avenue E-W", RoadTileKind.MainMainCross, 12f, 5.5f, true);
+            RoadCheck(failures, "junction centre", RoadTileKind.MainMainCross, 0f, 0f, true);
+            RoadCheck(failures, "corner", RoadTileKind.MainMainCross, 7.5f, 7.5f, false);
+
             // Dead end: the turning circle is road, the sidewalk ring behind it is not.
             RoadCheck(failures, "turning circle", RoadTileKind.End, 0f, 0f, true);
             RoadCheck(failures, "arm", RoadTileKind.End, 1.5f, 9f, true);

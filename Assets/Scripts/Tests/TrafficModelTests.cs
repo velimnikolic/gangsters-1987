@@ -61,8 +61,60 @@ namespace LivingCity.Tests
             SchoolAfternoonOrderIsTheMorningReversed(failures);
             OpposingLeftTurnsClearTheWidestVehicle(failures);
             TurnExitsLineUpWithTheLaneTheyJoin(failures);
+            BucketRingCoversItsRange(failures);
 
             return failures;
+        }
+
+        /// <summary>
+        /// The covering guarantee behind TrafficRegistry's spatial buckets: any body whose centre
+        /// lies within `range` of the query point must fall inside the cell rectangle CellRange
+        /// hands back, or the probe simply never sees it and two cars occupy the same tarmac.
+        /// This is the only part of the bucketing that can be wrong quietly - the per-body
+        /// geometry is untouched from the flat-list version - and the dangerous inputs are the
+        /// ones a uniform sweep misses: centres flush against a cell wall, ranges just over a
+        /// cell multiple, and negative coordinates, where integer division and FloorToInt part
+        /// company. Cannot exercise the registry itself headlessly (TrafficBody needs a live
+        /// Transform), so the candidate-set maths is tested and the loop bodies stay identical.
+        /// </summary>
+        static void BucketRingCoversItsRange(List<string> failures)
+        {
+            var rng = new System.Random(1189);
+            var cell = CityGrid.CellSize;
+
+            for (var trial = 0; trial < 2000; trial++)
+            {
+                // Centres straddle the origin so negative cells are exercised, and every fourth
+                // trial pins the centre to a cell wall - the worst case the Ceil covers.
+                var centre = new Vector3(
+                    (float)(rng.NextDouble() * 400.0 - 200.0), 0f,
+                    (float)(rng.NextDouble() * 400.0 - 200.0));
+                if (trial % 4 == 0)
+                    centre.x = Mathf.Floor(centre.x / cell) * cell;
+
+                // Up to MaxLookahead plus the largest half-length pairing the fleet can produce.
+                var range = (float)(rng.NextDouble() * (Entities.CarFollowing.MaxLookahead + 10.0));
+
+                Entities.TrafficRegistry.CellRange(centre, range,
+                    out var minX, out var maxX, out var minZ, out var maxZ);
+
+                // Probe the rim of the disc as well as its interior - the rim is where coverage
+                // fails first, and axis-aligned rim points are the tightest of all.
+                var angle = rng.NextDouble() * Mathf.PI * 2.0;
+                var reach = trial % 2 == 0 ? range : (float)(range * rng.NextDouble());
+                var point = centre + new Vector3(
+                    Mathf.Cos((float)angle) * reach, 0f, Mathf.Sin((float)angle) * reach);
+
+                var px = Mathf.FloorToInt(point.x / cell);
+                var pz = Mathf.FloorToInt(point.z / cell);
+                if (px < minX || px > maxX || pz < minZ || pz > maxZ)
+                {
+                    failures.Add($"bucket ring fails to cover its range: centre {centre}, range "
+                               + $"{range:0.###} -> cells [{minX}..{maxX}]x[{minZ}..{maxZ}], but "
+                               + $"a point at reach {reach:0.###} lands in ({px},{pz})");
+                    return;
+                }
+            }
         }
 
         // ------------------------------------------------ junction turn geometry
@@ -544,16 +596,37 @@ namespace LivingCity.Tests
 
             // 44 characters is the 280px popup at the line's 13px font with nothing to spare;
             // NoWrap means an overflow draws past the background rather than wrapping.
+            // Owners draw from the crowd's identity tables now (one civilian per door), so
+            // the widest line walks those - both gender pools - and every gang name the
+            // front overload can append in place of the protection word.
             var widestName = "";
-            foreach (var first in Gameplay.PropertyDirector.BossFirstNames)
-                foreach (var last in Gameplay.PropertyDirector.BossLastNames)
-                    if (first.Length + last.Length + 1 > widestName.Length)
-                        widestName = first + " " + last;
+            foreach (var table in new[]
+                     {
+                         Entities.PedestrianIdentity.AllMaleNames,
+                         Entities.PedestrianIdentity.AllFemaleNames,
+                     })
+                foreach (var first in table)
+                    foreach (var last in Entities.PedestrianIdentity.AllSurnames)
+                        if (first.Length + last.Length + 1 > widestName.Length)
+                            widestName = first + " " + last;
 
             var widest = UI.BusinessIntention.Line(widestName, 2400, false);
             if (widest.Length > 44)
                 failures.Add($"BusinessIntention: widest line is {widest.Length} chars " +
                              $"('{widest}') - it will draw past the popup.");
+
+            if (UI.BusinessIntention.Line(widestName, 2400, false, "Harbor Company")
+                    is var withGang && !withGang.EndsWith("Harbor Company"))
+                failures.Add("BusinessIntention: the gang overload does not replace the " +
+                             "protection word.");
+
+            foreach (var gang in Gangs.GangCatalog.Names)
+            {
+                var line = UI.BusinessIntention.Line(widestName, 2400, false, gang);
+                if (line.Length > 44)
+                    failures.Add($"BusinessIntention: gang front line is {line.Length} " +
+                                 $"chars ('{line}') - it will draw past the popup.");
+            }
         }
 
         /// <summary>
