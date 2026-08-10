@@ -49,8 +49,13 @@ namespace LivingCity.UI
 
         const float ListLeft = 40f;
         const float ListWidth = 1120f;
-        const float ListTop = -128f;
-        const float ListHeight = 868f;
+
+        /// <summary>Pages start below the masthead, the tab strip and their rules.</summary>
+        const float PageTop = -128f;
+
+        /// <summary>The personnel list sits under its own filter bar inside the page.</summary>
+        const float ListTop = -176f;
+        const float ListHeight = 812f;
 
         const float DetailLeft = 1180f;
         const float DetailWidth = PageWidth - DetailLeft - 36f;
@@ -95,10 +100,28 @@ namespace LivingCity.UI
             Demote,
         }
 
+        /// <summary>The book's sections, in tab-strip order. Newspaper is the entry
+        /// page - the player opens the book on what the world thinks of him, then turns
+        /// to the working pages.</summary>
+        public enum LedgerPage
+        {
+            Newspaper,
+            Personnel,
+            Finances,
+            Armory,
+            Diplomacy,
+            Orders,
+        }
+
         Canvas canvas;
         GameObject page;
         Image cursor;
         TMP_Text titleText;
+
+        LedgerPage currentPage = LedgerPage.Newspaper;
+        readonly GameObject[] pageRoots = new GameObject[6];
+        readonly Image[] tabFaces = new Image[6];
+        readonly TMP_Text[] tabLabels = new TMP_Text[6];
         RectTransform listViewport;
         RectTransform listContent;
         RectTransform detailContent;
@@ -200,6 +223,13 @@ namespace LivingCity.UI
                 return;
             }
 
+            // [ and ] turn the book's pages; the tabs are the pointer's way.
+            if (keyboard.leftBracketKey.wasPressedThisFrame)
+                SetPage((LedgerPage)(((int)currentPage + pageRoots.Length - 1)
+                    % pageRoots.Length));
+            if (keyboard.rightBracketKey.wasPressedThisFrame)
+                SetPage((LedgerPage)(((int)currentPage + 1) % pageRoots.Length));
+
             // F2: the sixty-man scale roster - the ledger is specified to stay usable
             // at sixty, and this is how a reviewer sees that without editor wiring.
             if (keyboard.f2Key.wasPressedThisFrame)
@@ -245,8 +275,11 @@ namespace LivingCity.UI
             {
                 paintedVersion = director.Version;
                 dirty = false;
-                RebuildList();
-                RebuildDetail();
+                if (currentPage == LedgerPage.Personnel)
+                {
+                    RebuildList();
+                    RebuildDetail();
+                }
                 UpdateBarLabels();
             }
         }
@@ -258,7 +291,9 @@ namespace LivingCity.UI
 
             page.SetActive(true);
             IsOpen = true;
-            dirty = true;
+            // The book always opens on the newspaper - the week's narrative frame -
+            // and the working pages keep their state for when the player turns to them.
+            SetPage(LedgerPage.Newspaper);
         }
 
         void Close()
@@ -276,6 +311,9 @@ namespace LivingCity.UI
 
         void UpdateScroll()
         {
+            if (currentPage != LedgerPage.Personnel)
+                return;
+
             var mouse = Mouse.current;
             if (mouse == null || !listContent)
                 return;
@@ -357,12 +395,17 @@ namespace LivingCity.UI
             Bevel(paper, 3f, raised: false);
 
             BuildTitleBar(paper);
-            BuildFilterBar(paper);
             BuildRule(paper, -66f);
+            BuildTabs(paper);
             BuildRule(paper, -118f);
 
+            // ---- the Personnel page, a full-stretch sheet like every other page ----
+            var personnel = NewPageRoot(paper, LedgerPage.Personnel);
+
+            BuildFilterBar(personnel);
+
             // List viewport: RectMask2D clips without needing an Image of its own.
-            listViewport = NewRect("Roster", paper);
+            listViewport = NewRect("Roster", personnel);
             PlaceTopLeft(listViewport, ListLeft, ListTop, ListWidth, ListHeight);
             listViewport.gameObject.AddComponent<RectMask2D>();
 
@@ -373,7 +416,7 @@ namespace LivingCity.UI
             listContent.anchoredPosition = Vector2.zero;
             listContent.sizeDelta = new Vector2(0f, ListHeight);
 
-            var detailBack = NewRect("Detail", paper);
+            var detailBack = NewRect("Detail", personnel);
             PlaceTopLeft(detailBack, DetailLeft, ListTop, DetailWidth, ListHeight);
             var detailImage = detailBack.gameObject.AddComponent<Image>();
             detailImage.sprite = null;
@@ -386,7 +429,16 @@ namespace LivingCity.UI
             detailContent.anchorMax = Vector2.one;
             detailContent.offsetMin = detailContent.offsetMax = Vector2.zero;
 
-            BuildSortMenu(paper);
+            BuildSortMenu(personnel);
+
+            // ---- the other sheets ----
+            BuildNewspaperPage(paper);
+            BuildComingPage(paper, LedgerPage.Finances, "FINANCES");
+            BuildComingPage(paper, LedgerPage.Armory, "ARMORY");
+            BuildComingPage(paper, LedgerPage.Diplomacy, "DIPLOMACY");
+            BuildComingPage(paper, LedgerPage.Orders, "ORDERS");
+
+            SetPage(LedgerPage.Newspaper);
 
             // LAST children, so hierarchy order draws them over everything on the tube:
             // the raster's dark lines, drawn once - the dynamic rebuilds only ever touch
@@ -396,6 +448,142 @@ namespace LivingCity.UI
             // Built active for TMP's sake, hidden until P.
             page.SetActive(false);
         }
+
+        RectTransform NewPageRoot(RectTransform paper, LedgerPage kind)
+        {
+            var root = NewRect("Page " + kind, paper);
+            root.anchorMin = Vector2.zero;
+            root.anchorMax = Vector2.one;
+            root.offsetMin = root.offsetMax = Vector2.zero;
+            pageRoots[(int)kind] = root.gameObject;
+            return root;
+        }
+
+        /// <summary>The tab strip - six soft-keys under the masthead. The active tab
+        /// runs inverse video, the same highlight the roster rows use, so "where am I"
+        /// reads by the one convention the whole terminal has.</summary>
+        void BuildTabs(RectTransform paper)
+        {
+            var names = new[]
+                { "NEWSPAPER", "PERSONNEL", "FINANCES", "ARMORY", "DIPLOMACY", "ORDERS" };
+            const float width = 176f;
+            const float gap = 8f;
+
+            for (var i = 0; i < names.Length; i++)
+            {
+                var kind = (LedgerPage)i;
+                var rect = NewRect("Tab " + names[i], paper);
+                PlaceTopLeft(rect, ListLeft + i * (width + gap), -74f, width, 36f);
+
+                var face = rect.gameObject.AddComponent<Image>();
+                face.sprite = null;
+                face.color = LedgerPalette.ButtonGlow;
+                face.raycastTarget = true;
+
+                var button = rect.gameObject.AddComponent<Button>();
+                button.targetGraphic = face;
+                var colours = button.colors;
+                colours.normalColor = LedgerPalette.ButtonNormal;
+                colours.highlightedColor = LedgerPalette.ButtonHover;
+                colours.pressedColor = LedgerPalette.ButtonPressed;
+                button.colors = colours;
+                button.onClick.AddListener(() => SetPage(kind));
+
+                Frame(rect, 1f, LedgerPalette.PhosphorDim);
+
+                var label = NewText("Label", rect, 13f, LedgerPalette.Phosphor,
+                    TextAlignmentOptions.Center);
+                label.rectTransform.anchorMin = Vector2.zero;
+                label.rectTransform.anchorMax = Vector2.one;
+                label.rectTransform.offsetMin = label.rectTransform.offsetMax = Vector2.zero;
+                label.characterSpacing = 2f;
+                label.fontStyle = FontStyles.Bold;
+                label.text = names[i];
+
+                tabFaces[i] = face;
+                tabLabels[i] = label;
+            }
+        }
+
+        void RefreshTabs()
+        {
+            for (var i = 0; i < tabFaces.Length; i++)
+            {
+                if (!tabFaces[i])
+                    continue;
+                var active = i == (int)currentPage;
+                tabFaces[i].color = active ? LedgerPalette.Phosphor : LedgerPalette.ButtonGlow;
+                tabLabels[i].color = active ? LedgerPalette.Screen : LedgerPalette.Phosphor;
+            }
+        }
+
+        /// <summary>
+        /// Turns the book to a page. Page STATE persists - the personnel selection,
+        /// filters and scroll live in fields untouched here - only the transient
+        /// interaction modes (an armed assign, a pending confirm, an open dropdown)
+        /// drop, because a mode you cannot see must never swallow the next click.
+        /// </summary>
+        public void SetPage(LedgerPage pageKind)
+        {
+            currentPage = pageKind;
+            for (var i = 0; i < pageRoots.Length; i++)
+                if (pageRoots[i])
+                    pageRoots[i].SetActive(i == (int)pageKind);
+
+            if (pageKind != LedgerPage.Personnel)
+            {
+                assignMode = false;
+                pendingConfirm = Confirm.None;
+                if (sortMenu)
+                    sortMenu.SetActive(false);
+            }
+
+            RefreshTabs();
+            dirty = true;
+        }
+
+        /// <summary>A sheet that exists but is not written yet - the honest placeholder
+        /// while the ledger's pages land one by one.</summary>
+        void BuildComingPage(RectTransform paper, LedgerPage kind, string name)
+        {
+            var root = NewPageRoot(paper, kind);
+            var hint = NewText("Hint", root, 16f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.Center);
+            hint.rectTransform.anchorMin = Vector2.zero;
+            hint.rectTransform.anchorMax = Vector2.one;
+            hint.rectTransform.offsetMin = hint.rectTransform.offsetMax = Vector2.zero;
+            hint.characterSpacing = 3f;
+            hint.text = "==  " + name + "  ==\n\nPAGE NOT YET IN SERVICE";
+            hint.textWrappingMode = TextWrappingModes.Normal;
+        }
+
+        void BuildNewspaperPage(RectTransform paper)
+        {
+            var root = NewPageRoot(paper, LedgerPage.Newspaper);
+
+            var masthead = NewText("Masthead", root, 44f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.Center);
+            PlaceTopLeft(masthead.rectTransform, ListLeft, PageTop - 8f,
+                PageWidth - ListLeft - 36f, 64f);
+            masthead.fontStyle = FontStyles.Bold;
+            masthead.characterSpacing = 10f;
+            masthead.text = "THE CITY WIRE";
+
+            newspaperDateline = NewText("Dateline", root, 14f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.Center);
+            PlaceTopLeft(newspaperDateline.rectTransform, ListLeft, PageTop - 76f,
+                PageWidth - ListLeft - 36f, 22f);
+            newspaperDateline.characterSpacing = 3f;
+
+            var rule = NewRect("MastheadRule", root);
+            PlaceTopLeft(rule, ListLeft, PageTop - 102f, PageWidth - ListLeft - 36f, 2f);
+            var ruleImage = rule.gameObject.AddComponent<Image>();
+            ruleImage.sprite = null;
+            ruleImage.color = LedgerPalette.Phosphor;
+            ruleImage.raycastTarget = false;
+        }
+
+        TMP_Text newspaperDateline;
 
         void BuildScanlines(RectTransform paper)
         {
@@ -442,12 +630,12 @@ namespace LivingCity.UI
             NewButton(paper, "[ CLOSE ]", PageWidth - 156f, -18f, 120f, 34f, Close);
         }
 
-        void BuildFilterBar(RectTransform paper)
+        void BuildFilterBar(RectTransform parent)
         {
-            sortLabel = NewButton(paper, "", ListLeft, -74f, 360f, 36f, ToggleSortMenu);
-            rankLabel = NewButton(paper, "", ListLeft + 380f, -74f, 230f, 36f, CycleRank);
-            postLabel = NewButton(paper, "", ListLeft + 630f, -74f, 210f, 36f, CyclePost);
-            showLabel = NewButton(paper, "", ListLeft + 860f, -74f, 210f, 36f, CycleShow);
+            sortLabel = NewButton(parent, "", ListLeft, PageTop, 360f, 36f, ToggleSortMenu);
+            rankLabel = NewButton(parent, "", ListLeft + 380f, PageTop, 230f, 36f, CycleRank);
+            postLabel = NewButton(parent, "", ListLeft + 630f, PageTop, 210f, 36f, CyclePost);
+            showLabel = NewButton(parent, "", ListLeft + 860f, PageTop, 210f, 36f, CycleShow);
             UpdateBarLabels();
         }
 
@@ -472,7 +660,7 @@ namespace LivingCity.UI
             sortMenu = new GameObject("SortMenu", typeof(RectTransform));
             sortMenu.transform.SetParent(paper, false);
             var rect = (RectTransform)sortMenu.transform;
-            PlaceTopLeft(rect, ListLeft, -112f, 360f, entries * rowH + 8f);
+            PlaceTopLeft(rect, ListLeft, PageTop - 38f, 360f, entries * rowH + 8f);
 
             var back = sortMenu.AddComponent<Image>();
             back.sprite = null;
@@ -571,15 +759,21 @@ namespace LivingCity.UI
                 _ => "SHOW: ALL",
             };
 
-            if (titleCount && director.Roster != null)
-                titleCount.text = LedgerText.MemberCount(director.Roster.Members.Count);
+            var weekOfYear = outfit ? outfit.Campaign.WeekOfYear : 1;
+            var year = outfit ? outfit.Campaign.Year : Outfit.Campaign.StartYear;
+
+            if (titleCount)
+                titleCount.text = currentPage == LedgerPage.Personnel &&
+                                  director.Roster != null
+                    ? LedgerText.MemberCount(director.Roster.Members.Count)
+                    : "";
 
             if (titleText)
-            {
-                var week = outfit ? outfit.Campaign.WeekOfYear : 1;
-                var year = outfit ? outfit.Campaign.Year : Outfit.Campaign.StartYear;
-                titleText.SetText("PERSONNEL RECORDS  //  WEEK {0}, {1}", week, year);
-            }
+                titleText.SetText("OUTFIT LEDGER  //  WEEK {0}, {1}", weekOfYear, year);
+
+            if (newspaperDateline)
+                newspaperDateline.SetText(
+                    "WEEK {0}, {1}  —  MORNING EDITION  —  10 CENTS", weekOfYear, year);
         }
 
         // ------------------------------------------------------------------ the list
