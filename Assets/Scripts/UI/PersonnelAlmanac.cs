@@ -40,7 +40,7 @@ namespace LivingCity.UI
     /// Mutations are click-paced, so a few hundred objects per rebuild is the affordable
     /// choice ContextMenuUI already made; pooling waits for a profiler to ask for it.
     /// </summary>
-    public sealed class PersonnelAlmanac : MonoBehaviour
+    public sealed class PersonnelAlmanac : MonoBehaviour, IMapTargetingConsumer
     {
         const int SortingOrder = 110;
 
@@ -83,6 +83,13 @@ namespace LivingCity.UI
         /// the close would otherwise act on the very press that closed the book.</summary>
         public static bool ClaimsEsc => IsOpen || Time.frameCount == lastCloseFrame;
 
+        /// <summary>True while the book stands open at the ORDERS page - the one page
+        /// that works AGAINST the map: the ledger shrinks to a side panel, and the
+        /// strategic map underneath stays live for target selection.</summary>
+        public static bool MapInteractive => IsOpen && pageIsOrders;
+
+        static bool pageIsOrders;
+
         static int lastCloseFrame = -1;
 
         // Static state outlives Play when domain reload is off - same fix as OverlayRegistry.
@@ -91,6 +98,7 @@ namespace LivingCity.UI
         {
             IsOpen = false;
             lastCloseFrame = -1;
+            pageIsOrders = false;
         }
 
         enum Confirm
@@ -115,6 +123,9 @@ namespace LivingCity.UI
 
         Canvas canvas;
         GameObject page;
+        Image shadeImage;
+        GameObject casingGo;
+        GameObject paperGo;
         Image cursor;
         TMP_Text titleText;
 
@@ -243,7 +254,12 @@ namespace LivingCity.UI
             if (keyboard.escapeKey.wasPressedThisFrame)
             {
                 // Innermost state first - each Esc peels one layer, closing last.
-                if (pendingConfirm != Confirm.None)
+                if (pendingCommit)
+                {
+                    pendingCommit = false;
+                    dirty = true;
+                }
+                else if (pendingConfirm != Confirm.None)
                 {
                     pendingConfirm = Confirm.None;
                     dirty = true;
@@ -305,6 +321,9 @@ namespace LivingCity.UI
                     case LedgerPage.Diplomacy:
                         RebuildDiplomacy();
                         break;
+                    case LedgerPage.Orders:
+                        RebuildOrders();
+                        break;
                 }
                 UpdateBarLabels();
             }
@@ -330,6 +349,11 @@ namespace LivingCity.UI
             if (page)
                 page.SetActive(false);
             IsOpen = false;
+            pageIsOrders = false;
+            if (StrategicMapHud.Targeting == (IMapTargetingConsumer)this)
+                StrategicMapHud.Targeting = null;
+            if (StrategicMapHud.Instance)
+                StrategicMapHud.Instance.SetTargetHighlights(null, Color.clear);
             lastCloseFrame = Time.frameCount;
             assignMode = false;
             pendingConfirm = Confirm.None;
@@ -354,6 +378,10 @@ namespace LivingCity.UI
                     viewport = armoryInventoryViewport;
                     content = armoryInventoryContent;
                     break;
+                case LedgerPage.Orders:
+                    viewport = ordersViewport;
+                    content = ordersContent;
+                    break;
                 default:
                     return;
             }
@@ -374,15 +402,22 @@ namespace LivingCity.UI
 
             var viewportHeight = viewport.rect.height;
             var maxScroll = Mathf.Max(0f, content.sizeDelta.y - viewportHeight);
-            if (currentPage == LedgerPage.Personnel)
+            switch (currentPage)
             {
-                scrollY = Mathf.Clamp(scrollY - wheel * WheelStep, 0f, maxScroll);
-                content.anchoredPosition = new Vector2(0f, scrollY);
-            }
-            else
-            {
-                armoryScrollY = Mathf.Clamp(armoryScrollY - wheel * WheelStep, 0f, maxScroll);
-                content.anchoredPosition = new Vector2(0f, armoryScrollY);
+                case LedgerPage.Personnel:
+                    scrollY = Mathf.Clamp(scrollY - wheel * WheelStep, 0f, maxScroll);
+                    content.anchoredPosition = new Vector2(0f, scrollY);
+                    break;
+                case LedgerPage.Armory:
+                    armoryScrollY =
+                        Mathf.Clamp(armoryScrollY - wheel * WheelStep, 0f, maxScroll);
+                    content.anchoredPosition = new Vector2(0f, armoryScrollY);
+                    break;
+                default:
+                    ordersScrollY =
+                        Mathf.Clamp(ordersScrollY - wheel * WheelStep, 0f, maxScroll);
+                    content.anchoredPosition = new Vector2(0f, ordersScrollY);
+                    break;
             }
         }
 
@@ -420,14 +455,16 @@ namespace LivingCity.UI
 
             // The modal shield: the ONE non-button raycast target in the project. With it
             // under the pointer, IsPointerOverGameObject is true everywhere on screen.
-            var shade = page.AddComponent<Image>();
-            shade.sprite = null;
-            shade.color = LedgerPalette.Room;
-            shade.raycastTarget = true;
+            // The ORDERS page disables it - there the map below must see the pointer.
+            shadeImage = page.AddComponent<Image>();
+            shadeImage.sprite = null;
+            shadeImage.color = LedgerPalette.Room;
+            shadeImage.raycastTarget = true;
 
             // The monitor's beige plastic case, raised off the desk; the tube sits
             // sunken inside it - two bevels, opposite ways, and it reads as hardware.
             var casing = NewRect("Case", page.transform);
+            casingGo = casing.gameObject;
             casing.anchorMin = casing.anchorMax = new Vector2(0.5f, 0.5f);
             casing.pivot = new Vector2(0.5f, 0.5f);
             casing.sizeDelta = new Vector2(PageWidth + 76f, PageHeight + 76f);
@@ -438,6 +475,7 @@ namespace LivingCity.UI
             Bevel(casing, 3f, raised: true);
 
             var paper = NewRect("Paper", page.transform);
+            paperGo = paper.gameObject;
             paper.anchorMin = paper.anchorMax = new Vector2(0.5f, 0.5f);
             paper.pivot = new Vector2(0.5f, 0.5f);
             paper.sizeDelta = new Vector2(PageWidth, PageHeight);
@@ -489,7 +527,9 @@ namespace LivingCity.UI
             BuildFinancesPage(paper);
             BuildArmoryPage(paper);
             BuildDiplomacyPage(paper);
-            BuildComingPage(paper, LedgerPage.Orders, "ORDERS");
+            // Orders lives OUTSIDE the paper: its page is a side panel over the live
+            // map, and the paper (with its casing, shade and scanlines) steps aside.
+            BuildOrdersPage((RectTransform)page.transform);
 
             SetPage(LedgerPage.Newspaper);
 
@@ -582,6 +622,26 @@ namespace LivingCity.UI
             for (var i = 0; i < pageRoots.Length; i++)
                 if (pageRoots[i])
                     pageRoots[i].SetActive(i == (int)pageKind);
+
+            // ORDERS steps out of the book: the paper, its case and the modal shade
+            // hide, the map opens underneath, and the page becomes a side panel.
+            var onMap = pageKind == LedgerPage.Orders;
+            pageIsOrders = onMap;
+            if (shadeImage)
+                shadeImage.enabled = !onMap;
+            if (casingGo)
+                casingGo.SetActive(!onMap);
+            if (paperGo)
+                paperGo.SetActive(!onMap);
+            if (onMap && StrategicMapHud.Instance && !StrategicMapHud.IsOpen)
+                StrategicMapHud.Instance.Open();
+            if (!onMap)
+            {
+                pendingCommit = false;
+                if (StrategicMapHud.Instance)
+                    StrategicMapHud.Instance.SetTargetHighlights(null, Color.clear);
+            }
+            RefreshTargeting();
 
             if (pageKind != LedgerPage.Personnel)
             {
@@ -1424,6 +1484,804 @@ namespace LivingCity.UI
             image.sprite = null;
             image.color = GangPalette.Of(gangId);
             image.raycastTarget = false;
+        }
+
+        // --------------------------------------------------------------- the orders page
+
+        const float OrdersPanelWidth = 470f;
+        const float OrdersInner = OrdersPanelWidth - 28f;
+
+        RectTransform ordersViewport;
+        RectTransform ordersContent;
+        float ordersScrollY;
+
+        int ordersCrewId = -1;
+        int ordersCategoryIndex;
+        int ordersTypeIndex;
+        readonly List<Outfit.OrderSpec> categorySpecs = new List<Outfit.OrderSpec>();
+        readonly List<int> draftBlocks = new List<int>();
+        int draftBlockId = -1;
+        float draftX;
+        float draftZ;
+        string draftLabel = "";
+        int draftMen = 1;
+        string ordersNote = "";
+        int selectedOrderId = -1;
+        bool pendingCommit;
+        readonly List<Rect> highlightRects = new List<Rect>();
+        readonly List<int> scratchPast = new List<int>();
+
+        void BuildOrdersPage(RectTransform pageRect)
+        {
+            var root = NewPageRoot(pageRect, LedgerPage.Orders);
+
+            var panel = NewRect("Panel", root);
+            panel.anchorMin = new Vector2(1f, 0f);
+            panel.anchorMax = new Vector2(1f, 1f);
+            panel.pivot = new Vector2(1f, 0.5f);
+            panel.anchoredPosition = Vector2.zero;
+            panel.sizeDelta = new Vector2(OrdersPanelWidth, 0f);
+
+            var back = panel.gameObject.AddComponent<Image>();
+            back.sprite = null;
+            back.color = new Color(LedgerPalette.Screen.r, LedgerPalette.Screen.g,
+                LedgerPalette.Screen.b, 0.94f);
+            back.raycastTarget = true; // the panel is UI; the map ignores clicks on it
+            Frame(panel, 1f, LedgerPalette.PhosphorDim);
+
+            var title = NewText("Title", panel, 17f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(title.rectTransform, 14f, -10f, 260f, 30f);
+            title.fontStyle = FontStyles.Bold;
+            title.characterSpacing = 3f;
+            title.text = "ORDERS";
+
+            NewButton(panel, "[ THE BOOK ]", OrdersPanelWidth - 150f, -12f, 136f, 28f,
+                () => SetPage(LedgerPage.Newspaper));
+
+            ordersViewport = NewRect("Viewport", panel);
+            ordersViewport.anchorMin = new Vector2(0f, 0f);
+            ordersViewport.anchorMax = new Vector2(1f, 1f);
+            ordersViewport.offsetMin = new Vector2(2f, 2f);
+            ordersViewport.offsetMax = new Vector2(-2f, -48f);
+            ordersViewport.gameObject.AddComponent<RectMask2D>();
+
+            ordersContent = NewRect("Content", ordersViewport);
+            ordersContent.anchorMin = new Vector2(0f, 1f);
+            ordersContent.anchorMax = new Vector2(1f, 1f);
+            ordersContent.pivot = new Vector2(0f, 1f);
+            ordersContent.anchoredPosition = Vector2.zero;
+            ordersContent.sizeDelta = new Vector2(0f, 400f);
+        }
+
+        Outfit.OrderSpec CurrentDraftSpec()
+        {
+            categorySpecs.Clear();
+            var category = (Outfit.OrderCategory)ordersCategoryIndex;
+            foreach (var spec in Outfit.OrderTable.Specs)
+                if (spec.Category == category)
+                    categorySpecs.Add(spec);
+            if (ordersTypeIndex >= categorySpecs.Count)
+                ordersTypeIndex = 0;
+            return categorySpecs[ordersTypeIndex];
+        }
+
+        void RefreshTargeting()
+        {
+            var mine = StrategicMapHud.Targeting == (IMapTargetingConsumer)this;
+            var wants = IsOpen && currentPage == LedgerPage.Orders && ordersCrewId >= 0;
+            if (wants)
+                StrategicMapHud.Targeting = this;
+            else if (mine)
+                StrategicMapHud.Targeting = null;
+        }
+
+        // ---- IMapTargetingConsumer ----
+
+        public bool WantsArea => CurrentDraftSpec().Mode == Outfit.TargetMode.Area;
+
+        public void OnAreaPreview(Rect worldXZ)
+        {
+            // Blocks light as the box swallows them - preview shares the capture logic
+            // so what lights is exactly what a release would take.
+            CaptureArea(worldXZ, preview: true);
+            PushHighlights();
+        }
+
+        public void OnAreaSelected(Rect worldXZ)
+        {
+            CaptureArea(worldXZ, preview: false);
+            selectedOrderId = -1;
+            dirty = true;
+        }
+
+        public void OnPointClicked(Vector2 worldXZ, int blockId)
+        {
+            var spec = CurrentDraftSpec();
+            if (spec.Mode == Outfit.TargetMode.Area)
+            {
+                // A bare click under an area order takes the one block it landed on.
+                if (blockId >= 0)
+                    CaptureArea(CityBlocks.Get(blockId)?.Union ?? default, preview: false);
+            }
+            else
+                CapturePoint(worldXZ, blockId);
+
+            selectedOrderId = -1;
+            dirty = true;
+        }
+
+        void CaptureArea(Rect worldRect, bool preview)
+        {
+            var spec = CurrentDraftSpec();
+            draftBlocks.Clear();
+            draftLabel = "";
+            draftBlockId = -1;
+            var skipped = 0;
+            string firstReason = null;
+
+            foreach (var block in CityBlocks.Blocks)
+            {
+                if (!block.Union.Overlaps(worldRect))
+                    continue;
+                var reason = EligibleBlockReason(spec.Type, block.Id);
+                if (reason == null)
+                    draftBlocks.Add(block.Id);
+                else
+                {
+                    skipped++;
+                    firstReason ??= reason;
+                }
+            }
+
+            if (!preview)
+                ordersNote = draftBlocks.Count + " block" +
+                    (draftBlocks.Count == 1 ? "" : "s") + " taken" +
+                    (skipped > 0 ? "; " + skipped + " skipped (" + firstReason + ")" : "") +
+                    ".";
+        }
+
+        void CapturePoint(Vector2 world, int blockId)
+        {
+            var spec = CurrentDraftSpec();
+
+            Entities.BusinessMarker best = null;
+            var bestSqr = 45f * 45f;
+            foreach (var business in PropertyRegistry.Businesses)
+            {
+                if (!business)
+                    continue;
+                var position = business.transform.position;
+                var dx = position.x - world.x;
+                var dz = position.z - world.y;
+                var sqr = dx * dx + dz * dz;
+                if (sqr < bestSqr)
+                {
+                    bestSqr = sqr;
+                    best = business;
+                }
+            }
+
+            var needsBusiness = spec.Type == Outfit.OrderType.SmashUp ||
+                spec.Type == Outfit.OrderType.Raid ||
+                spec.Type == Outfit.OrderType.Torch ||
+                spec.Type == Outfit.OrderType.Bomb ||
+                spec.Type == Outfit.OrderType.BuyPremises ||
+                spec.Type == Outfit.OrderType.SetUpBusiness ||
+                spec.Type == Outfit.OrderType.RunBusiness ||
+                spec.Type == Outfit.OrderType.AdjustProtection;
+
+            // Verbose BEFORE assignment, opaque after execution - that split is the
+            // design: the planner explains, the report never does.
+            if (needsBusiness && !best)
+            {
+                ordersNote = LedgerText.OrderLabel(spec.Type) +
+                    " wants a business door - nothing stands there.";
+                return;
+            }
+            if (blockId < 0 && !best)
+            {
+                ordersNote = "Open street - nothing to target.";
+                return;
+            }
+
+            draftBlocks.Clear();
+            if (best)
+            {
+                draftBlockId = best.BlockId;
+                var position = best.transform.position;
+                draftX = position.x;
+                draftZ = position.z;
+                draftLabel = best.BusinessName;
+            }
+            else
+            {
+                draftBlockId = blockId;
+                draftX = world.x;
+                draftZ = world.y;
+                draftLabel = "Block #" + blockId;
+            }
+            ordersNote = "Target: " + draftLabel + ".";
+        }
+
+        string EligibleBlockReason(Outfit.OrderType type, int blockId)
+        {
+            var territory = outfit ? outfit.Territory : null;
+            var owner = territory != null ? territory.OwnerOf(blockId) : -1;
+
+            switch (type)
+            {
+                case Outfit.OrderType.Extort:
+                    if (!BlockHasBusiness(blockId))
+                        return "no businesses";
+                    if (owner > 0)
+                        return "held by " + Gangs.GangRegistry.NameOf(owner);
+                    return null;
+
+                case Outfit.OrderType.CollectProtection:
+                case Outfit.OrderType.Patrol:
+                    return owner == Gangs.GangCatalog.PlayerGangId ? null : "not your turf";
+
+                default:
+                    return null;
+            }
+        }
+
+        static bool BlockHasBusiness(int blockId)
+        {
+            foreach (var business in PropertyRegistry.Businesses)
+                if (business && business.BlockId == blockId)
+                    return true;
+            return false;
+        }
+
+        float DraftDistance()
+        {
+            if (!outfit || !outfit.TryGetHeadquarters(out var hq, out _))
+                return 0f;
+
+            Vector2 target;
+            if (draftBlocks.Count > 0)
+            {
+                var sum = Vector2.zero;
+                var counted = 0;
+                foreach (var id in draftBlocks)
+                {
+                    var block = CityBlocks.Get(id);
+                    if (block == null)
+                        continue;
+                    sum += block.Center;
+                    counted++;
+                }
+                if (counted == 0)
+                    return 0f;
+                target = sum / counted;
+            }
+            else if (draftLabel.Length > 0)
+                target = new Vector2(draftX, draftZ);
+            else
+                return 0f;
+
+            return Vector2.Distance(new Vector2(hq.x, hq.z), target);
+        }
+
+        void PushHighlights()
+        {
+            if (!StrategicMapHud.Instance)
+                return;
+
+            highlightRects.Clear();
+            var color = LedgerPalette.Amber;
+            color.a = 0.3f;
+
+            var plan = outfit ? outfit.Plan : null;
+            Outfit.PlannedOrder selected = null;
+            if (plan != null && selectedOrderId >= 0)
+                foreach (var order in plan.Confirmed)
+                    if (order.Id == selectedOrderId)
+                        selected = order;
+
+            if (selected != null)
+            {
+                // A confirmed order's targets read in phosphor - the amber wash is
+                // reserved for the still-unconfirmed draft. The two states must never
+                // look alike.
+                color = LedgerPalette.Phosphor;
+                color.a = 0.28f;
+                foreach (var id in selected.BlockTargets)
+                    AddBlockRect(id);
+                if (selected.BlockTargets.Count == 0)
+                    highlightRects.Add(new Rect(
+                        selected.TargetX - 14f, selected.TargetZ - 14f, 28f, 28f));
+            }
+            else
+            {
+                foreach (var id in draftBlocks)
+                    AddBlockRect(id);
+                if (draftBlocks.Count == 0 && draftLabel.Length > 0)
+                    highlightRects.Add(new Rect(draftX - 14f, draftZ - 14f, 28f, 28f));
+            }
+
+            StrategicMapHud.Instance.SetTargetHighlights(highlightRects, color);
+        }
+
+        void AddBlockRect(int blockId)
+        {
+            var block = CityBlocks.Get(blockId);
+            if (block != null)
+                highlightRects.Add(block.Union);
+        }
+
+        void RebuildOrders()
+        {
+            foreach (Transform old in ordersContent)
+                Destroy(old.gameObject);
+
+            var roster = director.Roster;
+            if (roster == null || !outfit)
+                return;
+
+            var y = -8f;
+
+            var week = NewText("Week", ordersContent, 13f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(week.rectTransform, 14f, y, OrdersInner, 20f);
+            week.text = outfit.TryGetHeadquarters(out _, out var hqBlock)
+                ? "WEEK " + outfit.Campaign.Week + "  ·  HQ at block #" + hqBlock
+                : "WEEK " + outfit.Campaign.Week +
+                  "  ·  the families are still settling in";
+            y -= 26f;
+
+            if (ordersNote.Length > 0)
+            {
+                var note = NewText("Note", ordersContent, 12.5f, LedgerPalette.Amber,
+                    TextAlignmentOptions.TopLeft);
+                PlaceTopLeft(note.rectTransform, 14f, y, OrdersInner, 34f);
+                note.textWrappingMode = TextWrappingModes.Normal;
+                note.text = ordersNote;
+                y -= 38f;
+            }
+
+            y = OrdersCrewList(roster, y);
+            if (ordersCrewId >= 0)
+                y = OrdersJobCard(roster, y);
+            y = OrdersThisWeek(roster, y);
+            y = OrdersLastWeek(y);
+            y = OrdersCommit(y);
+
+            ordersContent.sizeDelta = new Vector2(0f, Mathf.Max(400f, -y + 20f));
+            var maxScroll = Mathf.Max(0f,
+                ordersContent.sizeDelta.y - ordersViewport.rect.height);
+            ordersScrollY = Mathf.Clamp(ordersScrollY, 0f, maxScroll);
+            ordersContent.anchoredPosition = new Vector2(0f, ordersScrollY);
+
+            PushHighlights();
+        }
+
+        float OrdersCrewList(Roster roster, float y)
+        {
+            y = OrdersHeader(":: LIEUTENANTS", y);
+
+            if (roster.Crews.Count == 0)
+            {
+                var none = NewText("None", ordersContent, 13f, LedgerPalette.PhosphorDim,
+                    TextAlignmentOptions.MidlineLeft);
+                PlaceTopLeft(none.rectTransform, 14f, y, OrdersInner, 20f);
+                none.text = "Nobody runs a crew. Promote a man on the PERSONNEL page.";
+                return y - 28f;
+            }
+
+            var plan = outfit.Plan;
+            foreach (var crew in roster.Crews)
+            {
+                var lieutenant = roster.Find(crew.LieutenantId);
+                var men = Outfit.CrewKit.MenOf(crew);
+                var committed = plan.CommittedMen(crew.Id);
+                var hasVehicle = Outfit.CrewKit.HasVehicle(roster, crew);
+                var chosen = crew.Id == ordersCrewId;
+                var crewId = crew.Id;
+
+                var label = NewButton(ordersContent,
+                    (chosen ? "= " : "") +
+                    (lieutenant != null ? lieutenant.Surname.ToUpperInvariant() : "?") +
+                    " — " + men + " MEN" + (hasVehicle ? " — CAR" : " — ON FOOT") +
+                    (chosen ? " =" : ""),
+                    14f, y, OrdersInner, 28f, () =>
+                    {
+                        ordersCrewId = crewId;
+                        selectedOrderId = -1;
+                        draftBlocks.Clear();
+                        draftLabel = "";
+                        ordersNote = "";
+                        RefreshTargeting();
+                        dirty = true;
+                    });
+                label.alignment = TextAlignmentOptions.MidlineLeft;
+                label.margin = new Vector4(10f, 0f, 0f, 0f);
+                y -= 30f;
+
+                // The fill indicator: the week's labour, spent left to right.
+                var barBack = NewRect("BarBack", ordersContent);
+                PlaceTopLeft(barBack, 14f, y, OrdersInner, 6f);
+                var backImage = barBack.gameObject.AddComponent<Image>();
+                backImage.sprite = null;
+                backImage.color = LedgerPalette.PhosphorFaint;
+                backImage.raycastTarget = false;
+
+                var fillFraction = men > 0 ? Mathf.Min(1f, committed / (float)men) : 0f;
+                var fill = NewRect("Fill", barBack);
+                fill.anchorMin = new Vector2(0f, 0f);
+                fill.anchorMax = new Vector2(0f, 1f);
+                fill.pivot = new Vector2(0f, 0.5f);
+                fill.anchoredPosition = Vector2.zero;
+                fill.sizeDelta = new Vector2(OrdersInner * fillFraction, 0f);
+                var fillImage = fill.gameObject.AddComponent<Image>();
+                fillImage.sprite = null;
+                fillImage.color = committed > men ? LedgerPalette.Amber
+                    : LedgerPalette.Phosphor;
+                fillImage.raycastTarget = false;
+
+                var committedText = NewText("Committed", ordersContent, 11.5f,
+                    committed > men ? LedgerPalette.Amber : LedgerPalette.PhosphorDim,
+                    TextAlignmentOptions.MidlineLeft);
+                PlaceTopLeft(committedText.rectTransform, 14f, y - 8f, OrdersInner, 16f);
+                committedText.text = LedgerText.CommittedLine(committed, men);
+                y -= 30f;
+            }
+
+            return y - 6f;
+        }
+
+        float OrdersJobCard(Roster roster, float y)
+        {
+            var crew = roster.FindCrew(ordersCrewId);
+            if (crew == null)
+            {
+                ordersCrewId = -1;
+                return y;
+            }
+
+            y = OrdersHeader(":: THE JOB", y);
+
+            var spec = CurrentDraftSpec();
+
+            // Category and type cyclers - the whole order table, four buttons.
+            NewButton(ordersContent, "<", 14f, y, 28f, 24f, () =>
+            {
+                ordersCategoryIndex = (ordersCategoryIndex + 4) % 5;
+                ordersTypeIndex = 0;
+                draftBlocks.Clear();
+                draftLabel = "";
+                dirty = true;
+            });
+            var categoryText = NewText("Category", ordersContent, 12.5f,
+                LedgerPalette.PhosphorDim, TextAlignmentOptions.Center);
+            PlaceTopLeft(categoryText.rectTransform, 46f, y, OrdersInner - 92f, 24f);
+            categoryText.text =
+                LedgerText.CategoryLabel((Outfit.OrderCategory)ordersCategoryIndex)
+                    .ToUpperInvariant();
+            NewButton(ordersContent, ">", 14f + OrdersInner - 28f, y, 28f, 24f, () =>
+            {
+                ordersCategoryIndex = (ordersCategoryIndex + 1) % 5;
+                ordersTypeIndex = 0;
+                draftBlocks.Clear();
+                draftLabel = "";
+                dirty = true;
+            });
+            y -= 28f;
+
+            NewButton(ordersContent, "<", 14f, y, 28f, 26f, () =>
+            {
+                ordersTypeIndex = (ordersTypeIndex + categorySpecs.Count - 1)
+                    % categorySpecs.Count;
+                draftBlocks.Clear();
+                draftLabel = "";
+                dirty = true;
+            });
+            var typeText = NewText("Type", ordersContent, 15f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.Center);
+            PlaceTopLeft(typeText.rectTransform, 46f, y, OrdersInner - 92f, 26f);
+            typeText.fontStyle = FontStyles.Bold;
+            typeText.text = LedgerText.OrderLabel(spec.Type).ToUpperInvariant();
+            NewButton(ordersContent, ">", 14f + OrdersInner - 28f, y, 28f, 26f, () =>
+            {
+                ordersTypeIndex = (ordersTypeIndex + 1) % categorySpecs.Count;
+                draftBlocks.Clear();
+                draftLabel = "";
+                dirty = true;
+            });
+            y -= 30f;
+
+            var requirement = NewText("Req", ordersContent, 12f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(requirement.rectTransform, 14f, y, OrdersInner, 18f);
+            requirement.text = LedgerText.RequirementLine(
+                spec.PrimaryAttribute, spec.PrimaryFloorHalfSteps);
+            y -= 20f;
+
+            if (spec.PrimaryFloorHalfSteps > 0)
+            {
+                var best = Outfit.CrewKit.BestAt(roster, crew, spec.PrimaryAttribute);
+                if (best < spec.PrimaryFloorHalfSteps)
+                {
+                    var warn = NewText("Warn", ordersContent, 12f, LedgerPalette.Amber,
+                        TextAlignmentOptions.MidlineLeft);
+                    PlaceTopLeft(warn.rectTransform, 14f, y, OrdersInner, 18f);
+                    warn.text = "Best man has " + LedgerText.Stars(best) +
+                                " - they can try anyway.";
+                    y -= 20f;
+                }
+            }
+
+            var hint = NewText("Hint", ordersContent, 12f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.TopLeft);
+            PlaceTopLeft(hint.rectTransform, 14f, y, OrdersInner, 32f);
+            hint.textWrappingMode = TextWrappingModes.Normal;
+            hint.text = LedgerText.TargetModeHint(spec.Mode);
+            y -= 36f;
+
+            var targetCount = spec.Mode == Outfit.TargetMode.Area
+                ? draftBlocks.Count
+                : (draftLabel.Length > 0 ? 1 : 0);
+
+            var targets = NewText("Targets", ordersContent, 13f,
+                targetCount > 0 ? LedgerPalette.Amber : LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(targets.rectTransform, 14f, y, OrdersInner - 100f, 20f);
+            targets.fontStyle = targetCount > 0 ? FontStyles.Bold : FontStyles.Normal;
+            targets.text = targetCount == 0
+                ? "TARGETS: none yet - UNCONFIRMED"
+                : "TARGETS: " + (spec.Mode == Outfit.TargetMode.Area
+                    ? draftBlocks.Count + " blocks"
+                    : draftLabel) + " - UNCONFIRMED";
+            if (targetCount > 0)
+                NewButton(ordersContent, "[ CLEAR ]", 14f + OrdersInner - 92f, y + 1f,
+                    92f, 22f, () =>
+                    {
+                        draftBlocks.Clear();
+                        draftLabel = "";
+                        ordersNote = "";
+                        dirty = true;
+                    });
+            y -= 24f;
+
+            if (targetCount > 0)
+            {
+                var hasVehicle = Outfit.CrewKit.HasVehicle(roster, crew);
+                var distance = DraftDistance();
+                var travel = Outfit.OrderMath.TravelFraction(distance, hasVehicle);
+                var needed = Outfit.OrderMath.MenNeeded(spec, targetCount, travel);
+
+                var travelText = NewText("Travel", ordersContent, 12f,
+                    travel > 0.5f ? LedgerPalette.Amber : LedgerPalette.PhosphorDim,
+                    TextAlignmentOptions.MidlineLeft);
+                PlaceTopLeft(travelText.rectTransform, 14f, y, OrdersInner, 18f);
+                travelText.text = "Travel: " + Mathf.RoundToInt(distance) + "m from HQ " +
+                    (hasVehicle ? "by car" : "ON FOOT") + " - eats " +
+                    Mathf.RoundToInt(travel * 100f) + "% of each man's week.";
+                y -= 20f;
+
+                var neededText = NewText("Needed", ordersContent, 12f,
+                    LedgerPalette.PhosphorDim, TextAlignmentOptions.MidlineLeft);
+                PlaceTopLeft(neededText.rectTransform, 14f, y, OrdersInner, 18f);
+                neededText.text = "Needs about " + needed + " man-week" +
+                    (needed == 1 ? "" : "s") + " to finish.";
+                y -= 24f;
+
+                NewButton(ordersContent, "-", 14f, y, 28f, 26f, () =>
+                {
+                    if (draftMen > 1)
+                    {
+                        draftMen--;
+                        dirty = true;
+                    }
+                });
+                var menText = NewText("Men", ordersContent, 14f, LedgerPalette.Phosphor,
+                    TextAlignmentOptions.Center);
+                PlaceTopLeft(menText.rectTransform, 46f, y, 120f, 26f);
+                menText.fontStyle = FontStyles.Bold;
+                menText.text = "MEN: " + draftMen;
+                NewButton(ordersContent, "+", 170f, y, 28f, 26f, () =>
+                {
+                    draftMen++;
+                    dirty = true;
+                });
+
+                if (Outfit.OrderMath.Undermanned(spec, targetCount, travel, draftMen))
+                {
+                    var short_ = NewText("Short", ordersContent, 12f, LedgerPalette.Amber,
+                        TextAlignmentOptions.MidlineLeft);
+                    PlaceTopLeft(short_.rectTransform, 210f, y, OrdersInner - 200f, 26f);
+                    short_.text = "Won't finish this week.";
+                }
+                y -= 32f;
+
+                var crewId = crew.Id;
+                var confirmSpec = spec;
+                NewButton(ordersContent, "[ CONFIRM ORDER ]", 14f, y, OrdersInner, 32f,
+                    () =>
+                    {
+                        var order = new Outfit.PlannedOrder
+                        {
+                            CrewId = crewId,
+                            Type = confirmSpec.Type,
+                            Men = draftMen,
+                            TargetBlockId = draftBlockId,
+                            TargetX = draftX,
+                            TargetZ = draftZ,
+                            TargetLabel = draftLabel,
+                        };
+                        order.BlockTargets.AddRange(draftBlocks);
+
+                        var result = outfit.ConfirmOrder(order);
+                        if (result.Ok)
+                        {
+                            draftBlocks.Clear();
+                            draftLabel = "";
+                            draftMen = 1;
+                            ordersNote = "Order confirmed - it is in the queue now.";
+                        }
+                        else
+                            ordersNote = result.Reason;
+                        dirty = true;
+                    });
+                y -= 40f;
+            }
+
+            return y - 6f;
+        }
+
+        float OrdersThisWeek(Roster roster, float y)
+        {
+            y = OrdersHeader(":: THIS WEEK", y);
+            var plan = outfit.Plan;
+
+            if (plan.Confirmed.Count == 0)
+            {
+                var none = NewText("None", ordersContent, 12.5f, LedgerPalette.PhosphorDim,
+                    TextAlignmentOptions.MidlineLeft);
+                PlaceTopLeft(none.rectTransform, 14f, y, OrdersInner, 18f);
+                none.text = "No orders in the queue.";
+                return y - 26f;
+            }
+
+            // The line each crew crosses, computed once for the whole list.
+            var pastAll = new HashSet<int>();
+            foreach (var crew in roster.Crews)
+            {
+                Outfit.OrderMath.PastTheLine(plan, crew.Id,
+                    Outfit.CrewKit.MenOf(crew), scratchPast);
+                foreach (var id in scratchPast)
+                    pastAll.Add(id);
+            }
+
+            foreach (var order in plan.Confirmed)
+            {
+                var crew = roster.FindCrew(order.CrewId);
+                var lieutenant = crew != null ? roster.Find(crew.LieutenantId) : null;
+                var past = pastAll.Contains(order.Id);
+                var chosen = order.Id == selectedOrderId;
+                var orderId = order.Id;
+
+                var row = NewButton(ordersContent,
+                    (chosen ? "= " : "") +
+                    (lieutenant != null ? lieutenant.Surname.ToUpperInvariant() : "?") +
+                    " · " + LedgerText.OrderLabel(order.Type) + " · " +
+                    (order.BlockTargets.Count > 0
+                        ? order.BlockTargets.Count + " blk"
+                        : order.TargetLabel) +
+                    " · " + order.Men + " men" +
+                    (past ? "  — PAST THE LINE" : ""),
+                    14f, y, OrdersInner - 100f, 26f, () =>
+                    {
+                        selectedOrderId = chosen ? -1 : orderId;
+                        dirty = true;
+                    });
+                row.alignment = TextAlignmentOptions.MidlineLeft;
+                row.margin = new Vector4(8f, 0f, 0f, 0f);
+                row.fontSize = 12f;
+                if (past)
+                    row.color = LedgerPalette.Amber;
+
+                NewButton(ordersContent, "^", 14f + OrdersInner - 96f, y, 26f, 26f,
+                    () => { outfit.MoveOrder(orderId, -1); dirty = true; });
+                NewButton(ordersContent, "v", 14f + OrdersInner - 66f, y, 26f, 26f,
+                    () => { outfit.MoveOrder(orderId, 1); dirty = true; });
+                NewButton(ordersContent, "X", 14f + OrdersInner - 36f, y, 26f, 26f,
+                    () =>
+                    {
+                        outfit.RemoveOrder(orderId);
+                        if (selectedOrderId == orderId)
+                            selectedOrderId = -1;
+                        dirty = true;
+                    });
+                y -= 30f;
+            }
+
+            return y - 6f;
+        }
+
+        float OrdersLastWeek(float y)
+        {
+            y = OrdersHeader(":: LAST WEEK", y);
+
+            if (outfit.LastWeek.Count == 0)
+            {
+                var none = NewText("None", ordersContent, 12.5f, LedgerPalette.PhosphorDim,
+                    TextAlignmentOptions.MidlineLeft);
+                PlaceTopLeft(none.rectTransform, 14f, y, OrdersInner, 18f);
+                none.text = "No record yet - the first week is still open.";
+                return y - 26f;
+            }
+
+            foreach (var record in outfit.LastWeek)
+            {
+                var color = record.Outcome switch
+                {
+                    Outfit.OrderOutcome.Completed => LedgerPalette.Phosphor,
+                    Outfit.OrderOutcome.Failed => LedgerPalette.Amber,
+                    _ => LedgerPalette.Disabled,
+                };
+                var row = NewText("Record", ordersContent, 12f, color,
+                    TextAlignmentOptions.MidlineLeft);
+                PlaceTopLeft(row.rectTransform, 14f, y, OrdersInner, 18f);
+                row.text = record.Lieutenant + " · " + LedgerText.OrderLabel(record.Type) +
+                    " · " + record.TargetSummary + " · " + record.Men + " men — " +
+                    LedgerText.OutcomeLabel(record.Outcome).ToUpperInvariant();
+                y -= 22f;
+            }
+
+            return y - 6f;
+        }
+
+        float OrdersCommit(float y)
+        {
+            y -= 8f;
+            if (pendingCommit)
+            {
+                var warn = NewText("Warn", ordersContent, 12.5f, LedgerPalette.Amber,
+                    TextAlignmentOptions.TopLeft);
+                PlaceTopLeft(warn.rectTransform, 14f, y, OrdersInner, 36f);
+                warn.textWrappingMode = TextWrappingModes.Normal;
+                warn.text = "End planning? Wages fall due, stances turn, and the week " +
+                            "runs as ordered.";
+                y -= 40f;
+
+                NewButton(ordersContent, "[ COMMIT ]", 14f, y, 200f, 32f, () =>
+                {
+                    pendingCommit = false;
+                    selectedOrderId = -1;
+                    outfit.CommitWeek();
+                    ordersNote = "The week is committed.";
+                    dirty = true;
+                });
+                NewButton(ordersContent, "[ CANCEL ]", 228f, y, 160f, 32f, () =>
+                {
+                    pendingCommit = false;
+                    dirty = true;
+                });
+            }
+            else
+                NewButton(ordersContent, "[ COMMIT THE WEEK ]", 14f, y, OrdersInner, 32f,
+                    () =>
+                    {
+                        pendingCommit = true;
+                        dirty = true;
+                    });
+
+            return y - 40f;
+        }
+
+        float OrdersHeader(string label, float y)
+        {
+            y -= 6f;
+            var header = NewText("Header", ordersContent, 12.5f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(header.rectTransform, 14f, y, OrdersInner, 20f);
+            header.fontStyle = FontStyles.Bold;
+            header.characterSpacing = 2f;
+            header.text = label;
+            return y - 24f;
         }
 
         void BuildScanlines(RectTransform paper)

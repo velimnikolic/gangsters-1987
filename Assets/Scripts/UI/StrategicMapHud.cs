@@ -41,6 +41,23 @@ namespace LivingCity.UI
     /// 300m up would otherwise be inside the smog); clouds and birds move to a cull-only
     /// layer because they live exactly between this camera and the ground.
     /// </summary>
+    public interface IMapTargetingConsumer
+    {
+        /// <summary>True = this order type drags a box; false = one click, one target.</summary>
+        bool WantsArea { get; }
+
+        /// <summary>Fires every frame the box is being dragged - blocks highlight as
+        /// the box captures them, before anything is selected.</summary>
+        void OnAreaPreview(Rect worldXZ);
+
+        /// <summary>The button came up on a dragged box.</summary>
+        void OnAreaSelected(Rect worldXZ);
+
+        /// <summary>The button came up on a click - the block under it, or -1 on a
+        /// street outside every slab and the nearest block id alongside.</summary>
+        void OnPointClicked(Vector2 worldXZ, int blockId);
+    }
+
     public sealed class StrategicMapHud : MonoBehaviour
     {
         /// <summary>Above the clock bar's 100, below the personnel ledger's 110 - the
@@ -110,7 +127,26 @@ namespace LivingCity.UI
         {
             IsOpen = false;
             lastCloseFrame = -1;
+            Instance = null;
+            Targeting = null;
         }
+
+        /// <summary>The scene's map, for the ledger's Orders page - which must open the
+        /// map and read its camera without a scene find per frame.</summary>
+        public static StrategicMapHud Instance { get; private set; }
+
+        /// <summary>
+        /// The order-targeting seam: while non-null, LMB belongs to the consumer - a
+        /// drag becomes an area box (world-XZ rect), a click a point - and the map's
+        /// own card selection stands down. Clicks over clickable UI (the ledger's
+        /// panel has the raycaster) are ignored here. Set by the Orders page while it
+        /// is picking targets; cleared on page leave and at Play reset.
+        /// </summary>
+        public static IMapTargetingConsumer Targeting;
+
+        public Camera MapCamera => mapCamera;
+
+        void Awake() => Instance = this;
 
         sealed class Block
         {
@@ -157,6 +193,12 @@ namespace LivingCity.UI
         readonly List<Image> territoryTiles = new List<Image>();
         RectTransform territoryRoot;
 
+        readonly List<Rect> targetRects = new List<Rect>();
+        readonly List<Image> targetTiles = new List<Image>();
+        RectTransform targetRoot;
+        Color targetColor = Color.white;
+        Image dragBox;
+
         readonly Dictionary<int, Block> blocks = new Dictionary<int, Block>();
         readonly List<(int blockId, Vector3 position)> slabCentres =
             new List<(int, Vector3)>();
@@ -195,11 +237,13 @@ namespace LivingCity.UI
                 return;
 
             // The personnel ledger is modal above everything - while it reads, M belongs
-            // to nobody, exactly as InteractionController stands down for it.
-            if (PersonnelAlmanac.IsOpen)
+            // to nobody, exactly as InteractionController stands down for it. The one
+            // exception is its Orders page, which works AGAINST the map: the ledger
+            // shrinks to a side panel and this map stays live under it.
+            if (PersonnelAlmanac.IsOpen && !PersonnelAlmanac.MapInteractive)
                 return;
 
-            if (keyboard.mKey.wasPressedThisFrame)
+            if (!PersonnelAlmanac.IsOpen && keyboard.mKey.wasPressedThisFrame)
             {
                 if (IsOpen) Close();
                 else Open();
@@ -219,8 +263,89 @@ namespace LivingCity.UI
             HandleNavigation(keyboard);
 
             var mouse = Mouse.current;
-            if (mouse != null && mouse.leftButton.wasPressedThisFrame)
+            if (mouse == null)
+                return;
+
+            if (Targeting != null)
+                HandleTargeting(mouse);
+            else if (mouse.leftButton.wasPressedThisFrame)
                 PickBlock(mouse.position.ReadValue());
+        }
+
+        // ------------------------------------------------------- order targeting input
+
+        Vector2 dragStartScreen;
+        bool dragging;
+
+        /// <summary>Under this many pixels of travel a press is a click, not a box -
+        /// nobody's hand is still enough for zero.</summary>
+        const float DragThreshold = 6f;
+
+        void HandleTargeting(Mouse mouse)
+        {
+            // A click on the ledger's panel belongs to its buttons - that canvas
+            // carries a raycaster, so the EventSystem knows.
+            var overUi = UnityEngine.EventSystems.EventSystem.current &&
+                UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject();
+
+            if (mouse.leftButton.wasPressedThisFrame && !overUi)
+            {
+                dragStartScreen = mouse.position.ReadValue();
+                dragging = true;
+            }
+
+            if (!dragging)
+                return;
+
+            var current = mouse.position.ReadValue();
+            var moved = (current - dragStartScreen).sqrMagnitude >
+                        DragThreshold * DragThreshold;
+
+            // The box lives while the button is down - blocks light as it swallows
+            // them because the consumer repaints highlights from the live preview.
+            if (Targeting.WantsArea && dragBox)
+            {
+                if (moved && mouse.leftButton.isPressed)
+                    ProjectRect(dragBox, WorldRectBetween(dragStartScreen, current));
+                else if (dragBox.enabled)
+                    dragBox.enabled = false;
+                if (moved && mouse.leftButton.isPressed)
+                    Targeting.OnAreaPreview(WorldRectBetween(dragStartScreen, current));
+            }
+
+            if (!mouse.leftButton.wasReleasedThisFrame)
+                return;
+
+            dragging = false;
+            if (dragBox)
+                dragBox.enabled = false;
+
+            if (Targeting.WantsArea && moved)
+            {
+                Targeting.OnAreaSelected(WorldRectBetween(dragStartScreen, current));
+            }
+            else if (!moved)
+            {
+                var world = ScreenToWorldXZ(current);
+                var block = Gameplay.CityBlocks.At(world) ??
+                            Gameplay.CityBlocks.Nearest(world);
+                Targeting.OnPointClicked(world, block?.Id ?? -1);
+            }
+        }
+
+        Vector2 ScreenToWorldXZ(Vector2 screen)
+        {
+            var world = mapCamera.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
+            return new Vector2(world.x, world.z);
+        }
+
+        Rect WorldRectBetween(Vector2 screenA, Vector2 screenB)
+        {
+            var a = ScreenToWorldXZ(screenA);
+            var b = ScreenToWorldXZ(screenB);
+            return Rect.MinMaxRect(
+                Mathf.Min(a.x, b.x), Mathf.Min(a.y, b.y),
+                Mathf.Max(a.x, b.x), Mathf.Max(a.y, b.y));
         }
 
         /// <summary>
@@ -464,9 +589,19 @@ namespace LivingCity.UI
             buildingHighlight.color = new Color(1f, 1f, 1f, 0.35f);
             buildingHighlight.enabled = false;
 
+            // Order targets over the highlights, under the dots - a selected block must
+            // not hide the men standing on it.
+            var targets = new GameObject("Targets", typeof(RectTransform));
+            targets.transform.SetParent(page.transform, false);
+            targetRoot = (RectTransform)targets.transform;
+
             var dots = new GameObject("Dots", typeof(RectTransform));
             dots.transform.SetParent(page.transform, false);
             dotRoot = (RectTransform)dots.transform;
+
+            dragBox = BuildRectImage("Drag Box", page.transform);
+            dragBox.color = new Color(1f, 1f, 1f, 0.16f);
+            dragBox.enabled = false;
 
             BuildCard();
 
@@ -807,6 +942,7 @@ namespace LivingCity.UI
                 return;
 
             PaintTerritory();
+            PaintTargets();
             SyncTrackedPeople();
 
             // No eyes anywhere (the playable-mafioso layer is parked, so there may be no
@@ -1042,6 +1178,38 @@ namespace LivingCity.UI
             for (var i = used; i < territoryTiles.Count; i++)
                 if (territoryTiles[i].enabled)
                     territoryTiles[i].enabled = false;
+        }
+
+        /// <summary>
+        /// The Orders page's highlight layer: whatever rects it last handed over, in
+        /// its colour, reprojected per frame like everything on this canvas. An empty
+        /// hand clears the layer. Deliberately separate from the territory wash and
+        /// the selection highlight - three layers, three meanings, no conflicts.
+        /// </summary>
+        public void SetTargetHighlights(List<Rect> worldRects, Color color)
+        {
+            targetRects.Clear();
+            if (worldRects != null)
+                targetRects.AddRange(worldRects);
+            targetColor = color;
+        }
+
+        void PaintTargets()
+        {
+            var used = 0;
+            for (; used < targetRects.Count; used++)
+            {
+                if (used == targetTiles.Count)
+                    targetTiles.Add(BuildRectImage("Target", targetRoot));
+                var tile = targetTiles[used];
+                if (tile.color != targetColor)
+                    tile.color = targetColor;
+                ProjectRect(tile, targetRects[used]);
+            }
+
+            for (var i = used; i < targetTiles.Count; i++)
+                if (targetTiles[i].enabled)
+                    targetTiles[i].enabled = false;
         }
 
         void ProjectRect(Image image, Rect worldRect)

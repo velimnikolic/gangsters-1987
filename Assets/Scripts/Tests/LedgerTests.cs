@@ -32,8 +32,122 @@ namespace LivingCity.Tests
             StancesTurnOverAtCommit(failures);
             TerritorySeedsFromTheFronts(failures);
             StanceWordingIsExhaustive(failures);
+            OrderTableCoversEveryType(failures);
+            TravelDrivesTheCapacity(failures);
+            PastTheLineFallsInListOrder(failures);
+            CrewKitReadsVehiclesAndSkill(failures);
 
             return failures;
+        }
+
+        static void OrderTableCoversEveryType(List<string> failures)
+        {
+            foreach (OrderType type in System.Enum.GetValues(typeof(OrderType)))
+            {
+                var spec = OrderTable.SpecOf(type);
+                if (spec.Type != type)
+                    failures.Add($"OrderTableCoversEveryType: {type} has no spec row.");
+                if (LedgerText.OrderLabel(type).Length == 0)
+                    failures.Add($"OrderTableCoversEveryType: {type} has no label.");
+                if (spec.Mode == TargetMode.Area && spec.BlocksPerManWeek <= 0f)
+                    failures.Add($"OrderTableCoversEveryType: {type} area with no throughput.");
+                if (spec.Mode == TargetMode.Point && spec.PointCost <= 0f)
+                    failures.Add($"OrderTableCoversEveryType: {type} point with no cost.");
+            }
+
+            // The reference throughputs: extortion 2-3 blocks/man/week, collection ~8.
+            var extort = OrderTable.SpecOf(OrderType.Extort);
+            if (extort.BlocksPerManWeek < 2f || extort.BlocksPerManWeek > 3f)
+                failures.Add("OrderTableCoversEveryType: extortion throughput off the sheet.");
+            if (OrderTable.SpecOf(OrderType.CollectProtection).BlocksPerManWeek != 8f)
+                failures.Add("OrderTableCoversEveryType: collection throughput off the sheet.");
+        }
+
+        static void TravelDrivesTheCapacity(List<string> failures)
+        {
+            // The same distance costs a foot crew five times what it costs a car.
+            var foot = OrderMath.TravelFraction(600f, hasVehicle: false);
+            var car = OrderMath.TravelFraction(600f, hasVehicle: true);
+            if (foot != 0.5f || car != 0.1f)
+                failures.Add($"TravelDrivesTheCapacity: foot {foot} / car {car}.");
+
+            // Far on foot saturates at the cap - the crew spends the week walking.
+            if (OrderMath.TravelFraction(50_000f, false) != OrderMath.MaxTravelFraction)
+                failures.Add("TravelDrivesTheCapacity: no travel cap.");
+
+            var extort = OrderTable.SpecOf(OrderType.Extort);
+            // 5 blocks at 2.5/man-week = 2 man-weeks of work, travel-free: 2 men.
+            if (OrderMath.MenNeeded(extort, 5, 0f) != 2)
+                failures.Add("TravelDrivesTheCapacity: clean work costed wrong.");
+            // Same job at 50% travel: each man delivers half a week - 4 men.
+            if (OrderMath.MenNeeded(extort, 5, 0.5f) != 4)
+                failures.Add("TravelDrivesTheCapacity: travel did not raise the crew.");
+
+            if (!OrderMath.Undermanned(extort, 5, 0.5f, 2))
+                failures.Add("TravelDrivesTheCapacity: an undermanned job read as fine.");
+            if (OrderMath.Undermanned(extort, 5, 0.5f, 4))
+                failures.Add("TravelDrivesTheCapacity: a manned job read as short.");
+        }
+
+        static void PastTheLineFallsInListOrder(List<string> failures)
+        {
+            var plan = new WeekPlan();
+            for (var i = 0; i < 3; i++)
+            {
+                var order = new PlannedOrder { CrewId = 7, Men = 2, Type = OrderType.Patrol };
+                order.Id = plan.NextOrderId();
+                plan.Confirmed.Add(order);
+            }
+
+            if (plan.CommittedMen(7) != 6)
+                failures.Add("PastTheLineFallsInListOrder: committed men miscounted.");
+
+            // A crew of four: orders 0 and 1 fit (2+2); order 2 crosses the line.
+            var past = new List<int>();
+            OrderMath.PastTheLine(plan, 7, crewSize: 4, past);
+            if (past.Count != 1 || past[0] != plan.Confirmed[2].Id)
+                failures.Add("PastTheLineFallsInListOrder: the line fell on the wrong row.");
+
+            // Reordering moves the line - priority is the list, nothing else.
+            (plan.Confirmed[0], plan.Confirmed[2]) = (plan.Confirmed[2], plan.Confirmed[0]);
+            OrderMath.PastTheLine(plan, 7, 4, past);
+            if (past.Count != 1 || past[0] != plan.Confirmed[2].Id)
+                failures.Add("PastTheLineFallsInListOrder: reordering did not move the line.");
+        }
+
+        static void CrewKitReadsVehiclesAndSkill(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(42);
+            var crew = roster.Crews[0];
+
+            if (CrewKit.MenOf(crew) != 3)
+                failures.Add("CrewKitReadsVehiclesAndSkill: the lieutenant does not count.");
+            if (CrewKit.HasVehicle(roster, crew))
+                failures.Add("CrewKitReadsVehiclesAndSkill: a car out of nowhere.");
+
+            // Sign the seeded car out to a crew hood - now the crew rides.
+            RosterEquipment car = null;
+            foreach (var item in roster.Equipment)
+                if (item.Kind == EquipmentKind.Vehicle)
+                    car = item;
+            RosterOps.GiveEquipment(roster, car.Id, crew.HoodIds[0]);
+            if (!CrewKit.HasVehicle(roster, crew))
+                failures.Add("CrewKitReadsVehiclesAndSkill: the signed-out car is invisible.");
+
+            var best = CrewKit.BestAt(roster, crew, CharacterAttribute.Firearms);
+            var manual = 0;
+            void Consider(int id)
+            {
+                var m = roster.Find(id);
+                var v = m.GetHalfSteps(CharacterAttribute.Firearms);
+                if (v > manual)
+                    manual = v;
+            }
+            Consider(crew.LieutenantId);
+            foreach (var id in crew.HoodIds)
+                Consider(id);
+            if (best != manual)
+                failures.Add("CrewKitReadsVehiclesAndSkill: BestAt disagrees with the sum.");
         }
 
         static void StancesTurnOverAtCommit(List<string> failures)

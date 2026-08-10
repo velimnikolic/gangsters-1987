@@ -163,6 +163,71 @@ namespace LivingCity.UI
         public const string ReasonOwnOutfit =
             "You cannot take a stance toward your own outfit.";
 
+        // -------------------------------------------------------------------- orders
+
+        public static string OrderLabel(Outfit.OrderType type) => type switch
+        {
+            Outfit.OrderType.Extort => "Extort",
+            Outfit.OrderType.Intimidate => "Intimidate",
+            Outfit.OrderType.CollectProtection => "Collect Protection",
+            Outfit.OrderType.AdjustProtection => "Adjust Protection",
+            Outfit.OrderType.Assault => "Assault",
+            Outfit.OrderType.SmashUp => "Smash Up",
+            Outfit.OrderType.Raid => "Raid",
+            Outfit.OrderType.Torch => "Torch",
+            Outfit.OrderType.Bomb => "Bomb",
+            Outfit.OrderType.Kill => "Kill",
+            Outfit.OrderType.Kidnap => "Kidnap",
+            Outfit.OrderType.Patrol => "Patrol",
+            Outfit.OrderType.Guard => "Guard",
+            Outfit.OrderType.Ambush => "Ambush",
+            Outfit.OrderType.Explore => "Explore",
+            Outfit.OrderType.BuyPremises => "Buy Premises",
+            Outfit.OrderType.SetUpBusiness => "Set Up Business",
+            Outfit.OrderType.RunBusiness => "Run Business",
+            Outfit.OrderType.Audit => "Audit",
+            Outfit.OrderType.Recruit => "Recruit",
+            Outfit.OrderType.Bribe => "Bribe",
+            Outfit.OrderType.EmployPolice => "Employ Police",
+            Outfit.OrderType.Donate => "Donate",
+            _ => "",
+        };
+
+        public static string CategoryLabel(Outfit.OrderCategory category) => category switch
+        {
+            Outfit.OrderCategory.Extortion => "Extortion & Territory",
+            Outfit.OrderCategory.Violence => "Violence",
+            Outfit.OrderCategory.Defense => "Defense & Recon",
+            Outfit.OrderCategory.Business => "Business",
+            Outfit.OrderCategory.Influence => "Personnel & Influence",
+            _ => "",
+        };
+
+        public static string TargetModeHint(Outfit.TargetMode mode) =>
+            mode == Outfit.TargetMode.Area
+                ? "Drag a box on the map - every eligible block inside becomes a target."
+                : "Click one building or one man on the map.";
+
+        public static string RequirementLine(CharacterAttribute attribute, int floorHalfSteps) =>
+            floorHalfSteps <= 0
+                ? "No particular talent required."
+                : "Wants " + AttributeLabel(attribute) + " " + Stars(floorHalfSteps) + "+.";
+
+        public static string OutcomeLabel(Outfit.OrderOutcome outcome) => outcome switch
+        {
+            Outfit.OrderOutcome.Completed => "Completed",
+            Outfit.OrderOutcome.Failed => "Failed",
+            Outfit.OrderOutcome.NeverReached => "Never reached",
+            _ => "",
+        };
+
+        public static string CommittedLine(int committed, int available) =>
+            committed + " of " + available + " men committed";
+
+        public const string ReasonNoTargets = "No targets picked.";
+        public const string ReasonNoSuchOrder = "No such order in the queue.";
+        public const string ReasonNoCrewSelected = "Pick a lieutenant first.";
+
         public static string DemoteConfirm(string name, int hoodCount) => hoodCount switch
         {
             0 => "Disband " + name + "'s crew? It has no men.",
