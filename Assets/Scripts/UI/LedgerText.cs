@@ -61,6 +61,10 @@ namespace LivingCity.UI
         {
             EquipmentKind.Pistol => "Pistol",
             EquipmentKind.Vehicle => "Vehicle",
+            EquipmentKind.Shotgun => "Shotgun",
+            EquipmentKind.Rifle => "Rifle",
+            EquipmentKind.TommyGun => "Tommy Gun",
+            EquipmentKind.TwinPistols => "Twin Pistols",
             _ => "",
         };
 
@@ -121,6 +125,9 @@ namespace LivingCity.UI
 
         public static string PromoteWarning(string name) =>
             name + " is short on brains or order for a lieutenant's job. Promote anyway?";
+
+        public static string TommyGunWarning(string name) =>
+            name + " is a poor shot - in his hands the tommy gun sprays the street.";
 
         public static string DemoteConfirm(string name, int hoodCount) => hoodCount switch
         {

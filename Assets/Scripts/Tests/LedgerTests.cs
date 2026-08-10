@@ -26,8 +26,78 @@ namespace LivingCity.Tests
             AssetsAreBookValue(failures);
             ReportUsesFrozenWagesWhenClosed(failures);
             CashFormatsExactly(failures);
+            PurchaseGateDebitsAndBooks(failures);
+            CataloguePricesMatchTheSheet(failures);
+            NewStockEntersThePoolUnheld(failures);
 
             return failures;
+        }
+
+        static void PurchaseGateDebitsAndBooks(List<string> failures)
+        {
+            var accounts = new Accounts();
+            accounts.Sheets.Add(new WeekSheet { Week = 1 });
+
+            if (BalanceMath.TryPurchase(accounts, 750) != null)
+                failures.Add("PurchaseGateDebitsAndBooks: an affordable buy refused.");
+            if (accounts.Safe != Accounts.StartingSafe - 750 ||
+                accounts.Current.Purchases != 750)
+                failures.Add("PurchaseGateDebitsAndBooks: the safe and the sheet disagree.");
+
+            var refusal = BalanceMath.TryPurchase(accounts, 999_999);
+            if (refusal == null || refusal.Length == 0)
+                failures.Add("PurchaseGateDebitsAndBooks: short money bought anyway.");
+            if (accounts.Safe != Accounts.StartingSafe - 750 ||
+                accounts.Current.Purchases != 750)
+                failures.Add("PurchaseGateDebitsAndBooks: a refusal touched the books.");
+        }
+
+        static void CataloguePricesMatchTheSheet(List<string> failures)
+        {
+            var expected = new Dictionary<string, int>
+            {
+                { ".38 Pistol", 100 }, { "Shotgun", 750 }, { "Rifle", 750 },
+                { "Tommy Gun", 2000 }, { "Twin Pack Pistols", 3000 },
+            };
+
+            foreach (var item in ArmoryCatalog.Weapons)
+            {
+                if (!expected.TryGetValue(item.DisplayName, out var price))
+                    failures.Add($"CataloguePricesMatchTheSheet: unexpected {item.DisplayName}.");
+                else if (item.Price != price)
+                    failures.Add($"CataloguePricesMatchTheSheet: {item.DisplayName} at " +
+                                 $"{item.Price}.");
+                if (item.Note.Length == 0)
+                    failures.Add($"CataloguePricesMatchTheSheet: {item.DisplayName} " +
+                                 "has no note.");
+            }
+            if (ArmoryCatalog.Weapons.Length != expected.Count)
+                failures.Add("CataloguePricesMatchTheSheet: weapon count drifted.");
+            if (ArmoryCatalog.Vehicles.Length == 0)
+                failures.Add("CataloguePricesMatchTheSheet: no vehicles for sale.");
+        }
+
+        static void NewStockEntersThePoolUnheld(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(42);
+            var before = roster.Equipment.Count;
+            var assetsBefore = BalanceMath.AssetsOf(roster);
+
+            var item = RosterOps.AddEquipment(roster, EquipmentKind.TommyGun,
+                "Tommy Gun", 2000);
+
+            if (roster.Equipment.Count != before + 1 ||
+                item.HolderId != RosterEquipment.Unheld)
+                failures.Add("NewStockEntersThePoolUnheld: the buy did not pool unheld.");
+            if (BalanceMath.AssetsOf(roster) != assetsBefore + 2000)
+                failures.Add("NewStockEntersThePoolUnheld: assets missed the book value.");
+
+            // The exclusivity rules apply to bought stock like seeded stock.
+            var a = roster.Members[0];
+            var b = roster.Members[1];
+            RosterOps.GiveEquipment(roster, item.Id, a.Id);
+            if (RosterOps.GiveEquipment(roster, item.Id, b.Id).Ok)
+                failures.Add("NewStockEntersThePoolUnheld: one tommy gun, two holders.");
         }
 
         static void CalendarDerivesYear(List<string> failures)

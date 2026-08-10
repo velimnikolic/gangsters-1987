@@ -1,9 +1,15 @@
 namespace LivingCity.Personnel
 {
+    /// <summary>Appended-only: Pistol and Vehicle came first and their indices are
+    /// load-bearing for nothing, but the habit costs nothing either.</summary>
     public enum EquipmentKind
     {
         Pistol,
         Vehicle,
+        Shotgun,
+        Rifle,
+        TommyGun,
+        TwinPistols,
     }
 
     /// <summary>

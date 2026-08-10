@@ -253,6 +253,11 @@ namespace LivingCity.UI
                     assignMode = false;
                     dirty = true;
                 }
+                else if (givePickerItemId >= 0)
+                {
+                    givePickerItemId = -1;
+                    dirty = true;
+                }
                 else if (sortMenu && sortMenu.activeSelf)
                 {
                     sortMenu.SetActive(false);
@@ -286,6 +291,9 @@ namespace LivingCity.UI
                         break;
                     case LedgerPage.Finances:
                         RebuildFinances();
+                        break;
+                    case LedgerPage.Armory:
+                        RebuildArmory();
                         break;
                 }
                 UpdateBarLabels();
@@ -321,26 +329,50 @@ namespace LivingCity.UI
 
         void UpdateScroll()
         {
-            if (currentPage != LedgerPage.Personnel)
-                return;
+            // Each page nominates its one scrolling region; the wheel means nothing
+            // anywhere else on the sheet.
+            RectTransform viewport;
+            RectTransform content;
+            switch (currentPage)
+            {
+                case LedgerPage.Personnel:
+                    viewport = listViewport;
+                    content = listContent;
+                    break;
+                case LedgerPage.Armory:
+                    viewport = armoryInventoryViewport;
+                    content = armoryInventoryContent;
+                    break;
+                default:
+                    return;
+            }
 
             var mouse = Mouse.current;
-            if (mouse == null || !listContent)
+            if (mouse == null || !content)
                 return;
 
             var wheel = mouse.scroll.ReadValue().y;
             if (wheel == 0f)
                 return;
 
-            // Only while the pointer is over the list - the detail card is fixed and the
-            // wheel must not surprise-scroll a list the player is not looking at.
+            // Only while the pointer is over the list - the rest of the page is fixed
+            // and the wheel must not surprise-scroll a list the player is not reading.
             if (!RectTransformUtility.RectangleContainsScreenPoint(
-                    listViewport, mouse.position.ReadValue()))
+                    viewport, mouse.position.ReadValue()))
                 return;
 
-            var maxScroll = Mathf.Max(0f, listContent.sizeDelta.y - ListHeight);
-            scrollY = Mathf.Clamp(scrollY - wheel * WheelStep, 0f, maxScroll);
-            listContent.anchoredPosition = new Vector2(0f, scrollY);
+            var viewportHeight = viewport.rect.height;
+            var maxScroll = Mathf.Max(0f, content.sizeDelta.y - viewportHeight);
+            if (currentPage == LedgerPage.Personnel)
+            {
+                scrollY = Mathf.Clamp(scrollY - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, scrollY);
+            }
+            else
+            {
+                armoryScrollY = Mathf.Clamp(armoryScrollY - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, armoryScrollY);
+            }
         }
 
         // -------------------------------------------------------------- construction
@@ -444,7 +476,7 @@ namespace LivingCity.UI
             // ---- the other sheets ----
             BuildNewspaperPage(paper);
             BuildFinancesPage(paper);
-            BuildComingPage(paper, LedgerPage.Armory, "ARMORY");
+            BuildArmoryPage(paper);
             BuildComingPage(paper, LedgerPage.Diplomacy, "DIPLOMACY");
             BuildComingPage(paper, LedgerPage.Orders, "ORDERS");
 
@@ -546,6 +578,11 @@ namespace LivingCity.UI
                 pendingConfirm = Confirm.None;
                 if (sortMenu)
                     sortMenu.SetActive(false);
+            }
+            if (pageKind != LedgerPage.Armory)
+            {
+                givePickerItemId = -1;
+                armoryNote = "";
             }
 
             RefreshTabs();
@@ -924,6 +961,296 @@ namespace LivingCity.UI
             if (bold)
                 valueText.fontStyle = FontStyles.Bold;
             valueText.text = value;
+        }
+
+        // --------------------------------------------------------------- the armory page
+
+        RectTransform armoryContent;
+        RectTransform armoryInventoryViewport;
+        RectTransform armoryInventoryContent;
+        float armoryScrollY;
+
+        /// <summary>The item a GIVE click is finding a holder for; -1 = browsing.</summary>
+        int givePickerItemId = -1;
+
+        string armoryNote = "";
+
+        void BuildArmoryPage(RectTransform paper)
+        {
+            var root = NewPageRoot(paper, LedgerPage.Armory);
+
+            armoryContent = NewRect("Counter", root);
+            armoryContent.anchorMin = Vector2.zero;
+            armoryContent.anchorMax = Vector2.one;
+            armoryContent.offsetMin = armoryContent.offsetMax = Vector2.zero;
+
+            // The inventory scrolls on its own - a sixty-man outfit's stock outgrows
+            // the sheet, and the mask is built once so the scroll survives rebuilds.
+            armoryInventoryViewport = NewRect("Inventory", root);
+            PlaceTopLeft(armoryInventoryViewport, 700f, PageTop - 76f,
+                PageWidth - 700f - 36f, ListHeight - 76f);
+            armoryInventoryViewport.gameObject.AddComponent<RectMask2D>();
+
+            armoryInventoryContent = NewRect("Rows", armoryInventoryViewport);
+            armoryInventoryContent.anchorMin = new Vector2(0f, 1f);
+            armoryInventoryContent.anchorMax = new Vector2(1f, 1f);
+            armoryInventoryContent.pivot = new Vector2(0f, 1f);
+            armoryInventoryContent.anchoredPosition = Vector2.zero;
+            armoryInventoryContent.sizeDelta = new Vector2(0f, ListHeight - 76f);
+        }
+
+        void RebuildArmory()
+        {
+            foreach (Transform old in armoryContent)
+                Destroy(old.gameObject);
+            foreach (Transform old in armoryInventoryContent)
+                Destroy(old.gameObject);
+
+            var roster = director.Roster;
+            if (roster == null)
+                return;
+
+            var safe = outfit ? outfit.Accounts.Safe : 0;
+
+            var heading = NewText("Heading", armoryContent, 20f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(heading.rectTransform, ListLeft, PageTop, 400f, 32f);
+            heading.fontStyle = FontStyles.Bold;
+            heading.characterSpacing = 3f;
+            heading.text = "THE ARMORY";
+
+            var safeText = NewText("Safe", armoryContent, 16f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.MidlineRight);
+            PlaceTopLeft(safeText.rectTransform, PageWidth - 396f, PageTop, 360f, 32f);
+            safeText.fontStyle = FontStyles.Bold;
+            safeText.text = "SAFE: " + LedgerText.Cash(safe);
+
+            if (armoryNote.Length > 0)
+            {
+                var note = NewText("Note", armoryContent, 13f, LedgerPalette.Amber,
+                    TextAlignmentOptions.MidlineLeft);
+                PlaceTopLeft(note.rectTransform, ListLeft, PageTop - 34f, 1200f, 22f);
+                note.text = armoryNote;
+            }
+
+            BuildCatalogue(roster, safe);
+
+            if (givePickerItemId >= 0)
+                BuildGivePicker(roster);
+            else
+                BuildInventory(roster);
+        }
+
+        void BuildCatalogue(Roster roster, int safe)
+        {
+            var y = PageTop - 76f;
+            y = CatalogueHeader(":: CATALOGUE — WEAPONS", y);
+            foreach (var item in Outfit.ArmoryCatalog.Weapons)
+                y = CatalogueRow(item, safe, y);
+
+            y -= 14f;
+            y = CatalogueHeader(":: CATALOGUE — VEHICLES", y);
+            foreach (var item in Outfit.ArmoryCatalog.Vehicles)
+                y = CatalogueRow(item, safe, y);
+        }
+
+        float CatalogueHeader(string label, float y)
+        {
+            var header = NewText("Header", armoryContent, 14f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(header.rectTransform, ListLeft, y, 500f, 24f);
+            header.fontStyle = FontStyles.Bold;
+            header.characterSpacing = 2f;
+            header.text = label;
+            return y - 30f;
+        }
+
+        float CatalogueRow(Outfit.ArmoryItem item, int safe, float y)
+        {
+            var name = NewText("Name", armoryContent, 15f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(name.rectTransform, ListLeft, y, 260f, 22f);
+            name.fontStyle = FontStyles.Bold;
+            name.text = item.DisplayName;
+
+            var price = NewText("Price", armoryContent, 15f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.MidlineRight);
+            PlaceTopLeft(price.rectTransform, ListLeft + 280f, y, 130f, 22f);
+            price.text = LedgerText.Cash(item.Price);
+
+            var captured = item;
+            var buyLabel = NewButton(armoryContent, "[ BUY ]", ListLeft + 440f, y + 1f,
+                100f, 24f, () =>
+                {
+                    var result = outfit
+                        ? outfit.Purchase(captured.Price, captured.DisplayName)
+                        : OpResult.Fail(LedgerText.ReasonNoSuchItem);
+                    if (result.Ok)
+                    {
+                        director.AddEquipment(captured.Kind, captured.DisplayName,
+                            captured.Price);
+                        armoryNote = captured.DisplayName + " added to the stock.";
+                    }
+                    else
+                        armoryNote = result.Reason;
+                    dirty = true;
+                });
+            // Short money reads at a glance; the click still explains exactly how short.
+            if (safe < item.Price)
+                buyLabel.color = LedgerPalette.Disabled;
+
+            var note = NewText("ItemNote", armoryContent, 12f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.TopLeft);
+            PlaceTopLeft(note.rectTransform, ListLeft, y - 22f, 560f, 20f);
+            note.text = item.Note;
+
+            return y - 52f;
+        }
+
+        void BuildInventory(Roster roster)
+        {
+            var header = NewText("InvHeader", armoryContent, 14f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(header.rectTransform, 700f, PageTop - 46f, 500f, 24f);
+            header.fontStyle = FontStyles.Bold;
+            header.characterSpacing = 2f;
+            header.text = ":: STOCK — " + roster.Equipment.Count + " ITEMS";
+
+            var y = 0f;
+            for (var i = 0; i < roster.Equipment.Count; i++)
+            {
+                var item = roster.Equipment[i];
+                var row = NewRect("Item", armoryInventoryContent);
+                PlaceTopLeft(row, 0f, y, PageWidth - 700f - 36f, 28f);
+
+                var kind = NewText("Kind", row, 12f, LedgerPalette.PhosphorDim,
+                    TextAlignmentOptions.MidlineLeft);
+                FillRow(kind.rectTransform, 0f, 110f);
+                kind.text = LedgerText.EquipmentLabel(item.Kind).ToUpperInvariant();
+
+                var name = NewText("Name", row, 14f, LedgerPalette.Phosphor,
+                    TextAlignmentOptions.MidlineLeft);
+                FillRow(name.rectTransform, 116f, 240f);
+                name.text = item.DisplayName;
+
+                var holder = roster.Find(item.HolderId);
+                var holderText = NewText("Holder", row, 13f,
+                    holder != null ? LedgerPalette.Phosphor : LedgerPalette.PhosphorDim,
+                    TextAlignmentOptions.MidlineLeft);
+                FillRow(holderText.rectTransform, 370f, 330f);
+                holderText.text = holder != null ? holder.FullName : "in armory";
+
+                var itemId = item.Id;
+                if (holder != null)
+                    NewButton(row, "[ RETURN ]", PageWidth - 700f - 36f - 120f, -2f,
+                        116f, 24f, () =>
+                        {
+                            var result = director.ReturnEquipment(itemId);
+                            armoryNote = result.Ok ? "" : result.Reason;
+                            dirty = true;
+                        });
+                else
+                    NewButton(row, "[ GIVE ]", PageWidth - 700f - 36f - 120f, -2f,
+                        116f, 24f, () =>
+                        {
+                            givePickerItemId = itemId;
+                            armoryNote = "";
+                            dirty = true;
+                        });
+
+                y -= 30f;
+            }
+
+            SizeInventoryContent(-y);
+        }
+
+        /// <summary>GIVE's second step: the stock list becomes the roster, pick the
+        /// holder. The tommy gun tags the poor shots in amber before the mistake, and
+        /// permits it after - the promotion rule's discipline.</summary>
+        void BuildGivePicker(Roster roster)
+        {
+            RosterEquipment item = null;
+            for (var i = 0; i < roster.Equipment.Count; i++)
+                if (roster.Equipment[i].Id == givePickerItemId)
+                    item = roster.Equipment[i];
+            if (item == null)
+            {
+                givePickerItemId = -1;
+                BuildInventory(roster);
+                return;
+            }
+
+            var header = NewText("PickHeader", armoryContent, 14f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(header.rectTransform, 700f, PageTop - 46f, 700f, 24f);
+            header.fontStyle = FontStyles.Bold;
+            header.text = "GIVE " + item.DisplayName.ToUpperInvariant() + " TO:";
+
+            NewButton(armoryContent, "[ CANCEL ]", PageWidth - 396f, PageTop - 46f,
+                120f, 24f, () =>
+                {
+                    givePickerItemId = -1;
+                    dirty = true;
+                });
+
+            var y = 0f;
+            var tommy = item.Kind == EquipmentKind.TommyGun;
+            for (var i = 0; i < roster.Members.Count; i++)
+            {
+                var member = roster.Members[i];
+                if (member.Status == CharacterStatus.Dead)
+                    continue;
+
+                var row = NewRect("Pick", armoryInventoryContent);
+                PlaceTopLeft(row, 0f, y, PageWidth - 700f - 36f, 28f);
+
+                var poorShot = tommy && member.GetHalfSteps(CharacterAttribute.Firearms) <
+                    Outfit.ArmoryCatalog.TommyGunFirearmsFloor;
+
+                var memberId = member.Id;
+                var memberName = member.FullName;
+                var pick = NewButton(row, "", 0f, 0f, 300f, 26f, () =>
+                {
+                    var result = director.GiveEquipment(givePickerItemId, memberId);
+                    armoryNote = !result.Ok ? result.Reason
+                        : poorShot ? LedgerText.TommyGunWarning(memberName)
+                        : "";
+                    givePickerItemId = -1;
+                    dirty = true;
+                });
+                pick.alignment = TextAlignmentOptions.MidlineLeft;
+                pick.margin = new Vector4(10f, 0f, 0f, 0f);
+                pick.text = member.FullName.ToUpperInvariant();
+
+                var guns = NewText("Guns", row, 13f, LedgerPalette.PhosphorDim,
+                    TextAlignmentOptions.MidlineLeft);
+                FillRow(guns.rectTransform, 320f, 200f);
+                guns.text = "Firearms " + LedgerText.Stars(
+                    member.GetHalfSteps(CharacterAttribute.Firearms));
+
+                if (poorShot)
+                {
+                    var warn = NewText("Warn", row, 12f, LedgerPalette.Amber,
+                        TextAlignmentOptions.MidlineLeft);
+                    FillRow(warn.rectTransform, 540f, 200f);
+                    warn.fontStyle = FontStyles.Bold;
+                    warn.text = "POOR SHOT";
+                }
+
+                y -= 30f;
+            }
+
+            SizeInventoryContent(-y);
+        }
+
+        void SizeInventoryContent(float height)
+        {
+            var viewportHeight = ListHeight - 76f;
+            armoryInventoryContent.sizeDelta =
+                new Vector2(0f, Mathf.Max(viewportHeight, height + 8f));
+            var maxScroll = Mathf.Max(0f, armoryInventoryContent.sizeDelta.y - viewportHeight);
+            armoryScrollY = Mathf.Clamp(armoryScrollY, 0f, maxScroll);
+            armoryInventoryContent.anchoredPosition = new Vector2(0f, armoryScrollY);
         }
 
         void BuildScanlines(RectTransform paper)

@@ -108,6 +108,20 @@ namespace LivingCity.Gameplay
             return Commit(RosterOps.GiveEquipment(Roster, itemId, id), "armed", id);
         }
 
+        /// <summary>The purchase path's roster half - the OutfitDirector's Purchase
+        /// gate has already moved the money by the time this runs.</summary>
+        public RosterEquipment AddEquipment(Personnel.EquipmentKind kind,
+            string displayName, int value)
+        {
+            if (Roster == null)
+                return null;
+
+            var item = RosterOps.AddEquipment(Roster, kind, displayName, value);
+            Version++;
+            Debug.Log("[Personnel] " + displayName + " added to the armory.");
+            return item;
+        }
+
         public OpResult ReturnEquipment(int itemId)
         {
             if (Roster == null)

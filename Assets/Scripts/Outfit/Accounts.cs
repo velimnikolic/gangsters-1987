@@ -90,6 +90,24 @@ namespace LivingCity.Outfit
             : riskyMoney < RiskModerateCeiling ? RiskRating.Moderate
             : RiskRating.High;
 
+        /// <summary>
+        /// The purchase gate's pure half: null means paid (safe debited, the open
+        /// week's Purchases line booked); otherwise the refusal, with the shortfall
+        /// spelled out and no state touched. OutfitDirector wraps this with Version.
+        /// </summary>
+        public static string TryPurchase(Accounts accounts, int price)
+        {
+            if (accounts == null || price < 0)
+                return UI.LedgerText.ReasonNoSuchItem;
+            if (accounts.Safe < price)
+                return UI.LedgerText.InsufficientFunds(price, accounts.Safe);
+
+            accounts.Safe -= price;
+            if (accounts.Current != null)
+                accounts.Current.Purchases += price;
+            return null;
+        }
+
         /// <summary>Book value of everything the outfit holds - today the equipment
         /// stock; property and businesses join the sum when buying lands.</summary>
         public static int AssetsOf(Roster roster)

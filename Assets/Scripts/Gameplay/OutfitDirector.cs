@@ -36,14 +36,10 @@ namespace LivingCity.Gameplay
         /// </summary>
         public OpResult Purchase(int price, string what)
         {
-            if (price < 0)
-                return OpResult.Fail(UI.LedgerText.ReasonNoSuchItem);
-            if (Accounts.Safe < price)
-                return OpResult.Fail(UI.LedgerText.InsufficientFunds(price, Accounts.Safe));
+            var refusal = BalanceMath.TryPurchase(Accounts, price);
+            if (refusal != null)
+                return OpResult.Fail(refusal);
 
-            Accounts.Safe -= price;
-            if (Accounts.Current != null)
-                Accounts.Current.Purchases += price;
             Version++;
             Debug.Log("[Outfit] Bought " + what + " for " + UI.LedgerText.Cash(price) +
                       "; safe at " + UI.LedgerText.Cash(Accounts.Safe) + ".");

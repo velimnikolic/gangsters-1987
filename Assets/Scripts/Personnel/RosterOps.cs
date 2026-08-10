@@ -174,6 +174,22 @@ namespace LivingCity.Personnel
             return OpResult.Success;
         }
 
+        /// <summary>New stock enters the shared pool unheld - the purchase path's
+        /// second half; the money half lives with the outfit's accounts.</summary>
+        public static RosterEquipment AddEquipment(Roster roster, EquipmentKind kind,
+            string displayName, int value)
+        {
+            var item = new RosterEquipment
+            {
+                Id = roster.NextEquipmentId(),
+                Kind = kind,
+                DisplayName = displayName,
+                Value = value,
+            };
+            roster.Equipment.Add(item);
+            return item;
+        }
+
         public static OpResult ReturnEquipment(Roster roster, int itemId)
         {
             var item = FindItem(roster, itemId);
