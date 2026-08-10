@@ -58,6 +58,7 @@ namespace LivingCity.EditorTools
         const string PoliceProps = "Assets/Synty/PolygonPoliceStation/Prefabs/Props/";
         const string PoliceEnv = "Assets/Synty/PolygonPoliceStation/Prefabs/Environment/";
         const string GenEnv = "Assets/Synty/PolygonGeneric/Prefabs/Environment/";
+        const string AuthoredVehicles = AuthorVehicles.OutputDir + "/";
 
         const string Roads = Root + "Tiles_T/Roads_T/";
         const string Tiles = Root + "Tiles_T/";
@@ -508,21 +509,22 @@ namespace LivingCity.EditorTools
             // the buses are 9.8-11.3m and cannot fit either limit, so they are AI-only below;
             // the bumper cars, formula car, excavator, bulldozer, crane and road roller are what
             // globbing this folder used to put outside a flat.
+            // Parked cars are the plain Synty models - static bakes need no driving rig,
+            // exactly as the pack's Cars_T set needed none.
             db.parkedCarGroups = new[]
             {
-                Bucket("Everyday", 70f, CarsStatic,
-                         "car-veteran", "car-passenger", "car-passenger-race", "car-hippie-van",
-                         "jeep-open", "car-pickup-modern", "car-caravan-small"),
+                Bucket("Everyday", 70f, PalmVehicles,
+                         "SM_Veh_Sedan_01", "SM_Veh_Suv_01", "SM_Veh_Pickup_01",
+                         "SM_Veh_Van_01", "SM_Veh_Buggy_01"),
 
                 // A taxi waits at a kerb as often as it drives, and it is already accepted in
                 // traffic below. The police car is not here on purpose: parked, it is studied,
                 // and outside the station's own forecourt - ResidentialHigh's landmarkCars
                 // override - it would read as a mistake rather than as a beat car.
-                Bucket("Service", 8f, CarsStatic, "car-taxi"),
+                Bucket("Service", 8f, PalmVehicles, "SM_Veh_Sedan_01_Preset_Taxi"),
 
-                // The armoured van is the one addition the period actively wants: a bank car is
-                // the whole reason this city has a police station in it.
-                Bucket("Trade", 22f, CarsStatic, "truck", "car-tow-truck", "armored-truck"),
+                Bucket("Trade", 22f, PalmVehicles, "SM_Veh_Pickup_01_Preset_Construction",
+                         "SM_Veh_Van_01"),
             };
 
             // The camper stays in Everyday - pulling it out would resize the bag, and the bags
@@ -531,7 +533,9 @@ namespace LivingCity.EditorTools
             // every one of its deals for another Everyday body, on its own stream
             // (SeedOffsets.RareVehicles): keep chance 0 retires the camper outright while its
             // bag seat keeps dealing draw-for-draw as before.
-            db.rareVehicleNames = new[] { "car-caravan-small" };
+            // The camper is gone with the pack cars; nothing in the Synty tables needs
+            // retiring, so the filter idles until a body earns rarity again.
+            db.rareVehicleNames = System.Array.Empty<string>();
             db.rareVehicleKeepChance = 0f;
 
             // motorbike_AI is deliberately absent from Everyday. Every vehicle in the pack is
@@ -545,31 +549,24 @@ namespace LivingCity.EditorTools
             // If that ever gets done, add the prefab variant HERE - this list overwrites
             // PrefabDatabase.aiCarGroups wholesale on every run, so an inspector-assigned
             // prefab would be wiped by the next Set Up Scene.
+            AuthorVehicles.AuthorAll(Missing);
+
             db.aiCarGroups = new[]
             {
-                // The same bodies as the kerb, so a car that drives past and a car that is parked
-                // belong to the same city. Every one carries the pack's CarBehavior + PathFinding
-                // pair and the same wheel rig as car-veteran_AI.
-                //
-                // Shorter than the parked list because Cars_AI_T is not a mirror of Cars_T: the
-                // pack ships no _AI variant for car-pickup-modern, car-camper-vintage or
-                // car-caravan-small, so those three are parked-only. Adding them here would just
-                // land in the Missing warning at the end of this file.
-                Bucket("Everyday", 66f, CarsAI,
-                         "car-veteran_AI", "car-passenger_AI", "car-passenger-race_AI",
-                         "car-hippie-van_AI", "jeep-open_AI"),
+                // The same bodies as the kerb, so a car that drives past and a car that is
+                // parked belong to the same city. Every one is an AuthorVehicles conversion:
+                // the Synty model with the forked CarBehavior + PathFinding pair, wheels and
+                // sensor boxes wired from the measured reference.
+                Bucket("Everyday", 66f, AuthoredVehicles,
+                         "SM_Veh_Sedan_01_AI", "SM_Veh_Suv_01_AI", "SM_Veh_Pickup_01_AI",
+                         "SM_Veh_Van_01_AI"),
 
-                // The taxi is a modern shell, but a city street of the era did have taxis and
-                // there is no vintage stand-in in the pack. Kept at a low weight, and moving,
-                // where the silhouette is read for a moment rather than studied at the kerb.
-                // car-police_AI left this bucket when the police became real: the only police
-                // cars in the city are the station's patrol fleet (PoliceDirector), which
-                // actually returns to base - a random one dissolving at the map edge next to
-                // them would read as a bug. See PrefabDatabase.policeCarPrefab.
-                Bucket("Service", 14f, CarsAI, "car-taxi_AI"),
+                // The taxi and the food van: liveried shells that read in motion.
+                Bucket("Service", 14f, AuthoredVehicles, "SM_Veh_Sedan_01_Preset_Taxi_AI",
+                         "SM_Veh_Sedan_01_Preset_Food_AI"),
 
-                Bucket("Freight", 14f, CarsAI, "truck_AI", "car-tow-truck_AI",
-                         "armored-truck_AI"),
+                Bucket("Freight", 14f, AuthoredVehicles, "SM_Veh_Van_01_AI",
+                         "SM_Veh_Pickup_01_Preset_Construction_AI"),
 
                 // There is deliberately no bus group here, and there used to be: a "Transit"
                 // bucket carrying bus-passenger_AI at 6/100. It was dropped because at 11.28m it
@@ -604,7 +601,7 @@ namespace LivingCity.EditorTools
             // The police: the fleet's car is the pack's own AI police car (now absent from
             // every traffic bucket above - the patrol fleet is the only source of one), the
             // officer the authored man_police conversion that AuthorPedestrians just wrote.
-            db.policeCarPrefab = Load(CarsAI + "car-police_AI.prefab");
+            db.policeCarPrefab = Load(AuthoredVehicles + "SM_Veh_Car_01_AI.prefab");
             db.policeOfficerPrefab = Load(AuthoredPeople + "man_police_AI.prefab");
 
             // The school run. The bus is the pack's own AI school bus, absent from every
@@ -644,12 +641,12 @@ namespace LivingCity.EditorTools
             // Cars_AI_T ships no _AI variant for car-caravan-small or car-pickup-modern, so they
             // are parked-only. Naming the missing halves here would land in the Missing warning
             // below.
-            db.paintableVehicles = Merge(
-                LoadAll(CarsStatic, "car-passenger", "car-veteran", "car-tow-truck",
-                                    "armored-truck", "truck", "car-caravan-small",
-                                    "car-pickup-modern"),
-                LoadAll(CarsAI, "car-passenger_AI", "car-veteran_AI", "car-tow-truck_AI",
-                                "armored-truck_AI", "truck_AI"));
+            // Empty in the Synty era: the tinter's multiply-against-atlas scheme was measured
+            // against atlas-LPEC's neutral swatches and does not transfer to the Synty
+            // texture set. Synty ships colour PRESETS instead (Sedan_01_Preset_*, the Alts
+            // material sets); if kerbside variety is wanted back it comes as preset picks,
+            // not as runtime tint - see the phase E notes.
+            db.paintableVehicles = System.Array.Empty<GameObject>();
 
             // The port's shift draws the same worker models the crowd's Workers group uses -
             // a docker on the quay and a labourer on the pavement are the same city. Nothing
@@ -1653,10 +1650,10 @@ namespace LivingCity.EditorTools
                     // empty list would take the bays away from the police station too.
                     landmarkCars: new[]
                     {
-                        Bucket("Customers", 1f, CarsStatic,
-                                 "car-veteran", "car-passenger", "car-hippie-van", "jeep-open",
-                                 "car-pickup-modern", "car-caravan-small", "car-taxi",
-                                 "armored-truck"),
+                        Bucket("Customers", 1f, PalmVehicles,
+                                 "SM_Veh_Sedan_01", "SM_Veh_Suv_01", "SM_Veh_Pickup_01",
+                                 "SM_Veh_Buggy_01", "SM_Veh_Sedan_01_Preset_Taxi",
+                                 "SM_Veh_Limousine_01"),
                     },
                     // Uncapped, so TargetLotSize alone decides: a one-cell block stays a single
                     // ring, a two-cell block becomes two ringed lots with a real alley between
@@ -1918,9 +1915,9 @@ namespace LivingCity.EditorTools
                     // frontage are not in this layout at all, being the bus's own bay.
                     landmarkCars: new[]
                     {
-                        Bucket("Parents", 1f, CarsStatic,
-                                 "car-passenger", "car-pickup-modern", "car-veteran",
-                                 "jeep-open", "car-caravan-small"),
+                        Bucket("Parents", 1f, PalmVehicles,
+                                 "SM_Veh_Sedan_01", "SM_Veh_Suv_01", "SM_Veh_Pickup_01",
+                                 "SM_Veh_Van_01"),
                     }),
 
                 // There was a fourth civic zone here, the fire station, and it is gone rather than
@@ -2088,7 +2085,7 @@ namespace LivingCity.EditorTools
                     // alone.
                     parkedCars: new[]
                     {
-                        Bucket("Bullion", 1f, CarsStatic, "armored-truck", "car-veteran"),
+                        Bucket("Bullion", 1f, PalmVehicles, "SM_Veh_Van_01", "SM_Veh_Limousine_01"),
                     }),
 
                 // The car dealership - building-carwash standing in for the showroom, the pack
@@ -2136,10 +2133,10 @@ namespace LivingCity.EditorTools
                     // in the window. All four fit VehiclePicker's 5.6 x 2.4 stall test.
                     landmarkCars: new[]
                     {
-                        Bucket("Showroom stock", 3f, CarsStatic,
-                               "car-passenger", "car-veteran"),
-                        Bucket("Showroom heroes", 1f, CarsStatic,
-                               "car-formula", "car-passenger-race"),
+                        Bucket("Showroom stock", 3f, PalmVehicles,
+                               "SM_Veh_Sedan_01", "SM_Veh_Suv_01"),
+                        Bucket("Showroom heroes", 1f, PalmVehicles,
+                               "SM_Veh_Supercar_01", "SM_Veh_Supercar_02"),
                     }),
 
                 // The scatter density is up from 0.04 now that the bays register in the block's

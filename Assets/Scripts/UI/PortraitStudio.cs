@@ -171,10 +171,10 @@ namespace LivingCity.UI
         /// consts in ArmoryCatalog; the bodies are the pack's ordinary street cars.</summary>
         public static string VehicleModelFor(string displayName) => displayName switch
         {
-            "Jalopy" => "car-veteran",
-            "Sedan" => "car-passenger",
-            "Panel Van" => "car-hippie-van",
-            _ => "car-passenger",
+            "Jalopy" => "SM_Veh_Pickup_01",
+            "Sedan" => "SM_Veh_Sedan_01",
+            "Panel Van" => "SM_Veh_Van_01",
+            _ => "SM_Veh_Sedan_01",
         };
 
         static GameObject ScanVehicles(PrefabDatabase.WeightedPrefabs[] groups, string prefabName)
