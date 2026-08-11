@@ -175,7 +175,11 @@ namespace LivingCity.EditorTools
                     car.acceleration = refCar.acceleration;
                     car.minDistance = refCar.minDistance;
                 }
-                car.randomDestination = false;
+                // The polyperfect fleet ships with randomDestination ON and VehicleSpawner
+                // (like PedestrianSpawner) also asserts it per instance. Baking FALSE here
+                // routed every spawned car into the checkpoint branch with no checkpoints -
+                // an EMPTY route - and traffic died on frame one.
+                car.randomDestination = refCar ? refCar.randomDestination : true;
 
                 if (refCar)
                     instance.tag = refCar.gameObject.tag;

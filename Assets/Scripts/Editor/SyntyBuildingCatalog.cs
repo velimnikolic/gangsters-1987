@@ -26,6 +26,15 @@ namespace LivingCity.EditorTools
         const string CatalogDir = SyntyKitExtractor.KitDir + "/Catalog";
         const string CatalogMeshDir = CatalogDir + "/Meshes";
 
+        /// <summary>
+        /// Ground truth for the seam conversation: every piece within 1.5 m of every cut,
+        /// with where it ended up, written to Library/CatalogSeamLog.txt on each build.
+        /// The offline pivot parse keeps guessing wrong about bounds and roof pieces -
+        /// this file is what actually happened.
+        /// </summary>
+        const string SeamLogPath = "Library/CatalogSeamLog.txt";
+        static readonly System.Text.StringBuilder SeamLog = new();
+
         static readonly string[] SkippedGroups = { "Street", "Beach" };
 
         /// <summary>
@@ -79,16 +88,22 @@ namespace LivingCity.EditorTools
             public readonly string matContains; // "" matches every wall piece in the plane
             public readonly char segment;
             public readonly float lateralMin, lateralMax;
+            public readonly float heightMax; // pivot y; caps a rule to the storeys below
+            public readonly string nameContains; // widens the name gate for THIS rule only
 
             public SeamRule(int cut, string matContains, char segment,
                             float lateralMin = float.NegativeInfinity,
-                            float lateralMax = float.PositiveInfinity)
+                            float lateralMax = float.PositiveInfinity,
+                            float heightMax = float.PositiveInfinity,
+                            string nameContains = "")
             {
                 this.cut = cut;
                 this.matContains = matContains;
                 this.segment = segment;
                 this.lateralMin = lateralMin;
                 this.lateralMax = lateralMax;
+                this.heightMax = heightMax;
+                this.nameContains = nameContains;
             }
         }
 
@@ -103,6 +118,9 @@ namespace LivingCity.EditorTools
                 new SeamRule(0, "Tile_Light", 'B'),
                 new SeamRule(0, "Plaster_White", 'B'),
                 new SeamRule(0, "Glass", 'B'),
+                // The corner windows' slot 0 is the 01_A atlas, NOT the glass override
+                // (the seam log settled this) - the Glass rule never fired for them.
+                new SeamRule(0, "PolygonPalmCity_01", 'B'),
                 // ALL brick belongs to the garage. A banded experiment gave the northern
                 // brick stretch (z>130) to B to close a reported hole - the screenshot
                 // showed those panels floating DETACHED in front of the tower: B's body
@@ -112,19 +130,33 @@ namespace LivingCity.EditorTools
             },
             ["Hotel_01"] = new[]
             {
-                // The settled logic after four rounds with the user. Each seam plane
-                // carries BOTH buildings' walls; the split gave each plane wholesale to
-                // one side, so the fix is to move only the pieces wearing the NEIGHBOUR's
-                // identity and leave the rest where the toss put them:
-                // - A/B seam: the toss gave the plane to B; only A's blue crosses over.
-                //   A wholesale grab here strips B's own PolygonPalmCity_01_C wall and
-                //   leaves a hole in BC's right flank ("BC ima rupu desno").
-                // - C/D seam: the toss gave the plane to D. D's identity is exactly
-                //   yellow + 04-atlas; C's wall is a mongrel of everything else, so D's
-                //   materials are pinned first and the wildcard hands the rest to C.
-                new SeamRule(0, "Plaster_Blue", 'A'),
-                new SeamRule(2, "Plaster_Yellow", 'D'),
-                new SeamRule(2, "PolygonPalmCity_04", 'D'),
+                // The settled logic, one seam at a time with the user's screenshots:
+                // - A/B seam: the whole plane (blue wall, brick panel, gutter pipes,
+                //   the stone garage door) is A's east face - the toss strays floated
+                //   detached beside B ("rupa i visak"). Wholesale to A; B closes itself
+                //   with a repainted borrow clone (see SeamWallBorrows).
+                // - C/D seam: yellow + 04-atlas is D's identity BUT only up to D's
+                //   roofline. D's body tops out at y9 (the label's h13 was the wall
+                //   itself), so the cap sits at 8.5: storeys y0/3/6 stay D's wall, the
+                //   y9 storey is the parapet of C's wooden roof terrace and everything
+                //   above it towered over D as "zid desno prevelik".
+                new SeamRule(0, "", 'A'),
+                // The hut band, FULL height: D's roof-access hut (lat 104-107) closes
+                // its west side with the y9 stretch of the shared yellow wall - the
+                // capped rule below would send it to C and leave the hut gaping.
+                new SeamRule(2, "Plaster_Yellow", 'D', lateralMin: 103f, lateralMax: 108f),
+                // D's wall proper: capped at its y9 roofline AND trimmed at the rear -
+                // D's back facade sits at lat 103 (the awninged yaw-180 row), so the
+                // lat 98-102 stretch of the shared wall is C's, not a 5 m fin behind D.
+                new SeamRule(2, "Plaster_Yellow", 'D', lateralMin: 102f, heightMax: 8.5f),
+                new SeamRule(2, "PolygonPalmCity_04", 'D', lateralMin: 102f, heightMax: 8.5f),
+                // D's roof-access hut STRADDLES the cut (lat 103-108, y~9) - the plain
+                // wildcard stole its plaster west wall and left the hut gaping.
+                new SeamRule(2, "Generic_Plaster", 'D', lateralMin: 103f, lateralMax: 108f),
+                // The terrace-colonnade pillars ("sipkice" over D's roof) carry no _Wall
+                // in their names - this rule widens the gate for Hotel_01 only, so the
+                // ParkingGarage seam pillars stay untouched.
+                new SeamRule(2, "", 'C', nameContains: "_Pillar"),
                 new SeamRule(2, "", 'C'),
             },
         };
@@ -140,7 +172,14 @@ namespace LivingCity.EditorTools
         /// </summary>
         static readonly Dictionary<string, (int cut, string matContains, char segment, string repaint)[]> SeamWallBorrows = new()
         {
-            ["Hotel_01"] = new[] { (2, "Plaster_Yellow", 'C', "Generic_Plaster") },
+            ["Hotel_01"] = new[]
+            {
+                // C/D: D keeps its yellow wall, C's east closure is a plaster clone.
+                (2, "Plaster_Yellow", 'C', "Generic_Plaster"),
+                // A/B: A keeps its blue wall (the whole plane is A's), B's west closure
+                // is a plaster clone of it.
+                (0, "Plaster_Blue", 'B', "Generic_Plaster"),
+            },
         };
 
         /// <summary>
@@ -152,9 +191,11 @@ namespace LivingCity.EditorTools
         /// </summary>
         static readonly Dictionary<string, (string matContains, char segment)[]> SeamWallFloorFills = new()
         {
-            // Glass fills the corner-window column (z-strip beside the white wall) that
-            // the Tile rule cannot see - its sharedMaterial is Generic_Glass_Opaque.
-            ["ParkingGarage"] = new[] { ("Tile_Light", 'B'), ("Glass", 'B') },
+            // PolygonPalmCity_01 fills the corner-window column (the strip beside the
+            // white wall): the corner pieces' sharedMaterial is the 01_A atlas - the
+            // seam log showed the old "Glass" guess matched nothing (glass is a later
+            // material slot), which is why the corner column never filled.
+            ["ParkingGarage"] = new[] { ("Tile_Light", 'B'), ("PolygonPalmCity_01", 'B') },
         };
 
         /// <summary>
@@ -179,6 +220,7 @@ namespace LivingCity.EditorTools
             AssetDatabase.DeleteAsset(CatalogDir);
             EnsureFolders();
             SyntyBakeUtil.ClearCache();
+            SeamLog.Clear();
 
             // 1. Bake every demo group into Catalog prefabs.
             var baked = new List<string>();
@@ -247,7 +289,9 @@ namespace LivingCity.EditorTools
             }
 
             EditorSceneManager.SaveScene(scene, ScenePath);
-            Debug.Log($"[Catalog] {index} buildings on show in {ScenePath}: " + string.Join(", ", baked));
+            System.IO.File.WriteAllText(SeamLogPath, SeamLog.ToString());
+            Debug.Log($"[Catalog] {index} buildings on show in {ScenePath}: " + string.Join(", ", baked) +
+                      $"\n[Catalog] seam log: {SeamLogPath}");
         }
 
         static void BakeCatalogEntry(Transform group, List<string> baked)
@@ -458,17 +502,32 @@ namespace LivingCity.EditorTools
             // letters) are final. Only pieces standing IN a party plane move; everything
             // else keeps its geometric side.
             if (segments.Count > 1 && SeamWallOwners.TryGetValue(groupName, out var owners))
+            {
+                var widenedNames = owners.Where(r => r.nameContains.Length > 0)
+                                         .Select(r => r.nameContains).ToArray();
                 for (var source = 0; source < segments.Count; source++)
                     foreach (var piece in segments[source].ToList())
                     {
-                        // Walls, their trims AND railings - the garage's terrace railing
-                        // runs along the seam without "_Wall" anywhere in its name.
-                        if (!piece.name.Contains("_Wall") && !piece.name.Contains("_Railing"))
+                        // Wall furniture in the widest sense: the garage's terrace
+                        // railing has no "_Wall" in its name, and a wall that changes
+                        // sides must take its gutter pipes, doors and mounted props
+                        // along or they float where the wall used to be.
+                        // _Roof_Edge: the villa roof's tile-coped rim pieces stand in the
+                        // party plane like a wall (Hotel_01's "visak" slab over D) - the
+                        // seam log shows none anywhere they should not move.
+                        if (!piece.name.Contains("_Wall") && !piece.name.Contains("_Railing") &&
+                            !piece.name.Contains("_Pipe") && !piece.name.Contains("_Door") &&
+                            !piece.name.Contains("_Prop_") && !piece.name.Contains("_Roof_Edge") &&
+                            !widenedNames.Any(n => piece.name.Contains(n)))
                             continue;
                         var renderer = piece.GetComponentInChildren<MeshRenderer>(true);
                         if (!renderer || !renderer.sharedMaterial)
                             continue;
-                        var p = Project(renderer.bounds.center);
+                        // Corner pieces WRAP the seam plane, so their bounds centre sits
+                        // ~1.2 m off it - judge those by pivot instead.
+                        var p = piece.name.Contains("Corner")
+                            ? Project(piece.position)
+                            : Project(renderer.bounds.center);
                         // The seam plane's own axis - pivot-based, because a piece's
                         // bounds can extend either way from its pivot.
                         var lateral = alongX ? piece.position.z : piece.position.x;
@@ -477,7 +536,10 @@ namespace LivingCity.EditorTools
                             if (rule.cut >= cuts.Count ||
                                 Mathf.Abs(p - cuts[rule.cut]) > 0.8f ||
                                 !renderer.sharedMaterial.name.Contains(rule.matContains) ||
-                                lateral < rule.lateralMin || lateral > rule.lateralMax)
+                                lateral < rule.lateralMin || lateral > rule.lateralMax ||
+                                piece.position.y > rule.heightMax ||
+                                (rule.nameContains.Length > 0 &&
+                                 !piece.name.Contains(rule.nameContains)))
                                 continue;
                             // A piece may only cross ONE boundary - a party wall always
                             // separates neighbours, so a farther move is a wrong rule.
@@ -491,6 +553,7 @@ namespace LivingCity.EditorTools
                             break;
                         }
                     }
+            }
 
             // "Produzi zid do poda": clone the matched wall's lowest authored storey at
             // the seam down to the ground, one storey pitch at a time. Only the
@@ -511,7 +574,10 @@ namespace LivingCity.EditorTools
                         if (!renderer || !renderer.sharedMaterial ||
                             !renderer.sharedMaterial.name.Contains(matContains))
                             continue;
-                        if (!cuts.Any(cut => Mathf.Abs(Project(renderer.bounds.center) - cut) <= 0.8f))
+                        var fillProj = piece.name.Contains("Corner")
+                            ? Project(piece.position)
+                            : Project(renderer.bounds.center);
+                        if (!cuts.Any(cut => Mathf.Abs(fillProj - cut) <= 0.8f))
                             continue;
                         var pieceYaw = Mathf.RoundToInt(Mathf.Repeat(piece.eulerAngles.y, 360f) / 90f) * 90 % 360;
                         var inSeamPlane = alongX ? (pieceYaw == 90 || pieceYaw == 270)
@@ -574,8 +640,12 @@ namespace LivingCity.EditorTools
                             continue;
                         var renderer = piece.GetComponentInChildren<MeshRenderer>(true);
                         if (!renderer || !renderer.sharedMaterial ||
-                            !renderer.sharedMaterial.name.Contains(matContains) ||
-                            Mathf.Abs(Project(renderer.bounds.center) - cuts[cutIndex]) > 0.8f)
+                            !renderer.sharedMaterial.name.Contains(matContains))
+                            continue;
+                        var borrowProj = piece.name.Contains("Corner")
+                            ? Project(piece.position)
+                            : Project(renderer.bounds.center);
+                        if (Mathf.Abs(borrowProj - cuts[cutIndex]) > 0.8f)
                             continue;
                         var pieceYaw = Mathf.RoundToInt(Mathf.Repeat(piece.eulerAngles.y, 360f) / 90f) * 90 % 360;
                         var inSeamPlane = alongX ? (pieceYaw == 90 || pieceYaw == 270)
@@ -597,6 +667,29 @@ namespace LivingCity.EditorTools
                         segments[into].Add(clone);
                     }
                 }
+
+            // The seam census - every piece near every cut, with its final segment.
+            if (cuts.Count > 0)
+            {
+                SeamLog.AppendLine($"=== {groupName}  axis {(alongX ? "x" : "z")}  cuts: " +
+                                   string.Join(", ", cuts.Select(c => c.ToString("F2"))));
+                for (var s = 0; s < segments.Count; s++)
+                    foreach (var piece in segments[s])
+                    {
+                        var renderer = piece.GetComponentInChildren<MeshRenderer>(true);
+                        if (!renderer)
+                            continue;
+                        var b = Project(renderer.bounds.center);
+                        var pv = Project(piece.position);
+                        if (!cuts.Any(c => Mathf.Abs(b - c) <= 1.5f || Mathf.Abs(pv - c) <= 1.5f))
+                            continue;
+                        var lat = alongX ? piece.position.z : piece.position.x;
+                        SeamLog.AppendLine(
+                            $"{(char)('A' + s)}  {piece.name,-44} y{piece.position.y,6:F2} " +
+                            $"lat{lat,7:F2} pv{pv,7:F2} b{b,7:F2} yaw{Mathf.RoundToInt(piece.eulerAngles.y),4} " +
+                            $"{(renderer.sharedMaterial ? renderer.sharedMaterial.name : "-")}");
+                    }
+            }
 
             return segments;
         }

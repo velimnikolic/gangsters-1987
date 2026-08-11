@@ -244,6 +244,12 @@ namespace LivingCity.Entities
                     behaviour.maxspeed = config.carMaxSpeed;
 
                 behaviour.headway = config.carHeadway;
+
+                // Same per-instance pattern as PedestrianSpawner: the fleet prefabs are not
+                // trusted to carry this. The Synty authoring pass baked it FALSE, which sent
+                // every car down the checkpoint branch with an empty checkpoint list - an
+                // EMPTY (not null) route - and killed the whole city's traffic on frame one.
+                behaviour.randomDestination = true;
             }
 
             if (gates && behaviour)
