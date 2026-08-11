@@ -19,6 +19,11 @@ namespace LivingCity.News
         /// each remaining desk.</summary>
         public const int FrontPageSize = 6;
 
+        /// <summary>How many stories carry a picture, counted from the lead down. A
+        /// real front page runs two or three cuts, and every one of them costs the
+        /// studio a staged render - so this is a look decision and a budget both.</summary>
+        public const int PhotosPerPage = 2;
+
         /// <summary>Every headline - filled templates and calendar entries alike -
         /// must fit this. Sized for one line of the newspaper UI's lead font; the
         /// headless suite proofs both pools against it.</summary>
@@ -157,10 +162,17 @@ namespace LivingCity.News
                     var template = pool[(pick + probe) % pool.Length];
                     if (!used.Add(template))
                         continue;
-                    page.Add(new Headline { Desk = desk, Text = Fill(template, rng) });
+                    var text = Fill(template, rng, out var gangId);
+                    page.Add(new Headline { Desk = desk, Text = text, GangId = gangId });
                     break;
                 }
             }
+
+            // The picture desk last, so adding or removing a photo can never change
+            // which stories ran - the words are set before the camera is loaded.
+            var photos = PhotosPerPage < page.Count ? PhotosPerPage : page.Count;
+            for (var i = 0; i < photos; i++)
+                page[i].Photo = PictureDesk.For(page[i].Desk, page[i].GangId, rng);
 
             return page.ToArray();
         }
@@ -200,14 +212,18 @@ namespace LivingCity.News
         /// <summary>
         /// Slot filling. Draws happen only for slots the template actually contains,
         /// in a fixed order, so adding a template never reshuffles another's fills.
+        /// <paramref name="gangId"/> reports the family the story ended up naming, or
+        /// -1 - the picture desk prints that family's man.
         /// </summary>
-        static string Fill(string template, System.Random rng)
+        static string Fill(string template, System.Random rng, out int gangId)
         {
             var text = template;
+            gangId = -1;
 
             if (text.Contains("{GANG}"))
             {
                 var gang = rng.Next(GangCatalog.Names.Length);
+                gangId = gang;
                 text = text.Replace("{GANG}", GangCatalog.Names[gang].ToUpperInvariant());
 
                 if (text.Contains("{GANG2}"))
