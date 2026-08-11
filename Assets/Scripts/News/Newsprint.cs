@@ -32,8 +32,10 @@ namespace LivingCity.News
         /// </summary>
         public static float Shade(float luminance, int x, int y)
         {
-            // Press photos run contrasty - flat mid-grays die on cheap paper.
-            var tone = (luminance - 0.5f) * 1.35f + 0.52f;
+            // Press photos run contrasty - flat mid-grays die on cheap paper - but
+            // lifted, not just stretched: a curve centred on 0.5 laid so much ink into
+            // the upper mid-tones that a lit face muddled into its own backdrop.
+            var tone = (luminance - 0.5f) * 1.30f + 0.58f;
 
             // Film grain, deterministic per pixel.
             tone += (Hash(x, y) - 0.5f) * 0.08f;

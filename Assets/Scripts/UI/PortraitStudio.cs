@@ -45,6 +45,18 @@ namespace LivingCity.UI
             Vehicle,
         }
 
+        /// <summary>
+        /// How the exposure is developed. The ledger wants the colour print it always
+        /// had; the newspaper wants the same negative pushed through a halftone screen
+        /// (see <see cref="News.Newsprint"/>). Part of the cache key, so one man can
+        /// hang in the ledger and in the paper at once without either restaging him.
+        /// </summary>
+        public enum Treatment
+        {
+            Colour,
+            Newsprint,
+        }
+
         /// <summary>Unnamed in the layer table and unused by the project - see the class
         /// comment for why 30 is taken.</summary>
         const int StudioLayer = 31;
@@ -67,6 +79,7 @@ namespace LivingCity.UI
             public string Key;
             public GameObject Prefab;
             public Framing Framing;
+            public Treatment Treatment;
             public readonly List<RawImage> Targets = new List<RawImage>();
         }
 
@@ -84,13 +97,14 @@ namespace LivingCity.UI
         /// stays untouched (leave it disabled - Show enables it) until the print lands.
         /// Null prefab or target: no-op.
         /// </summary>
-        public static void Request(GameObject prefab, Framing framing, RawImage target)
+        public static void Request(GameObject prefab, Framing framing, RawImage target,
+            Treatment treatment = Treatment.Colour)
         {
             if (!prefab || !target)
                 return;
 
             var studio = Require();
-            var key = framing + ":" + prefab.name;
+            var key = treatment + ":" + framing + ":" + prefab.name;
 
             if (studio.prints.TryGetValue(key, out var print))
             {
@@ -105,7 +119,7 @@ namespace LivingCity.UI
                     return;
                 }
 
-            var job = new Job { Key = key, Prefab = prefab, Framing = framing };
+            var job = new Job { Key = key, Prefab = prefab, Framing = framing, Treatment = treatment };
             job.Targets.Add(target);
             studio.queue.Add(job);
         }
@@ -134,6 +148,11 @@ namespace LivingCity.UI
                         return prefab;
             }
 
+            // The officer rides no crowd group - the patrol fleet is the only source of
+            // one - and the newspaper's drug-war desk asks for him by name.
+            if (prefabs.policeOfficerPrefab && prefabs.policeOfficerPrefab.name == prefabName)
+                return prefabs.policeOfficerPrefab;
+
             WarnOnce("people:" + prefabName, "[PortraitStudio] '" + prefabName +
                 "' is not in the PrefabDatabase pedestrian groups - no mugshot.");
             return null;
@@ -153,6 +172,12 @@ namespace LivingCity.UI
 
             var found = ScanVehicles(prefabs.parkedCarGroups, prefabName)
                         ?? ScanVehicles(prefabs.aiCarGroups, prefabName);
+
+            // Same exception as the officer: the patrol car sits outside every traffic
+            // bucket, and the paper photographs it at the kerb.
+            if (!found && prefabs.policeCarPrefab && prefabs.policeCarPrefab.name == prefabName)
+                found = prefabs.policeCarPrefab;
+
             if (!found)
                 WarnOnce("vehicle:" + prefabName, "[PortraitStudio] '" + prefabName +
                     "' is not in the PrefabDatabase car groups - no photo.");
@@ -316,10 +341,15 @@ namespace LivingCity.UI
             Aim(BoundsOf(staged), job.Framing);
 
             // The mugshot gets an opaque wall so the print covers the initials
-            // beneath it; merchandise floats on the page through alpha.
-            cam.backgroundColor = job.Framing == Framing.Bust
-                ? new Color(0.10f, 0.11f, 0.10f, 1f)
-                : new Color(0f, 0f, 0f, 0f);
+            // beneath it; merchandise floats on the page through alpha. In newsprint
+            // that wall goes light: the ledger's near-black would screen to a solid
+            // slab of ink, where a press mugshot stands against pale studio backdrop.
+            if (job.Framing != Framing.Bust)
+                cam.backgroundColor = new Color(0f, 0f, 0f, 0f);
+            else
+                cam.backgroundColor = job.Treatment == Treatment.Newsprint
+                    ? new Color(0.84f, 0.84f, 0.84f, 1f)
+                    : new Color(0.10f, 0.11f, 0.10f, 1f);
 
             // Belt and braces on top of the 2.5km: no other camera - including ones
             // created after this rig, like the strategic map's - may see the studio.
@@ -341,8 +371,14 @@ namespace LivingCity.UI
             var previous = RenderTexture.active;
             RenderTexture.active = film;
             print.ReadPixels(new Rect(0f, 0f, PrintSize, PrintSize), 0, 0);
-            print.Apply(false, true);
             RenderTexture.active = previous;
+
+            if (job.Treatment == Treatment.Newsprint)
+                ScreenToNewsprint(print);
+
+            // Apply LAST and non-readable: the newsprint pass needs the pixels on the
+            // CPU, and uploading twice would cost a second copy of every print.
+            print.Apply(false, true);
 
             prints[job.Key] = print;
             foreach (var target in job.Targets)
@@ -351,6 +387,38 @@ namespace LivingCity.UI
             Destroy(staged);
             staged = null;
             queue.RemoveAt(0);
+        }
+
+        /// <summary>
+        /// Turns an exposure into newsprint: composite over paper (a cut-out subject
+        /// prints on bare stock, not on a hole), take luminance, and run it through the
+        /// halftone screen. The arithmetic lives in News.Newsprint so the headless suite
+        /// can proof it; this is only the pixel loop.
+        /// </summary>
+        static void ScreenToNewsprint(Texture2D print)
+        {
+            var pixels = print.GetPixels32();
+            var width = print.width;
+
+            for (var i = 0; i < pixels.Length; i++)
+            {
+                var p = pixels[i];
+                var a = p.a / 255f;
+                var r = p.r / 255f * a + News.Newsprint.PaperLuminance * (1f - a);
+                var g = p.g / 255f * a + News.Newsprint.PaperLuminance * (1f - a);
+                var b = p.b / 255f * a + News.Newsprint.PaperLuminance * (1f - a);
+
+                var luminance = 0.299f * r + 0.587f * g + 0.114f * b;
+                var shade = News.Newsprint.Shade(luminance, i % width, i / width);
+
+                pixels[i] = new Color32(
+                    (byte)(Mathf.Lerp(News.Newsprint.InkR, News.Newsprint.PaperR, shade) * 255f),
+                    (byte)(Mathf.Lerp(News.Newsprint.InkG, News.Newsprint.PaperG, shade) * 255f),
+                    (byte)(Mathf.Lerp(News.Newsprint.InkB, News.Newsprint.PaperB, shade) * 255f),
+                    255);
+            }
+
+            print.SetPixels32(pixels);
         }
 
         static void Show(RawImage target, Texture2D print)

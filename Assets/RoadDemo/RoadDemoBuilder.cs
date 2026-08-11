@@ -54,6 +54,16 @@ namespace RoadDemo
         public Vector2 sitSeconds = new Vector2(10f, 35f);
         public Vector2 chatSeconds = new Vector2(6f, 14f);
 
+        [Header("Organic layout")]
+        [Tooltip("Share of ordinary-street segments the layout tries to close, so a street " +
+                 "stops at a block instead of running the width of the map. Boulevards are " +
+                 "never cut, and a cut is rolled back if it would leave a dead end or split " +
+                 "the network - so the share that actually lands is a little under this.")]
+        [Range(0f, 0.6f)] public float streetGapChance = 0.3f;
+
+        [Tooltip("Which set of gaps gets drawn. Same seed, same street plan.")]
+        public int layoutSeed = 7;
+
         const float Cell = 5f;
         const float StreetHalf = 5f;     // carriageway half width: 2 lanes
         const float BoulevardHalf = 15f; // 2+2 lanes plus a 10 m median
@@ -102,8 +112,6 @@ namespace RoadDemo
         Vector3 _paveSize, _paveOffset;
         float _paveTop;
         GameObject _policeCarPrefab;
-        Sprite _policeIndicator;
-        Sprite _policePanel;
         readonly List<GameObject> _officerPrefabs = new List<GameObject>();
         GameObject _policeStation;     // the packed station instance, found at placement
         bool _forecourtPlanned;
@@ -114,6 +122,15 @@ namespace RoadDemo
         GameObject _blockPrefab;
         readonly List<GameObject> _featureBlocks = new List<GameObject>();
         readonly Dictionary<GameObject, Bounds> _prefabBoundsCache = new Dictionary<GameObject, Bounds>();
+
+        // Which stretches of each road are actually built. A closed segment is not a
+        // road at all - no carriageway, no lane graph, no crossings - and the strip
+        // it would have taken becomes a court shared by the two block interiors
+        // either side, which is what merges them into one bigger block.
+        //   _vSeg[i, j] - vertical road i, between horizontal roads j and j+1
+        //   _hSeg[j, i] - horizontal road j, between vertical roads i and i+1
+        bool[,] _vSeg, _hSeg;
+        string _layoutKey;   // what the cached plan was drawn for (the editor sketch)
 
         readonly HashSet<long> _cells = new HashSet<long>();
         RoadNode[,] _nodes;
@@ -150,6 +167,7 @@ namespace RoadDemo
             _traffic = new GameObject("Traffic").transform;
             _cars = new GameObject("Cars").transform;
 
+            EnsureLayout();
             BuildNodes();
             BuildRoadsAndSidewalks();
             BuildBlocks();
@@ -203,23 +221,43 @@ namespace RoadDemo
             if (verticalRoadX == null || horizontalRoadZ == null ||
                 verticalRoadX.Length == 0 || horizontalRoadZ.Length == 0) return;
 
-            float z0 = horizontalRoadZ[0] - 20f, z1 = horizontalRoadZ[horizontalRoadZ.Length - 1] + 20f;
-            float x0 = verticalRoadX[0] - 20f, x1 = verticalRoadX[verticalRoadX.Length - 1] + 20f;
+            int nv = verticalRoadX.Length, nh = horizontalRoadZ.Length;
+            if (verticalIsBoulevard == null || verticalIsBoulevard.Length < nv ||
+                horizontalIsBoulevard == null || horizontalIsBoulevard.Length < nh) return;
 
-            for (int i = 0; i < verticalRoadX.Length; i++)
-            {
-                bool blvd = i < verticalIsBoulevard.Length && verticalIsBoulevard[i];
-                Gizmos.color = blvd ? new Color(1f, 0.8f, 0.2f, 0.5f) : new Color(1f, 1f, 1f, 0.35f);
-                Gizmos.DrawCube(new Vector3(verticalRoadX[i], 0f, (z0 + z1) * 0.5f),
-                    new Vector3((blvd ? BoulevardHalf : StreetHalf) * 2f, 0.1f, z1 - z0));
-            }
-            for (int j = 0; j < horizontalRoadZ.Length; j++)
-            {
-                bool blvd = j < horizontalIsBoulevard.Length && horizontalIsBoulevard[j];
-                Gizmos.color = blvd ? new Color(1f, 0.8f, 0.2f, 0.5f) : new Color(1f, 1f, 1f, 0.35f);
-                Gizmos.DrawCube(new Vector3((x0 + x1) * 0.5f, 0f, horizontalRoadZ[j]),
-                    new Vector3(x1 - x0, 0.1f, (blvd ? BoulevardHalf : StreetHalf) * 2f));
-            }
+            EnsureLayout();
+
+            var street = new Color(1f, 1f, 1f, 0.35f);
+            var avenue = new Color(1f, 0.8f, 0.2f, 0.5f);
+            var court = new Color(0.35f, 0.8f, 0.4f, 0.28f);   // what a closed segment becomes
+
+            for (int i = 0; i < nv; i++)
+                for (int j = 0; j < nh; j++)
+                {
+                    Gizmos.color = verticalIsBoulevard[i] || horizontalIsBoulevard[j] ? avenue : street;
+                    Gizmos.DrawCube(new Vector3(verticalRoadX[i], 0f, horizontalRoadZ[j]),
+                        new Vector3(VHalf(i) * 2f, 0.1f, HHalf(j) * 2f));
+                }
+
+            for (int i = 0; i < nv; i++)
+                for (int j = 0; j + 1 < nh; j++)
+                {
+                    float a = horizontalRoadZ[j] + HHalf(j), b = horizontalRoadZ[j + 1] - HHalf(j + 1);
+                    Gizmos.color = !_vSeg[i, j] ? court
+                        : verticalIsBoulevard[i] ? avenue : street;
+                    Gizmos.DrawCube(new Vector3(verticalRoadX[i], 0f, (a + b) * 0.5f),
+                        new Vector3(VHalf(i) * 2f, 0.1f, b - a));
+                }
+
+            for (int j = 0; j < nh; j++)
+                for (int i = 0; i + 1 < nv; i++)
+                {
+                    float a = verticalRoadX[i] + VHalf(i), b = verticalRoadX[i + 1] - VHalf(i + 1);
+                    Gizmos.color = !_hSeg[j, i] ? court
+                        : horizontalIsBoulevard[j] ? avenue : street;
+                    Gizmos.DrawCube(new Vector3((a + b) * 0.5f, 0f, horizontalRoadZ[j]),
+                        new Vector3(b - a, 0.1f, HHalf(j) * 2f));
+                }
         }
 
 #if UNITY_EDITOR
@@ -299,16 +337,8 @@ namespace RoadDemo
             if (_policeCarPrefab == null)
                 Debug.LogWarning("[RoadDemo] SM_Veh_Car_Police_01 missing; police patrol disabled");
 
-            // the patrol indicator: a soft dot from Interface Modern Menus (the
-            // project's single source of UI art), tinted police-blue by the overlay
-            _policeIndicator = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(
-                "Assets/Synty/InterfaceModernMenus/Sprites/FX/SPR_ModernMenus_FX_Glow_Dot_01.png");
-            if (_policeIndicator == null)
-                Debug.LogWarning("[RoadDemo] InterfaceModernMenus dot sprite missing; no patrol indicators");
-
-            // the popup chrome: the same dark box the building card wears
-            _policePanel = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(
-                "Assets/Synty/InterfaceModernMenus/Sprites/ModernMenus/SPR_ModernMenus_Box_Medium_04_Dark_Front.png");
+            // the patrol overlay dresses itself out of DemoUi - the demo's one
+            // wardrobe, so its dot and popup match the top bar and the ledger
 
             // people from every Synty pack; only humanoid-rigged prefabs qualify
             // (the walk clip retargets onto any humanoid avatar)
@@ -419,6 +449,139 @@ namespace RoadDemo
         }
 #endif
 
+        // ------------------------------------------------------------ layout plan
+
+        bool NorthOpen(int i, int j) => j + 1 < horizontalRoadZ.Length && _vSeg[i, j];
+        bool SouthOpen(int i, int j) => j > 0 && _vSeg[i, j - 1];
+        bool EastOpen(int i, int j) => i + 1 < verticalRoadX.Length && _hSeg[j, i];
+        bool WestOpen(int i, int j) => i > 0 && _hSeg[j, i - 1];
+
+        /// <summary>How many roads still meet at this junction: 4 is a crossroads,
+        /// 3 a T, 2 a bend or a through-stretch.</summary>
+        int Degree(int i, int j)
+        {
+            int d = 0;
+            if (NorthOpen(i, j)) d++;
+            if (SouthOpen(i, j)) d++;
+            if (EastOpen(i, j)) d++;
+            if (WestOpen(i, j)) d++;
+            return d;
+        }
+
+        /// Rebuilds the plan only when what it was drawn for has changed - the edit
+        /// mode sketch asks for it every frame.
+        void EnsureLayout()
+        {
+            string key = verticalRoadX.Length + "x" + horizontalRoadZ.Length +
+                         ":" + layoutSeed + ":" + streetGapChance;
+            if (_vSeg != null && _layoutKey == key) return;
+            PlanLayout();
+            _layoutKey = key;
+        }
+
+        // Draws the segment mask - which is the whole of "streets go around blocks
+        // rather than through them". Two rules keep the result drivable and both
+        // are hard:
+        //
+        //   No junction may drop below TWO open segments. DemoVehicle forbids
+        //   U-turns, so a dead end is not a cul-de-sac, it is a car that reaches
+        //   the end of its lane with nowhere to go and drives on into open ground.
+        //
+        //   The network must stay in one piece, or the cars that spawned in a
+        //   severed corner circle it for the rest of the session while the rest of
+        //   the city stands empty.
+        //
+        // Cuts are drawn in a shuffled order and each is rolled back if it breaks
+        // either rule, so streetGapChance is an upper bound, not a quota - a dense
+        // grid grants most of it, a sparse one almost none.
+        void PlanLayout()
+        {
+            int nv = verticalRoadX.Length, nh = horizontalRoadZ.Length;
+            _vSeg = new bool[nv, Mathf.Max(1, nh - 1)];
+            _hSeg = new bool[nh, Mathf.Max(1, nv - 1)];
+            for (int i = 0; i < nv; i++)
+                for (int j = 0; j + 1 < nh; j++) _vSeg[i, j] = true;
+            for (int j = 0; j < nh; j++)
+                for (int i = 0; i + 1 < nv; i++) _hSeg[j, i] = true;
+
+            // its own generator rather than UnityEngine.Random: the street plan must
+            // not shift because some later pass drew one more bush
+            var rng = new System.Random(layoutSeed);
+
+            // boulevards are the arteries and stay whole - cutting one strands half
+            // the through traffic and reads as a missing road, not as a block
+            var cuts = new List<(bool vertical, int road, int seg)>();
+            for (int i = 0; i < nv; i++)
+                if (!verticalIsBoulevard[i])
+                    for (int j = 0; j + 1 < nh; j++) cuts.Add((true, i, j));
+            for (int j = 0; j < nh; j++)
+                if (!horizontalIsBoulevard[j])
+                    for (int i = 0; i + 1 < nv; i++) cuts.Add((false, j, i));
+
+            for (int k = cuts.Count - 1; k > 0; k--)
+            {
+                int swap = rng.Next(k + 1);
+                (cuts[k], cuts[swap]) = (cuts[swap], cuts[k]);
+            }
+
+            int want = Mathf.RoundToInt(cuts.Count * Mathf.Clamp01(streetGapChance));
+            int closed = 0;
+            foreach (var cut in cuts)
+            {
+                if (closed >= want) break;
+
+                if (cut.vertical) _vSeg[cut.road, cut.seg] = false;
+                else _hSeg[cut.road, cut.seg] = false;
+
+                if (LayoutHolds())
+                {
+                    closed++;
+                }
+                else if (cut.vertical) _vSeg[cut.road, cut.seg] = true;
+                else _hSeg[cut.road, cut.seg] = true;
+            }
+
+            // Only in Play: the edit-mode sketch re-plans on every slider tick, and
+            // one line per tick buries the console.
+            if (Application.isPlaying)
+                Debug.Log($"[RoadDemo] street plan: {closed} of {cuts.Count} segments closed " +
+                          $"(asked for {want}), seed {layoutSeed}.");
+        }
+
+        bool LayoutHolds()
+        {
+            int nv = verticalRoadX.Length, nh = horizontalRoadZ.Length;
+
+            for (int i = 0; i < nv; i++)
+                for (int j = 0; j < nh; j++)
+                    if (Degree(i, j) < 2) return false;
+
+            var seen = new bool[nv, nh];
+            var queue = new Queue<Vector2Int>();
+            int reached = 1;
+            seen[0, 0] = true;
+            queue.Enqueue(new Vector2Int(0, 0));
+
+            void Visit(int i, int j)
+            {
+                if (seen[i, j]) return;
+                seen[i, j] = true;
+                reached++;
+                queue.Enqueue(new Vector2Int(i, j));
+            }
+
+            while (queue.Count > 0)
+            {
+                var p = queue.Dequeue();
+                if (NorthOpen(p.x, p.y)) Visit(p.x, p.y + 1);
+                if (SouthOpen(p.x, p.y)) Visit(p.x, p.y - 1);
+                if (EastOpen(p.x, p.y)) Visit(p.x + 1, p.y);
+                if (WestOpen(p.x, p.y)) Visit(p.x - 1, p.y);
+            }
+
+            return reached == nv * nh;
+        }
+
         // ------------------------------------------------------------------ layout
 
         float VHalf(int i) => verticalIsBoulevard[i] ? BoulevardHalf : StreetHalf;
@@ -468,10 +631,13 @@ namespace RoadDemo
 
         void BuildNodeGeometry(RoadNode n)
         {
-            bool north = n.J < horizontalRoadZ.Length - 1;
-            bool south = n.J > 0;
-            bool east = n.I < verticalRoadX.Length - 1;
-            bool west = n.I > 0;
+            // "has" means a road actually continues that way - the map edge and a
+            // closed segment read the same here, and both get the sidewalk cap that
+            // turns this junction into a T or a bend
+            bool north = NorthOpen(n.I, n.J);
+            bool south = SouthOpen(n.I, n.J);
+            bool east = EastOpen(n.I, n.J);
+            bool west = WestOpen(n.I, n.J);
             bool vBlvd = verticalIsBoulevard[n.I];
             bool hBlvd = horizontalIsBoulevard[n.J];
 
@@ -530,11 +696,13 @@ namespace RoadDemo
         {
             for (int i = 0; i < verticalRoadX.Length; i++)
                 for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
-                    FillVerticalSegment(i, _nodes[i, j], _nodes[i, j + 1]);
+                    if (_vSeg[i, j])
+                        FillVerticalSegment(i, _nodes[i, j], _nodes[i, j + 1]);
 
             for (int j = 0; j < horizontalRoadZ.Length; j++)
                 for (int i = 0; i + 1 < verticalRoadX.Length; i++)
-                    FillHorizontalSegment(j, _nodes[i, j], _nodes[i + 1, j]);
+                    if (_hSeg[j, i])
+                        FillHorizontalSegment(j, _nodes[i, j], _nodes[i + 1, j]);
         }
 
         void FillVerticalSegment(int i, RoadNode a, RoadNode b)
@@ -721,6 +889,69 @@ namespace RoadDemo
                         FillCourtyard(xMin, xMax, zMin, zMax, occupied, floorTop);
                     }
                 }
+
+            BuildGapCourts();
+        }
+
+        // Where a segment was closed, the strip the street would have taken - both
+        // sidewalks and the carriageway between them - is left bare ground by every
+        // pass above, because they all skip a closed segment. It belongs to the
+        // blocks either side now, so it gets the same floor and the same courtyard
+        // dressing they do: the two interiors read as one big block with a garden
+        // down the middle, which is the whole point of cutting the street.
+        void BuildGapCourts()
+        {
+            int nv = verticalRoadX.Length, nh = horizontalRoadZ.Length;
+
+            for (int i = 0; i < nv; i++)
+                for (int j = 0; j + 1 < nh; j++)
+                {
+                    if (_vSeg[i, j]) continue;
+                    GapCourt(verticalRoadX[i] - VHalf(i) - Cell,
+                             verticalRoadX[i] + VHalf(i) + Cell,
+                             horizontalRoadZ[j] + HHalf(j) + Cell,
+                             horizontalRoadZ[j + 1] - HHalf(j + 1) - Cell, true);
+                }
+
+            for (int j = 0; j < nh; j++)
+                for (int i = 0; i + 1 < nv; i++)
+                {
+                    if (_hSeg[j, i]) continue;
+                    GapCourt(verticalRoadX[i] + VHalf(i) + Cell,
+                             verticalRoadX[i + 1] - VHalf(i + 1) - Cell,
+                             horizontalRoadZ[j] - HHalf(j) - Cell,
+                             horizontalRoadZ[j] + HHalf(j) + Cell, false);
+                }
+        }
+
+        /// Half width kept clear either side of a footpath's centre line.
+        const float GapPathHalf = 1.9f;
+
+        void GapCourt(float xMin, float xMax, float zMin, float zMax, bool vertical)
+        {
+            if (xMax - xMin < Cell || zMax - zMin < Cell) return;
+
+            // The two footpaths sit where the sidewalks did - the middle of the
+            // corner slab at either end, which is exactly the line BuildPedGraph
+            // links along. Handed to FillCourtyard as occupied ground so nothing
+            // gets planted in the walking lane.
+            var paths = new List<Rect>();
+            if (vertical)
+            {
+                float d = zMax - zMin;
+                paths.Add(new Rect(xMin + Cell * 0.5f - GapPathHalf, zMin, GapPathHalf * 2f, d));
+                paths.Add(new Rect(xMax - Cell * 0.5f - GapPathHalf, zMin, GapPathHalf * 2f, d));
+            }
+            else
+            {
+                float w = xMax - xMin;
+                paths.Add(new Rect(xMin, zMin + Cell * 0.5f - GapPathHalf, w, GapPathHalf * 2f));
+                paths.Add(new Rect(xMin, zMax - Cell * 0.5f - GapPathHalf, w, GapPathHalf * 2f));
+            }
+
+            bool paved = _pave != null && Random.value < 0.65f;
+            BuildBlockFloor(xMin, xMax, zMin, zMax, null, paved);
+            FillCourtyard(xMin, xMax, zMin, zMax, paths, FloorLevel());
         }
 
         // Frontage dictation: extra yaw that turns a feature bake's entrance row
@@ -1088,6 +1319,7 @@ namespace RoadDemo
             for (int i = 0; i < verticalRoadX.Length; i++)
                 for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
                 {
+                    if (!_vSeg[i, j]) continue;   // a court dresses itself
                     var a = _nodes[i, j];
                     var b = _nodes[i, j + 1];
                     var start = new Vector3(verticalRoadX[i], 0f, a.ZMax);
@@ -1098,6 +1330,7 @@ namespace RoadDemo
             for (int j = 0; j < horizontalRoadZ.Length; j++)
                 for (int i = 0; i + 1 < verticalRoadX.Length; i++)
                 {
+                    if (!_hSeg[j, i]) continue;
                     var a = _nodes[i, j];
                     var b = _nodes[i + 1, j];
                     var start = new Vector3(a.XMax, 0f, horizontalRoadZ[j]);
@@ -1237,6 +1470,7 @@ namespace RoadDemo
             for (int i = 0; i < verticalRoadX.Length; i++)
                 for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
                 {
+                    if (!_vSeg[i, j]) continue;
                     var a = _nodes[i, j];
                     var b = _nodes[i, j + 1];
                     int count = verticalIsBoulevard[i] ? 3 : Random.Range(1, 3);
@@ -1252,6 +1486,7 @@ namespace RoadDemo
             for (int j = 0; j < horizontalRoadZ.Length; j++)
                 for (int i = 0; i + 1 < verticalRoadX.Length; i++)
                 {
+                    if (!_hSeg[j, i]) continue;
                     var a = _nodes[i, j];
                     var b = _nodes[i + 1, j];
                     int count = horizontalIsBoulevard[j] ? 3 : Random.Range(1, 3);
@@ -1270,47 +1505,74 @@ namespace RoadDemo
         // One line of poles along each ordinary street (east / south side), wires
         // scaled to whatever span the pole spacing produces. Pole positions inside
         // intersection or zebra zones are skipped, so spans stretch across them.
+        //
+        // Run by run, not road by road: a closed segment breaks the line, and a
+        // single span stretched over the court in its place would be a 100 m wire
+        // hanging across a garden with nothing holding it up.
         void PowerlinePass()
         {
             if (_powerpole == null || _wires.Count == 0) return;
-            const float WireLen = 7.696f;
-            const float WireY = 8.33f;
-            float[] strand = { -0.85f, 0f, 0.85f };
 
-            for (int i = 0; i < verticalRoadX.Length; i++)
+            int nv = verticalRoadX.Length, nh = horizontalRoadZ.Length;
+
+            for (int i = 0; i < nv; i++)
             {
                 if (verticalIsBoulevard[i]) continue;
                 float x = verticalRoadX[i] + StreetHalf + 4.3f;
-                var spots = PoleSpots(
-                    _nodes[i, 0].ZMax + 2f, _nodes[i, horizontalRoadZ.Length - 1].ZMin - 2f,
-                    z => InsideNodeZoneZ(i, z));
-                foreach (var z in spots)
-                    Prop(_powerpole, new Vector3(x, 0.1f, z), 0f, _geometry);
-                for (int k = 0; k + 1 < spots.Count; k++)
-                    foreach (float off in strand)
-                    {
-                        var wire = Instantiate(Pick(_wires),
-                            new Vector3(x + off, WireY, spots[k]), Quaternion.identity, _geometry);
-                        wire.transform.localScale = new Vector3(1f, 1f, (spots[k + 1] - spots[k]) / WireLen);
-                    }
+                for (int j = 0; j + 1 < nh; )
+                {
+                    if (!_vSeg[i, j]) { j++; continue; }
+                    int end = j;
+                    while (end + 1 < nh && _vSeg[i, end]) end++;
+                    PoleRun(PoleSpots(_nodes[i, j].ZMax + 2f, _nodes[i, end].ZMin - 2f,
+                                      z => InsideNodeZoneZ(i, z)),
+                            x, true);
+                    j = end;
+                }
             }
-            for (int j = 0; j < horizontalRoadZ.Length; j++)
+            for (int j = 0; j < nh; j++)
             {
                 if (horizontalIsBoulevard[j]) continue;
                 float z = horizontalRoadZ[j] - StreetHalf - 4.3f;
-                var spots = PoleSpots(
-                    _nodes[0, j].XMax + 2f, _nodes[verticalRoadX.Length - 1, j].XMin - 2f,
-                    x => InsideNodeZoneX(j, x));
-                foreach (var x in spots)
-                    Prop(_powerpole, new Vector3(x, 0.1f, z), 90f, _geometry);
-                for (int k = 0; k + 1 < spots.Count; k++)
-                    foreach (float off in strand)
-                    {
-                        var wire = Instantiate(Pick(_wires),
-                            new Vector3(spots[k], WireY, z + off), Quaternion.Euler(0f, 90f, 0f), _geometry);
-                        wire.transform.localScale = new Vector3(1f, 1f, (spots[k + 1] - spots[k]) / WireLen);
-                    }
+                for (int i = 0; i + 1 < nv; )
+                {
+                    if (!_hSeg[j, i]) { i++; continue; }
+                    int end = i;
+                    while (end + 1 < nv && _hSeg[j, end]) end++;
+                    PoleRun(PoleSpots(_nodes[i, j].XMax + 2f, _nodes[end, j].XMin - 2f,
+                                      x => InsideNodeZoneX(j, x)),
+                            z, false);
+                    i = end;
+                }
             }
+        }
+
+        /// One unbroken line of poles: spots are positions ALONG the run, lateral
+        /// is the fixed road-side offset on the other axis.
+        void PoleRun(List<float> spots, float lateral, bool vertical)
+        {
+            const float WireLen = 7.696f;
+            const float WireY = 8.33f;
+            float[] strand = { -0.85f, 0f, 0.85f };
+            float yaw = vertical ? 0f : 90f;
+
+            Vector3 At(float along, float side) => vertical
+                ? new Vector3(lateral + side, 0.1f, along)
+                : new Vector3(along, 0.1f, lateral + side);
+
+            foreach (float along in spots)
+                Prop(_powerpole, At(along, 0f), yaw, _geometry);
+
+            for (int k = 0; k + 1 < spots.Count; k++)
+                foreach (float off in strand)
+                {
+                    var seat = At(spots[k], off);
+                    var wire = Instantiate(Pick(_wires),
+                        new Vector3(seat.x, WireY, seat.z),
+                        Quaternion.Euler(0f, yaw, 0f), _geometry);
+                    wire.transform.localScale =
+                        new Vector3(1f, 1f, (spots[k + 1] - spots[k]) / WireLen);
+                }
         }
 
         List<float> PoleSpots(float from, float to, System.Func<float, bool> blocked)
@@ -1397,6 +1659,7 @@ namespace RoadDemo
                 float limit = blvd ? boulevardSpeed : streetSpeed;
                 for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
                 {
+                    if (!_vSeg[i, j]) continue;   // court, not carriageway
                     var a = _nodes[i, j];
                     var b = _nodes[i, j + 1];
                     foreach (float off in LaneOffsets(blvd))
@@ -1415,6 +1678,7 @@ namespace RoadDemo
                 float limit = blvd ? boulevardSpeed : streetSpeed;
                 for (int i = 0; i + 1 < verticalRoadX.Length; i++)
                 {
+                    if (!_hSeg[j, i]) continue;   // court, not carriageway
                     var a = _nodes[i, j];
                     var b = _nodes[i + 1, j];
                     foreach (float off in LaneOffsets(blvd))
@@ -1448,6 +1712,13 @@ namespace RoadDemo
 
             foreach (var n in _nodes)
             {
+                // A bend or a through-stretch gets no lights: with one way in and
+                // one way out there is nothing to take turns over, and a signal
+                // there only holds cars for a road that is not there. Signal stays
+                // null, which both the drivers and the walkers already read as
+                // "cross when you like" - see DemoVehicle.Tick and PedestrianAgent.
+                if (Degree(n.I, n.J) < 3) continue;
+
                 var sig = new TrafficSignal(((n.I * 31 + n.J * 17) % 13) / 13f * TrafficSignal.Cycle);
                 n.Signal = sig;
                 _signals.Add(sig);
@@ -1564,16 +1835,21 @@ namespace RoadDemo
                 {
                     var n = _nodes[i, j];
                     bool vBlvd = verticalIsBoulevard[i], hBlvd = horizontalIsBoulevard[j];
-                    AddCrossing(_corners[i, j, NW], _corners[i, j, NE], j < nh - 1, vBlvd, true,
+                    AddCrossing(_corners[i, j, NW], _corners[i, j, NE], NorthOpen(i, j), vBlvd, true,
                         new Vector3(n.X, 0.02f, n.ZMax + Off), n.Signal);
-                    AddCrossing(_corners[i, j, SW], _corners[i, j, SE], j > 0, vBlvd, true,
+                    AddCrossing(_corners[i, j, SW], _corners[i, j, SE], SouthOpen(i, j), vBlvd, true,
                         new Vector3(n.X, 0.02f, n.ZMin - Off), n.Signal);
-                    AddCrossing(_corners[i, j, NE], _corners[i, j, SE], i < nv - 1, hBlvd, false,
+                    AddCrossing(_corners[i, j, NE], _corners[i, j, SE], EastOpen(i, j), hBlvd, false,
                         new Vector3(n.XMax + Off, 0.02f, n.Z), n.Signal);
-                    AddCrossing(_corners[i, j, NW], _corners[i, j, SW], i > 0, hBlvd, false,
+                    AddCrossing(_corners[i, j, NW], _corners[i, j, SW], WestOpen(i, j), hBlvd, false,
                         new Vector3(n.XMin - Off, 0.02f, n.Z), n.Signal);
                 }
 
+            // The pavement runs the length of every segment INCLUDING the closed
+            // ones. Where a street was cut the two sidewalk lines survive as
+            // footpaths across the court that replaced it, so people cut through
+            // the garden instead of walking the long way round - and the court's
+            // planting is told to keep off those two lanes (see GapCourt).
             for (int i = 0; i < nv; i++)
                 for (int j = 0; j + 1 < nh; j++)
                 {
@@ -1808,8 +2084,7 @@ namespace RoadDemo
             SpawnFootPatrols(policeRoot, markers);
 
             if (markers.Count == 0) return;
-            if (_policeIndicator != null)
-                gameObject.AddComponent<PolicePatrolOverlay>().Init(markers, _policeIndicator, _policePanel);
+            gameObject.AddComponent<PolicePatrolOverlay>().Init(markers);
         }
 
         void SpawnPatrolCars(Transform parent, List<IPatrolMarker> markers)
@@ -2027,8 +2302,9 @@ namespace RoadDemo
         // The demo's own day/night stack, self-contained in this folder: DemoClock
         // advances the hour and owns pause/speed, DemoSky swings the sun and moon
         // under a procedural skybox with the PalmCity cloud ring, DemoStreetLamps
-        // and DemoHeadlights light the street after dark, and DemoTopBar puts the
-        // clock and the time controls across the top of the screen.
+        // and DemoHeadlights light the street after dark, DemoNightWindows lights
+        // a share of the windows behind the facades, and DemoTopBar puts the clock
+        // and the time controls across the top of the screen.
         void BuildDayNight()
         {
             var go = new GameObject("DayNight");
@@ -2060,6 +2336,9 @@ namespace RoadDemo
 
             var lamps = go.AddComponent<DemoStreetLamps>();
             lamps.clock = clock;
+
+            var windows = go.AddComponent<DemoNightWindows>();
+            windows.clock = clock;
 
             var headlights = go.AddComponent<DemoHeadlights>();
             headlights.clock = clock;

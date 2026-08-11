@@ -171,8 +171,12 @@ namespace LivingCity.News
             // The picture desk last, so adding or removing a photo can never change
             // which stories ran - the words are set before the camera is loaded.
             var photos = PhotosPerPage < page.Count ? PhotosPerPage : page.Count;
+            var printed = new HashSet<string>();
             for (var i = 0; i < photos; i++)
-                page[i].Photo = PictureDesk.For(page[i].Desk, page[i].GangId, rng);
+            {
+                page[i].Photo = PictureDesk.For(page[i].Desk, page[i].GangId, rng, printed);
+                printed.Add(page[i].Photo.ModelName);
+            }
 
             return page.ToArray();
         }

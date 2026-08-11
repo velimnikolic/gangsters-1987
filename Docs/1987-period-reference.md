@@ -90,3 +90,21 @@ Godina za atmosferu: hladni rat na izmaku, Reganova Amerika, kokain kao "kralj u
 - **Ekonomija igre:** kokain = visoka marža, visok rizik / krek = masovno tržište, brutalna konkurencija, rat teritorija / heroin = starije, "otmenije" mreže.
 - **Događaji-okidači:** Commission presude (vakuum moći), Black Monday (opran novac gubi vrednost, panika), pojačane racije DEA, doušnici koji "pevaju".
 - **Atmosfera:** pejdžeri i govornice, keš-koferi, brzi čamci, korumpirani panduri, "Just Say No" bilbordi kao ironičan kontrast.
+
+---
+
+## 6. Šta je od ovoga već u kodu
+
+Novinski sloj živi u `Assets/Scripts/News/` — engine-free (bez UnityEngine), deterministički
+po seed-u, testiran u `Assets/Scripts/Tests/HeadlineTests.cs`:
+
+| Fajl | Šta radi |
+|---|---|
+| `Headline.cs` | Jedan naslov + `NewsDate` (kalendar 1987, mapira se iz `CityClock.Day`, daje `Masthead()`) |
+| `NewsCalendar.cs` | Stvarni događaji iz sekcija 1–4 gore, zakucani za datume; vode naslovnu stranu tog dana |
+| `HeadlineGenerator.cs` | `FrontPage(seed, date)` — 6 naslova, po jedan sa svakog deska |
+| `NewsPhoto.cs` | Foto-desk: bira model i potpis; priča koja imenuje porodicu štampa **tog** vojnika |
+| `Newsprint.cs` | Halftone raster — pretvara render u zrnastu crno-belu novinsku fotku |
+
+Kad dodaješ nove događaje u sekcije 1–4, dodaj ih i u `NewsCalendar.All` — test proverava
+datume i dužinu teksta, ali ne može da zna za događaj koji nigde nije upisan.

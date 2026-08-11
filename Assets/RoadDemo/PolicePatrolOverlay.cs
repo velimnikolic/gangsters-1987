@@ -66,14 +66,16 @@ namespace RoadDemo
         const float SelectedScale = 1.5f;
 
         const float PickRadius = 30f;  // reference pixels of click slack
-        const float PopupWidth = 300f;
-        const float PopupHeight = 64f;
+        const float PopupWidth = 320f;
+        const float PopupHeight = 74f;
         const float PopupLift = 26f;   // reference pixels above the dot
 
-        // The sprite is white, so the tint IS the colour; a resting unit's dot
-        // just fades back so the working shift reads at a glance.
-        static readonly Color OnDuty = new Color(0.30f, 0.58f, 1f, 1f);
-        static readonly Color Resting = new Color(0.30f, 0.58f, 1f, 0.4f);
+        // The sprite is white, so the tint IS the colour. The duty blue is DemoUi's
+        // own accent pushed a shade deeper - a dot over the world has to hold its
+        // own against daylight asphalt where a bar's accent rule never does - and a
+        // resting unit's dot just fades back so the working shift reads at a glance.
+        static readonly Color OnDuty = new Color(0.38f, 0.70f, 1f, 1f);
+        static readonly Color Resting = new Color(0.38f, 0.70f, 1f, 0.38f);
 
         List<IPatrolMarker> _subjects;
         readonly List<Image> _images = new List<Image>();
@@ -86,8 +88,19 @@ namespace RoadDemo
         int _selected = -1;
         string _shownTitle, _shownLine;
 
-        public void Init(List<IPatrolMarker> subjects, Sprite dot, Sprite panel)
+        public void Init(List<IPatrolMarker> subjects)
         {
+            var dot = DemoUi.Dot;
+            if (dot == null)
+            {
+                // A sprite-less Image would draw a hard white square over every cop -
+                // worse than no indicator at all, so the overlay sits the demo out.
+                Debug.LogWarning("[RoadDemo] Modern Menus glow dot missing; patrol " +
+                                 "indicators are off.");
+                Destroy(this);
+                return;
+            }
+
             _subjects = subjects;
 
             var root = new GameObject("Police Overlay", typeof(RectTransform));
@@ -113,7 +126,7 @@ namespace RoadDemo
                 _images.Add(img);
             }
 
-            BuildPopup(panel);
+            BuildPopup();
             BuildingCardPicker.ClickVeto = ClaimsClick;
         }
 
@@ -125,7 +138,12 @@ namespace RoadDemo
 
         // Built once, active, then hidden - the main HUD's trick: a TMP text only
         // loads its font in OnEnable, which never runs under an inactive parent.
-        void BuildPopup(Sprite panel)
+        //
+        // The card wears the demo's wardrobe: the same framed pack box the ledger's
+        // detail card wears, the same two type faces, and the accent stripe down its
+        // left edge that says "this is the selected thing" in the one colour the top
+        // bar already uses for live.
+        void BuildPopup()
         {
             if (TMP_Settings.instance == null || TMP_Settings.defaultFontAsset == null)
             {
@@ -134,54 +152,43 @@ namespace RoadDemo
                 return;
             }
 
-            _popup = new GameObject("Popup", typeof(RectTransform));
-            _popup.transform.SetParent(_canvas.transform, false);
-            _popupRect = (RectTransform)_popup.transform;
+            _popupRect = DemoUi.NewRect("Popup", _canvas.transform);
+            _popup = _popupRect.gameObject;
             _popupRect.sizeDelta = new Vector2(PopupWidth, PopupHeight);
             _popupRect.pivot = new Vector2(0.5f, 0f);
 
             var background = _popup.AddComponent<Image>();
             background.raycastTarget = false;
-            if (panel != null)
-            {
-                background.sprite = panel;
-                background.type = Image.Type.Sliced;
-                // the pack's 512px box carries a 180px authored border - at popup
-                // scale that is the whole image, so shrink the drawn border down
-                background.pixelsPerUnitMultiplier = 14f;
-            }
-            else
-            {
-                background.color = new Color(0f, 0f, 0f, 0.78f);
-            }
+            DemoUi.Dress(background, DemoUi.Box, 15f, DemoUi.Panel);
 
-            _popupTitle = BuildPopupText("Title", top: true);
-            _popupTitle.fontSize = 15f;
-            _popupTitle.fontStyle = FontStyles.Bold;
-            _popupTitle.color = new Color(0.96f, 0.96f, 0.96f);
+            var stripe = DemoUi.Block(_popupRect, "Accent", DemoUi.Accent);
+            var stripeRect = stripe.rectTransform;
+            stripeRect.anchorMin = new Vector2(0f, 0f);
+            stripeRect.anchorMax = new Vector2(0f, 1f);
+            stripeRect.pivot = new Vector2(0f, 0.5f);
+            stripeRect.anchoredPosition = new Vector2(14f, 0f);
+            stripeRect.sizeDelta = new Vector2(3f, -24f);
 
-            _popupLine = BuildPopupText("Line", top: false);
-            _popupLine.fontSize = 12.5f;
-            _popupLine.color = new Color(0.82f, 0.86f, 0.93f);
+            _popupTitle = BuildPopupText("Title", 15f, DemoUi.Ink, top: true);
+            _popupTitle.characterSpacing = 2f;
+
+            _popupLine = BuildPopupText("Line", 13f, DemoUi.InkDim, top: false);
 
             _popup.SetActive(false);
         }
 
-        TMP_Text BuildPopupText(string name, bool top)
+        TMP_Text BuildPopupText(string name, float size, Color colour, bool top)
         {
-            var go = new GameObject(name, typeof(RectTransform));
-            go.transform.SetParent(_popup.transform, false);
+            var text = DemoUi.Text(_popupRect, name, size, colour,
+                TextAlignmentOptions.MidlineLeft, display: top);
 
-            var rect = (RectTransform)go.transform;
+            // Left inset clears the accent stripe; the halves split the card's height
+            // so the title sits over its own line with no measuring.
+            var rect = text.rectTransform;
             rect.anchorMin = new Vector2(0f, top ? 0.5f : 0f);
             rect.anchorMax = new Vector2(1f, top ? 1f : 0.5f);
-            rect.offsetMin = new Vector2(14f, top ? 0f : 8f);
-            rect.offsetMax = new Vector2(-14f, top ? -8f : 0f);
-
-            var text = go.AddComponent<TextMeshProUGUI>();
-            text.alignment = TextAlignmentOptions.MidlineLeft;
-            text.textWrappingMode = TextWrappingModes.NoWrap;
-            text.raycastTarget = false;
+            rect.offsetMin = new Vector2(26f, top ? 0f : 10f);
+            rect.offsetMax = new Vector2(-16f, top ? -10f : 0f);
             return text;
         }
 

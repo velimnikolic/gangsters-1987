@@ -60,11 +60,21 @@ MonoBehaviour:
     - label: Terrace 4+5 floor
       weight: 85
       prefabs:
+      - {fileID: 4258684368630228395, guid: 3b81b7d5d517aed448559adf165e8148, type: 3}
+      - {fileID: 76900819964785811, guid: f0addc2bfcfe06141b7263112b51f45c, type: 3}
+      - {fileID: 3269023282141483171, guid: 9ecafaffda7d4684f970304d895dbdc5, type: 3}
+      - {fileID: 2230805118455393707, guid: 3bba4b82680f87e4e8da460d1d63431c, type: 3}
+      - {fileID: 8129089941205723621, guid: 5d58ad8a4e871784cafe3b4403f458f5, type: 3}
+      - {fileID: 1588608416529042507, guid: b6110ca912186b74f9368c4fe93792ec, type: 3}
       - {fileID: 768242726850778071, guid: faf0a7a585ccd483e87ae2b8c93f54bf, type: 3}
       - {fileID: 7970507632870313262, guid: 395cdd486df6c481981706a92daf8317, type: 3}
       rearPrefabs:
-      - {fileID: 4262399113899048206, guid: cb459f4c3c7f04847888c6c46ebfea15, type: 3}
+      - {fileID: 76900819964785811, guid: f0addc2bfcfe06141b7263112b51f45c, type: 3}
+      - {fileID: 1588608416529042507, guid: b6110ca912186b74f9368c4fe93792ec, type: 3}
+      - {fileID: 7277822505979140534, guid: c2d9e560136c4f3499610d8cc76a3c8c, type: 3}
       cornerPrefabs:
+      - {fileID: 4258684368630228395, guid: 3b81b7d5d517aed448559adf165e8148, type: 3}
+      - {fileID: 8129089941205723621, guid: 5d58ad8a4e871784cafe3b4403f458f5, type: 3}
       - {fileID: 768242726850778071, guid: faf0a7a585ccd483e87ae2b8c93f54bf, type: 3}
       layout: 0
       minGap: 0
@@ -344,9 +354,9 @@ MonoBehaviour:
     - label: Outbuildings
       weight: 100
       prefabs:
-      - {fileID: 1503676966882326081, guid: f64c1829f5061a246a7e4201faf04259, type: 3}
-      - {fileID: 1503676966882326081, guid: f64c1829f5061a246a7e4201faf04259, type: 3}
-      - {fileID: 4262399113899048206, guid: cb459f4c3c7f04847888c6c46ebfea15, type: 3}
+      - {fileID: 4517737593536244963, guid: 13b09be02f547b44b949feef45cd49c9, type: 3}
+      - {fileID: 4517737593536244963, guid: 13b09be02f547b44b949feef45cd49c9, type: 3}
+      - {fileID: 7277822505979140534, guid: c2d9e560136c4f3499610d8cc76a3c8c, type: 3}
       rearPrefabs: []
       cornerPrefabs: []
       layout: 1
@@ -445,9 +455,9 @@ MonoBehaviour:
     - label: Outbuildings
       weight: 100
       prefabs:
-      - {fileID: 1503676966882326081, guid: f64c1829f5061a246a7e4201faf04259, type: 3}
-      - {fileID: 1503676966882326081, guid: f64c1829f5061a246a7e4201faf04259, type: 3}
-      - {fileID: 4262399113899048206, guid: cb459f4c3c7f04847888c6c46ebfea15, type: 3}
+      - {fileID: 4517737593536244963, guid: 13b09be02f547b44b949feef45cd49c9, type: 3}
+      - {fileID: 4517737593536244963, guid: 13b09be02f547b44b949feef45cd49c9, type: 3}
+      - {fileID: 7277822505979140534, guid: c2d9e560136c4f3499610d8cc76a3c8c, type: 3}
       rearPrefabs: []
       cornerPrefabs: []
       layout: 1
@@ -667,8 +677,8 @@ MonoBehaviour:
     - label: Bank neighbours
       weight: 100
       prefabs:
-      - {fileID: 1503676966882326081, guid: f64c1829f5061a246a7e4201faf04259, type: 3}
-      - {fileID: 4262399113899048206, guid: cb459f4c3c7f04847888c6c46ebfea15, type: 3}
+      - {fileID: 4517737593536244963, guid: 13b09be02f547b44b949feef45cd49c9, type: 3}
+      - {fileID: 7277822505979140534, guid: c2d9e560136c4f3499610d8cc76a3c8c, type: 3}
       rearPrefabs: []
       cornerPrefabs: []
       layout: 1
@@ -768,8 +778,8 @@ MonoBehaviour:
     - label: Bank neighbours
       weight: 100
       prefabs:
-      - {fileID: 1503676966882326081, guid: f64c1829f5061a246a7e4201faf04259, type: 3}
-      - {fileID: 4262399113899048206, guid: cb459f4c3c7f04847888c6c46ebfea15, type: 3}
+      - {fileID: 4517737593536244963, guid: 13b09be02f547b44b949feef45cd49c9, type: 3}
+      - {fileID: 7277822505979140534, guid: c2d9e560136c4f3499610d8cc76a3c8c, type: 3}
       rearPrefabs: []
       cornerPrefabs: []
       layout: 1

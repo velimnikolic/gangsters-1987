@@ -132,39 +132,50 @@ namespace LivingCity.News
         /// <summary>
         /// Picks the photo for a story. <paramref name="gangId"/> is the family the
         /// headline named, or -1; the crime desk prints that family's soldier when it
-        /// has one. Draws exactly once from the stream whatever the desk, so a page's
-        /// later stories never shift because an earlier one chose differently.
+        /// has one. <paramref name="alreadyPrinted"/> holds the models already on this
+        /// page - two desks drawing from the same table of suits would otherwise run
+        /// the same man twice, which no sub-editor would let through. May be null.
+        ///
+        /// Draws exactly once from the stream whatever the desk decides (the dodge
+        /// walks the table rather than re-rolling), so a page's later stories never
+        /// shift because an earlier one chose differently.
         /// </summary>
-        public static NewsPhoto For(HeadlineDesk desk, int gangId, System.Random rng)
+        public static NewsPhoto For(HeadlineDesk desk, int gangId, System.Random rng,
+            System.Collections.Generic.HashSet<string> alreadyPrinted = null)
         {
             var roll = rng.Next(1000);
 
             switch (desk)
             {
                 case HeadlineDesk.Crime:
+                    // A story that names a family prints THAT family's soldier, dodge
+                    // or no dodge - the picture is the point, not the variety.
                     var face = gangId >= 0 && gangId < GangCatalog.SoldierModels.Length
                         ? GangCatalog.SoldierModels[gangId]
-                        : CriminalFaces[roll % CriminalFaces.Length];
+                        : Pick(CriminalFaces, roll, alreadyPrinted);
                     return new NewsPhoto(PhotoSubject.Person, face,
                         CrimeCaptions[roll % CrimeCaptions.Length]);
 
                 case HeadlineDesk.DrugWar:
                     // Half the drug-war pictures are the seized vehicle, half the cop
-                    // standing over it - the two stock shots of the era.
+                    // standing over it - the two stock shots of the era. The caption
+                    // draws off roll/2: the low bit already went to choosing the
+                    // branch, so reusing it would pin each branch to one caption.
                     return (roll & 1) == 0
                         ? new NewsPhoto(PhotoSubject.Vehicle,
-                            SeizedVehicles[roll % SeizedVehicles.Length],
-                            DrugWarCaptions[1 + roll % 2])
+                            Pick(SeizedVehicles, roll, alreadyPrinted),
+                            DrugWarCaptions[1 + (roll / 2) % 2])
                         : new NewsPhoto(PhotoSubject.Person, OfficerModel,
-                            DrugWarCaptions[roll % 2 == 0 ? 0 : 3]);
+                            (roll / 2) % 2 == 0 ? DrugWarCaptions[0] : DrugWarCaptions[3]);
 
                 case HeadlineDesk.Nation:
                     return new NewsPhoto(PhotoSubject.Person,
-                        roll % 3 == 0 ? "SM_Chr_Detective_Male_01_AI" : SuitFaces[roll % SuitFaces.Length],
+                        roll % 3 == 0 ? "SM_Chr_Detective_Male_01_AI"
+                                      : Pick(SuitFaces, roll / 3, alreadyPrinted),
                         NationCaptions[roll % NationCaptions.Length]);
 
                 case HeadlineDesk.World:
-                    return new NewsPhoto(PhotoSubject.Person, SuitFaces[roll % SuitFaces.Length],
+                    return new NewsPhoto(PhotoSubject.Person, Pick(SuitFaces, roll, alreadyPrinted),
                         WorldCaptions[roll % WorldCaptions.Length]);
 
                 case HeadlineDesk.Business:
@@ -172,13 +183,34 @@ namespace LivingCity.News
                     return roll % 4 == 0
                         ? new NewsPhoto(PhotoSubject.Vehicle, "SM_Veh_Limousine_01",
                             BusinessCaptions[2])
-                        : new NewsPhoto(PhotoSubject.Person, SuitFaces[roll % SuitFaces.Length],
+                        : new NewsPhoto(PhotoSubject.Person, Pick(SuitFaces, roll, alreadyPrinted),
                             BusinessCaptions[roll % 2]);
 
                 default:
-                    return new NewsPhoto(PhotoSubject.Person, StreetFaces[roll % StreetFaces.Length],
+                    return new NewsPhoto(PhotoSubject.Person, Pick(StreetFaces, roll, alreadyPrinted),
                         CultureCaptions[roll % CultureCaptions.Length]);
             }
+        }
+
+        /// <summary>
+        /// The table entry at <paramref name="roll"/>, stepping forward past anything
+        /// already on the page. A table entirely used up falls back to the plain
+        /// entry - a repeat beats no picture.
+        /// </summary>
+        static string Pick(string[] table, int roll, System.Collections.Generic.HashSet<string> avoid)
+        {
+            var start = roll % table.Length;
+            if (avoid == null)
+                return table[start];
+
+            for (var step = 0; step < table.Length; step++)
+            {
+                var candidate = table[(start + step) % table.Length];
+                if (!avoid.Contains(candidate))
+                    return candidate;
+            }
+
+            return table[start];
         }
 
         /// <summary>
