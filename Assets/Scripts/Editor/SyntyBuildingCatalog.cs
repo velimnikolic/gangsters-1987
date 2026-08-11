@@ -22,7 +22,23 @@ namespace LivingCity.EditorTools
     public static class SyntyBuildingCatalog
     {
         const string PalmDemo = "Assets/Synty/PolygonPalmCity/Scenes/Demo.unity";
+        const string CityDemo = "Assets/Synty/PolygonCity/Scenes/Demo.unity";
         const string ScenePath = "Assets/BuildingCatalog.unity";
+
+        // Each pack shows in its own titled block of the grid so the stock never mixes.
+        const string SectionPalm = "PALM CITY";
+        const string SectionCity = "CITY";
+        const string SectionClubs = "NIGHTCLUBS";
+
+        /// <summary>The nightclub pack ships no assembled exteriors - each demo SCENE is
+        /// one venue (Scene root + Roof_Layer; Background_Layer is the surrounding street
+        /// dressing and stays behind). Per the user's cut of 2026-08-11, only NightClub
+        /// made the catalog - DanceClub, DiveBar, RooftopBar and the police-demo street
+        /// row are out (re-add a scene line here to bring one back).</summary>
+        static readonly (string scene, string name)[] NightclubScenes =
+        {
+            ("Assets/Synty/PolygonNightclubs/Scenes/Demo_NightClub_01.unity", "NightClub"),
+        };
         const string CatalogDir = SyntyKitExtractor.KitDir + "/Catalog";
         const string CatalogMeshDir = CatalogDir + "/Meshes";
 
@@ -222,8 +238,8 @@ namespace LivingCity.EditorTools
             SyntyBakeUtil.ClearCache();
             SeamLog.Clear();
 
-            // 1. Bake every demo group into Catalog prefabs.
-            var baked = new List<string>();
+            // 1. Bake every demo group into Catalog prefabs, one pack at a time.
+            var baked = new List<(string section, string name)>();
             var demo = EditorSceneManager.OpenScene(PalmDemo, OpenSceneMode.Additive);
             try
             {
@@ -231,12 +247,12 @@ namespace LivingCity.EditorTools
                 if (city)
                     foreach (Transform group in city.transform)
                         if (!SkippedGroups.Contains(group.name))
-                            BakeCatalogEntry(group, baked);
+                            BakeCatalogEntry(group, baked, SectionPalm);
 
                 var estate = demo.GetRootGameObjects().FirstOrDefault(go => go.name == "Estate");
                 var mansion = estate ? estate.transform.Find("Mansion") : null;
                 if (mansion)
-                    BakeCatalogEntry(mansion, baked);
+                    BakeCatalogEntry(mansion, baked, SectionPalm);
             }
             finally
             {
@@ -244,10 +260,14 @@ namespace LivingCity.EditorTools
                 SyntyBakeUtil.ClearCache();
             }
 
+            BakeCityClusters(baked);
+            foreach (var (venueScene, venueName) in NightclubScenes)
+                BakeVenue(venueScene, venueName, baked);
+
             if (baked.Count == 0)
             {
                 EditorUtility.DisplayDialog("Catalog build failed",
-                    "No groups could be baked from the PalmCity demo. See the Console.", "OK");
+                    "No groups could be baked from any demo scene. See the Console.", "OK");
                 return;
             }
 
@@ -259,11 +279,23 @@ namespace LivingCity.EditorTools
             const int columns = 5;
             const float spacing = 60f;
             var index = 0;
-            foreach (var name in baked)
+            string currentSection = null;
+            foreach (var (section, name) in baked)
             {
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>($"{CatalogDir}/{name}.prefab");
                 if (!prefab)
                     continue;
+
+                if (section != currentSection)
+                {
+                    // A new pack: finish the row, leave one empty, title the block.
+                    if (index % columns != 0)
+                        index += columns - index % columns;
+                    if (index > 0)
+                        index += columns;
+                    SectionHeader(section, new Vector3(-spacing * 0.75f, 0f, index / columns * spacing));
+                    currentSection = section;
+                }
 
                 var row = index / columns;
                 var column = index % columns;
@@ -290,21 +322,25 @@ namespace LivingCity.EditorTools
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             System.IO.File.WriteAllText(SeamLogPath, SeamLog.ToString());
-            Debug.Log($"[Catalog] {index} buildings on show in {ScenePath}: " + string.Join(", ", baked) +
+            Debug.Log($"[Catalog] {index} buildings on show in {ScenePath}: " +
+                      string.Join(", ", baked.Select(b => b.name)) +
                       $"\n[Catalog] seam log: {SeamLogPath}");
         }
 
-        static void BakeCatalogEntry(Transform group, List<string> baked)
+        static void BakeCatalogEntry(Transform group, List<(string section, string name)> baked,
+                                     string section, string nameOverride = null)
         {
             // The Building shell where the group has one, the whole group otherwise -
             // exactly the kit extractor's rule.
+            var key = nameOverride ?? group.name;
             var shell = group.Find("Building");
             var source = shell ? shell.gameObject : group.gameObject;
 
             var copy = Object.Instantiate(source);
-            copy.name = group.name;
+            copy.name = key;
             copy.transform.position = shell ? shell.position : group.position;
             copy.transform.rotation = shell ? shell.rotation : group.rotation;
+            StripClouds(copy);
 
             try
             {
@@ -313,7 +349,7 @@ namespace LivingCity.EditorTools
                 // the row is split into its constituent buildings first and each segment
                 // bakes on its own. Single-building groups come back as one segment and
                 // bake exactly as before.
-                var segments = SplitRow(copy.transform, group.name);
+                var segments = SplitRow(copy.transform, key);
 
                 // Labels first (A, B, C... in row order), then the user's manual joins glue
                 // segments back together - the merged one carries the joined letters.
@@ -321,7 +357,7 @@ namespace LivingCity.EditorTools
                 for (var i = 0; i < segments.Count; i++)
                     labelled.Add((((char)('A' + i)).ToString(), segments[i]));
 
-                if (ManualJoins.TryGetValue(group.name, out var joins))
+                if (ManualJoins.TryGetValue(key, out var joins))
                     foreach (var join in joins)
                     {
                         var members = labelled.Where(s => join.Contains(s.label)).ToList();
@@ -336,7 +372,7 @@ namespace LivingCity.EditorTools
                                                           s.label[0] > join.Min() &&
                                                           s.label[0] < join.Max()).ToList();
                         if (skipped.Count > 0)
-                            Debug.LogWarning($"[Catalog] '{group.name}' join '{join}' skips " +
+                            Debug.LogWarning($"[Catalog] '{key}' join '{join}' skips " +
                                              $"segment(s) {string.Join(", ", skipped.Select(s => s.label))} " +
                                              "between its letters - the merged building will have a gap.");
                         var merged = (label: join, pieces: members.SelectMany(m => m.pieces).ToList());
@@ -345,13 +381,13 @@ namespace LivingCity.EditorTools
                             labelled.Remove(member);
                     }
 
-                var displayName = ManualNames.TryGetValue(group.name, out var renamed)
-                    ? renamed : group.name;
+                var displayName = ManualNames.TryGetValue(key, out var renamed)
+                    ? renamed : key;
 
                 if (labelled.Count <= 1)
                 {
                     SyntyKitExtractor.BakeGroup(copy, displayName, yaw: 0f, CatalogDir, CatalogMeshDir);
-                    baked.Add(displayName);
+                    baked.Add((section, displayName));
                     return;
                 }
 
@@ -365,7 +401,7 @@ namespace LivingCity.EditorTools
                             piece.SetParent(segmentRoot.transform, worldPositionStays: true);
                         SyntyKitExtractor.BakeGroup(segmentRoot, segmentName, yaw: 0f,
                                                     CatalogDir, CatalogMeshDir);
-                        baked.Add(segmentName);
+                        baked.Add((section, segmentName));
                     }
                     finally
                     {
@@ -375,12 +411,485 @@ namespace LivingCity.EditorTools
             }
             catch (System.Exception e)
             {
-                Debug.LogWarning($"[Catalog] '{group.name}' failed to bake: {e.Message}");
+                Debug.LogWarning($"[Catalog] '{key}' failed to bake: {e.Message}");
             }
             finally
             {
                 if (copy) Object.DestroyImmediate(copy);
             }
+        }
+
+        /// <summary>
+        /// The PolygonCity demo is ONE flat list of ~4000 prefab instances - no per-
+        /// building groups at all. But its buildings stand apart across streets, so
+        /// building pieces (SM_Bld_*) cluster by XZ footprint: expanded rects that touch
+        /// are one building. Deterministic names City_01.. in south-west reading order,
+        /// so the user's future corrections keep meaning across rebuilds.
+        /// </summary>
+        static void BakeCityClusters(List<(string section, string name)> baked)
+        {
+            var demo = EditorSceneManager.OpenScene(CityDemo, OpenSceneMode.Additive);
+            try
+            {
+                var root = demo.GetRootGameObjects().FirstOrDefault(go => go.name == "Demo");
+                if (!root)
+                {
+                    Debug.LogWarning("[Catalog] PolygonCity demo has no 'Demo' root - pack skipped.");
+                    return;
+                }
+
+                var copy = Object.Instantiate(root);
+                try
+                {
+                    StripClouds(copy);
+                    var pieces = new List<Transform>();
+                    foreach (Transform child in copy.transform)
+                        if (child.name.StartsWith("SM_Bld_"))
+                            pieces.Add(child);
+
+                    var rects = new Rect[pieces.Count];
+                    for (var i = 0; i < pieces.Count; i++)
+                    {
+                        var r = pieces[i].GetComponentInChildren<MeshRenderer>(true);
+                        var b = r ? r.bounds : new Bounds(pieces[i].position, Vector3.one);
+                        rects[i] = Rect.MinMaxRect(b.min.x - 1.5f, b.min.z - 1.5f,
+                                                   b.max.x + 1.5f, b.max.z + 1.5f);
+                    }
+
+                    var parent = Enumerable.Range(0, pieces.Count).ToArray();
+                    int Find(int i)
+                    {
+                        while (parent[i] != i)
+                            i = parent[i] = parent[parent[i]];
+                        return i;
+                    }
+                    for (var i = 0; i < pieces.Count; i++)
+                        for (var j = i + 1; j < pieces.Count; j++)
+                            if (rects[i].Overlaps(rects[j]))
+                                parent[Find(i)] = Find(j);
+
+                    var clusters = new Dictionary<int, List<Transform>>();
+                    for (var i = 0; i < pieces.Count; i++)
+                    {
+                        var id = Find(i);
+                        if (!clusters.TryGetValue(id, out var list))
+                            clusters[id] = list = new List<Transform>();
+                        list.Add(pieces[i]);
+                    }
+
+                    var ordered = clusters.Values.Where(c => c.Count >= 6)
+                        .OrderBy(c => Mathf.Round(c.Min(t => t.position.z) / 10f))
+                        .ThenBy(c => c.Min(t => t.position.x)).ToList();
+
+                    var n = 0;
+                    foreach (var cluster in ordered)
+                    {
+                        var name = $"City_{++n:00}";
+                        try
+                        {
+                            BakeCluster(cluster, name, baked);
+                        }
+                        catch (System.Exception e)
+                        {
+                            Debug.LogWarning($"[Catalog] '{name}' failed to bake: {e.Message}");
+                        }
+                    }
+                    Debug.Log($"[Catalog] PolygonCity: {n} building clusters from {pieces.Count} " +
+                              $"pieces ({clusters.Values.Count(c => c.Count < 6)} sliver clusters dropped).");
+                }
+                finally
+                {
+                    if (copy) Object.DestroyImmediate(copy);
+                }
+            }
+            finally
+            {
+                EditorSceneManager.CloseScene(demo, removeScene: true);
+                SyntyBakeUtil.ClearCache();
+            }
+        }
+
+        /// <summary>
+        /// One city block, split into its constituent buildings so the explorer can pick
+        /// them "ponaosob". A single-building cluster bakes flat exactly as before; a
+        /// multi-building one bakes each building as City_XX_A.. and reassembles them as
+        /// children of one City_XX prefab at their authored offsets - each child carries
+        /// its own combined mesh and footprint collider, the parent carries none.
+        /// </summary>
+        static void BakeCluster(List<Transform> cluster, string name,
+                                List<(string section, string name)> baked)
+        {
+            var buildings = SplitClusterByColour(cluster);
+
+            if (buildings.Count <= 1)
+            {
+                var holder = new GameObject(name);
+                try
+                {
+                    foreach (var piece in cluster)
+                        piece.SetParent(holder.transform, worldPositionStays: true);
+                    SyntyKitExtractor.BakeGroup(holder, name, yaw: 0f, CatalogDir, CatalogMeshDir);
+                    baked.Add((SectionCity, name));
+                }
+                finally
+                {
+                    Object.DestroyImmediate(holder);
+                }
+                return;
+            }
+
+            // Anchor = the whole cluster's footprint centre at ground level, so the
+            // assembled parent stands in its showroom cell exactly where the flat bake
+            // used to. Measure BEFORE the sub-bakes reparent and consume the pieces.
+            var all = ClusterBounds(cluster);
+            var anchor = new Vector3(all.center.x, 0f, all.center.z);
+
+            var members = new List<(string sub, Vector3 pivot)>();
+            for (var b = 0; b < buildings.Count; b++)
+            {
+                var subName = $"{name}_{SegmentLabel(b)}";
+                var holder = new GameObject(subName);
+                try
+                {
+                    foreach (var piece in buildings[b])
+                        piece.SetParent(holder.transform, worldPositionStays: true);
+                    var pivot = SyntyKitExtractor.BakeGroup(holder, subName, yaw: 0f,
+                                                            CatalogDir, CatalogMeshDir);
+                    if (pivot.HasValue)
+                        members.Add((subName, pivot.Value));
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"[Catalog] '{subName}' failed to bake: {e.Message}");
+                }
+                finally
+                {
+                    Object.DestroyImmediate(holder);
+                }
+            }
+
+            var parentGo = new GameObject(name);
+            try
+            {
+                foreach (var (sub, pivot) in members)
+                {
+                    var prefab = AssetDatabase.LoadAssetAtPath<GameObject>($"{CatalogDir}/{sub}.prefab");
+                    if (!prefab)
+                        continue;
+                    var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+                    instance.transform.SetParent(parentGo.transform, worldPositionStays: false);
+                    instance.transform.localPosition = pivot - anchor;
+                }
+                PrefabUtility.SaveAsPrefabAsset(parentGo, $"{CatalogDir}/{name}.prefab");
+                baked.Add((SectionCity, name));
+                Debug.Log($"[Catalog] '{name}': {members.Count} buildings " +
+                          $"({string.Join(", ", members.Select(m => m.sub))}).");
+            }
+            finally
+            {
+                Object.DestroyImmediate(parentGo);
+            }
+        }
+
+        static Bounds ClusterBounds(List<Transform> pieces)
+        {
+            var bounds = default(Bounds);
+            var first = true;
+            foreach (var piece in pieces)
+                foreach (var renderer in piece.GetComponentsInChildren<MeshRenderer>(true))
+                {
+                    if (first) { bounds = renderer.bounds; first = false; }
+                    else bounds.Encapsulate(renderer.bounds);
+                }
+            return bounds;
+        }
+
+        static string SegmentLabel(int i)
+            => i < 26 ? ((char)('A' + i)).ToString()
+                      : SegmentLabel(i / 26 - 1) + (char)('A' + i % 26);
+
+        // Dressing families never seed a building of their own - a default-material
+        // roofline or shop row would otherwise chain the whole block into one "building".
+        // They attach to the nearest wall core instead (their own column wins: the wall
+        // below a roof is metres closer than the neighbour 5m over).
+        static readonly string[] DressingTokens =
+            { "Roof", "FireEscape", "Cover", "Door", "Stairs", "Shop" };
+
+        /// <summary>
+        /// The user's model for the PolygonCity blocks: a building is a CONTIGUOUS SLICE
+        /// of the street row - full depth, full height, advancing part by part - told
+        /// apart from its neighbours BY COLOUR (the PolygonCity_XX_Y atlas variant each
+        /// wall module resolves to; no override = the _01_A default, itself a colour).
+        /// The block perimeter is walked as a ring (S, E, N, W); every piece snaps to a
+        /// 5m cell on its nearest side, a cell owns EVERYTHING at that station (walls,
+        /// shop base, roof, escapes - the whole thickness), and a building is a run of
+        /// adjacent cells whose wall colour agrees. Pieces deeper than the ring band are
+        /// freestanding interior towers and group separately by colour with strict
+        /// edge contact (corner-touch must not chain slices diagonally).
+        /// </summary>
+        static List<List<Transform>> SplitClusterByColour(List<Transform> pieces)
+        {
+            const float CellSize = 5f;       // the demo authors on a 5m module grid
+            const float RingDepth = 12.5f;   // how deep a street row reaches into the block
+            const float RunGap = 8f;         // cells further apart than this never chain
+
+            var all = ClusterBounds(pieces);
+            var centres = new Vector3[pieces.Count];
+            for (var i = 0; i < pieces.Count; i++)
+            {
+                var renderer = pieces[i].GetComponentInChildren<MeshRenderer>(true);
+                centres[i] = renderer ? renderer.bounds.center : pieces[i].position;
+            }
+
+            string CoreKey(int i)
+            {
+                if (DressingTokens.Any(pieces[i].name.Contains))
+                    return null;
+                var colour = ColourOf(pieces[i]);
+                return colour == null ? null : $"{FamilyOf(pieces[i].name)}|{colour}";
+            }
+
+            // --- 1. ring cells vs interior pieces -------------------------------------
+            var cells = new Dictionary<(int side, int station), List<int>>();
+            var interior = new List<int>();
+            for (var i = 0; i < pieces.Count; i++)
+            {
+                var c = centres[i];
+                var dS = c.z - all.min.z;
+                var dE = all.max.x - c.x;
+                var dN = all.max.z - c.z;
+                var dW = c.x - all.min.x;
+                var least = Mathf.Min(dS, dE, dN, dW);
+                if (least > RingDepth)
+                {
+                    interior.Add(i);
+                    continue;
+                }
+                var side = least == dS ? 0 : least == dE ? 1 : least == dN ? 2 : 3;
+                var along = side == 0 || side == 2 ? c.x : c.z;
+                var key = (side, Mathf.RoundToInt(along / CellSize));
+                if (!cells.TryGetValue(key, out var list))
+                    cells[key] = list = new List<int>();
+                list.Add(i);
+            }
+
+            // --- 2. walk the ring: S west→east, E south→north, N east→west, W north→south
+            var ordered = cells
+                .OrderBy(kv => kv.Key.side)
+                .ThenBy(kv => kv.Key.side is 0 or 1 ? kv.Key.station : -kv.Key.station)
+                .Select(kv =>
+                {
+                    var centre = Vector3.zero;
+                    foreach (var i in kv.Value)
+                        centre += centres[i];
+                    centre /= kv.Value.Count;
+                    var colour = kv.Value.Select(CoreKey).Where(k => k != null)
+                        .GroupBy(k => k).OrderByDescending(g => g.Count())
+                        .Select(g => g.Key).FirstOrDefault();
+                    return (kv.Value, centre, colour);
+                })
+                .ToList();
+
+            var runs = new List<(List<int> members, string colour, Vector3 first, Vector3 last)>();
+            foreach (var (members, centre, colour) in ordered)
+            {
+                var extend = runs.Count > 0
+                    && Vector3.Distance(centre, runs[^1].last) <= RunGap
+                    && (colour == null || runs[^1].colour == null || colour == runs[^1].colour);
+                if (extend)
+                {
+                    var run = runs[^1];
+                    run.members.AddRange(members);
+                    run.colour ??= colour;
+                    run.last = centre;
+                    runs[^1] = run;
+                }
+                else
+                {
+                    runs.Add((new List<int>(members), colour, centre, centre));
+                }
+            }
+
+            // The walk is cyclic: the west side's last cell stands beside the south
+            // side's first, so a building wrapping that corner arrives split in two.
+            if (runs.Count > 1
+                && Vector3.Distance(runs[0].first, runs[^1].last) <= RunGap
+                && (runs[0].colour == null || runs[^1].colour == null
+                    || runs[0].colour == runs[^1].colour))
+            {
+                var first = runs[0];
+                first.members.AddRange(runs[^1].members);
+                first.colour ??= runs[^1].colour;
+                runs[0] = first;
+                runs.RemoveAt(runs.Count - 1);
+            }
+
+            var groups = runs.Select(r => r.members).ToList();
+
+            // --- 3. interior towers: colour union with strict EDGE contact ------------
+            var interiorCores = interior.Where(i => CoreKey(i) != null).ToList();
+            if (interiorCores.Count > 0)
+            {
+                var parent = interior.ToDictionary(i => i, i => i);
+                int Find(int i)
+                {
+                    while (parent[i] != i)
+                        i = parent[i] = parent[parent[i]];
+                    return i;
+                }
+                bool EdgeContact(int a, int b)
+                {
+                    var ra = pieces[a].GetComponentInChildren<MeshRenderer>(true).bounds;
+                    var rb = pieces[b].GetComponentInChildren<MeshRenderer>(true).bounds;
+                    var x = Mathf.Min(ra.max.x, rb.max.x) - Mathf.Max(ra.min.x, rb.min.x);
+                    var z = Mathf.Min(ra.max.z, rb.max.z) - Mathf.Max(ra.min.z, rb.min.z);
+                    return (x > -0.6f && z > 1f) || (z > -0.6f && x > 1f);
+                }
+                foreach (var a in interiorCores)
+                    foreach (var b in interiorCores)
+                        if (a < b && CoreKey(a) == CoreKey(b) && EdgeContact(a, b))
+                            parent[Find(a)] = Find(b);
+                foreach (var i in interior)
+                {
+                    if (CoreKey(i) != null)
+                        continue;
+                    var best = interiorCores
+                        .OrderBy(j => (centres[i] - centres[j]).sqrMagnitude).First();
+                    parent[Find(i)] = Find(best);
+                }
+                groups.AddRange(interior.GroupBy(Find).Select(g => g.ToList()));
+            }
+            else if (interior.Count > 0 && groups.Count > 0)
+            {
+                // Dressing-only interior (courtyard roofs and the like): give each piece
+                // to the nearest ring run rather than inventing a building of scraps.
+                foreach (var i in interior)
+                {
+                    var best = groups
+                        .OrderBy(g => g.Min(j => (centres[i] - centres[j]).sqrMagnitude))
+                        .First();
+                    best.Add(i);
+                }
+            }
+            else if (interior.Count > 0)
+            {
+                groups.Add(interior);
+            }
+
+            return groups
+                .Where(g => g.Count > 0)
+                .Select(g => g.Select(i => pieces[i]).ToList())
+                .OrderBy(g => Mathf.Round(g.Min(t => t.position.z) / 10f))
+                .ThenBy(g => g.Min(t => t.position.x)).ToList();
+        }
+
+        static string ColourOf(Transform piece)
+        {
+            foreach (var renderer in piece.GetComponentsInChildren<MeshRenderer>(true))
+                foreach (var material in renderer.sharedMaterials)
+                    if (material && material.name.StartsWith("PolygonCity_"))
+                        return material.name;
+            return null;
+        }
+
+        /// <summary>SM_Bld_Apartment_Stack_75 → Apartment; SM_Bld_OfficeOld_Large_Floor_03
+        /// → OfficeOld_Large. Type is part of identity: an office tower is not the same
+        /// building as the same-coloured apartments beside it.</summary>
+        static string FamilyOf(string pieceName)
+        {
+            var family = pieceName.StartsWith("SM_Bld_") ? pieceName.Substring(7) : pieceName;
+            bool stripped;
+            do
+            {
+                stripped = false;
+                var cut = family.LastIndexOf('_');
+                if (cut < 0)
+                    break;
+                var tail = family.Substring(cut + 1);
+                if (tail.All(char.IsDigit) || tail is "Stack" or "Corner" or "Floor" or "Base")
+                {
+                    family = family.Substring(0, cut);
+                    stripped = true;
+                }
+            } while (stripped);
+            return family;
+        }
+
+        /// <summary>One nightclub demo scene = one venue: Scene root + Roof_Layer bake
+        /// together; Background_Layer, cameras, light rigs and the sky clouds stay
+        /// behind.</summary>
+        static void BakeVenue(string scenePath, string name, List<(string section, string name)> baked)
+        {
+            var demo = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
+            try
+            {
+                var holder = new GameObject(name);
+                try
+                {
+                    var found = false;
+                    foreach (var rootName in new[] { "Scene", "Roof_Layer" })
+                    {
+                        var root = demo.GetRootGameObjects().FirstOrDefault(go => go.name == rootName);
+                        if (!root)
+                            continue;
+                        found = true;
+                        var copy = Object.Instantiate(root);
+                        copy.transform.SetParent(holder.transform, worldPositionStays: true);
+                    }
+                    if (!found)
+                    {
+                        Debug.LogWarning($"[Catalog] '{scenePath}' has no Scene/Roof_Layer root - skipped.");
+                        return;
+                    }
+                    StripClouds(holder);
+                    SyntyKitExtractor.BakeGroup(holder, name, yaw: 0f, CatalogDir, CatalogMeshDir);
+                    baked.Add((SectionClubs, name));
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"[Catalog] '{name}' failed to bake: {e.Message}");
+                }
+                finally
+                {
+                    Object.DestroyImmediate(holder);
+                }
+            }
+            finally
+            {
+                EditorSceneManager.CloseScene(demo, removeScene: true);
+                SyntyBakeUtil.ClearCache();
+            }
+        }
+
+        /// <summary>
+        /// Sky dressing has no place in a building bake - the nightclub demos hang
+        /// SM_Env_Cloud rings over every venue and the city demo scatters its own.
+        /// Matched on "_Env_Cloud", NOT "Cloud": SM_Prop_Sign_White_Cloud_01 is a neon
+        /// sign and stays.
+        /// </summary>
+        static void StripClouds(GameObject root)
+        {
+            var clouds = root.GetComponentsInChildren<Transform>(true)
+                             .Where(t => t.name.Contains("_Env_Cloud")).ToList();
+            foreach (var cloud in clouds)
+                if (cloud)
+                    Object.DestroyImmediate(cloud.gameObject);
+        }
+
+        /// <summary>The pack title standing left of its block's first row.</summary>
+        static void SectionHeader(string title, Vector3 position)
+        {
+            var header = new GameObject($"{title} header");
+            header.transform.position = position + new Vector3(0f, 18f, 0f);
+            header.transform.rotation = Quaternion.Euler(35f, 0f, 0f);
+
+            var text = header.AddComponent<TextMesh>();
+            text.text = title;
+            text.fontSize = 96;
+            text.characterSize = 0.8f;
+            text.anchor = TextAnchor.LowerRight;
+            text.alignment = TextAlignment.Right;
+            text.color = new Color(1f, 0.85f, 0.4f);
         }
 
         /// <summary>Two buildings can only meet at a party wall; a real building is at

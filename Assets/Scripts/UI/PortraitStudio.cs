@@ -198,7 +198,14 @@ namespace LivingCity.UI
         static PrefabDatabase Database()
         {
             var builder = FindAnyObjectByType<CityBuilder>();
-            return builder ? builder.Prefabs : null;
+            if (builder && builder.Prefabs)
+                return builder.Prefabs;
+
+            // The city-less scenes (the standalone Ledger menu) still photograph:
+            // the same database the city uses reaches Play through LedgerModelSet's
+            // Resources bridge, the way the gun bodies already do.
+            var bridge = LedgerModelSet.Instance;
+            return bridge ? bridge.database : null;
         }
 
         // ------------------------------------------------------------------ the rig

@@ -249,5 +249,7 @@ namespace LivingCity.UI
         public const string ReasonAlreadyFront = "He already runs the front.";
         public const string ReasonAlreadyHolds = "He already holds it.";
         public const string ReasonNotHeld = "Nobody holds it.";
+        public const string ReasonGearViaLieutenant =
+            "Gear goes to a lieutenant - his crew draws from him.";
     }
 }

@@ -52,6 +52,7 @@ namespace LivingCity.Gameplay
                                  "roster runs on the fallback seed.", this);
 
             Roster = RosterSeeder.Generate(seed);
+            RosterOps.NormalizeArms(Roster);
             Version++;
         }
 
@@ -66,6 +67,7 @@ namespace LivingCity.Gameplay
         public void DebugSeedLarge(int memberCount)
         {
             Roster = RosterSeeder.GenerateLarge(seed, memberCount);
+            RosterOps.NormalizeArms(Roster);
             Version++;
             Debug.Log("[Personnel] Debug roster: " + memberCount + " men on the books.");
         }
@@ -128,7 +130,11 @@ namespace LivingCity.Gameplay
                 return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchItem);
             var result = RosterOps.ReturnEquipment(Roster, itemId);
             if (result.Ok)
+            {
+                // The crew the item left closes ranks over what remains.
+                RosterOps.NormalizeArms(Roster);
                 Version++;
+            }
             return result;
         }
 
@@ -144,6 +150,9 @@ namespace LivingCity.Gameplay
             if (!result.Ok)
                 return result;
 
+            // Every successful mutation can move men or guns across crew lines -
+            // the lieutenants re-deal their crews' arms before the ledger repaints.
+            RosterOps.NormalizeArms(Roster);
             Version++;
             var member = Roster.Find(id);
             Debug.Log("[Personnel] " + (member != null ? member.FullName : "#" + id) +

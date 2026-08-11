@@ -42,6 +42,14 @@ namespace LivingCity.EditorTools
             changed |= Wire(ref set.rifle, "SniperRifle_1");
             changed |= Wire(ref set.tommyGun, "SubmachineGun_1");
 
+            // The photographs' model source for city-less scenes.
+            if (!set.database)
+            {
+                set.database = AssetDatabase.LoadAssetAtPath<LivingCity.Data.PrefabDatabase>(
+                    "Assets/Configs/PrefabDatabase.asset");
+                changed |= set.database != null;
+            }
+
             if (!changed)
                 return;
 

@@ -16,3 +16,4 @@ MonoBehaviour:
   shotgun: {fileID: 919132149155446097, guid: 52c402cc6787795b3f6cdb7041df029c, type: 3}
   rifle: {fileID: 919132149155446097, guid: a5ab3d8e6063677f091d22479077e97f, type: 3}
   tommyGun: {fileID: 919132149155446097, guid: 4d420969986fcb77331cebca0e11ee5e, type: 3}
+  database: {fileID: 11400000, guid: 337c66643e8054699b6b171150f619c0, type: 2}

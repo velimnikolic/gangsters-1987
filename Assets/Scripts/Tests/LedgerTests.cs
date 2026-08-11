@@ -125,12 +125,13 @@ namespace LivingCity.Tests
             if (CrewKit.HasVehicle(roster, crew))
                 failures.Add("CrewKitReadsVehiclesAndSkill: a car out of nowhere.");
 
-            // Sign the seeded car out to a crew hood - now the crew rides.
+            // Sign the seeded car out to the crew's lieutenant - gear only issues
+            // to him now - and the crew rides.
             RosterEquipment car = null;
             foreach (var item in roster.Equipment)
                 if (item.Kind == EquipmentKind.Vehicle)
                     car = item;
-            RosterOps.GiveEquipment(roster, car.Id, crew.HoodIds[0]);
+            RosterOps.GiveEquipment(roster, car.Id, crew.LieutenantId);
             if (!CrewKit.HasVehicle(roster, crew))
                 failures.Add("CrewKitReadsVehiclesAndSkill: the signed-out car is invisible.");
 
@@ -281,9 +282,19 @@ namespace LivingCity.Tests
             if (BalanceMath.AssetsOf(roster) != assetsBefore + 2000)
                 failures.Add("NewStockEntersThePoolUnheld: assets missed the book value.");
 
-            // The exclusivity rules apply to bought stock like seeded stock.
-            var a = roster.Members[0];
-            var b = roster.Members[1];
+            // The exclusivity rules apply to bought stock like seeded stock - and a
+            // weapon only lands on a lieutenant now, so the two would-be holders are
+            // two crews' heads (the second promoted out of the pool for the occasion).
+            var a = roster.Find(roster.Crews[0].LieutenantId);
+            var pool = new List<int>();
+            roster.PoolIds(pool);
+            if (pool.Count == 0 || !RosterOps.Promote(roster, pool[0], out _).Ok)
+            {
+                failures.Add("NewStockEntersThePoolUnheld: no second lieutenant to " +
+                             "test exclusivity with.");
+                return;
+            }
+            var b = roster.Find(pool[0]);
             RosterOps.GiveEquipment(roster, item.Id, a.Id);
             if (RosterOps.GiveEquipment(roster, item.Id, b.Id).Ok)
                 failures.Add("NewStockEntersThePoolUnheld: one tommy gun, two holders.");

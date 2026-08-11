@@ -149,6 +149,11 @@ namespace LivingCity.Personnel
             return OpResult.Success;
         }
 
+        /// <summary>Guns are dealt by Firearms, vehicles by Driving - the one split
+        /// NormalizeArms cares about. The chain-of-command rule itself covers BOTH:
+        /// everything in the drawer issues to a lieutenant.</summary>
+        public static bool IsWeapon(EquipmentKind kind) => kind != EquipmentKind.Vehicle;
+
         public static OpResult GiveEquipment(Roster roster, int itemId, int id)
         {
             var item = FindItem(roster, itemId);
@@ -160,6 +165,12 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(LedgerText.ReasonNoSuchMember);
             if (member.Status == CharacterStatus.Dead)
                 return OpResult.Fail(LedgerText.ReasonDead);
+
+            // The boss hands gear to his lieutenants, nobody else - each lieutenant
+            // deals his crew in himself (NormalizeArms): guns by who can shoot,
+            // wheels by who can drive.
+            if (member.Rank != Rank.Lieutenant)
+                return OpResult.Fail(LedgerText.ReasonGearViaLieutenant);
 
             if (item.HolderId == id)
                 return OpResult.Fail(LedgerText.ReasonAlreadyHolds);
@@ -200,6 +211,110 @@ namespace LivingCity.Personnel
 
             item.HolderId = RosterEquipment.Unheld;
             return OpResult.Success;
+        }
+
+        /// <summary>
+        /// The quartermaster discipline, re-derived from the current roster: gear
+        /// lives with crews. Anything in the hands of anyone outside a crew reverts
+        /// to the safe (a man who leaves turns his kit in), and each crew's gear is
+        /// then re-dealt by its lieutenant - guns by Firearms, wheels by Driving,
+        /// the best of each to the best hand when the lieutenant is organized, and
+        /// progressively more backwards the less Organization he has. Deterministic
+        /// and idempotent: the deal depends only on who is in which crew, what the
+        /// crew holds, and the lieutenant's Organization - no draws, so re-running
+        /// it never reshuffles a settled hand.
+        /// PersonnelDirector runs this after every mutation; headless tests call it
+        /// directly, the same split as every op here.
+        /// </summary>
+        public static void NormalizeArms(Roster roster)
+        {
+            for (var i = 0; i < roster.Equipment.Count; i++)
+            {
+                var item = roster.Equipment[i];
+                if (item.HolderId != RosterEquipment.Unheld &&
+                    roster.CrewOf(item.HolderId) == null)
+                    item.HolderId = RosterEquipment.Unheld;
+            }
+
+            for (var i = 0; i < roster.Crews.Count; i++)
+                DealCrewArms(roster, roster.Crews[i]);
+        }
+
+        /// <summary>One crew's deal, in two decks - guns and wheels - over the same
+        /// hands. The lieutenant is a pair of hands like his men (he carries and he
+        /// drives too) and the warehouse for whatever is left over.</summary>
+        static void DealCrewArms(Roster roster, Crew crew)
+        {
+            var lieutenant = roster.Find(crew.LieutenantId);
+            if (lieutenant == null)
+                return;
+
+            // The crew's gear, wherever it currently sits inside the crew.
+            var guns = new System.Collections.Generic.List<RosterEquipment>();
+            var wheels = new System.Collections.Generic.List<RosterEquipment>();
+            for (var i = 0; i < roster.Equipment.Count; i++)
+            {
+                var item = roster.Equipment[i];
+                if (item.HolderId != RosterEquipment.Unheld &&
+                    (item.HolderId == crew.LieutenantId ||
+                     crew.HoodIds.Contains(item.HolderId)))
+                    (IsWeapon(item.Kind) ? guns : wheels).Add(item);
+            }
+            if (guns.Count == 0 && wheels.Count == 0)
+                return;
+
+            // Who stands to be dealt in: everyone in the crew still on his feet.
+            var hands = new System.Collections.Generic.List<Character>();
+            if (lieutenant.Status == CharacterStatus.Active)
+                hands.Add(lieutenant);
+            for (var i = 0; i < crew.HoodIds.Count; i++)
+            {
+                var hood = roster.Find(crew.HoodIds[i]);
+                if (hood != null && hood.Status == CharacterStatus.Active)
+                    hands.Add(hood);
+            }
+
+            Deal(guns, hands, CharacterAttribute.Firearms, lieutenant);
+            Deal(wheels, hands, CharacterAttribute.Driving, lieutenant);
+        }
+
+        /// <summary>One deck over the crew's hands, ranked by the stat that deck
+        /// runs on. Organization decides how much of the ideal deal survives: at
+        /// five stars everything lands right; at none the whole hand is dealt
+        /// backwards - the tommy to the wild miss, the sedan to the man who cannot
+        /// park it. Ids break ties so the deal is stable across repaints.</summary>
+        static void Deal(System.Collections.Generic.List<RosterEquipment> items,
+            System.Collections.Generic.List<Character> hands,
+            CharacterAttribute stat, Character lieutenant)
+        {
+            if (items.Count == 0)
+                return;
+
+            items.Sort((x, y) => y.Value != x.Value
+                ? y.Value.CompareTo(x.Value) : x.Id.CompareTo(y.Id));
+
+            var ranked = new System.Collections.Generic.List<Character>(hands);
+            ranked.Sort((x, y) =>
+            {
+                var sx = x.GetHalfSteps(stat);
+                var sy = y.GetHalfSteps(stat);
+                return sy != sx ? sy.CompareTo(sx) : x.Id.CompareTo(y.Id);
+            });
+
+            var pairs = System.Math.Min(items.Count, ranked.Count);
+            var correct = pairs *
+                lieutenant.GetHalfSteps(CharacterAttribute.Organization) /
+                AttributeScale.MaxHalfSteps;
+
+            for (var i = 0; i < pairs; i++)
+            {
+                var hand = i < correct ? ranked[i] : ranked[correct + (pairs - 1 - i)];
+                items[i].HolderId = hand.Id;
+            }
+
+            // One piece per pair of hands; the lieutenant warehouses the surplus.
+            for (var i = pairs; i < items.Count; i++)
+                items[i].HolderId = lieutenant.Id;
         }
 
         /// <summary>The shared gate for every assignment move; null means assignable.</summary>

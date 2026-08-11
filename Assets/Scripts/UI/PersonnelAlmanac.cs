@@ -328,6 +328,18 @@ namespace LivingCity.UI
         int paintedOutfitVersion = -1;
         int paintedGangVersion = -1;
 
+        /// <summary>The standalone menu scene's way in - Open is otherwise the P key's
+        /// alone. False until the page is built and the roster seeded, so the scene
+        /// polls from Update instead of racing Start order.</summary>
+        public bool TryOpenBook()
+        {
+            if (IsOpen || !page || !director || director.Roster == null)
+                return false;
+
+            Open();
+            return true;
+        }
+
         void Open()
         {
             if (!page || director.Roster == null)
@@ -513,7 +525,9 @@ namespace LivingCity.UI
             detailImage.sprite = null;
             detailImage.color = LedgerPalette.CardTint;
             detailImage.raycastTarget = false;
-            Frame(detailBack, 1f, LedgerPalette.PhosphorDim);
+            // The pack panel carries its own frame; the flat tint keeps the drawn one.
+            if (!LedgerSkinSet.TryDressPanel(detailImage))
+                Frame(detailBack, 1f, LedgerPalette.PhosphorDim);
 
             detailContent = NewRect("DetailContent", detailBack);
             detailContent.anchorMin = Vector2.zero;
@@ -559,14 +573,20 @@ namespace LivingCity.UI
         {
             var names = new[]
                 { "NEWSPAPER", "PERSONNEL", "FINANCES", "ARMORY", "DIPLOMACY", "ORDERS" };
+            // Packed so the VISIBLE edges touch, not the rects: the pack slab carries
+            // transparent margins inside its own sprite (measured off Button_04's
+            // alpha: 47px left + 37px right, /3.5 PPU = 24 reference units of air), so
+            // flush rects still LOOK gapped. The step overlaps exactly that air; the
+            // raycast seam under the overlap goes to the later sibling, which is a
+            // hairline nobody aims at.
             const float width = 139f;
-            const float gap = 8f;
+            const float step = width - 24f;
 
             for (var i = 0; i < names.Length; i++)
             {
                 var kind = (LedgerPage)i;
                 var rect = NewRect("Tab " + names[i], paper);
-                PlaceTopLeft(rect, ListLeft + i * (width + gap), -74f, width, 36f);
+                PlaceTopLeft(rect, ListLeft + i * step, -74f, width, 36f);
 
                 var face = rect.gameObject.AddComponent<Image>();
                 face.sprite = null;
@@ -575,9 +595,13 @@ namespace LivingCity.UI
 
                 var button = rect.gameObject.AddComponent<Button>();
                 button.targetGraphic = face;
-                // Skinned, a tab is a pack button and RefreshTabs presses the active one
-                // in; sprite-less, the old phosphor block and its frame carry the strip.
-                if (!UiSkin.TryDressButton(button, face))
+                // Dressing order is a chain of wardrobes: the Modern Menus slab first,
+                // the Waste No Space sheet if the pack is missing, and the flat block
+                // in its 1px frame when there is no sprite at all. RefreshTabs says
+                // "active" in whichever language the strip ended up wearing.
+                if (LedgerSkinSet.TryDressTab(button, face))
+                    skinnedTabs = true;
+                else if (!UiSkin.TryDressButton(button, face))
                 {
                     var colours = button.colors;
                     colours.normalColor = LedgerPalette.ButtonNormal;
@@ -596,11 +620,17 @@ namespace LivingCity.UI
                 label.characterSpacing = 2f;
                 label.fontStyle = FontStyles.Bold;
                 label.text = names[i];
+                LedgerSkinSet.ApplyHeadline(label);
 
                 tabFaces[i] = face;
                 tabLabels[i] = label;
             }
         }
+
+        /// <summary>Set once in BuildTabs when the Modern Menus slab dressed the strip -
+        /// RefreshTabs cannot tell the two sprite wardrobes apart by looking at the
+        /// Image, and each says "active" differently.</summary>
+        bool skinnedTabs;
 
         void RefreshTabs()
         {
@@ -609,9 +639,17 @@ namespace LivingCity.UI
                 if (!tabFaces[i])
                     continue;
                 var active = i == (int)currentPage;
-                // Skinned tabs say "selected" by sitting pressed into the case; the
-                // sprite-less fallback keeps the terminal's inverse video.
-                if (tabFaces[i].sprite != null)
+                // The pack strip says "selected" in accent blue with the label gone
+                // inverse; UiSkin's tabs sit pressed into the case; the sprite-less
+                // fallback keeps the terminal's inverse video.
+                if (skinnedTabs)
+                {
+                    tabFaces[i].color = active
+                        ? LedgerSkinSet.AccentTint : LedgerSkinSet.FaceTint;
+                    tabLabels[i].color = active
+                        ? LedgerPalette.Screen : LedgerPalette.Phosphor;
+                }
+                else if (tabFaces[i].sprite != null)
                 {
                     tabFaces[i].sprite = active ? UiSkin.Sunken : UiSkin.ButtonNormal;
                     tabLabels[i].color = active
@@ -699,6 +737,7 @@ namespace LivingCity.UI
             masthead.fontStyle = FontStyles.Bold;
             masthead.characterSpacing = 10f;
             masthead.text = "THE CITY WIRE";
+            LedgerSkinSet.ApplyHeadline(masthead);
 
             newspaperDateline = NewText("Dateline", root, 14f, LedgerPalette.PhosphorDim,
                 TextAlignmentOptions.Center);
@@ -825,7 +864,7 @@ namespace LivingCity.UI
         {
             var root = NewPageRoot(paper, LedgerPage.Finances);
 
-            NewButton(root, "< EARLIER", PageRight - 276f, PageTop, 130f, 32f, () =>
+            NewToolbarButton(root, "< EARLIER", PageRight - 253f, PageTop, 130f, 32f, () =>
             {
                 var sheets = outfit ? outfit.Accounts.Sheets.Count : 1;
                 if (financeWeekBack < sheets - 1)
@@ -834,7 +873,7 @@ namespace LivingCity.UI
                     dirty = true;
                 }
             });
-            NewButton(root, "LATER >", PageRight - 130f, PageTop, 130f, 32f, () =>
+            NewToolbarButton(root, "LATER >", PageRight - 130f, PageTop, 130f, 32f, () =>
             {
                 if (financeWeekBack > 0)
                 {
@@ -1169,7 +1208,7 @@ namespace LivingCity.UI
             price.text = LedgerText.Cash(item.Price);
 
             var captured = item;
-            var buyLabel = NewButton(armoryContent, "[ BUY ]", ListLeft + 440f, y + 1f,
+            var buyLabel = NewButton(armoryContent, "BUY", ListLeft + 440f, y + 1f,
                 100f, 24f, () =>
                 {
                     var result = outfit
@@ -1251,7 +1290,7 @@ namespace LivingCity.UI
 
                 var itemId = item.Id;
                 if (holder != null)
-                    NewButton(row, "[ RETURN ]", StockWidth - 120f, -2f,
+                    NewButton(row, "RETURN", StockWidth - 120f, -2f,
                         116f, 24f, () =>
                         {
                             var result = director.ReturnEquipment(itemId);
@@ -1259,7 +1298,7 @@ namespace LivingCity.UI
                             dirty = true;
                         });
                 else
-                    NewButton(row, "[ GIVE ]", StockWidth - 120f, -2f,
+                    NewButton(row, "GIVE", StockWidth - 120f, -2f,
                         116f, 24f, () =>
                         {
                             givePickerItemId = itemId;
@@ -1273,9 +1312,10 @@ namespace LivingCity.UI
             SizeInventoryContent(-y);
         }
 
-        /// <summary>GIVE's second step: the stock list becomes the roster, pick the
-        /// holder. The tommy gun tags the poor shots in amber before the mistake, and
-        /// permits it after - the promotion rule's discipline.</summary>
+        /// <summary>GIVE's second step: the stock list becomes the lieutenants, pick
+        /// the crew. ALL gear issues through a crew's head - he deals his men in
+        /// himself (NormalizeArms: guns by Firearms, wheels by Driving) - so the row
+        /// shows the one stat every deal runs on: his Organization.</summary>
         void BuildGivePicker(Roster roster)
         {
             RosterEquipment item = null;
@@ -1295,7 +1335,7 @@ namespace LivingCity.UI
             header.fontStyle = FontStyles.Bold;
             header.text = "GIVE " + item.DisplayName.ToUpperInvariant() + " TO:";
 
-            NewButton(armoryContent, "[ CANCEL ]", PageRight - 120f, StockHeaderY,
+            NewButton(armoryContent, "CANCEL", PageRight - 120f, StockHeaderY,
                 120f, 24f, () =>
                 {
                     givePickerItemId = -1;
@@ -1303,27 +1343,21 @@ namespace LivingCity.UI
                 });
 
             var y = 0f;
-            var tommy = item.Kind == EquipmentKind.TommyGun;
             for (var i = 0; i < roster.Members.Count; i++)
             {
                 var member = roster.Members[i];
-                if (member.Status == CharacterStatus.Dead)
+                if (member.Status == CharacterStatus.Dead ||
+                    member.Rank != Rank.Lieutenant)
                     continue;
 
                 var row = NewRect("Pick", armoryInventoryContent);
                 PlaceTopLeft(row, 0f, y, StockWidth, 28f);
 
-                var poorShot = tommy && member.GetHalfSteps(CharacterAttribute.Firearms) <
-                    Outfit.ArmoryCatalog.TommyGunFirearmsFloor;
-
                 var memberId = member.Id;
-                var memberName = member.FullName;
                 var pick = NewButton(row, "", 0f, 0f, 300f, 26f, () =>
                 {
                     var result = director.GiveEquipment(givePickerItemId, memberId);
-                    armoryNote = !result.Ok ? result.Reason
-                        : poorShot ? LedgerText.TommyGunWarning(memberName)
-                        : "";
+                    armoryNote = result.Ok ? "" : result.Reason;
                     givePickerItemId = -1;
                     dirty = true;
                 });
@@ -1331,20 +1365,20 @@ namespace LivingCity.UI
                 pick.margin = new Vector4(10f, 0f, 0f, 0f);
                 pick.text = member.FullName.ToUpperInvariant();
 
-                var guns = NewText("Guns", row, 13f, LedgerPalette.PhosphorDim,
+                var stars = NewText("Stat", row, 13f, LedgerPalette.PhosphorDim,
                     TextAlignmentOptions.MidlineLeft);
-                FillRow(guns.rectTransform, 320f, 200f);
-                guns.text = "Firearms " + LedgerText.Stars(
-                    member.GetHalfSteps(CharacterAttribute.Firearms));
+                FillRow(stars.rectTransform, 320f, 200f);
+                stars.text = LedgerText.AttributeLabel(CharacterAttribute.Organization) +
+                    " " + LedgerText.Stars(
+                        member.GetHalfSteps(CharacterAttribute.Organization));
 
-                if (poorShot)
-                {
-                    var warn = NewText("Warn", row, 12f, LedgerPalette.Amber,
-                        TextAlignmentOptions.MidlineLeft);
-                    FillRow(warn.rectTransform, 540f, 200f);
-                    warn.fontStyle = FontStyles.Bold;
-                    warn.text = "POOR SHOT";
-                }
+                var crew = roster.CrewOf(memberId);
+                var men = NewText("Crew", row, 12f, LedgerPalette.PhosphorDim,
+                    TextAlignmentOptions.MidlineLeft);
+                FillRow(men.rectTransform, 540f, 220f);
+                men.text = crew != null
+                    ? "deals to " + crew.HoodIds.Count + " men"
+                    : "no crew yet";
 
                 y -= 30f;
             }
@@ -1575,7 +1609,8 @@ namespace LivingCity.UI
             back.color = new Color(LedgerPalette.Screen.r, LedgerPalette.Screen.g,
                 LedgerPalette.Screen.b, 0.94f);
             back.raycastTarget = true;
-            if (!UiSkin.TryDress(back, UiSkin.PanelDark))
+            if (!LedgerSkinSet.TryDressPanel(back) &&
+                !UiSkin.TryDress(back, UiSkin.PanelDark))
                 Frame(panel, 1f, LedgerPalette.PhosphorDim);
 
             var title = NewText("Title", panel, 17f, LedgerPalette.Phosphor,
@@ -2089,7 +2124,7 @@ namespace LivingCity.UI
                     ? draftBlocks.Count + " blocks"
                     : draftLabel) + " - UNCONFIRMED";
             if (targetCount > 0)
-                NewButton(ordersContent, "[ CLEAR ]", 14f + OrdersInner - 92f, y + 1f,
+                NewButton(ordersContent, "CLEAR", 14f + OrdersInner - 92f, y + 1f,
                     92f, 22f, () =>
                     {
                         draftBlocks.Clear();
@@ -2152,7 +2187,7 @@ namespace LivingCity.UI
 
                 var crewId = crew.Id;
                 var confirmSpec = spec;
-                NewButton(ordersContent, "[ CONFIRM ORDER ]", 14f, y, OrdersInner, 32f,
+                NewButton(ordersContent, "CONFIRM ORDER", 14f, y, OrdersInner, 32f,
                     () =>
                     {
                         var order = new Outfit.PlannedOrder
@@ -2301,7 +2336,7 @@ namespace LivingCity.UI
                             "runs as ordered.";
                 y -= 40f;
 
-                NewButton(ordersContent, "[ COMMIT ]", 14f, y, 200f, 32f, () =>
+                NewButton(ordersContent, "COMMIT", 14f, y, 200f, 32f, () =>
                 {
                     pendingCommit = false;
                     selectedOrderId = -1;
@@ -2309,14 +2344,14 @@ namespace LivingCity.UI
                     ordersNote = "The week is committed.";
                     dirty = true;
                 });
-                NewButton(ordersContent, "[ CANCEL ]", 228f, y, 160f, 32f, () =>
+                NewButton(ordersContent, "CANCEL", 228f, y, 160f, 32f, () =>
                 {
                     pendingCommit = false;
                     dirty = true;
                 });
             }
             else
-                NewButton(ordersContent, "[ COMMIT THE WEEK ]", 14f, y, OrdersInner, 32f,
+                NewButton(ordersContent, "COMMIT THE WEEK", 14f, y, OrdersInner, 32f,
                     () =>
                     {
                         pendingCommit = true;
@@ -2340,6 +2375,11 @@ namespace LivingCity.UI
 
         void BuildScanlines(RectTransform paper)
         {
+            // The raster was the CRT's texture; the Modern Menus book has the pack's
+            // own chrome for texture and draws none.
+            if (LedgerSkinSet.Active)
+                return;
+
             var root = NewRect("Scanlines", paper);
             root.anchorMin = Vector2.zero;
             root.anchorMax = Vector2.one;
@@ -2369,6 +2409,7 @@ namespace LivingCity.UI
             PlaceTopLeft(titleText.rectTransform, ListLeft, -14f, 560f, 46f);
             titleText.fontStyle = FontStyles.Bold;
             titleText.characterSpacing = 3f;
+            LedgerSkinSet.ApplyHeadline(titleText);
             // The date is written by UpdateBarLabels from the campaign calendar - the
             // year was a hard-coded literal here once, and only once.
 
@@ -2377,15 +2418,22 @@ namespace LivingCity.UI
             PlaceTopLeft(titleCount.rectTransform, PageRight - 440f, -20f, 300f, 36f);
             titleCount.characterSpacing = 2f;
 
-            NewButton(paper, "[ CLOSE ]", PageRight - 120f, -18f, 120f, 34f, Close);
+            NewToolbarButton(paper, "CLOSE", PageRight - 120f, -18f, 120f, 32f, Close);
         }
 
         void BuildFilterBar(RectTransform parent)
         {
-            sortLabel = NewButton(parent, "", ListLeft, PageTop, 240f, 36f, ToggleSortMenu);
-            rankLabel = NewButton(parent, "", ListLeft + 248f, PageTop, 200f, 36f, CycleRank);
-            postLabel = NewButton(parent, "", ListLeft + 456f, PageTop, 200f, 36f, CyclePost);
-            showLabel = NewButton(parent, "", ListLeft + 664f, PageTop, 200f, 36f, CycleShow);
+            // One packed toolbar. The chip's sprite carries ~7 units of transparent
+            // margin (12+16px at PPU x4), so each segment overlaps the last by that
+            // much - the visible edges kiss and the row reads as one bar.
+            sortLabel = NewToolbarButton(parent, "", ListLeft, PageTop, 240f, 32f,
+                ToggleSortMenu);
+            rankLabel = NewToolbarButton(parent, "", ListLeft + 233f, PageTop, 200f, 32f,
+                CycleRank);
+            postLabel = NewToolbarButton(parent, "", ListLeft + 426f, PageTop, 200f, 32f,
+                CyclePost);
+            showLabel = NewToolbarButton(parent, "", ListLeft + 619f, PageTop, 200f, 32f,
+                CycleShow);
             UpdateBarLabels();
         }
 
@@ -2416,7 +2464,8 @@ namespace LivingCity.UI
             back.sprite = null;
             back.color = LedgerPalette.Screen;
             back.raycastTarget = true; // The menu's own body must swallow stray clicks.
-            if (!UiSkin.TryDress(back, UiSkin.PanelDark))
+            if (!LedgerSkinSet.TryDressPanel(back) &&
+                !UiSkin.TryDress(back, UiSkin.PanelDark))
                 Frame(rect, 1f, LedgerPalette.PhosphorDim);
 
             for (var i = 0; i < entries; i++)
@@ -2431,7 +2480,8 @@ namespace LivingCity.UI
                 else
                     label = "LOYALTY";
 
-                var button = NewButton(rect, label, 4f, -4f - i * rowH, 352f, rowH, () =>
+                var button = NewToolbarButton(rect, label, 4f, -4f - i * rowH, 352f,
+                    rowH, () =>
                 {
                     if (index == 0)
                         options.Sort = SortKey.Roster;
@@ -2816,13 +2866,41 @@ namespace LivingCity.UI
 
         // ---------------------------------------------------------------- the detail
 
-        /// <summary>The street model this member wears - the mugshot photographs what
-        /// the city fields. The Outfit mirrors the roster (GangSeeder), so rank picks
-        /// between GangCatalog's player-gang bodies exactly the way SpawnCrew does.</summary>
-        static GameObject MemberModel(Character member) =>
-            PortraitStudio.FindPeoplePrefab(member.Rank == Rank.Lieutenant
-                ? Gangs.GangCatalog.LieutenantModels[Gangs.GangCatalog.PlayerGangId]
-                : Gangs.GangCatalog.SoldierModels[Gangs.GangCatalog.PlayerGangId]);
+        /// <summary>The pack faces the mugshots draw from - suits for the men who run
+        /// things, street muscle for the men who do them. Verified against the baked
+        /// PrefabDatabase pedestrian groups by name.</summary>
+        static readonly string[] LieutenantLooks =
+        {
+            "SM_Chr_Detective_Male_01_AI",
+            "SM_Gen_Chr_Business_Male_01_AI",
+            "SM_Chr_City_Male_01_AI",
+            "SM_Chr_Rich_Male_01_AI",
+        };
+
+        static readonly string[] HoodLooks =
+        {
+            "SM_Chr_Gang_Male_01_AI",
+            "SM_Chr_Gang_Male_02_AI",
+            "SM_Chr_Goon_01_AI",
+            "SM_Chr_Criminal_Male_01_AI",
+            "SM_Gen_Chr_Street_Male_01_AI",
+            "SM_Gen_Chr_Street_Male_02_AI",
+            "SM_Chr_City_Male_02_AI",
+            "SM_Chr_Salesman_01_AI",
+        };
+
+        /// <summary>The face this member wears in his photograph: a fitting pack model
+        /// picked by his stable Id - sixty men are not one man in one coat. Specialists
+        /// and lieutenants draw from the suits, hoods from the street. No rng: the Id
+        /// indexes the table directly, so the same man always sits for the same photo
+        /// and no shared stream is disturbed.</summary>
+        static GameObject MemberModel(Character member)
+        {
+            var looks = member.Rank == Rank.Lieutenant ||
+                        member.Specialty != Specialty.None
+                ? LieutenantLooks : HoodLooks;
+            return PortraitStudio.FindPeoplePrefab(looks[member.Id % looks.Length]);
+        }
 
         void RebuildDetail()
         {
@@ -2983,18 +3061,19 @@ namespace LivingCity.UI
         }
 
         /// <summary>
-        /// Five real stars - UiSkin's baked gold (full / half / dim empty). The half is
-        /// baked into its sprite, so the RectMask2D wedge trick this used to need is
-        /// gone; one Image per slot, no rotation.
+        /// Five real stars. Skinned, they are the pack's own gold star icon: a full
+        /// star shows the sprite as authored, an empty slot is the same sprite ghosted
+        /// by StarEmptyTint, and a half is a Filled-horizontal overlay lighting the
+        /// left of the ghost - the pack ships ONE star, so the states are tints and a
+        /// fill, not sprite swaps. Sprite-less, UiSkin's baked gold family (full /
+        /// half / dim empty) carries the pitch exactly as before.
         /// </summary>
         void BuildStarStrip(float x, float centreY, int halfSteps)
         {
+            var packStar = LedgerSkinSet.Star;
+
             for (var slot = 0; slot < 5; slot++)
             {
-                var sprite = halfSteps >= (slot + 1) * 2 ? UiSkin.StarFull
-                    : halfSteps == slot * 2 + 1 ? UiSkin.StarHalf
-                    : UiSkin.StarEmpty;
-
                 var rect = NewRect("Star", detailContent);
                 rect.anchorMin = new Vector2(0f, 1f);
                 rect.anchorMax = new Vector2(0f, 1f);
@@ -3003,9 +3082,36 @@ namespace LivingCity.UI
                     new Vector2(x + slot * StarPitch + StarPitch * 0.5f, centreY);
                 rect.sizeDelta = new Vector2(StarSize, StarSize);
                 var image = rect.gameObject.AddComponent<Image>();
-                image.sprite = sprite;
-                image.color = Color.white;
                 image.raycastTarget = false;
+
+                if (packStar == null)
+                {
+                    image.sprite = halfSteps >= (slot + 1) * 2 ? UiSkin.StarFull
+                        : halfSteps == slot * 2 + 1 ? UiSkin.StarHalf
+                        : UiSkin.StarEmpty;
+                    image.color = Color.white;
+                    continue;
+                }
+
+                image.sprite = packStar;
+                image.color = LedgerSkinSet.StarEmptyTint;
+
+                var earnedHalves = halfSteps - slot * 2;
+                if (earnedHalves <= 0)
+                    continue;
+
+                var lit = NewRect("Lit", rect);
+                lit.anchorMin = Vector2.zero;
+                lit.anchorMax = Vector2.one;
+                lit.offsetMin = lit.offsetMax = Vector2.zero;
+                var litImage = lit.gameObject.AddComponent<Image>();
+                litImage.sprite = packStar;
+                litImage.color = Color.white;
+                litImage.raycastTarget = false;
+                litImage.type = Image.Type.Filled;
+                litImage.fillMethod = Image.FillMethod.Horizontal;
+                litImage.fillOrigin = (int)Image.OriginHorizontal.Left;
+                litImage.fillAmount = earnedHalves >= 2 ? 1f : 0.5f;
             }
         }
 
@@ -3022,7 +3128,7 @@ namespace LivingCity.UI
                 var item = held[i];
                 y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
                     item.DisplayName, LedgerPalette.Phosphor, y + 2f);
-                NewButton(detailContent, "[ RETURN ]", DetailWidth - 130f, y + 24f, 110f, 22f,
+                NewButton(detailContent, "RETURN", DetailWidth - 130f, y + 24f, 110f, 22f,
                     () =>
                     {
                         lastRefusal = "";
@@ -3032,6 +3138,12 @@ namespace LivingCity.UI
                         dirty = true;
                     });
             }
+
+            // The armory ledger is a LIEUTENANT's business: gear issues only to a
+            // crew's head, so on a hood's or specialist's card the stock listing -
+            // header included - is noise. His card ends at what he personally carries.
+            if (member.Rank != Rank.Lieutenant)
+                return y;
 
             y = DetailLine(":: ARMORY", LedgerPalette.PhosphorDim, y - 4f);
 
@@ -3048,7 +3160,7 @@ namespace LivingCity.UI
                     y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
                         item.DisplayName, LedgerPalette.Phosphor, y + 2f);
                     if (member.Status != CharacterStatus.Dead)
-                        NewButton(detailContent, "[ GIVE ]", DetailWidth - 130f, y + 24f,
+                        NewButton(detailContent, "GIVE", DetailWidth - 130f, y + 24f,
                             110f, 22f, () =>
                             {
                                 lastRefusal = "";
@@ -3100,9 +3212,9 @@ namespace LivingCity.UI
                 warn.text = LedgerText.PromoteWarning(member.FullName);
                 y -= 48f;
 
-                NewButton(detailContent, "[ PROMOTE ANYWAY ]", 20f, y, 210f, 30f,
+                NewButton(detailContent, "PROMOTE ANYWAY", 20f, y, 210f, 30f,
                     () => DoPromote(member.Id));
-                NewButton(detailContent, "[ CANCEL ]", 244f, y, 120f, 30f, () =>
+                NewButton(detailContent, "CANCEL", 244f, y, 120f, 30f, () =>
                 {
                     pendingConfirm = Confirm.None;
                     dirty = true;
@@ -3121,14 +3233,14 @@ namespace LivingCity.UI
                     crew != null ? crew.HoodIds.Count : 0);
                 y -= 48f;
 
-                NewButton(detailContent, "[ DISBAND ]", 20f, y, 140f, 30f, () =>
+                NewButton(detailContent, "DISBAND", 20f, y, 140f, 30f, () =>
                 {
                     pendingConfirm = Confirm.None;
                     var result = director.Demote(member.Id);
                     lastRefusal = result.Ok ? "" : result.Reason;
                     dirty = true;
                 });
-                NewButton(detailContent, "[ CANCEL ]", 174f, y, 120f, 30f, () =>
+                NewButton(detailContent, "CANCEL", 174f, y, 120f, 30f, () =>
                 {
                     pendingConfirm = Confirm.None;
                     dirty = true;
@@ -3140,7 +3252,7 @@ namespace LivingCity.UI
             {
                 y = DetailLine("Pick a crew, the pool, or the front.",
                     LedgerPalette.Phosphor, y);
-                NewButton(detailContent, "[ CANCEL ]", 20f, y, 120f, 30f, () =>
+                NewButton(detailContent, "CANCEL", 20f, y, 120f, 30f, () =>
                 {
                     assignMode = false;
                     dirty = true;
@@ -3150,7 +3262,7 @@ namespace LivingCity.UI
 
             if (member.Rank == Rank.Lieutenant)
             {
-                NewButton(detailContent, "[ DEMOTE ]", 20f, y, 130f, 30f, () =>
+                NewButton(detailContent, "DEMOTE", 20f, y, 130f, 30f, () =>
                 {
                     pendingConfirm = Confirm.Demote;
                     dirty = true;
@@ -3158,7 +3270,7 @@ namespace LivingCity.UI
                 return;
             }
 
-            NewButton(detailContent, "[ PROMOTE ]", 20f, y, 140f, 30f, () =>
+            NewButton(detailContent, "PROMOTE", 20f, y, 140f, 30f, () =>
             {
                 var check = director.CheckPromote(member.Id);
                 if (!check.CanPromote)
@@ -3169,7 +3281,7 @@ namespace LivingCity.UI
                     DoPromote(member.Id);
                 dirty = true;
             });
-            NewButton(detailContent, "[ REASSIGN ]", 174f, y, 150f, 30f, () =>
+            NewButton(detailContent, "REASSIGN", 174f, y, 150f, 30f, () =>
             {
                 assignMode = true;
                 lastRefusal = "";
@@ -3227,6 +3339,9 @@ namespace LivingCity.UI
             text.alignment = alignment;
             text.textWrappingMode = TextWrappingModes.NoWrap;
             text.raycastTarget = false;
+            // The whole book speaks the pack's body face through this one seam; the
+            // masthead and tabs re-dress in the headline face at their call sites.
+            LedgerSkinSet.ApplyBody(text);
             return text;
         }
 
@@ -3247,10 +3362,53 @@ namespace LivingCity.UI
 
             var button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = background;
-            // A pack button when the sheet is there; the phosphor block in its 1px frame
-            // otherwise. The label stays phosphor either way - green text on the pack's
-            // charcoal face is the skin-era soft-key.
-            if (!UiSkin.TryDressButton(button, background))
+            // The same wardrobe chain as the tabs: Modern Menus slab, then the Waste
+            // No Space sheet, then the flat block in its 1px frame. The label stays
+            // Phosphor either way - bright text on whatever face was available.
+            if (!LedgerSkinSet.TryDressButton(button, background) &&
+                !UiSkin.TryDressButton(button, background))
+            {
+                var colours = button.colors;
+                colours.normalColor = LedgerPalette.ButtonNormal;
+                colours.highlightedColor = LedgerPalette.ButtonHover;
+                colours.pressedColor = LedgerPalette.ButtonPressed;
+                button.colors = colours;
+                Frame(rect, 1f, LedgerPalette.PhosphorDim);
+            }
+            button.onClick.AddListener(onClick);
+
+            var text = NewText("Label", rect, 13f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.Center);
+            text.rectTransform.anchorMin = Vector2.zero;
+            text.rectTransform.anchorMax = Vector2.one;
+            text.rectTransform.offsetMin = text.rectTransform.offsetMax = Vector2.zero;
+            text.characterSpacing = 1f;
+            text.fontStyle = FontStyles.Bold;
+            text.text = label;
+            return text;
+        }
+
+        /// <summary>A TOOLBAR segment: the same click surface as NewButton but in the
+        /// skin's flat-chip wardrobe, so the furniture rows (filter bar, CLOSE, the
+        /// sort menu) read as one species and the action slabs below as another.
+        /// Toolbar neighbours are laid FLUSH - the chip's own edges are the seams.
+        /// Sprite-less the two species collapse into one, which is what the terminal
+        /// always drew.</summary>
+        TextMeshProUGUI NewToolbarButton(Transform parent, string label, float x,
+            float y, float w, float h, UnityEngine.Events.UnityAction onClick)
+        {
+            var rect = NewRect("Toolbar " + label, parent);
+            PlaceTopLeft(rect, x, y, w, h);
+
+            var background = rect.gameObject.AddComponent<Image>();
+            background.sprite = null;
+            background.color = LedgerPalette.ButtonGlow;
+            background.raycastTarget = true;
+
+            var button = rect.gameObject.AddComponent<Button>();
+            button.targetGraphic = background;
+            if (!LedgerSkinSet.TryDressToolbarButton(button, background) &&
+                !UiSkin.TryDressButton(button, background))
             {
                 var colours = button.colors;
                 colours.normalColor = LedgerPalette.ButtonNormal;

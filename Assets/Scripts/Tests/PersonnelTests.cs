@@ -34,6 +34,8 @@ namespace LivingCity.Tests
             AssignToFrontSwapsTheManager(failures);
             LieutenantCannotBeClickAssigned(failures);
             EquipmentIsExclusive(failures);
+            GearFlowsThroughTheLieutenant(failures);
+            LieutenantDealsArmsByOrganization(failures);
             DeadReceiveNothing(failures);
             ViewGroupsInLedgerOrder(failures);
             ViewSortsWithinGroups(failures);
@@ -437,9 +439,11 @@ namespace LivingCity.Tests
 
         static void EquipmentIsExclusive(List<string> failures)
         {
+            // Lieutenants, because weapons refuse anyone below that rank now -
+            // exclusivity is what is under test here, not the chain of command.
             var roster = new Roster();
-            var a = Make(roster, "First", "Holder");
-            var b = Make(roster, "Second", "Holder");
+            var a = Make(roster, "First", "Holder", Rank.Lieutenant);
+            var b = Make(roster, "Second", "Holder", Rank.Lieutenant);
             var pistol = MakeItem(roster, EquipmentKind.Pistol);
 
             if (!RosterOps.GiveEquipment(roster, pistol.Id, a.Id).Ok)
@@ -450,6 +454,113 @@ namespace LivingCity.Tests
                 failures.Add("EquipmentIsExclusive: return refused.");
             if (!RosterOps.GiveEquipment(roster, pistol.Id, b.Id).Ok)
                 failures.Add("EquipmentIsExclusive: refused after a clean return.");
+        }
+
+        /// <summary>ALL gear - guns and wheels alike - issues to lieutenants alone,
+        /// with the refusal explaining the chain of command.</summary>
+        static void GearFlowsThroughTheLieutenant(List<string> failures)
+        {
+            var roster = new Roster();
+            var hood = Make(roster, "Corner", "Hood");
+            var lieutenant = Make(roster, "Head", "Crew", Rank.Lieutenant);
+            MakeCrew(roster, lieutenant, hood);
+            var pistol = MakeItem(roster, EquipmentKind.Pistol);
+            var car = MakeItem(roster, EquipmentKind.Vehicle);
+
+            var refused = RosterOps.GiveEquipment(roster, pistol.Id, hood.Id);
+            if (refused.Ok || refused.Reason != LedgerText.ReasonGearViaLieutenant)
+                failures.Add("GearFlowsThroughTheLieutenant: the hood bought his " +
+                             "own iron.");
+            if (RosterOps.GiveEquipment(roster, car.Id, hood.Id).Ok)
+                failures.Add("GearFlowsThroughTheLieutenant: the hood got his own " +
+                             "car.");
+            if (!RosterOps.GiveEquipment(roster, pistol.Id, lieutenant.Id).Ok ||
+                !RosterOps.GiveEquipment(roster, car.Id, lieutenant.Id).Ok)
+                failures.Add("GearFlowsThroughTheLieutenant: the lieutenant was " +
+                             "refused.");
+        }
+
+        /// <summary>The deal itself: at five-star Organization the best iron lands in
+        /// the best hands and the surplus stays with the lieutenant; at one star the
+        /// hand is dealt backwards; a man who leaves the crew turns his iron in.</summary>
+        static void LieutenantDealsArmsByOrganization(List<string> failures)
+        {
+            var roster = new Roster();
+            var lieutenant = Make(roster, "Head", "Crew", Rank.Lieutenant);
+            var ace = Make(roster, "Dead", "Eye");
+            var mid = Make(roster, "Fair", "Shot");
+            var mud = Make(roster, "Wild", "Miss");
+            MakeCrew(roster, lieutenant, ace, mid, mud);
+
+            lieutenant.SetHalfSteps(CharacterAttribute.Firearms, 2);
+            ace.SetHalfSteps(CharacterAttribute.Firearms, 10);
+            mid.SetHalfSteps(CharacterAttribute.Firearms, 8);
+            mud.SetHalfSteps(CharacterAttribute.Firearms, 4);
+
+            var tommy = MakeItem(roster, EquipmentKind.TommyGun);
+            tommy.Value = 2000;
+            var shotgun = MakeItem(roster, EquipmentKind.Shotgun);
+            shotgun.Value = 900;
+            var pistolA = MakeItem(roster, EquipmentKind.Pistol);
+            pistolA.Value = 250;
+            var pistolB = MakeItem(roster, EquipmentKind.Pistol);
+            pistolB.Value = 100;
+            var pistolC = MakeItem(roster, EquipmentKind.Pistol);
+            pistolC.Value = 60;
+            var safePistol = MakeItem(roster, EquipmentKind.Pistol);
+            safePistol.Value = 40;
+
+            foreach (var item in roster.Equipment)
+                if (item != safePistol)
+                    item.HolderId = lieutenant.Id;
+
+            // The wheels deal runs on Driving, its own deck over the same hands.
+            var car = MakeItem(roster, EquipmentKind.Vehicle);
+            car.Value = 1500;
+            car.HolderId = lieutenant.Id;
+            lieutenant.SetHalfSteps(CharacterAttribute.Driving, 2);
+            ace.SetHalfSteps(CharacterAttribute.Driving, 4);
+            mid.SetHalfSteps(CharacterAttribute.Driving, 6);
+            mud.SetHalfSteps(CharacterAttribute.Driving, 10);
+
+            lieutenant.SetHalfSteps(CharacterAttribute.Organization, 10);
+            RosterOps.NormalizeArms(roster);
+            if (tommy.HolderId != ace.Id || shotgun.HolderId != mid.Id ||
+                pistolA.HolderId != mud.Id || pistolB.HolderId != lieutenant.Id)
+                failures.Add("LieutenantDealsArmsByOrganization: the five-star deal " +
+                             "misfired.");
+            if (car.HolderId != mud.Id)
+                failures.Add("LieutenantDealsArmsByOrganization: the car missed the " +
+                             "best driver.");
+            if (pistolC.HolderId != lieutenant.Id)
+                failures.Add("LieutenantDealsArmsByOrganization: the surplus left " +
+                             "the lieutenant.");
+            if (safePistol.HolderId != RosterEquipment.Unheld)
+                failures.Add("LieutenantDealsArmsByOrganization: the deal raided " +
+                             "the safe.");
+
+            lieutenant.SetHalfSteps(CharacterAttribute.Organization, 2);
+            RosterOps.NormalizeArms(roster);
+            if (tommy.HolderId == ace.Id)
+                failures.Add("LieutenantDealsArmsByOrganization: a one-star deal " +
+                             "still found the ace.");
+            if (pistolB.HolderId != ace.Id)
+                failures.Add("LieutenantDealsArmsByOrganization: the backwards deal " +
+                             "is not backwards.");
+
+            // The ace walks; whatever he carried goes back to the safe, and the
+            // crew closes ranks over the rest.
+            var carried = tommy.HolderId == ace.Id || shotgun.HolderId == ace.Id ||
+                pistolA.HolderId == ace.Id || pistolB.HolderId == ace.Id;
+            if (!carried)
+                failures.Add("LieutenantDealsArmsByOrganization: the ace left " +
+                             "empty-handed before the walkout test.");
+            RosterOps.AssignToPool(roster, ace.Id);
+            RosterOps.NormalizeArms(roster);
+            for (var i = 0; i < roster.Equipment.Count; i++)
+                if (roster.Equipment[i].HolderId == ace.Id)
+                    failures.Add("LieutenantDealsArmsByOrganization: the ace kept " +
+                                 "crew iron in the pool.");
         }
 
         static void DeadReceiveNothing(List<string> failures)

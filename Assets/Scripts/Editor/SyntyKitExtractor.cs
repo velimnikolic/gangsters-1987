@@ -296,8 +296,11 @@ namespace LivingCity.EditorTools
         /// MonoBehaviour and Light is stripped (the demo dressing is geometry, the behaviour
         /// is ours).
         /// </summary>
-        internal static void BakeGroup(GameObject group, string role, float yaw,
-                                       string outputDir = BuildingsDir, string meshOutputDir = MeshDir)
+        /// <returns>The world-space pivot the bake recentred on (footprint centre at the
+        /// group's ground height), or null when the group had nothing to bake - lets a
+        /// caller reassemble several bakes at their authored relative offsets.</returns>
+        internal static Vector3? BakeGroup(GameObject group, string role, float yaw,
+                                           string outputDir = BuildingsDir, string meshOutputDir = MeshDir)
         {
             foreach (var mb in group.GetComponentsInChildren<MonoBehaviour>(true))
                 if (mb) Object.DestroyImmediate(mb);
@@ -318,7 +321,7 @@ namespace LivingCity.EditorTools
             if (renderers.Length == 0)
             {
                 Debug.LogWarning($"SyntyKitExtractor: '{role}' has no mesh renderers, skipped");
-                return;
+                return null;
             }
 
             var bounds = renderers[0].bounds;
@@ -408,6 +411,7 @@ namespace LivingCity.EditorTools
             var size = bounds.size;
             Debug.Log($"SyntyKitExtractor: baked '{role}' {size.x:F1} x {size.y:F1} x {size.z:F1} m, " +
                       $"{perMaterial.Count} material(s), front yaw {yaw}deg");
+            return pivot;
         }
 
         static Transform FindByPath(Scene scene, string path)

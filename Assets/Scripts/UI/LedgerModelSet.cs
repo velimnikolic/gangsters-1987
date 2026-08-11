@@ -27,6 +27,10 @@ namespace LivingCity.UI
 
         public GameObject tommyGun;
 
+        [Tooltip("The city's own PrefabDatabase - PortraitStudio's model source in " +
+                 "scenes that have no CityBuilder (the standalone Ledger menu).")]
+        public LivingCity.Data.PrefabDatabase database;
+
         static LedgerModelSet loaded;
         static bool loadTried;
         static bool warnedMissing;
