@@ -346,6 +346,11 @@ namespace LivingCity.Generation
                 if (!instance)
                     continue;
 
+                // The ride should run. The rotator finds the prop's own rotate pivot and
+                // no-ops on props without one, so it is safe across the whole pool.
+                if (station.Kind == ParkLayout.StationKind.Carousel)
+                    instance.AddComponent<City.FerrisWheelRotator>();
+
                 // The knoll is a terrain dome that renders in the atlas's earth swatch - the
                 // old park's "giant red boulder". Dressed in the lawn's own material it reads
                 // as the grassy rise it is meant to be.

@@ -23,25 +23,46 @@ namespace RoadDemo
         public TrafficSignal Signal;
     }
 
+    // The clip wardrobe a walker carries. Walk and Idle are mandatory; the rest
+    // are optional and simply gate the behaviours that use them - an agent
+    // without sit clips never sits, one without a talk clip never chats.
+    public struct PedClips
+    {
+        public AnimationClip Walk, Idle, SitDown, SitLoop, StandUp, Talk, Shout;
+    }
+
     public class PedestrianAgent
     {
         const float CrossHustle = 1.35f;
 
+        // Mixer input per pose; a pose whose clip was not provided stays invalid
+        // and SetPose refuses to select it.
+        public const int PoseWalk = 0, PoseIdle = 1, PoseSitDown = 2, PoseSit = 3,
+            PoseStandUp = 4, PoseTalk = 5, PoseShout = 6;
+        const int PoseCount = 7;
+
         public Transform Tf;
         public float Speed = 1.5f;
 
-        PedLink _link;
-        PedNode _cameFrom;
-        float _t;
-        bool _waiting;
+        protected PedLink _link;
+        protected PedNode _cameFrom;
+        protected float _t;
+        protected bool _waiting;
+        /// <summary>Humanoid retarget scale - carries a child rig's sit height.</summary>
+        protected float HumanScale = 1f;
         float _repickTimer;
         float _lateral; // keeps opposing walkers off each other's line
 
         PlayableGraph _graph;
         AnimationMixerPlayable _mixer;
-        float _walkWeight = 1f;
+        readonly AnimationClipPlayable[] _poses = new AnimationClipPlayable[PoseCount];
+        readonly float[] _weights = new float[PoseCount];
+        int _pose = PoseWalk;
 
         public void Init(Transform tf, AnimationClip walk, AnimationClip idle, PedLink start, float t)
+            => Init(tf, new PedClips { Walk = walk, Idle = idle }, start, t);
+
+        public void Init(Transform tf, PedClips clips, PedLink start, float t)
         {
             Tf = tf;
             _link = start;
@@ -53,18 +74,37 @@ namespace RoadDemo
             if (animator != null)
             {
                 animator.applyRootMotion = false;
+                HumanScale = animator.avatar != null && animator.avatar.isHuman
+                    ? animator.humanScale : 1f;
                 _graph = PlayableGraph.Create("Pedestrian");
                 _graph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
                 var output = AnimationPlayableOutput.Create(_graph, "anim", animator);
-                _mixer = AnimationMixerPlayable.Create(_graph, 2);
-                var walkP = AnimationClipPlayable.Create(_graph, walk);
-                walkP.SetTime(Random.value * walk.length);
-                walkP.SetSpeed(Speed / 1.5f);
-                var idleP = AnimationClipPlayable.Create(_graph, idle);
-                _graph.Connect(walkP, 0, _mixer, 0);
-                _graph.Connect(idleP, 0, _mixer, 1);
-                _mixer.SetInputWeight(0, 1f);
-                _mixer.SetInputWeight(1, 0f);
+                _mixer = AnimationMixerPlayable.Create(_graph, PoseCount);
+
+                void Wire(int pose, AnimationClip clip)
+                {
+                    if (clip == null) return;
+                    var playable = AnimationClipPlayable.Create(_graph, clip);
+                    _graph.Connect(playable, 0, _mixer, pose);
+                    _mixer.SetInputWeight(pose, 0f);
+                    _poses[pose] = playable;
+                }
+
+                Wire(PoseWalk, clips.Walk);
+                Wire(PoseIdle, clips.Idle);
+                Wire(PoseSitDown, clips.SitDown);
+                Wire(PoseSit, clips.SitLoop);
+                Wire(PoseStandUp, clips.StandUp);
+                Wire(PoseTalk, clips.Talk);
+                Wire(PoseShout, clips.Shout);
+
+                if (_poses[PoseWalk].IsValid())
+                {
+                    _poses[PoseWalk].SetTime(Random.value * clips.Walk.length);
+                    _poses[PoseWalk].SetSpeed(Speed / 1.5f);
+                }
+                _weights[PoseWalk] = 1f;
+                _mixer.SetInputWeight(PoseWalk, 1f);
                 output.SetSourcePlayable(_mixer);
                 _graph.Play();
             }
@@ -102,16 +142,48 @@ namespace RoadDemo
                 }
             }
 
-            float target = _waiting ? 0f : 1f;
-            if (_mixer.IsValid() && !Mathf.Approximately(_walkWeight, target))
-            {
-                _walkWeight = Mathf.MoveTowards(_walkWeight, target, 4f * dt);
-                _mixer.SetInputWeight(0, _walkWeight);
-                _mixer.SetInputWeight(1, 1f - _walkWeight);
-            }
+            BlendLocomotion(dt, !_waiting);
 
             if (_waiting) return;
             Move(dt);
+        }
+
+        // ------------------------------------------------------------- posing
+
+        protected bool HasPose(int pose) => _poses[pose].IsValid();
+
+        /// <summary>Select the pose the blend drifts toward; a pose with no clip is refused.</summary>
+        protected void SetPose(int pose)
+        {
+            if (_poses[pose].IsValid()) _pose = pose;
+        }
+
+        /// <summary>Rewind a one-shot (sit down, stand up) before blending it in.</summary>
+        protected void RestartPose(int pose, float atTime = 0f)
+        {
+            if (_poses[pose].IsValid()) _poses[pose].SetTime(atTime);
+        }
+
+        /// <summary>Drift every mixer weight toward the selected pose.</summary>
+        protected void TickBlend(float dt)
+        {
+            if (!_mixer.IsValid()) return;
+            for (int i = 0; i < PoseCount; i++)
+            {
+                if (!_poses[i].IsValid()) continue;
+                float target = i == _pose ? 1f : 0f;
+                if (Mathf.Approximately(_weights[i], target)) continue;
+                _weights[i] = Mathf.MoveTowards(_weights[i], target, 4f * dt);
+                _mixer.SetInputWeight(i, _weights[i]);
+            }
+        }
+
+        // The walk/idle crossfade, callable by derived agents that hand-animate
+        // legs off the graph (the foot patrol's door walk) without running Tick.
+        protected void BlendLocomotion(float dt, bool walking)
+        {
+            SetPose(walking ? PoseWalk : PoseIdle);
+            TickBlend(dt);
         }
 
         void Move(float dt)
@@ -122,7 +194,8 @@ namespace RoadDemo
             {
                 var arrived = _link.To;
                 _cameFrom = _link.From;
-                PickNext(arrived, keepAwayFrom: _cameFrom);
+                if (OnArrived(arrived))
+                    PickNext(arrived, keepAwayFrom: _cameFrom);
                 return;
             }
 
@@ -141,7 +214,28 @@ namespace RoadDemo
             Tf.position = pos;
         }
 
+        /// Called once per node reached; return false to keep the agent off the
+        /// next link (a derived agent taking over - the foot patrol turning in).
+        protected virtual bool OnArrived(PedNode node) => true;
+
         void PickNext(PedNode node, PedNode keepAwayFrom)
+        {
+            var pick = ChooseLink(node, keepAwayFrom);
+            if (pick == null) return;
+
+            _link = pick;
+            _t = 0f;
+            if (!MayEnter(pick))
+            {
+                _waiting = true;
+                _repickTimer = 4f;
+            }
+        }
+
+        // The default walker: weighted random wander that avoids doubling back
+        // and undersells zebra crossings. The foot patrol substitutes a routed
+        // choice on its way home.
+        protected virtual PedLink ChooseLink(PedNode node, PedNode keepAwayFrom)
         {
             PedLink pick = null;
             float total = 0f;
@@ -153,15 +247,7 @@ namespace RoadDemo
                 total += w;
                 if (Random.value * total <= w) pick = l; // reservoir pick
             }
-            if (pick == null) return;
-
-            _link = pick;
-            _t = 0f;
-            if (!MayEnter(pick))
-            {
-                _waiting = true;
-                _repickTimer = 4f;
-            }
+            return pick;
         }
     }
 }

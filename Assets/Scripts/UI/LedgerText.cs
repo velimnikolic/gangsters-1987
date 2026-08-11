@@ -33,6 +33,40 @@ namespace LivingCity.UI
             _ => "",
         };
 
+        /// <summary>The hover note over a card's attribute row - what the stat is FOR,
+        /// in the order table's own terms, so the tooltip teaches the system the number
+        /// feeds instead of restating the label.</summary>
+        public static string AttributeNote(CharacterAttribute attribute) => attribute switch
+        {
+            CharacterAttribute.Intelligence =>
+                "Brain work: collecting protection, audits, recruiting, bribes and " +
+                "police contacts. A lieutenancy leans on it.",
+            CharacterAttribute.Organization =>
+                "How much of the armory a lieutenant actually gets into his crew's " +
+                "hands. A lieutenancy leans on it.",
+            CharacterAttribute.Business =>
+                "Buying premises, setting up and running businesses, and knowing " +
+                "where a donation does the most good.",
+            CharacterAttribute.Firearms =>
+                "Gun work: raids, kills, patrols, guard duty, ambushes. The best " +
+                "shots draw the guns when gear is dealt.",
+            CharacterAttribute.Fists =>
+                "Muscle: assaults, smash-ups and kidnappings.",
+            CharacterAttribute.Knives =>
+                "Quiet blade work, for the jobs that turn close and personal.",
+            CharacterAttribute.Arson =>
+                "Torch jobs - burning the place without burning the block.",
+            CharacterAttribute.Explosives =>
+                "Bomb jobs - a charge that goes off once, where it was meant to.",
+            CharacterAttribute.Intimidation =>
+                "The lean: extortion, threats and raising protection rates.",
+            CharacterAttribute.Driving =>
+                "Behind the wheel. The best drivers draw the cars when gear is dealt.",
+            CharacterAttribute.Stealth =>
+                "Moving unseen - exploring and scouting another outfit's turf.",
+            _ => "",
+        };
+
         public static string RankLabel(Rank rank) => rank switch
         {
             Rank.Hood => "Hood",

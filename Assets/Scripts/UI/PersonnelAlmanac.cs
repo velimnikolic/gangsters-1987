@@ -65,6 +65,17 @@ namespace LivingCity.UI
         const float DetailLeft = 516f;
         const float DetailWidth = PageWidth - DetailLeft - 16f;
 
+        /// <summary>Air between the card's frame and everything printed on it - the
+        /// padding the sheet went without. Card content reasons in CardInnerWidth;
+        /// DetailWidth is the panel's outer measure only.</summary>
+        const float CardPad = 14f;
+        const float CardInnerWidth = DetailWidth - CardPad * 2f;
+
+        /// <summary>The wash behind the mugshot block - covers the photo and the
+        /// identity lines, kept INSIDE the padding so nothing pokes past the panel's
+        /// drawn face (the pack sprite's face sits inset from its rect).</summary>
+        const float CardMastheadHeight = 108f;
+
         /// <summary>Right edge of usable page content, mirroring ListLeft's margin.</summary>
         const float PageRight = PageWidth - 36f;
 
@@ -145,6 +156,8 @@ namespace LivingCity.UI
         RectTransform listViewport;
         RectTransform listContent;
         RectTransform detailContent;
+        RectTransform hoverNote;
+        TMP_Text hoverNoteText;
         GameObject sortMenu;
         TMP_Text titleCount;
         TMP_Text sortLabel;
@@ -552,14 +565,38 @@ namespace LivingCity.UI
             detailImage.sprite = null;
             detailImage.color = LedgerPalette.CardTint;
             detailImage.raycastTarget = false;
-            // The pack panel carries its own frame; the flat tint keeps the drawn one.
-            if (!LedgerSkinSet.TryDressPanel(detailImage))
+            // The pack panel carries its own frame, re-cast to the tube's green - the
+            // one blue panel on a phosphor page read as a stranger's furniture. The
+            // sprite-less flat tint keeps the drawn frame.
+            if (!LedgerSkinSet.TryDressPanel(detailImage, LedgerPalette.CardFace))
                 Frame(detailBack, 1f, LedgerPalette.PhosphorDim);
 
+            // The content rect sits INSIDE the frame by CardPad on every side, so
+            // every line the card prints inherits the padding for free.
             detailContent = NewRect("DetailContent", detailBack);
             detailContent.anchorMin = Vector2.zero;
             detailContent.anchorMax = Vector2.one;
-            detailContent.offsetMin = detailContent.offsetMax = Vector2.zero;
+            detailContent.offsetMin = new Vector2(CardPad, CardPad);
+            detailContent.offsetMax = new Vector2(-CardPad, -CardPad);
+
+            // The one shared hover note - a child of the CARD, not the content (which
+            // rebuilds under the pointer), raised to last sibling on every show so it
+            // prints over whatever rows it happens to cover.
+            hoverNote = NewRect("HoverNote", detailBack);
+            PlaceTopLeft(hoverNote, CardPad, -CardPad, CardInnerWidth, 60f);
+            var noteImage = hoverNote.gameObject.AddComponent<Image>();
+            noteImage.sprite = null;
+            noteImage.color = LedgerPalette.Screen;
+            noteImage.raycastTarget = false;
+            Frame(hoverNote, 1f, LedgerPalette.PhosphorDim);
+            hoverNoteText = NewText("Text", hoverNote, 12.5f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.TopLeft);
+            hoverNoteText.rectTransform.anchorMin = Vector2.zero;
+            hoverNoteText.rectTransform.anchorMax = Vector2.one;
+            hoverNoteText.rectTransform.offsetMin = new Vector2(10f, 8f);
+            hoverNoteText.rectTransform.offsetMax = new Vector2(-10f, -8f);
+            hoverNoteText.textWrappingMode = TextWrappingModes.Normal;
+            hoverNote.gameObject.SetActive(false);
 
             BuildSortMenu(personnel);
 
@@ -1491,6 +1528,17 @@ namespace LivingCity.UI
                     LedgerPalette.PhosphorDim, TextAlignmentOptions.MidlineLeft);
                 PlaceTopLeft(waiting.rectTransform, ListLeft, PageTop - 48f, 800f, 24f);
                 waiting.text = "The families have not shown themselves yet.";
+
+                // DEV, editor only: deal a dummy hand of families so the page can be
+                // seen dressed before the street layer seeds the real ones. The real
+                // generator with a fixed seed, so the preview IS the live layout; a
+                // later GangDirector install overwrites it wholesale, and the Version
+                // bump repaints this page on its own.
+                if (Application.isEditor)
+                    NewCardKey(diplomacyContent, "DEAL DUMMY FAMILIES", ListLeft,
+                        PageTop - 88f, 240f, 32f, false, () =>
+                            Gangs.GangRegistry.Install(
+                                Gangs.GangSeeder.Generate(1987, director.Roster)));
                 return;
             }
 
@@ -1500,22 +1548,31 @@ namespace LivingCity.UI
                 holdings.Clear();
             var y = PageTop - 52f;
 
-            // The player's own line first - the yardstick every rival row reads against.
+            // The player's own line first - the yardstick every rival row reads
+            // against, and the boss's face on it: the don looks his rivals in the eye.
             foreach (var gang in gangs)
             {
                 if (!gang.IsPlayer)
                     continue;
-                DiplomacySwatch(gang.Id, ListLeft, y);
+
+                DiplomacyMugshot(Gangs.GangCatalog.BossModel,
+                    Initials(Gangs.GangCatalog.BossName), ListLeft, y, 64f);
+                DiplomacySwatch(gang.Id, ListLeft + 80f, y);
                 var you = NewText("You", diplomacyContent, 16f, LedgerPalette.Phosphor,
                     TextAlignmentOptions.MidlineLeft);
-                PlaceTopLeft(you.rectTransform, ListLeft + 28f, y, 700f, 26f);
+                PlaceTopLeft(you.rectTransform, ListLeft + 104f, y, 640f, 26f);
                 you.fontStyle = FontStyles.Bold;
                 var held = Outfit.Turf.CountOf(holdings, gang.Id);
                 you.text = gang.Name.ToUpperInvariant() + " — YOURS" +
                     (outfit
                         ? "  ·  " + held + " BUILDING" + (held == 1 ? "" : "S")
                         : "");
-                y -= 44f;
+
+                var boss = NewText("Boss", diplomacyContent, 13f,
+                    LedgerPalette.PhosphorDim, TextAlignmentOptions.MidlineLeft);
+                PlaceTopLeft(boss.rectTransform, ListLeft + 104f, y - 26f, 400f, 20f);
+                boss.text = "Boss: " + Gangs.GangCatalog.BossName;
+                y -= 92f;
             }
 
             foreach (var gang in gangs)
@@ -1542,34 +1599,49 @@ namespace LivingCity.UI
 
         float DiplomacyRow(Gangs.Gang gang, float y)
         {
-            DiplomacySwatch(gang.Id, ListLeft, y);
+            // The wash first, so the row's furniture prints over it - each family
+            // sits on its own faint pane instead of floating in the dark.
+            var wash = NewRect("Wash", diplomacyContent);
+            PlaceTopLeft(wash, ListLeft - 10f, y + 6f, PageRight - ListLeft + 20f, 94f);
+            var washImage = wash.gameObject.AddComponent<Image>();
+            washImage.sprite = null;
+            washImage.color = LedgerPalette.CardTint;
+            washImage.raycastTarget = false;
 
+            // The face of the family: its capo, wearing the model his soldiers
+            // answer to on the street.
+            var leader = gang.Members.Count > 0 ? gang.Members[0].FullName : "";
+            DiplomacyMugshot(Gangs.GangCatalog.LieutenantModels[gang.Id],
+                Initials(leader.Length > 0 ? leader : gang.Name), ListLeft, y - 2f, 72f);
+
+            DiplomacySwatch(gang.Id, ListLeft + 88f, y);
             var name = NewText("Name", diplomacyContent, 16f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(name.rectTransform, ListLeft + 28f, y, 400f, 26f);
+            PlaceTopLeft(name.rectTransform, ListLeft + 112f, y, 320f, 26f);
             name.fontStyle = FontStyles.Bold;
             name.text = gang.Name.ToUpperInvariant();
+
+            var capo = NewText("Capo", diplomacyContent, 13f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(capo.rectTransform, ListLeft + 112f, y - 25f, 320f, 20f);
+            capo.text = leader.Length > 0 ? "Run by " + leader : "Run by persons unknown";
 
             var front = Gangs.GangRegistry.FrontBusinessOf(gang.Id);
             var frontText = NewText("Front", diplomacyContent, 13f, LedgerPalette.PhosphorDim,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(frontText.rectTransform, ListLeft + 28f, y - 26f, 380f, 20f);
+            PlaceTopLeft(frontText.rectTransform, ListLeft + 112f, y - 43f, 320f, 20f);
             frontText.text = front
                 ? "Front: " + front.BusinessName
                 : "Front: unknown";
 
-            var strength = NewText("Strength", diplomacyContent, 13f,
-                LedgerPalette.PhosphorDim, TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(strength.rectTransform, ListLeft + 28f, y - 46f, 380f, 20f);
-            strength.text = "Strength: " + LedgerText.StrengthUnknown;
-
             var turf = NewText("Turf", diplomacyContent, 13f, LedgerPalette.PhosphorDim,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(turf.rectTransform, ListLeft + 28f, y - 66f, 380f, 20f);
+            PlaceTopLeft(turf.rectTransform, ListLeft + 112f, y - 61f, 320f, 20f);
             var held = Outfit.Turf.CountOf(holdings, gang.Id);
-            turf.text = outfit
-                ? "Territory: " + held + (held == 1 ? " building" : " buildings")
-                : "Territory: unknown";
+            turf.text = "Strength: " + LedgerText.StrengthUnknown + "  ·  " +
+                (outfit
+                    ? "Territory: " + held + (held == 1 ? " building" : " buildings")
+                    : "Territory: unknown");
 
             var current = outfit ? outfit.Relations.StanceWith(gang.Id) : Outfit.Stance.Peace;
             var pending = Outfit.Stance.Peace;
@@ -1610,6 +1682,51 @@ namespace LivingCity.UI
             hairImage.raycastTarget = false;
 
             return y - 100f;
+        }
+
+        /// <summary>A framed face slot for the diplomacy page - the personnel card's
+        /// mugshot recipe at row size. Initials are the placeholder AND the fallback:
+        /// PortraitStudio's print covers them when it lands, and when no model
+        /// resolves they simply stay.</summary>
+        void DiplomacyMugshot(string model, string initials, float x, float y, float size)
+        {
+            var photo = NewRect("Photo", diplomacyContent);
+            PlaceTopLeft(photo, x, y, size, size);
+            var photoImage = photo.gameObject.AddComponent<Image>();
+            photoImage.sprite = null;
+            photoImage.color = LedgerPalette.PhotoBack;
+            photoImage.raycastTarget = false;
+            Frame(photo, 1f, LedgerPalette.PhosphorDim);
+
+            var text = NewText("Initials", photo, size * 0.32f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.Center);
+            text.rectTransform.anchorMin = Vector2.zero;
+            text.rectTransform.anchorMax = Vector2.one;
+            text.rectTransform.offsetMin = text.rectTransform.offsetMax = Vector2.zero;
+            text.fontStyle = FontStyles.Bold;
+            text.text = initials;
+
+            var mugshot = NewRect("Mugshot", photo);
+            mugshot.anchorMin = Vector2.zero;
+            mugshot.anchorMax = Vector2.one;
+            mugshot.offsetMin = mugshot.offsetMax = Vector2.zero;
+            var raw = mugshot.gameObject.AddComponent<RawImage>();
+            raw.raycastTarget = false;
+            raw.enabled = false; // Show() flips it on when the print lands
+            PortraitStudio.Request(PortraitStudio.FindPeoplePrefab(model),
+                PortraitStudio.Framing.Bust, raw);
+        }
+
+        /// <summary>First letters of the first and last word of a name - "Don
+        /// Salvatore Ricci" prints DR in the slot until his photograph arrives.</summary>
+        static string Initials(string fullName)
+        {
+            var parts = fullName.Split(' ');
+            var head = parts.Length > 0 && parts[0].Length > 0
+                ? parts[0][0].ToString() : "";
+            var tail = parts.Length > 1 && parts[parts.Length - 1].Length > 0
+                ? parts[parts.Length - 1][0].ToString() : "";
+            return head + tail;
         }
 
         void DiplomacySwatch(int gangId, float x, float y)
@@ -2677,21 +2794,23 @@ namespace LivingCity.UI
             RosterView.Build(roster, effective, rows);
 
             var y = 0f;
-            var inCrew = false;
+            var indented = false;
             for (var i = 0; i < rows.Count; i++)
             {
                 var row = rows[i];
                 switch (row.Kind)
                 {
                     case RowKind.CrewHeader:
-                        inCrew = true;
+                        indented = true;
                         y -= CrewGap;
                         break;
 
                     case RowKind.FrontHeader:
                     case RowKind.PoolHeader:
                     case RowKind.SpecialistHeader:
-                        inCrew = false;
+                        // One indent rule for the whole ledger: the front's and the
+                        // pool's men step in exactly as far as a crew's hoods do.
+                        indented = true;
                         BuildSectionHeader(row.Kind, y);
                         y -= SectionHeaderHeight;
                         break;
@@ -2703,7 +2822,7 @@ namespace LivingCity.UI
                         break;
 
                     default:
-                        BuildCharacterRow(roster, row.CharacterId, y, inCrew);
+                        BuildCharacterRow(roster, row.CharacterId, y, indented);
                         y -= RowHeight;
                         break;
                 }
@@ -2746,16 +2865,46 @@ namespace LivingCity.UI
                     AddRowButton(rect, background, () => SelectMember(FrontSelection));
             }
 
-            var label = NewText("Label", rect, 14f,
+            // THE FRONT and THE POOL head groups of men the same way a lieutenant
+            // heads his crew, so they wear his exact dress: the full-beam pip, the
+            // bold 15pt name, the hairline underneath - no "==" decoration.
+            var crewStyle = kind != RowKind.SpecialistHeader;
+            if (crewStyle)
+            {
+                var hairline = NewRect("Hairline", rect);
+                hairline.anchorMin = new Vector2(0f, 0f);
+                hairline.anchorMax = new Vector2(1f, 0f);
+                hairline.pivot = new Vector2(0f, 0f);
+                hairline.anchoredPosition = Vector2.zero;
+                hairline.sizeDelta = new Vector2(0f, 1f);
+                var hairImage = hairline.gameObject.AddComponent<Image>();
+                hairImage.sprite = null;
+                hairImage.color = LedgerPalette.HairLine;
+                hairImage.raycastTarget = false;
+
+                var pip = NewRect("Pip", rect);
+                pip.anchorMin = new Vector2(0f, 0f);
+                pip.anchorMax = new Vector2(0f, 1f);
+                pip.pivot = new Vector2(0f, 0.5f);
+                pip.anchoredPosition = Vector2.zero;
+                pip.sizeDelta = new Vector2(4f, 0f);
+                var pipImage = pip.gameObject.AddComponent<Image>();
+                pipImage.sprite = null;
+                pipImage.color = inverse ? LedgerPalette.Screen : LedgerPalette.Phosphor;
+                pipImage.raycastTarget = false;
+            }
+
+            var label = NewText("Label", rect, crewStyle ? 15f : 14f,
                 inverse ? LedgerPalette.Screen : LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
             FillRow(label.rectTransform, 12f, 400f);
             label.fontStyle = FontStyles.Bold;
-            label.characterSpacing = 3f;
+            if (!crewStyle)
+                label.characterSpacing = 3f;
             label.text = kind switch
             {
-                RowKind.FrontHeader => "== THE FRONT ==",
-                RowKind.PoolHeader => "== THE POOL ==",
+                RowKind.FrontHeader => "THE FRONT",
+                RowKind.PoolHeader => "THE POOL",
                 _ => "== SPECIALISTS ==",
             };
         }
@@ -2962,8 +3111,72 @@ namespace LivingCity.UI
             return PortraitStudio.FindPeoplePrefab(looks[member.Id % looks.Length]);
         }
 
+        /// <summary>The wash behind the identity block - the card's own masthead. A
+        /// breath of phosphor kept inside the card's padding: the old version bled to
+        /// the rect edge and its hairline floor stuck out past the panel sprite's
+        /// drawn face, both gone at the user's word. Built FIRST so everything prints
+        /// over it.</summary>
+        void BuildCardMasthead()
+        {
+            var band = NewRect("Masthead", detailContent);
+            band.anchorMin = new Vector2(0f, 1f);
+            band.anchorMax = new Vector2(1f, 1f);
+            band.pivot = new Vector2(0.5f, 1f);
+            band.anchoredPosition = Vector2.zero;
+            band.sizeDelta = new Vector2(0f, CardMastheadHeight);
+            var bandImage = band.gameObject.AddComponent<Image>();
+            bandImage.sprite = null;
+            bandImage.color = LedgerPalette.CardMasthead;
+            bandImage.raycastTarget = false;
+        }
+
+        /// <summary>Prints the shared note just under the hovered row, sized to its
+        /// copy. Row coordinates are DetailContent's, inset by CardPad from the card
+        /// the note itself hangs on.</summary>
+        void ShowHoverNote(string note, RectTransform row)
+        {
+            if (note.Length == 0 || hoverNote == null)
+                return;
+
+            hoverNoteText.text = note;
+            hoverNote.gameObject.SetActive(true);
+            hoverNote.SetAsLastSibling();
+
+            var height = hoverNoteText.GetPreferredValues(
+                note, CardInnerWidth - 20f, 0f).y + 16f;
+            hoverNote.sizeDelta = new Vector2(CardInnerWidth, height);
+            hoverNote.anchoredPosition = new Vector2(CardPad,
+                row.anchoredPosition.y - row.sizeDelta.y - CardPad - 2f);
+        }
+
+        void HideHoverNote()
+        {
+            if (hoverNote != null)
+                hoverNote.gameObject.SetActive(false);
+        }
+
+        /// <summary>The pointer half of the card's hover notes: an invisible zone laid
+        /// over one stat row. AddComponent-only, never serialized, so nesting inside
+        /// the almanac is safe.</summary>
+        sealed class StatHoverZone : MonoBehaviour, IPointerEnterHandler,
+            IPointerExitHandler
+        {
+            public PersonnelAlmanac almanac;
+            public string note;
+
+            public void OnPointerEnter(PointerEventData eventData) =>
+                almanac.ShowHoverNote(note, (RectTransform)transform);
+
+            public void OnPointerExit(PointerEventData eventData) =>
+                almanac.HideHoverNote();
+        }
+
         void RebuildDetail()
         {
+            // The rows under the pointer are about to be destroyed, and destroyed
+            // rows send no PointerExit - drop the note with them.
+            HideHoverNote();
+
             foreach (Transform old in detailContent)
                 Destroy(old.gameObject);
 
@@ -2985,6 +3198,8 @@ namespace LivingCity.UI
                 hint.text = "Select a man from the roster.";
                 return;
             }
+
+            BuildCardMasthead();
 
             // The mugshot corner. The initials are the placeholder AND the fallback:
             // PortraitStudio photographs the member's street model a frame later and its
@@ -3018,7 +3233,7 @@ namespace LivingCity.UI
 
             var name = NewText("Name", detailContent, 19f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(name.rectTransform, 118f, -20f, DetailWidth - 138f, 32f);
+            PlaceTopLeft(name.rectTransform, 118f, -20f, CardInnerWidth - 138f, 32f);
             name.fontStyle = FontStyles.Bold;
             name.text = member.FullName;
 
@@ -3038,7 +3253,7 @@ namespace LivingCity.UI
 
             var post = NewText("Post", detailContent, 14f, LedgerPalette.PhosphorDim,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(post.rectTransform, 118f, -54f, DetailWidth - 138f, 22f);
+            PlaceTopLeft(post.rectTransform, 118f, -54f, CardInnerWidth - 138f, 22f);
             post.text = rankLine + "  ·  " +
                 LedgerText.AssignmentLine(assignment, crewName);
 
@@ -3047,7 +3262,7 @@ namespace LivingCity.UI
                 : LedgerPalette.Amber;
             var status = NewText("Status", detailContent, 14f, statusColor,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(status.rectTransform, 118f, -78f, DetailWidth - 138f, 22f);
+            PlaceTopLeft(status.rectTransform, 118f, -78f, CardInnerWidth - 138f, 22f);
             status.text = "Status: " + LedgerText.StatusLabel(member.Status) +
                           (member.Wanted ? "  ·  WANTED" : "");
 
@@ -3073,6 +3288,8 @@ namespace LivingCity.UI
         /// moment gear lands, so the card repaints already-dealt.</summary>
         void BuildFrontDetail(Roster roster)
         {
+            BuildCardMasthead();
+
             var photo = NewRect("Photo", detailContent);
             PlaceTopLeft(photo, 20f, -18f, 84f, 84f);
             var photoImage = photo.gameObject.AddComponent<Image>();
@@ -3102,13 +3319,13 @@ namespace LivingCity.UI
 
             var name = NewText("Name", detailContent, 19f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(name.rectTransform, 118f, -20f, DetailWidth - 138f, 32f);
+            PlaceTopLeft(name.rectTransform, 118f, -20f, CardInnerWidth - 138f, 32f);
             name.fontStyle = FontStyles.Bold;
             name.text = Gangs.GangCatalog.BossName;
 
             var post = NewText("Post", detailContent, 14f, LedgerPalette.PhosphorDim,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(post.rectTransform, 118f, -54f, DetailWidth - 138f, 22f);
+            PlaceTopLeft(post.rectTransform, 118f, -54f, CardInnerWidth - 138f, 22f);
             post.text = "BOSS  ·  " +
                 Gangs.GangCatalog.Names[Gangs.GangCatalog.PlayerGangId];
 
@@ -3153,8 +3370,8 @@ namespace LivingCity.UI
                         : "in the locker"),
                     LedgerPalette.Phosphor, y + 2f);
                 var itemId = item.Id;
-                NewButton(detailContent, "RETURN", DetailWidth - 130f, y + 24f,
-                    110f, 22f, () =>
+                NewCardKey(detailContent, "RETURN", CardInnerWidth - 130f, y + 24f,
+                    110f, 22f, false, () =>
                     {
                         lastRefusal = "";
                         var result = director.ReturnEquipment(itemId);
@@ -3179,8 +3396,8 @@ namespace LivingCity.UI
                 y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
                     item.DisplayName, LedgerPalette.Phosphor, y + 2f);
                 var itemId = item.Id;
-                NewButton(detailContent, "GIVE", DetailWidth - 130f, y + 24f,
-                    110f, 22f, () =>
+                NewCardKey(detailContent, "GIVE", CardInnerWidth - 130f, y + 24f,
+                    110f, 22f, false, () =>
                     {
                         lastRefusal = "";
                         var result = director.GiveEquipmentToFront(itemId);
@@ -3200,7 +3417,7 @@ namespace LivingCity.UI
         {
             var line = NewText("Line", detailContent, 14f, color,
                 TextAlignmentOptions.MidlineLeft);
-            PlaceTopLeft(line.rectTransform, 20f, y, DetailWidth - 40f, 22f);
+            PlaceTopLeft(line.rectTransform, 20f, y, CardInnerWidth - 40f, 22f);
             line.text = text;
             return y - 24f;
         }
@@ -3234,7 +3451,7 @@ namespace LivingCity.UI
 
             var value = NewText("Value", detailContent, 14f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineRight);
-            PlaceTopLeft(value.rectTransform, DetailWidth - 90f, y, 70f, 20f);
+            PlaceTopLeft(value.rectTransform, CardInnerWidth - 90f, y, 70f, 20f);
             value.text = member.Loyalty.ToString();
 
             return y - 26f;
@@ -3252,8 +3469,20 @@ namespace LivingCity.UI
 
             var value = NewText("Value", detailContent, 13f, LedgerPalette.PhosphorDim,
                 TextAlignmentOptions.MidlineRight);
-            PlaceTopLeft(value.rectTransform, DetailWidth - 90f, y, 70f, 22f);
+            PlaceTopLeft(value.rectTransform, CardInnerWidth - 90f, y, 70f, 22f);
             value.text = LedgerText.Stars(halfSteps);
+
+            // The whole line is a hover zone: rest the pointer on a stat and the
+            // note under it says what the number is FOR.
+            var zone = NewRect("Hover", detailContent);
+            PlaceTopLeft(zone, 12f, y, CardInnerWidth - 24f, 25f);
+            var zoneImage = zone.gameObject.AddComponent<Image>();
+            zoneImage.sprite = null;
+            zoneImage.color = Color.clear;
+            zoneImage.raycastTarget = true;
+            var hover = zone.gameObject.AddComponent<StatHoverZone>();
+            hover.almanac = this;
+            hover.note = LedgerText.AttributeNote(attribute);
 
             return y - 26f;
         }
@@ -3326,8 +3555,8 @@ namespace LivingCity.UI
                 var item = held[i];
                 y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
                     item.DisplayName, LedgerPalette.Phosphor, y + 2f);
-                NewButton(detailContent, "RETURN", DetailWidth - 130f, y + 24f, 110f, 22f,
-                    () =>
+                NewCardKey(detailContent, "RETURN", CardInnerWidth - 130f, y + 24f,
+                    110f, 22f, false, () =>
                     {
                         lastRefusal = "";
                         var result = director.ReturnEquipment(item.Id);
@@ -3359,8 +3588,8 @@ namespace LivingCity.UI
                     y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
                         item.DisplayName, LedgerPalette.Phosphor, y + 2f);
                     if (member.Status != CharacterStatus.Dead)
-                        NewButton(detailContent, "GIVE", DetailWidth - 130f, y + 24f,
-                            110f, 22f, () =>
+                        NewCardKey(detailContent, "GIVE", CardInnerWidth - 130f, y + 24f,
+                            110f, 22f, false, () =>
                             {
                                 lastRefusal = "";
                                 var result = director.GiveEquipment(item.Id, member.Id);
@@ -3408,14 +3637,14 @@ namespace LivingCity.UI
             {
                 var warn = NewText("Warn", detailContent, 13f, LedgerPalette.Amber,
                     TextAlignmentOptions.TopLeft);
-                PlaceTopLeft(warn.rectTransform, 20f, y, DetailWidth - 40f, 44f);
+                PlaceTopLeft(warn.rectTransform, 20f, y, CardInnerWidth - 40f, 44f);
                 warn.textWrappingMode = TextWrappingModes.Normal;
                 warn.text = LedgerText.PromoteWarning(member.FullName);
                 y -= 48f;
 
-                NewButton(detailContent, "PROMOTE ANYWAY", 20f, y, 210f, 30f,
-                    () => DoPromote(member.Id));
-                NewButton(detailContent, "CANCEL", 244f, y, 120f, 30f, () =>
+                NewCardKey(detailContent, "PROMOTE ANYWAY", 20f, y, 210f, 32f, true,
+                    () => DoPromote(member.Id), warn: true);
+                NewCardKey(detailContent, "CANCEL", 244f, y, 120f, 32f, false, () =>
                 {
                     pendingConfirm = Confirm.None;
                     dirty = true;
@@ -3428,20 +3657,20 @@ namespace LivingCity.UI
                 var crew = roster.CrewOf(member.Id);
                 var warn = NewText("Warn", detailContent, 13f, LedgerPalette.Amber,
                     TextAlignmentOptions.TopLeft);
-                PlaceTopLeft(warn.rectTransform, 20f, y, DetailWidth - 40f, 44f);
+                PlaceTopLeft(warn.rectTransform, 20f, y, CardInnerWidth - 40f, 44f);
                 warn.textWrappingMode = TextWrappingModes.Normal;
                 warn.text = LedgerText.DemoteConfirm(member.FirstName,
                     crew != null ? crew.HoodIds.Count : 0);
                 y -= 48f;
 
-                NewButton(detailContent, "DISBAND", 20f, y, 140f, 30f, () =>
+                NewCardKey(detailContent, "DISBAND", 20f, y, 140f, 32f, true, () =>
                 {
                     pendingConfirm = Confirm.None;
                     var result = director.Demote(member.Id);
                     lastRefusal = result.Ok ? "" : result.Reason;
                     dirty = true;
-                });
-                NewButton(detailContent, "CANCEL", 174f, y, 120f, 30f, () =>
+                }, warn: true);
+                NewCardKey(detailContent, "CANCEL", 174f, y, 120f, 32f, false, () =>
                 {
                     pendingConfirm = Confirm.None;
                     dirty = true;
@@ -3453,7 +3682,7 @@ namespace LivingCity.UI
             {
                 y = DetailLine("Pick a crew, the pool, or the front.",
                     LedgerPalette.Phosphor, y);
-                NewButton(detailContent, "CANCEL", 20f, y, 120f, 30f, () =>
+                NewCardKey(detailContent, "CANCEL", 20f, y, 120f, 32f, false, () =>
                 {
                     assignMode = false;
                     dirty = true;
@@ -3463,15 +3692,19 @@ namespace LivingCity.UI
 
             if (member.Rank == Rank.Lieutenant)
             {
-                NewButton(detailContent, "DEMOTE", 20f, y, 130f, 30f, () =>
+                // Ghost in amber: a demotion is the card's dangerous verb, and the
+                // filled treatment stays reserved for the confirm that commits it.
+                NewCardKey(detailContent, "DEMOTE", 20f, y, 130f, 32f, false, () =>
                 {
                     pendingConfirm = Confirm.Demote;
                     dirty = true;
-                });
+                }, warn: true);
                 return;
             }
 
-            NewButton(detailContent, "PROMOTE", 20f, y, 140f, 30f, () =>
+            // PROMOTE is the card's one loud verb - the filled key; REASSIGN rides
+            // beside it as the ghost, so the pair reads primary/secondary at a glance.
+            NewCardKey(detailContent, "PROMOTE", 20f, y, 140f, 32f, true, () =>
             {
                 var check = director.CheckPromote(member.Id);
                 if (!check.CanPromote)
@@ -3482,7 +3715,7 @@ namespace LivingCity.UI
                     DoPromote(member.Id);
                 dirty = true;
             });
-            NewButton(detailContent, "REASSIGN", 174f, y, 150f, 30f, () =>
+            NewCardKey(detailContent, "REASSIGN", 174f, y, 150f, 32f, false, () =>
             {
                 assignMode = true;
                 lastRefusal = "";
@@ -3563,19 +3796,15 @@ namespace LivingCity.UI
 
             var button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = background;
-            // The same wardrobe chain as the tabs: Modern Menus slab, then the Waste
-            // No Space sheet, then the flat block in its 1px frame. The label stays
-            // Phosphor either way - bright text on whatever face was available.
-            if (!LedgerSkinSet.TryDressButton(button, background) &&
-                !UiSkin.TryDressButton(button, background))
-            {
-                var colours = button.colors;
-                colours.normalColor = LedgerPalette.ButtonNormal;
-                colours.highlightedColor = LedgerPalette.ButtonHover;
-                colours.pressedColor = LedgerPalette.ButtonPressed;
-                button.colors = colours;
-                Frame(rect, 1f, LedgerPalette.PhosphorDim);
-            }
+            // The pack slabs live in the TAB STRIP and nowhere else, at the user's
+            // word. Every other key in the ledger is flat print - the translucent
+            // phosphor block in its 1px frame, always.
+            var colours = button.colors;
+            colours.normalColor = LedgerPalette.ButtonNormal;
+            colours.highlightedColor = LedgerPalette.ButtonHover;
+            colours.pressedColor = LedgerPalette.ButtonPressed;
+            button.colors = colours;
+            Frame(rect, 1f, LedgerPalette.PhosphorDim);
             button.onClick.AddListener(onClick);
 
             var text = NewText("Label", rect, 13f, LedgerPalette.Phosphor,
@@ -3589,12 +3818,59 @@ namespace LivingCity.UI
             return text;
         }
 
-        /// <summary>A TOOLBAR segment: the same click surface as NewButton but in the
-        /// skin's flat-chip wardrobe, so the furniture rows (filter bar, CLOSE, the
-        /// sort menu) read as one species and the action slabs below as another.
-        /// Toolbar neighbours are laid FLUSH - the chip's own edges are the seams.
-        /// Sprite-less the two species collapse into one, which is what the terminal
-        /// always drew.</summary>
+        /// <summary>The detail CARD's own species of key - the verbs of a man's sheet
+        /// (PROMOTE, REASSIGN, the confirms) dressed apart from the blue action slabs
+        /// of the shop rows. A primary key is a solid block of phosphor with tube-dark
+        /// text - the card's one loud verb; a secondary key is a ghost, a faint face
+        /// with phosphor text, rimmed by a 1px frame when sprite-less. Warn swaps the
+        /// phosphor for the amber gun on keys that commit something a player might
+        /// regret. Never dressed by the pack: these stay flat print whatever the
+        /// wardrobe, which is exactly what tells them apart from the shop slabs.</summary>
+        TextMeshProUGUI NewCardKey(Transform parent, string label, float x, float y,
+            float w, float h, bool primary, UnityEngine.Events.UnityAction onClick,
+            bool warn = false)
+        {
+            var ink = warn ? LedgerPalette.Amber : LedgerPalette.Phosphor;
+
+            var rect = NewRect("Key " + label, parent);
+            PlaceTopLeft(rect, x, y, w, h);
+
+            var background = rect.gameObject.AddComponent<Image>();
+            background.sprite = null;
+            background.color = primary ? ink : new Color(ink.r, ink.g, ink.b, 0.14f);
+            background.raycastTarget = true;
+
+            var button = rect.gameObject.AddComponent<Button>();
+            button.targetGraphic = background;
+            var colours = button.colors;
+            colours.normalColor = LedgerPalette.ButtonNormal;
+            colours.highlightedColor = LedgerPalette.ButtonHover;
+            colours.selectedColor = LedgerPalette.ButtonHover;
+            colours.pressedColor = LedgerPalette.ButtonPressed;
+            button.colors = colours;
+            button.onClick.AddListener(onClick);
+
+            // Deliberately UNSKINNED, at the user's word: at soft-key size every pack
+            // face reads as an arrowhead. The card's verbs are flat print - a solid
+            // block, or a ghost inside its 1px rim.
+            if (!primary)
+                Frame(rect, 1f, ink);
+
+            var text = NewText("Label", rect, 13f,
+                primary ? LedgerPalette.Screen : ink, TextAlignmentOptions.Center);
+            text.rectTransform.anchorMin = Vector2.zero;
+            text.rectTransform.anchorMax = Vector2.one;
+            text.rectTransform.offsetMin = text.rectTransform.offsetMax = Vector2.zero;
+            text.characterSpacing = 1f;
+            text.fontStyle = FontStyles.Bold;
+            text.text = label;
+            return text;
+        }
+
+        /// <summary>A TOOLBAR segment: the same click surface as NewButton for the
+        /// furniture rows (filter bar, CLOSE, the sort menu). Flat print like every
+        /// key outside the tab strip - the pack chips read as arrowheads at segment
+        /// size, so the two species collapse into the one the terminal always drew.</summary>
         TextMeshProUGUI NewToolbarButton(Transform parent, string label, float x,
             float y, float w, float h, UnityEngine.Events.UnityAction onClick)
         {
@@ -3608,16 +3884,12 @@ namespace LivingCity.UI
 
             var button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = background;
-            if (!LedgerSkinSet.TryDressToolbarButton(button, background) &&
-                !UiSkin.TryDressButton(button, background))
-            {
-                var colours = button.colors;
-                colours.normalColor = LedgerPalette.ButtonNormal;
-                colours.highlightedColor = LedgerPalette.ButtonHover;
-                colours.pressedColor = LedgerPalette.ButtonPressed;
-                button.colors = colours;
-                Frame(rect, 1f, LedgerPalette.PhosphorDim);
-            }
+            var colours = button.colors;
+            colours.normalColor = LedgerPalette.ButtonNormal;
+            colours.highlightedColor = LedgerPalette.ButtonHover;
+            colours.pressedColor = LedgerPalette.ButtonPressed;
+            button.colors = colours;
+            Frame(rect, 1f, LedgerPalette.PhosphorDim);
             button.onClick.AddListener(onClick);
 
             var text = NewText("Label", rect, 13f, LedgerPalette.Phosphor,

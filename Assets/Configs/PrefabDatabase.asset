@@ -1065,7 +1065,7 @@ MonoBehaviour:
   - {fileID: 2100000, guid: 63fa7e9688de14d1095a3ece0fc11d03, type: 2}
   - {fileID: 2100000, guid: 4f4e57507bae240f084d090d8dd1311d, type: 2}
   - {fileID: 2100000, guid: c7972fa873f7e42988516f9629b85067, type: 2}
-  lineMaterial: {fileID: 2100000, guid: 10ae6b21c629441748ad77b50d8a4c6e, type: 2}
+  lineMaterial: {fileID: 2100000, guid: 6e7bf9f0081523148abd49e4d6f09dfe, type: 2}
   groundTints:
   - {fileID: 2100000, guid: 093450b0235f94dd0a54da206336e62f, type: 2}
   - {fileID: 2100000, guid: 93362ba1674e54d429b5beaac5c0406e, type: 2}
@@ -1073,11 +1073,11 @@ MonoBehaviour:
   - {fileID: 2100000, guid: b47c1c47418e34c68a2d608c97880ec8, type: 2}
   - {fileID: 2100000, guid: a37d71781ce5e44a3994edab3a8f26ea, type: 2}
   - {fileID: 2100000, guid: 1a89ab56751a74e069c15ecee4a0a51c, type: 2}
-  paintDarkMaterial: {fileID: 2100000, guid: b4c8453584a5a46b585853fdd7a8c899, type: 2}
-  paintLightMaterial: {fileID: 2100000, guid: 5ac15ef4e59a24e5f9082be9fc6c399f, type: 2}
+  paintDarkMaterial: {fileID: 2100000, guid: b37d1e8f68c55cb439235fb4ddd83475, type: 2}
+  paintLightMaterial: {fileID: 2100000, guid: c28dd5e9258349d47833b706791d01af, type: 2}
   cinderTint: {fileID: 2100000, guid: 33291033ca99147b0b25edd0230df7f5, type: 2}
-  grimeMaterial: {fileID: 2100000, guid: f0846e9999ebd45199ddab1af5f86587, type: 2}
-  oilMaterial: {fileID: 2100000, guid: cc022e6bfc9bb4dce8a69928f4659f7a, type: 2}
+  grimeMaterial: {fileID: 2100000, guid: e7121bf69a7387b4a99928a16c40793e, type: 2}
+  oilMaterial: {fileID: 2100000, guid: e887f283c50f2be489ea956e17ec9837, type: 2}
   chimneyVents:
   - prefab: {fileID: 265990862613161308, guid: cfc6c8d22a0000c43a7ce1a999aec2b0, type: 3}
     local: {x: -0.00000006159732, y: 18.388376, z: 0.000000024338563}

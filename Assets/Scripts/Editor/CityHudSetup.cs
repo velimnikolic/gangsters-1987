@@ -101,7 +101,7 @@ namespace LivingCity.EditorTools
 
             var disc = BuildDisc(content);
             var timeLabel = BuildLabel("Time", content, 26f, new Color(0.96f, 0.96f, 0.96f), "08:00");
-            var dayLabel = BuildLabel("Day", content, 16f, new Color(0.70f, 0.72f, 0.76f), "Dan 1");
+            var dayLabel = BuildLabel("Day", content, 16f, new Color(0.70f, 0.72f, 0.76f), "Day 1");
 
             var hud = Ensure<CityClockHud>(hudObject);
 

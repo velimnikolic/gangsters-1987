@@ -20,11 +20,14 @@ namespace RoadDemo
         public Transform Tf;
         public float HalfLen;
 
-        RoadEdge _edge;
-        float _s;
-        float _speed;
+        protected RoadEdge _edge;
+        protected float _s;
+        protected float _speed;
         Turn _turn;
         RoadEdge _next;
+
+        public RoadEdge CurrentEdge => _edge;
+        public float Progress => _s;
 
         Vector3 _p0, _p1, _p2; // curve through the intersection that led onto _edge
         float _curveLen = 1f;
@@ -64,30 +67,28 @@ namespace RoadDemo
                 else lefts.Add(e);
             }
 
-            float roll = Random.value;
-            if (straight != null && (roll < 0.55f || (lefts.Count == 0 && rights.Count == 0)))
-            {
-                _next = straight;
-                _turn = Turn.Straight;
-            }
-            else if (rights.Count > 0 && (roll < 0.8f || lefts.Count == 0))
-            {
-                _next = rights[Random.Range(0, rights.Count)];
-                _turn = Turn.Right;
-            }
-            else if (lefts.Count > 0)
-            {
-                _next = lefts[Random.Range(0, lefts.Count)];
-                _turn = Turn.Left;
-            }
-            else
-            {
-                _next = straight;
-                _turn = Turn.Straight;
-            }
+            _next = PickNext(straight, lefts, rights);
+            _turn = _next == null || Vector3.Dot(_next.Dir, _edge.Dir) > 0.5f
+                ? Turn.Straight
+                : Vector3.Cross(_edge.Dir, _next.Dir).y > 0f ? Turn.Right : Turn.Left;
         }
 
-        static float Allowed(float endSpeed, float dist)
+        // The default driver: random wander biased to straight, then right. A derived
+        // driver (the patrol car) substitutes a routed choice; candidates are already
+        // filtered for U-turns and the turn geometry is derived from whatever it picks.
+        protected virtual RoadEdge PickNext(RoadEdge straight, List<RoadEdge> lefts, List<RoadEdge> rights)
+        {
+            float roll = Random.value;
+            if (straight != null && (roll < 0.55f || (lefts.Count == 0 && rights.Count == 0)))
+                return straight;
+            if (rights.Count > 0 && (roll < 0.8f || lefts.Count == 0))
+                return rights[Random.Range(0, rights.Count)];
+            if (lefts.Count > 0)
+                return lefts[Random.Range(0, lefts.Count)];
+            return straight;
+        }
+
+        protected static float Allowed(float endSpeed, float dist)
             => Mathf.Sqrt(endSpeed * endSpeed + 2f * Brake * Mathf.Max(0f, dist));
 
         public void Tick(float dt)
@@ -144,11 +145,24 @@ namespace RoadDemo
                 target = Mathf.Min(target, Allowed(0f, gap));
             }
 
+            target = LimitTarget(target);
+
             _speed = Mathf.MoveTowards(_speed, target, (target < _speed ? Brake : Accel) * dt);
             _s += _speed * dt;
 
             if (_s >= _edge.Length && _next != null) EnterNode();
             Place();
+        }
+
+        /// A derived driver's last word on the target speed - how the patrol car
+        /// rolls to a stop at its kerb, with the same braking curve signals use.
+        protected virtual float LimitTarget(float target) => target;
+
+        // Leave the lane graph (a patrol car swinging into its forecourt). The
+        // owner must stop calling Tick until the next Spawn.
+        public void Despawn()
+        {
+            if (_edge != null) _edge.Cars.Remove(this);
         }
 
         bool OncomingPriority()

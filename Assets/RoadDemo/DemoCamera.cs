@@ -55,8 +55,11 @@ namespace RoadDemo
 
         void OnGUI()
         {
-            GUI.Label(new Rect(12f, 8f, 640f, 24f),
-                "WASD/strelice: pomeranje   Q/E ili desni klik: rotacija   točkić: zum");
+            // below the top bar, which spans the full width at 42 canvas-px
+            // (reference height 1080) - convert to real screen pixels
+            float barPx = UnityEngine.Screen.height / 1080f * 42f;
+            GUI.Label(new Rect(12f, barPx + 6f, 760f, 24f),
+                "WASD/arrows: move   Q/E or right-click: rotate   wheel: zoom   click a building: card");
         }
     }
 }

@@ -1,0 +1,121 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace RoadDemo
+{
+    // Headlights for the demo's cars: two tungsten spots per car, intensity riding
+    // DemoSky's night curve, and only the beams nearest the camera's ground
+    // focus burning - 100 cars is 200 beams, and URP Forward+ renders at most 256
+    // additional lights per frame on desktop, most of which the street lamps take.
+    public class DemoHeadlights : MonoBehaviour
+    {
+        public DemoClock clock;
+
+        // 24 cars' worth. Counted in beams, cut between cars (a pair shares one
+        // sort key); sized so lamps (192) + beams (48) stay under URP's 256.
+        const int LitBeamBudget = 48;
+        const float ResortInterval = 0.4f;
+
+        // beam geometry and colour follow CarHeadlights: tilted down so the pool
+        // hugs the bumper, period tungsten yellow rather than modern white
+        const float DownTilt = 24f;
+        const float SpotOuterAngle = 70f;
+        const float SpotInnerAngle = 35f;
+        const float Range = 12f;
+        const float Intensity = 16f;
+        static readonly Color BeamColour = new Color(1f, 0.85f, 0.45f);
+
+        struct Rig
+        {
+            public Transform Car;
+            public Light L, R;
+        }
+
+        readonly List<Rig> _rigs = new List<Rig>();
+        float _nextResort;
+        float _lit = -1f;
+
+        public void Register(Transform car, float halfLen)
+        {
+            var rig = new Rig
+            {
+                Car = car,
+                L = Attach(car, new Vector3(-0.55f, 0.7f, halfLen - 0.5f)),
+                R = Attach(car, new Vector3(0.55f, 0.7f, halfLen - 0.5f)),
+            };
+            _rigs.Add(rig);
+        }
+
+        static Light Attach(Transform car, Vector3 localPos)
+        {
+            var holder = new GameObject("headlight");
+            holder.transform.SetParent(car, false);
+            holder.transform.localPosition = localPos;
+            holder.transform.localRotation = Quaternion.Euler(DownTilt, 0f, 0f);
+
+            var light = holder.AddComponent<Light>();
+            light.type = LightType.Spot;
+            light.spotAngle = SpotOuterAngle;
+            light.innerSpotAngle = SpotInnerAngle;
+            light.color = BeamColour;
+            light.range = Range;
+            light.intensity = 0f;
+            light.shadows = LightShadows.None;
+            light.enabled = false;
+            light.lightmapBakeType = LightmapBakeType.Realtime;
+            light.renderMode = LightRenderMode.ForcePixel;
+            holder.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalLightData>()
+                  .usePipelineSettings = true;
+            return light;
+        }
+
+        void LateUpdate()
+        {
+            if (_rigs.Count == 0)
+                return;
+
+            float night = DemoSky.Nightness(clock ? clock.Hour : 12f);
+            float target = Intensity * night;
+
+            bool resortDue = Time.unscaledTime >= _nextResort;
+            if (resortDue)
+                _nextResort = Time.unscaledTime + ResortInterval;
+            if (!resortDue && Mathf.Approximately(target, _lit))
+                return;
+            _lit = target;
+
+            bool burn = target > 0.001f;
+            var camera = Camera.main;
+            if (burn && camera && _rigs.Count * 2 > LitBeamBudget)
+            {
+                // rank around where the camera looks, not where it stands - the rig
+                // parks it a couple hundred metres back along its boom
+                var eye = camera.transform.position;
+                var forward = camera.transform.forward;
+                if (forward.y < -0.05f && eye.y > 0f)
+                    eye += forward * (eye.y / -forward.y);
+
+                _rigs.Sort((a, b) =>
+                {
+                    if (!a.Car || !b.Car)
+                        return 0;
+                    return (a.Car.position - eye).sqrMagnitude
+                        .CompareTo((b.Car.position - eye).sqrMagnitude);
+                });
+            }
+
+            for (int i = 0; i < _rigs.Count; i++)
+            {
+                var rig = _rigs[i];
+                if (!rig.L || !rig.R)
+                    continue;   // car despawned; lights died with it
+
+                bool burns = burn && i * 2 < LitBeamBudget;
+                rig.L.enabled = burns;
+                rig.R.enabled = burns;
+                rig.L.intensity = target;
+                rig.R.intensity = target;
+            }
+        }
+    }
+}

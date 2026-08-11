@@ -237,7 +237,11 @@ namespace LivingCity.EditorTools
             // Kit-referenced entries: the prefab keeps its runtime role name, only the
             // showroom label reads human (applied at placement, not at bake).
             ["building-policestation"] = "Police Station",
-            ["building-warehouse"] = "Stovariste",
+            ["building-warehouse"] = "Warehouse",
+            ["building-factory"] = "Factory",
+            ["building-factory-old"] = "Old Factory",
+            ["building-factory-hall"] = "Factory Hall",
+            ["building-workshop"] = "Workshop",
             ["building-coffeeshop"] = "Coffee Shop",
         };
 
@@ -292,6 +296,12 @@ namespace LivingCity.EditorTools
             {
                 (SectionPolice, "building-policestation"),
                 (SectionGang, "building-warehouse"),
+                // The kit-bashed industrial set rides in the same pack section as the
+                // stovariste - same walls, one district.
+                (SectionGang, "building-factory"),
+                (SectionGang, "building-factory-old"),
+                (SectionGang, "building-factory-hall"),
+                (SectionGang, "building-workshop"),
                 (SectionCoffee, "building-coffeeshop"),
             })
                 if (AssetDatabase.LoadAssetAtPath<GameObject>(

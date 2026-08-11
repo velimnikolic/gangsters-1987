@@ -415,6 +415,7 @@ namespace LivingCity.EditorTools
             // passes are versioned no-ops once their output is current.
             SyntyKitExtractor.ExtractIfStale();
             SyntyKitBash.BuildIfStale();
+            SyntyIndustrialKitBash.BuildIfStale();
             SyntyRoadTiles.BuildIfStale();
 
             // Road tiles: the composite bakes - polyperfect Tile/Path logic under Synty

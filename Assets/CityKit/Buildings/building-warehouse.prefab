@@ -73,7 +73,6 @@ MeshRenderer:
   - {fileID: 2100000, guid: b9eb2539339de154ba6d40f01e7de7ed, type: 2}
   - {fileID: 2100000, guid: 3526f85d076f8f541bbad248bffe2aba, type: 2}
   - {fileID: 2100000, guid: 57b3870b47b9c7f4a92bfe517bf7d8b7, type: 2}
-  - {fileID: 2100000, guid: 57644755660f32046b2b0b2c8405d706, type: 2}
   - {fileID: 2100000, guid: 012da64c05320c741adfaf5d31c211d1, type: 2}
   - {fileID: 2100000, guid: 9267717af01705b4689c9a8c70dce2ce, type: 2}
   m_StaticBatchInfo:
@@ -118,5 +117,5 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 468.08646, y: 371.29132, z: 468.0865}
-  m_Center: {x: 0, y: 0, z: 0}
+  m_Size: {x: 70.69722, y: 13.410927, z: 61.5}
+  m_Center: {x: 0, y: 3.7054634, z: 0}

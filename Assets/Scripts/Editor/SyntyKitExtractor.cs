@@ -90,7 +90,7 @@ namespace LivingCity.EditorTools
         /// Version.txt beside the output so CreateAssets can skip reopening a 61 MB demo
         /// scene on every refresh. Delete the file (or bump this) to force a re-extract.
         /// </summary>
-        public const int Version = 6;
+        public const int Version = 7;
         const string VersionPath = BuildingsDir + "/Version.txt";
 
         /// <summary>demo group -> city role. yawOverride in degrees, NaN = trust the doors.</summary>
@@ -369,8 +369,10 @@ namespace LivingCity.EditorTools
         /// fences, gates, anything under open sky - stays, which is what makes the lot
         /// read as a stockyard. Architecture (SM_Bld_*: walls, floors, trusses, fences,
         /// the roofs themselves) always stays; vehicles (SM_Veh_*: forklifts, vans) always
-        /// go, parked outside or not. Roof-mounted props survive the height test (their
-        /// base sits AT the roof top, not below it).
+        /// go, parked outside or not, as does the demo's night backdrop (SM_Generic_SkyDome,
+        /// a dark inverted sphere over the whole lot - the demo is a night scene and the
+        /// dome is its sky, not part of the compound). Roof-mounted props survive the
+        /// height test (their base sits AT the roof top, not below it).
         /// </summary>
         static void StripWarehouseInterior(Transform holder)
         {
@@ -390,7 +392,8 @@ namespace LivingCity.EditorTools
                 for (var i = root.childCount - 1; i >= 0; i--)
                 {
                     var piece = root.GetChild(i);
-                    if (piece.name.StartsWith("SM_Veh"))
+                    if (piece.name.StartsWith("SM_Veh") ||
+                        piece.name.StartsWith("SM_Generic_SkyDome"))
                     {
                         Object.DestroyImmediate(piece.gameObject);
                         continue;

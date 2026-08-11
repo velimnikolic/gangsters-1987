@@ -44,3 +44,6 @@ crashlytics-build.properties
 
 # macOS
 .DS_Store
+
+# Editor dump artefakti
+LedgerDump_*.txt

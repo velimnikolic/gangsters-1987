@@ -60,6 +60,14 @@ namespace LivingCity.UI
         /// <summary>The mugshot slot's backing.</summary>
         public static readonly Color PhotoBack = new Color(0f, 0f, 0f, 0.55f);
 
+        /// <summary>The wash behind the card's identity block - the card's own
+        /// masthead, a breath of phosphor over the face rather than a black slab.</summary>
+        public static readonly Color CardMasthead = new Color(0.38f, 1f, 0.50f, 0.09f);
+
+        /// <summary>The skinned card's face - the pack panel re-cast from its blue
+        /// scheme to the tube's green, one lit step above the screen.</summary>
+        public static readonly Color CardFace = new Color(0.045f, 0.12f, 0.065f, 0.95f);
+
         /// <summary>The dark line a CRT draws between raster rows.</summary>
         public static readonly Color ScanLine = new Color(0f, 0f, 0f, 0.28f);
 
