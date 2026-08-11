@@ -54,6 +54,14 @@ namespace LivingCity.EditorTools
         const string SeamLogPath = "Library/CatalogSeamLog.txt";
         static readonly System.Text.StringBuilder SeamLog = new();
 
+        /// <summary>
+        /// Ledger of this build's palm bakes: prefab name, the world pivot BakeGroup
+        /// recentred on, and the world bounds of the source pieces. Every catalog bake
+        /// runs at yaw 0, so placing the prefab back AT its pivot reproduces the demo
+        /// layout exactly - which is what the palm-block extraction does.
+        /// </summary>
+        internal static readonly List<(string name, Vector3 pivot, Bounds bounds)> PalmLedger = new();
+
         static readonly string[] SkippedGroups = { "Street", "Beach" };
 
         /// <summary>
@@ -245,6 +253,7 @@ namespace LivingCity.EditorTools
             EnsureFolders();
             SyntyBakeUtil.ClearCache();
             SeamLog.Clear();
+            PalmLedger.Clear();
 
             // 1. Bake every demo group into Catalog prefabs, one pack at a time.
             var baked = new List<(string section, string name)>();
@@ -261,6 +270,10 @@ namespace LivingCity.EditorTools
                 var mansion = estate ? estate.transform.Find("Mansion") : null;
                 if (mansion)
                     BakeCatalogEntry(mansion, baked, SectionPalm);
+
+                // While the demo is still open: reassemble its street blocks as candidate
+                // block prefabs (buildings from the ledger, props cloned off the scene).
+                SyntyCityBlocks.ExtractPalmBlocks(demo);
             }
             finally
             {
@@ -445,7 +458,10 @@ namespace LivingCity.EditorTools
 
                 if (labelled.Count <= 1)
                 {
-                    SyntyKitExtractor.BakeGroup(copy, displayName, yaw: 0f, CatalogDir, CatalogMeshDir);
+                    var bounds = InstanceBounds(copy);
+                    var pivot = SyntyKitExtractor.BakeGroup(copy, displayName, yaw: 0f, CatalogDir, CatalogMeshDir);
+                    if (section == SectionPalm && pivot.HasValue)
+                        PalmLedger.Add((displayName, pivot.Value, bounds));
                     baked.Add((section, displayName));
                     return;
                 }
@@ -458,8 +474,11 @@ namespace LivingCity.EditorTools
                     {
                         foreach (var piece in pieces)
                             piece.SetParent(segmentRoot.transform, worldPositionStays: true);
-                        SyntyKitExtractor.BakeGroup(segmentRoot, segmentName, yaw: 0f,
-                                                    CatalogDir, CatalogMeshDir);
+                        var bounds = InstanceBounds(segmentRoot);
+                        var pivot = SyntyKitExtractor.BakeGroup(segmentRoot, segmentName, yaw: 0f,
+                                                                CatalogDir, CatalogMeshDir);
+                        if (section == SectionPalm && pivot.HasValue)
+                            PalmLedger.Add((segmentName, pivot.Value, bounds));
                         baked.Add((section, segmentName));
                     }
                     finally

@@ -16,21 +16,24 @@ namespace RoadDemo
     public class RoadDemoBuilder : MonoBehaviour
     {
         [Header("Grid (centreline positions, multiples of 5)")]
-        public float[] verticalRoadX = { 0f, 70f, 140f, 210f, 280f };
+        // Spacing wraps a residentialblock1 bake per interior: 70 m (X) by 50 m (Z)
+        // between the inner sidewalk edges, so the block sits flush with the kerbs.
+        public float[] verticalRoadX = { 0f, 100f, 200f, 300f, 400f };
         public bool[] verticalIsBoulevard = { false, true, false, true, false };
-        public float[] horizontalRoadZ = { 0f, 70f, 140f, 210f };
+        public float[] horizontalRoadZ = { 0f, 80f, 160f, 230f };
         public bool[] horizontalIsBoulevard = { false, true, false, false };
 
         [Header("Traffic")]
-        public int carCount = 70;
+        public int carCount = 100;
         public float streetSpeed = 9f;
         public float boulevardSpeed = 13f;
-        public int pedestrianCount = 120;
+        public int pedestrianCount = 170;
 
         const float Cell = 5f;
         const float StreetHalf = 5f;     // carriageway half width: 2 lanes
         const float BoulevardHalf = 15f; // 2+2 lanes plus a 10 m median
 
+        const string BlockPrefabPath = "Assets/CityKit/Blocks/residentialblock1.prefab";
         const string CityEnv = "Assets/Synty/PolygonCity/Prefabs/Environments/";
         const string CityProps = "Assets/Synty/PolygonCity/Prefabs/Props/";
         const string PalmEnv = "Assets/Synty/PolygonPalmCity/Prefabs/Environment/";
@@ -39,6 +42,7 @@ namespace RoadDemo
         GameObject _roadWest, _roadEast;    // YellowLines halves of a two-way street
         GameObject _laneEdge, _laneDash;    // boulevard kerb lane / inner dashed lane
         GameObject _median, _bare, _crossing;
+        GameObject _bareCracked, _roadPatch; // block-floor variation tiles
         GameObject _swStraight, _swCorner, _divider;
         GameObject _poleBase, _poleArm, _poleLights;
         readonly List<GameObject> _palms = new List<GameObject>();
@@ -63,6 +67,7 @@ namespace RoadDemo
         readonly List<GameObject> _umbrellas = new List<GameObject>();
         GameObject _bag, _bagOpen, _bollard, _hydrant, _mailbox, _newsstand, _powerpole;
         GameObject _bikeStand, _signPole, _manhole;
+        GameObject _blockPrefab;
 
         readonly HashSet<long> _cells = new HashSet<long>();
         RoadNode[,] _nodes;
@@ -73,7 +78,7 @@ namespace RoadDemo
         readonly List<PedLink> _pedLinks = new List<PedLink>();
         SignalMaterials _signalMats;
 
-        Transform _geometry, _flora, _traffic, _cars;
+        Transform _geometry, _flora, _traffic, _cars, _blocks;
 
         void Awake()
         {
@@ -84,11 +89,15 @@ namespace RoadDemo
             // vertices in object space, and a combined mesh would swing them around
             // the batch pivot instead of their own trunks
             _flora = new GameObject("Flora").transform;
+            // block bakes carry PalmCity palms/bushes whose wind shader displaces
+            // vertices in object space — the root must stay out of static batching
+            _blocks = new GameObject("Blocks").transform;
             _traffic = new GameObject("Traffic").transform;
             _cars = new GameObject("Cars").transform;
 
             BuildNodes();
             BuildRoadsAndSidewalks();
+            BuildBlocks();
             DressStreets();
             BuildGraph();
             BuildSignals();
@@ -175,6 +184,8 @@ namespace RoadDemo
             _median = Load(CityEnv + "SM_Env_Road_Median_01.prefab");
             _bare = Load(CityEnv + "SM_Env_Road_Bare_01.prefab");
             _crossing = Load(CityEnv + "SM_Env_Road_Crossing_01.prefab");
+            _bareCracked = Load(CityEnv + "SM_Env_Road_03.prefab");
+            _roadPatch = Load(CityEnv + "SM_Env_Road_Patch_01.prefab");
             _swStraight = Load(CityEnv + "SM_Env_Sidewalk_Straight_01.prefab");
             _swCorner = Load(CityEnv + "SM_Env_Sidewalk_Corner_01.prefab");
             _divider = Load(CityEnv + "SM_Env_Street_Divider_01.prefab");
@@ -264,6 +275,10 @@ namespace RoadDemo
             _bikeStand = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Bike_Stand_02.prefab");
             _signPole = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Sign_Pole_02.prefab");
             _manhole = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Manhole_01.prefab");
+
+            _blockPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(BlockPrefabPath);
+            if (_blockPrefab == null)
+                Debug.LogWarning("[RoadDemo] block bake missing (" + BlockPrefabPath + "); interiors stay empty");
 
             _walkClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AnimationClip>(
                 "Assets/Animations/People/Standard Walk.anim");
@@ -492,6 +507,65 @@ namespace RoadDemo
                     Instantiate(_palms[(int)(mx / Cell + 3) % _palms.Count],
                         new Vector3(mx, 0.1f, cz + 18.9f), Quaternion.Euler(0f, mx * 29f, 0f), _flora);
                 }
+        }
+
+        // --------------------------------------------------------- block interiors
+
+        // The residentialblock1 bake's pivot is the midpoint of its two cluster
+        // pivots, not the footprint centre: the building AABB (measured from the
+        // bake) spans X[-36.15, 34.16], Z[-30.11, 20.34], so its centre sits at
+        // this offset from the pivot and placement has to compensate.
+        static readonly Vector3 BlockPivotToCentre = new Vector3(-0.993f, 0f, -4.882f);
+
+        void BuildBlocks()
+        {
+            for (int i = 0; i + 1 < verticalRoadX.Length; i++)
+                for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
+                {
+                    float xMin = verticalRoadX[i] + VHalf(i) + Cell;
+                    float xMax = verticalRoadX[i + 1] - VHalf(i + 1) - Cell;
+                    float zMin = horizontalRoadZ[j] + HHalf(j) + Cell;
+                    float zMax = horizontalRoadZ[j + 1] - HHalf(j + 1) - Cell;
+                    BuildBlockFloor(xMin, xMax, zMin, zMax);
+
+                    if (_blockPrefab == null) continue;
+                    var centre = new Vector3((xMin + xMax) * 0.5f, 0f, (zMin + zMax) * 0.5f);
+
+                    // both facade rows front the E-W streets, so a half-turn is a
+                    // valid orientation — alternate it to break up the cloning
+                    float yaw = (i + j) % 2 == 0 ? 0f : 180f;
+                    var rot = Quaternion.Euler(0f, yaw, 0f);
+                    Instantiate(_blockPrefab, centre - rot * BlockPivotToCentre, rot, _blocks);
+                }
+        }
+
+        // Asphalt pad under the whole interior, following the pack demo's own
+        // recipe for large paved areas: Road_Bare_01 at random yaws with the
+        // cracked Road_03 mixed in, tar patches dropped at free positions and
+        // sunk a few centimetres so only the raised blob shows, plus a couple
+        // of manholes.
+        void BuildBlockFloor(float xMin, float xMax, float zMin, float zMax)
+        {
+            for (float mx = xMin; mx < xMax - 0.1f; mx += Cell)
+                for (float mz = zMin; mz < zMax - 0.1f; mz += Cell)
+                {
+                    var tile = _bareCracked != null && Random.value < 0.12f ? _bareCracked : _bare;
+                    PlaceCell(tile, mx, mz, 90 * Random.Range(0, 4));
+                }
+
+            if (_roadPatch != null)
+                for (int p = 0; p < 14; p++)
+                    Instantiate(_roadPatch,
+                        new Vector3(Random.Range(xMin + 1.5f, xMax - 1.5f),
+                            Random.Range(-0.05f, -0.02f),
+                            Random.Range(zMin + 1.5f, zMax - 1.5f)),
+                        Quaternion.Euler(0f, Random.Range(0f, 360f), 0f), _geometry);
+
+            for (int p = 0; p < 3; p++)
+                Prop(_manhole,
+                    new Vector3(Random.Range(xMin + 2f, xMax - 2f), 0.02f,
+                        Random.Range(zMin + 2f, zMax - 2f)),
+                    Random.value * 360f, _geometry);
         }
 
         // --------------------------------------------------------- street dressing
