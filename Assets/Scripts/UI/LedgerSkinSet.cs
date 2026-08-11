@@ -45,6 +45,15 @@ namespace LivingCity.UI
         [Tooltip("The standalone menu scene's full-screen art behind the book.")]
         public Sprite backdrop;
 
+        [Tooltip("The band behind the masthead row - the topbar's floor.")]
+        public Sprite masthead;
+
+        [Tooltip("Soft darkening around the page edges - depth without ruled lines.")]
+        public Sprite vignette;
+
+        [Tooltip("Progress bars: the loyalty bar, the orders labour bar.")]
+        public Sprite barCapsule;
+
         [Tooltip("Every ledger text that is not a masthead or a tab.")]
         public TMP_FontAsset bodyFont;
 
@@ -115,6 +124,30 @@ namespace LivingCity.UI
 
         /// <summary>The pack's gold star; null keeps UiSkin's baked stars.</summary>
         public static Sprite Star => Instance ? Instance.star : null;
+
+        /// <summary>The topbar band; null leaves the masthead on bare page.</summary>
+        public static Sprite Masthead => Instance ? Instance.masthead : null;
+
+        /// <summary>The page-edge vignette; null leaves the page flat.</summary>
+        public static Sprite Vignette => Instance ? Instance.vignette : null;
+
+        /// <summary>Puts the pack capsule on a bar Image - trough or fill; the tint
+        /// the caller already set stays, because the palette colours ARE the states
+        /// (faint trough, bright fill, amber overrun). The multiplier derives from
+        /// the drawn height so a 6-unit sliver and a 12-unit bar both keep round
+        /// ends. False when the skin or slot is missing.</summary>
+        public static bool TryDressBar(Image image, float barHeight)
+        {
+            var set = Instance;
+            if (!set || !set.barCapsule || !image)
+                return false;
+
+            image.sprite = set.barCapsule;
+            image.type = Image.Type.Sliced;
+            image.pixelsPerUnitMultiplier =
+                set.barCapsule.rect.height / Mathf.Max(barHeight, 1f);
+            return true;
+        }
 
         // ------------------------------------------------------------------- dressing
 

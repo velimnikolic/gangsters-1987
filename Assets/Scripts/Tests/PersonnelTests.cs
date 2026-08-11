@@ -36,6 +36,7 @@ namespace LivingCity.Tests
             EquipmentIsExclusive(failures);
             GearFlowsThroughTheLieutenant(failures);
             LieutenantDealsArmsByOrganization(failures);
+            FrontArmsTheGuards(failures);
             DeadReceiveNothing(failures);
             ViewGroupsInLedgerOrder(failures);
             ViewSortsWithinGroups(failures);
@@ -511,13 +512,16 @@ namespace LivingCity.Tests
             safePistol.Value = 40;
 
             foreach (var item in roster.Equipment)
-                if (item != safePistol)
-                    item.HolderId = lieutenant.Id;
+                if (item != safePistol &&
+                    !RosterOps.GiveEquipment(roster, item.Id, lieutenant.Id).Ok)
+                    failures.Add("LieutenantDealsArmsByOrganization: the lieutenant " +
+                                 "refused his own deck.");
 
             // The wheels deal runs on Driving, its own deck over the same hands.
             var car = MakeItem(roster, EquipmentKind.Vehicle);
             car.Value = 1500;
-            car.HolderId = lieutenant.Id;
+            if (!RosterOps.GiveEquipment(roster, car.Id, lieutenant.Id).Ok)
+                failures.Add("LieutenantDealsArmsByOrganization: the car was refused.");
             lieutenant.SetHalfSteps(CharacterAttribute.Driving, 2);
             ace.SetHalfSteps(CharacterAttribute.Driving, 4);
             mid.SetHalfSteps(CharacterAttribute.Driving, 6);
@@ -548,8 +552,9 @@ namespace LivingCity.Tests
                 failures.Add("LieutenantDealsArmsByOrganization: the backwards deal " +
                              "is not backwards.");
 
-            // The ace walks; whatever he carried goes back to the safe, and the
-            // crew closes ranks over the rest.
+            // The ace walks to the pool. Gear stays in the PARENT - the user's rule:
+            // he carries nothing out, and the crew's deal closes ranks over the men
+            // who remain.
             var carried = tommy.HolderId == ace.Id || shotgun.HolderId == ace.Id ||
                 pistolA.HolderId == ace.Id || pistolB.HolderId == ace.Id;
             if (!carried)
@@ -558,9 +563,87 @@ namespace LivingCity.Tests
             RosterOps.AssignToPool(roster, ace.Id);
             RosterOps.NormalizeArms(roster);
             for (var i = 0; i < roster.Equipment.Count; i++)
-                if (roster.Equipment[i].HolderId == ace.Id)
-                    failures.Add("LieutenantDealsArmsByOrganization: the ace kept " +
-                                 "crew iron in the pool.");
+            {
+                var item = roster.Equipment[i];
+                if (item.HolderId == ace.Id)
+                    failures.Add("LieutenantDealsArmsByOrganization: the ace walked " +
+                                 "out with crew iron.");
+                if (item != safePistol && item.OwnerId != lieutenant.Id)
+                    failures.Add("LieutenantDealsArmsByOrganization: the crew lost " +
+                                 "a deed in the walkout.");
+                if (item != safePistol && item.HolderId != RosterEquipment.Unheld &&
+                    roster.CrewOf(item.HolderId) == null &&
+                    item.HolderId != lieutenant.Id)
+                    failures.Add("LieutenantDealsArmsByOrganization: crew iron " +
+                                 "landed outside the crew.");
+            }
+        }
+
+        /// <summary>Gear dumped at the front deals to the men guarding the desk - the
+        /// manager and the pooled hoods - ideally (the boss deals this one himself),
+        /// with the surplus staying in the locker, never raiding a crew's deck; a
+        /// guard who joins a crew takes his iron into that crew's deal.</summary>
+        static void FrontArmsTheGuards(List<string> failures)
+        {
+            var roster = new Roster();
+            var manager = Make(roster, "Desk", "Manager");
+            var ace = Make(roster, "Pool", "Ace");
+            var mud = Make(roster, "Pool", "Mud");
+            var lieutenant = Make(roster, "Head", "Crew", Rank.Lieutenant);
+            var crewHood = Make(roster, "Crew", "Hood");
+            var crew = MakeCrew(roster, lieutenant, crewHood);
+
+            if (!RosterOps.AssignToFront(roster, manager.Id).Ok)
+            {
+                failures.Add("FrontArmsTheGuards: could not seat the manager.");
+                return;
+            }
+
+            manager.SetHalfSteps(CharacterAttribute.Firearms, 6);
+            ace.SetHalfSteps(CharacterAttribute.Firearms, 10);
+            mud.SetHalfSteps(CharacterAttribute.Firearms, 4);
+
+            var crewGun = MakeItem(roster, EquipmentKind.Shotgun);
+            crewGun.Value = 900;
+            if (!RosterOps.GiveEquipment(roster, crewGun.Id, lieutenant.Id).Ok)
+                failures.Add("FrontArmsTheGuards: the crew gun was refused.");
+
+            var tommy = MakeItem(roster, EquipmentKind.TommyGun);
+            tommy.Value = 2000;
+            var pistolA = MakeItem(roster, EquipmentKind.Pistol);
+            pistolA.Value = 250;
+            var pistolB = MakeItem(roster, EquipmentKind.Pistol);
+            pistolB.Value = 100;
+            var spare = MakeItem(roster, EquipmentKind.Pistol);
+            spare.Value = 60;
+
+            foreach (var item in new[] { tommy, pistolA, pistolB, spare })
+                if (!RosterOps.GiveEquipmentToFront(roster, item.Id).Ok)
+                    failures.Add("FrontArmsTheGuards: the front refused the dump.");
+
+            RosterOps.NormalizeArms(roster);
+
+            // Boss's ideal deal over ace(10), manager(6), mud(4).
+            if (tommy.HolderId != ace.Id || pistolA.HolderId != manager.Id ||
+                pistolB.HolderId != mud.Id)
+                failures.Add("FrontArmsTheGuards: the guards drew the wrong iron.");
+            if (spare.HolderId != RosterEquipment.FrontArmory)
+                failures.Add("FrontArmsTheGuards: the surplus left the locker.");
+            if (crewGun.HolderId != lieutenant.Id)
+                failures.Add("FrontArmsTheGuards: the front deal raided the crew.");
+
+            // The ace joins a crew. The tommy STAYS at the front - gear belongs to
+            // the parent - and the remaining guards draw over it; the ace's new
+            // crew deals him ITS deck instead.
+            RosterOps.AssignToCrew(roster, ace.Id, crew.Id);
+            RosterOps.NormalizeArms(roster);
+            if (tommy.OwnerId != RosterEquipment.FrontArmory)
+                failures.Add("FrontArmsTheGuards: the front lost the tommy's deed.");
+            if (tommy.HolderId == ace.Id)
+                failures.Add("FrontArmsTheGuards: the ace walked out with front iron.");
+            if (tommy.HolderId != manager.Id)
+                failures.Add("FrontArmsTheGuards: the tommy skipped the best " +
+                             "remaining guard.");
         }
 
         static void DeadReceiveNothing(List<string> failures)

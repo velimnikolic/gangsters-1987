@@ -78,6 +78,8 @@ namespace LivingCity.EditorTools
     {
         const string PalmDemo = "Assets/Synty/PolygonPalmCity/Scenes/Demo.unity";
         const string PoliceDemo = "Assets/Synty/PolygonPoliceStation/Scenes/Demo.unity";
+        const string GangDemo = "Assets/Synty/PolygonGangWarfare/Scenes/Demo.unity";
+        const string CoffeeOverview = "Assets/Synty/PolygonCoffeeShop/Scene/Overview.unity";
 
         public const string KitDir = "Assets/CityKit";
         public const string BuildingsDir = KitDir + "/Buildings";
@@ -88,7 +90,7 @@ namespace LivingCity.EditorTools
         /// Version.txt beside the output so CreateAssets can skip reopening a 61 MB demo
         /// scene on every refresh. Delete the file (or bump this) to force a re-extract.
         /// </summary>
-        public const int Version = 3;
+        public const int Version = 6;
         const string VersionPath = BuildingsDir + "/Version.txt";
 
         /// <summary>demo group -> city role. yawOverride in degrees, NaN = trust the doors.</summary>
@@ -156,6 +158,8 @@ namespace LivingCity.EditorTools
             SyntyBakeUtil.ClearCache();
             ExtractPalmGroups();
             ExtractPoliceStation();
+            ExtractGangWarehouse();
+            ExtractCoffeeShop();
             SyntyBakeUtil.ClearCache();
 
             System.IO.File.WriteAllText(VersionPath, Version.ToString());
@@ -191,7 +195,11 @@ namespace LivingCity.EditorTools
         /// The station is split across three roots with different parent offsets; they are
         /// re-parented under one pivot preserving world positions, then baked like any other
         /// group. Street slab, sky backdrop and the demo lighting rigs are deliberately not
-        /// taken. The result is the one dressed-interior landmark in the city.
+        /// taken, and the interior dressing is stripped: the demo's prop groups hold ~790
+        /// furniture pieces (the whole-station bake weighed 171 MB, half the kit's mesh
+        /// budget) that the roofed building never shows to the iso camera. Only exterior
+        /// props survive - the street marquee, facade aircons/billboards/downpipes and the
+        /// roof vent/antenna dressing (positions measured against the shell bounds offline).
         /// </summary>
         static void ExtractPoliceStation()
         {
@@ -213,6 +221,7 @@ namespace LivingCity.EditorTools
                     copy.transform.SetParent(holder.transform, worldPositionStays: true);
                     copy.transform.position = root.transform.position;
                     copy.transform.rotation = root.transform.rotation;
+                    StripStationInterior(copy.transform);
                 }
 
                 // The station entrance faces +Z in the demo's own frame (entrance wall pieces
@@ -225,6 +234,188 @@ namespace LivingCity.EditorTools
             {
                 EditorSceneManager.CloseScene(scene, removeScene: true);
             }
+        }
+
+        /// <summary>Prop-group children that stay in the bake: exterior dressing only.</summary>
+        static readonly string[] StationExteriorProps =
+        {
+            "SM_Sign_Police_Station", // free-standing street marquee at the lot edge
+            "SM_Prop_Aircon",         // wall-mounted units on the facades
+            "SM_Prop_Billboard",
+            "SM_Prop_Vents",          // roof ducting
+            "SM_Prop_SatDish",
+            "SM_Prop_Antenna",
+            "SM_Prop_DownPipe",
+            "SM_Bld_HeliPad",         // roof-deck stairs (the pad itself is architecture)
+        };
+
+        /// <summary>
+        /// Deletes the interior dressing from a police-demo root copy. Architecture groups
+        /// (Building/Buildings - walls, roof, helipad, the garage's painted parking lines)
+        /// pass through untouched; the garage's static Vehicles group goes entirely; the
+        /// three prop groups keep only the exterior families above.
+        /// </summary>
+        static void StripStationInterior(Transform root)
+        {
+            for (var i = root.childCount - 1; i >= 0; i--)
+            {
+                var group = root.GetChild(i);
+                switch (group.name)
+                {
+                    case "Vehicles":
+                        Object.DestroyImmediate(group.gameObject);
+                        break;
+                    case "SmallProps":
+                    case "LargeProps":
+                    case "Props":
+                        for (var j = group.childCount - 1; j >= 0; j--)
+                        {
+                            var prop = group.GetChild(j);
+                            if (!StationExteriorProps.Any(prefix => prop.name.StartsWith(prefix)))
+                                Object.DestroyImmediate(prop.gameObject);
+                        }
+                        break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The GangWarfare warehouse compound (the stovariste): the demo is ONE flat Scene
+        /// root of ~2550 pieces plus a separate Roof root (lifted so demo players can see
+        /// the drug lab inside) - there are no Building/Props groups to filter by, so the
+        /// interior is cut geometrically instead: see StripWarehouseInterior. Baked at
+        /// yaw 0 - interior doors vastly outnumber the gate, so the door heuristic would
+        /// misread; the front is judged in the catalog and corrected here if wrong.
+        /// </summary>
+        static void ExtractGangWarehouse()
+        {
+            var scene = EditorSceneManager.OpenScene(GangDemo, OpenSceneMode.Additive);
+            try
+            {
+                var holder = new GameObject("building-warehouse");
+                foreach (var rootName in new[] { "Scene", "Roof" })
+                {
+                    var root = FindSceneRoot(scene, rootName);
+                    if (!root)
+                    {
+                        Debug.LogWarning($"SyntyKitExtractor: gang demo root '{rootName}' not found");
+                        continue;
+                    }
+
+                    var copy = Object.Instantiate(root);
+                    copy.name = rootName;
+                    copy.transform.SetParent(holder.transform, worldPositionStays: true);
+                    copy.transform.position = root.transform.position;
+                    copy.transform.rotation = root.transform.rotation;
+                }
+
+                StripWarehouseInterior(holder.transform);
+                BakeGroup(holder, "building-warehouse", yaw: 0f);
+                Object.DestroyImmediate(holder);
+            }
+            finally
+            {
+                EditorSceneManager.CloseScene(scene, removeScene: true);
+            }
+        }
+
+        /// <summary>
+        /// The coffee shop pack ships ONE assembled building and no demo street: Overview
+        /// holds the SM_Bld_Cafe_01 instance at identity with the front already on +Z (the
+        /// facade sign sits at z=+3.6 and the overview camera parks on that side), so the
+        /// door heuristic is skipped - its four doors would outvote the entrance. The
+        /// tables child is interior dressing and stays behind; doors and both signs are
+        /// facade and ride along.
+        /// </summary>
+        static void ExtractCoffeeShop()
+        {
+            var scene = EditorSceneManager.OpenScene(CoffeeOverview, OpenSceneMode.Additive);
+            try
+            {
+                var root = FindSceneRoot(scene, "SM_Bld_Cafe_01");
+                if (!root)
+                {
+                    Debug.LogWarning("SyntyKitExtractor: coffee overview root 'SM_Bld_Cafe_01' not found");
+                    return;
+                }
+
+                var copy = Object.Instantiate(root);
+                copy.name = "building-coffeeshop";
+                copy.transform.position = root.transform.position;
+                copy.transform.rotation = root.transform.rotation;
+
+                for (var i = copy.transform.childCount - 1; i >= 0; i--)
+                {
+                    var child = copy.transform.GetChild(i);
+                    if (child.name.StartsWith("SM_Bld_Cafe_Tables"))
+                        Object.DestroyImmediate(child.gameObject);
+                }
+
+                BakeGroup(copy, "building-coffeeshop", yaw: 0f);
+                Object.DestroyImmediate(copy);
+            }
+            finally
+            {
+                EditorSceneManager.CloseScene(scene, removeScene: true);
+            }
+        }
+
+        /// <summary>
+        /// Cuts the warehouse interior from the flat compound: the ROOF defines indoors.
+        /// Every roof/ceiling piece contributes its XZ footprint; a dressing piece whose
+        /// centre stands under one of those footprints with its base well below that
+        /// roof's top is inside a hall and goes (lab tanks, money stacks, pallets, the
+        /// shooting range rails, hanging lights). Yard dressing - containers, barrels,
+        /// fences, gates, anything under open sky - stays, which is what makes the lot
+        /// read as a stockyard. Architecture (SM_Bld_*: walls, floors, trusses, fences,
+        /// the roofs themselves) always stays; vehicles (SM_Veh_*: forklifts, vans) always
+        /// go, parked outside or not. Roof-mounted props survive the height test (their
+        /// base sits AT the roof top, not below it).
+        /// </summary>
+        static void StripWarehouseInterior(Transform holder)
+        {
+            var roofs = new List<(Rect footprint, float top)>();
+            foreach (Transform root in holder)
+                foreach (Transform piece in root)
+                {
+                    if (!piece.name.StartsWith("SM_Bld_Roof") &&
+                        !piece.name.StartsWith("SM_Bld_Ceiling") &&
+                        !piece.name.StartsWith("SM_Bld_Floor_Ceiling"))
+                        continue;
+                    if (TryPieceBounds(piece, out var b))
+                        roofs.Add((new Rect(b.min.x, b.min.z, b.size.x, b.size.z), b.max.y));
+                }
+
+            foreach (Transform root in holder)
+                for (var i = root.childCount - 1; i >= 0; i--)
+                {
+                    var piece = root.GetChild(i);
+                    if (piece.name.StartsWith("SM_Veh"))
+                    {
+                        Object.DestroyImmediate(piece.gameObject);
+                        continue;
+                    }
+                    if (piece.name.StartsWith("SM_Bld"))
+                        continue;
+
+                    if (!TryPieceBounds(piece, out var b))
+                        continue;
+                    var centre = new Vector2(b.center.x, b.center.z);
+                    if (roofs.Any(r => r.footprint.Contains(centre) && b.min.y < r.top - 1f))
+                        Object.DestroyImmediate(piece.gameObject);
+                }
+        }
+
+        static bool TryPieceBounds(Transform piece, out Bounds bounds)
+        {
+            bounds = default;
+            var first = true;
+            foreach (var r in piece.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                if (first) { bounds = r.bounds; first = false; }
+                else bounds.Encapsulate(r.bounds);
+            }
+            return !first;
         }
 
         static void ExtractGroup(Scene scene, Entry entry)

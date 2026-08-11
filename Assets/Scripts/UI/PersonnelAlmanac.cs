@@ -59,13 +59,20 @@ namespace LivingCity.UI
         const float ListTop = -176f;
         const float ListHeight = 860f;
 
-        const float DetailLeft = 522f;
-        const float DetailWidth = PageWidth - DetailLeft - 36f;
+        /// <summary>Widened at the user's word: the card starts a touch after the
+        /// list (which ends at 510) and runs nearly to the fold - reference pixels
+        /// the character sheet was starving for.</summary>
+        const float DetailLeft = 516f;
+        const float DetailWidth = PageWidth - DetailLeft - 16f;
 
         /// <summary>Right edge of usable page content, mirroring ListLeft's margin.</summary>
         const float PageRight = PageWidth - 36f;
 
-        const float CrewHeaderHeight = 44f;
+        /// <summary>The crew band is GONE at the user's word - the lieutenant's row is
+        /// the crew's handle (select him; join his crew in assign mode). This gap is
+        /// all that separates one crew from the next, and with the hoods indented it
+        /// is all the grouping the eye needs.</summary>
+        const float CrewGap = 10f;
         const float SectionHeaderHeight = 38f;
         const float RowHeight = 34f;
         const float HoodIndent = 28f;
@@ -153,6 +160,10 @@ namespace LivingCity.UI
         /// <summary>Scratch for Turf reads - refilled from the markers on use.</summary>
         readonly System.Collections.Generic.List<Outfit.Turf.Holding> holdings =
             new System.Collections.Generic.List<Outfit.Turf.Holding>();
+
+        /// <summary>selectedId's sentinel for "the front is selected" - the boss's
+        /// card rather than a member's. Never a real Character id (those are >= 0).</summary>
+        const int FrontSelection = -2;
 
         ViewOptions options;
         int selectedId = -1;
@@ -497,10 +508,26 @@ namespace LivingCity.UI
             paperImage.raycastTarget = false;
             paper.gameObject.AddComponent<RectMask2D>();
 
+            // Depth without ruled lines: the pack vignette breathes dark at the page
+            // edges, and the masthead band floors the top row - the dividers this
+            // page used to draw are gone at the user's word.
+            var vignetteSprite = LedgerSkinSet.Vignette;
+            if (vignetteSprite != null)
+            {
+                var vignette = NewRect("Vignette", paper);
+                vignette.anchorMin = Vector2.zero;
+                vignette.anchorMax = Vector2.one;
+                vignette.offsetMin = vignette.offsetMax = Vector2.zero;
+                var vignetteImage = vignette.gameObject.AddComponent<Image>();
+                vignetteImage.sprite = vignetteSprite;
+                vignetteImage.type = Image.Type.Sliced;
+                vignetteImage.pixelsPerUnitMultiplier = 1.5f;
+                vignetteImage.color = new Color(0f, 0f, 0f, 0.5f);
+                vignetteImage.raycastTarget = false;
+            }
+
             BuildTitleBar(paper);
-            BuildRule(paper, -66f);
             BuildTabs(paper);
-            BuildRule(paper, -118f);
 
             // ---- the Personnel page, a full-stretch sheet like every other page ----
             var personnel = NewPageRoot(paper, LedgerPage.Personnel);
@@ -1282,14 +1309,17 @@ namespace LivingCity.UI
                 name.text = item.DisplayName;
 
                 var holder = roster.Find(item.HolderId);
+                var atFront = item.OwnerId == RosterEquipment.FrontArmory;
                 var holderText = NewText("Holder", row, 13f,
-                    holder != null ? LedgerPalette.Phosphor : LedgerPalette.PhosphorDim,
+                    holder != null || atFront
+                        ? LedgerPalette.Phosphor : LedgerPalette.PhosphorDim,
                     TextAlignmentOptions.MidlineLeft);
                 FillRow(holderText.rectTransform, 370f, 330f);
-                holderText.text = holder != null ? holder.FullName : "in armory";
+                holderText.text = holder != null ? holder.FullName
+                    : atFront ? "at the front" : "in armory";
 
                 var itemId = item.Id;
-                if (holder != null)
+                if (item.OwnerId != RosterEquipment.Unheld)
                     NewButton(row, "RETURN", StockWidth - 120f, -2f,
                         116f, 24f, () =>
                         {
@@ -1343,6 +1373,39 @@ namespace LivingCity.UI
                 });
 
             var y = 0f;
+
+            // The front first: the desk is a destination like any lieutenant - gear
+            // dumped there arms the men guarding it.
+            {
+                var frontRow = NewRect("PickFront", armoryInventoryContent);
+                PlaceTopLeft(frontRow, 0f, y, StockWidth, 28f);
+
+                var frontPick = NewButton(frontRow, "", 0f, 0f, 300f, 26f, () =>
+                {
+                    var result = director.GiveEquipmentToFront(givePickerItemId);
+                    armoryNote = result.Ok ? "" : result.Reason;
+                    givePickerItemId = -1;
+                    dirty = true;
+                });
+                frontPick.alignment = TextAlignmentOptions.MidlineLeft;
+                frontPick.margin = new Vector4(10f, 0f, 0f, 0f);
+                frontPick.text = "THE FRONT";
+
+                var frontGuards = 0;
+                for (var i = 0; i < roster.Members.Count; i++)
+                    if (roster.Members[i].Status == CharacterStatus.Active &&
+                        RosterOps.InFrontGuard(roster, roster.Members[i].Id))
+                        frontGuards++;
+                var frontMen = NewText("Crew", frontRow, 12f, LedgerPalette.PhosphorDim,
+                    TextAlignmentOptions.MidlineLeft);
+                FillRow(frontMen.rectTransform, 540f, 220f);
+                frontMen.text = frontGuards > 0
+                    ? "deals to " + frontGuards + " men"
+                    : "nobody on guard";
+
+                y -= 30f;
+            }
+
             for (var i = 0; i < roster.Members.Count; i++)
             {
                 var member = roster.Members[i];
@@ -1996,6 +2059,7 @@ namespace LivingCity.UI
                 backImage.sprite = null;
                 backImage.color = LedgerPalette.PhosphorFaint;
                 backImage.raycastTarget = false;
+                LedgerSkinSet.TryDressBar(backImage, 6f);
 
                 var fillFraction = men > 0 ? Mathf.Min(1f, committed / (float)men) : 0f;
                 var fill = NewRect("Fill", barBack);
@@ -2009,6 +2073,7 @@ namespace LivingCity.UI
                 fillImage.color = committed > men ? LedgerPalette.Amber
                     : LedgerPalette.Phosphor;
                 fillImage.raycastTarget = false;
+                LedgerSkinSet.TryDressBar(fillImage, 6f);
 
                 var committedText = NewText("Committed", ordersContent, 11.5f,
                     committed > men ? LedgerPalette.Amber : LedgerPalette.PhosphorDim,
@@ -2404,6 +2469,26 @@ namespace LivingCity.UI
 
         void BuildTitleBar(RectTransform paper)
         {
+            // The topbar's floor: the pack's menu bar, laid full-width behind the
+            // masthead row so the title, count and CLOSE read as one fixture.
+            var band = LedgerSkinSet.Masthead;
+            if (band != null)
+            {
+                var bandRect = NewRect("MastheadBand", paper);
+                bandRect.anchorMin = new Vector2(0f, 1f);
+                bandRect.anchorMax = new Vector2(1f, 1f);
+                bandRect.pivot = new Vector2(0.5f, 1f);
+                bandRect.anchoredPosition = Vector2.zero;
+                bandRect.sizeDelta = new Vector2(0f, 66f);
+                var bandImage = bandRect.gameObject.AddComponent<Image>();
+                bandImage.sprite = band;
+                bandImage.type = Image.Type.Sliced;
+                bandImage.pixelsPerUnitMultiplier = 4f;
+                bandImage.color = new Color(LedgerSkinSet.FaceTint.r,
+                    LedgerSkinSet.FaceTint.g, LedgerSkinSet.FaceTint.b, 0.4f);
+                bandImage.raycastTarget = false;
+            }
+
             titleText = NewText("Title", paper, 22f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
             PlaceTopLeft(titleText.rectTransform, ListLeft, -14f, 560f, 46f);
@@ -2435,16 +2520,6 @@ namespace LivingCity.UI
             showLabel = NewToolbarButton(parent, "", ListLeft + 619f, PageTop, 200f, 32f,
                 CycleShow);
             UpdateBarLabels();
-        }
-
-        void BuildRule(RectTransform paper, float y)
-        {
-            var rule = NewRect("Rule", paper);
-            PlaceTopLeft(rule, ListLeft, y, PageWidth - ListLeft - 36f, 1f);
-            var image = rule.gameObject.AddComponent<Image>();
-            image.sprite = null;
-            image.color = LedgerPalette.PhosphorDim;
-            image.raycastTarget = false;
         }
 
         /// <summary>Thirteen fixed rows, built once; it toggles rather than rebuilds
@@ -2610,8 +2685,7 @@ namespace LivingCity.UI
                 {
                     case RowKind.CrewHeader:
                         inCrew = true;
-                        BuildCrewHeader(roster, row, y);
-                        y -= CrewHeaderHeight;
+                        y -= CrewGap;
                         break;
 
                     case RowKind.FrontHeader:
@@ -2641,66 +2715,39 @@ namespace LivingCity.UI
             listContent.anchoredPosition = new Vector2(0f, scrollY);
         }
 
-        void BuildCrewHeader(Roster roster, LedgerRow row, float y)
-        {
-            var lieutenant = roster.Find(row.CharacterId);
-            var crewId = row.CrewId;
-
-            var rect = NewRect("Crew", listContent);
-            PlaceTopLeft(rect, 0f, y, ListWidth, CrewHeaderHeight);
-
-            var isTarget = assignMode && selectedId >= 0;
-            // Inverse video is the terminal's selection: the block lights, the text goes
-            // tube-dark. Same convention on the hood rows below.
-            var inverse = !assignMode && row.CharacterId == selectedId;
-            var background = rect.gameObject.AddComponent<Image>();
-            background.sprite = null;
-            background.color = isTarget ? LedgerPalette.Target
-                : inverse ? LedgerPalette.Phosphor
-                : LedgerPalette.BandDim;
-            background.raycastTarget = true;
-
-            AddRowButton(rect, background, () =>
-            {
-                if (assignMode)
-                    FinishAssign(director.AssignToCrew(selectedId, crewId));
-                else
-                    SelectMember(row.CharacterId);
-            });
-
-            var name = NewText("Name", rect, 16f,
-                inverse ? LedgerPalette.Screen : LedgerPalette.Phosphor,
-                TextAlignmentOptions.MidlineLeft);
-            FillRow(name.rectTransform, 12f, 340f);
-            name.fontStyle = FontStyles.Bold;
-            name.characterSpacing = 2f;
-            name.text = lieutenant != null
-                ? LedgerText.CrewName(lieutenant.Surname)
-                : "CREW";
-            // No member cells here: the lieutenant is a member, and his row - the
-            // Lieutenant row right below - carries his data like anyone else's.
-        }
-
         void BuildSectionHeader(RowKind kind, float y)
         {
             var rect = NewRect("Section", listContent);
             PlaceTopLeft(rect, 0f, y, ListWidth, SectionHeaderHeight);
 
             var isTarget = assignMode && selectedId >= 0 && kind != RowKind.SpecialistHeader;
-            if (isTarget)
+            // The front's header is also the BOSS's row: clicking it opens the front
+            // card - his face, the desk, the locker - the way a member row opens his.
+            var frontSelectable = kind == RowKind.FrontHeader && !assignMode;
+            var inverse = frontSelectable && selectedId == FrontSelection;
+
+            if (isTarget || frontSelectable)
             {
                 var background = rect.gameObject.AddComponent<Image>();
                 background.sprite = null;
-                background.color = LedgerPalette.Target;
+                background.color = isTarget ? LedgerPalette.Target
+                    : inverse ? LedgerPalette.Phosphor
+                    : Color.clear;
                 background.raycastTarget = true;
 
-                var toPool = kind == RowKind.PoolHeader;
-                AddRowButton(rect, background, () => FinishAssign(toPool
-                    ? director.AssignToPool(selectedId)
-                    : director.AssignToFront(selectedId)));
+                if (isTarget)
+                {
+                    var toPool = kind == RowKind.PoolHeader;
+                    AddRowButton(rect, background, () => FinishAssign(toPool
+                        ? director.AssignToPool(selectedId)
+                        : director.AssignToFront(selectedId)));
+                }
+                else
+                    AddRowButton(rect, background, () => SelectMember(FrontSelection));
             }
 
-            var label = NewText("Label", rect, 14f, LedgerPalette.Phosphor,
+            var label = NewText("Label", rect, 14f,
+                inverse ? LedgerPalette.Screen : LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineLeft);
             FillRow(label.rectTransform, 12f, 400f);
             label.fontStyle = FontStyles.Bold;
@@ -2724,12 +2771,17 @@ namespace LivingCity.UI
             PlaceTopLeft(rect, 0f, y, ListWidth, RowHeight);
 
             var inverse = id == selectedId && !assignMode;
+            // A lieutenant's row is his crew's handle: in assign mode it lights as
+            // the drop target the crew band used to be.
+            var isCrewTarget = assignMode && lieutenantRow && selectedId >= 0;
             var background = rect.gameObject.AddComponent<Image>();
             background.sprite = null;
             // No zebra stripes - the raster's own scanlines rule this page. The
             // background catches the click, and lights to full phosphor for the
             // selection: inverse video, the terminal's one and only highlight.
-            background.color = inverse ? LedgerPalette.Phosphor : Color.clear;
+            background.color = isCrewTarget ? LedgerPalette.Target
+                : inverse ? LedgerPalette.Phosphor
+                : Color.clear;
             background.raycastTarget = true;
 
             var hairline = NewRect("Hairline", rect);
@@ -2743,14 +2795,23 @@ namespace LivingCity.UI
             hairImage.color = LedgerPalette.HairLine;
             hairImage.raycastTarget = false;
 
-            // In assign mode a man is not a target - clicking one cancels the mode, the
-            // gesture for "never mind" that costs nothing to discover.
+            // In assign mode the LIEUTENANT'S row takes the man into his crew - the
+            // user's rule: the lieutenant IS his group's handle. An ordinary man is
+            // no target, so clicking one cancels the mode - the gesture for "never
+            // mind" that costs nothing to discover.
+            var crew = lieutenantRow ? roster.CrewOf(id) : null;
+            var crewId = crew != null ? crew.Id : -1;
             AddRowButton(rect, background, () =>
             {
                 if (assignMode)
                 {
-                    assignMode = false;
-                    dirty = true;
+                    if (crewId >= 0)
+                        FinishAssign(director.AssignToCrew(selectedId, crewId));
+                    else
+                    {
+                        assignMode = false;
+                        dirty = true;
+                    }
                 }
                 else
                     SelectMember(id);
@@ -2874,7 +2935,6 @@ namespace LivingCity.UI
             "SM_Chr_Detective_Male_01_AI",
             "SM_Gen_Chr_Business_Male_01_AI",
             "SM_Chr_City_Male_01_AI",
-            "SM_Chr_Rich_Male_01_AI",
         };
 
         static readonly string[] HoodLooks =
@@ -2908,6 +2968,12 @@ namespace LivingCity.UI
                 Destroy(old.gameObject);
 
             var roster = director.Roster;
+            if (roster != null && selectedId == FrontSelection)
+            {
+                BuildFrontDetail(roster);
+                return;
+            }
+
             var member = roster != null && selectedId >= 0 ? roster.Find(selectedId) : null;
             if (member == null)
             {
@@ -3000,6 +3066,136 @@ namespace LivingCity.UI
             BuildActionStrip(roster, member, y);
         }
 
+        /// <summary>The front's card - the BOSS's card: his face and name up top (the
+        /// main character finally has a page), then the desk, the guards, what sits
+        /// at the front, and the stock with GIVE straight into the headquarters
+        /// locker. NormalizeArms deals the locker to the men guarding the desk the
+        /// moment gear lands, so the card repaints already-dealt.</summary>
+        void BuildFrontDetail(Roster roster)
+        {
+            var photo = NewRect("Photo", detailContent);
+            PlaceTopLeft(photo, 20f, -18f, 84f, 84f);
+            var photoImage = photo.gameObject.AddComponent<Image>();
+            photoImage.sprite = null;
+            photoImage.color = LedgerPalette.PhotoBack;
+            photoImage.raycastTarget = false;
+            Frame(photo, 1f, LedgerPalette.PhosphorDim);
+
+            var initials = NewText("Initials", photo, 30f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.Center);
+            initials.rectTransform.anchorMin = Vector2.zero;
+            initials.rectTransform.anchorMax = Vector2.one;
+            initials.rectTransform.offsetMin = initials.rectTransform.offsetMax = Vector2.zero;
+            initials.fontStyle = FontStyles.Bold;
+            initials.text = "DR";
+
+            var mugshot = NewRect("Mugshot", photo);
+            mugshot.anchorMin = Vector2.zero;
+            mugshot.anchorMax = Vector2.one;
+            mugshot.offsetMin = mugshot.offsetMax = Vector2.zero;
+            var mugshotImage = mugshot.gameObject.AddComponent<RawImage>();
+            mugshotImage.raycastTarget = false;
+            mugshotImage.enabled = false; // Show() flips it on when the print lands
+            PortraitStudio.Request(
+                PortraitStudio.FindPeoplePrefab(Gangs.GangCatalog.BossModel),
+                PortraitStudio.Framing.Bust, mugshotImage);
+
+            var name = NewText("Name", detailContent, 19f, LedgerPalette.Phosphor,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(name.rectTransform, 118f, -20f, DetailWidth - 138f, 32f);
+            name.fontStyle = FontStyles.Bold;
+            name.text = Gangs.GangCatalog.BossName;
+
+            var post = NewText("Post", detailContent, 14f, LedgerPalette.PhosphorDim,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(post.rectTransform, 118f, -54f, DetailWidth - 138f, 22f);
+            post.text = "BOSS  ·  " +
+                Gangs.GangCatalog.Names[Gangs.GangCatalog.PlayerGangId];
+
+            var y = -118f;
+
+            // The desk and its guard.
+            var manager = roster.Find(roster.FrontId);
+            y = DetailLine(":: THE DESK", LedgerPalette.PhosphorDim, y);
+            y = DetailLine(manager != null
+                    ? manager.FullName + " runs the desk."
+                    : "Nobody runs the desk.",
+                manager != null ? LedgerPalette.Phosphor : LedgerPalette.Amber, y);
+
+            var guards = 0;
+            for (var i = 0; i < roster.Members.Count; i++)
+            {
+                var member = roster.Members[i];
+                if (member.Status == CharacterStatus.Active &&
+                    member.Id != roster.FrontId &&
+                    roster.AssignmentOf(member.Id).Kind == AssignmentKind.Pool)
+                    guards++;
+            }
+            y = DetailLine(guards == 1
+                    ? "1 hood on guard at the front."
+                    : guards + " hoods on guard at the front.",
+                guards > 0 ? LedgerPalette.Phosphor : LedgerPalette.PhosphorDim, y);
+
+            // What the front holds - the locker and the guards' hands.
+            y = DetailLine(":: AT THE FRONT", LedgerPalette.PhosphorDim, y - 4f);
+            var anyHeld = false;
+            for (var i = 0; i < roster.Equipment.Count; i++)
+            {
+                var item = roster.Equipment[i];
+                if (item.OwnerId != RosterEquipment.FrontArmory)
+                    continue;
+                var holder = roster.Find(item.HolderId);
+                anyHeld = true;
+
+                y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
+                    item.DisplayName + "  —  " +
+                    (holder != null ? LedgerText.HeldByLine(holder.FullName)
+                        : "in the locker"),
+                    LedgerPalette.Phosphor, y + 2f);
+                var itemId = item.Id;
+                NewButton(detailContent, "RETURN", DetailWidth - 130f, y + 24f,
+                    110f, 22f, () =>
+                    {
+                        lastRefusal = "";
+                        var result = director.ReturnEquipment(itemId);
+                        if (!result.Ok)
+                            lastRefusal = result.Reason;
+                        dirty = true;
+                    });
+            }
+            if (!anyHeld)
+                y = DetailLine("The locker is empty.", LedgerPalette.PhosphorDim, y);
+
+            // The stock: GIVE dumps gear at the front, the guards draw it at once.
+            y = DetailLine(":: ARMORY", LedgerPalette.PhosphorDim, y - 4f);
+            var anyStock = false;
+            for (var i = 0; i < roster.Equipment.Count; i++)
+            {
+                var item = roster.Equipment[i];
+                if (item.OwnerId != RosterEquipment.Unheld)
+                    continue;
+                anyStock = true;
+
+                y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
+                    item.DisplayName, LedgerPalette.Phosphor, y + 2f);
+                var itemId = item.Id;
+                NewButton(detailContent, "GIVE", DetailWidth - 130f, y + 24f,
+                    110f, 22f, () =>
+                    {
+                        lastRefusal = "";
+                        var result = director.GiveEquipmentToFront(itemId);
+                        if (!result.Ok)
+                            lastRefusal = result.Reason;
+                        dirty = true;
+                    });
+            }
+            if (!anyStock)
+                y = DetailLine("The stock is empty.", LedgerPalette.PhosphorDim, y);
+
+            if (lastRefusal.Length > 0)
+                DetailLine(lastRefusal, LedgerPalette.Amber, y - 4f);
+        }
+
         float DetailLine(string text, Color color, float y)
         {
             var line = NewText("Line", detailContent, 14f, color,
@@ -3022,6 +3218,7 @@ namespace LivingCity.UI
             backImage.sprite = null;
             backImage.color = LedgerPalette.PhosphorFaint;
             backImage.raycastTarget = false;
+            LedgerSkinSet.TryDressBar(backImage, 12f);
 
             var fill = NewRect("Fill", back);
             fill.anchorMin = new Vector2(0f, 0f);
@@ -3033,6 +3230,7 @@ namespace LivingCity.UI
             fillImage.sprite = null;
             fillImage.color = LedgerPalette.Phosphor;
             fillImage.raycastTarget = false;
+            LedgerSkinSet.TryDressBar(fillImage, 12f);
 
             var value = NewText("Value", detailContent, 14f, LedgerPalette.Phosphor,
                 TextAlignmentOptions.MidlineRight);
@@ -3151,11 +3349,12 @@ namespace LivingCity.UI
             for (var i = 0; i < roster.Equipment.Count; i++)
             {
                 var item = roster.Equipment[i];
-                if (item.HolderId == member.Id)
+                // His crew's own deck shows through his men's IN HAND lines, not here.
+                if (item.OwnerId == member.Id)
                     continue;
                 anyStock = true;
 
-                if (item.HolderId == RosterEquipment.Unheld)
+                if (item.OwnerId == RosterEquipment.Unheld)
                 {
                     y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
                         item.DisplayName, LedgerPalette.Phosphor, y + 2f);
@@ -3172,13 +3371,15 @@ namespace LivingCity.UI
                 }
                 else
                 {
-                    // The finite pool made visible: an item someone else holds shows here,
-                    // muted, with no button - the only path is returning it from HIS card,
+                    // The finite pool made visible: an item another group owns shows
+                    // here, muted, with no button - the only path is returning it,
                     // so exclusivity cannot be violated from the UI at all.
                     var holder = roster.Find(item.HolderId);
                     y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
                         item.DisplayName + "  —  " +
-                        LedgerText.HeldByLine(holder != null ? holder.FullName : "?"),
+                        LedgerText.HeldByLine(holder != null ? holder.FullName
+                            : item.OwnerId == RosterEquipment.FrontArmory
+                                ? "the front" : "?"),
                         LedgerPalette.Disabled, y + 2f);
                 }
             }

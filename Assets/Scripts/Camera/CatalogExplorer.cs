@@ -36,7 +36,7 @@ namespace LivingCity.CameraRig
                 camera.gameObject.AddComponent<CatalogExplorer>();
         }
 
-        const float PanSpeed = 60f;        // m/s; a catalog cell is 60, so one cell per second
+        const float PanSpeed = 120f;       // m/s; two catalog cells per second (doubled per the user)
         const float HurryMultiplier = 3f;
         const float ZoomStep = 8f;         // metres per scroll notch, along the view ray
         const float OrbitSpeed = 0.15f;    // degrees per pixel of right-drag

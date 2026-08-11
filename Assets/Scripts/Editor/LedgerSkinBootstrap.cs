@@ -63,6 +63,13 @@ namespace LivingCity.EditorTools
             changed |= Wire(ref set.headlineFont,
                 Pack + "Fonts/SairaCondensed/SairaCondensed-ExtraBold SDF.asset");
 
+            changed |= Wire(ref set.masthead,
+                Pack + "Sprites/General/SPR_ModernMenus_Menu_Bar_Medium_01.png");
+            changed |= Wire(ref set.vignette,
+                Pack + "Sprites/General/SPR_ModernMenus_Menu_Gradient_Vignette_01.png");
+            changed |= Wire(ref set.barCapsule,
+                Pack + "Sprites/ModernMenus/SPR_ModernMenus_Bar_Capsule_01.png");
+
             if (!changed)
                 return;
 

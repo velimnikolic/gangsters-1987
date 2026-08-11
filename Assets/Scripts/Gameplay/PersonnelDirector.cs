@@ -47,7 +47,10 @@ namespace LivingCity.Gameplay
         {
             var builder = FindAnyObjectByType<CityBuilder>();
             seed = builder && builder.Config ? builder.Config.seed : FallbackSeed;
-            if (!builder || !builder.Config)
+            // In the standalone Ledger menu the missing city is the DESIGN, not a
+            // fault - the warning would cry wolf on every single Play there.
+            if ((!builder || !builder.Config) &&
+                !FindAnyObjectByType<UI.LedgerMenuScene>())
                 Debug.LogWarning("[Personnel] No CityBuilder config in the scene - the " +
                                  "roster runs on the fallback seed.", this);
 
@@ -122,6 +125,22 @@ namespace LivingCity.Gameplay
             Version++;
             Debug.Log("[Personnel] " + displayName + " added to the armory.");
             return item;
+        }
+
+        /// <summary>The front card's GIVE: gear into the headquarters locker, dealt
+        /// out to the desk's guards by the normalize pass right after.</summary>
+        public OpResult GiveEquipmentToFront(int itemId)
+        {
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchItem);
+            var result = RosterOps.GiveEquipmentToFront(Roster, itemId);
+            if (result.Ok)
+            {
+                RosterOps.NormalizeArms(Roster);
+                Version++;
+                Debug.Log("[Personnel] Gear dumped at the front.");
+            }
+            return result;
         }
 
         public OpResult ReturnEquipment(int itemId)

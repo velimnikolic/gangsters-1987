@@ -172,16 +172,41 @@ namespace LivingCity.Personnel
             if (member.Rank != Rank.Lieutenant)
                 return OpResult.Fail(LedgerText.ReasonGearViaLieutenant);
 
-            if (item.HolderId == id)
+            if (item.OwnerId == id)
                 return OpResult.Fail(LedgerText.ReasonAlreadyHolds);
-            if (item.HolderId != RosterEquipment.Unheld)
+            if (item.OwnerId != RosterEquipment.Unheld)
+            {
+                var holder = roster.Find(item.HolderId);
+                return OpResult.Fail(LedgerText.HeldByLine(
+                    holder != null ? holder.FullName
+                    : item.OwnerId == RosterEquipment.FrontArmory
+                        ? "the front" : "another man"));
+            }
+
+            item.OwnerId = id;
+            item.HolderId = id;
+            return OpResult.Success;
+        }
+
+        /// <summary>The boss dumps gear at headquarters: the FRONT becomes its owner,
+        /// and NormalizeArms deals the locker out to the men guarding the desk - the
+        /// front manager and the pooled hoods.</summary>
+        public static OpResult GiveEquipmentToFront(Roster roster, int itemId)
+        {
+            var item = FindItem(roster, itemId);
+            if (item == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchItem);
+            if (item.OwnerId == RosterEquipment.FrontArmory)
+                return OpResult.Fail(LedgerText.ReasonAlreadyHolds);
+            if (item.OwnerId != RosterEquipment.Unheld)
             {
                 var holder = roster.Find(item.HolderId);
                 return OpResult.Fail(LedgerText.HeldByLine(
                     holder != null ? holder.FullName : "another man"));
             }
 
-            item.HolderId = id;
+            item.OwnerId = RosterEquipment.FrontArmory;
+            item.HolderId = RosterEquipment.FrontArmory;
             return OpResult.Success;
         }
 
@@ -206,38 +231,101 @@ namespace LivingCity.Personnel
             var item = FindItem(roster, itemId);
             if (item == null)
                 return OpResult.Fail(LedgerText.ReasonNoSuchItem);
-            if (item.HolderId == RosterEquipment.Unheld)
+            if (item.OwnerId == RosterEquipment.Unheld)
                 return OpResult.Fail(LedgerText.ReasonNotHeld);
 
+            item.OwnerId = RosterEquipment.Unheld;
             item.HolderId = RosterEquipment.Unheld;
             return OpResult.Success;
         }
 
         /// <summary>
         /// The quartermaster discipline, re-derived from the current roster: gear
-        /// lives with crews. Anything in the hands of anyone outside a crew reverts
-        /// to the safe (a man who leaves turns his kit in), and each crew's gear is
-        /// then re-dealt by its lieutenant - guns by Firearms, wheels by Driving,
-        /// the best of each to the best hand when the lieutenant is organized, and
-        /// progressively more backwards the less Organization he has. Deterministic
-        /// and idempotent: the deal depends only on who is in which crew, what the
-        /// crew holds, and the lieutenant's Organization - no draws, so re-running
-        /// it never reshuffles a settled hand.
+        /// BELONGS to a parent group (a lieutenant's crew, or the front) and never
+        /// leaves it on a man's back - OwnerId is the deed, HolderId just says who
+        /// carries it today. Each deal re-runs over the group's current hands: guns
+        /// by Firearms, wheels by Driving, the best of each to the best hand when
+        /// the dealer is organized, progressively more backwards when he is not.
+        /// A man who leaves the group is simply no longer a hand - the next deal
+        /// passes his old piece to whoever remains. Deterministic and idempotent:
+        /// no draws, so re-running never reshuffles a settled hand.
         /// PersonnelDirector runs this after every mutation; headless tests call it
         /// directly, the same split as every op here.
         /// </summary>
         public static void NormalizeArms(Roster roster)
         {
+            // Ownership first: gear whose parent group no longer exists (the owner
+            // demoted, dead, off the books) reverts to the safe. The FRONT is always
+            // a valid parent; a lieutenant is one while he still runs a crew.
             for (var i = 0; i < roster.Equipment.Count; i++)
             {
                 var item = roster.Equipment[i];
-                if (item.HolderId != RosterEquipment.Unheld &&
-                    roster.CrewOf(item.HolderId) == null)
+                if (item.OwnerId == RosterEquipment.Unheld)
+                {
                     item.HolderId = RosterEquipment.Unheld;
+                    continue;
+                }
+                if (item.OwnerId == RosterEquipment.FrontArmory)
+                    continue;
+
+                var owner = roster.Find(item.OwnerId);
+                if (owner == null || owner.Rank != Rank.Lieutenant ||
+                    roster.CrewOf(owner.Id) == null)
+                {
+                    item.OwnerId = RosterEquipment.Unheld;
+                    item.HolderId = RosterEquipment.Unheld;
+                }
             }
 
             for (var i = 0; i < roster.Crews.Count; i++)
                 DealCrewArms(roster, roster.Crews[i]);
+
+            DealFrontArms(roster);
+        }
+
+        /// <summary>The men who guard headquarters: the front manager and every pooled
+        /// hood - the pool IS the muscle kept at the desk between assignments. Public
+        /// because the front card lists exactly this group's hands.</summary>
+        public static bool InFrontGuard(Roster roster, int id)
+        {
+            if (id == roster.FrontId)
+                return true;
+            return roster.AssignmentOf(id).Kind == AssignmentKind.Pool;
+        }
+
+        /// <summary>The front's deal: everything the FRONT owns, re-dealt over the
+        /// desk's hands. The BOSS deals this one himself - gear lands ideally - and
+        /// the surplus stays in the locker, not on a man.</summary>
+        static void DealFrontArms(Roster roster)
+        {
+            var guns = new System.Collections.Generic.List<RosterEquipment>();
+            var wheels = new System.Collections.Generic.List<RosterEquipment>();
+            for (var i = 0; i < roster.Equipment.Count; i++)
+            {
+                var item = roster.Equipment[i];
+                if (item.OwnerId == RosterEquipment.FrontArmory)
+                    (IsWeapon(item.Kind) ? guns : wheels).Add(item);
+            }
+            if (guns.Count == 0 && wheels.Count == 0)
+                return;
+
+            var hands = new System.Collections.Generic.List<Character>();
+            var manager = roster.Find(roster.FrontId);
+            if (manager != null && manager.Status == CharacterStatus.Active)
+                hands.Add(manager);
+            for (var i = 0; i < roster.Members.Count; i++)
+            {
+                var member = roster.Members[i];
+                if (member.Status == CharacterStatus.Active &&
+                    member.Id != roster.FrontId &&
+                    roster.AssignmentOf(member.Id).Kind == AssignmentKind.Pool)
+                    hands.Add(member);
+            }
+
+            Deal(guns, hands, CharacterAttribute.Firearms,
+                AttributeScale.MaxHalfSteps, RosterEquipment.FrontArmory);
+            Deal(wheels, hands, CharacterAttribute.Driving,
+                AttributeScale.MaxHalfSteps, RosterEquipment.FrontArmory);
         }
 
         /// <summary>One crew's deal, in two decks - guns and wheels - over the same
@@ -249,15 +337,14 @@ namespace LivingCity.Personnel
             if (lieutenant == null)
                 return;
 
-            // The crew's gear, wherever it currently sits inside the crew.
+            // The crew's deck is what the LIEUTENANT owns - the user's rule: gear
+            // stays in the parent, whoever carried it yesterday.
             var guns = new System.Collections.Generic.List<RosterEquipment>();
             var wheels = new System.Collections.Generic.List<RosterEquipment>();
             for (var i = 0; i < roster.Equipment.Count; i++)
             {
                 var item = roster.Equipment[i];
-                if (item.HolderId != RosterEquipment.Unheld &&
-                    (item.HolderId == crew.LieutenantId ||
-                     crew.HoodIds.Contains(item.HolderId)))
+                if (item.OwnerId == crew.LieutenantId)
                     (IsWeapon(item.Kind) ? guns : wheels).Add(item);
             }
             if (guns.Count == 0 && wheels.Count == 0)
@@ -274,18 +361,21 @@ namespace LivingCity.Personnel
                     hands.Add(hood);
             }
 
-            Deal(guns, hands, CharacterAttribute.Firearms, lieutenant);
-            Deal(wheels, hands, CharacterAttribute.Driving, lieutenant);
+            var organization = lieutenant.GetHalfSteps(CharacterAttribute.Organization);
+            Deal(guns, hands, CharacterAttribute.Firearms, organization, lieutenant.Id);
+            Deal(wheels, hands, CharacterAttribute.Driving, organization, lieutenant.Id);
         }
 
-        /// <summary>One deck over the crew's hands, ranked by the stat that deck
-        /// runs on. Organization decides how much of the ideal deal survives: at
-        /// five stars everything lands right; at none the whole hand is dealt
-        /// backwards - the tommy to the wild miss, the sedan to the man who cannot
-        /// park it. Ids break ties so the deal is stable across repaints.</summary>
+        /// <summary>One deck over one group's hands, ranked by the stat that deck
+        /// runs on. The organization half-steps decide how much of the ideal deal
+        /// survives: at five stars everything lands right; at none the whole hand
+        /// is dealt backwards - the tommy to the wild miss, the sedan to the man
+        /// who cannot park it. Ids break ties so the deal is stable across
+        /// repaints. Surplus lands on warehouseId - the lieutenant for a crew, the
+        /// front locker for the desk.</summary>
         static void Deal(System.Collections.Generic.List<RosterEquipment> items,
             System.Collections.Generic.List<Character> hands,
-            CharacterAttribute stat, Character lieutenant)
+            CharacterAttribute stat, int organization, int warehouseId)
         {
             if (items.Count == 0)
                 return;
@@ -302,9 +392,7 @@ namespace LivingCity.Personnel
             });
 
             var pairs = System.Math.Min(items.Count, ranked.Count);
-            var correct = pairs *
-                lieutenant.GetHalfSteps(CharacterAttribute.Organization) /
-                AttributeScale.MaxHalfSteps;
+            var correct = pairs * organization / AttributeScale.MaxHalfSteps;
 
             for (var i = 0; i < pairs; i++)
             {
@@ -312,9 +400,9 @@ namespace LivingCity.Personnel
                 items[i].HolderId = hand.Id;
             }
 
-            // One piece per pair of hands; the lieutenant warehouses the surplus.
+            // One piece per pair of hands; the warehouse takes the surplus.
             for (var i = pairs; i < items.Count; i++)
-                items[i].HolderId = lieutenant.Id;
+                items[i].HolderId = warehouseId;
         }
 
         /// <summary>The shared gate for every assignment move; null means assignable.</summary>

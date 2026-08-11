@@ -29,6 +29,9 @@ namespace LivingCity.EditorTools
         const string SectionPalm = "PALM CITY";
         const string SectionCity = "CITY";
         const string SectionClubs = "NIGHTCLUBS";
+        const string SectionPolice = "POLICE STATION";
+        const string SectionGang = "GANG WARFARE";
+        const string SectionCoffee = "COFFEE SHOP";
 
         /// <summary>The nightclub pack ships no assembled exteriors - each demo SCENE is
         /// one venue (Scene root + Roof_Layer; Background_Layer is the surrounding street
@@ -39,7 +42,7 @@ namespace LivingCity.EditorTools
         {
             ("Assets/Synty/PolygonNightclubs/Scenes/Demo_NightClub_01.unity", "NightClub"),
         };
-        const string CatalogDir = SyntyKitExtractor.KitDir + "/Catalog";
+        internal const string CatalogDir = SyntyKitExtractor.KitDir + "/Catalog";
         const string CatalogMeshDir = CatalogDir + "/Meshes";
 
         /// <summary>
@@ -223,6 +226,11 @@ namespace LivingCity.EditorTools
         static readonly Dictionary<string, string> ManualNames = new()
         {
             ["Skyscraper_03"] = "Palm Tower",
+            // Kit-referenced entries: the prefab keeps its runtime role name, only the
+            // showroom label reads human (applied at placement, not at bake).
+            ["building-policestation"] = "Police Station",
+            ["building-warehouse"] = "Stovariste",
+            ["building-coffeeshop"] = "Coffee Shop",
         };
 
         [MenuItem("Tools/City/Build Synty Building Catalog Scene", priority = 4)]
@@ -264,6 +272,22 @@ namespace LivingCity.EditorTools
             foreach (var (venueScene, venueName) in NightclubScenes)
                 BakeVenue(venueScene, venueName, baked);
 
+            // Kit-owned compounds show as REFERENCES to the kit's own bakes (interiors
+            // already stripped there) - re-baking them here would put second multi-MB
+            // meshes in Catalog/Meshes for buildings the kit already owns.
+            foreach (var (section, kitName) in new[]
+            {
+                (SectionPolice, "building-policestation"),
+                (SectionGang, "building-warehouse"),
+                (SectionCoffee, "building-coffeeshop"),
+            })
+                if (AssetDatabase.LoadAssetAtPath<GameObject>(
+                        $"{SyntyKitExtractor.BuildingsDir}/{kitName}.prefab"))
+                    baked.Add((section, kitName));
+                else
+                    Debug.LogWarning($"[Catalog] {kitName} kit prefab missing - " +
+                                     "run Tools/City/Create or Refresh Config Assets first.");
+
             if (baked.Count == 0)
             {
                 EditorUtility.DisplayDialog("Catalog build failed",
@@ -272,6 +296,11 @@ namespace LivingCity.EditorTools
             }
 
             AssetDatabase.SaveAssets();
+
+            // The user's block recipes re-bake NOW, from the fresh Catalog prefabs -
+            // this rebuild just regenerated every Catalog guid, so any block composed
+            // against the previous bake points at ghosts.
+            SyntyCityBlocks.Bake();
 
             // 2. The showroom scene: a labelled grid, five per row.
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
@@ -283,6 +312,9 @@ namespace LivingCity.EditorTools
             foreach (var (section, name) in baked)
             {
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>($"{CatalogDir}/{name}.prefab");
+                if (!prefab)
+                    prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                        $"{SyntyKitExtractor.BuildingsDir}/{name}.prefab");
                 if (!prefab)
                     continue;
 
@@ -305,8 +337,35 @@ namespace LivingCity.EditorTools
                 var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
                 instance.transform.SetPositionAndRotation(position, Quaternion.Euler(0f, 180f, 0f));
 
-                Label(instance, name, position);
+                Label(instance, ManualNames.TryGetValue(name, out var display) ? display : name,
+                      position);
                 index++;
+            }
+
+            // 3. The user's composed blocks under their own title. A block outgrows the
+            //    60 m cell, so the row advances by measured width instead of the grid
+            //    step; the pivot (footprint centre) shifts so left edges line up.
+            var blockPrefabs = SyntyCityBlocks.LoadBaked();
+            if (blockPrefabs.Count > 0)
+            {
+                if (index % columns != 0)
+                    index += columns - index % columns;
+                index += columns;
+                var blockZ = index / columns * spacing;
+                SectionHeader("BLOCKS", new Vector3(-spacing * 0.75f, 0f, blockZ));
+
+                var cursor = 0f;
+                foreach (var prefab in blockPrefabs)
+                {
+                    var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+                    instance.transform.SetPositionAndRotation(
+                        new Vector3(cursor, 0f, blockZ), Quaternion.Euler(0f, 180f, 0f));
+                    var bounds = InstanceBounds(instance);
+                    instance.transform.position += new Vector3(cursor - bounds.min.x, 0f, 0f);
+                    Label(instance, prefab.name, instance.transform.position);
+                    cursor += bounds.size.x + 20f;
+                }
+                index += columns; // the block row counts toward the camera fit below
             }
 
             var rows = (index + columns - 1) / columns;
@@ -610,22 +669,30 @@ namespace LivingCity.EditorTools
 
         // Dressing families never seed a building of their own - a default-material
         // roofline or shop row would otherwise chain the whole block into one "building".
-        // They attach to the nearest wall core instead (their own column wins: the wall
-        // below a roof is metres closer than the neighbour 5m over).
+        // They are dealt to the run whose footprint band they overlap most, so a shop
+        // front stays under its own storeys and a roof stays on its own building.
         static readonly string[] DressingTokens =
             { "Roof", "FireEscape", "Cover", "Door", "Stairs", "Shop" };
 
         /// <summary>
         /// The user's model for the PolygonCity blocks: a building is a CONTIGUOUS SLICE
-        /// of the street row - full depth, full height, advancing part by part - told
-        /// apart from its neighbours BY COLOUR (the PolygonCity_XX_Y atlas variant each
-        /// wall module resolves to; no override = the _01_A default, itself a colour).
-        /// The block perimeter is walked as a ring (S, E, N, W); every piece snaps to a
-        /// 5m cell on its nearest side, a cell owns EVERYTHING at that station (walls,
-        /// shop base, roof, escapes - the whole thickness), and a building is a run of
-        /// adjacent cells whose wall colour agrees. Pieces deeper than the ring band are
-        /// freestanding interior towers and group separately by colour with strict
-        /// edge contact (corner-touch must not chain slices diagonally).
+        /// of the street row - full depth, FULL HEIGHT (ground floor to roof, whatever
+        /// each storey's colour), advancing part by part - told apart from its
+        /// neighbours BY COLOUR (the PolygonCity_XX_Y atlas variant each wall module
+        /// resolves to; no override = the _01_A default, itself a colour).
+        ///
+        /// Only WALL cores define the slices: the block perimeter is walked as a ring
+        /// (S, E, N, W), wall pieces snap to 5m cells on their nearest side, and a
+        /// building is a run of adjacent cells whose colour agrees. Everything else -
+        /// roofs, shop fronts, escapes, huts - is then dealt to the run whose
+        /// interior-extended footprint band it OVERLAPS most. Assigning by overlap
+        /// rather than by nearest-side is what keeps a selection one unbroken block:
+        /// on an L-corner the set-back roof tiles used to flip to the other street's
+        /// run and a wide shop front could leave its own storeys ("selektuje samo
+        /// prvi sprat" / roof bleeding over the neighbours - the user's screenshot).
+        /// Wall pieces deeper than the ring band are freestanding interior towers and
+        /// group separately by colour with strict edge contact (corner-touch must not
+        /// chain slices diagonally).
         /// </summary>
         static List<List<Transform>> SplitClusterByColour(List<Transform> pieces)
         {
@@ -634,11 +701,11 @@ namespace LivingCity.EditorTools
             const float RunGap = 8f;         // cells further apart than this never chain
 
             var all = ClusterBounds(pieces);
-            var centres = new Vector3[pieces.Count];
+            var bounds = new Bounds[pieces.Count];
             for (var i = 0; i < pieces.Count; i++)
             {
                 var renderer = pieces[i].GetComponentInChildren<MeshRenderer>(true);
-                centres[i] = renderer ? renderer.bounds.center : pieces[i].position;
+                bounds[i] = renderer ? renderer.bounds : new Bounds(pieces[i].position, Vector3.one);
             }
 
             string CoreKey(int i)
@@ -649,12 +716,18 @@ namespace LivingCity.EditorTools
                 return colour == null ? null : $"{FamilyOf(pieces[i].name)}|{colour}";
             }
 
-            // --- 1. ring cells vs interior pieces -------------------------------------
+            // --- 1. wall cores only: ring cells vs interior; the rest waits for the deal
             var cells = new Dictionary<(int side, int station), List<int>>();
-            var interior = new List<int>();
+            var interiorCores = new List<int>();
+            var loose = new List<int>();
             for (var i = 0; i < pieces.Count; i++)
             {
-                var c = centres[i];
+                if (CoreKey(i) == null)
+                {
+                    loose.Add(i);
+                    continue;
+                }
+                var c = bounds[i].center;
                 var dS = c.z - all.min.z;
                 var dE = all.max.x - c.x;
                 var dN = all.max.z - c.z;
@@ -662,7 +735,7 @@ namespace LivingCity.EditorTools
                 var least = Mathf.Min(dS, dE, dN, dW);
                 if (least > RingDepth)
                 {
-                    interior.Add(i);
+                    interiorCores.Add(i);
                     continue;
                 }
                 var side = least == dS ? 0 : least == dE ? 1 : least == dN ? 2 : 3;
@@ -681,32 +754,53 @@ namespace LivingCity.EditorTools
                 {
                     var centre = Vector3.zero;
                     foreach (var i in kv.Value)
-                        centre += centres[i];
+                        centre += bounds[i].center;
                     centre /= kv.Value.Count;
-                    var colour = kv.Value.Select(CoreKey).Where(k => k != null)
+                    var colour = kv.Value.Select(CoreKey)
                         .GroupBy(k => k).OrderByDescending(g => g.Count())
-                        .Select(g => g.Key).FirstOrDefault();
-                    return (kv.Value, centre, colour);
+                        .Select(g => g.Key).First();
+                    return (kv.Key.side, members: kv.Value, centre, colour);
                 })
                 .ToList();
 
-            var runs = new List<(List<int> members, string colour, Vector3 first, Vector3 last)>();
-            foreach (var (members, centre, colour) in ordered)
+            var runs = new List<(List<int> members, string colour, Vector3 first, Vector3 last,
+                                 Dictionary<int, (float min, float max)> sides)>();
+            (float min, float max) CellExtent(int side, List<int> members)
+            {
+                var min = float.MaxValue;
+                var max = float.MinValue;
+                foreach (var i in members)
+                {
+                    min = Mathf.Min(min, side is 0 or 2 ? bounds[i].min.x : bounds[i].min.z);
+                    max = Mathf.Max(max, side is 0 or 2 ? bounds[i].max.x : bounds[i].max.z);
+                }
+                return (min, max);
+            }
+            void Widen(Dictionary<int, (float min, float max)> sides, int side,
+                       (float min, float max) extent)
+            {
+                sides[side] = sides.TryGetValue(side, out var e)
+                    ? (Mathf.Min(e.min, extent.min), Mathf.Max(e.max, extent.max))
+                    : extent;
+            }
+            foreach (var (side, members, centre, colour) in ordered)
             {
                 var extend = runs.Count > 0
                     && Vector3.Distance(centre, runs[^1].last) <= RunGap
-                    && (colour == null || runs[^1].colour == null || colour == runs[^1].colour);
+                    && colour == runs[^1].colour;
                 if (extend)
                 {
                     var run = runs[^1];
                     run.members.AddRange(members);
-                    run.colour ??= colour;
                     run.last = centre;
+                    Widen(run.sides, side, CellExtent(side, members));
                     runs[^1] = run;
                 }
                 else
                 {
-                    runs.Add((new List<int>(members), colour, centre, centre));
+                    var sides = new Dictionary<int, (float min, float max)>();
+                    Widen(sides, side, CellExtent(side, members));
+                    runs.Add((new List<int>(members), colour, centre, centre, sides));
                 }
             }
 
@@ -714,23 +808,45 @@ namespace LivingCity.EditorTools
             // side's first, so a building wrapping that corner arrives split in two.
             if (runs.Count > 1
                 && Vector3.Distance(runs[0].first, runs[^1].last) <= RunGap
-                && (runs[0].colour == null || runs[^1].colour == null
-                    || runs[0].colour == runs[^1].colour))
+                && runs[0].colour == runs[^1].colour)
             {
                 var first = runs[0];
                 first.members.AddRange(runs[^1].members);
-                first.colour ??= runs[^1].colour;
+                foreach (var kv in runs[^1].sides)
+                    Widen(first.sides, kv.Key, kv.Value);
                 runs[0] = first;
                 runs.RemoveAt(runs.Count - 1);
             }
 
-            var groups = runs.Select(r => r.members).ToList();
+            // Each group carries footprint band(s); a ring run's bands reach from its
+            // street edge RingDepth into the block, so its set-back roof storeys land
+            // on it by overlap instead of drifting to whichever side happens nearer.
+            var groups = new List<(List<int> members, List<Rect> bands)>();
+            foreach (var run in runs)
+            {
+                var bands = new List<Rect>();
+                foreach (var kv in run.sides)
+                {
+                    var (min, max) = kv.Value;
+                    bands.Add(kv.Key switch
+                    {
+                        0 => Rect.MinMaxRect(min - 0.5f, all.min.z - 0.5f,
+                                             max + 0.5f, all.min.z + RingDepth),
+                        1 => Rect.MinMaxRect(all.max.x - RingDepth, min - 0.5f,
+                                             all.max.x + 0.5f, max + 0.5f),
+                        2 => Rect.MinMaxRect(min - 0.5f, all.max.z - RingDepth,
+                                             max + 0.5f, all.max.z + 0.5f),
+                        _ => Rect.MinMaxRect(all.min.x - 0.5f, min - 0.5f,
+                                             all.min.x + RingDepth, max + 0.5f),
+                    });
+                }
+                groups.Add((run.members, bands));
+            }
 
             // --- 3. interior towers: colour union with strict EDGE contact ------------
-            var interiorCores = interior.Where(i => CoreKey(i) != null).ToList();
             if (interiorCores.Count > 0)
             {
-                var parent = interior.ToDictionary(i => i, i => i);
+                var parent = interiorCores.ToDictionary(i => i, i => i);
                 int Find(int i)
                 {
                     while (parent[i] != i)
@@ -739,46 +855,63 @@ namespace LivingCity.EditorTools
                 }
                 bool EdgeContact(int a, int b)
                 {
-                    var ra = pieces[a].GetComponentInChildren<MeshRenderer>(true).bounds;
-                    var rb = pieces[b].GetComponentInChildren<MeshRenderer>(true).bounds;
-                    var x = Mathf.Min(ra.max.x, rb.max.x) - Mathf.Max(ra.min.x, rb.min.x);
-                    var z = Mathf.Min(ra.max.z, rb.max.z) - Mathf.Max(ra.min.z, rb.min.z);
+                    var x = Mathf.Min(bounds[a].max.x, bounds[b].max.x)
+                          - Mathf.Max(bounds[a].min.x, bounds[b].min.x);
+                    var z = Mathf.Min(bounds[a].max.z, bounds[b].max.z)
+                          - Mathf.Max(bounds[a].min.z, bounds[b].min.z);
                     return (x > -0.6f && z > 1f) || (z > -0.6f && x > 1f);
                 }
                 foreach (var a in interiorCores)
                     foreach (var b in interiorCores)
                         if (a < b && CoreKey(a) == CoreKey(b) && EdgeContact(a, b))
                             parent[Find(a)] = Find(b);
-                foreach (var i in interior)
+                foreach (var tower in interiorCores.GroupBy(Find))
                 {
-                    if (CoreKey(i) != null)
-                        continue;
-                    var best = interiorCores
-                        .OrderBy(j => (centres[i] - centres[j]).sqrMagnitude).First();
-                    parent[Find(i)] = Find(best);
-                }
-                groups.AddRange(interior.GroupBy(Find).Select(g => g.ToList()));
-            }
-            else if (interior.Count > 0 && groups.Count > 0)
-            {
-                // Dressing-only interior (courtyard roofs and the like): give each piece
-                // to the nearest ring run rather than inventing a building of scraps.
-                foreach (var i in interior)
-                {
-                    var best = groups
-                        .OrderBy(g => g.Min(j => (centres[i] - centres[j]).sqrMagnitude))
-                        .First();
-                    best.Add(i);
+                    var members = tower.ToList();
+                    var rect = Rect.MinMaxRect(float.MaxValue, float.MaxValue,
+                                               float.MinValue, float.MinValue);
+                    foreach (var i in members)
+                        rect = Rect.MinMaxRect(
+                            Mathf.Min(rect.xMin, bounds[i].min.x - 0.5f),
+                            Mathf.Min(rect.yMin, bounds[i].min.z - 0.5f),
+                            Mathf.Max(rect.xMax, bounds[i].max.x + 0.5f),
+                            Mathf.Max(rect.yMax, bounds[i].max.z + 0.5f));
+                    groups.Add((members, new List<Rect> { rect }));
                 }
             }
-            else if (interior.Count > 0)
+
+            if (groups.Count == 0)
+                return new List<List<Transform>> { new(pieces) };
+
+            // --- 4. deal every remaining piece to its best-overlapping building -------
+            float Overlap(Rect a, Rect b)
             {
-                groups.Add(interior);
+                var w = Mathf.Min(a.xMax, b.xMax) - Mathf.Max(a.xMin, b.xMin);
+                var h = Mathf.Min(a.yMax, b.yMax) - Mathf.Max(a.yMin, b.yMin);
+                return w > 0f && h > 0f ? w * h : 0f;
+            }
+            foreach (var i in loose)
+            {
+                var rect = Rect.MinMaxRect(bounds[i].min.x, bounds[i].min.z,
+                                           bounds[i].max.x, bounds[i].max.z);
+                var best = 0;
+                var bestScore = float.MinValue;
+                for (var g = 0; g < groups.Count; g++)
+                {
+                    var score = groups[g].bands.Max(band => Overlap(rect, band));
+                    if (score <= 0f)
+                        // No overlap anywhere: fall back to (negative) distance so the
+                        // piece still lands on the closest band rather than group 0.
+                        score = -groups[g].bands.Min(band =>
+                            (band.center - new Vector2(bounds[i].center.x, bounds[i].center.z))
+                            .sqrMagnitude);
+                    if (score > bestScore) { bestScore = score; best = g; }
+                }
+                groups[best].members.Add(i);
             }
 
             return groups
-                .Where(g => g.Count > 0)
-                .Select(g => g.Select(i => pieces[i]).ToList())
+                .Select(g => g.members.Select(i => pieces[i]).ToList())
                 .OrderBy(g => Mathf.Round(g.Min(t => t.position.z) / 10f))
                 .ThenBy(g => g.Min(t => t.position.x)).ToList();
         }
@@ -1226,6 +1359,19 @@ namespace LivingCity.EditorTools
             text.anchor = TextAnchor.LowerCenter;
             text.alignment = TextAlignment.Center;
             text.color = Color.white;
+        }
+
+        /// <summary>World bounds of a placed instance's renderers; pivot when it has none.</summary>
+        static Bounds InstanceBounds(GameObject instance)
+        {
+            var bounds = new Bounds(instance.transform.position, Vector3.zero);
+            var first = true;
+            foreach (var r in instance.GetComponentsInChildren<MeshRenderer>())
+            {
+                if (first) { bounds = r.bounds; first = false; }
+                else bounds.Encapsulate(r.bounds);
+            }
+            return bounds;
         }
 
         static void EnsureFolders()

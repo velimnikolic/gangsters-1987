@@ -15,6 +15,15 @@ namespace LivingCity.Gangs
         public const int GangCount = 5;
         public const int PlayerGangId = 0;
 
+        /// <summary>The player's boss - the main character. The ledger's front card
+        /// wears his face and name; nothing else names him yet, so this is the one
+        /// source when the story layer arrives.</summary>
+        public const string BossName = "Don Salvatore Ricci";
+
+        /// <summary>The boss's street model - the rich suit, reserved for him (the
+        /// mugshot tables deliberately leave it out of the lieutenant looks).</summary>
+        public const string BossModel = "SM_Chr_Rich_Male_01_AI";
+
         /// <summary>Names are budgeted: they stand where "Protected" stands in the
         /// business popup line (see BusinessIntention.Line's gang overload).</summary>
         public static readonly string[] Names =
