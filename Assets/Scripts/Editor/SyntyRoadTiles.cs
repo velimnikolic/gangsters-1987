@@ -38,14 +38,18 @@ namespace LivingCity.EditorTools
         public const string TilesDir = SyntyKitExtractor.KitDir + "/Tiles";
         const string MeshDir = TilesDir + "/Meshes";
 
-        public const int Version = 1;
+        public const int Version = 5;
         const string VersionPath = TilesDir + "/Version.txt";
 
         // Synty pieces. Sizes verified offline against the binary FBX (corner pivots).
-        const string Road10 = "Assets/Synty/PolygonGeneric/Prefabs/Environment/SM_Gen_Env_Road_01.prefab";          // 10 x 10
-        const string Road10Half = "Assets/Synty/PolygonGeneric/Prefabs/Environment/SM_Gen_Env_Road_Half_02.prefab"; // 10 w x 5 l
-        const string Crossing = "Assets/Synty/PolygonGeneric/Prefabs/Environment/SM_Gen_Env_Road_Crossing_01.prefab"; // 5 x 5
-        const string Asphalt5 = "Assets/Synty/PolygonPoliceStation/Prefabs/Environment/SM_Env_Ground_Small_01.prefab"; // 5 x 5 plain
+        //
+        // The WHOLE carriageway comes from ONE pack (PoliceStation env) on purpose: its
+        // marked road, plain asphalt and crossing all share the same material, so pieces
+        // meet seamlessly. The first version mixed Generic roads over PoliceStation fill -
+        // three greys from three packs stitched per tile, which read as a broken road.
+        const string Road10 = "Assets/Synty/PolygonPoliceStation/Prefabs/Environment/SM_Env_Road_01.prefab";        // 10 x 10, marked
+        const string Crossing = "Assets/Synty/PolygonPoliceStation/Prefabs/Environment/SM_Env_Ground_Small_Crossing_01.prefab"; // 5 x 5
+        const string Asphalt2 = "Assets/Synty/PolygonPoliceStation/Prefabs/Environment/SM_Env_Ground_Small_02.prefab"; // 2.5 x 2.5 plain
         const string Walk = "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab";           // 2.5
         const string Kerb = "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_Edge_01.prefab";      // 2.5, drop on one edge
 
@@ -55,6 +59,25 @@ namespace LivingCity.EditorTools
         const float VisualScale = 30f / Span;            // 2/3
         const float MinorHalfWidth = 5f;                 // 10 m road
         const float MainHalfWidth = 10f;                 // two 10 m carriageways, butted
+
+        /// <summary>
+        /// The polyperfect height contract, in staging metres (authored = metric x 2/3).
+        /// The source tiles put the CARRIAGEWAY at authored -0.2 - the road Path nodes the
+        /// cars drive on sit at exactly that height - and the PAVEMENT top at authored 0,
+        /// which is what GroundPlacer's lift stack (apron 0.01, slab 0.02, patch 0.05) was
+        /// tuned against. v4 drew everything at ~0: cars sank 30cm into the asphalt and any
+        /// block layer buried the road. RoadY sinks the carriageway to the contract depth;
+        /// PavementY drops the kerb/walk base so the slab TOP (authored 0.013 x 2/3) lands
+        /// on authored zero, flush with where the apron takes over at PavementEdge.
+        /// </summary>
+        const float RoadY = -0.3f;
+        const float PavementY = -0.013f;
+
+        /// <summary>
+        /// Marked pieces (dashes, zebra) float this far above the plain fill so they win
+        /// the overdraw after the bake.
+        /// </summary>
+        const float OverlayY = RoadY + 0.01f;
 
         struct Arm
         {
@@ -323,79 +346,78 @@ namespace LivingCity.EditorTools
 
         static void LayAsphalt(Transform parent, string name, List<Arm> arms)
         {
-            // Plain fill first, on the 5 m grid, everywhere the analytic region says asphalt.
-            for (var x = 0; x < 9; x++)
-                for (var z = 0; z < 9; z++)
+            // Plain fill on the 2.5 m lattice, sunk to the contract depth. Every band edge
+            // in this file (half-widths 5/10, junction core reaches, the rim at 22.5) is a
+            // multiple of 2.5, so a cell is either fully on the asphalt or fully off it: no
+            // holes at the rims or junction corners, no overhang under the kerb. The wider
+            // margin lays one extra ring UNDER the kerb row: the kerb slab sits 0.15 staging
+            // metres above the sunken road, and without a shelf below it that gap reads as a
+            // slit into the void instead of a deep gutter.
+            for (var x = 0; x < 18; x++)
+                for (var z = 0; z < 18; z++)
                 {
-                    float minX = -Half + x * 5f, minZ = -Half + z * 5f;
-                    if (OnAsphalt(arms, minX + 2.5f, minZ + 2.5f, -0.1f))
-                        PlaceRect(parent, Asphalt5, minX, minZ, 0f);
+                    float minX = -Half + x * 2.5f, minZ = -Half + z * 2.5f;
+                    if (OnAsphalt(arms, minX + 1.25f, minZ + 1.25f, 2.5f))
+                        PlaceRect(parent, Asphalt2, minX, minZ, 0f, y: RoadY);
                 }
 
-            // Marked carriageway on top of each arm, outside the junction core, at +2 cm so
-            // the markings win the overdraw against the plain fill.
+            // Dashed centre-line pieces anchor to the RIM and step inward in 10 m slots, so
+            // a dash piece always butts the tile edge and the 10 m pitch continues across
+            // every seam. The 45-vs-10 remainder is absorbed as a 5 m plain zone at the
+            // centre of straights (where the zebra goes on crosswalk tiles, so plain and
+            // crosswalk straights share one dash phase) and at junction mouths.
             var crosswalk = name.Contains("crosswalk");
             foreach (var arm in arms)
             {
                 var perpReach = arms.Where(o => Mathf.Abs(Vector2.Dot(o.dir, arm.dir)) < 0.5f)
                                     .Select(o => o.halfWidth).DefaultIfEmpty(0f).Max();
                 var isStraightRun = arms.Count == 2 && arms.Any(o => o.dir == -arm.dir);
+                var runStart = isStraightRun ? (crosswalk ? 2.5f : 0f) : perpReach;
 
                 var lanes = arm.halfWidth > MinorHalfWidth + 0.1f
                     ? new[] { -10f, 0f }   // main: two carriageways, each 10 wide
                     : new[] { -5f };       // minor: one, centred
 
                 foreach (var laneMin in lanes)
-                {
-                    // Run from the core edge (or the tile centre on a straight) to the rim.
-                    var from = isStraightRun ? 0f : perpReach;
-                    var runs = SegmentRun(from, Half, crosswalk && isStraightRun);
-                    foreach (var (min, len, marked) in runs)
-                        PlaceArmPiece(parent, arm, laneMin, min, len, marked);
-                }
+                    for (var max = Half; max - 10f >= runStart - 0.01f; max -= 10f)
+                        PlaceArmPiece(parent, arm, laneMin, max - 10f, 10f, Road10);
             }
+
+            if (crosswalk)
+                LayCrossing(parent, arms);
         }
 
         /// <summary>
-        /// Splits a half-arm run into 10/5 m road pieces; on a crosswalk tile the first
-        /// 2.5 m past the centre is left to the crossing overlay. Returns (start, length,
-        /// marked) with marked=false for crossing stripes.
+        /// PoliceStation road art runs its markings along local +X (centre dashes, zebra
+        /// bars), so a piece is yawed to lay X along the arm. Positions are the axis-aligned
+        /// footprint; PlaceRect resolves the corner pivot for any yaw. The across range is
+        /// the same for both signs of an axis - lane sets are symmetric - so only the along
+        /// coordinate is signed.
         /// </summary>
-        static IEnumerable<(float min, float len, bool marked)> SegmentRun(float from, float to, bool crosswalkAtCentre)
+        static void PlaceArmPiece(Transform parent, Arm arm, float acrossMin, float along, float len, string prefabPath)
         {
-            var cursor = from;
-            if (crosswalkAtCentre && Mathf.Approximately(from, 0f))
-            {
-                yield return (0f, 2.5f, false);
-                cursor = 2.5f;
-            }
-
-            while (to - cursor > 0.1f)
-            {
-                var remaining = to - cursor;
-                var len = remaining >= 10f ? 10f : (remaining >= 5f ? 5f : remaining);
-                if (len < 4.9f) yield break; // sub-5 m tail stays plain fill
-                yield return (cursor, len, true);
-                cursor += len;
-            }
+            float minX, minZ, yaw;
+            if (arm.dir == Vector2.up) { minX = acrossMin; minZ = along; yaw = 90f; }
+            else if (arm.dir == Vector2.down) { minX = acrossMin; minZ = -along - len; yaw = 270f; }
+            else if (arm.dir == Vector2.right) { minX = along; minZ = acrossMin; yaw = 0f; }
+            else { minX = -along - len; minZ = acrossMin; yaw = 180f; }
+            PlaceRect(parent, prefabPath, minX, minZ, yaw, y: OverlayY);
         }
 
-        static void PlaceArmPiece(Transform parent, Arm arm, float laneMin, float along, float len, bool marked)
+        /// <summary>
+        /// Zebra row centred on the tile: one Crossing piece per 5 m across the full drawn
+        /// width - two on a street, four on the avenue - with the bars (long in local X)
+        /// turned along the traffic axis. Same layer as the dash pieces; the two never
+        /// overlap, they share the edge at along = +/-2.5.
+        /// </summary>
+        static void LayCrossing(Transform parent, List<Arm> arms)
         {
-            var prefab = marked ? (len >= 9.9f ? Road10 : Road10Half) : Crossing;
-            // Crossing pieces are 5 wide: two side by side per 10 m carriageway.
-            var widths = marked ? new[] { 0f } : new[] { 0f, 5f };
-
-            foreach (var w in widths)
+            var arm = arms[0];
+            var vertical = Mathf.Abs(arm.dir.y) > 0.5f; // road runs along z
+            for (var c = -arm.halfWidth; c < arm.halfWidth - 0.1f; c += 5f)
             {
-                float minX, minZ, yaw;
-                var acrossMin = laneMin + w;
-                if (arm.dir == Vector2.up) { minX = acrossMin; minZ = along; yaw = 0f; }
-                else if (arm.dir == Vector2.down) { minX = -acrossMin - (marked ? 10f : 5f); minZ = -along - len; yaw = 180f; }
-                else if (arm.dir == Vector2.right) { minX = along; minZ = acrossMin; yaw = 90f; }
-                else { minX = -along - len; minZ = -acrossMin - (marked ? 10f : 5f); yaw = 270f; }
-
-                PlaceRect(parent, prefab, minX, minZ, yaw, y: marked ? 0.02f : 0.03f);
+                if (vertical) PlaceRect(parent, Crossing, c, -2.5f, 90f, y: OverlayY);
+                else PlaceRect(parent, Crossing, -2.5f, c, 0f, y: OverlayY);
             }
         }
 
@@ -420,9 +442,9 @@ namespace LivingCity.EditorTools
                     else if (OnAsphalt(arms, cx + 2.5f, cz, 0f)) kerbYaw = 90f;
 
                     if (!float.IsNaN(kerbYaw))
-                        PlaceRect(parent, Kerb, cx - 1.25f, cz - 1.25f, kerbYaw);
+                        PlaceRect(parent, Kerb, cx - 1.25f, cz - 1.25f, kerbYaw, y: PavementY);
                     else if (OnAsphalt(arms, cx, cz, 6.5f))
-                        PlaceRect(parent, Walk, cx - 1.25f, cz - 1.25f, 0f);
+                        PlaceRect(parent, Walk, cx - 1.25f, cz - 1.25f, 0f, y: PavementY);
                 }
         }
 
@@ -492,16 +514,18 @@ namespace LivingCity.EditorTools
                 var filter = r.GetComponent<MeshFilter>();
                 if (!filter || !filter.sharedMesh) continue;
                 var mats = r.sharedMaterials;
-                for (int s = 0; s < filter.sharedMesh.subMeshCount && s < mats.Length; s++)
+                var matrix = staging.transform.worldToLocalMatrix * r.localToWorldMatrix;
+                var mesh = SyntyBakeUtil.MeshFor(filter.sharedMesh, matrix);
+                for (int s = 0; s < mesh.subMeshCount && s < mats.Length; s++)
                 {
                     if (!mats[s]) continue;
                     if (!byMaterial.TryGetValue(mats[s], out var list))
                         byMaterial[mats[s]] = list = new List<CombineInstance>();
                     list.Add(new CombineInstance
                     {
-                        mesh = filter.sharedMesh,
+                        mesh = mesh,
                         subMeshIndex = s,
-                        transform = staging.transform.worldToLocalMatrix * r.localToWorldMatrix,
+                        transform = matrix,
                     });
                 }
             }

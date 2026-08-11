@@ -8,6 +8,52 @@ using UnityEngine.SceneManagement;
 namespace LivingCity.EditorTools
 {
     /// <summary>
+    /// The mirrored-piece fix both bake passes share. The Synty demo scenes mirror pieces
+    /// freely (half of every roof ridge, many wall runs are localScale -1 copies), and a
+    /// combine matrix with negative determinant flips triangle winding - the surface then
+    /// renders only from INSIDE, which on a baked building reads as "walls but no roof and
+    /// no floors". The fix is the standard one: for mirrored instances, combine a copy of
+    /// the source mesh with triangles reversed and normals negated, so the mirror in the
+    /// matrix lands the geometry right side out again.
+    /// </summary>
+    internal static class SyntyBakeUtil
+    {
+        static readonly System.Collections.Generic.Dictionary<Mesh, Mesh> Flipped = new();
+
+        public static Mesh MeshFor(Mesh source, Matrix4x4 transform)
+        {
+            if (transform.determinant >= 0f)
+                return source;
+
+            if (Flipped.TryGetValue(source, out var cached))
+                return cached;
+
+            var copy = Object.Instantiate(source);
+            copy.name = source.name + " (winding-flipped)";
+            for (var s = 0; s < copy.subMeshCount; s++)
+            {
+                var tris = copy.GetTriangles(s);
+                System.Array.Reverse(tris);
+                copy.SetTriangles(tris, s);
+            }
+            var normals = copy.normals;
+            for (var i = 0; i < normals.Length; i++)
+                normals[i] = -normals[i];
+            copy.normals = normals;
+
+            return Flipped[source] = copy;
+        }
+
+        /// <summary>Between bakes the cache must not leak stale editor-only meshes.</summary>
+        public static void ClearCache()
+        {
+            foreach (var mesh in Flipped.Values)
+                if (mesh) Object.DestroyImmediate(mesh);
+            Flipped.Clear();
+        }
+    }
+
+    /// <summary>
     /// Lifts the assembled buildings out of the Synty demo scenes into project-owned prefabs
     /// under Assets/CityKit/Buildings, named with the city's existing vocabulary
     /// (building-bank, building-cafe, ...) so the ~15 files that match prefab names at
@@ -42,7 +88,7 @@ namespace LivingCity.EditorTools
         /// Version.txt beside the output so CreateAssets can skip reopening a 61 MB demo
         /// scene on every refresh. Delete the file (or bump this) to force a re-extract.
         /// </summary>
-        public const int Version = 1;
+        public const int Version = 3;
         const string VersionPath = BuildingsDir + "/Version.txt";
 
         /// <summary>demo group -> city role. yawOverride in degrees, NaN = trust the doors.</summary>
@@ -107,8 +153,10 @@ namespace LivingCity.EditorTools
                 return;
 
             EnsureFolders();
+            SyntyBakeUtil.ClearCache();
             ExtractPalmGroups();
             ExtractPoliceStation();
+            SyntyBakeUtil.ClearCache();
 
             System.IO.File.WriteAllText(VersionPath, Version.ToString());
             AssetDatabase.ImportAsset(VersionPath);
@@ -188,10 +236,19 @@ namespace LivingCity.EditorTools
                 return;
             }
 
-            var copy = Object.Instantiate(group.gameObject);
+            // The building SHELL only. A demo group is Building + Dressing + Decals (+
+            // Vehicles), and v1 baked the lot - interior furniture, shop stock, graffiti -
+            // into meshes of 17-51 MB per building. A city of hundreds of those exhausted
+            // the graphics ring buffer and read as "the blocks are gone": placed, unpaid
+            // for, undrawn. The Building subtree is the architecture; the dressing was demo
+            // set-decoration.
+            var shell = group.Find("Building");
+            var source = shell ? shell.gameObject : group.gameObject;
+
+            var copy = Object.Instantiate(source);
             copy.name = entry.role;
-            copy.transform.position = group.position;
-            copy.transform.rotation = group.rotation;
+            copy.transform.position = shell ? shell.position : group.position;
+            copy.transform.rotation = shell ? shell.rotation : group.rotation;
 
             var yaw = float.IsNaN(entry.yawOverride) ? MeasureFrontYaw(copy) : entry.yawOverride;
             BakeGroup(copy, entry.role, yaw);
@@ -239,7 +296,8 @@ namespace LivingCity.EditorTools
         /// MonoBehaviour and Light is stripped (the demo dressing is geometry, the behaviour
         /// is ours).
         /// </summary>
-        internal static void BakeGroup(GameObject group, string role, float yaw)
+        internal static void BakeGroup(GameObject group, string role, float yaw,
+                                       string outputDir = BuildingsDir, string meshOutputDir = MeshDir)
         {
             foreach (var mb in group.GetComponentsInChildren<MonoBehaviour>(true))
                 if (mb) Object.DestroyImmediate(mb);
@@ -251,8 +309,11 @@ namespace LivingCity.EditorTools
             // footprint. Renderer bounds are world-space, so measure after the yaw.
             group.transform.rotation = Quaternion.Euler(0f, -yaw, 0f) * group.transform.rotation;
 
-            var renderers = group.GetComponentsInChildren<MeshRenderer>(true)
-                .Where(r => r.GetComponent<MeshFilter>() && r.GetComponent<MeshFilter>().sharedMesh)
+            // Active geometry only: the Synty prefabs carry disabled alternates (glass
+            // inserts, part variants) that v1 baked in on top of the visible set.
+            var renderers = group.GetComponentsInChildren<MeshRenderer>(false)
+                .Where(r => r.enabled && r.gameObject.activeInHierarchy
+                            && r.GetComponent<MeshFilter>() && r.GetComponent<MeshFilter>().sharedMesh)
                 .ToArray();
             if (renderers.Length == 0)
             {
@@ -264,23 +325,26 @@ namespace LivingCity.EditorTools
             foreach (var r in renderers) bounds.Encapsulate(r.bounds);
             var pivot = new Vector3(bounds.center.x, group.transform.position.y, bounds.center.z);
 
-            // Per-material combine, vertices baked in pivot space.
+            // Per-material combine, vertices baked in pivot space. Mirrored instances get
+            // the winding-flipped source copy - see SyntyBakeUtil.
             var byMaterial = new Dictionary<Material, List<CombineInstance>>();
             var toPivot = Matrix4x4.TRS(pivot, Quaternion.identity, Vector3.one).inverse;
             foreach (var r in renderers)
             {
                 var filter = r.GetComponent<MeshFilter>();
                 var mats = r.sharedMaterials;
-                for (int s = 0; s < filter.sharedMesh.subMeshCount && s < mats.Length; s++)
+                var matrix = toPivot * r.localToWorldMatrix;
+                var mesh = SyntyBakeUtil.MeshFor(filter.sharedMesh, matrix);
+                for (int s = 0; s < mesh.subMeshCount && s < mats.Length; s++)
                 {
                     if (!mats[s]) continue;
                     if (!byMaterial.TryGetValue(mats[s], out var list))
                         byMaterial[mats[s]] = list = new List<CombineInstance>();
                     list.Add(new CombineInstance
                     {
-                        mesh = filter.sharedMesh,
+                        mesh = mesh,
                         subMeshIndex = s,
-                        transform = toPivot * r.localToWorldMatrix,
+                        transform = matrix,
                     });
                 }
             }
@@ -304,7 +368,7 @@ namespace LivingCity.EditorTools
                 mergeSubMeshes: false, useMatrices: true);
             final.RecalculateBounds();
 
-            var meshPath = $"{MeshDir}/{role}.asset";
+            var meshPath = $"{meshOutputDir}/{role}.asset";
             var existingMesh = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
             if (existingMesh)
             {
@@ -337,7 +401,7 @@ namespace LivingCity.EditorTools
                 d.name = decal.gameObject.name;
             }
 
-            var prefabPath = $"{BuildingsDir}/{role}.prefab";
+            var prefabPath = $"{outputDir}/{role}.prefab";
             PrefabUtility.SaveAsPrefabAsset(output, prefabPath);
             Object.DestroyImmediate(output);
 

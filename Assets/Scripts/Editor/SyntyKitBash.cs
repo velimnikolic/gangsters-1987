@@ -23,7 +23,7 @@ namespace LivingCity.EditorTools
         const string PoliceBld = "Assets/Synty/PolygonPoliceStation/Prefabs/Buildings/";
         const string GenBase = "Assets/Synty/PolygonGeneric/Prefabs/Base/";
 
-        public const int Version = 1;
+        public const int Version = 3;
         const string VersionPath = SyntyKitExtractor.BuildingsDir + "/KitBashVersion.txt";
 
         const float M = 2.5f;   // the module
@@ -83,6 +83,60 @@ namespace LivingCity.EditorTools
                 roofSlab = PalmBld + "SM_Bld_Roof_Flat_01.prefab",
                 roofEdge = PalmBld + "SM_Bld_Roof_Edge_Straight_01.prefab",
             },
+            // The residential series - the bulk of the city's street wall. Synty ships NO
+            // assembled residential buildings (the three demo apartments are all there is),
+            // but it ships ten distinct 2.5 x 3.0 facade panel styles, which is what a
+            // rowhouse kit IS. Six silhouettes, varied by style, width and storey count, so
+            // a ShuffleBag run steps the skyline the way the old 4/5-floor kit did.
+            new()
+            {
+                name = "building-res-01", w = 8, d = 5, floors = 3,
+                wall = PalmBld + "SM_Bld_Wall_Window_02.prefab",
+                door = PalmBld + "SM_Bld_Deco_Wall_Door_01.prefab",
+                roofSlab = PalmBld + "SM_Bld_Roof_Flat_01.prefab",
+                roofEdge = PalmBld + "SM_Bld_Roof_Trim_01.prefab",
+            },
+            new()
+            {
+                name = "building-res-02", w = 6, d = 4, floors = 2,
+                wall = PalmBld + "SM_Bld_Wall_Window_03.prefab",
+                door = PalmBld + "SM_Bld_Deco_Wall_Door_02.prefab",
+                roofSlab = PalmBld + "SM_Bld_Roof_Flat_01.prefab",
+                roofEdge = PalmBld + "SM_Bld_Roof_Edge_Straight_01.prefab",
+            },
+            new()
+            {
+                name = "building-res-03", w = 9, d = 5, floors = 4,
+                wall = PalmBld + "SM_Bld_Deco_Wall_Window_03.prefab",
+                door = PalmBld + "SM_Bld_Deco_Wall_Door_03.prefab",
+                roofSlab = PalmBld + "SM_Bld_Roof_Flat_01.prefab",
+                roofEdge = PalmBld + "SM_Bld_Roof_Trim_01.prefab",
+            },
+            new()
+            {
+                name = "building-res-04", w = 7, d = 5, floors = 3,
+                wall = PalmBld + "SM_Bld_Deco_Wall_Window_04.prefab",
+                door = PalmBld + "SM_Bld_Deco_Wall_Door_01.prefab",
+                roofSlab = PalmBld + "SM_Bld_Roof_Flat_01.prefab",
+                roofEdge = PalmBld + "SM_Bld_Roof_Edge_Straight_01.prefab",
+            },
+            new()
+            {
+                name = "building-res-05", w = 6, d = 5, floors = 4,
+                wall = PalmBld + "SM_Bld_Wall_Window_04.prefab",
+                door = PalmBld + "SM_Bld_Deco_Wall_Door_02.prefab",
+                roofSlab = PalmBld + "SM_Bld_Roof_Flat_01.prefab",
+                roofEdge = PalmBld + "SM_Bld_Roof_Trim_01.prefab",
+            },
+            new()
+            {
+                name = "building-res-06", w = 8, d = 4, floors = 2,
+                wall = PalmBld + "SM_Bld_Deco_Wall_Window_05.prefab",
+                door = PalmBld + "SM_Bld_Deco_Wall_Door_04.prefab",
+                roofSlab = PalmBld + "SM_Bld_Roof_Flat_01.prefab",
+                roofEdge = PalmBld + "SM_Bld_Roof_Edge_Straight_01.prefab",
+            },
+
             // The detached-house stock (bank neighbours, outbuildings): villa kit, gable
             // roof, even depth by the slope arithmetic above.
             new()

@@ -252,15 +252,22 @@ namespace LivingCity.EditorTools
         // from KitBuildings.
         static readonly string[] TerraceStreet =
         {
-            "building-apartment-01", "building-apartment-02", "building-apartment-03",
-            "building-hotel-small", "building-store-01",
+            // The kit-bashed residential series carries the street wall - per the user's
+            // call, the city is MOSTLY residential - with the demo apartments as the
+            // minority seasoning. Hotel and store left the bag for the same reason.
+            "building-res-01", "building-res-02", "building-res-03",
+            "building-res-04", "building-res-05", "building-res-06",
+            "building-apartment-01", "building-apartment-03",
         };
 
-        static readonly string[] TerraceRear = { "building-apartment-02", "building-house-block-big" };
+        static readonly string[] TerraceRear =
+        {
+            "building-res-02", "building-res-06", "building-house-block-big",
+        };
 
         static readonly string[] TerraceCorner =
         {
-            "building-apartment-01", "building-hotel-small",
+            "building-res-01", "building-res-05", "building-apartment-01",
         };
 
         /// <summary>
@@ -1053,19 +1060,33 @@ namespace LivingCity.EditorTools
                 foreach (var agent in instance.GetComponentsInChildren<UnityEngine.AI.NavMeshAgent>(true))
                     Object.DestroyImmediate(agent);
 
-                // The pack's mover, and not a MonoBehaviour, so the sweep below cannot catch
+                // The wander script is the pack's own and lives in a namespace this assembly
+                // does not reference, so it goes by elimination: anything that is not one of
+                // ours, on a prefab that so far has none of ours. Null entries are missing
+                // scripts, which would break the build silently, and go too.
+                //
+                // BEFORE the CharacterController below, not after: the Animated People wander
+                // script [RequireComponent]s the controller, so deleting the controller first
+                // fails ("Can't remove CharacterController because People_WanderScript depends
+                // on it") and the walker keeps a second collider - the exact double-count the
+                // crosswalk triggers must never see.
+                foreach (var script in instance.GetComponentsInChildren<MonoBehaviour>(true))
+                    if (!script || script is not (HumanBehavior or PathFinding))
+                        Object.DestroyImmediate(script);
+
+                // The pack's mover, and not a MonoBehaviour, so the sweep above cannot catch
                 // it. It IS a collider: left on beside the capsule copied from the reference,
                 // the walker carries two, and every crosswalk trigger counts it twice.
                 foreach (var mover in instance.GetComponentsInChildren<CharacterController>(true))
                     Object.DestroyImmediate(mover);
 
-                // The wander script is the pack's own and lives in a namespace this assembly
-                // does not reference, so it goes by elimination: anything that is not one of
-                // ours, on a prefab that so far has none of ours. Null entries are missing
-                // scripts, which would break the build silently, and go too.
-                foreach (var script in instance.GetComponentsInChildren<MonoBehaviour>(true))
-                    if (!script || script is not (HumanBehavior or PathFinding))
-                        Object.DestroyImmediate(script);
+                // Synty characters ship every body variant in one prefab with the alternates
+                // disabled - a dozen extra SkinnedMeshRenderers of dead weight per walker,
+                // times two thousand walkers. The disabled variants go at authoring; the
+                // active default look is what walks.
+                foreach (var renderer in instance.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    if (renderer && (!renderer.gameObject.activeInHierarchy || !renderer.enabled))
+                        Object.DestroyImmediate(renderer.gameObject);
 
                 var animator = instance.GetComponent<Animator>();
                 var referenceAnimator = reference.GetComponent<Animator>();
@@ -1400,7 +1421,15 @@ namespace LivingCity.EditorTools
             File.Copy(basePath, target, overwrite: true);
             AssetDatabase.ImportAsset(PedestrianControllerPath, ImportAssetOptions.ForceUpdate);
 
-            return AssetDatabase.LoadAssetAtPath<AnimatorController>(PedestrianControllerPath);
+            // The snapshot's main object carries the snapshot's NAME, and an asset whose main
+            // object name disagrees with its filename warns on every import. Stamp it.
+            var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(PedestrianControllerPath);
+            if (controller && controller.name != "People Interaction Controller")
+            {
+                controller.name = "People Interaction Controller";
+                EditorUtility.SetDirty(controller);
+            }
+            return controller;
         }
 
         /// <summary>

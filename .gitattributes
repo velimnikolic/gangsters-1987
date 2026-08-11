@@ -1,0 +1,2 @@
+/Assets/CityKit/Buildings/Meshes/building-policestation.asset filter=lfs diff=lfs merge=lfs -text
+/Assets/CityKit/Catalog/Meshes/Mansion.asset filter=lfs diff=lfs merge=lfs -text

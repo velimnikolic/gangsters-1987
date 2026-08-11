@@ -1,0 +1,107 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 42c7a6e183ace48838f51cde888f32db, type: 3}
+  m_Name: OneBlockConfig
+  m_EditorClassIdentifier: Assembly-CSharp::LivingCity.Data.CityConfig
+  gridWidth: 7
+  gridHeight: 7
+  minArterialSpacing: 4
+  maxArterialSpacing: 4
+  minBoulevards: 0
+  maxBoulevards: 0
+  seed: 1
+  blockFillRatio: 0.92
+  buildingTintChance: 0.85
+  commercialTintChance: 1
+  groundPatchSize: 24
+  groundTintChance: 0.85
+  groundPaint: 1
+  sidewalkWidth: 11.960052
+  mainSidewalkWidth: 16.574999
+  alleyWidth: 6
+  partyWallGap: 0.05
+  maxFillerGap: 0.8
+  featureStripMin: 8
+  featureStripMax: 12
+  pocketParkChance: 0.5
+  serviceRoadWidth: 8
+  industrialWallInset: 1
+  chimneySmoke: 1
+  carCount: 6
+  pedestrianCount: 12
+  entitySpawnInterval: 0.1
+  wanderRoutesBeforeExit: {x: 1, y: 2}
+  carMinTravelDistance: 0
+  carMaxSpeed: 45
+  carHeadway: 0.9
+  vehicleTintChance: 0.85
+  pedestrianInteractions: 1
+  pedestrianPersonalSpace: 1.2
+  pedestrianMinSeparation: 0.6
+  chatChance: 0.06
+  chatDurationRange: {x: 6, y: 20}
+  argueFraction: 0.25
+  benchChance: 0.35
+  sitDurationRange: {x: 15, y: 60}
+  shopChance: 0.3
+  shopDurationRange: {x: 10, y: 40}
+  interactionCooldownRange: {x: 30, y: 90}
+  idleChance: 0.3
+  idleDurationRange: {x: 3, y: 10}
+  buildingVisitChance: 0.22
+  buildingStayRange: {x: 20, y: 120}
+  buildingSwapChance: 0.6
+  workMorningHour: 8.5
+  workEveningHour: 17.5
+  nightHomeHour: 22.5
+  commuteStaggerHours: 1.5
+  policeCarCount: 4
+  policeOfficerCount: 4
+  policeCarPatrolRoutes: {x: 2, y: 4}
+  policeCarRestRange: {x: 20, y: 60}
+  policeOfficerPatrolRoutes: {x: 2, y: 4}
+  policeOfficerStationStayRange: {x: 20, y: 90}
+  policeCarsStartAtStation: 1
+  policeOfficersStartAtStation: 1
+  bankVisitorCount: 2
+  bankVisitStayRange: {x: 30, y: 90}
+  bankVisitorGapRange: {x: 10, y: 40}
+  schoolChildCount: 8
+  schoolBusStops: 3
+  schoolStopDistance: {x: 60, y: 160}
+  schoolMorningHour: 7.5
+  schoolAfternoonHour: 15
+  schoolRunWindowHours: 1.5
+  schoolBusDwellSeconds: 8
+  schoolParentCount: 2
+  schoolParentStayRange: {x: 20, y: 60}
+  schoolParentGapRange: {x: 15, y: 50}
+  portChance: 0
+  dockWorkerCount: 6
+  portShipStayRange: {x: 45, y: 90}
+  portShipGapRange: {x: 20, y: 60}
+  pedestrianProbeInterval: 3
+  pedestrianSpawnBatch: 10
+  pedestrianRepathBudget: 24
+  pedestrianLodMidOrtho: 45
+  pedestrianLodFarOrtho: 60
+  pedestrianLodMidRate: 3
+  realSecondsPerGameHour: 60
+  startHour: 8
+  nightBrightness: 1
+  litLampBudget: 192
+  headlightRange: 12
+  headlightIntensity: 16
+  lampRange: 10
+  lampIntensity: 5
+  debugSingleZone: 1
+  debugZone: 0

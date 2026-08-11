@@ -300,6 +300,17 @@ namespace LivingCity.City
                     checkpoints.Reverse();
                 trajectory = pathFinding.GetPathWithCheckpoints(checkpoints, PathType.Road);
             }
+            // PATCH (Living City): guard the EMPTY route, not just the null one. During the
+            // Synty tile swap a broken link in the path graph made GetPath return an empty
+            // list for every car, and trajectory[0] below threw once per spawned car - three
+            // hundred exceptions that buried the actual cause. An empty route now logs once
+            // per car and falls through to the retry/deactivate branch like a null does.
+            if (trajectory != null && trajectory.Count == 0)
+            {
+                Debug.LogWarning($"{name}: path search returned an EMPTY route - the tile path " +
+                                 "graph is broken (are the road tiles' Path nodes linking?).", this);
+                trajectory = null;
+            }
             if (trajectory != null)
             {
                 // PATCH (Living City): randomPathTries decrements on every call, including
