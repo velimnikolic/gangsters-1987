@@ -53,7 +53,7 @@ Material:
     - _ZWrite: 1
     m_Colors:
     - _BaseColor: {r: 0.24, g: 0.42, b: 0.62, a: 1}
-    - _Color: {r: 0.23999995, g: 0.41999996, b: 0.62, a: 1}
+    - _Color: {r: 0.24, g: 0.42, b: 0.62, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
 --- !u!114 &7883328612519343016
