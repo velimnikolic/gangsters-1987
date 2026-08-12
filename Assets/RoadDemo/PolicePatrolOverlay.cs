@@ -248,9 +248,13 @@ namespace RoadDemo
             }
 
             // Clicks normally arrive through ClaimsClick (BuildingCardPicker runs
-            // first and asks); this is the fallback for a scene without the picker.
+            // first and asks); this is the fallback for a scene without the picker -
+            // and for the frames the picker stands down, which is the whole time the
+            // ledger is open. A click spent on a screen never reaches a cop either.
             var mouse = Mouse.current;
-            if (mouse != null && mouse.leftButton.wasPressedThisFrame && !_claimedThisFrame)
+            if (mouse != null && mouse.leftButton.wasPressedThisFrame && !_claimedThisFrame &&
+                !(UnityEngine.EventSystems.EventSystem.current &&
+                  UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject()))
                 Select(PickAt(mouse.position.ReadValue()));
             _claimedThisFrame = false;
             var kb = Keyboard.current;

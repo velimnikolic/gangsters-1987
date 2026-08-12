@@ -62,7 +62,10 @@ namespace LivingCity.EditorTools
         sealed class BlockRecipe
         {
             public string name;
-            public (string prefab, Vector3 pos, float yaw)[] members; // prefab = Catalog name
+            // prefab = Catalog name, or a Buildings name for the hand-made shells;
+            // mirrorX flips the member on its local X (localScale.x = -1), the one
+            // arrangement a yaw cannot reproduce.
+            public (string prefab, Vector3 pos, float yaw, bool mirrorX)[] members;
             public (string path, Vector3 pos, float yaw)[] props;     // full asset path; optional
         }
 
@@ -81,10 +84,10 @@ namespace LivingCity.EditorTools
             new()
             {
                 name = "residentialblock1",
-                members = new (string prefab, Vector3 pos, float yaw)[]
+                members = new (string prefab, Vector3 pos, float yaw, bool mirrorX)[]
                 {
-                    ("City_03", new Vector3(-9.9f, 0f, -5.85f), 0f),
-                    ("City_05", new Vector3(9.9f, 0f, 5.85f), 180f),
+                    ("City_03", new Vector3(-9.9f, 0f, -5.85f), 0f, false),
+                    ("City_05", new Vector3(9.9f, 0f, 5.85f), 180f, false),
                 },
                 // The S-court measures x[-20,16], z[-14,2] in the block frame (sub-
                 // building AABBs, offline); the alley x[-22,-15], z[6,18]; the east
@@ -150,6 +153,31 @@ namespace LivingCity.EditorTools
                     (PalmEnv + "SM_Env_Grass_Clump_01", new Vector3(14f, 0f, -13.5f), 300f),
                 },
             },
+
+            // 2026-08-12, second dictation: composed on the catalog's A1 pad (70 x 50,
+            // centred at world -555, 625), so this block is the A1 lot's own bake -
+            // RoadDemoBuilder gives an A1 interior residentialblock2 and nothing else.
+            // Transcribed from the pad: offsets are the scene position minus the pad
+            // centre, turned through the showroom's 180 baseline (x/z negated, yaw
+            // less 180). The west City_01 stood at 91.4 degrees by hand - snapped to
+            // 90 - and carries localScale.x = -1, mirrored deliberately in the scene.
+            new()
+            {
+                name = "residentialblock2",
+                members = new (string prefab, Vector3 pos, float yaw, bool mirrorX)[]
+                {
+                    ("City_01", new Vector3(19.092f, 0f, -0.699f), -90f, true),
+                    ("City_01", new Vector3(-10.3f, 0f, -8f), 0f, false),
+                    ("building-coffeeshop", new Vector3(-0.3f, 0f, 14.5f), 0f, false),
+                },
+                props = new (string path, Vector3 pos, float yaw)[]
+                {
+                    (PalmProp + "SM_Prop_Powerbox_01", new Vector3(19.8f, 0f, 3.5f), 180f),
+                    // both bins stand 3.24 m up in the scene - dictated that way, kept
+                    (PalmProp + "SM_Prop_Trash_Bin_03", new Vector3(0.19f, 3.24f, 9.64f), 180f),
+                    (PalmProp + "SM_Prop_Trash_Bin_03", new Vector3(-7.34f, 3.24f, -9.81f), 2.925f),
+                },
+            },
         };
 
         [MenuItem("Tools/City/Bake City Blocks", priority = 5)]
@@ -181,23 +209,30 @@ namespace LivingCity.EditorTools
                 var placedBuildings = 0;
                 try
                 {
-                    foreach (var (prefabName, pos, yaw) in recipe.members)
+                    foreach (var (prefabName, pos, yaw, mirrorX) in recipe.members)
                     {
+                        // Catalog first, then the hand-made shells in Buildings - the
+                        // showroom offers both and a dictated block may use either.
                         var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
-                            $"{SyntyBuildingCatalog.CatalogDir}/{prefabName}.prefab");
+                            $"{SyntyBuildingCatalog.CatalogDir}/{prefabName}.prefab")
+                            ?? AssetDatabase.LoadAssetAtPath<GameObject>(
+                            $"{SyntyKitExtractor.BuildingsDir}/{prefabName}.prefab");
                         if (!prefab)
                         {
                             // The catalog rebuild renames segments when splits or joins
                             // change - the recipe must name its dead member out loud.
                             Debug.LogError($"[Blocks] recipe '{recipe.name}': member " +
-                                           $"'{prefabName}' is not in the Catalog - the " +
-                                           "rebuild renamed or dropped it; fix the recipe.");
+                                           $"'{prefabName}' is in neither Catalog nor " +
+                                           "Buildings - the rebuild renamed or dropped " +
+                                           "it; fix the recipe.");
                             continue;
                         }
                         var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
                         instance.transform.SetParent(parentGo.transform, worldPositionStays: false);
                         instance.transform.localPosition = pos;
                         instance.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+                        if (mirrorX)
+                            instance.transform.localScale = new Vector3(-1f, 1f, 1f);
                         placedBuildings++;
                     }
 
@@ -231,6 +266,19 @@ namespace LivingCity.EditorTools
                     {
                         PrefabUtility.SaveAsPrefabAsset(parentGo, $"{BlocksDir}/{recipe.name}.prefab");
                         bakedCount++;
+
+                        // The footprint decides which lot can take the bake at all
+                        // (RoadDemoBuilder.Fits allows 1 m of overhang), so print it
+                        // instead of making someone measure the prefab by hand.
+                        var renderers = parentGo.GetComponentsInChildren<Renderer>();
+                        if (renderers.Length > 0)
+                        {
+                            var box = renderers[0].bounds;
+                            foreach (var r in renderers) box.Encapsulate(r.bounds);
+                            Debug.Log($"[Blocks] {recipe.name}: footprint {box.size.x:F2} x " +
+                                      $"{box.size.z:F2} m, centre {box.center.x:F2}, {box.center.z:F2} " +
+                                      "off the pivot.");
+                        }
                     }
                 }
                 finally

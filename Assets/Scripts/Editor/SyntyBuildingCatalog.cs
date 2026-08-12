@@ -23,12 +23,12 @@ namespace LivingCity.EditorTools
     {
         const string PalmDemo = "Assets/Synty/PolygonPalmCity/Scenes/Demo.unity";
         const string CityDemo = "Assets/Synty/PolygonCity/Scenes/Demo.unity";
-        const string ScenePath = "Assets/BuildingCatalog.unity";
+        internal const string ScenePath = "Assets/BuildingCatalog.unity";
 
         // Each pack shows in its own titled block of the grid so the stock never mixes.
         const string SectionPalm = "PALM CITY";
         const string SectionCity = "CITY";
-        const string SectionClubs = "NIGHTCLUBS";
+        internal const string SectionClubs = "NIGHTCLUBS";
         const string SectionPolice = "POLICE STATION";
         const string SectionGang = "GANG WARFARE";
         const string SectionCoffee = "COFFEE SHOP";
@@ -390,6 +390,12 @@ namespace LivingCity.EditorTools
                 }
                 index += columns; // the block row counts toward the camera fit below
             }
+
+            // 4. The lot pads: the sizes a composed block has to fit into, painted on
+            //    the floor west of the nightclubs so blocks get built against them,
+            //    with the loose props of both packs lined up west of those again.
+            BlockLotPads.Draw();
+            SyntyPropShowroom.Draw();
 
             var rows = (index + columns - 1) / columns;
             var centre = new Vector3((columns - 1) * spacing / 2f, 0f, (rows - 1) * spacing / 2f);

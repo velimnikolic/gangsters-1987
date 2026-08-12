@@ -3,14 +3,23 @@ using UnityEngine.Rendering;
 
 namespace RoadDemo
 {
-    // The demo's sky, self-contained. Unity's procedural skybox (the same sky the
-    // PalmCity pack's own demo scene uses) driven by the sun, the PalmCity cloud
-    // ring drifting over the grid, a neutral white sun that dips below the horizon
-    // at dusk, and a dim blue moon for the ground at night.
+    // The demo's sky, self-contained: the Synty sky dome sphere the PalmCity demo
+    // scene itself stands under (SM_Gen_Env_Skydome_01 wearing Generic_SimpleSky),
+    // tinted through day, sunset and night; the PalmCity cloud ring drifting over
+    // the grid; a neutral white sun that dips below the horizon at dusk; and a dim
+    // blue moon for the ground at night.
+    //
+    // Why the dome and not just a skybox: the pack's whole look is painted, and the
+    // dome carries a painted gradient with the pack's own horizon in it, while
+    // Unity's procedural skybox renders a physical one that reads as a different
+    // art style the moment it meets Synty geometry. The dome's shader also has
+    // scene fog switched off, so the sky keeps its colour no matter how thick the
+    // haze on the ground gets. A procedural skybox is still set behind it - it is
+    // never seen, but it is what URP falls back to for reflections.
     //
     // Deliberately NOT the city's CityWeather: its ClearDusk grade is a period
     // sepia tuned for the main game - on this demo it read as a permanent orange
-    // filter - and it clears the skybox to a solid horizon colour, the opposite of
+    // filter - and it clears the sky to a solid horizon colour, the opposite of
     // the sky the demo wants. The sun stays neutral white at height and only warms
     // as it approaches the horizon, so the sunset lives at sunset.
     public class DemoSky : MonoBehaviour
@@ -19,10 +28,14 @@ namespace RoadDemo
         public Light sun;
         public Transform cloudRing;    // slow drift
         public Renderer cloudRenderer; // night tint
+        public Transform skyDome;      // rides with the camera, stays at ground level
+        public Renderer skyDomeRenderer;
 
         Light _moon;
         Material _skybox;
         Material _cloudMat;
+        Material _domeMat;
+        Color _domeBase;
         Color _cloudTop, _cloudBase, _cloudFresnel;
 
         // -- the day's shape ---------------------------------------------------
@@ -34,9 +47,11 @@ namespace RoadDemo
         const float DuskAzimuth = 75f;
 
         // -- sun ---------------------------------------------------------------
-        static readonly Color SunHigh = new Color(1f, 0.972f, 0.925f);
+        // PalmCity's own demo sun, colour and strength both - the grade on top of
+        // it (DemoGrade) lifts exposure, so the old 1.35 clipped the pavements
+        static readonly Color SunHigh = new Color(1f, 0.957f, 0.839f);
         static readonly Color SunLow = new Color(1f, 0.72f, 0.45f);
-        const float SunIntensity = 1.35f;
+        const float SunIntensity = 1.1f;
 
         // -- night -------------------------------------------------------------
         static readonly Color MoonColour = new Color(0.35f, 0.42f, 0.72f);
@@ -51,15 +66,26 @@ namespace RoadDemo
         static readonly Color NightAmbientEquator = new Color(0f, 0.177f, 0.292f);
         static readonly Color NightAmbientGround = Color.black;
 
-        // light haze only - the fog must not eat the sky or the cloud ring
-        static readonly Color DayFog = new Color(0.74f, 0.80f, 0.88f);
+        // light haze only - the fog must not eat the cloud ring. The dome ignores
+        // it outright, so the colour here is PalmCity's own demo fog: a pale sky
+        // blue that fades the sand fringe out before the horizon reaches it.
+        static readonly Color DayFog = new Color(0.733f, 0.902f, 0.953f);
         static readonly Color NightFog = new Color(0.037f, 0.14f, 0.231f);
-        const float DayFogDensity = 0.0012f;
-        const float NightFogDensity = 0.0016f;
+        const float DayFogDensity = 0.0015f;
+        const float NightFogDensity = 0.0018f;
 
         static readonly Color CloudTopNight = new Color(0.10f, 0.12f, 0.20f);
         static readonly Color CloudBaseNight = new Color(0.05f, 0.07f, 0.12f);
         const float CloudDriftDegPerSec = 0.25f;
+
+        // -- sky dome ----------------------------------------------------------
+        // multiplied over the painted gradient, so white is the texture untouched;
+        // the sunset tint peaks in the middle of either twilight and is gone by the
+        // time the sky is fully day or fully night
+        static readonly Color DomeDay = Color.white;
+        static readonly Color DomeSunset = new Color(1f, 0.58f, 0.38f);
+        static readonly Color DomeNight = new Color(0.085f, 0.115f, 0.235f);
+        const float DomeRadius = 1200f;   // inside the camera's 1600 m far plane
 
         /// <summary>
         /// How much of the night is in force at this hour: 0 in full daylight, 1
@@ -123,6 +149,20 @@ namespace RoadDemo
                 _cloudFresnel = _cloudMat.GetColor("_Fresnel_Color");
             }
 
+            if (skyDomeRenderer && skyDome)
+            {
+                _domeMat = skyDomeRenderer.material;   // instance, as above
+                _domeBase = _domeMat.HasProperty("_BaseColor")
+                    ? _domeMat.GetColor("_BaseColor") : Color.white;
+
+                // the pack ships the dome at its own demo's size; scale it to a
+                // radius the camera stays well inside and the far plane still
+                // reaches, whatever the grid ends up measuring
+                var extents = skyDomeRenderer.bounds.extents;
+                float radius = Mathf.Max(0.01f, Mathf.Max(extents.x, extents.z));
+                skyDome.localScale *= DomeRadius / radius;
+            }
+
             Apply();
         }
 
@@ -132,6 +172,19 @@ namespace RoadDemo
 
             if (cloudRing)
                 cloudRing.Rotate(0f, CloudDriftDegPerSec * Time.deltaTime, 0f);
+
+            // the dome follows the camera across the map but never off the ground:
+            // it is a backdrop, and lifting it with the camera would tip the
+            // painted horizon out of line with the real one
+            if (skyDome)
+            {
+                var camera = Camera.main;
+                if (camera)
+                {
+                    Vector3 p = camera.transform.position;
+                    skyDome.position = new Vector3(p.x, 0f, p.z);
+                }
+            }
         }
 
         void Apply()
@@ -143,6 +196,22 @@ namespace RoadDemo
             ApplyMoon(hour, night);
             ApplyAtmosphere(night);
             ApplyClouds(night);
+            ApplyDome(night);
+        }
+
+        // Day -> night down the one ramp everything else uses, with the sunset
+        // warmth arced over the middle of each twilight: 4n(1-n) is zero at both
+        // ends of the ramp and one halfway across it.
+        void ApplyDome(float night)
+        {
+            if (_domeMat == null)
+                return;
+
+            Color tint = Color.Lerp(DomeDay, DomeNight, night);
+            tint = Color.Lerp(tint, DomeSunset, 4f * night * (1f - night) * 0.8f);
+            _domeMat.SetColor("_BaseColor",
+                new Color(_domeBase.r * tint.r, _domeBase.g * tint.g,
+                          _domeBase.b * tint.b, _domeBase.a));
         }
 
         // The sun makes the FULL circle: above the horizon by day, below it at
@@ -229,6 +298,8 @@ namespace RoadDemo
                 Destroy(_skybox);
             if (_cloudMat)
                 Destroy(_cloudMat);
+            if (_domeMat)
+                Destroy(_domeMat);
         }
     }
 }

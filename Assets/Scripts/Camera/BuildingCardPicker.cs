@@ -1,5 +1,6 @@
 using System.Text;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -100,6 +101,13 @@ namespace LivingCity.CameraRig
 
         void Pick(Vector2 screen)
         {
+            // The guard every other world picker in the project keeps: a click that
+            // landed on a screen - the ledger's page, the demo's top bar, the map
+            // beside the book - was spent there and must never also reach the city.
+            // Without it the book is click-through and a card opens behind it.
+            if (EventSystem.current && EventSystem.current.IsPointerOverGameObject())
+                return;
+
             if (ClickVeto != null && ClickVeto(screen))
             {
                 CloseCard();

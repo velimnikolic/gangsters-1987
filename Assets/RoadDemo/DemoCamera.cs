@@ -12,10 +12,16 @@ namespace RoadDemo
         public float yaw = 35f;
         public float pitch = 52f;
 
+        /// <summary>The book owns the screen while it is open - its own keys, its own
+        /// wheel (the roster scrolls on it) - and the map takes the half of the world
+        /// that is still visible. Nothing the player does over either may also steer
+        /// the camera underneath.</summary>
+        static bool BookOpen => LivingCity.UI.PersonnelAlmanac.IsOpen;
+
         void LateUpdate()
         {
             float dt = Time.unscaledDeltaTime;
-            var kb = Keyboard.current;
+            var kb = BookOpen ? null : Keyboard.current;
             if (kb != null)
             {
                 Vector2 pan = Vector2.zero;
@@ -33,7 +39,7 @@ namespace RoadDemo
                 if (kb.eKey.isPressed) yaw += 70f * dt;
             }
 
-            var mouse = Mouse.current;
+            var mouse = BookOpen ? null : Mouse.current;
             if (mouse != null)
             {
                 float scroll = mouse.scroll.ReadValue().y;
@@ -55,6 +61,11 @@ namespace RoadDemo
 
         void OnGUI()
         {
+            // IMGUI prints over every canvas in the scene, so the hint would land on
+            // the open book itself - and none of what it names works there anyway.
+            if (BookOpen)
+                return;
+
             // below the top bar, which spans the full width at 42 canvas-px
             // (reference height 1080) - convert to real screen pixels
             float barPx = UnityEngine.Screen.height / 1080f * 42f;

@@ -6,26 +6,54 @@ namespace RoadDemo
     // Lit windows after dark. Self-contained (the demo does not use the city's
     // NightWindows, and its own clock/night curve are the ones that drive this).
     //
-    // The pack did the hard part: the PolygonCity atlas ships an emission map,
-    // "Emissive_01", in which the artist painted exactly which texels are windows
-    // and signage. What it does not ship is any reason for that map to be used -
-    // every building material sits at _Enable_Emission 0 with a black emission
-    // colour, so nothing on a facade ever lights and the city after sunset is a
-    // field of silhouettes lit only by the street lamps.
+    // Two kinds of surface light up, and they are found in two different ways.
     //
-    // Turning that map on wholesale is the wrong fix: every window of every
-    // building and every sign in the city lights at once, at the same second and
-    // the same brightness, which reads as a switch being thrown rather than as a
-    // city. So the map is used as the artist's *list of candidates*, and the
-    // lighting picks from it:
+    //  - THE PANES. Every building in the demo is a CityKit bash of Synty wall
+    //    pieces, and the window openings in those pieces are separate quads with
+    //    a glass material on them - Generic_Glass_Opaque, PalmCity Glass_01,
+    //    GangWarfare_01_Glass, and so on. A glass material carries no emission
+    //    map, so lighting one lights the whole pane at a single flat value: a
+    //    window is either on or off, never half of it. Practically every
+    //    building in the kit has glass somewhere, so this is what makes the
+    //    whole city light rather than a scattering of it.
     //
-    //  - a quarter of the buildings never light at all - they keep the pack's own
-    //    materials untouched and stay dark all night;
-    //  - the rest are dealt one of Buckets lots. Each lot carries its own copy of
-    //    the emission map with a random share of the painted cells blacked out, so
-    //    only some of the windows and signs on that building are live;
-    //  - each lot also comes on at its own point in the dusk ramp, and some of
-    //    them go dark again in the small hours.
+    //  - THE ATLAS EMISSIVES. Some pack materials carry an emissive atlas but
+    //    never switch it on. Those get switched on too - that is where signage,
+    //    light fittings and shopfront glow live.
+    //
+    // What is deliberately NOT done is carving up those atlases. An earlier pass
+    // here read them as if the artist had painted each window on the facade
+    // texture, and blanked out random 32-texel cells to vary which windows a
+    // building lit. They are nothing of the sort: a Synty emissive atlas is a
+    // strip of flat colour SWATCHES that emissive faces are UV'd onto (open
+    // Emissive_01 and it is black but for a pedestrian signal, a TAXI sign and a
+    // palette band at the bottom). A cell grid laid over that cuts straight
+    // through a swatch, so every face using it came out lit in patches. The
+    // atlases are used whole.
+    //
+    // The variation is per BUILDING instead, which is the grain the city is built
+    // at anyway: a CityKit block is a nest of catalog prefabs - City_03_A,
+    // Apartment_02, Palm Tower - one renderer each. Every building is dealt a lot
+    // off its position, and a lot decides when in the dusk its windows come on,
+    // what colour and how bright they burn, and when it turns in. Which lots a
+    // building can draw depends on what it is:
+    //
+    //  - HOMES (anything inside a residential block, the apartments, the mansion)
+    //    include the possibility of not lighting at all. Somebody is asleep,
+    //    somebody is out, somebody's flat is empty - so a share of them stay dark
+    //    all night, and the rest go to bed at their own hour.
+    //  - TRADE - shops, offices, the yards - all light, and shut at closing time,
+    //    which runs from half nine to a quarter to one across the lots. One lot
+    //    of them does not close at all: the garage, the lobby, the sign nobody
+    //    has the key for.
+    //  - LANDMARKS - the Palm Tower - burn from dusk to dawn and are exempt from
+    //    everything below.
+    //
+    // And at four in the morning the city goes out. Every lot but the night-shift
+    // one and the landmarks fades away over the following half hour and stays
+    // down: by the time the sky itself starts to lift at a quarter to five there
+    // is next to nothing burning. The few that are left are drawn deliberately
+    // thin, so it is about a twentieth of the windows that were lit at midnight.
     //
     // This is not real illumination - a window casts nothing onto the pavement
     // opposite; DemoStreetLamps does that. What it gives is a city that reads as
@@ -33,6 +61,23 @@ namespace RoadDemo
     public class DemoNightWindows : MonoBehaviour
     {
         public DemoClock clock;
+
+        // The city blocks. Panes are only lit under here, which is what keeps the
+        // traffic's windscreens out of it; the atlas emissives are picked up
+        // scene-wide, so street furniture and signage still light. Left unset,
+        // panes are looked for everywhere and vehicle glass is filtered by name.
+        public Transform facadeRoot;
+
+        // Buildings that are never dark. Matched against the renderer's own name
+        // and every parent up to facadeRoot, so naming the catalog prefab is
+        // enough - the block it sits in does not have to know.
+        public string[] landmarks = { "Palm Tower" };
+
+        // What counts as somewhere people live. Same walk up the parents, which is
+        // what lets one name on the block - residentialblock1 - speak for the
+        // dozen-odd City_03_x / City_05_x buildings baked inside it.
+        static readonly string[] HomeNames =
+            { "residential", "apartment", "house-block", "mansion", "res-" };
 
         // Synty's Generic_Basic shader graph exposes emission as a plain Boolean
         // property plus a colour and a map - no keyword, so a SetFloat is all the
@@ -43,109 +88,161 @@ namespace RoadDemo
         static readonly int SyntyEmissionMap = Shader.PropertyToID("_Emission_Map");
         static readonly int EmissionColor = Shader.PropertyToID("_EmissionColor");
         static readonly int EmissionMap = Shader.PropertyToID("_EmissionMap");
+        static readonly int BaseColor = Shader.PropertyToID("_BaseColor");
+        static readonly int LegacyColor = Shader.PropertyToID("_Color");
 
-        // Warm tungsten. The emission map already decides WHICH texels light up,
-        // this only tints and scales them; a shade over 1 pushes into the bloom.
-        static readonly Color LitColour = new Color(1f, 0.87f, 0.62f);
-        const float Intensity = 1.5f;
+        // The lots, in one block so the indices below can name their ranges.
+        const int HomeLots = 10;     // 0 .. 9    flats and houses
+        const int VigilLot = 10;     //           the home lot that is up all night
+        const int TradeLot = 11;     // 11 .. 14  shops, offices, yards
+        const int TradeLots = 4;
+        const int LandmarkLot = 15;
+        const int Lots = 16;
 
-        const int Buckets = 5;
+        // Share of homes that never light: asleep, out, or empty.
+        const float HomeDark = 0.28f;
 
-        // Share of buildings that stay dark all night. With KillShare below this
-        // leaves roughly 40% of the painted windows in the city burning at once -
-        // enough to read as occupied, far from a christmas tree.
-        const float DarkShare = 0.25f;
+        // Share of the homes that DO light which draw the night-shift lot. This is
+        // what is still burning between four and six, so it is also the answer to
+        // "how much of the city is left on" - a twentieth of it.
+        const float VigilShare = 0.05f;
 
-        // Share of the emission map's cells blacked out per bucket, and the size
-        // of a cell in texels. 32 on the pack's 1024 map is about one window
-        // cluster: coarse enough to put out a whole row of a facade, fine enough
-        // that two buildings on the same bucket still differ from each other.
-        const float KillShare = 0.45f;
-        const int MaskCell = 32;
+        static readonly Color[] HomeTints =
+        {
+            new Color(1f, 0.86f, 0.60f),    // tungsten
+            new Color(1f, 0.80f, 0.52f),    // a warmer, older bulb
+            new Color(1f, 0.90f, 0.72f),    // soft white
+            new Color(0.98f, 0.84f, 0.66f), // shaded lamp
+        };
 
-        // Ceiling on a mask's resolution. The city's own atlas is 1024 and is
-        // copied texel for texel, but several packs ship 4096 emission maps and
-        // Buckets copies of one of those would be a third of a gigabyte. Anything
-        // larger is shrunk to this first, which costs the masks about 20 MB per
-        // source atlas - beside the 67 MB Unity already holds for a 4096 original.
-        const int MaxMaskSize = 1024;
+        static readonly Color[] TradeTints =
+        {
+            new Color(0.84f, 0.90f, 1f),    // fluorescent tube
+            new Color(0.92f, 0.95f, 1f),    // cold office
+            new Color(1f, 0.93f, 0.80f),    // shop window
+        };
 
-        // A building's night starts somewhere in the dusk ramp, not at the top of
-        // it, and the last of them only lights once it is properly dark.
-        static readonly float[] Onset = { 0f, 0.12f, 0.28f, 0.45f, 0.62f };
+        static readonly Color Tungsten = new Color(1f, 0.86f, 0.60f);
 
-        // Hour at which a bucket turns in, or 0 for the ones that burn till dawn -
-        // stairwells, signage, the people who never switch anything off.
-        static readonly float[] SleepHour = { 0f, 1.4f, 2.1f, 0f, 3.2f };
+        // A pane is a large flat surface and blooms far more readily than a
+        // painted swatch does, so the two are scaled apart.
+        const float PaneIntensity = 1.15f;
+        const float AtlasIntensity = 1.5f;
+
+        // Four in the morning, and how long the wave takes to pass over the city.
+        // Nothing brings the lights back: DemoSky starts lifting the sky at 4:45
+        // and by SmallHoursEnd it is light enough that nobody would switch one on.
+        const float BlackoutHour = 4f;
+        const float BlackoutFade = 0.6f;
 
         // The hour DemoSky's night curve finally reaches zero - its sunrise plus
-        // its twilight. The sleep fade applies below this and nowhere else, and it
-        // has to reach exactly this far: cut it off at sunrise itself and a window
-        // that went dark at three snaps back on for the last of the twilight,
-        // because the night it is being scaled by has not run out yet.
+        // its twilight. The blackout is lifted here and nowhere earlier, and it
+        // has to reach exactly this far: lift it at sunrise itself and the whole
+        // city snaps back on for the last of the twilight, because the night it is
+        // being scaled by has not run out yet.
         const float SmallHoursEnd = 7.25f;
 
-        readonly List<Material>[] _bucketMats = new List<Material>[Buckets];
-        readonly float[] _applied = new float[Buckets];
-        readonly List<Texture2D> _masks = new List<Texture2D>();
+        // How long a lot takes to go dark once its closing time comes round.
+        const float SleepFade = 0.8f;
+
+        // A closing time far enough out that no hour of the night reaches it: the
+        // lots that are still burning when the blackout arrives.
+        const float Never = 99f;
+
+        // How a lot burns through the night.
+        readonly struct Lot
+        {
+            public readonly float Onset;  // where in the dusk ramp it comes on
+            public readonly float Sleep;  // when it turns in, on the small-hours
+                                          // clock: 1 is one in the morning, -2 is
+                                          // ten at night, Never is not at all
+            public readonly Color Tint;   // colour times brightness, at full night
+            public readonly bool Vigil;   // exempt from the four o'clock blackout
+
+            public Lot(float onset, float sleep, Color tint, bool vigil)
+            {
+                Onset = onset;
+                Sleep = sleep;
+                Tint = tint;
+                Vigil = vigil;
+            }
+        }
+
+        enum Kind { Home, Trade, Landmark }
+
+        // A driven material and the colour it burns at full night.
+        readonly struct Lamp
+        {
+            public readonly Material Material;
+            public readonly Color Colour;
+
+            public Lamp(Material material, Color colour)
+            {
+                Material = material;
+                Colour = colour;
+            }
+        }
+
+        Lot[] _lots;
+        readonly List<Lamp>[] _lamps = new List<Lamp>[Lots];
+        readonly float[] _applied = new float[Lots];
 
         void Start()
         {
-            for (int i = 0; i < Buckets; i++)
+            _lots = BuildLots();
+            for (int i = 0; i < Lots; i++)
             {
-                _bucketMats[i] = new List<Material>();
+                _lamps[i] = new List<Lamp>();
                 _applied[i] = -1f;
             }
 
-            // one masked set of the map per source texture, made once and shared
-            var maskSets = new Dictionary<Texture, Texture2D[]>();
-            // one clone per (pack material, bucket) - buildings on the same bucket
-            // share it, so the whole city costs a couple of dozen materials
+            // one clone per (pack material, lot) - buildings on the same lot share
+            // it, so the whole city costs a few hundred materials, all on the one
+            // Synty shader and so all still batched by the SRP batcher
             var clones = new Dictionary<(Material, int), Material>();
-
-            int litBuildings = 0, darkBuildings = 0;
+            int panes = 0, signs = 0, dark = 0;
 
             foreach (var renderer in FindObjectsByType<Renderer>(FindObjectsSortMode.None))
             {
+                bool facade = !facadeRoot || renderer.transform.IsChildOf(facadeRoot);
                 var materials = renderer.sharedMaterials;
-
-                // does this renderer carry anything the artist painted windows on?
-                bool candidate = false;
-                for (int i = 0; i < materials.Length && !candidate; i++)
-                    candidate = materials[i] && UnlitEmissionMap(materials[i]);
-                if (!candidate)
-                    continue;
-
-                int bucket = BucketOf(renderer.transform.position);
-                if (bucket < 0)
-                {
-                    // left on the pack's own materials: never lights, costs nothing
-                    darkBuildings++;
-                    continue;
-                }
-
+                int lot = -2; // not worked out yet
                 bool touched = false;
+
                 for (int i = 0; i < materials.Length; i++)
                 {
                     var original = materials[i];
                     if (!original)
                         continue;
 
-                    var map = UnlitEmissionMap(original);
-                    if (!map)
+                    bool pane = facade && IsUnlitPane(original);
+                    if (!pane && !UnlitEmissionMap(original))
                         continue;
 
-                    if (!clones.TryGetValue((original, bucket), out var clone))
+                    if (lot == -2)
                     {
-                        if (!maskSets.TryGetValue(map, out var masks))
-                        {
-                            masks = BuildMasks(map);
-                            maskSets[map] = masks;
-                        }
+                        var kind = KindOf(renderer.transform);
+                        lot = LotOf(renderer.transform.position, kind);
+                        if (lot < 0)
+                            dark++;
+                    }
 
-                        clone = MakeNightMaterial(original, masks?[bucket]);
-                        clones[(original, bucket)] = clone;
-                        _bucketMats[bucket].Add(clone);
+                    // a home nobody is home in: left on the pack's own materials,
+                    // never lights, costs nothing
+                    if (lot < 0)
+                        break;
+
+                    if (!clones.TryGetValue((original, lot), out var clone))
+                    {
+                        clone = MakeNightMaterial(original, pane);
+                        clones[(original, lot)] = clone;
+
+                        float intensity = pane
+                            ? PaneIntensity / PaneCoverage(original)
+                            : AtlasIntensity;
+                        _lamps[lot].Add(new Lamp(clone, _lots[lot].Tint * intensity));
+
+                        if (pane) panes++; else signs++;
                     }
 
                     materials[i] = clone;
@@ -153,40 +250,197 @@ namespace RoadDemo
                 }
 
                 if (touched)
-                {
                     // never the shared array in place - assigning it back is what
                     // actually swaps the materials on the renderer
                     renderer.sharedMaterials = materials;
-                    litBuildings++;
-                }
             }
 
-            if (litBuildings == 0)
+            if (panes + signs == 0)
             {
                 enabled = false;
-                Debug.LogWarning("[RoadDemo] No unlit emissive materials found - facades will " +
-                                 "stay as the pack left them.", this);
+                Debug.LogWarning("[RoadDemo] Nothing to light after dark - no glass and no unlit " +
+                                 "emissive materials found; facades stay as the pack left them.",
+                                 this);
                 return;
             }
 
-            Debug.Log($"[RoadDemo] Night windows: {litBuildings} facades on {clones.Count} " +
-                      $"materials across {Buckets} lots, {darkBuildings} left dark.", this);
+            Debug.Log($"[RoadDemo] Night windows: {panes} pane materials and {signs} emissive " +
+                      $"atlases across {Lots} lots, {dark} buildings left dark.", this);
+        }
+
+        /// <summary>
+        /// The lot table. Seeded, so a run looks the same twice and a lot's
+        /// behaviour can be recognised across the city.
+        /// </summary>
+        static Lot[] BuildLots()
+        {
+            var lots = new Lot[Lots];
+            var rng = new System.Random(9187);
+
+            // Homes come on across the whole of the dusk - the ones at the top of
+            // the ramp are people who were already in, the last are people still
+            // on their way - and turn in somewhere between half past midnight and
+            // half three.
+            for (int i = 0; i < HomeLots; i++)
+                lots[i] = new Lot(
+                    0.05f + 0.6f * (i / (float)(HomeLots - 1)),
+                    0.5f + 3f * (float)rng.NextDouble(),
+                    Pick(HomeTints, rng) * (0.72f + 0.4f * (float)rng.NextDouble()),
+                    false);
+
+            // The night shift: a landing light, a baby, somebody working. Dim, and
+            // the only thing besides the landmarks still on at five.
+            lots[VigilLot] = new Lot(0.12f, Never, Tungsten * 0.7f, true);
+
+            // Trade lights on early - the sign goes on before the light does - and
+            // shuts at closing time, which is spread from half nine to one in the
+            // morning across the lots. All but the last of them: something has to
+            // still be burning for the four o'clock blackout to take, so the last
+            // lot is the all-night end of the trade - the garage, the hotel lobby,
+            // the signage nobody has the key for.
+            for (int i = 0; i < TradeLots; i++)
+            {
+                bool allNight = i == TradeLots - 1;
+                lots[TradeLot + i] = new Lot(
+                    0.3f * (float)rng.NextDouble(),
+                    allNight ? Never : -2.5f + 3.2f * (i / (TradeLots - 2f)),
+                    Pick(TradeTints, rng) * (0.9f + 0.35f * (float)rng.NextDouble()),
+                    false);
+            }
+
+            lots[LandmarkLot] = new Lot(0f, Never, Tungsten * 1.15f, true);
+            return lots;
+        }
+
+        static Color Pick(Color[] from, System.Random rng) => from[rng.Next(from.Length)];
+
+        /// <summary>
+        /// What this renderer belongs to, read off its own name and its parents'.
+        /// The nearest name wins, so a landmark parked inside a residential block
+        /// is still a landmark.
+        /// </summary>
+        Kind KindOf(Transform of)
+        {
+            for (var node = of; node && node != facadeRoot; node = node.parent)
+            {
+                var name = node.name;
+
+                if (landmarks != null)
+                    foreach (var landmark in landmarks)
+                        if (!string.IsNullOrEmpty(landmark) && Mentions(name, landmark))
+                            return Kind.Landmark;
+
+                foreach (var home in HomeNames)
+                    if (Mentions(name, home))
+                        return Kind.Home;
+            }
+
+            return Kind.Trade;
+        }
+
+        static bool Mentions(string name, string word) =>
+            name.IndexOf(word, System.StringComparison.OrdinalIgnoreCase) >= 0;
+
+        /// <summary>
+        /// Which lot a building draws, or -1 for a home that stays dark. Hashed
+        /// off its position so it is stable: the same building lights the same way
+        /// every run, and nothing has to be stored per renderer.
+        /// </summary>
+        static int LotOf(Vector3 position, Kind kind)
+        {
+            if (kind == Kind.Landmark)
+                return LandmarkLot;
+
+            float r = Hash01(position);
+
+            if (kind == Kind.Trade)
+                return TradeLot + Mathf.Min(TradeLots - 1, (int)(r * TradeLots));
+
+            if (r < HomeDark)
+                return -1;
+
+            // renormalised twice so the shares below are shares of the homes that
+            // light, not of all of them
+            r = (r - HomeDark) / (1f - HomeDark);
+            if (r < VigilShare)
+                return VigilLot;
+
+            r = (r - VigilShare) / (1f - VigilShare);
+            return Mathf.Min(HomeLots - 1, (int)(r * HomeLots));
+        }
+
+        static float Hash01(Vector3 position)
+        {
+            unchecked
+            {
+                uint h = (uint)(Mathf.RoundToInt(position.x) * 73856093
+                              ^ Mathf.RoundToInt(position.y) * 83492791
+                              ^ Mathf.RoundToInt(position.z) * 19349663);
+                h ^= h >> 13;
+                h *= 2654435761u;
+                h ^= h >> 16;
+
+                return (h & 0xFFFFFF) / (float)0x1000000;
+            }
+        }
+
+        /// <summary>
+        /// Whether this is a window pane waiting to be lit: a glass material that
+        /// is not already emitting.
+        ///
+        /// Matched on the name because that is the only thing the kits agree on -
+        /// the panes come from five different packs (Generic_Glass_Opaque,
+        /// PalmCity Glass_01..03, PolygonGangWarfare_01_Glass, the police
+        /// station's Glass_01 and Security_Glass_*) with nothing else in common.
+        /// Two families of name have to be kept out: a vehicle's windscreen, and
+        /// the "Glasses" a character wears.
+        /// </summary>
+        static bool IsUnlitPane(Material material)
+        {
+            var name = material.name;
+            if (!Mentions(name, "Glass"))
+                return false;
+            if (Mentions(name, "Vehicle") || Mentions(name, "Glasses"))
+                return false;
+
+            return !AlreadyEmissive(material);
+        }
+
+        /// <summary>
+        /// How much of a lit pane actually reaches the screen: its albedo alpha.
+        ///
+        /// Most of the kits' glass is alpha-blended - PolygonCity's Misc/Glass_01,
+        /// the pane on the bulk of the residential bake, sits at 0.44 - and a
+        /// blended surface has its emission multiplied by that alpha on the way
+        /// out. Dividing the lot's brightness by it puts every pane on screen at
+        /// the value the lot asked for, whatever its glass was set to. Floored,
+        /// so a nearly invisible pane cannot ask for a hundred times the light.
+        /// </summary>
+        static float PaneCoverage(Material material)
+        {
+            float alpha = 1f;
+            if (material.HasProperty(BaseColor))
+                alpha = material.GetColor(BaseColor).a;
+            else if (material.HasProperty(LegacyColor))
+                alpha = material.GetColor(LegacyColor).a;
+
+            return Mathf.Clamp(alpha, 0.35f, 1f);
         }
 
         /// <summary>
         /// The emission map of a material that carries one but does not currently
         /// use it, or null.
         ///
-        /// Two things have to be kept out. Anything already burning - the PalmCity
-        /// props and vehicles, the police station's security panels - is the pack
-        /// looking as intended and is not ours to drive. And several of the pack's
-        /// own materials have a NORMAL map sitting in the emission slot (every
-        /// PolygonCity _B and _C variant does); lighting those paints the facade in
-        /// normal-map lilac, so the texture has to actually be an emissive one.
+        /// Anything already burning - the PalmCity facades and vehicles, the
+        /// police station's security panels - is the pack looking as intended and
+        /// is not ours to drive. And several of the pack's own materials have a
+        /// NORMAL map sitting in the emission slot; lighting those paints the
+        /// facade in normal-map lilac, so the texture has to actually be an
+        /// emissive one.
         /// </summary>
         static Texture UnlitEmissionMap(Material material)
         {
-            if (material.HasProperty(EnableEmission) && material.GetFloat(EnableEmission) > 0.5f)
+            if (AlreadyEmissive(material))
                 return null;
 
             Texture map = null;
@@ -194,25 +448,22 @@ namespace RoadDemo
                 map = material.GetTexture(SyntyEmissionMap);
             if (!map && material.HasProperty(EmissionMap))
                 map = material.GetTexture(EmissionMap);
-            if (!map)
-                return null;
 
-            if (map.name.IndexOf("Emissive", System.StringComparison.OrdinalIgnoreCase) < 0)
-                return null;
-
-            // a material with no Synty toggle but an already-bright standard colour
-            // is emissive by the other convention - leave it alone too
-            if (!material.HasProperty(EnableEmission) && material.HasProperty(EmissionColor))
-            {
-                var c = material.GetColor(EmissionColor);
-                if (c.maxColorComponent > 0.01f)
-                    return null;
-            }
-
-            return map;
+            return map && Mentions(map.name, "Emissive") ? map : null;
         }
 
-        Material MakeNightMaterial(Material original, Texture2D mask)
+        // Emissive by either convention: the Synty toggle, or - for materials that
+        // have no toggle - a standard emission colour that is already bright.
+        static bool AlreadyEmissive(Material material)
+        {
+            if (material.HasProperty(EnableEmission))
+                return material.GetFloat(EnableEmission) > 0.5f;
+
+            return material.HasProperty(EmissionColor)
+                   && material.GetColor(EmissionColor).maxColorComponent > 0.01f;
+        }
+
+        static Material MakeNightMaterial(Material original, bool pane)
         {
             // a clone, never the asset: writing emission onto a shared material
             // edits the file on disk the moment this runs in the editor, and leaves
@@ -224,12 +475,16 @@ namespace RoadDemo
             clone.EnableKeyword("_EMISSION");
             clone.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
 
-            if (mask)
+            // A pane has no emission map and must light flat across the whole
+            // quad. Synty's graph defaults an unbound map to white, which would do
+            // it, but only that graph promises so - a white texture in the slot
+            // gets the same result out of anything.
+            if (pane)
             {
                 if (clone.HasProperty(SyntyEmissionMap))
-                    clone.SetTexture(SyntyEmissionMap, mask);
+                    clone.SetTexture(SyntyEmissionMap, Texture2D.whiteTexture);
                 if (clone.HasProperty(EmissionMap))
-                    clone.SetTexture(EmissionMap, mask);
+                    clone.SetTexture(EmissionMap, Texture2D.whiteTexture);
             }
 
             // dark until the clock says otherwise - Start can run at noon
@@ -241,182 +496,21 @@ namespace RoadDemo
             return clone;
         }
 
-        /// <summary>
-        /// One copy of the emission map per bucket, each with a different random
-        /// share of its cells blacked out, so a facade shows only some of the
-        /// windows and signs the artist painted on it.
-        ///
-        /// The source is re-decoded from the PNG rather than read off the imported
-        /// texture: the pack ships these without Read/Write enabled, and flipping
-        /// that on 100-odd textures to run a demo is not a trade worth making.
-        /// </summary>
-        Texture2D[] BuildMasks(Texture source)
-        {
-            var readable = Decode(source);
-            if (!readable)
-            {
-                Debug.LogWarning($"[RoadDemo] Could not read {source.name}; its buildings light " +
-                                 "every painted window instead of a share of them.", this);
-                return null;
-            }
-
-            int w = readable.width, h = readable.height;
-            var painted = readable.GetPixels32();
-            Destroy(readable); // the pixels are ours now; a 4096 decode is 67 MB
-
-            int factor = Mathf.Max(Mathf.CeilToInt(w / (float)MaxMaskSize),
-                                   Mathf.CeilToInt(h / (float)MaxMaskSize));
-            if (factor > 1)
-                painted = Shrink(painted, ref w, ref h, factor);
-
-            var masks = new Texture2D[Buckets];
-
-            for (int b = 0; b < Buckets; b++)
-            {
-                var pixels = (Color32[])painted.Clone();
-                // seeded per bucket, so a run looks the same twice and a bucket's
-                // pattern can be recognised across the city
-                var rng = new System.Random(9187 + b * 31);
-
-                for (int cy = 0; cy < h; cy += MaskCell)
-                {
-                    for (int cx = 0; cx < w; cx += MaskCell)
-                    {
-                        if (rng.NextDouble() >= KillShare)
-                            continue;
-
-                        int xEnd = Mathf.Min(cx + MaskCell, w);
-                        int yEnd = Mathf.Min(cy + MaskCell, h);
-                        for (int y = cy; y < yEnd; y++)
-                        {
-                            int row = y * w;
-                            for (int x = cx; x < xEnd; x++)
-                                pixels[row + x] = new Color32(0, 0, 0, 255);
-                        }
-                    }
-                }
-
-                var mask = new Texture2D(w, h, TextureFormat.RGBA32, true)
-                {
-                    name = source.name + $" (night {b})",
-                    wrapMode = source.wrapMode,
-                    filterMode = source.filterMode,
-                    anisoLevel = source.anisoLevel,
-                };
-                mask.SetPixels32(pixels);
-                mask.Apply(true, true); // mips, then off the CPU - nothing reads it again
-                masks[b] = mask;
-                _masks.Add(mask);
-            }
-
-            return masks;
-        }
-
-        /// <summary>
-        /// Box-shrinks an emission map by taking the BRIGHTEST texel of each block
-        /// rather than their average.
-        ///
-        /// Averaging is the wrong filter here: a painted window is a handful of lit
-        /// texels in a field of black, and the mean of a 4x4 block that holds one
-        /// of them is a sixteenth as bright - the windows would survive the shrink
-        /// as a smear. Taking the maximum keeps every painted patch at the artist's
-        /// own brightness and only costs it a little precision at its edge.
-        /// </summary>
-        static Color32[] Shrink(Color32[] source, ref int width, ref int height, int factor)
-        {
-            int w = Mathf.Max(1, width / factor);
-            int h = Mathf.Max(1, height / factor);
-            var shrunk = new Color32[w * h];
-
-            for (int y = 0; y < h; y++)
-            {
-                int sy0 = y * factor, sy1 = Mathf.Min(sy0 + factor, height);
-                int row = y * w;
-
-                for (int x = 0; x < w; x++)
-                {
-                    int sx0 = x * factor, sx1 = Mathf.Min(sx0 + factor, width);
-                    Color32 brightest = default;
-                    int best = -1;
-
-                    for (int sy = sy0; sy < sy1; sy++)
-                    {
-                        int sourceRow = sy * width;
-                        for (int sx = sx0; sx < sx1; sx++)
-                        {
-                            var texel = source[sourceRow + sx];
-                            int sum = texel.r + texel.g + texel.b;
-                            if (sum > best)
-                            {
-                                best = sum;
-                                brightest = texel;
-                            }
-                        }
-                    }
-
-                    shrunk[row + x] = brightest;
-                }
-            }
-
-            width = w;
-            height = h;
-            return shrunk;
-        }
-
-        // LoadImage gives a readable texture whatever the importer was told, which
-        // is the only way at the source pixels without re-importing the pack.
-        static Texture2D Decode(Texture source)
-        {
-#if UNITY_EDITOR
-            var path = UnityEditor.AssetDatabase.GetAssetPath(source);
-            if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
-            {
-                var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-                if (texture.LoadImage(System.IO.File.ReadAllBytes(path)))
-                    return texture;
-                Destroy(texture);
-            }
-#endif
-            return null;
-        }
-
-        /// <summary>
-        /// Which lot a building draws, or -1 for one that stays dark. Hashed off
-        /// its position so it is stable: the same building lights the same way
-        /// every run, and nothing has to be stored per renderer.
-        /// </summary>
-        static int BucketOf(Vector3 position)
-        {
-            unchecked
-            {
-                uint h = (uint)(Mathf.RoundToInt(position.x) * 73856093
-                              ^ Mathf.RoundToInt(position.y) * 83492791
-                              ^ Mathf.RoundToInt(position.z) * 19349663);
-                h ^= h >> 13;
-                h *= 2654435761u;
-                h ^= h >> 16;
-
-                float r = (h & 0xFFFFFF) / (float)0x1000000;
-                if (r < DarkShare)
-                    return -1;
-
-                int bucket = (int)((r - DarkShare) / (1f - DarkShare) * Buckets);
-                return Mathf.Clamp(bucket, 0, Buckets - 1);
-            }
-        }
-
         void LateUpdate()
         {
             float hour = clock ? clock.Hour : 12f;
             float night = DemoSky.Nightness(hour);
+            float blackout = Blackout(hour);
 
-            for (int b = 0; b < Buckets; b++)
+            for (int b = 0; b < Lots; b++)
             {
-                var materials = _bucketMats[b];
-                if (materials.Count == 0)
+                var lamps = _lamps[b];
+                if (lamps.Count == 0)
                     continue;
 
-                float lit = BucketNight(b, hour, night);
+                float lit = LotNight(_lots[b], hour, night);
+                if (!_lots[b].Vigil)
+                    lit *= blackout;
 
                 // a colour write per material per frame is cheap, but it also
                 // dirties them and there is no reason to do it while the sun is
@@ -425,52 +519,68 @@ namespace RoadDemo
                     continue;
 
                 _applied[b] = lit;
-                var emission = LitColour * (Intensity * lit);
 
-                foreach (var material in materials)
+                foreach (var lamp in lamps)
                 {
-                    if (!material)
+                    if (!lamp.Material)
                         continue;
-                    if (material.HasProperty(SyntyEmissionColor))
-                        material.SetColor(SyntyEmissionColor, emission);
-                    if (material.HasProperty(EmissionColor))
-                        material.SetColor(EmissionColor, emission);
+
+                    var emission = lamp.Colour * lit;
+                    if (lamp.Material.HasProperty(SyntyEmissionColor))
+                        lamp.Material.SetColor(SyntyEmissionColor, emission);
+                    if (lamp.Material.HasProperty(EmissionColor))
+                        lamp.Material.SetColor(EmissionColor, emission);
                 }
             }
         }
 
         /// <summary>
-        /// How lit this bucket is: the demo's one night curve, entered late by its
-        /// own onset, and given up again at its own bedtime.
+        /// How lit this lot is: the demo's one night curve, entered late by the
+        /// lot's own onset, and given up again at its own bedtime.
         /// </summary>
-        static float BucketNight(int bucket, float hour, float night)
+        static float LotNight(Lot lot, float hour, float night)
         {
-            float onset = Onset[bucket];
-            float lit = onset <= 0f ? night : Mathf.Clamp01((night - onset) / (1f - onset));
+            float lit = lot.Onset <= 0f
+                ? night
+                : Mathf.Clamp01((night - lot.Onset) / (1f - lot.Onset));
 
-            float sleep = SleepHour[bucket];
-            if (sleep > 0f && hour < SmallHoursEnd)
-                lit *= 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(sleep, sleep + 0.8f, hour));
+            // The small-hours clock, on which the evening runs negative into
+            // midnight: half nine is -2.5, one in the morning is 1. Closing times
+            // are written the same way, so a shop that shuts before midnight and a
+            // flat whose light goes off at three are the one piece of arithmetic,
+            // and neither of them can be tripped by the daylight hours - those sit
+            // far below any lot's closing time, and are zero night anyway.
+            float small = hour >= 12f ? hour - 24f : hour;
 
-            return lit;
+            return lit * (1f - Mathf.SmoothStep(0f, 1f,
+                Mathf.InverseLerp(lot.Sleep, lot.Sleep + SleepFade, small)));
+        }
+
+        /// <summary>
+        /// The four o'clock blackout: 1 the rest of the night, 0 from half four
+        /// until the night curve itself runs out. Every lot but the night shift
+        /// and the landmarks is scaled by it.
+        /// </summary>
+        static float Blackout(float hour)
+        {
+            if (hour <= BlackoutHour || hour >= SmallHoursEnd)
+                return 1f;
+
+            return 1f - Mathf.SmoothStep(0f, 1f,
+                Mathf.InverseLerp(BlackoutHour, BlackoutHour + BlackoutFade, hour));
         }
 
         void OnDestroy()
         {
-            foreach (var materials in _bucketMats)
+            foreach (var lamps in _lamps)
             {
-                if (materials == null)
+                if (lamps == null)
                     continue;
-                foreach (var material in materials)
-                    if (material)
-                        Destroy(material);
-                materials.Clear();
+                foreach (var lamp in lamps)
+                    if (lamp.Material)
+                        Destroy(lamp.Material);
+                lamps.Clear();
             }
-
-            foreach (var mask in _masks)
-                if (mask)
-                    Destroy(mask);
-            _masks.Clear();
         }
     }
 }
