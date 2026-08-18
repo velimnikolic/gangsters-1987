@@ -14,9 +14,15 @@ namespace LivingCity.EditorTools
     /// the shooting READS - which is the only question this scene exists to answer. So: a
     /// plane, a light, a camera, two rigs and a timeline. It runs the moment you press Play.
     ///
-    /// The characters are the _Rig prefabs rather than the _AI ones. Same models, same humanoid
-    /// avatars, but without HumanBehavior and PathFinding, which would spend the whole scene
-    /// logging that they cannot find a route.
+    /// The characters are plain Synty character prefabs: Humanoid, an Avatar, and nothing
+    /// else - no behaviour to strip, no NavMeshAgent to log that it cannot find a route.
+    /// They replaced the polyperfect _Rig prefabs when that pack was dropped; the aim is
+    /// IK-driven off the humanoid rig, so the swap costs the scene nothing.
+    ///
+    /// One thing does NOT carry over: WeaponSocket's grip constants were set by eye on the
+    /// old skeleton, and the Synty hand bone is oriented differently, so the revolver may
+    /// sit wrong in the fist until it gets the gizmo pass (WeaponSocket.cs) - the same pass
+    /// the player prefab needs, and the same numbers once it is done.
     /// </summary>
     public static class ShootingDemoSetup
     {
@@ -25,9 +31,12 @@ namespace LivingCity.EditorTools
         const string RevolverPath = "Assets/Weapons/Revolver.obj";
         const string WeaponMaterialDir = "Assets/Materials/Weapons";
 
-        const string Rigs = "Assets/polyperfect/Low Poly Epic City/T/- Prefabs_T/People_T/Rigs_T/";
-        const string ShooterPrefab = Rigs + "man-mafia_Rig.prefab";
-        const string VictimPrefab = Rigs + "man-casual_Rig.prefab";
+        // The gunman is a Gang Warfare mafioso, the man he shoots a City civilian - the two
+        // packs the rest of the game is built from, so the scene reads like the city does.
+        const string ShooterPrefab =
+            "Assets/Synty/PolygonGangWarfare/Prefabs/Character/SM_Chr_Italian_Gangster_01.prefab";
+        const string VictimPrefab =
+            "Assets/Synty/PolygonCity/Prefabs/Characters/Character_Male_Jacket.prefab";
 
         /// <summary>How far apart they stand. Close enough to read as a confrontation.</summary>
         const float Range = 3.2f;
@@ -53,7 +62,9 @@ namespace LivingCity.EditorTools
 
             if (!shooterSource || !victimSource)
             {
-                Debug.LogError($"[ShootingDemo] Missing character rigs under {Rigs}.");
+                Debug.LogError($"[ShootingDemo] Missing character prefab: " +
+                               $"{(shooterSource ? VictimPrefab : ShooterPrefab)}. Are the " +
+                               "PolygonGangWarfare and PolygonCity packs imported?");
                 return;
             }
 
@@ -81,8 +92,12 @@ namespace LivingCity.EditorTools
             EditorSceneManager.SaveScene(scene, ScenePath);
 
             Selection.activeGameObject = director.gameObject;
-            Debug.Log($"[ShootingDemo] Built {ScenePath}. Press Play: the gunman waits, raises " +
-                      "the revolver, fires, and the other man goes down.", director);
+            Debug.Log($"[ShootingDemo] Built {ScenePath} with Synty characters. Press Play: the " +
+                      "gunman waits, raises the revolver, fires, and the other man goes down.\n" +
+                      "[ShootingDemo] The grip constants on WeaponSocket were authored on the " +
+                      "old skeleton - if the revolver sits wrong in the fist, drag it into " +
+                      "place in the Scene view and copy the transform back onto the component.",
+                      director);
         }
 
         /// <summary>
@@ -126,15 +141,26 @@ namespace LivingCity.EditorTools
             instance.transform.position = position;
 
             var animator = instance.GetComponent<Animator>();
-            if (animator)
+            if (!animator)
             {
-                animator.runtimeAnimatorController = controller;
-
-                // Same rule as every spawned pedestrian: the transform is driven by script, so
-                // root motion would fight it. Here it also keeps the death clip from sliding
-                // the body off its mark.
-                animator.applyRootMotion = false;
+                Debug.LogError($"[ShootingDemo] '{source.name}' has no Animator on its root - " +
+                               "the aim IK and the death clip both need one.");
+                return instance;
             }
+
+            // The aim is Animator IK, which only exists on a Humanoid rig. Synty ships its
+            // characters that way; say so out loud if a pack update ever changes it, because
+            // the symptom otherwise is a gunman who simply never raises his arm.
+            if (!animator.isHuman)
+                Debug.LogError($"[ShootingDemo] '{source.name}' is not imported as Humanoid - " +
+                               "the gunman's aim IK will do nothing.");
+
+            animator.runtimeAnimatorController = controller;
+
+            // Same rule as every spawned pedestrian: the transform is driven by script, so
+            // root motion would fight it. Here it also keeps the death clip from sliding
+            // the body off its mark.
+            animator.applyRootMotion = false;
 
             return instance;
         }

@@ -25,10 +25,10 @@ namespace LivingCity.EditorTools
         const string GeneratedRoot = "Assets/ci/Generated Sounds/";
         const string ConfigDir = "Assets/Configs";
 
-        // The one crowd recording anywhere in the project. It ships with the people pack and
-        // sat unused; the 400 pack has no walla at all, so this IS the murmur.
-        const string CrowdLoop =
-            "Assets/polyperfect/Low Poly Animated People/- Sounds/crowd-walking.ogg";
+        // The only crowd recording the project ever had shipped with the polyperfect people
+        // pack, which is gone. The 400 pack has no walla at all, so there is no murmur to
+        // point at until one is bought or recorded - PedestrianAudioSystem already treats an
+        // empty loop list as "no murmur" rather than as an error.
 
         static readonly List<string> Missing = new List<string>();
 
@@ -92,12 +92,7 @@ namespace LivingCity.EditorTools
                 "Footsteps/foley_footstep_concrete_3.wav",
                 "Footsteps/foley_footstep_concrete_4.wav");
 
-            var crowd = AssetDatabase.LoadAssetAtPath<AudioClip>(CrowdLoop);
-            if (!crowd)
-                Missing.Add(CrowdLoop);
-            db.crowdMurmurLoops = crowd
-                ? new[] { crowd }
-                : System.Array.Empty<AudioClip>();
+            db.crowdMurmurLoops = System.Array.Empty<AudioClip>();
 
             if (created)
                 SeedTrims(db);

@@ -24,8 +24,8 @@ MonoBehaviour:
   mainTJunction: {fileID: 496256085948208980, guid: 897becdbd74dd4b6a8e7c85e943c0188, type: 3}
   mainMainCross: {fileID: 271563124984321122, guid: 048b70fa56ccf4190a4469c343a8d903, type: 3}
   groundTile: {fileID: 8697361452759086240, guid: a031e28231ae84e36a52c09b292e29ad, type: 3}
-  trafficLights: {fileID: 4508453612489127794, guid: 00e16a692dcdc0e4aaf17f63939c5f96, type: 3}
-  mainTrafficLights: {fileID: 2771972179784003025, guid: 0dde3fd85494af3439592d8398332fad, type: 3}
+  trafficLights: {fileID: 0}
+  mainTrafficLights: {fileID: 0}
   zonePalettes:
   - zone: 0
     weight: 26
@@ -225,13 +225,13 @@ MonoBehaviour:
     - label: Works
       weight: 100
       prefabs:
-      - {fileID: 818922317169698198, guid: 9934bcd888105b1479b7a9ed1f6c2e9b, type: 3}
-      - {fileID: 7598386832721089177, guid: 338413759378efe48b11787a566d0325, type: 3}
-      - {fileID: 862788045951780387, guid: 9f49ee41983b96a4ca6109ee74ec82c1, type: 3}
-      - {fileID: 7747346613568891360, guid: 828327f9a5f1db74785f3bc9592ad530, type: 3}
-      - {fileID: 3319918821040778129, guid: a520474f707db444aae91b030252930d, type: 3}
-      - {fileID: 72212052519490991, guid: 27aa404be60bae1478bb4a505511d4f6, type: 3}
-      - {fileID: 4080503948124311580, guid: 186fa293b13fe0743a75eff25cab5bcd, type: 3}
+      - {fileID: 0}
+      - {fileID: 0}
+      - {fileID: 0}
+      - {fileID: 0}
+      - {fileID: 0}
+      - {fileID: 0}
+      - {fileID: 0}
       rearPrefabs: []
       cornerPrefabs: []
       layout: 1
@@ -270,49 +270,49 @@ MonoBehaviour:
     pocketParkProps: []
     carRows: 0
     industrialYard: 1
-    gatePrefab: {fileID: 318290829188796415, guid: 6a0e62812c4454a4c93385eaace6ddcb, type: 3}
-    serviceRoadGround: {fileID: 2451021813786462333, guid: 5e0cf7839daff434fa5b429dab5c6bd6, type: 3}
-    yardConcrete: {fileID: 2575792158893954549, guid: c578c08a88954af4d81c30d80f077061, type: 3}
-    yardDirt: {fileID: 8205171096326981906, guid: 3849d3d3aa68a4d468a866c87e247b89, type: 3}
+    gatePrefab: {fileID: 0}
+    serviceRoadGround: {fileID: 0}
+    yardConcrete: {fileID: 0}
+    yardDirt: {fileID: 0}
     stackProps:
-    - {fileID: 1501163463327554, guid: 77b5f8619984f4e83b9adfea5d3c77f0, type: 3}
-    - {fileID: 1391051809619566, guid: ff3b15dbf20634fb38deaf75f0b200e9, type: 3}
-    - {fileID: 1665030572213034, guid: d3fd5bfc18cad454e9be5bd79372cc9d, type: 3}
-    - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
-    - {fileID: 1470712856484872, guid: d15abc5daf2f94b21940801b1d2705a8, type: 3}
-    - {fileID: 4443422033992286759, guid: 16e9c844c98965b478a28a6d713f1602, type: 3}
-    - {fileID: 4504325424524712750, guid: f834a9a3692a7924b8e8a5eeff906d04, type: 3}
-    - {fileID: 8262117082928332476, guid: 43ac6fd4aee0fed47a8b89ca84c1c23e, type: 3}
-    - {fileID: 5162275840650946576, guid: 13cf13d146da24149b93cbd60bb6424d, type: 3}
-    - {fileID: 9187607802181391332, guid: 2fbd6e4bc14375f41b9864a9ff3f0b9e, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
     chimneyProps:
-    - {fileID: 265990862613161308, guid: cfc6c8d22a0000c43a7ce1a999aec2b0, type: 3}
-    - {fileID: 4048172729937154615, guid: ccce2299abb3c5744b77d9ca7c94677b, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
     auxBuildings:
-    - {fileID: 7830246702326893990, guid: 6ad39ebe0d0f9ef49aeafecb8545c21c, type: 3}
-    - {fileID: 3319918821040778129, guid: a520474f707db444aae91b030252930d, type: 3}
-    - {fileID: 4048172729937154615, guid: ccce2299abb3c5744b77d9ca7c94677b, type: 3}
-    - {fileID: 1330090781118970, guid: 9d5bf04c12e844c2482c7b4a383846b0, type: 3}
-    - {fileID: 3618017333485105166, guid: 0d07906e0d9fc364f8a3f7352faeae78, type: 3}
-    - {fileID: 2612582649479418936, guid: 5ca481a8cb1ce794598d31a5421ae510, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
     yardBarrels:
-    - {fileID: 3492022511357751809, guid: b746a8a39049651429d3d49749bc1459, type: 3}
-    - {fileID: 4194742535996500365, guid: c7a7f18d36f4f8b4095d6da7a83c1933, type: 3}
-    - {fileID: 7370056187232985952, guid: 04a323ebb9c995c43b68d14db7b378c8, type: 3}
-    - {fileID: 2035517934593662474, guid: f84db0a156635a747ab78854f37e0ab6, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
     yardCrates:
-    - {fileID: 1665030572213034, guid: d3fd5bfc18cad454e9be5bd79372cc9d, type: 3}
-    - {fileID: 1599302078891562, guid: db0ad5a13bd0f4a18ab8cd9bf02007a4, type: 3}
-    - {fileID: 6048508556727767060, guid: 361ec4cb4f1b87144b915faa758286bb, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
     yardSacks:
-    - {fileID: 5162275840650946576, guid: 13cf13d146da24149b93cbd60bb6424d, type: 3}
-    - {fileID: 1414372620113739292, guid: 98b135364647b404c89d64f0341cf028, type: 3}
-    - {fileID: 2453480032729421386, guid: 7ce24aaa4d3ffb84791afdbc6fd7fe29, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
     yardFixtures:
-    - {fileID: 1366491309713228839, guid: 04e82db73c14f4d45a29fcbbb76c5934, type: 3}
-    - {fileID: 2466519714884335441, guid: 55c38dd9bfd3d454c8fc0521f2b2e748, type: 3}
-    - {fileID: 2567819492064619014, guid: 1bd2afa9eb1aa8c49934076712f6b843, type: 3}
-    - {fileID: 7627442570216701703, guid: 7c3ef8b5909f635449cea6c27ea2228d, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
     portYard: 0
     waterTile: {fileID: 0}
     quayGround: {fileID: 0}
@@ -323,17 +323,17 @@ MonoBehaviour:
     portBoats: []
     portProps: []
     portQuayLamp: {fileID: 0}
-    fenceSegment: {fileID: 1109267488826964, guid: 65810125c0cde440aa04f86730ff9090, type: 3}
-    fencePost: {fileID: 1594896995144188, guid: 48917a9402bea4a49a4254092f74b9fe, type: 3}
+    fenceSegment: {fileID: 0}
+    fencePost: {fileID: 0}
     parkingBooth: {fileID: 0}
     parkedCars:
     - label: Works
       weight: 1
       prefabs:
-      - {fileID: 1330241434410046, guid: 396e047ed643f4049803beede69fcb78, type: 3}
-      - {fileID: 5788786309315824959, guid: 31125961197a8b445b33643c583135f8, type: 3}
-      - {fileID: 6164559798135929300, guid: 43493aa8f54734142a96e2e72c2da600, type: 3}
-      - {fileID: 1423468028759846, guid: bc8dfa78933894feb833d87fdb95ebfb, type: 3}
+      - {fileID: 0}
+      - {fileID: 0}
+      - {fileID: 0}
+      - {fileID: 0}
     landmarkCars: []
   - zone: 3
     weight: 14
@@ -434,7 +434,7 @@ MonoBehaviour:
     - label: Ambulance
       weight: 1
       prefabs:
-      - {fileID: 3599669909053901963, guid: 8533eb24444732d43ad95ef38bceaa96, type: 3}
+      - {fileID: 0}
     landmarkCars: []
   - zone: 4
     weight: 12
@@ -551,7 +551,7 @@ MonoBehaviour:
     groundIsTilePerCell: 1
     apronGround: {fileID: 5072245934179844349, guid: 9c1ec85f6c4184e20ae04b66ef8fba19, type: 3}
     parkMounds:
-    - {fileID: 3211953871280234727, guid: 132f677729d046942b3b4e8766dac0e6, type: 3}
+    - {fileID: 0}
     groundPatchChance: 1
     paveJoints: 0
     groups: []
@@ -622,7 +622,7 @@ MonoBehaviour:
     - {fileID: 7251943758774493481, guid: 5de91b71dc1698644b51f75f1521f6ea, type: 3}
     - {fileID: 7211606713778384998, guid: cc46b771562eb3e4793292607fc3f72b, type: 3}
     parkDeadTrees: []
-    parkWaterTile: {fileID: 3248540378835810537, guid: 73b1d213ed2eb684bbc87d693075a09e, type: 3}
+    parkWaterTile: {fileID: 0}
     parkGatePiers: {fileID: 5553779822531802155, guid: f262fc49423774740ba0141c5d16ee21, type: 3}
     parkAmusement:
     - {fileID: 6035346482135873332, guid: 8077fd9c00503d6459620aa5feaec24b, type: 3}
@@ -959,8 +959,8 @@ MonoBehaviour:
     - label: Docks
       weight: 100
       prefabs:
-      - {fileID: 7747346613568891360, guid: 828327f9a5f1db74785f3bc9592ad530, type: 3}
-      - {fileID: 3319918821040778129, guid: a520474f707db444aae91b030252930d, type: 3}
+      - {fileID: 0}
+      - {fileID: 0}
       rearPrefabs: []
       cornerPrefabs: []
       layout: 1
@@ -973,7 +973,7 @@ MonoBehaviour:
     maxLotsPerAxis: 0
     maxPerimeterBuildings: 0
     landmarks:
-    - {fileID: 3035501176962291040, guid: fd5dedab04d098d489e07cb0829f21ec, type: 3}
+    - {fileID: 0}
     landmarkChance: 0
     requiredLandmark: -1
     guaranteedLandmark: -1
@@ -1000,17 +1000,17 @@ MonoBehaviour:
     pocketParkProps: []
     carRows: 0
     industrialYard: 0
-    gatePrefab: {fileID: 318290829188796415, guid: 6a0e62812c4454a4c93385eaace6ddcb, type: 3}
+    gatePrefab: {fileID: 0}
     serviceRoadGround: {fileID: 0}
     yardConcrete: {fileID: 0}
     yardDirt: {fileID: 0}
     stackProps:
-    - {fileID: 1501163463327554, guid: 77b5f8619984f4e83b9adfea5d3c77f0, type: 3}
-    - {fileID: 1391051809619566, guid: ff3b15dbf20634fb38deaf75f0b200e9, type: 3}
-    - {fileID: 1665030572213034, guid: d3fd5bfc18cad454e9be5bd79372cc9d, type: 3}
-    - {fileID: 1000014107978514, guid: 341771ed74a984e4caa9bd8ec01fa965, type: 3}
-    - {fileID: 8262117082928332476, guid: 43ac6fd4aee0fed47a8b89ca84c1c23e, type: 3}
-    - {fileID: 5162275840650946576, guid: 13cf13d146da24149b93cbd60bb6424d, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
     chimneyProps: []
     auxBuildings: []
     yardBarrels: []
@@ -1018,40 +1018,40 @@ MonoBehaviour:
     yardSacks: []
     yardFixtures: []
     portYard: 1
-    waterTile: {fileID: 3248540378835810537, guid: 73b1d213ed2eb684bbc87d693075a09e, type: 3}
+    waterTile: {fileID: 0}
     quayGround: {fileID: 8697361452759086240, guid: a031e28231ae84e36a52c09b292e29ad, type: 3}
-    pierSegment: {fileID: 5182802573156597564, guid: e05a55516bfadc34dadbb81d93a4a828, type: 3}
+    pierSegment: {fileID: 0}
     portCranes:
-    - {fileID: 1426054580676314, guid: c6fe72a221ecc41aba30094958f212b3, type: 3}
+    - {fileID: 0}
     portContainers:
-    - {fileID: 1338355318084972, guid: aa5dc305ea229487caa944e36d991189, type: 3}
-    - {fileID: 1012853047471764, guid: 6d17f1c03ddba4bd982e6a259539d272, type: 3}
-    - {fileID: 1743089644504300, guid: 880105d612d39412b951fe6d75095e05, type: 3}
-    - {fileID: 1735748496291786, guid: 5aa74c7b10e7849639b202685a4de45d, type: 3}
-    - {fileID: 1241916178129826, guid: 9712b31cf233f4e6a838854084ab4d52, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
     portShips:
-    - {fileID: 20277845658430194, guid: 2bf1cec311e1ff447abe622813daf0e5, type: 3}
+    - {fileID: 0}
     portBoats:
-    - {fileID: 7890200977569509778, guid: c4345ffbcfc8cc945bb35cbfd2409f5a, type: 3}
-    - {fileID: 5142040024209798775, guid: 22faefc6fc1373d44829a173981667b8, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
     portProps:
-    - {fileID: 1102048447515162, guid: 25595fb68aa0d4f81bd9363a1a314491, type: 3}
-    - {fileID: 1391051809619566, guid: ff3b15dbf20634fb38deaf75f0b200e9, type: 3}
-    - {fileID: 1501163463327554, guid: 77b5f8619984f4e83b9adfea5d3c77f0, type: 3}
-    - {fileID: 1665030572213034, guid: d3fd5bfc18cad454e9be5bd79372cc9d, type: 3}
-    - {fileID: 1000012096175024, guid: fae1240368fb29f4eb38e72b2e047d0a, type: 3}
-    - {fileID: 1000011308840414, guid: 4c8b95dbf9c5cd84db6cff7de3368e67, type: 3}
-    portQuayLamp: {fileID: 1000013202082976, guid: 4d91d13412c514e49a1e707292505db6, type: 3}
-    fenceSegment: {fileID: 1109267488826964, guid: 65810125c0cde440aa04f86730ff9090, type: 3}
-    fencePost: {fileID: 1594896995144188, guid: 48917a9402bea4a49a4254092f74b9fe, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    portQuayLamp: {fileID: 0}
+    fenceSegment: {fileID: 0}
+    fencePost: {fileID: 0}
     parkingBooth: {fileID: 0}
     parkedCars:
     - label: Docks
       weight: 1
       prefabs:
-      - {fileID: 1330241434410046, guid: 396e047ed643f4049803beede69fcb78, type: 3}
-      - {fileID: 1423468028759846, guid: bc8dfa78933894feb833d87fdb95ebfb, type: 3}
-      - {fileID: 5788786309315824959, guid: 31125961197a8b445b33643c583135f8, type: 3}
+      - {fileID: 0}
+      - {fileID: 0}
+      - {fileID: 0}
     landmarkCars: []
   facadeYawFixes: []
   uniqueBuildings:
@@ -1060,65 +1060,65 @@ MonoBehaviour:
   - {fileID: 2380803296569820005, guid: 740b9e77fe3db437a851165e131e488a, type: 3}
   - {fileID: 8548573141037604992, guid: 0a88d434f6262457f8290989e291a8d9, type: 3}
   - {fileID: 5902398185701017002, guid: e027c23a19d9c47aeb45398c7a22a616, type: 3}
-  buildingBaseMaterial: {fileID: 2100000, guid: 03ddc7e460b33402eb7640fab3881ac9, type: 2}
+  buildingBaseMaterial: {fileID: 0}
   buildingTints:
-  - {fileID: 2100000, guid: 351d36b1c52cf4639b283e90c7f08483, type: 2}
-  - {fileID: 2100000, guid: 91e626fb0141d4bc2a29da31972b7b17, type: 2}
-  - {fileID: 2100000, guid: facfdbcfd17c6448abbc5c8837c5da5d, type: 2}
-  - {fileID: 2100000, guid: 633e92487b10b46c18ec766c011bfe1c, type: 2}
-  - {fileID: 2100000, guid: 03c05c4a62cea4938bfc0455316fecdf, type: 2}
-  - {fileID: 2100000, guid: fbff88a2d8264447abe64dc416c2824f, type: 2}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
   commercialTints:
-  - {fileID: 2100000, guid: a44420caaf74445869d5209e98e974bc, type: 2}
-  - {fileID: 2100000, guid: a36586842aafa43b8b9dc32bd59b5b75, type: 2}
-  - {fileID: 2100000, guid: d9b4d8ffddee34dc8b17dbbebab0685c, type: 2}
-  - {fileID: 2100000, guid: 63fa7e9688de14d1095a3ece0fc11d03, type: 2}
-  - {fileID: 2100000, guid: 4f4e57507bae240f084d090d8dd1311d, type: 2}
-  - {fileID: 2100000, guid: c7972fa873f7e42988516f9629b85067, type: 2}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
   lineMaterial: {fileID: 2100000, guid: 6e7bf9f0081523148abd49e4d6f09dfe, type: 2}
   groundTints:
-  - {fileID: 2100000, guid: 093450b0235f94dd0a54da206336e62f, type: 2}
-  - {fileID: 2100000, guid: 93362ba1674e54d429b5beaac5c0406e, type: 2}
-  - {fileID: 2100000, guid: a27d19c26d0d3486eb06ea0d6587bd70, type: 2}
-  - {fileID: 2100000, guid: b47c1c47418e34c68a2d608c97880ec8, type: 2}
-  - {fileID: 2100000, guid: a37d71781ce5e44a3994edab3a8f26ea, type: 2}
-  - {fileID: 2100000, guid: 1a89ab56751a74e069c15ecee4a0a51c, type: 2}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
   paintDarkMaterial: {fileID: 2100000, guid: b37d1e8f68c55cb439235fb4ddd83475, type: 2}
   paintLightMaterial: {fileID: 2100000, guid: c28dd5e9258349d47833b706791d01af, type: 2}
-  cinderTint: {fileID: 2100000, guid: 33291033ca99147b0b25edd0230df7f5, type: 2}
+  cinderTint: {fileID: 0}
   grimeMaterial: {fileID: 2100000, guid: e7121bf69a7387b4a99928a16c40793e, type: 2}
   oilMaterial: {fileID: 2100000, guid: e887f283c50f2be489ea956e17ec9837, type: 2}
   chimneyVents:
-  - prefab: {fileID: 265990862613161308, guid: cfc6c8d22a0000c43a7ce1a999aec2b0, type: 3}
+  - prefab: {fileID: 0}
     local: {x: -0.00000006159732, y: 18.388376, z: 0.000000024338563}
-  - prefab: {fileID: 7598386832721089177, guid: 338413759378efe48b11787a566d0325, type: 3}
+  - prefab: {fileID: 0}
     local: {x: -4.249095, y: 25.178255, z: -0.000000021497954}
-  - prefab: {fileID: 7598386832721089177, guid: 338413759378efe48b11787a566d0325, type: 3}
+  - prefab: {fileID: 0}
     local: {x: 4.2047453, y: 25.178255, z: -0.0000000082524805}
-  - prefab: {fileID: 818922317169698198, guid: 9934bcd888105b1479b7a9ed1f6c2e9b, type: 3}
+  - prefab: {fileID: 0}
     local: {x: 0.091875754, y: 23.294153, z: -6.350312}
-  - prefab: {fileID: 72212052519490991, guid: 27aa404be60bae1478bb4a505511d4f6, type: 3}
+  - prefab: {fileID: 0}
     local: {x: -8.1959305, y: 9, z: -4.273215}
-  - prefab: {fileID: 4202220882244699723, guid: 5731e4f8b569f7e4da151f82fa9f55d3, type: 3}
+  - prefab: {fileID: 0}
     local: {x: -3.3356442, y: 20.607016, z: 0.55739295}
-  - prefab: {fileID: 2215209693239599735, guid: 5f3b442e803724c4291da1b5beddba8c, type: 3}
+  - prefab: {fileID: 0}
     local: {x: 1.9881994, y: 20.607014, z: -4.152783}
-  - prefab: {fileID: 6684296866273395084, guid: 1c69eea314f42f543a55ac9ac3f884b6, type: 3}
+  - prefab: {fileID: 0}
     local: {x: -3.3356442, y: 20.607016, z: 0.55739295}
-  - prefab: {fileID: 5679678132739351760, guid: 8c2b7166132ff7144b342ec6b2ab895e, type: 3}
+  - prefab: {fileID: 0}
     local: {x: 2.5720308, y: 20.607014, z: -3.217693}
-  - prefab: {fileID: 4524193779938541034, guid: 575c50ac6726d1545bcd64ffc9b25e68, type: 3}
+  - prefab: {fileID: 0}
     local: {x: -3.6584888, y: 23.80671, z: -3.317509}
-  - prefab: {fileID: 4382183402933652077, guid: 5ecdad9e9e7fdd9459299af9c1d1bc65, type: 3}
+  - prefab: {fileID: 0}
     local: {x: -3.6584883, y: 23.80671, z: -2.8591998}
-  - prefab: {fileID: 3655131549311888650, guid: 3a5e9009bececcb479700b874c81f922, type: 3}
+  - prefab: {fileID: 0}
     local: {x: -1.3571482, y: 23.806711, z: 1.4640005}
-  - prefab: {fileID: 883696919425858869, guid: 641aa067143b4cf4d83e2dea9c2e70b9, type: 3}
+  - prefab: {fileID: 0}
     local: {x: -4.118884, y: 23.80671, z: -4.4026446}
-  - prefab: {fileID: 1503676966882326081, guid: f64c1829f5061a246a7e4201faf04259, type: 3}
+  - prefab: {fileID: 0}
     local: {x: -3.4105885, y: 9.9, z: -0.005879376}
   smokeMaterial: {fileID: 2100000, guid: c63d588ff81774854a3088eea91661f0, type: 2}
-  smokePuffMesh: {fileID: 4300002, guid: 9609c2921431d4e26bc801af948ee0c4, type: 3}
+  smokePuffMesh: {fileID: 0}
   streetLamps:
   - {fileID: 5090366286920645887, guid: 38a94b6ff8e6e2f4192bed6c26404045, type: 3}
   trees:
@@ -1179,94 +1179,94 @@ MonoBehaviour:
   rareVehicleNames: []
   rareVehicleKeepChance: 0
   vehicleTints:
-  - {fileID: 2100000, guid: ddb556b2da30449699e8a993a5c69448, type: 2}
-  - {fileID: 2100000, guid: 0d3d2721c465944089fcc89cfe7f37d5, type: 2}
-  - {fileID: 2100000, guid: 30c45b72f10dc42daa81692d03c07457, type: 2}
-  - {fileID: 2100000, guid: c9f37b8b30e2a47c8abdf2578a478283, type: 2}
-  - {fileID: 2100000, guid: 826da4f1d1e034fcfa2da6f87129eda7, type: 2}
-  - {fileID: 2100000, guid: d98241c1cbe4e4fecbe429747b910e95, type: 2}
-  - {fileID: 2100000, guid: 210c9c2fac7504fed9be596dba13f1e6, type: 2}
-  - {fileID: 2100000, guid: 4867f2d69071240b991eff8a2a8dc550, type: 2}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
   pedestrianGroups:
   - label: Suits
     weight: 3
     prefabs:
-    - {fileID: 6221278092488703861, guid: 1d76543c9e9ea43798b68f4504ef0991, type: 3}
-    - {fileID: 8793253484258870663, guid: 15962f3183ee34f378d156ff02ab95a9, type: 3}
-    - {fileID: 314608592701253574, guid: 44b2347d15aa647faa948c5375a077b4, type: 3}
-    - {fileID: 628514493542394461, guid: 19e7e8948126e40109c12f396ffee483, type: 3}
-    - {fileID: 5513000267630380605, guid: 3d20924dbe5194fdcbc656bfd340d190, type: 3}
-    - {fileID: 4280803305825599928, guid: be030152edddb48d2923a18e8716f0ec, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
   - label: Civilians
     weight: 4
     prefabs:
-    - {fileID: 1415879598655448365, guid: 78be001e898434132bb7d6821065ef98, type: 3}
-    - {fileID: 75809492689458801, guid: e208d5b021a9443eaab58de826bb72ab, type: 3}
-    - {fileID: 2345450317395555999, guid: f720b20134c9f4d69ad9a20fd095455f, type: 3}
-    - {fileID: 8095661380849261736, guid: 5b31251e1d7504243bcdccd07fe6b6ff, type: 3}
-    - {fileID: 3302722058644528397, guid: b283f46c2986d4b23a76ea6ffb68f1e7, type: 3}
-    - {fileID: 7206898386595225833, guid: eeaf1fd6ac5ba47939ed4e22bc4fc391, type: 3}
-    - {fileID: 4941019406704658054, guid: b09e41b21d17a4f1ca9f249ef8a74882, type: 3}
-    - {fileID: 8934680330363796802, guid: 8a73ee325e29848b6b627f11db8cf218, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
   - label: Workers
     weight: 2
     prefabs:
-    - {fileID: 1287551727072644559, guid: c0680071561b94e11b20cc91a9831605, type: 3}
-    - {fileID: 4292001445412303987, guid: 439c41401a94f4d8d8ab19def919eccc, type: 3}
-    - {fileID: 6968390727003508201, guid: 65708910966e54fe7aa5757fec781cfa, type: 3}
-    - {fileID: 1574614095903758774, guid: cd5d608db67264b1d84db7471fcb0ef7, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
   - label: Fringe
     weight: 1
     prefabs:
-    - {fileID: 3256353919637305634, guid: c61c0ee7c202d4fc2ae054480fc40807, type: 3}
-    - {fileID: 1520178028484305419, guid: 23d1adeef80a240458d59e4c9a91fd1b, type: 3}
-    - {fileID: 7639936838902338526, guid: fc9138bf4854140e1a67307b941a3ae4, type: 3}
-    - {fileID: 8530007935808357469, guid: a381877c7491c43bcbf4bb1937c79bca, type: 3}
-    - {fileID: 6765787183467291163, guid: 94f9deb7a03ce4e19b7487a994f19c26, type: 3}
-    - {fileID: 7305804502796701674, guid: a3c3628c2131944bd9c58bcf941cfe56, type: 3}
-    - {fileID: 4586992887658067438, guid: bd12c3052acc84d6d910d66fbba6981f, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
   - label: Children
     weight: 1.5
     prefabs:
-    - {fileID: 6229438364091640978, guid: 77c944ed0161aa344a9f59ce29435cd2, type: 3}
-    - {fileID: 9000303046610071551, guid: f324afde089c1402da1064881bf3cc23, type: 3}
-    - {fileID: 1617419383600197604, guid: 4a77ae789c4c148cbab64198280742cc, type: 3}
-    - {fileID: 7592806404244581127, guid: 4e6b1012b31144408b863441e60e3aa4, type: 3}
-    - {fileID: 8713510822655231014, guid: 69012da8ecdad4033ac8e17b8165880e, type: 3}
-    - {fileID: 9173799594649838335, guid: 42fc5345b213a4799882514d290fe6f8, type: 3}
-    - {fileID: 5330915401198231892, guid: 37f74705082f34d799f1ae906b27c934, type: 3}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
   aiPedestrians:
-  - {fileID: 6229438364091640978, guid: 77c944ed0161aa344a9f59ce29435cd2, type: 3}
-  - {fileID: 1739492204495814131, guid: d9b30281572acd1428de68fe4e4c9988, type: 3}
-  - {fileID: 4773668259113336104, guid: 8df224532d7e80f4ea2e60b21753ca64, type: 3}
-  - {fileID: 8559158833678960086, guid: fc0764a18174c2944abd01c737d1b0d0, type: 3}
-  - {fileID: 3178355596657646033, guid: 85e32c765da7b734c9880285b0f15f72, type: 3}
-  - {fileID: 5534041706690384203, guid: 4907e2a2fa08d26449f823f461386574, type: 3}
-  - {fileID: 7793103633514177349, guid: 9565ed19728f30241abdac15d7ed0ed9, type: 3}
-  - {fileID: 7151790092106136865, guid: 690e9e99bf6f8774e9c3a24d7a643b75, type: 3}
-  - {fileID: 5757955882483379394, guid: 5373272d61c43eb448a976bfd04257cd, type: 3}
-  - {fileID: 7663872161362641315, guid: 119cf27cbf5a69846825f1ad6906ebfa, type: 3}
-  - {fileID: 5549721444016830162, guid: fa75ed603b019694f9a56554338a70b4, type: 3}
-  - {fileID: 4141400571594952038, guid: e00438b6d9c586741bafa49bc51ae228, type: 3}
-  - {fileID: 5314385134852338919, guid: d92a0ccd16b4a2247ba8becc0d5377ae, type: 3}
-  - {fileID: 5678193843773380545, guid: a8bd27e353211b94394e057d69a367e8, type: 3}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
   pedestrianController: {fileID: 9100000, guid: 1efefdb7cc3fb4e8cb82812ab0b7fcb2, type: 2}
   policeCarPrefab: {fileID: 2034611993091648679, guid: 670152cefe3af40a0b0b0137d935b30a, type: 3}
-  policeOfficerPrefab: {fileID: 3902621975115057558, guid: 57b6ae02e62b443d6bc3d3ae5ad27c6a, type: 3}
-  schoolBusPrefab: {fileID: 7587706607480147986, guid: 3a49e2340aa3ba3498ba460bdc1ec141, type: 3}
+  policeOfficerPrefab: {fileID: 0}
+  schoolBusPrefab: {fileID: 0}
   schoolChildPrefabs:
-  - {fileID: 6229438364091640978, guid: 77c944ed0161aa344a9f59ce29435cd2, type: 3}
-  - {fileID: 9000303046610071551, guid: f324afde089c1402da1064881bf3cc23, type: 3}
-  - {fileID: 1617419383600197604, guid: 4a77ae789c4c148cbab64198280742cc, type: 3}
-  - {fileID: 7592806404244581127, guid: 4e6b1012b31144408b863441e60e3aa4, type: 3}
-  - {fileID: 8713510822655231014, guid: 69012da8ecdad4033ac8e17b8165880e, type: 3}
-  - {fileID: 9173799594649838335, guid: 42fc5345b213a4799882514d290fe6f8, type: 3}
-  - {fileID: 5330915401198231892, guid: 37f74705082f34d799f1ae906b27c934, type: 3}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
   dockWorkerPrefabs:
-  - {fileID: 1287551727072644559, guid: c0680071561b94e11b20cc91a9831605, type: 3}
-  - {fileID: 4292001445412303987, guid: 439c41401a94f4d8d8ab19def919eccc, type: 3}
+  - {fileID: 0}
+  - {fileID: 0}
   clouds:
-  - {fileID: 1569108936417716, guid: 80919aaf925554880b9b809635f0dd9b, type: 3}
-  - {fileID: 1236916720052730, guid: 268a4c6663b8b434f9c9477d880c3534, type: 3}
-  - {fileID: 1876786635592858, guid: 848e7aa294fa1479d8c2203642ff7223, type: 3}
-  - {fileID: 1272823836203374, guid: debbcc96ccb624cf3b0d6d68f2886015, type: 3}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}

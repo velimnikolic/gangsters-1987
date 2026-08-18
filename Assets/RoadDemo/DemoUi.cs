@@ -10,10 +10,10 @@ namespace RoadDemo
     /// faces, and the colour names the demo prints in.
     ///
     /// Demo-local ON PURPOSE. RoadDemo does not borrow LivingCity's runtime (it has
-    /// its own clock, sky, lamps and headlights), so it does not borrow LedgerSkinSet
-    /// either - but it does dress from the SAME pack folder and answers with the same
-    /// scheme, so the demo's top bar and the ledger the demo installs read as one
-    /// piece of software instead of two.
+    /// its own clock, sky, lamps and headlights), so it dresses itself from the
+    /// Modern Menus pack folder here. The ledger the demo installs no longer shares
+    /// this scheme - it is a paper book on a desk now (see LedgerStyle) - so the top
+    /// bar and the map read as the demo's instruments, the folder as the boss's.
     ///
     /// Editor-only asset loading, the discipline RoadDemoBuilder and BuildingCardPicker
     /// already keep: this scene is dev tooling that never ships, so AssetDatabase is
@@ -24,11 +24,9 @@ namespace RoadDemo
     {
         // ------------------------------------------------------------------ colours
         //
-        // Every value below is the one the dressed ledger prints in, copied rather
-        // than referenced (LedgerPalette is LivingCity's, and this scene keeps its
-        // own): Ink is its Phosphor, InkDim its PhosphorDim, Gold its Amber, Panel
-        // its CardFace, Accent the pack's AccentTint and KeyFace the pack's FaceTint
-        // that its tab strip wears. Move one and move the other.
+        // The Modern Menus scheme the demo's own instruments print in: a deep navy
+        // tube, ice-white data, steel chrome, powder-blue highlights and a gold
+        // warning gun. (The ledger used to share it; it wears paper now.)
 
         /// <summary>Data at full beam - the clock, a unit's name, anything read.</summary>
         public static readonly Color Ink = new Color(0.90f, 0.95f, 1f);
@@ -96,6 +94,14 @@ namespace RoadDemo
         public static Sprite IconPlay => Slot(ref iconPlay, Flat + "ICON_ModernMenus_Play_01_Clean.png");
         public static Sprite IconFaster => Slot(ref iconFaster, Flat + "ICON_ModernMenus_FastForward_01_Clean.png");
 
+        /// <summary>The crews' activity glyphs - on the move, in a fight, in a word,
+        /// down - and the recruit slot's plus. Same flat white cut, tinted in place.</summary>
+        public static Sprite IconArrow => Slot(ref iconArrow, Flat + "ICON_ModernMenus_Arrow_01_Clean.png");
+        public static Sprite IconCombat => Slot(ref iconCombat, Flat + "ICON_ModernMenus_Combat_01_Clean.png");
+        public static Sprite IconChat => Slot(ref iconChat, Flat + "ICON_ModernMenus_Chat_01_Clean.png");
+        public static Sprite IconDeath => Slot(ref iconDeath, Flat + "ICON_ModernMenus_Death_01_Clean.png");
+        public static Sprite IconPlus => Slot(ref iconPlus, Flat + "ICON_ModernMenus_Plus_01_Clean.png");
+
         /// <summary>The soft glow dot the world markers ride on.</summary>
         public static Sprite Dot => Slot(ref dot, Pack + "Sprites/FX/SPR_ModernMenus_FX_Glow_Dot_01.png");
 
@@ -108,15 +114,17 @@ namespace RoadDemo
             Fonts + "BarlowCondensed/BarlowCondensed-Medium SDF.asset");
 
         static Sprite gradient, chip, box, iconTimer, iconPlay, iconFaster, dot;
+        static Sprite iconArrow, iconCombat, iconChat, iconDeath, iconPlus;
         static TMP_FontAsset headline, body;
         static bool warned;
 
         // Static state outlives Play when domain reload is off, and a re-import can
-        // leave a stale reference behind - the same guard LedgerSkinSet keeps.
+        // leave a stale reference behind - the same guard LedgerStyle keeps.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
         {
             gradient = chip = box = iconTimer = iconPlay = iconFaster = dot = null;
+            iconArrow = iconCombat = iconChat = iconDeath = iconPlus = null;
             headline = body = null;
             warned = false;
         }

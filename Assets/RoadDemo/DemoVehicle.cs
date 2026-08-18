@@ -29,6 +29,10 @@ namespace RoadDemo
         public RoadEdge CurrentEdge => _edge;
         public float Progress => _s;
 
+        /// <summary>Metres a second, for whoever is listening (DemoAudio pitches
+        /// the engine on it, and only cars stopped dead lean on the horn).</summary>
+        public float Speed => _speed;
+
         Vector3 _p0, _p1, _p2; // curve through the intersection that led onto _edge
         float _curveLen = 1f;
         float _curveSpeed;

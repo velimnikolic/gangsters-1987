@@ -193,8 +193,8 @@ namespace LivingCity.Entities
                 yield return UndockPoll;
 
             var outbound = PoliceDocking.Undock(
-                forecourt.StallWorld(stall), stallRot * Vector3.forward, kerbPos);
-            yield return Drive(outbound, stallRot, Quaternion.LookRotation(kerbDir, Vector3.up));
+                forecourt.StallWorld(stall), stallRot * Vector3.forward, kerbPos, kerbDir);
+            yield return DriveOut(outbound, Quaternion.LookRotation(kerbDir, Vector3.up));
 
             forecourt.ReleaseStall(stall);
             stall = -1;
@@ -221,8 +221,9 @@ namespace LivingCity.Entities
             car.SetNewPath();
         }
 
-        /// <summary>The hand-animated leg: position along the curve at PoliceDocking.Speed,
-        /// rotation slerped across it. TrafficRegistry needs no telling - it reads the
+        /// <summary>The hand-animated leg INTO the bay: position along the curve at
+        /// PoliceDocking.Speed, rotation slerped across it - the car backs in, so its heading is
+        /// not its direction of travel. TrafficRegistry needs no telling - it reads the
         /// transform live.</summary>
         IEnumerator Drive(PoliceDocking.Curve curve, Quaternion from, Quaternion to)
         {
@@ -233,6 +234,23 @@ namespace LivingCity.Entities
                 transform.SetPositionAndRotation(
                     PoliceDocking.Point(curve, t),
                     Quaternion.Slerp(from, to, Mathf.SmoothStep(0f, 1f, t)));
+                yield return null;
+            }
+        }
+
+        /// <summary>The hand-animated leg OUT of the bay, which the car drives forwards: steered
+        /// by the curve's own tangent, so it does not glide out of the forecourt sideways. See
+        /// PolicePatrolAgent.DriveOut, which this is copied from as the rest of this pair is.
+        /// </summary>
+        IEnumerator DriveOut(PoliceDocking.Curve curve, Quaternion onLane)
+        {
+            var t = 0f;
+            while (t < 1f)
+            {
+                t = PoliceDocking.Advance(curve, t, PoliceDocking.Speed * Time.deltaTime);
+                transform.SetPositionAndRotation(
+                    PoliceDocking.Point(curve, t),
+                    PoliceDocking.Heading(curve, t, onLane));
                 yield return null;
             }
         }

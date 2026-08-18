@@ -159,7 +159,7 @@ namespace LivingCity.EditorTools
             },
         };
 
-        [MenuItem("Tools/City/Rebuild Synty City Kit (Kit-Bash)")]
+        [MenuItem("Tools/City/Catalog/Rebuild Synty City Kit (Kit-Bash)", priority = 2)]
         public static void ForceBuild()
         {
             AssetDatabase.DeleteAsset(VersionPath);

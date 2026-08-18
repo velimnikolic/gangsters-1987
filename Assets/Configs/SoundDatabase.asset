@@ -43,7 +43,7 @@ MonoBehaviour:
   - {fileID: 8300000, guid: 8c43aa9d1d52b4dcd8e5b572a20813b2, type: 3}
   footstepVolume: 0.04
   crowdMurmurLoops:
-  - {fileID: 8300000, guid: ddec8cf93b66b4785985c0c49e5816a5, type: 3}
+  - {fileID: 0}
   murmurVolume: 0.13
   masterVolume: 1
   detailMaxDistance: 60

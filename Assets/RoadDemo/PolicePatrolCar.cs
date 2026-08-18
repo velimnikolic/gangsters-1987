@@ -45,6 +45,12 @@ namespace RoadDemo
         float _t;
         Quaternion _fromRot, _toRot;
 
+        /// <summary>Set for the leg the car drives FORWARDS - out of the bay - where
+        /// the heading is the curve's own tangent instead of a slerp between the
+        /// endpoints. Clear for the way in, which is a reversing manoeuvre: the car
+        /// ends nose-out, so there its heading is not its direction of travel.</summary>
+        bool _steerByTangent;
+
         public void InitParked(Vector3 stall, Quaternion stallRot, RoadEdge home, float kerbS,
             List<RoadEdge> allEdges, Dictionary<RoadEdge, RoadEdge> routeHome,
             Vector2 restRange, Vector2Int waypointRange, float firstRest)
@@ -78,7 +84,9 @@ namespace RoadDemo
                 case Mode.Docking:
                     _t = PatrolDocking.Advance(_curve, _t, PatrolDocking.Speed * dt);
                     Tf.SetPositionAndRotation(PatrolDocking.Point(_curve, _t),
-                        Quaternion.Slerp(_fromRot, _toRot, Mathf.SmoothStep(0f, 1f, _t)));
+                        _steerByTangent
+                            ? PatrolDocking.Heading(_curve, _t, _toRot)
+                            : Quaternion.Slerp(_fromRot, _toRot, Mathf.SmoothStep(0f, 1f, _t)));
                     if (_t < 1f) break;
                     if (State == Mode.Undocking)
                     {
@@ -123,10 +131,12 @@ namespace RoadDemo
         void BeginUndock()
         {
             State = Mode.Undocking;
-            _curve = PatrolDocking.Undock(_stall, _stallRot * Vector3.forward, _kerb);
+            _curve = PatrolDocking.Undock(
+                _stall, _stallRot * Vector3.forward, _kerb, _home.Dir);
             _t = 0f;
             _fromRot = _stallRot;
             _toRot = Quaternion.LookRotation(_home.Dir);
+            _steerByTangent = true;
         }
 
         void BeginDock()
@@ -137,6 +147,7 @@ namespace RoadDemo
             _t = 0f;
             _fromRot = Tf.rotation;
             _toRot = _stallRot;
+            _steerByTangent = false;
         }
 
         // Reaching the current waypoint edge draws the next one - anywhere on the

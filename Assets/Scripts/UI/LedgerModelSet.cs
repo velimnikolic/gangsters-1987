@@ -17,12 +17,17 @@ namespace LivingCity.UI
     /// </summary>
     public sealed class LedgerModelSet : ScriptableObject
     {
-        [Tooltip("Plays the .38 Pistol listing, and both halves of the Twin Pack.")]
+        [Tooltip("The Synty arsenal the catalogue photographs - the PolygonGangWarfare " +
+                 "guns and street tools, baked by name so a listing names its own body " +
+                 "and two pistols can look different. Same table shape as people.")]
+        public GameObject[] weapons = System.Array.Empty<GameObject>();
+
+        [Tooltip("Fallback body for a Pistol listing that names no model of its own.")]
         public GameObject pistol;
 
         public GameObject shotgun;
 
-        [Tooltip("The armory Rifle - the long, scoped body reads as 'longest range'.")]
+        [Tooltip("The armory Rifle - the long body reads as 'longest range'.")]
         public GameObject rifle;
 
         public GameObject tommyGun;
@@ -30,6 +35,12 @@ namespace LivingCity.UI
         [Tooltip("The city's own PrefabDatabase - PortraitStudio's model source in " +
                  "scenes that have no CityBuilder (the standalone Ledger menu).")]
         public LivingCity.Data.PrefabDatabase database;
+
+        [Tooltip("The Synty cast the book photographs - the men's mugshots, the capos, the " +
+                 "paper's faces. Plain pack character prefabs (Humanoid, no scripts), " +
+                 "baked by name from the Synty folders so a portrait never depends on the " +
+                 "PrefabDatabase's crowd slots being dealt.")]
+        public GameObject[] people = System.Array.Empty<GameObject>();
 
         static LedgerModelSet loaded;
         static bool loadTried;
@@ -57,11 +68,47 @@ namespace LivingCity.UI
             }
         }
 
-        /// <summary>The body that plays this kind on the catalogue board. Null (kind
-        /// unknown, asset not baked yet, pack missing) means "no photograph" - the row
-        /// simply keeps its text.</summary>
-        public static GameObject WeaponModelFor(EquipmentKind kind)
+        /// <summary>The pack prefab of this name, or null. Accepts the "_AI" suffix the
+        /// converted street walkers carry - GangCatalog and the picture desk still name
+        /// men that way - so one table answers every caller.</summary>
+        public static GameObject PersonNamed(string name)
         {
+            var set = Instance;
+            if (!set || set.people == null || string.IsNullOrEmpty(name))
+                return null;
+
+            var bare = name.EndsWith("_AI") ? name.Substring(0, name.Length - 3) : name;
+            foreach (var prefab in set.people)
+                if (prefab && (prefab.name == name || prefab.name == bare))
+                    return prefab;
+            return null;
+        }
+
+        /// <summary>The pack prefab of this name among the baked weapons, or null.</summary>
+        public static GameObject WeaponNamed(string name)
+        {
+            var set = Instance;
+            if (!set || set.weapons == null || string.IsNullOrEmpty(name))
+                return null;
+
+            foreach (var prefab in set.weapons)
+                if (prefab && prefab.name == name)
+                    return prefab;
+            return null;
+        }
+
+        /// <summary>The body that plays this listing on the catalogue board - the model
+        /// it names, else its kind's fallback slot. Null (nothing named, asset not baked
+        /// yet, pack missing) means "no photograph" - the row simply keeps its
+        /// text.</summary>
+        public static GameObject WeaponModelFor(EquipmentKind kind, string modelName)
+        {
+            // The listing's own body first - that is how the .38 and the plated pistol,
+            // one kind between them, photograph differently.
+            var named = WeaponNamed(modelName);
+            if (named)
+                return named;
+
             var set = Instance;
             if (!set)
             {
@@ -82,6 +129,7 @@ namespace LivingCity.UI
                 EquipmentKind.Shotgun => set.shotgun,
                 EquipmentKind.Rifle => set.rifle,
                 EquipmentKind.TommyGun => set.tommyGun,
+                EquipmentKind.MachinePistol => set.tommyGun,
                 _ => null,
             };
         }

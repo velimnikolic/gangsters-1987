@@ -118,6 +118,8 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(LedgerText.ReasonNoSuchCrew);
             if (crew.HoodIds.Contains(id))
                 return OpResult.Fail(LedgerText.ReasonAlreadyInCrew);
+            if (crew.HoodIds.Count >= Crew.MaxHoods)
+                return OpResult.Fail(LedgerText.ReasonCrewFull);
 
             Detach(roster, id);
             crew.HoodIds.Add(id);

@@ -160,16 +160,7 @@ namespace RoadDemo
 
         void BuildStep(float fromRight, string name, bool faster)
         {
-            var key = NewKey(name, fromRight, KeySize, KeyHeight, () =>
-            {
-                if (!clock)
-                    return;
-                if (faster)
-                    clock.SpeedUp();
-                else
-                    clock.SlowDown();
-                Refresh();
-            });
+            var key = NewKey(name, fromRight, KeySize, KeyHeight, () => Step(faster));
 
             // One fast-forward glyph serves both steps: mirrored on X it IS the
             // rewind the pack never shipped, and the pair stays perfectly matched.
@@ -241,6 +232,24 @@ namespace RoadDemo
         {
             if (clock)
                 clock.Paused = !clock.Paused;
+            // The two halves of the same switch, and the one the player hears on the
+            // frame the world goes quiet - DemoAudio keeps interface clicks out of
+            // the pause fade for exactly this.
+            DemoAudio.Ui(clock && clock.Paused ? DemoSounds.UiToggleOff : DemoSounds.UiToggleOn);
+            Refresh();
+        }
+
+        /// <summary>One rung up or down the speed ladder. The key and the chip both
+        /// come through here, so they cannot drift apart.</summary>
+        void Step(bool faster)
+        {
+            if (!clock)
+                return;
+            if (faster)
+                clock.SpeedUp();
+            else
+                clock.SlowDown();
+            DemoAudio.Ui(DemoSounds.UiClick);
             Refresh();
         }
 
@@ -288,15 +297,9 @@ namespace RoadDemo
             // The comma and period keys carry < and > - the arrows the two step keys
             // draw, on the keys that already print them.
             if (keyboard.commaKey.wasPressedThisFrame)
-            {
-                clock.SlowDown();
-                Refresh();
-            }
+                Step(faster: false);
             if (keyboard.periodKey.wasPressedThisFrame)
-            {
-                clock.SpeedUp();
-                Refresh();
-            }
+                Step(faster: true);
         }
 
         void LateUpdate()

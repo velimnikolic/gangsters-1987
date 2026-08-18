@@ -26,6 +26,11 @@ namespace LivingCity.Gameplay
         public Roster Roster { get; private set; }
         public int Version { get; private set; }
 
+        /// <summary>The city seed the roster was dealt from - the ledger's newspaper
+        /// prints its editions off the same number, so the paper is as deterministic
+        /// as the men it writes about.</summary>
+        public int Seed => seed;
+
         void Awake()
         {
             if (Instance && Instance != this)

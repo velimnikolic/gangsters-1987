@@ -246,12 +246,19 @@ namespace LivingCity.Tests
         {
             var expected = new Dictionary<string, int>
             {
-                { ".38 Pistol", 100 }, { "Shotgun", 750 }, { "Rifle", 750 },
-                { "Tommy Gun", 2000 }, { "Twin Pack Pistols", 3000 },
+                // Weakest to strongest, priced in that order (the plated pieces are gone).
+                { "Twin Pack Pistols", 250 }, { "Shotgun", 750 },
+                { "Machine Pistol", 1250 }, { "Rifle", 1750 }, { "Tommy Gun", 2000 },
             };
 
             foreach (var item in ArmoryCatalog.Weapons)
             {
+                // Every gun names the body it photographs - the sheet has kinds that
+                // may share a body (the twin pack is two revolvers), so the name is the key.
+                if (string.IsNullOrEmpty(item.ModelName))
+                    failures.Add($"CataloguePricesMatchTheSheet: {item.DisplayName} " +
+                                 "names no model.");
+
                 if (!expected.TryGetValue(item.DisplayName, out var price))
                     failures.Add($"CataloguePricesMatchTheSheet: unexpected {item.DisplayName}.");
                 else if (item.Price != price)
@@ -402,8 +409,8 @@ namespace LivingCity.Tests
         static void AssetsAreBookValue(List<string> failures)
         {
             var roster = RosterSeeder.Generate(42);
-            // Seeded stock: three $100 pistols and a $1,500 car.
-            if (BalanceMath.AssetsOf(roster) != 1800)
+            // Seeded stock: the $1,500 car - the men's .38s are their own, not stock.
+            if (BalanceMath.AssetsOf(roster) != 1500)
                 failures.Add($"AssetsAreBookValue: {BalanceMath.AssetsOf(roster)}.");
         }
 

@@ -221,6 +221,8 @@ namespace RoadDemo
                     break;
 
                 case Mode.ToDoor:
+                    // the door heard shutting behind him, at the doorstep he just left
+                    DemoAudio.At(DemoSounds.DoorClose, _door.Pos, DemoSounds.DoorVolume, 0.08f);
                     _door.Busy = false;
                     _door = null;
                     State = Mode.Inside;
@@ -249,6 +251,7 @@ namespace RoadDemo
             _doorFwd = Random.value < 0.5f;
             Tf.gameObject.SetActive(true);
             Tf.SetPositionAndRotation(door.Pos, Quaternion.LookRotation(door.Outward));
+            DemoAudio.At(DemoSounds.DoorOpen, door.Pos, DemoSounds.DoorVolume, 0.08f);
             BeginLeg(door.Pos, door.EntryPos, Mode.WalkOut);
             SetPose(PoseWalk);
             return true;

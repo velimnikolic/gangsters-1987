@@ -17,7 +17,7 @@ namespace LivingCity.EditorTools
     ///
     /// They stand west of the NIGHTCLUBS section, off the end of the showroom rows.
     ///
-    /// Run from Tools/City/Draw Block Lot Pads, and re-run any time: the pads are
+    /// Run from Tools/City/Catalog/Draw Block Lot Pads, and re-run any time: the pads are
     /// rebuilt under one root, so nothing accumulates. Building the catalog scene
     /// lays them down too.
     /// </summary>
@@ -26,10 +26,11 @@ namespace LivingCity.EditorTools
         internal const string RootName = "BLOCK LOTS";
         const string PadDir = "Assets/CityKit/LotPads";
 
-        /// <summary>The lot sizes RoadDemoBuilder's spacing produces - its
-        /// blockWidthRange / blockDepthRange spread over 4 columns and 3 rows.
-        /// Change them there and change them here.</summary>
-        static readonly float[] Widths = { 70f, 85f, 100f, 115f };
+        /// <summary>The lot sizes RoadDemoBuilder's spacing hands out - its
+        /// blockWidths / blockDepths palettes, one pad per combination. The two
+        /// lists are the same list: a size with no pad here gets no block composed
+        /// for it, so change them there and change them here.</summary>
+        static readonly float[] Widths = { 70f, 85f, 100f };
         static readonly float[] Depths = { 50f, 70f, 95f };
 
         /// <summary>The kit's module. Every pad edge lands on it, so a building
@@ -50,7 +51,7 @@ namespace LivingCity.EditorTools
             new Color(0.55f, 0.28f, 0.34f),
         };
 
-        [MenuItem("Tools/City/Draw Block Lot Pads", priority = 6)]
+        [MenuItem("Tools/City/Catalog/Draw Block Lot Pads", priority = 22)]
         public static void DrawPads()
         {
             var scene = SceneManager.GetActiveScene();
@@ -118,6 +119,19 @@ namespace LivingCity.EditorTools
         internal static string Code(int width, int depth) =>
             $"{(char)('A' + width)}{depth + 1}";
 
+        /// <summary>Every lot code the palettes hand out, whether or not the pads have
+        /// been drawn - so a pass can ask what SHOULD exist without opening the catalog
+        /// scene to look.</summary>
+        internal static string[] Codes()
+        {
+            var codes = new string[Widths.Length * Depths.Length];
+            var n = 0;
+            for (var d = 0; d < Depths.Length; d++)
+                for (var w = 0; w < Widths.Length; w++)
+                    codes[n++] = Code(w, d);
+            return codes;
+        }
+
         /// <summary>How far the whole set reaches along one axis: every size plus the
         /// gaps between them.</summary>
         static float Span(float[] sizes)
@@ -154,32 +168,59 @@ namespace LivingCity.EditorTools
         static void Pad(string code, float xMin, float zMin, float width, float depth,
                         Color paint, Transform parent)
         {
+            var centre = new Vector3(xMin + width * 0.5f, 0f, zMin + depth * 0.5f);
+            var pad = PadPlane($"Lot {code} ({width:F0}x{depth:F0})", centre, width, depth,
+                               paint, parent);
+
+            // north edge, outside the pad: a label there survives the pad filling up
+            PadLabel($"{pad.name} label",
+                     $"{code}\n{width:F0} x {depth:F0} m\n" +
+                     $"{width / Cell:F0} x {depth / Cell:F0} cells",
+                     new Vector3(centre.x, 5f, zMin + depth + 4f), parent);
+        }
+
+        /// <summary>The painted rectangle itself, centred on <paramref name="centre"/>.
+        /// Shared with the block workbench, whose pads are the same rectangles with a
+        /// composed block standing on them.</summary>
+        internal static GameObject PadPlane(string name, Vector3 centre, float width,
+                                            float depth, Color paint, Transform parent)
+        {
             var pad = GameObject.CreatePrimitive(PrimitiveType.Plane);
-            pad.name = $"Lot {code} ({width:F0}x{depth:F0})";
+            pad.name = name;
             var collider = pad.GetComponent<Collider>();
             if (collider) Object.DestroyImmediate(collider);
 
             pad.transform.SetParent(parent, false);
-            pad.transform.position =
-                new Vector3(xMin + width * 0.5f, -0.02f, zMin + depth * 0.5f);
+            pad.transform.position = new Vector3(centre.x, -0.02f, centre.z);
             pad.transform.localScale = new Vector3(width / 10f, 1f, depth / 10f);
             pad.GetComponent<MeshRenderer>().sharedMaterial = Paint(paint);
+            return pad;
+        }
 
-            // north edge, outside the pad: a label there survives the pad filling up
-            var text = new GameObject($"{pad.name} label");
-            text.transform.SetParent(parent, false);
-            text.transform.SetPositionAndRotation(
-                new Vector3(xMin + width * 0.5f, 5f, zMin + depth + 4f),
-                Quaternion.Euler(35f, 0f, 0f));
+        /// <summary>A pad's floating caption; the name carries " label" so the capture
+        /// pass can tell captions from content.</summary>
+        internal static void PadLabel(string name, string text, Vector3 position,
+                                      Transform parent)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.SetPositionAndRotation(position, Quaternion.Euler(35f, 0f, 0f));
 
-            var mesh = text.AddComponent<TextMesh>();
-            mesh.text = $"{code}\n{width:F0} x {depth:F0} m\n" +
-                        $"{width / Cell:F0} x {depth / Cell:F0} cells";
+            var mesh = go.AddComponent<TextMesh>();
+            mesh.text = text;
             mesh.fontSize = 48;
             mesh.characterSize = 0.5f;
             mesh.anchor = TextAnchor.LowerCenter;
             mesh.alignment = TextAlignment.Center;
             mesh.color = Color.white;
+        }
+
+        /// <summary>The colour a lot width is painted in, by pad code letter - the
+        /// workbench pads keep their lot's own colour.</summary>
+        internal static Color PaintFor(string code)
+        {
+            var column = code.Length > 0 ? code[0] - 'A' : 0;
+            return Paints[Mathf.Clamp(column, 0, Paints.Length - 1)];
         }
 
         static void Header(string title, Vector3 position, Transform parent)

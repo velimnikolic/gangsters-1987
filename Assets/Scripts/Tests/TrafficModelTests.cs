@@ -46,6 +46,8 @@ namespace LivingCity.Tests
             DockingCurveTerminatesAtTheStall(failures);
             DockingStepNeverBeatsTheCap(failures);
             DockingFinalApproachIsMonotone(failures);
+            UndockingCurveRunsStallToKerb(failures);
+            UndockingCarPointsWhereItIsGoing(failures);
             PoliceIntentionCoversEveryState(failures);
             SchoolIntentionCoversEveryState(failures);
             ForecourtIntentionCoversEveryState(failures);
@@ -791,6 +793,108 @@ namespace LivingCity.Tests
                     }
                     previous = distance;
                 }
+            }
+        }
+
+        /// <summary>
+        /// The outbound geometries, from a bay at the origin facing +Z out toward the street:
+        /// a kerb straight ahead with the lane running either way across the bay's nose, a kerb
+        /// offset along the lane, a bay that opens almost onto the lane (the case the handle
+        /// clip exists for), and the degenerate stall-is-the-kerb curve that must terminate.
+        /// </summary>
+        static readonly (Vector3 kerb, Vector3 lane)[] UndockCases =
+        {
+            (new Vector3(0f, 0f, 11f), Vector3.right),
+            (new Vector3(0f, 0f, 11f), Vector3.left),
+            (new Vector3(6f, 0f, 11f), Vector3.right),
+            (new Vector3(-6f, 0f, 11f), Vector3.left),
+            (new Vector3(0f, 0f, 2f), Vector3.right),
+            (Vector3.zero, Vector3.right),
+        };
+
+        static readonly Vector3 UndockStallOut = Vector3.forward;
+
+        /// <summary>
+        /// The endpoints are the contract with the two components that fly this curve: t 0 is
+        /// the bay the car is standing in and t 1 is the kerb waypoint CarBehavior takes over
+        /// at, and the walk between them has to finish in bounded steps for every one of them -
+        /// including the coincident case, where there is nowhere to go.
+        /// </summary>
+        static void UndockingCurveRunsStallToKerb(List<string> failures)
+        {
+            foreach (var (kerb, lane) in UndockCases)
+            {
+                var curve = Entities.PoliceDocking.Undock(
+                    Vector3.zero, UndockStallOut, kerb, lane);
+
+                if (Entities.PoliceDocking.Point(curve, 0f).magnitude > 1e-4f)
+                    failures.Add($"Undocking: curve to {kerb} does not start in the stall.");
+                if ((Entities.PoliceDocking.Point(curve, 1f) - kerb).magnitude > 1e-4f)
+                    failures.Add($"Undocking: curve to {kerb} does not end at the kerb.");
+
+                var t = 0f;
+                var steps = 0;
+                while (t < 1f && steps < 10_000)
+                {
+                    t = Entities.PoliceDocking.Advance(curve, t, Entities.PoliceDocking.Speed * Dt);
+                    steps++;
+                }
+
+                if (t < 1f)
+                    failures.Add($"Undocking: curve to {kerb} never terminates " +
+                                 $"({steps} steps, t {t:F3}).");
+            }
+        }
+
+        /// <summary>
+        /// The one that names the bug this curve was rebuilt for. A car pulling out drives
+        /// FORWARDS, so the heading it is steered by must be within a few degrees of the way it
+        /// actually moved on every step - the old single-control curve went straight out into
+        /// the road while the yaw slerped ninety degrees onto the lane, and the car crabbed out
+        /// of the forecourt sideways. Checked against the step's DISPLACEMENT, because the
+        /// displacement is what a player watches.
+        ///
+        /// It also has to arrive along the lane: CarBehavior takes the wheel back at the kerb,
+        /// and a heading that does not match the lane there is a snap on the handover.
+        ///
+        /// Read off Tangent rather than off Heading, which is only LookRotation over the same
+        /// flattened vector: Quaternion.LookRotation is an internal call and throws outside the
+        /// Unity runtime, and this suite runs in a bare .NET host.
+        /// </summary>
+        static void UndockingCarPointsWhereItIsGoing(List<string> failures)
+        {
+            foreach (var (kerb, lane) in UndockCases)
+            {
+                if (kerb.sqrMagnitude < 1e-4f)
+                    continue;
+
+                var curve = Entities.PoliceDocking.Undock(
+                    Vector3.zero, UndockStallOut, kerb, lane);
+
+                var t = 0f;
+                while (t < 1f)
+                {
+                    var heading = Entities.PoliceDocking.Tangent(curve, t);
+                    var next = Entities.PoliceDocking.Advance(
+                        curve, t, Entities.PoliceDocking.Speed * Dt);
+                    var moved = Entities.PoliceDocking.Point(curve, next)
+                              - Entities.PoliceDocking.Point(curve, t);
+
+                    if (moved.sqrMagnitude > 1e-6f && Vector3.Angle(heading, moved) > 10f)
+                    {
+                        failures.Add(
+                            $"Undocking: the car to {kerb} slides sideways at t {t:F2} - " +
+                            $"{Vector3.Angle(heading, moved):F1} degrees off its own travel.");
+                        break;
+                    }
+
+                    t = next;
+                }
+
+                var arrival = Entities.PoliceDocking.Tangent(curve, 1f);
+                if (Vector3.Angle(arrival, lane) > 1f)
+                    failures.Add($"Undocking: the car to {kerb} reaches the kerb " +
+                                 $"{Vector3.Angle(arrival, lane):F1} degrees off the lane.");
             }
         }
 

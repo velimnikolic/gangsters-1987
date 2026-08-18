@@ -10,6 +10,7 @@ namespace LivingCity.Personnel
         Rifle,
         TommyGun,
         TwinPistols,
+        MachinePistol,
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using LivingCity.Generation;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -8,7 +9,10 @@ namespace LivingCity.EditorTools
 {
     /// <summary>
     /// City blocks the user composed by hand: groups of catalog buildings arranged in the
-    /// showroom scene, dictated block by block, and transcribed here as recipes. The scene
+    /// showroom scene, dictated block by block, and transcribed here as recipes. Blocks
+    /// composed on a lot pad no longer need transcribing - Tools/City/Catalog/Capture Blocks
+    /// From Lot Pads writes them to Assets/CityKit/BlockRecipes and AllRecipes() bakes those
+    /// alongside this table. The scene
     /// arrangement itself is EPHEMERAL - the catalog rebuild overwrites
     /// Assets/BuildingCatalog.unity and regenerates Assets/CityKit/Catalog with fresh
     /// guids - so this table is the only durable record, and members are named, never
@@ -27,11 +31,12 @@ namespace LivingCity.EditorTools
     /// </summary>
     public static class SyntyCityBlocks
     {
-        const string BlocksDir = SyntyKitExtractor.KitDir + "/Blocks";
+        internal const string BlocksDir = SyntyKitExtractor.KitDir + "/Blocks";
 
         /// <summary>Auto-extracted candidates carry this prefix; the manual-recipe
-        /// cleanup in Bake() must never treat them as stale recipes.</summary>
-        const string PalmBlockPrefix = "PalmBlock_";
+        /// cleanup in Bake() must never treat them as stale recipes, and the randomiser
+        /// packs lots out of these and never out of a block somebody composed.</summary>
+        internal const string PalmBlockPrefix = "PalmBlock_";
 
         /// <summary>Two buildings this close (m, XZ gap) share a block; the demo's
         /// streets are 10+ m wide, party-wall rows touch outright.</summary>
@@ -62,11 +67,34 @@ namespace LivingCity.EditorTools
         sealed class BlockRecipe
         {
             public string name;
+            // The lot pad the block was composed on, and that pad's size. Carried
+            // through onto the bake as a BlockLotTag, which is how the city builder
+            // knows an authored block belongs in a B2 interior and nowhere else.
+            // Null lot = a bake for no particular lot, placed wherever it fits.
+            public string lot;
+            public float lotWidth, lotDepth;
             // prefab = Catalog name, or a Buildings name for the hand-made shells;
             // mirrorX flips the member on its local X (localScale.x = -1), the one
             // arrangement a yaw cannot reproduce.
             public (string prefab, Vector3 pos, float yaw, bool mirrorX)[] members;
             public (string path, Vector3 pos, float yaw)[] props;     // full asset path; optional
+            // Captured recipes bring their dressing over as it was written down, scale
+            // included - a floor tile stretched over a courtyard is one prop that has to
+            // go back down the size it was authored at. The dictated rows above never
+            // carry a scale, so they stay a plain tuple.
+            public BlockPropData[] captured;
+        }
+
+        /// <summary>Every piece of dressing a recipe carries, dictated and captured alike,
+        /// in one shape the bake can stand up without asking where it came from.</summary>
+        static IEnumerable<BlockPropData> Dressing(BlockRecipe recipe)
+        {
+            if (recipe.props != null)
+                foreach (var (path, pos, yaw) in recipe.props)
+                    yield return new BlockPropData { path = path, pos = pos, yaw = yaw };
+            if (recipe.captured != null)
+                foreach (var prop in recipe.captured)
+                    yield return prop;
         }
 
         // Courtyard dressing draws on the PalmCity demo's own habits, measured offline:
@@ -156,7 +184,8 @@ namespace LivingCity.EditorTools
 
             // 2026-08-12, second dictation: composed on the catalog's A1 pad (70 x 50,
             // centred at world -555, 625), so this block is the A1 lot's own bake -
-            // RoadDemoBuilder gives an A1 interior residentialblock2 and nothing else.
+            // the lot below stamps a BlockLotTag onto the bake, and RoadDemoBuilder
+            // gives an A1 interior the block authored for A1 ahead of anything else.
             // Transcribed from the pad: offsets are the scene position minus the pad
             // centre, turned through the showroom's 180 baseline (x/z negated, yaw
             // less 180). The west City_01 stood at 91.4 degrees by hand - snapped to
@@ -164,6 +193,9 @@ namespace LivingCity.EditorTools
             new()
             {
                 name = "residentialblock2",
+                lot = "A1",
+                lotWidth = 70f,
+                lotDepth = 50f,
                 members = new (string prefab, Vector3 pos, float yaw, bool mirrorX)[]
                 {
                     ("City_01", new Vector3(19.092f, 0f, -0.699f), -90f, true),
@@ -180,17 +212,48 @@ namespace LivingCity.EditorTools
             },
         };
 
-        [MenuItem("Tools/City/Bake City Blocks", priority = 5)]
+        /// <summary>
+        /// What the bake actually works from: the hand-dictated table above plus every
+        /// block captured off a lot pad (Assets/CityKit/BlockRecipes/*.json, written by
+        /// BlockLotCapture). A captured recipe of the same name wins - capturing is how
+        /// a block is edited now, so it is the later word.
+        /// </summary>
+        static List<BlockRecipe> AllRecipes()
+        {
+            var all = new List<BlockRecipe>(Recipes);
+            foreach (var saved in BlockRecipeStore.LoadAll())
+            {
+                var recipe = new BlockRecipe
+                {
+                    name = saved.name,
+                    lot = saved.lot,
+                    lotWidth = saved.lotWidth,
+                    lotDepth = saved.lotDepth,
+                    members = saved.members
+                        .Select(m => (m.prefab, m.pos, m.yaw, m.mirrorX)).ToArray(),
+                    captured = saved.props.ToArray(),
+                };
+                var existing = all.FindIndex(r => r.name == recipe.name);
+                if (existing >= 0)
+                    all[existing] = recipe;
+                else
+                    all.Add(recipe);
+            }
+            return all;
+        }
+
+        [MenuItem("Tools/City/Catalog/Bake City Blocks", priority = 21)]
         public static void Bake()
         {
             EnsureBlocksFolder();
+            var recipes = AllRecipes();
 
             // Overwrite in place, never delete-and-recreate: SaveAsPrefabAsset onto the
             // existing path keeps the guid, so block instances already standing in the
             // showroom scene refresh instead of going missing. Only bakes whose recipe
             // was renamed or removed get dropped - PalmBlock_* candidates belong to the
             // extraction pass, not to the recipe table, and stay untouched.
-            var live = new HashSet<string>(Recipes.Select(r => r.name));
+            var live = new HashSet<string>(recipes.Select(r => r.name));
             foreach (var found in AssetDatabase.FindAssets("t:Prefab", new[] { BlocksDir }))
             {
                 var path = AssetDatabase.GUIDToAssetPath(found);
@@ -199,11 +262,11 @@ namespace LivingCity.EditorTools
                     AssetDatabase.DeleteAsset(path);
             }
 
-            if (Recipes.Length == 0)
+            if (recipes.Count == 0)
                 return;
 
             var bakedCount = 0;
-            foreach (var recipe in Recipes)
+            foreach (var recipe in recipes)
             {
                 var parentGo = new GameObject(recipe.name);
                 var placedBuildings = 0;
@@ -211,19 +274,30 @@ namespace LivingCity.EditorTools
                 {
                     foreach (var (prefabName, pos, yaw, mirrorX) in recipe.members)
                     {
-                        // Catalog first, then the hand-made shells in Buildings - the
-                        // showroom offers both and a dictated block may use either.
+                        // A block standing inside itself is a bake that never ends.
+                        if (prefabName == recipe.name)
+                        {
+                            Debug.LogError($"[Blocks] recipe '{recipe.name}' lists itself as a " +
+                                           "member - skipped.");
+                            continue;
+                        }
+
+                        // Catalog first, then the hand-made shells in Buildings, then
+                        // the block bakes - the showroom offers all three and a
+                        // composed block may stand a whole smaller block in its yard.
                         var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
                             $"{SyntyBuildingCatalog.CatalogDir}/{prefabName}.prefab")
                             ?? AssetDatabase.LoadAssetAtPath<GameObject>(
-                            $"{SyntyKitExtractor.BuildingsDir}/{prefabName}.prefab");
+                            $"{SyntyKitExtractor.BuildingsDir}/{prefabName}.prefab")
+                            ?? AssetDatabase.LoadAssetAtPath<GameObject>(
+                            $"{BlocksDir}/{prefabName}.prefab");
                         if (!prefab)
                         {
                             // The catalog rebuild renames segments when splits or joins
                             // change - the recipe must name its dead member out loud.
                             Debug.LogError($"[Blocks] recipe '{recipe.name}': member " +
-                                           $"'{prefabName}' is in neither Catalog nor " +
-                                           "Buildings - the rebuild renamed or dropped " +
+                                           $"'{prefabName}' is in neither Catalog, Buildings " +
+                                           "nor Blocks - the rebuild renamed or dropped " +
                                            "it; fix the recipe.");
                             continue;
                         }
@@ -236,13 +310,13 @@ namespace LivingCity.EditorTools
                         placedBuildings++;
                     }
 
-                    foreach (var (path, pos, yaw) in recipe.props ?? System.Array.Empty<(string, Vector3, float)>())
+                    foreach (var prop in Dressing(recipe))
                     {
-                        // Recipe rows carry bare prefab names for readability; the asset
-                        // on disk always ends in .prefab (this is what silently emptied
-                        // the first courtyard bake - 44 null loads).
-                        var assetPath = path.EndsWith(".prefab") ? path : path + ".prefab";
-                        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+                        // Dictated rows carry a bare prefab name, captured ones a real
+                        // asset path that is not always a .prefab - BlockRecipeStore.LoadProp
+                        // knows both, and blind appending here is what silently emptied the
+                        // first courtyard bake and later every captured auto floor.
+                        var prefab = BlockRecipeStore.LoadProp(prop.path, out var assetPath);
                         if (!prefab)
                         {
                             Debug.LogError($"[Blocks] recipe '{recipe.name}': prop '{assetPath}' not found.");
@@ -254,8 +328,9 @@ namespace LivingCity.EditorTools
                         // collider the ray meets first).
                         var instance = Object.Instantiate(prefab, parentGo.transform);
                         instance.name = prefab.name;
-                        instance.transform.localPosition = pos;
-                        instance.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+                        instance.transform.localPosition = prop.pos;
+                        instance.transform.localRotation = Quaternion.Euler(0f, prop.yaw, 0f);
+                        instance.transform.localScale = prop.Scale;
                         foreach (var collider in instance.GetComponentsInChildren<Collider>(true))
                             Object.DestroyImmediate(collider);
                     }
@@ -264,6 +339,18 @@ namespace LivingCity.EditorTools
                     // recipe is broken and only the LogError above should remain of it.
                     if (placedBuildings > 0)
                     {
+                        // The pad it was composed on travels with the bake - the city
+                        // builder reads prefabs, not recipes, and without this every
+                        // captured block is just another prefab in the folder that
+                        // nothing knows where to put.
+                        if (!string.IsNullOrEmpty(recipe.lot))
+                        {
+                            var tag = parentGo.AddComponent<BlockLotTag>();
+                            tag.lot = recipe.lot;
+                            tag.lotWidth = recipe.lotWidth;
+                            tag.lotDepth = recipe.lotDepth;
+                        }
+
                         PrefabUtility.SaveAsPrefabAsset(parentGo, $"{BlocksDir}/{recipe.name}.prefab");
                         bakedCount++;
 
@@ -277,7 +364,11 @@ namespace LivingCity.EditorTools
                             foreach (var r in renderers) box.Encapsulate(r.bounds);
                             Debug.Log($"[Blocks] {recipe.name}: footprint {box.size.x:F2} x " +
                                       $"{box.size.z:F2} m, centre {box.center.x:F2}, {box.center.z:F2} " +
-                                      "off the pivot.");
+                                      "off the pivot" +
+                                      (string.IsNullOrEmpty(recipe.lot)
+                                          ? ", no lot - goes wherever it fits."
+                                          : $", lot {recipe.lot} " +
+                                            $"({recipe.lotWidth:F0} x {recipe.lotDepth:F0} m)."));
                         }
                     }
                 }
@@ -288,7 +379,9 @@ namespace LivingCity.EditorTools
             }
 
             AssetDatabase.SaveAssets();
-            Debug.Log($"[Blocks] {bakedCount}/{Recipes.Length} block recipes baked to {BlocksDir}.");
+            Debug.Log($"[Blocks] {bakedCount}/{recipes.Count} block recipes baked to {BlocksDir} " +
+                      $"({Recipes.Length} dictated, {recipes.Count - Recipes.Length} captured off " +
+                      "the lot pads).");
         }
 
         /// <summary>Baked blocks for the showroom row: manual recipes in table order,
@@ -297,7 +390,7 @@ namespace LivingCity.EditorTools
         {
             var list = new List<GameObject>();
             var seen = new HashSet<string>();
-            foreach (var recipe in Recipes)
+            foreach (var recipe in AllRecipes())
             {
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
                     $"{BlocksDir}/{recipe.name}.prefab");

@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using LivingCity.Gameplay;
+using static LivingCity.UI.LedgerKit;
 
 namespace LivingCity.UI
 {
@@ -8,18 +9,18 @@ namespace LivingCity.UI
     /// The whole booter for the standalone Ledger scene: a city-less room where the
     /// book IS the game. GameplayBootstrap declines scenes without a CityBuilder on
     /// purpose, so this component brings the two directors and the almanac itself -
-    /// the runtime-self-install contract, just scoped to one scene - hangs the Modern
-    /// Menus pack's heist art behind the book, and opens the book without waiting for
-    /// P. After that first opening the book is the almanac's as ever: P toggles, Esc
-    /// peels, and closing it leaves the player looking at the key art.
+    /// the runtime-self-install contract, just scoped to one scene - lays the rest of
+    /// the desk behind the folder, and opens the book without waiting for P. After
+    /// that first opening the book is the almanac's as ever: P toggles, Esc peels,
+    /// and closing it leaves the player looking at the empty desk.
     ///
     /// The backdrop canvas carries NO GraphicRaycaster - the project rule: a canvas
-    /// earns a raycaster only by owning clicks, and art owns none.
+    /// earns a raycaster only by owning clicks, and a desk owns none.
     /// </summary>
     public sealed class LedgerMenuScene : MonoBehaviour
     {
         /// <summary>Far under the book's 110 - and under every HUD, were one to exist
-        /// here. The art is a floor, not a layer.</summary>
+        /// here. The desk is a floor, not a layer.</summary>
         const int BackdropOrder = 10;
 
         PersonnelAlmanac almanac;
@@ -50,6 +51,9 @@ namespace LivingCity.UI
                 opened = true;
         }
 
+        /// <summary>The rest of the desk: the same walnut and lamp the folder sits on,
+        /// across the whole screen, so the right half (where the city's map would
+        /// dock) reads as more desk rather than a void.</summary>
         void BuildBackdrop()
         {
             var go = new GameObject("Ledger Backdrop", typeof(RectTransform));
@@ -64,47 +68,20 @@ namespace LivingCity.UI
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
 
-            var art = new GameObject("Art", typeof(RectTransform));
-            art.transform.SetParent(go.transform, false);
-            var artRect = (RectTransform)art.transform;
-            artRect.anchorMin = artRect.anchorMax = new Vector2(0.5f, 0.5f);
-            artRect.anchoredPosition = Vector2.zero;
+            var desk = NewRect("Desk", go.transform);
+            Stretch(desk);
+            Fill(desk, LedgerStyle.Desk);
+            Grain(desk, 1920f, 1200f, 1.6f);
 
-            var image = art.AddComponent<Image>();
-            image.raycastTarget = false;
-
-            var sprite = LedgerSkinSet.Backdrop;
-            if (sprite)
-            {
-                image.sprite = sprite;
-                image.color = Color.white;
-                // Envelope, not fit: key art may crop at odd aspects but must never
-                // letterbox - the fitter keeps the sprite's own proportions while
-                // covering the screen whole.
-                var fitter = art.AddComponent<AspectRatioFitter>();
-                fitter.aspectMode = AspectRatioFitter.AspectMode.EnvelopeParent;
-                fitter.aspectRatio = sprite.rect.width / sprite.rect.height;
-            }
-            else
-            {
-                // Skin not baked yet - the dark room the book already assumes.
-                artRect.anchorMin = Vector2.zero;
-                artRect.anchorMax = Vector2.one;
-                artRect.offsetMin = artRect.offsetMax = Vector2.zero;
-                image.color = LedgerPalette.Room;
-            }
-
-            // A quiet scrim so the art reads as a room behind the book, not a rival
-            // for it - and white ledger text never lands on a neon sign.
-            var scrim = new GameObject("Scrim", typeof(RectTransform));
-            scrim.transform.SetParent(go.transform, false);
-            var scrimRect = (RectTransform)scrim.transform;
-            scrimRect.anchorMin = Vector2.zero;
-            scrimRect.anchorMax = Vector2.one;
-            scrimRect.offsetMin = scrimRect.offsetMax = Vector2.zero;
-            var scrimImage = scrim.AddComponent<Image>();
-            scrimImage.color = new Color(0f, 0f, 0f, 0.35f);
-            scrimImage.raycastTarget = false;
+            var lamp = NewRect("Lamp", desk);
+            lamp.anchorMin = lamp.anchorMax = new Vector2(0f, 1f);
+            lamp.pivot = new Vector2(0.5f, 0.5f);
+            lamp.anchoredPosition = new Vector2(180f, -40f);
+            lamp.sizeDelta = new Vector2(1500f, 1500f);
+            var lampImage = lamp.gameObject.AddComponent<RawImage>();
+            lampImage.texture = LedgerStyle.RadialLight;
+            lampImage.color = LedgerStyle.Lamp;
+            lampImage.raycastTarget = false;
         }
     }
 }

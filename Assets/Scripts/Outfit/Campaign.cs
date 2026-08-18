@@ -12,8 +12,9 @@ namespace LivingCity.Outfit
     /// </summary>
     public sealed class Campaign
     {
-        /// <summary>The era's opening year - the city's 1980s setting, week one.</summary>
-        public const int StartYear = 1980;
+        /// <summary>The era's opening year - 1987, the setting the whole game is written
+        /// to (see Docs/1987-period-reference.md); the newspaper's calendar agrees.</summary>
+        public const int StartYear = 1987;
 
         public const int WeeksPerYear = 52;
 

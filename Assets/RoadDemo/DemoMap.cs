@@ -15,7 +15,7 @@ namespace RoadDemo
     ///
     /// The map DRAWS the plan rather than photographing it - no second camera, no
     /// render texture. The block slabs come off the same grid arithmetic the kit is
-    /// laid on (RoadDemoBuilder.Lots and the two half-widths), the buildings off the
+    /// laid on (RoadDemoBuilder.LotPlans and the two half-widths), the buildings off the
     /// very colliders BuildingCardPicker raycasts in the world, so what is clickable
     /// on the map is exactly what is clickable in the scene - and the card it opens
     /// prints the same two lines the world card does.
@@ -43,6 +43,8 @@ namespace RoadDemo
 
         const float PedDot = 6f;
         const float PoliceDot = 8f;
+        const float CrewDot = 8f;
+        const float BossDot = 10f;
         const float CarLength = 9f, CarWidth = 5f;
 
         /// <summary>A footprint never draws thinner than this - a box has to hold a
@@ -87,6 +89,9 @@ namespace RoadDemo
         List<PoliceFootPatrol> _officers;
         List<DemoVehicle> _cars;
         List<PolicePatrolCar> _policeCars;
+        DemoCrews _crews;              // dealt after build; its men are plotted live
+        RectTransform _moverRoot;
+        readonly Dictionary<CrewWalker, Image> _crewDots = new Dictionary<CrewWalker, Image>();
 
         /// <summary>A footprint on the map: the same transform the world picker would
         /// hand its card, measured the same way.</summary>
@@ -134,7 +139,7 @@ namespace RoadDemo
         public void Init(RoadDemoBuilder builder, Transform blockRoot,
             BuildingCardPicker picker, List<CivilianAgent> civilians,
             List<PoliceFootPatrol> officers, List<DemoVehicle> cars,
-            List<PolicePatrolCar> policeCars)
+            List<PolicePatrolCar> policeCars, DemoCrews crews)
         {
             _builder = builder;
             _blockRoot = blockRoot;
@@ -143,11 +148,12 @@ namespace RoadDemo
             _officers = officers;
             _cars = cars;
             _policeCars = policeCars;
+            _crews = crews;
         }
 
         void Start()
         {
-            if (_builder == null || _builder.Lots.Count == 0)
+            if (_builder == null || _builder.LotPlans.Count == 0)
             {
                 // No city to draw - a map of nothing is worse than no map.
                 Destroy(this);
@@ -298,11 +304,12 @@ namespace RoadDemo
             legend.anchorMax = new Vector2(1f, 1f);
             legend.pivot = new Vector2(1f, 1f);
             legend.anchoredPosition = new Vector2(-ViewPad, -ViewPad);
-            legend.sizeDelta = new Vector2(3f * LegendStep, HeaderHeight - ViewPad);
+            legend.sizeDelta = new Vector2(4f * LegendStep, HeaderHeight - ViewPad);
 
             LegendChip(legend, 0, DemoUi.Dot, new Vector2(9f, 9f), PoliceBlue, "POLICE");
             LegendChip(legend, 1, DemoUi.Dot, new Vector2(9f, 9f), DemoUi.Ink, "CIVILIAN");
             LegendChip(legend, 2, null, new Vector2(5f, 9f), TrafficInk, "TRAFFIC");
+            LegendChip(legend, 3, DemoUi.Dot, new Vector2(9f, 9f), DemoUi.Gold, "OUTFIT");
         }
 
         const float LegendStep = 86f;
@@ -368,8 +375,8 @@ namespace RoadDemo
 
             var blocks = DemoUi.NewRect("Blocks", view);
             DemoUi.Fill(blocks);
-            foreach (var lot in _builder.Lots)
-                _plan.Add((DemoUi.Block(blocks, "Block", BlockFace).rectTransform, lot));
+            foreach (var lot in _builder.LotPlans)
+                _plan.Add((DemoUi.Block(blocks, "Block", BlockFace).rectTransform, lot.Slab));
 
             var buildings = DemoUi.NewRect("Buildings", view);
             DemoUi.Fill(buildings);
@@ -433,7 +440,7 @@ namespace RoadDemo
 
         void BuildMovers(RectTransform view)
         {
-            var root = DemoUi.NewRect("Movers", view);
+            var root = _moverRoot = DemoUi.NewRect("Movers", view);
             DemoUi.Fill(root);
 
             if (_civilians != null)
@@ -577,6 +584,7 @@ namespace RoadDemo
 
             _shown = open;
             _panel.SetActive(open);
+            DemoAudio.Ui(open ? DemoSounds.MapOpen : DemoSounds.MapClose);
             if (!open)
                 Select(-1);
 
@@ -619,6 +627,59 @@ namespace RoadDemo
                     mover.Img.color = mover.Patrol.MarkerDimmed ? PoliceRest : mover.Tint;
                 if (!mover.Img.enabled)
                     mover.Img.enabled = true;
+            }
+
+            PlotCrews();
+        }
+
+        // The outfit's men are dealt after the map is built and re-dealt whenever
+        // the ledger changes, so their dots are matched to the live roll call every
+        // frame rather than pooled once: a lieutenant's dot a shade larger, the
+        // selected crew's dots lit white.
+        readonly List<CrewWalker> _crewSeen = new List<CrewWalker>();
+        static readonly Color RivalRed = new Color(1f, 0.36f, 0.30f, 1f);
+
+        void PlotCrews()
+        {
+            if (_crews == null || _moverRoot == null)
+                return;
+
+            _crewSeen.Clear();
+            foreach (var unit in _crews.Units)
+            {
+                bool lit = _crews.Selected == unit;
+                foreach (var man in unit.All())
+                {
+                    if (man.Tf == null || man.Dead)
+                        continue;
+                    _crewSeen.Add(man);
+                    if (!_crewDots.TryGetValue(man, out var dot))
+                    {
+                        dot = DemoUi.Block(_moverRoot, "crew", DemoUi.Gold);
+                        dot.sprite = DemoUi.Dot;
+                        _crewDots[man] = dot;
+                    }
+                    float size = man.IsLieutenant ? BossDot : CrewDot;
+                    dot.rectTransform.sizeDelta = new Vector2(size, size);
+                    var position = man.Tf.position;
+                    dot.rectTransform.anchoredPosition = ToView(new Vector2(position.x, position.z));
+                    dot.color = lit ? Color.white : unit.Faction != 0 ? RivalRed : DemoUi.Gold;
+                    if (!dot.enabled)
+                        dot.enabled = true;
+                }
+            }
+
+            if (_crewDots.Count == _crewSeen.Count)
+                return;
+            var stale = new List<CrewWalker>();
+            foreach (var kv in _crewDots)
+                if (!_crewSeen.Contains(kv.Key))
+                    stale.Add(kv.Key);
+            foreach (var man in stale)
+            {
+                if (_crewDots[man])
+                    Destroy(_crewDots[man].gameObject);
+                _crewDots.Remove(man);
             }
         }
 

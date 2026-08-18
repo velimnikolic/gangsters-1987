@@ -15,7 +15,7 @@ namespace LivingCity.UI
     ///   checkout, an Editor that has not refreshed), TryDress returns false and the caller
     ///   keeps the solid-colour Image it built first - the HUD looks like it did before
     ///   this class existed, instead of drawing white squares.
-    /// - The ledger book is NOT a customer. LedgerPalette's CRT terminal is an authored
+    /// - The ledger book is NOT a customer. LedgerStyle's paper-and-desk look is an authored
     ///   look with a sprite-less discipline of its own; this skin covers the street-level
     ///   chrome (menus, popups, bars) and stops at the book's cover.
     ///

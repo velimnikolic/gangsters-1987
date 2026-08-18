@@ -245,7 +245,7 @@ namespace LivingCity.EditorTools
             ["building-coffeeshop"] = "Coffee Shop",
         };
 
-        [MenuItem("Tools/City/Build Synty Building Catalog Scene", priority = 4)]
+        [MenuItem("Tools/City/Catalog/Build Synty Building Catalog Scene", priority = 20)]
         public static void Build()
         {
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
@@ -396,6 +396,11 @@ namespace LivingCity.EditorTools
             //    with the loose props of both packs lined up west of those again.
             BlockLotPads.Draw();
             SyntyPropShowroom.Draw();
+
+            // 5. The blocks the user has already captured, each back on a pad of its own
+            //    lot size north of the lot pads. Without this the rebuild would hand
+            //    back empty pads and the composition would have to be dragged again.
+            BlockLotCapture.DrawWorkbench();
 
             var rows = (index + columns - 1) / columns;
             var centre = new Vector3((columns - 1) * spacing / 2f, 0f, (rows - 1) * spacing / 2f);

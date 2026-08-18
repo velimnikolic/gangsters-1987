@@ -25,7 +25,10 @@ namespace LivingCity.Personnel
     public static class RosterSeeder
     {
         public const int MemberCount = 6;
-        public const int PistolCount = 3;
+        /// <summary>None: the .38 every man carries is his own, not the outfit's
+        /// stock - the armory holds what is BETTER than that. Kept as a named
+        /// number because the stock test counts against it.</summary>
+        public const int PistolCount = 0;
 
         static readonly string[] VehicleNames = { "Sedan", "Coupe", "Panel Van" };
 

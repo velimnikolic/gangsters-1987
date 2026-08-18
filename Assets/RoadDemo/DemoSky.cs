@@ -58,9 +58,15 @@ namespace RoadDemo
         const float MoonIntensity = 0.45f;
         const float MoonElevationScale = 0.7f;
 
-        static readonly Color DayAmbientSky = new Color(0.55f, 0.62f, 0.72f);
-        static readonly Color DayAmbientEquator = new Color(0.42f, 0.44f, 0.47f);
-        static readonly Color DayAmbientGround = new Color(0.24f, 0.23f, 0.21f);
+        // Deliberately under half the sun's strength. Ambient this close to the key
+        // light fills the shadow side of every wall back in and the city reads as
+        // flat colour with no form to it - which is what the demo looked like while
+        // the shadow range was too short to draw a shadow at all (see DemoShadows).
+        // The sky term stays the bluest of the three so the shaded faces cool off
+        // against the warm sun instead of just going grey.
+        static readonly Color DayAmbientSky = new Color(0.40f, 0.48f, 0.60f);
+        static readonly Color DayAmbientEquator = new Color(0.31f, 0.33f, 0.36f);
+        static readonly Color DayAmbientGround = new Color(0.17f, 0.16f, 0.15f);
 
         static readonly Color NightAmbientSky = new Color(0f, 0.079f, 0.236f);
         static readonly Color NightAmbientEquator = new Color(0f, 0.177f, 0.292f);

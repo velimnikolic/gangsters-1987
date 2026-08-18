@@ -99,6 +99,7 @@ namespace LivingCity.UI
             EquipmentKind.Rifle => "Rifle",
             EquipmentKind.TommyGun => "Tommy Gun",
             EquipmentKind.TwinPistols => "Twin Pistols",
+            EquipmentKind.MachinePistol => "Machine Pistol",
             _ => "",
         };
 
@@ -280,6 +281,7 @@ namespace LivingCity.UI
         public const string ReasonNotLieutenant = "He does not run a crew.";
         public const string ReasonLieutenantMoves = "A lieutenant is demoted, not reassigned.";
         public const string ReasonAlreadyInCrew = "He is already in that crew.";
+        public const string ReasonCrewFull = "A lieutenant runs four men at most.";
         public const string ReasonAlreadyFront = "He already runs the front.";
         public const string ReasonAlreadyHolds = "He already holds it.";
         public const string ReasonNotHeld = "Nobody holds it.";

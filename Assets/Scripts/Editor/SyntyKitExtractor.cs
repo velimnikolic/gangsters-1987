@@ -140,7 +140,7 @@ namespace LivingCity.EditorTools
             new(PalmDemo, "City/Toilet", "building-park-toilet"),
         };
 
-        [MenuItem("Tools/City/Rebuild Synty City Kit (Buildings)")]
+        [MenuItem("Tools/City/Catalog/Rebuild Synty City Kit (Buildings)", priority = 1)]
         public static void ForceExtract()
         {
             AssetDatabase.DeleteAsset(VersionPath);

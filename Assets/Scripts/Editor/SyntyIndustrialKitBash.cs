@@ -74,7 +74,7 @@ namespace LivingCity.EditorTools
             "Assets/Synty/PolygonCity/Prefabs/Buildings/SM_Prop_Water_Tower_01.prefab";
         const float ChimneyCourse = 2.505f; // block height; base sits 0.126 under the pivot
 
-        [MenuItem("Tools/City/Rebuild Synty Industrial Kit (Kit-Bash)")]
+        [MenuItem("Tools/City/Catalog/Rebuild Synty Industrial Kit (Kit-Bash)", priority = 3)]
         public static void ForceBuild()
         {
             AssetDatabase.DeleteAsset(VersionPath);

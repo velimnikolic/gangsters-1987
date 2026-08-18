@@ -44,7 +44,7 @@ namespace LivingCity.EditorTools
         const float Clearance = 60f;   // clear of the lot pads
         const float Cell = 5f;
 
-        [MenuItem("Tools/City/Draw Prop Showroom", priority = 7)]
+        [MenuItem("Tools/City/Catalog/Draw Prop Showroom", priority = 23)]
         public static void DrawShowroom()
         {
             var scene = SceneManager.GetActiveScene();

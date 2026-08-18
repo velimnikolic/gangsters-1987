@@ -208,9 +208,9 @@ namespace LivingCity.Entities
 
             var stallRot = station.StallRotation(stall);
             var curve = PoliceDocking.Undock(
-                station.StallWorld(stall), stallRot * Vector3.forward, kerbPos);
+                station.StallWorld(stall), stallRot * Vector3.forward, kerbPos, kerbDir);
 
-            yield return Drive(curve, stallRot, Quaternion.LookRotation(kerbDir, Vector3.up));
+            yield return DriveOut(curve, Quaternion.LookRotation(kerbDir, Vector3.up));
 
             station.ReleaseStall(stall);
             stall = -1;
@@ -232,9 +232,10 @@ namespace LivingCity.Entities
             }
         }
 
-        /// <summary>The hand-animated leg: position along the curve at PoliceDocking.Speed,
-        /// rotation slerped across it. TrafficRegistry needs no telling - it reads the
-        /// transform live.</summary>
+        /// <summary>The hand-animated leg INTO the bay: position along the curve at
+        /// PoliceDocking.Speed, rotation slerped across it. Slerped and not steered on purpose -
+        /// the car backs in, so it ends nose-out while travelling nose-first no longer applies.
+        /// TrafficRegistry needs no telling - it reads the transform live.</summary>
         IEnumerator Drive(PoliceDocking.Curve curve, Quaternion from, Quaternion to)
         {
             var t = 0f;
@@ -244,6 +245,25 @@ namespace LivingCity.Entities
                 transform.SetPositionAndRotation(
                     PoliceDocking.Point(curve, t),
                     Quaternion.Slerp(from, to, Mathf.SmoothStep(0f, 1f, t)));
+                yield return null;
+            }
+        }
+
+        /// <summary>The hand-animated leg OUT of the bay, which the car drives forwards: the
+        /// heading is the curve's own tangent, so the car points where it is going instead of
+        /// gliding sideways out of the forecourt while its yaw slerps onto the lane. The
+        /// outbound curve is built to end along kerbDir, so the last tangent IS
+        /// <paramref name="onLane"/> - which stands in only where a degenerate curve leaves no
+        /// direction to read.</summary>
+        IEnumerator DriveOut(PoliceDocking.Curve curve, Quaternion onLane)
+        {
+            var t = 0f;
+            while (t < 1f)
+            {
+                t = PoliceDocking.Advance(curve, t, PoliceDocking.Speed * Time.deltaTime);
+                transform.SetPositionAndRotation(
+                    PoliceDocking.Point(curve, t),
+                    PoliceDocking.Heading(curve, t, onLane));
                 yield return null;
             }
         }

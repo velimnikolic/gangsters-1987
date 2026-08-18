@@ -14,7 +14,9 @@ namespace RoadDemo
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureLedger()
         {
-            if (!Object.FindAnyObjectByType<RoadDemoBuilder>())
+            // the crew demo (Assets/CrewDemo) reads the same books for its own men
+            if (!Object.FindAnyObjectByType<RoadDemoBuilder>() &&
+                !Object.FindAnyObjectByType<CrewDemo.CrewDemoBuilder>())
                 return;
 
             var host = GameObject.Find("Gameplay") ?? new GameObject("Gameplay");

@@ -6,7 +6,7 @@ namespace LivingCity.EditorTools
 {
     /// <summary>
     /// The hand-made route into the city: assemble Synty modules under one root in any
-    /// scene, select the root, run Tools/City/Bake Selected As City Building. The root's
+    /// scene, select the root, run Tools/City/Catalog/Bake Selected As City Building. The root's
     /// NAME becomes the building's name, and the bake is the same one every kit building
     /// goes through - one mesh per material, footprint-centred pivot, mirrored pieces
     /// winding-fixed, a BoxCollider round the lot.
@@ -29,7 +29,7 @@ namespace LivingCity.EditorTools
         public const string HandmadeDir = SyntyKitExtractor.KitDir + "/Handmade";
         const string HandmadeMeshDir = HandmadeDir + "/Meshes";
 
-        [MenuItem("Tools/City/Bake Selected As City Building", priority = 5)]
+        [MenuItem("Tools/City/Catalog/Bake Selected As City Building", priority = 4)]
         public static void Bake()
         {
             var selected = Selection.activeGameObject;

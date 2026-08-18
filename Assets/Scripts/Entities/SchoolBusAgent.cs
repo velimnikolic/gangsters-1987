@@ -377,13 +377,11 @@ namespace LivingCity.Entities
                        schoolKerb, schoolKerbDir, KerbHalfLength, KerbHalfWidth))
                 yield return UndockPoll;
 
-            var berthRot = school.BusStallRotation(berthFlip);
             var curve = PoliceDocking.Undock(
-                school.BusStallWorld, school.BusStallOut(berthFlip), schoolKerb,
+                school.BusStallWorld, school.BusStallOut(berthFlip), schoolKerb, schoolKerbDir,
                 PoliceDocking.BusMouthOffset);
 
-            yield return Drive(curve, berthRot,
-                               Quaternion.LookRotation(schoolKerbDir, Vector3.up));
+            yield return DriveOut(curve, Quaternion.LookRotation(schoolKerbDir, Vector3.up));
 
             docked = false;
 
@@ -425,8 +423,9 @@ namespace LivingCity.Entities
             docked = true;
         }
 
-        /// <summary>The hand-animated leg: position along the curve at PoliceDocking.Speed,
-        /// rotation slerped across it. TrafficRegistry needs no telling - it reads the transform
+        /// <summary>The hand-animated leg INTO the berth: position along the curve at
+        /// PoliceDocking.Speed, rotation slerped across it - the bus backs in, so its heading is
+        /// not its direction of travel. TrafficRegistry needs no telling - it reads the transform
         /// live. Copied from PolicePatrolAgent rather than shared, as the rest of this class
         /// is.</summary>
         IEnumerator Drive(PoliceDocking.Curve curve, Quaternion from, Quaternion to)
@@ -438,6 +437,23 @@ namespace LivingCity.Entities
                 transform.SetPositionAndRotation(
                     PoliceDocking.Point(curve, t),
                     Quaternion.Slerp(from, to, Mathf.SmoothStep(0f, 1f, t)));
+                yield return null;
+            }
+        }
+
+        /// <summary>The hand-animated leg OUT of the berth, which the bus drives forwards:
+        /// steered by the curve's own tangent, so a 9.77m vehicle leaves the berth pointing down
+        /// its own path rather than sliding out broadside. See PolicePatrolAgent.DriveOut.
+        /// </summary>
+        IEnumerator DriveOut(PoliceDocking.Curve curve, Quaternion onLane)
+        {
+            var t = 0f;
+            while (t < 1f)
+            {
+                t = PoliceDocking.Advance(curve, t, PoliceDocking.Speed * Time.deltaTime);
+                transform.SetPositionAndRotation(
+                    PoliceDocking.Point(curve, t),
+                    PoliceDocking.Heading(curve, t, onLane));
                 yield return null;
             }
         }

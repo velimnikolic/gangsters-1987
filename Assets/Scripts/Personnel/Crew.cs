@@ -13,6 +13,10 @@ namespace LivingCity.Personnel
     /// </summary>
     public sealed class Crew
     {
+        /// <summary>A lieutenant runs four men at most - the fifth is refused. The
+        /// street bar has five slots for exactly this reason.</summary>
+        public const int MaxHoods = 4;
+
         public int Id;
         public int LieutenantId;
         public readonly List<int> HoodIds = new List<int>();

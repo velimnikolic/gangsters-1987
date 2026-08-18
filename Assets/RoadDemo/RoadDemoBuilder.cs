@@ -20,7 +20,8 @@ namespace RoadDemo
         // How many roads there are and which of them are boulevards is authored
         // here; where they land is re-spaced at Play time unless the randomiser
         // below is switched off. The authored X/Z are then the even fallback
-        // spacing, one residentialblock1 bake per interior (70 x 50 m).
+        // spacing, one residentialblock1 bake per interior (70 x 50 m). Re-spaced,
+        // the interiors take their sizes from blockWidths / blockDepths below.
         public float[] verticalRoadX = { 0f, 100f, 200f, 300f, 400f };
         public bool[] verticalIsBoulevard = { false, true, false, true, false };
         public float[] horizontalRoadZ = { 0f, 80f, 160f, 230f };
@@ -35,15 +36,17 @@ namespace RoadDemo
         [Tooltip("Which spread of sizes gets drawn. Same seed, same city.")]
         public int spacingSeed = 7;
 
-        [Tooltip("Interior width a column of blocks may take, kerb to kerb. The " +
-                 "range is spread evenly over the columns and then shuffled, so both " +
-                 "ends of it always land somewhere. The low end is the residential " +
-                 "bake's own 70 m - go under it and those lots turn into pocket " +
-                 "courts instead, since the bake cannot shrink.")]
-        public Vector2 blockWidthRange = new Vector2(70f, 115f);
+        [Tooltip("Interior widths a column of blocks may take, kerb to kerb. Only " +
+                 "sizes that have a lot pad in the catalog scene belong here: a block " +
+                 "is composed ON a pad, so a width with no pad gets a bake that cannot " +
+                 "fill it. Handed out in order and then shuffled, so with more columns " +
+                 "than sizes one width comes up twice. The narrowest is the residential " +
+                 "bake's own 70 m - go under it and those lots turn into pocket courts " +
+                 "instead, since the bake cannot shrink.")]
+        public float[] blockWidths = { 70f, 85f, 100f }; // lot pad columns A, B, C
 
         [Tooltip("The same for interior depth, row by row. The bake needs 50 m.")]
-        public Vector2 blockDepthRange = new Vector2(50f, 95f);
+        public float[] blockDepths = { 50f, 70f, 95f };  // lot pad rows 1, 2, 3
 
         [Header("Traffic")]
         public int carCount = 100;
@@ -83,16 +86,26 @@ namespace RoadDemo
         // has no room to dress it and it reads as a gap between two streets.
         const float MinInterior = 20f;
 
+        // The generic terrace: the last-resort filler for a lot no other bake wanted.
+        // It is the one block named here; everything else in the folder is found by
+        // the scan (see LoadBlockBakes), so composing a new one needs no edit here.
         const string BlockPrefabPath = "Assets/CityKit/Blocks/residentialblock1.prefab";
-        // residentialblock2 is authored on the catalog's A1 pad (70 x 50) and is the
-        // only bake allowed on an A1 lot; every other interior keeps block1. Missing
-        // bake = A1 lots fall back to block1, so the demo still builds.
-        const string BlockPrefabPathA1 = "Assets/CityKit/Blocks/residentialblock2.prefab";
-        // A1 is the 70 x 50 lot from the catalog pad table; a lot counts as A1 when
-        // both sides land within this tolerance of it (spacing rounds to 5 m).
-        static readonly Vector2 LotA1 = new Vector2(70f, 50f);
+        // A lot counts as a pad's when both sides land within this tolerance of the
+        // pad's size (spacing rounds to 5 m).
         const float LotMatchTolerance = 1f;
         const string BlocksDir = "Assets/CityKit/Blocks/";
+        // The auto-extracted PalmCity candidates, taken by number: 02..08 were kept,
+        // 01 and 09 passed over. The scan leaves this family to the loop below.
+        const string PalmBlockPrefix = "PalmBlock_";
+        // What the catalog's batch roller names its output (BlockLotStock.Prefix - the
+        // editor assembly cannot be referenced from here, so the string is repeated
+        // rather than shared). A bake named this way was composed by the machine and
+        // stands in a lot only where no hand-made block wants it.
+        const string AutoBlockPrefix = "auto_";
+        // A block is a lot's worth of buildings. A bake measuring less than this on
+        // either side is a stray prop saved into the folder, not an interior, and
+        // standing it alone in a lot would read as an empty block with litter in it.
+        const float MinBakeFootprint = 12f;
         const string PoliceStationPath = "Assets/CityKit/Buildings/building-policestation.prefab";
         const string CityEnv = "Assets/Synty/PolygonCity/Prefabs/Environments/";
         const string CityProps = "Assets/Synty/PolygonCity/Prefabs/Props/";
@@ -145,10 +158,55 @@ namespace RoadDemo
         float _stallRowHalf, _stallLift;
         readonly List<PolicePatrolCar> _policeCars = new List<PolicePatrolCar>();
         readonly List<PoliceFootPatrol> _policeOfficers = new List<PoliceFootPatrol>();
+        DemoCrews _crews;
         GameObject _blockPrefab;
-        GameObject _blockPrefabA1;
+        // Blocks composed on a catalog lot pad, filed under that pad's code ("B2").
+        // Several bakes may share a code; a lot takes the next one in turn, so two
+        // B2 interiors in the same city are not the same block twice.
+        readonly Dictionary<string, List<GameObject>> _lotBakes =
+            new Dictionary<string, List<GameObject>>();
+        readonly Dictionary<string, int> _lotBakeCursor = new Dictionary<string, int>();
+        readonly HashSet<string> _lotOverflowLogged = new HashSet<string>();
+        // The rolled stock: blocks the catalog's randomiser composed for a pad size, one
+        // pool per code, kept apart from the hand-made blocks above because they rank
+        // below them - a lot takes a roll only once no composed block wants it. Empty
+        // until Tools/City/Catalog/Randomise Blocks For Every Lot has been run.
+        readonly Dictionary<string, List<GameObject>> _autoBakes =
+            new Dictionary<string, List<GameObject>>();
+        readonly Dictionary<string, int> _autoBakeCursor = new Dictionary<string, int>();
+        readonly HashSet<GameObject> _autoBakesPlaced = new HashSet<GameObject>();
+        readonly HashSet<string> _autoMissingLogged = new HashSet<string>();
+        // Which of them have gone down. A hand-made block stands on its own pad or
+        // not at all - one whose pad the spacing never rolled sits this city out.
+        readonly HashSet<GameObject> _lotBakesPlaced = new HashSet<GameObject>();
+        // A roll the stock roller SEEDED with a hand-made block - the block stood in a
+        // corner of a bigger pad and the rest randomised round it (BlockLotStock) -
+        // and the block it carries. The same block must not stand on its own pad as
+        // well: a roll is passed over while its seed's own pad is still to come or
+        // already holds it, and a seed that stood inside a roll is not laid again.
+        readonly Dictionary<GameObject, List<GameObject>> _seedsIn =
+            new Dictionary<GameObject, List<GameObject>>();
+        readonly HashSet<GameObject> _seedsStanding = new HashSet<GameObject>();
+        readonly HashSet<GameObject> _ownPadComing = new HashSet<GameObject>();
+        // A PLACE stands once in the whole city: one fairground, one palm tower, one
+        // hotel. Which places already stand, by member name, and which bake brought
+        // each - so a bake carrying one of them is passed over, whichever pool it is
+        // in. The stock roller keeps the same rule while composing; this is the same
+        // rule at placement, where hand-made blocks, rolls and the loose feature pool
+        // meet and can double each other.
+        readonly Dictionary<string, string> _landmarkOwner = new Dictionary<string, string>();
+        readonly Dictionary<GameObject, string[]> _landmarkCache = new Dictionary<GameObject, string[]>();
+        // Every prefab in the blocks folder by name, so a nested composed block inside
+        // a bake (b2block1 stands residentialblock2 in its yard) is read as fabric
+        // rather than taken for a place of its own.
+        readonly HashSet<string> _bakeNames = new HashSet<string>();
+        // Which members are FABRIC (the anonymous City_XX terrace, the storefronts) and
+        // which are places is LivingCity.Generation.BlockFabric's rule, shared with the
+        // roller so a block that stood on the catalog pad is never refused here.
+        // What every prop clone in a bake is called - dressing, never a place.
+        const string PropPrefix = "SM_";
         readonly List<GameObject> _featureBlocks = new List<GameObject>();
-        readonly List<Rect> _lots = new List<Rect>();
+        readonly List<LotInfo> _lotPlans = new List<LotInfo>();
         LivingCity.CameraRig.BuildingCardPicker _picker;
         readonly Dictionary<GameObject, Bounds> _prefabBoundsCache = new Dictionary<GameObject, Bounds>();
 
@@ -199,9 +257,12 @@ namespace RoadDemo
             SpawnCars();
             SpawnPolice();
             SpawnPedestrians();
+            SpawnCrews();
             BuildEnvironment();
             BuildDayNight();
+            BuildAudio();
             BuildMap();
+            BuildLotOverlay();
 
             StaticBatchingUtility.Combine(_geometry.gameObject);
 #else
@@ -247,8 +308,8 @@ namespace RoadDemo
                 horizontalIsBoulevard == null || horizontalIsBoulevard.Length < nh) return;
 
             // the sketch draws the plan Play would build, not the authored spacing
-            float[] vx = PlanLine(verticalRoadX, verticalIsBoulevard, blockWidthRange, 0);
-            float[] hz = PlanLine(horizontalRoadZ, horizontalIsBoulevard, blockDepthRange, 1);
+            float[] vx = PlanLine(verticalRoadX, verticalIsBoulevard, blockWidths, 0);
+            float[] hz = PlanLine(horizontalRoadZ, horizontalIsBoulevard, blockDepths, 1);
 
             var street = new Color(1f, 1f, 1f, 0.35f);
             var avenue = new Color(1f, 0.8f, 0.2f, 0.5f);
@@ -442,23 +503,21 @@ namespace RoadDemo
             if (_blockPrefab == null)
                 Debug.LogWarning("[RoadDemo] block bake missing (" + BlockPrefabPath + "); interiors stay empty");
 
-            _blockPrefabA1 = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(BlockPrefabPathA1);
-            if (_blockPrefabA1 == null)
-                Debug.LogWarning("[RoadDemo] A1 bake missing (" + BlockPrefabPathA1 + "); A1 lots take " +
-                                 "residentialblock1 instead");
-
             // feature interiors: the auto-extracted palm block bakes plus the
             // police station from the building catalog
             for (int i = 2; i <= 8; i++)
             {
                 var block = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
-                    BlocksDir + "PalmBlock_0" + i + ".prefab");
+                    BlocksDir + PalmBlockPrefix + "0" + i + ".prefab");
                 if (block != null) _featureBlocks.Add(block);
-                else Debug.LogWarning("[RoadDemo] missing block bake: PalmBlock_0" + i);
+                else Debug.LogWarning("[RoadDemo] missing block bake: " + PalmBlockPrefix + "0" + i);
             }
             var police = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PoliceStationPath);
             if (police != null) _featureBlocks.Add(police);
             else Debug.LogWarning("[RoadDemo] missing prefab: " + PoliceStationPath);
+
+            // and every block composed by hand into the folder, on top of those
+            LoadBlockBakes();
 
             AnimationClip PeopleClip(string name) =>
                 UnityEditor.AssetDatabase.LoadAssetAtPath<AnimationClip>(
@@ -484,7 +543,182 @@ namespace RoadDemo
                    _crossing && _swStraight && _swCorner && _divider &&
                    _poleBase && _poleArm && _poleLights && _carPrefabs.Count > 0;
         }
+
+        // The whole blocks folder, sorted into the two pools the city draws from.
+        // Nothing composed into that folder is left out of the generated city: it is
+        // read wholesale rather than from a list of paths kept here, so a block built
+        // by hand in the catalog scene and saved beside the others is in the next city
+        // with no edit to this file.
+        //
+        //   BlockLotTag on the root -> filed under that pad's code, and it goes in an
+        //     interior of that size and nowhere else. A block captured off a pad is
+        //     baked with the tag (SyntyCityBlocks); a block saved out of the catalog
+        //     scene by hand has none unless someone added it, and a name that starts
+        //     with a pad code ("b2block1" -> B2) is taken as saying the same thing.
+        //     Named with the roller's prefix ("auto_") it is a ROLL rather than an
+        //     arrangement, and it is filed in the stock pool, which ranks below.
+        //   no lot of its own -> the feature pool, laid in any interior it fits.
+        //
+        // Two families are left out because the loader placed them already: the
+        // generic terrace, which is the fallback rather than a pool member, and the
+        // PalmBlock candidates, of which only the kept numbers are wanted.
+        void LoadBlockBakes()
+        {
+            _lotBakes.Clear();
+            _lotBakeCursor.Clear();
+            _autoBakes.Clear();
+            _autoBakeCursor.Clear();
+            _bakeNames.Clear();
+
+            var guids = UnityEditor.AssetDatabase.FindAssets(
+                "t:Prefab", new[] { BlocksDir.TrimEnd('/') });
+            System.Array.Sort(guids, (a, b) => string.CompareOrdinal(
+                UnityEditor.AssetDatabase.GUIDToAssetPath(a),
+                UnityEditor.AssetDatabase.GUIDToAssetPath(b)));
+
+            var loose = new List<string>();
+            foreach (var guid in guids)
+            {
+                var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                    UnityEditor.AssetDatabase.GUIDToAssetPath(guid));
+                if (prefab == null) continue;
+                _bakeNames.Add(prefab.name);
+                if (prefab == _blockPrefab) continue;
+                if (prefab.name.StartsWith(PalmBlockPrefix)) continue;
+
+                var size = PrefabBoundsOf(prefab).size;
+                if (size.x < MinBakeFootprint || size.z < MinBakeFootprint)
+                {
+                    Debug.LogWarning($"[RoadDemo] {prefab.name} measures {size.x:F1} x {size.z:F1} m " +
+                                     "- too small to stand in a lot as a block, so it is left out of " +
+                                     "the city. Recompose it in the catalog scene if it lost its buildings.");
+                    continue;
+                }
+
+                var code = LotCodeOf(prefab);
+                if (code == null)
+                {
+                    _featureBlocks.Add(prefab);
+                    loose.Add($"{prefab.name} ({size.x:F0} x {size.z:F0} m)");
+                    continue;
+                }
+
+                // Rolled stock is filed apart from the blocks somebody composed: both
+                // are authored for a pad, but a roll is only ever there to fill an
+                // interior no hand-made block wanted.
+                var pool = prefab.name.StartsWith(AutoBlockPrefix) ? _autoBakes : _lotBakes;
+                if (!pool.TryGetValue(code, out var list))
+                    pool[code] = list = new List<GameObject>();
+                list.Add(prefab);
+            }
+
+            // Biggest first: the pool is handed to the roomiest interiors in order,
+            // and a hand-made block composed on a 100 x 95 pad has to meet a lot that
+            // can hold it before a small palm bake takes the space.
+            _featureBlocks.Sort((a, b) =>
+            {
+                var sa = PrefabBoundsOf(a).size;
+                var sb = PrefabBoundsOf(b).size;
+                int byArea = (sb.x * sb.z).CompareTo(sa.x * sa.z);
+                return byArea != 0 ? byArea : string.CompareOrdinal(a.name, b.name);
+            });
+
+            DropLooseStationIfComposed();
+
+            // Which rolls carry a hand-made block inside them (a seeded roll stands one
+            // as a member, under the block's own name), read off the bakes: the demo
+            // must not stand that block twice, once as itself and once as the seed.
+            _seedsIn.Clear();
+            var handMade = new Dictionary<string, GameObject>();
+            foreach (var pair in _lotBakes)
+                foreach (var bake in pair.Value)
+                    handMade[bake.name] = bake;
+            var seeded = new List<string>();
+            foreach (var pair in _autoBakes)
+                foreach (var roll in pair.Value)
+                    foreach (Transform child in roll.transform)
+                        if (handMade.TryGetValue(child.name, out var seed))
+                        {
+                            if (!_seedsIn.TryGetValue(roll, out var list))
+                                _seedsIn[roll] = list = new List<GameObject>();
+                            if (!list.Contains(seed)) list.Add(seed);
+                            seeded.Add($"{roll.name} carries {seed.name}");
+                        }
+
+            if (loose.Count > 0)
+                Debug.Log("[RoadDemo] free block bakes - " + string.Join("; ", loose));
+            if (seeded.Count > 0)
+                Debug.Log("[RoadDemo] seeded rolls - " + string.Join("; ", seeded));
+            Report("lot bakes", _lotBakes);
+            Report("rolled stock", _autoBakes);
+            if (_autoBakes.Count == 0)
+                Debug.LogWarning("[RoadDemo] no rolled stock in " + BlocksDir + " - interiors with " +
+                                 "no block composed for them fall back to the feature pool and the " +
+                                 "generic terrace. Run Tools/City/Catalog/Randomise Blocks For Every " +
+                                 "Lot to give every lot size a block of its own.");
+        }
+
+        // One station to a city. It reaches the streets either inside the block composed
+        // round it (c2policestation) or loose out of the feature pool - with both in play,
+        // a grid that holds that block gets a second station standing in a lot of its own.
+        void DropLooseStationIfComposed()
+        {
+            foreach (var pair in _lotBakes)
+                foreach (var bake in pair.Value)
+                {
+                    if (StationIn(bake) == null) continue;
+                    if (_featureBlocks.RemoveAll(b => b.name.StartsWith(StationName)) > 0)
+                        Debug.Log("[RoadDemo] the station comes with " + bake.name +
+                                  ", so it is not packed loose as well");
+                    return;
+                }
+        }
+
+        void Report(string what, Dictionary<string, List<GameObject>> pools)
+        {
+            if (pools.Count == 0) return;
+            var filed = new List<string>();
+            foreach (var pair in pools)
+                filed.Add(pair.Key + ": " + string.Join(", ", pair.Value.ConvertAll(p => p.name)));
+            filed.Sort(System.StringComparer.Ordinal);
+            Debug.Log("[RoadDemo] " + what + " - " + string.Join("; ", filed));
+        }
+
+        // The pad a bake belongs to, or null for one that belongs to no pad in
+        // particular. The tag is the authority; a name that opens with a pad code is
+        // read as the same claim, so a block saved as "b2block1" lands on the B2 pads
+        // without anyone having to add the component by hand.
+        string LotCodeOf(GameObject prefab)
+        {
+            var tag = prefab.GetComponent<LivingCity.Generation.BlockLotTag>();
+            if (tag != null && !string.IsNullOrEmpty(tag.lot))
+                return tag.lot.Trim().ToUpperInvariant();
+
+            var name = prefab.name;
+            if (name.Length < 2) return null;
+            int column = char.ToUpperInvariant(name[0]) - 'A';
+            int row = name[1] - '1';
+            bool inPalette = blockWidths != null && blockDepths != null &&
+                             column >= 0 && column < blockWidths.Length &&
+                             row >= 0 && row < blockDepths.Length;
+            return inPalette ? $"{(char)('A' + column)}{row + 1}" : null;
+        }
 #endif
+
+        // The police station inside a block, or null. A bake's members are its direct
+        // children and keep the prefab's name, which is the same test the feature packer
+        // makes on what it lays - so a station reaches the city the same way whether it
+        // was packed loose or composed into a block. Outside the editor-only block above
+        // because the placement reads it, and placement is not editor-only.
+        const string StationName = "building-policestation";
+
+        static GameObject StationIn(GameObject block)
+        {
+            if (block == null) return null;
+            foreach (Transform child in block.transform)
+                if (child.name.StartsWith(StationName)) return child.gameObject;
+            return null;
+        }
 
         // ------------------------------------------------------------------ layout
 
@@ -514,10 +748,82 @@ namespace RoadDemo
         /// <summary>The sidewalk ring between a carriageway and a block interior.</summary>
         public static float SidewalkWidth => Cell;
 
-        /// <summary>Every block's ground plan in world XZ - the interior plus its
-        /// sidewalk ring, which is what the eye reads as one block. Filled by
-        /// BuildBlocks and never touched again.</summary>
-        public IReadOnlyList<Rect> Lots => _lots;
+        /// <summary>Every block the demo laid out. Filled by BuildBlocks and never
+        /// touched again: the map draws the slabs, the O overlay prints the rest.</summary>
+        public IReadOnlyList<LotInfo> LotPlans => _lotPlans;
+
+        /// <summary>
+        /// One block interior as it was PLANNED - the rectangle a bake has to stay
+        /// inside, the catalog pad that rectangle answers to, and what ended up
+        /// standing on it.
+        ///
+        /// The sizes are the plan's own, not a measurement of the geometry afterwards:
+        /// a bake is allowed a metre of overhang onto the sidewalk, so measuring the
+        /// result back would answer with the building instead of the lot.
+        /// </summary>
+        public readonly struct LotInfo
+        {
+            /// <summary>Grid cell: the interior between vertical roads Column and
+            /// Column+1, horizontal roads Row and Row+1.</summary>
+            public readonly int Column, Row;
+
+            /// <summary>Kerb to kerb minus the sidewalk ring - the lot pad rectangle
+            /// itself, in world XZ.</summary>
+            public readonly Rect Interior;
+
+            /// <summary>The interior plus its sidewalk ring, which is what the eye
+            /// reads as one block; the map's slab.</summary>
+            public readonly Rect Slab;
+
+            /// <summary>The catalog scene's pad code for this size ("B2"), or null
+            /// when the interior is not one of the palette sizes and so has no pad
+            /// with anything composed on it.</summary>
+            public readonly string Code;
+
+            /// <summary>What was built here, in the words the overlay prints.</summary>
+            public readonly string Contents;
+
+            public LotInfo(int column, int row, Rect interior, Rect slab, string code,
+                string contents)
+            {
+                Column = column;
+                Row = row;
+                Interior = interior;
+                Slab = slab;
+                Code = code;
+                Contents = contents;
+            }
+
+            public float Width => Interior.width;
+            public float Depth => Interior.height;
+
+            /// <summary>The interior in kit cells - the unit a block is composed in.</summary>
+            public float CellsWide => Interior.width / Cell;
+            public float CellsDeep => Interior.height / Cell;
+        }
+
+        // The catalog's pad code for an interior size: a letter for the width column
+        // (A is the first palette entry) and a number for the depth row, which is
+        // exactly what the pads in the catalog scene are named ("Lot B2 (85x70)").
+        // Derived from the palettes here rather than read off BlockLotPads, which
+        // lives in the editor assembly runtime code cannot reference - the two lists
+        // are kept the same list by hand, and that tool's own comment says so.
+        // Null = a size with no pad, which is worth seeing in the overlay: nothing was
+        // ever composed for it.
+        string LotCode(float width, float depth)
+        {
+            int w = PaletteIndex(blockWidths, width);
+            int d = PaletteIndex(blockDepths, depth);
+            return w < 0 || d < 0 ? null : $"{(char)('A' + w)}{d + 1}";
+        }
+
+        static int PaletteIndex(float[] palette, float size)
+        {
+            if (palette == null) return -1;
+            for (int k = 0; k < palette.Length; k++)
+                if (Mathf.Abs(palette[k] - size) <= LotMatchTolerance) return k;
+            return -1;
+        }
 
         // ---------------------------------------------------------- block sizing
 
@@ -527,8 +833,8 @@ namespace RoadDemo
         void Respace()
         {
             if (!randomiseBlockSizes) return;
-            verticalRoadX = PlanLine(verticalRoadX, verticalIsBoulevard, blockWidthRange, 0);
-            horizontalRoadZ = PlanLine(horizontalRoadZ, horizontalIsBoulevard, blockDepthRange, 1);
+            verticalRoadX = PlanLine(verticalRoadX, verticalIsBoulevard, blockWidths, 0);
+            horizontalRoadZ = PlanLine(horizontalRoadZ, horizontalIsBoulevard, blockDepths, 1);
 
             var sizes = new List<string>();
             for (int i = 0; i + 1 < verticalRoadX.Length; i++)
@@ -545,26 +851,27 @@ namespace RoadDemo
         //
         //   x[i+1] = x[i] + half(i) + sidewalk + interior + sidewalk + half(i+1)
         //
-        // The range is spread evenly across the gaps and then shuffled rather than
-        // rolled per gap - a handful of uniform rolls clusters around the middle,
-        // which is exactly the "every block the same width" look this is here to
-        // break. Every size is snapped to the 5 m cell, so the kit's pieces still
-        // tile and every centreline stays a multiple of 5.
-        float[] PlanLine(float[] authored, bool[] boulevard, Vector2 range, int salt)
+        // The sizes are dealt from the palette in order and then shuffled rather
+        // than rolled per gap - a handful of uniform rolls clusters around the
+        // middle, which is exactly the "every block the same width" look this is
+        // here to break. A palette rather than a low-to-high range because the
+        // sizes are not free: each one has a lot pad in the catalog scene and a
+        // bake composed on it, and interpolating between two of them would invent
+        // widths nothing was ever built for. More gaps than palette entries wraps,
+        // so a size comes up twice. Every size is snapped to the 5 m cell, so the
+        // kit's pieces still tile and every centreline stays a multiple of 5.
+        float[] PlanLine(float[] authored, bool[] boulevard, float[] palette, int salt)
         {
             int n = authored == null ? 0 : authored.Length;
             if (n == 0 || boulevard == null || boulevard.Length < n) return authored;
             if (!randomiseBlockSizes || n < 2) return (float[])authored.Clone();
+            if (palette == null || palette.Length == 0) return (float[])authored.Clone();
 
             int gaps = n - 1;
-            float lo = Mathf.Min(range.x, range.y), hi = Mathf.Max(range.x, range.y);
             var spans = new float[gaps];
             for (int k = 0; k < gaps; k++)
-            {
-                float t = gaps == 1 ? 0.5f : k / (float)(gaps - 1);
                 spans[k] = Mathf.Max(MinInterior,
-                    Mathf.Round(Mathf.Lerp(lo, hi, t) / Cell) * Cell);
-            }
+                    Mathf.Round(palette[k % palette.Length] / Cell) * Cell);
 
             // its own generator rather than UnityEngine.Random: the street plan must
             // not shift because some later pass drew one more bush
@@ -573,6 +880,24 @@ namespace RoadDemo
             {
                 int swap = rng.Next(k + 1);
                 (spans[k], spans[swap]) = (spans[swap], spans[k]);
+            }
+
+            // Two identical sizes side by side read as one overlong block sliced in
+            // half - the very look the shuffle is here to break. With more gaps than
+            // palette entries the repeat itself is unavoidable, so it gets pushed
+            // apart rather than removed: the second of the pair trades places with
+            // the first later span that leaves neither of them beside its own size.
+            for (int k = 1; k < gaps; k++)
+            {
+                if (spans[k] != spans[k - 1]) continue;
+                for (int m = k + 1; m < gaps; m++)
+                {
+                    if (spans[m] == spans[k]) continue;                  // nothing gained
+                    if (m - 1 > k && spans[m - 1] == spans[k]) continue; // pair only moves
+                    if (m + 1 < gaps && spans[m + 1] == spans[k]) continue;
+                    (spans[k], spans[m]) = (spans[m], spans[k]);
+                    break;
+                }
             }
 
             var line = new float[n];
@@ -825,73 +1150,356 @@ namespace RoadDemo
             return _floorLevel;
         }
 
-        // A residential bake is one fixed footprint, so once the interiors stopped
-        // being one fixed size it cannot go just anywhere. A metre of overhang is
-        // allowed: the interior is ringed by a 5 m sidewalk cell, and the terrace
-        // ends meeting the kerb read better than a gap.
+        // Whether a bake may stand in an interior of this size.
+        //
+        // A bake composed on the catalog pad of this very size fits by definition: the
+        // roller keeps every BUILDING inside the pad, and what its renderer box shows
+        // past the kerb is dressing - a palm canopy, a lamp arm, a bay marking - which
+        // the 5 m sidewalk ring has room for. Measuring that box against the interior
+        // is what once refused nearly the whole stock by a few centimetres (auto_A2_1
+        // at 71.02 m for a 70 m pad, and so on down the list) and left A2 lots empty
+        // and A3 lots half-packed out of the feature pool instead.
+        //
+        // Anything else - the terrace, the loose palm bakes, a block with no pad -
+        // is one fixed footprint that has to be measured, and a metre of overhang is
+        // allowed: the terrace ends meeting the kerb read better than a gap.
         bool Fits(GameObject bake, float width, float depth)
         {
             if (bake == null) return false;
+            var tag = bake.GetComponent<LivingCity.Generation.BlockLotTag>();
+            if (tag != null && !string.IsNullOrEmpty(tag.lot) &&
+                tag.lot.Trim().ToUpperInvariant() == LotCode(width, depth))
+                return true;
             var size = PrefabBoundsOf(bake).size;
             return width + 1f >= size.x && depth + 1f >= size.z;
         }
 
-        // Which residential bake a lot gets. residentialblock2 is authored for the
-        // A1 pad and is reserved for it - an A1 lot takes block2 and nothing else,
-        // every other size takes block1. Null = the lot keeps its floor only.
-        bool _a1OverflowLogged;
-
-        GameObject ResidentialBakeFor(float width, float depth)
+        // The places a bake stands, by member name, read off its hierarchy: a bake's
+        // members are its direct children under the prefab's own name, its props are
+        // clones named SM_*. A PalmBlock counts as a place itself AND brings its
+        // buildings, so the loose PalmBlock_07 in the feature pool and the one
+        // composed into a rolled block meet on "Fairground" whichever way round they
+        // come. A composed block nested in another (b2block1 stands residentialblock2
+        // in its yard) is fabric - it is neither a place nor walked into, or the
+        // terrace standing on its own A1 pad would be refused for the coffee shop
+        // inside its twin. A single building loose in the feature pool (the station)
+        // is its own name.
+        string[] LandmarksOf(GameObject bake)
         {
-            bool isA1 = Mathf.Abs(width - LotA1.x) <= LotMatchTolerance &&
-                        Mathf.Abs(depth - LotA1.y) <= LotMatchTolerance;
-            if (isA1)
+            if (!_landmarkCache.TryGetValue(bake, out var found))
             {
-                if (Fits(_blockPrefabA1, width, depth)) return _blockPrefabA1;
-                // The bake is authored ON the A1 pad, so not fitting it means the
-                // arrangement grew past the pad - say so rather than quietly
-                // substituting block1 and leaving the lot looking untouched.
-                if (_blockPrefabA1 != null && !_a1OverflowLogged)
-                {
-                    _a1OverflowLogged = true;
-                    var size = PrefabBoundsOf(_blockPrefabA1).size;
-                    Debug.LogWarning($"[RoadDemo] residentialblock2 measures {size.x:F1} x {size.z:F1} m " +
-                                     $"and overflows the A1 lot ({LotA1.x} x {LotA1.y}); falling back to " +
-                                     "residentialblock1 there.");
-                }
+                var set = new HashSet<string>();
+                bool palm = bake.name.StartsWith(PalmBlockPrefix);
+                bool composed = _bakeNames.Contains(bake.name) && !palm;
+                if (!composed) set.Add(bake.name);
+                if (composed || palm) CollectLandmarks(bake.transform, set);
+                // a seeded roll carries its seed's places too - the one nested block
+                // that is known for what it is
+                if (_seedsIn.TryGetValue(bake, out var seeds))
+                    foreach (var seed in seeds)
+                        set.UnionWith(LandmarksOf(seed));
+                found = new string[set.Count];
+                set.CopyTo(found);
+                _landmarkCache[bake] = found;
             }
-            return Fits(_blockPrefab, width, depth) ? _blockPrefab : null;
+            return found;
         }
 
-        // Interiors are handed out largest first: the feature bakes (PalmBlock_02..08
-        // and the police station) are the biggest and least forgiving pieces, so they
-        // take the roomiest lots, whatever the spacing came out as. What is left over
-        // takes the residential terrace where it fits; a lot too small for it keeps
-        // its floor and nothing else, rather than a bake spilling over the kerb.
+        void CollectLandmarks(Transform root, HashSet<string> into)
+        {
+            foreach (Transform child in root)
+            {
+                string name = child.name;
+                if (name.StartsWith(PropPrefix) ||
+                    LivingCity.Generation.BlockFabric.IsFabric(name)) continue;
+                if (_bakeNames.Contains(name))
+                {
+                    if (!name.StartsWith(PalmBlockPrefix)) continue;
+                    into.Add(name);
+                    CollectLandmarks(child, into);
+                    continue;
+                }
+                into.Add(name);
+            }
+        }
+
+        // The place in this bake that another bake already brought to the city, or
+        // null when nothing in it is spoken for. A place this bake claimed itself
+        // (PlanOwnPads claims ahead for the hand-made blocks that will stand) does
+        // not count against it. Logged once per bake and pool, so the console says
+        // why a block was passed over rather than the lot just coming up different.
+        string SpentLandmark(GameObject bake)
+        {
+            foreach (var mark in LandmarksOf(bake))
+                if (_landmarkOwner.TryGetValue(mark, out var owner) && owner != bake.name)
+                    return mark;
+            return null;
+        }
+
+        readonly HashSet<GameObject> _landmarkSkipLogged = new HashSet<GameObject>();
+
+        bool CarriesSpentLandmark(GameObject bake, string where)
+        {
+            var mark = SpentLandmark(bake);
+            if (mark == null) return false;
+            if (_landmarkSkipLogged.Add(bake))
+                Debug.Log($"[RoadDemo] {bake.name} passed over for {where}: {mark} already " +
+                          $"stands in {_landmarkOwner[mark]} - one to a city");
+            return true;
+        }
+
+        void ClaimLandmarks(GameObject bake)
+        {
+            foreach (var mark in LandmarksOf(bake))
+                if (!_landmarkOwner.ContainsKey(mark)) _landmarkOwner[mark] = bake.name;
+        }
+
+        // Whether every place this bake carries is its own - true for one that stood
+        // (it claimed them) or has none, false for one passed over because another
+        // block got there first.
+        bool OwnsItsPlaces(GameObject bake)
+        {
+            foreach (var mark in LandmarksOf(bake))
+                if (_landmarkOwner.TryGetValue(mark, out var owner) && owner != bake.name)
+                    return false;
+            return true;
+        }
+
+        // PalmBlock_07 bakes in the Synty ferris wheel as dead geometry; its rotate
+        // pivot gets the demo's own spin, whether the fairground came loose out of
+        // the feature pool or composed inside a block.
+        static void SpinFerrisWheels(GameObject go)
+        {
+            foreach (var t in go.GetComponentsInChildren<Transform>())
+                if (t.name.Contains("Ferris") && t.name.Contains("_Rotate"))
+                    t.gameObject.AddComponent<DemoFerrisWheel>();
+        }
+
+        // The block authored FOR this interior, if one was ever composed on its pad.
+        // An interior of 85 x 70 m is the catalog's B2 pad, and a bake that carries
+        // "B2" was arranged against exactly that rectangle - so it goes there and
+        // nowhere else, ahead of the feature bakes and the generic terrace.
+        //
+        // Several bakes may carry the same code; they are handed out in turn, so a
+        // city with four B2 interiors shows four different blocks before it repeats.
+        // Null = nothing was composed for this size (or what was overflows it).
+        GameObject LotBakeFor(float width, float depth)
+        {
+            var code = LotCode(width, depth);
+            if (code == null || !_lotBakes.TryGetValue(code, out var bakes) || bakes.Count == 0)
+                return null;
+
+            // With a stock to fill the rest of the city, a composed block goes down ONCE:
+            // showing the same one twice while a roll waits unused wastes the only blocks
+            // in the folder somebody actually arranged. With no stock the pool still
+            // wraps, because the alternative there is the generic terrace.
+            bool once = _autoBakes.Count > 0;
+
+            _lotBakeCursor.TryGetValue(code, out int cursor);
+            for (int k = 0; k < bakes.Count; k++)
+            {
+                var bake = bakes[(cursor + k) % bakes.Count];
+                if (once && _lotBakesPlaced.Contains(bake)) continue;
+                if (!Fits(bake, width, depth)) continue;
+                if (CarriesSpentLandmark(bake, $"lot {code}")) continue;
+                if (_seedsStanding.Contains(bake))
+                {
+                    if (_landmarkSkipLogged.Add(bake))
+                        Debug.Log($"[RoadDemo] {bake.name} passed over for lot {code}: it already " +
+                                  "stands in the corner of a seeded roll");
+                    continue;
+                }
+                _lotBakeCursor[code] = (cursor + k + 1) % bakes.Count;
+                _lotBakesPlaced.Add(bake);
+                ClaimLandmarks(bake);
+                return bake;
+            }
+
+            // Nothing left to hand out is the ordinary end of the pool, not a fault -
+            // the roll below takes over. Only a pool that fits NOWHERE is worth a word.
+            for (int k = 0; k < bakes.Count; k++)
+                if (Fits(bakes[k], width, depth))
+                    return null;
+
+            // Every bake filed under this code was composed ON that pad, so not
+            // fitting means the arrangement grew past it - say so rather than
+            // quietly substituting the terrace and leaving the lot looking untouched.
+            if (_lotOverflowLogged.Add(code))
+            {
+                var names = new List<string>();
+                foreach (var bake in bakes)
+                {
+                    var size = PrefabBoundsOf(bake).size;
+                    names.Add($"{bake.name} ({size.x:F1} x {size.z:F1} m)");
+                }
+                Debug.LogWarning($"[RoadDemo] no bake for lot {code} fits its {width:F0} x " +
+                                 $"{depth:F0} m interior: {string.Join(", ", names)}. Recapture " +
+                                 "them inside the pad; the lot takes a rolled block instead.");
+            }
+            return null;
+        }
+
+        // The catalog's own roll for this pad size, handed out in turn. Everything the
+        // hand-made pool could not cover comes from here: one run of Tools/City/Catalog/
+        // Randomise Blocks For Every Lot leaves three blocks for every pad size, which is
+        // more than any one grid has interiors, so a lot of this size is never the same
+        // block twice. Null = nothing was rolled for this size, or what was overflows it.
+        GameObject StockBakeFor(float width, float depth)
+        {
+            var code = LotCode(width, depth);
+            if (code == null) return null;
+            if (!_autoBakes.TryGetValue(code, out var bakes) || bakes.Count == 0)
+            {
+                if (_autoBakes.Count > 0 && _autoMissingLogged.Add(code))
+                    Debug.LogWarning($"[RoadDemo] nothing was rolled for lot {code} ({width:F0} x " +
+                                     $"{depth:F0} m) - that pad may be missing from the catalog " +
+                                     "scene. Run Draw Block Lot Pads, then Randomise Blocks For " +
+                                     "Every Lot.");
+                return null;
+            }
+
+            // One that has not stood yet, before one that has. A place stands once in
+            // the city whichever block brings it, so a roll carrying a fairground that
+            // is already up is passed over in both passes - a stock block laid twice
+            // is allowed only when it is all terrace, which nobody can tell apart.
+            _autoBakeCursor.TryGetValue(code, out int cursor);
+            int spent = 0;
+            for (int pass = 0; pass < 2; pass++)
+                for (int k = 0; k < bakes.Count; k++)
+                {
+                    var bake = bakes[(cursor + k) % bakes.Count];
+                    if (pass == 0 && _autoBakesPlaced.Contains(bake)) continue;
+                    // laid again only when it is all terrace: a roll that brought a
+                    // place owns it now, and owning it is no licence to show it twice
+                    if (pass == 1 && LandmarksOf(bake).Length > 0) continue;
+                    if (!Fits(bake, width, depth)) continue;
+                    if (CarriesSpentLandmark(bake, $"lot {code}")) { spent++; continue; }
+                    // a seeded roll waits while its hand-made block has a pad of its
+                    // own coming in this grid, or already stands on it
+                    if (SeedElsewhere(bake) is GameObject seed)
+                    {
+                        if (_landmarkSkipLogged.Add(bake))
+                            Debug.Log($"[RoadDemo] {bake.name} passed over for lot {code}: its seed " +
+                                      $"{seed.name} stands on its own pad in this city");
+                        continue;
+                    }
+                    _autoBakeCursor[code] = (cursor + k + 1) % bakes.Count;
+                    _autoBakesPlaced.Add(bake);
+                    ClaimLandmarks(bake);
+                    if (_seedsIn.TryGetValue(bake, out var seeds))
+                        foreach (var s in seeds) _seedsStanding.Add(s);
+                    return bake;
+                }
+            if (spent > 0 && _autoMissingLogged.Add(code))
+                Debug.LogWarning($"[RoadDemo] every block rolled for lot {code} that fits it carries " +
+                                 "a place already standing in the city. Re-roll the stock (Tools/" +
+                                 "City/Catalog/Randomise Blocks For Every Lot): a roll made under " +
+                                 "the one-place-per-city rule puts each place in one block only.");
+            return null;
+        }
+
+        // The hand-made block inside a seeded roll that stands, or will stand, on its
+        // own pad in this city - null when the roll is free to go down. Interiors are
+        // built largest first, so the roll (a bigger pad) is asked before the seed's
+        // own pad comes up; _ownPadComing is what answers for the pads still to come.
+        GameObject SeedElsewhere(GameObject roll)
+        {
+            if (!_seedsIn.TryGetValue(roll, out var seeds)) return null;
+            foreach (var seed in seeds)
+                if (_lotBakesPlaced.Contains(seed) || _ownPadComing.Contains(seed))
+                    return seed;
+            return null;
+        }
+
+        // The hand-made blocks this grid will stand on their own pads: for each pad
+        // code with interiors in the plan, the first bakes filed under it that fit,
+        // as many as there are interiors - the same order LotBakeFor hands them out
+        // in. Everything else filed under a code sits the city out, unless a seeded
+        // roll happens to bring it in the corner of a bigger lot.
+        //
+        // Their places are claimed here and now, ahead of every roll and of the loose
+        // feature pool: interiors are built largest first, so a bigger lot is filled
+        // before a hand-made block's own pad comes up, and without this a roll or a
+        // loose palm bake standing the diner first would cost b2block1 its pad.
+        void PlanOwnPads(List<(int i, int j, float xMin, float xMax, float zMin, float zMax, Rect slab)> lots)
+        {
+            _ownPadComing.Clear();
+            var interiors = new Dictionary<string, (int count, float width, float depth)>();
+            foreach (var lot in lots)
+            {
+                float width = lot.xMax - lot.xMin, depth = lot.zMax - lot.zMin;
+                var code = LotCode(width, depth);
+                if (code == null) continue;
+                interiors.TryGetValue(code, out var have);
+                interiors[code] = (have.count + 1, width, depth);
+            }
+            foreach (var pair in interiors)
+            {
+                if (!_lotBakes.TryGetValue(pair.Key, out var bakes)) continue;
+                int taken = 0;
+                foreach (var bake in bakes)
+                {
+                    if (taken >= pair.Value.count) break;
+                    if (!Fits(bake, pair.Value.width, pair.Value.depth)) continue;
+                    if (SpentLandmark(bake) != null) continue;
+                    _ownPadComing.Add(bake);
+                    ClaimLandmarks(bake);
+                    taken++;
+                }
+            }
+        }
+
+        // What a lot with no block of its own gets: the generic terrace, wherever it
+        // fits. Null = the lot keeps its floor only.
+        GameObject ResidentialBakeFor(float width, float depth) =>
+            Fits(_blockPrefab, width, depth) ? _blockPrefab : null;
+
+        // Interiors are handed out largest first, and each one takes the first of
+        // these that it can have:
+        //
+        //   1. the block composed on ITS pad - authored against this exact rectangle
+        //   2. the catalog's roll for this pad size - the stock BlockLotStock writes,
+        //      which is what every lot nobody composed a block for is filled with
+        //   3. no stock at all: the city as it was built before there was one - the
+        //      feature pool packed in rows, then the residential terrace
+        //
+        // A hand-made block stands on its own pad or not at all. Not every one has to
+        // be in every city: a pad the spacing did not roll leaves its block out, and
+        // that is right - a block dropped centred into a bigger lot is a ring of bare
+        // court, which is worse than the roll the lot gets instead. Where a hand-made
+        // block is wanted in a bigger lot the roller does it properly: the block is
+        // stood in a corner and the rest of the pad randomised round it (a seeded
+        // roll, BlockLotStock), and that roll comes here as stock like any other.
+        //
+        // Across all of it a PLACE stands once: the fairground, the palm tower, the
+        // hotel, the station. Whichever pool a bake comes from, one carrying a place
+        // already up is passed over (LandmarksOf and CarriesSpentLandmark), and the
+        // console says which and why.
+        //
+        // A lot too small even for the terrace keeps its floor and nothing else,
+        // rather than a bake spilling over the kerb.
         //
         // Nothing else goes inside a block. Interiors carry catalogue bakes and the
         // lot floor only - no scattered greenery, furniture or lawns. Street furniture
         // still belongs to the streets, which are not block interiors (DressStreets).
         void BuildBlocks()
         {
-            var lots = new List<(int i, int j, float xMin, float xMax, float zMin, float zMax)>();
+            var lots = new List<(int i, int j, float xMin, float xMax, float zMin, float zMax,
+                Rect slab)>();
             for (int i = 0; i + 1 < verticalRoadX.Length; i++)
                 for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
-                {
                     lots.Add((i, j,
                         verticalRoadX[i] + VHalf(i) + Cell,
                         verticalRoadX[i + 1] - VHalf(i + 1) - Cell,
                         horizontalRoadZ[j] + HHalf(j) + Cell,
-                        horizontalRoadZ[j + 1] - HHalf(j + 1) - Cell));
-
-                    // the map's slab: kerb to kerb, so the sidewalk ring reads as part
-                    // of the block it belongs to rather than as road
-                    _lots.Add(Rect.MinMaxRect(
-                        verticalRoadX[i] + VHalf(i),
-                        horizontalRoadZ[j] + HHalf(j),
-                        verticalRoadX[i + 1] - VHalf(i + 1),
-                        horizontalRoadZ[j + 1] - HHalf(j + 1)));
-                }
+                        horizontalRoadZ[j + 1] - HHalf(j + 1) - Cell,
+                        // the map's slab: kerb to kerb, so the sidewalk ring reads as
+                        // part of the block it belongs to rather than as road
+                        Rect.MinMaxRect(
+                            verticalRoadX[i] + VHalf(i),
+                            horizontalRoadZ[j] + HHalf(j),
+                            verticalRoadX[i + 1] - VHalf(i + 1),
+                            horizontalRoadZ[j + 1] - HHalf(j + 1))));
 
             // biggest first, ties broken by position so the order never wobbles
             lots.Sort((a, b) =>
@@ -902,6 +1510,8 @@ namespace RoadDemo
                 return a.i != b.i ? a.i.CompareTo(b.i) : a.j.CompareTo(b.j);
             });
 
+            PlanOwnPads(lots);
+
             int feature = 0;
             foreach (var lot in lots)
             {
@@ -909,18 +1519,53 @@ namespace RoadDemo
                 int i = lot.i, j = lot.j;
                 var centre = new Vector3((xMin + xMax) * 0.5f, FloorLevel() + 0.02f, (zMin + zMax) * 0.5f);
 
-                var bake = feature >= _featureBlocks.Count
+                string contents;
+
+                // A block composed for this exact lot outranks everything: it was
+                // arranged against this rectangle, and no other interior is its.
+                var authored = LotBakeFor(xMax - xMin, zMax - zMin);
+                // then the catalog's own roll for this pad size, which is what fills
+                // every interior nobody composed a block for
+                if (authored == null)
+                    authored = StockBakeFor(xMax - xMin, zMax - zMin);
+                var bake = authored ?? (feature >= _featureBlocks.Count
                     ? ResidentialBakeFor(xMax - xMin, zMax - zMin)
-                    : null;
+                    : null);
                 if (bake != null)
                 {
-                    BuildBlockFloor(xMin, xMax, zMin, zMax, null, false);
+                    contents = bake.name;
 
-                    // both facade rows front the E-W streets, so a half-turn is a
-                    // valid orientation â€” alternate it to break up the cloning
-                    float yaw = (i + j) % 2 == 0 ? 0f : 180f;
+                    // The terrace's two facade rows both front the E-W streets, so a
+                    // half-turn is a valid orientation - alternate it to break up the
+                    // cloning. An authored block keeps the facing it was composed at:
+                    // its own frontage, forecourt and parking were laid out against
+                    // one particular street, and a half-turn puts them on the other.
+                    float yaw = authored != null ? 0f : ((i + j) % 2 == 0 ? 0f : 180f);
                     var rot = Quaternion.Euler(0f, yaw, 0f);
                     var block = Instantiate(bake, centre - rot * BlockPivotToCentre(bake), rot, _blocks);
+                    SpinFerrisWheels(block);
+
+                    // The lot's own ground goes down AFTER the block, so what the block
+                    // digs out (a skatepark bowl) is left open rather than plated over.
+                    // A composed block brings its floor with it (BlockFloorFiller), so
+                    // this is the court showing round its edges and through its gaps:
+                    // the concrete plate carpet, the same as the sidewalk it meets, and
+                    // never the black asphalt lot - that read as an unfinished block.
+                    BuildBlockFloor(xMin, xMax, zMin, zMax, SunkenRects(block), _pave != null);
+
+                    // The station is a fixture, not decoration: the patrol cars dock at
+                    // its forecourt, and it reaches the city inside a composed block
+                    // (c2policestation) as readily as it does packed loose. So it is
+                    // looked for here too, and the block's own lot is the forecourt's.
+                    if (_policeStation == null)
+                    {
+                        var station = StationIn(block);
+                        if (station != null)
+                        {
+                            _policeStation = station;
+                            PlanForecourt(xMin, xMax, zMin, zMax, FloorLevel());
+                        }
+                    }
 
                     // street doors for the crowd: the bake's two terrace rows
                     // front the E-W streets, so the north and south faces of
@@ -939,17 +1584,21 @@ namespace RoadDemo
                     // blocks first: a bake that digs below street level (the
                     // skatepark bowl reaches -2 m) must get NO floor beneath it.
                     // Courts follow the PalmCity demo's own floor: concrete
-                    // plate carpets, with the worn-asphalt lot kept as an
-                    // occasional variant â€” and forced whenever the next bake
-                    // digs below ground, since plates cannot ring a bowl.
+                    // plate carpets. The worn-asphalt lot is kept only for a
+                    // bake that digs below ground, since plates cannot ring a
+                    // bowl - as a look it is not wanted anywhere else.
                     bool digs = feature < _featureBlocks.Count &&
                         PrefabBoundsOf(_featureBlocks[feature]).min.y < -0.2f;
-                    bool paved = !digs && _pave != null && Random.value < 0.8f;
+                    bool paved = !digs && _pave != null;
                     float floorTop = FloorLevel();
                     bool northRow = (i + j) % 2 == 1;
                     var holes = new List<Rect>();
+                    // a bake is only consumed once it stands, so what the packer moved
+                    // the cursor past IS what this interior carries
+                    int firstFeature = feature;
                     PackFeatureBlocks(ref feature, xMin, xMax, zMin, zMax,
                         holes, floorTop, paved, northRow);
+                    contents = FeatureContents(firstFeature, feature, paved);
                     // the stall row and the driveway out to the street: geometry
                     // the patrol cars dock against, so it is planned even though
                     // nothing decorative is laid over the rest of the lot
@@ -957,7 +1606,27 @@ namespace RoadDemo
                         PlanForecourt(xMin, xMax, zMin, zMax, floorTop);
                     BuildBlockFloor(xMin, xMax, zMin, zMax, holes, paved);
                 }
+
+                float width = xMax - xMin, depth = zMax - zMin;
+                _lotPlans.Add(new LotInfo(i, j,
+                    Rect.MinMaxRect(xMin, zMin, xMax, zMax), lot.slab,
+                    LotCode(width, depth), contents));
             }
+        }
+
+        // What an interior ended up carrying, worded for the O overlay: the bakes the
+        // packer laid in this one, or the empty court's own floor when it took none.
+        string FeatureContents(int first, int last, bool paved)
+        {
+            // the packer moves past a bake whose place already stands elsewhere
+            // without laying it, so those are not this interior's contents
+            var names = new List<string>();
+            for (int k = first; k < last; k++)
+                if (OwnsItsPlaces(_featureBlocks[k]))
+                    names.Add(_featureBlocks[k].name);
+            if (names.Count == 0)
+                return paved ? "empty - concrete court" : "empty - asphalt court";
+            return string.Join(", ", names);
         }
 
         // Frontage dictation: extra yaw that turns a feature bake's entrance row
@@ -998,6 +1667,9 @@ namespace RoadDemo
                 if (remaining < 15f) break;
 
                 var prefab = _featureBlocks[feature];
+                // a place already standing inside some composed block is not laid
+                // loose as well: the pool moves on past it
+                if (CarriesSpentLandmark(prefab, "the feature pool")) { feature++; continue; }
                 float baseYaw = FrontageOf(prefab.name);
                 float yaw = baseYaw + (northRow ? 180f : 0f);
                 var go = Instantiate(prefab, Vector3.zero, Quaternion.Euler(0f, yaw, 0f), _blocks);
@@ -1042,12 +1714,9 @@ namespace RoadDemo
                 if (digs) sunken.Add(rects.Count);
                 rects.Add(new Rect(xStart, zStart, b.size.x, b.size.z));
                 placed.Add(go);
-                // PalmBlock_07 bakes in the Synty ferris wheel as dead geometry;
-                // its rotate pivot gets the demo's own spin
-                foreach (var t in go.GetComponentsInChildren<Transform>())
-                    if (t.name.Contains("Ferris") && t.name.Contains("_Rotate"))
-                        t.gameObject.AddComponent<DemoFerrisWheel>();
-                if (prefab.name.StartsWith("building-policestation")) _policeStation = go;
+                ClaimLandmarks(prefab);
+                SpinFerrisWheels(go);
+                if (prefab.name.StartsWith(StationName)) _policeStation = go;
                 // a civilian door on whichever face fronts this bake's street.
                 // The station keeps its own door (the beat officers'), and a
                 // sunken bake (skatepark) has no facade on the frontage line.
@@ -1106,16 +1775,34 @@ namespace RoadDemo
             return b;
         }
 
-        // Asphalt pad under the whole interior, following the pack demo's own
-        // recipe for large paved areas: Road_Bare_01 at random yaws with the
-        // cracked Road_03 mixed in, tar patches dropped at free positions and
-        // sunk a few centimetres so only the raised blob shows, plus a couple
-        // of manholes. The wear level rolls per interior â€” some pads come out
-        // nearly clean, some badly cracked and patched â€” so neighbouring blocks
-        // stop sharing one uniform grey. Cells fully inside a hole rect (sunken
-        // bakes like the skatepark bowl) get no floor at all. Paved interiors
-        // follow the PalmCity demo's court floor instead: a carpet of 2.5 m
-        // SM_Env_Sidewalk_01 concrete plates at random quarter-turns.
+        // Where a standing block reaches below street level - the skatepark bowl,
+        // a sunken garage - as XZ rectangles the lot floor must leave open. Read
+        // off the instance's renderers, half a metre down or more so foundation
+        // skirts and floor tiles do not count; a plate under a piece that merely
+        // sits low is hidden by it, a plate over a bowl fills the bowl in.
+        List<Rect> SunkenRects(GameObject block)
+        {
+            List<Rect> holes = null;
+            float ground = FloorLevel() - 0.5f;
+            foreach (var r in block.GetComponentsInChildren<Renderer>())
+            {
+                var b = r.bounds;
+                if (b.min.y >= ground) continue;
+                holes ??= new List<Rect>();
+                holes.Add(Rect.MinMaxRect(b.min.x, b.min.z, b.max.x, b.max.z));
+            }
+            return holes;
+        }
+
+        // The lot's ground. Paved interiors follow the PalmCity demo's court floor:
+        // a carpet of 2.5 m SM_Env_Sidewalk_01 concrete plates at random quarter-
+        // turns, flush with the sidewalk - what every block interior gets now.
+        // The asphalt lot is kept only for a court holding a bake that digs below
+        // ground, which plates cannot ring: Road_Bare_01 at random yaws with the
+        // cracked Road_03 mixed in, tar patches sunk so only the raised blob
+        // shows, plus a couple of manholes, at a wear level rolled per interior.
+        // Cells fully inside a hole rect (sunken bakes like the skatepark bowl)
+        // get no floor at all.
         void BuildBlockFloor(float xMin, float xMax, float zMin, float zMax, List<Rect> holes,
             bool paved)
         {
@@ -1850,6 +2537,24 @@ namespace RoadDemo
             }
         }
 
+        // The outfit's crews - the ledger's lieutenants and their hoods - out on the
+        // sidewalks under the player's command. Dealt by DemoCrews once the
+        // PersonnelDirector has seeded the roster (its Start, a frame after this
+        // Awake); RoadDemoLedger seats that director in this scene.
+        void SpawnCrews()
+        {
+            if (_walkClip == null || _idleClip == null || _pedLinks.Count == 0) return;
+            var clips = CrewKit.WithArms(new PedClips { Walk = _walkClip, Idle = _idleClip });
+            _crews = gameObject.AddComponent<DemoCrews>();
+            _crews.MuzzleFlashPrefab = CrewKit.MuzzleFlash;
+            _crews.BloodPrefab = CrewKit.Blood;
+            _crews.ImpactPrefab = CrewKit.Impact;
+            _crews.GunshotClip = CrewKit.Gunshot;
+            _crews.CrackClip = CrewKit.Crack;
+            _crews.BarTopInset = 52f; // under the top bar (42) with a little air
+            _crews.Init(_pedLinks, clips, _pedPrefabs);
+        }
+
         // ------------------------------------------------------------------- cars
 
         void SpawnCars()
@@ -2151,12 +2856,19 @@ namespace RoadDemo
             camData.antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing;
             camData.antialiasingQuality = AntialiasingQuality.High;
 
-            camGo.AddComponent<AudioListener>();
+            // no AudioListener here: at a 190 m boom a listener on the lens puts the
+            // whole street outside any sane rolloff. DemoAudio parks the scene's one
+            // ear on the camera's FOCUS instead.
             var dc = camGo.AddComponent<DemoCamera>();
             dc.pivot = centre;
             dc.distance = 190f;
             dc.yaw = 33f;
             dc.pitch = 52f;
+
+            // the project's pipeline asset stops shadows 50 m from the camera -
+            // which is inside the boom, so from up here nothing cast one at all
+            camGo.AddComponent<DemoShadows>().rig = dc;
+            _rig = dc;
 
             // catalog-style building card on click; only the block bakes answer,
             // the street kit's own colliders stay mute
@@ -2167,6 +2879,8 @@ namespace RoadDemo
         // ------------------------------------------------------------- day/night
 
         Light _sun;
+        DemoCamera _rig;
+        DemoClock _clock;
 
         // The demo's own day/night stack, self-contained in this folder: DemoClock
         // advances the hour and owns pause/speed, DemoSky swings the sun and moon
@@ -2238,6 +2952,21 @@ namespace RoadDemo
             var barGo = new GameObject("TopBar");
             var bar = barGo.AddComponent<DemoTopBar>();
             bar.clock = clock;
+
+            _clock = clock;
+        }
+
+        // ----------------------------------------------------------------- audio
+
+        // The demo's mix, self-contained in this folder like everything else here:
+        // wind and a traffic hum under the whole city, engines on the cars nearest
+        // the camera's focus, and a pooled trickle of footsteps, horns, doors and
+        // voices over the top. Built last of the world layers, because it reads the
+        // builder's own live lists - anything spawned after this is heard too.
+        void BuildAudio()
+        {
+            var go = new GameObject("Audio");
+            go.AddComponent<DemoAudio>().Init(_clock, _rig, _vehicles, _policeCars, _pedestrians);
         }
 
         // ------------------------------------------------------------------- map
@@ -2250,7 +2979,17 @@ namespace RoadDemo
         {
             var go = new GameObject("Map");
             go.AddComponent<DemoMap>().Init(this, _blocks, _picker,
-                _pedestrians, _policeOfficers, _vehicles, _policeCars);
+                _pedestrians, _policeOfficers, _vehicles, _policeCars, _crews);
+        }
+
+        // ------------------------------------------------------- the lot overlay
+        //
+        // The O key's answer to "what is this block, and what was it built for":
+        // the plan BuildBlocks just worked from, printed over the lots themselves.
+        void BuildLotOverlay()
+        {
+            var go = new GameObject("Lot Overlay");
+            go.AddComponent<DemoLotOverlay>().Init(this);
         }
     }
 }

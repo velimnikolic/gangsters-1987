@@ -133,6 +133,9 @@ namespace LivingCity.UI
             var prefabs = Database();
             if (!prefabs || prefabs.pedestrianGroups == null)
             {
+                var stray = LedgerModelSet.PersonNamed(prefabName) ?? EditorFallback(prefabName);
+                if (stray)
+                    return stray;
                 WarnOnce("people:" + prefabName, "[PortraitStudio] No CityBuilder with " +
                     "pedestrian groups in the scene - no mugshot for '" + prefabName + "'.");
                 return null;
@@ -153,8 +156,52 @@ namespace LivingCity.UI
             if (prefabs.policeOfficerPrefab && prefabs.policeOfficerPrefab.name == prefabName)
                 return prefabs.policeOfficerPrefab;
 
+            // The Synty cast baked into LedgerModelSet answers by name (with or without
+            // the "_AI" suffix) - the book's portraits never wait on the crowd slots.
+            var fallback = LedgerModelSet.PersonNamed(prefabName) ?? EditorFallback(prefabName);
+            if (fallback)
+                return fallback;
             WarnOnce("people:" + prefabName, "[PortraitStudio] '" + prefabName +
                 "' is not in the PrefabDatabase pedestrian groups - no mugshot.");
+            return null;
+        }
+
+        /// <summary>
+        /// The dev-time safety net under both scans: when the PrefabDatabase cannot
+        /// answer (its people and car slots are being re-dealt - the working tree has
+        /// had them empty), photograph the pack's own prefab of that name, or of the
+        /// same name without the "_AI" suffix the converted street copies carry. Editor
+        /// only: a build has no AssetDatabase and keeps the initials, which is what an
+        /// empty database deserves. Logged once per name so the gap stays visible.
+        /// </summary>
+        static GameObject EditorFallback(string prefabName)
+        {
+#if UNITY_EDITOR
+            if (string.IsNullOrEmpty(prefabName))
+                return null;
+
+            var bare = prefabName.EndsWith("_AI")
+                ? prefabName.Substring(0, prefabName.Length - 3)
+                : null;
+            foreach (var candidate in new[] { prefabName, bare })
+            {
+                if (candidate == null)
+                    continue;
+                foreach (var guid in UnityEditor.AssetDatabase.FindAssets(candidate + " t:Prefab"))
+                {
+                    var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                    if (System.IO.Path.GetFileNameWithoutExtension(path) != candidate)
+                        continue;
+                    var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                    if (!prefab)
+                        continue;
+                    WarnOnce("fallback:" + prefabName, "[PortraitStudio] '" + prefabName +
+                        "' is not in the PrefabDatabase - photographing " + path +
+                        " instead (editor only; a build keeps the initials).");
+                    return prefab;
+                }
+            }
+#endif
             return null;
         }
 
@@ -165,6 +212,9 @@ namespace LivingCity.UI
             var prefabs = Database();
             if (!prefabs)
             {
+                var stray = EditorFallback(prefabName);
+                if (stray)
+                    return stray;
                 WarnOnce("vehicle:" + prefabName, "[PortraitStudio] No CityBuilder in " +
                     "the scene - no photo for '" + prefabName + "'.");
                 return null;
@@ -178,6 +228,8 @@ namespace LivingCity.UI
             if (!found && prefabs.policeCarPrefab && prefabs.policeCarPrefab.name == prefabName)
                 found = prefabs.policeCarPrefab;
 
+            if (!found)
+                found = EditorFallback(prefabName);
             if (!found)
                 WarnOnce("vehicle:" + prefabName, "[PortraitStudio] '" + prefabName +
                     "' is not in the PrefabDatabase car groups - no photo.");

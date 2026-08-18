@@ -29,6 +29,13 @@ namespace RoadDemo
     public struct PedClips
     {
         public AnimationClip Walk, Idle, SitDown, SitLoop, StandUp, Talk, Shout;
+
+        // The gun wardrobe (the outfit's men): gun held low, gun up, the shot, the
+        // flinch, the fall. Optional like the rest - an unarmed walker never asks.
+        public AnimationClip PistolIdle, Aim, Shoot, Hit, Death;
+
+        // The run a man breaks into closing on a fight. Optional: without it he walks.
+        public AnimationClip Jog;
     }
 
     public class PedestrianAgent
@@ -38,8 +45,29 @@ namespace RoadDemo
         // Mixer input per pose; a pose whose clip was not provided stays invalid
         // and SetPose refuses to select it.
         public const int PoseWalk = 0, PoseIdle = 1, PoseSitDown = 2, PoseSit = 3,
-            PoseStandUp = 4, PoseTalk = 5, PoseShout = 6;
-        const int PoseCount = 7;
+            PoseStandUp = 4, PoseTalk = 5, PoseShout = 6,
+            PosePistolIdle = 7, PoseAim = 8, PoseShoot = 9, PoseHit = 10, PoseDeath = 11,
+            PoseJog = 12;
+        const int PoseCount = 13;
+
+        // Clips cut straight out of an FBX (the pistol set) carry no loop flag, so
+        // a loop pose is wrapped by hand in TickBlend; the .anim files loop themselves.
+        static readonly bool[] LoopByHand = MakeLoopTable();
+
+        static bool[] MakeLoopTable()
+        {
+            var table = new bool[PoseCount];
+            // the .anim loops carry their own flag; wrapping them by hand as well is
+            // harmless, and it covers a walk drawn out of the FBX (Walk_Loop) too
+            table[PoseWalk] = true;
+            table[PoseIdle] = true;
+            table[PoseTalk] = true;
+            table[PoseShout] = true;
+            table[PosePistolIdle] = true;
+            table[PoseAim] = true;
+            table[PoseJog] = true;
+            return table;
+        }
 
         public Transform Tf;
         public float Speed = 1.5f;
@@ -64,10 +92,28 @@ namespace RoadDemo
 
         public void Init(Transform tf, PedClips clips, PedLink start, float t)
         {
-            Tf = tf;
+            Setup(tf, clips);
             _link = start;
             _cameFrom = start.From;
             _t = t;
+            Move(0f);
+        }
+
+        /// <summary>A walker off the graph entirely: stood at a point, no link under
+        /// him. Tick does nothing for him beyond the pose blend - whoever put him
+        /// there moves him (the crews' free stride on the empty demo floor).</summary>
+        public void InitAt(Transform tf, PedClips clips, Vector3 position, Quaternion rotation)
+        {
+            Setup(tf, clips);
+            _link = null;
+            _cameFrom = null;
+            _t = 0f;
+            Tf.SetPositionAndRotation(position, rotation);
+        }
+
+        void Setup(Transform tf, PedClips clips)
+        {
+            Tf = tf;
             _lateral = Random.Range(-0.7f, 0.7f); // kerb strip now carries palms/lamps at half+1.15
 
             var animator = tf.GetComponentInChildren<Animator>();
@@ -97,18 +143,25 @@ namespace RoadDemo
                 Wire(PoseStandUp, clips.StandUp);
                 Wire(PoseTalk, clips.Talk);
                 Wire(PoseShout, clips.Shout);
+                Wire(PosePistolIdle, clips.PistolIdle);
+                Wire(PoseAim, clips.Aim);
+                Wire(PoseShoot, clips.Shoot);
+                Wire(PoseHit, clips.Hit);
+                Wire(PoseDeath, clips.Death);
+                Wire(PoseJog, clips.Jog);
 
+                // every loop starts somewhere along itself, not at frame one - a line of
+                // men breathing, walking or jogging in lockstep reads as a machine
+                for (int i = 0; i < PoseCount; i++)
+                    if (LoopByHand[i] && _poses[i].IsValid())
+                        _poses[i].SetTime(Random.value * _poses[i].GetAnimationClip().length);
                 if (_poses[PoseWalk].IsValid())
-                {
-                    _poses[PoseWalk].SetTime(Random.value * clips.Walk.length);
                     _poses[PoseWalk].SetSpeed(Speed / 1.5f);
-                }
                 _weights[PoseWalk] = 1f;
                 _mixer.SetInputWeight(PoseWalk, 1f);
                 output.SetSourcePlayable(_mixer);
                 _graph.Play();
             }
-            Move(0f);
         }
 
         public void Dispose()
@@ -125,6 +178,12 @@ namespace RoadDemo
 
         public void Tick(float dt)
         {
+            if (_link == null)
+            {
+                BlendLocomotion(dt, false);
+                return;
+            }
+
             if (_waiting)
             {
                 if (MayEnter(_link))
@@ -152,6 +211,21 @@ namespace RoadDemo
 
         protected bool HasPose(int pose) => _poses[pose].IsValid();
 
+        /// <summary>The kerb-strip offset a walker keeps off the link's centre line;
+        /// a crew sets it by hand so its men do not all share one line.</summary>
+        protected float Lateral { get => _lateral; set => _lateral = value; }
+
+        /// <summary>Stood at a crossing waiting on the light (t = 0 on a gated link).</summary>
+        protected bool Waiting { get => _waiting; set => _waiting = value; }
+
+        /// <summary>Drop the current link and choose afresh from this node - a walker
+        /// given new orders while it stands at a light asks its own ChooseLink again.</summary>
+        protected void Reroute(PedNode node)
+        {
+            _waiting = false;
+            PickNext(node, keepAwayFrom: null);
+        }
+
         /// <summary>Select the pose the blend drifts toward; a pose with no clip is refused.</summary>
         protected void SetPose(int pose)
         {
@@ -159,10 +233,34 @@ namespace RoadDemo
         }
 
         /// <summary>Rewind a one-shot (sit down, stand up) before blending it in.</summary>
-        protected void RestartPose(int pose, float atTime = 0f)
+        protected void RestartPose(int pose, float atTime = 0f, float speed = 1f)
         {
-            if (_poses[pose].IsValid()) _poses[pose].SetTime(atTime);
+            if (!_poses[pose].IsValid()) return;
+            _poses[pose].SetTime(atTime);
+            _poses[pose].SetSpeed(speed);
         }
+
+        /// <summary>Playback rate of a pose - the walk's is tied to Speed, and a
+        /// derived agent that changes pace mid-life re-ties it here.</summary>
+        protected void SetPoseSpeed(int pose, float speed)
+        {
+            if (_poses[pose].IsValid()) _poses[pose].SetSpeed(speed);
+        }
+
+        /// <summary>Seconds into the pose's clip, and the clip's length - a one-shot
+        /// (the shot, the flinch, the fall) is over when the first passes the second.</summary>
+        protected float PoseTime(int pose) => _poses[pose].IsValid() ? (float)_poses[pose].GetTime() : 0f;
+        protected float PoseLength(int pose) =>
+            _poses[pose].IsValid() ? _poses[pose].GetAnimationClip().length : 0f;
+
+        /// <summary>Freeze a pose on its current frame - the fall stays fallen.</summary>
+        protected void HoldPose(int pose)
+        {
+            if (_poses[pose].IsValid()) _poses[pose].SetSpeed(0f);
+        }
+
+        /// <summary>The selected pose, for derived agents that branch on it.</summary>
+        protected int CurrentPose => _pose;
 
         /// <summary>Drift every mixer weight toward the selected pose.</summary>
         protected void TickBlend(float dt)
@@ -171,6 +269,12 @@ namespace RoadDemo
             for (int i = 0; i < PoseCount; i++)
             {
                 if (!_poses[i].IsValid()) continue;
+                if (LoopByHand[i])
+                {
+                    float len = _poses[i].GetAnimationClip().length;
+                    if (len > 0.01f && _poses[i].GetTime() >= len)
+                        _poses[i].SetTime(_poses[i].GetTime() % len);
+                }
                 float target = i == _pose ? 1f : 0f;
                 if (Mathf.Approximately(_weights[i], target)) continue;
                 _weights[i] = Mathf.MoveTowards(_weights[i], target, 4f * dt);

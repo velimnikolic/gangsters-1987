@@ -12,6 +12,17 @@ namespace RoadDemo
         public float yaw = 35f;
         public float pitch = 52f;
 
+        /// <summary>The key line under the top bar. The road demo's by default; a
+        /// scene with other clicks to explain writes its own.</summary>
+        public string hint =
+            "WASD/arrows: move   Q/E or right-click: rotate   wheel: zoom   " +
+            "click a building: card   O: lot info   click a lieutenant: select   " +
+            "right-click: send his crew   M: mute";
+
+        /// <summary>Pixels the hint sits below the top of the screen (the road demo's
+        /// top bar is 42 canvas-px on the 1080 reference height).</summary>
+        public float hintTopPx = 42f;
+
         /// <summary>The book owns the screen while it is open - its own keys, its own
         /// wheel (the roster scrolls on it) - and the map takes the half of the world
         /// that is still visible. Nothing the player does over either may also steer
@@ -68,9 +79,8 @@ namespace RoadDemo
 
             // below the top bar, which spans the full width at 42 canvas-px
             // (reference height 1080) - convert to real screen pixels
-            float barPx = UnityEngine.Screen.height / 1080f * 42f;
-            GUI.Label(new Rect(12f, barPx + 6f, 760f, 24f),
-                "WASD/arrows: move   Q/E or right-click: rotate   wheel: zoom   click a building: card");
+            float barPx = UnityEngine.Screen.height / 1080f * hintTopPx;
+            GUI.Label(new Rect(12f, barPx + 6f, 1400f, 24f), hint);
         }
     }
 }

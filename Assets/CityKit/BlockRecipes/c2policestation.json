@@ -1,0 +1,5850 @@
+{
+    "name": "c2policestation",
+    "lot": "C2",
+    "lotWidth": 100.0,
+    "lotDepth": 70.0,
+    "members": [
+        {
+            "prefab": "City_02_B",
+            "pos": {
+                "x": -39.70002746582031,
+                "y": 0.0,
+                "z": 25.7999267578125
+            },
+            "yaw": 0.0,
+            "mirrorX": false
+        },
+        {
+            "prefab": "City_04",
+            "pos": {
+                "x": -34.227569580078128,
+                "y": 1.6399999856948853,
+                "z": -0.06988525390625
+            },
+            "yaw": -179.2204132080078,
+            "mirrorX": false
+        },
+        {
+            "prefab": "building-policestation",
+            "pos": {
+                "x": 20.199996948242189,
+                "y": 3.4000000953674318,
+                "z": 15.70001220703125
+            },
+            "yaw": 0.0,
+            "mirrorX": false
+        }
+    ],
+    "props": [
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -50.0,
+                "y": 0.019999999552965165,
+                "z": -35.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 20.0,
+                "y": 1.0,
+                "z": 4.359997749328613
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": 32.0,
+                "y": 0.029999999329447748,
+                "z": -33.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 40.33332824707031,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Car_01.prefab",
+            "pos": {
+                "x": 40.25480651855469,
+                "y": 0.05000000074505806,
+                "z": -30.190673828125
+            },
+            "yaw": -178.5087127685547,
+            "scale": {
+                "x": 0.9999999403953552,
+                "y": 1.0,
+                "z": 0.9999999403953552
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 37.0,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab",
+            "pos": {
+                "x": 36.946746826171878,
+                "y": 0.05000000074505806,
+                "z": -30.1656494140625
+            },
+            "yaw": -178.5927276611328,
+            "scale": {
+                "x": 1.0000001192092896,
+                "y": 1.0,
+                "z": 1.0000001192092896
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 33.66667175292969,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab",
+            "pos": {
+                "x": 33.69171142578125,
+                "y": 0.05000000074505806,
+                "z": -30.02435302734375
+            },
+            "yaw": 178.760498046875,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": 22.0,
+                "y": 0.029999999329447748,
+                "z": -33.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 30.333328247070314,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Motorbike_02.prefab",
+            "pos": {
+                "x": 30.350662231445314,
+                "y": 0.05000000074505806,
+                "z": -31.4373779296875
+            },
+            "yaw": -178.15696716308595,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 27.0,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 23.666671752929689,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": 12.0,
+                "y": 0.029999999329447748,
+                "z": -33.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 20.333328247070314,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Car_01.prefab",
+            "pos": {
+                "x": 20.267913818359376,
+                "y": 0.05000000074505806,
+                "z": -30.32806396484375
+            },
+            "yaw": -1.78814697265625,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 17.0,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Motorbike_01.prefab",
+            "pos": {
+                "x": 17.003921508789064,
+                "y": 0.05000000074505806,
+                "z": -31.62164306640625
+            },
+            "yaw": 179.6900634765625,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 13.666671752929688,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Car_01.prefab",
+            "pos": {
+                "x": 13.619949340820313,
+                "y": 0.05000000074505806,
+                "z": -30.34027099609375
+            },
+            "yaw": -0.311065673828125,
+            "scale": {
+                "x": 0.9999999403953552,
+                "y": 1.0,
+                "z": 0.9999999403953552
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": 2.0,
+                "y": 0.029999999329447748,
+                "z": -33.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 10.333328247070313,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Car_02.prefab",
+            "pos": {
+                "x": 10.370376586914063,
+                "y": 0.05000000074505806,
+                "z": -30.1790771484375
+            },
+            "yaw": -0.200775146484375,
+            "scale": {
+                "x": 0.9999998807907105,
+                "y": 1.0,
+                "z": 0.9999998807907105
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 7.0,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 3.6666717529296877,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab",
+            "pos": {
+                "x": 3.6632843017578127,
+                "y": 0.05000000074505806,
+                "z": -30.37286376953125
+            },
+            "yaw": 0.7736968994140625,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": -8.0,
+                "y": 0.029999999329447748,
+                "z": -33.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 0.3333282470703125,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -3.0,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Motorbike_01.prefab",
+            "pos": {
+                "x": -3.042877197265625,
+                "y": 0.05000000074505806,
+                "z": -31.73394775390625
+            },
+            "yaw": 1.081085205078125,
+            "scale": {
+                "x": 1.0000003576278687,
+                "y": 1.0,
+                "z": 1.0000003576278687
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -6.3333282470703129,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab",
+            "pos": {
+                "x": -6.2888031005859379,
+                "y": 0.05000000074505806,
+                "z": -30.1339111328125
+            },
+            "yaw": 179.29617309570313,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": -18.0,
+                "y": 0.029999999329447748,
+                "z": -33.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -9.666671752929688,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Car_02.prefab",
+            "pos": {
+                "x": -9.741867065429688,
+                "y": 0.05000000074505806,
+                "z": -30.28411865234375
+            },
+            "yaw": 2.20233154296875,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -13.0,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -16.333343505859376,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Car_02.prefab",
+            "pos": {
+                "x": -16.351943969726564,
+                "y": 0.05000000074505806,
+                "z": -30.03851318359375
+            },
+            "yaw": -177.75709533691407,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": -28.0,
+                "y": 0.029999999329447748,
+                "z": -33.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -19.666656494140626,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab",
+            "pos": {
+                "x": -19.623458862304689,
+                "y": 0.05000000074505806,
+                "z": -30.379150390625
+            },
+            "yaw": 1.052703857421875,
+            "scale": {
+                "x": 0.9999999403953552,
+                "y": 1.0,
+                "z": 0.9999999403953552
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -23.0,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Medium_01.prefab",
+            "pos": {
+                "x": -22.970748901367189,
+                "y": 0.05000000074505806,
+                "z": -30.33880615234375
+            },
+            "yaw": 178.60214233398438,
+            "scale": {
+                "x": 0.9999999403953552,
+                "y": 1.0,
+                "z": 0.9999999403953552
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -26.333343505859376,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab",
+            "pos": {
+                "x": -26.305282592773439,
+                "y": 0.05000000074505806,
+                "z": -30.134521484375
+            },
+            "yaw": -179.55833435058595,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": -38.0,
+                "y": 0.029999999329447748,
+                "z": -33.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -29.666656494140626,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -33.0,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Car_01.prefab",
+            "pos": {
+                "x": -33.11189270019531,
+                "y": 0.05000000074505806,
+                "z": -30.3916015625
+            },
+            "yaw": 0.508880615234375,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -36.333343505859378,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Taxi_01.prefab",
+            "pos": {
+                "x": -36.25132751464844,
+                "y": 0.05000000074505806,
+                "z": -30.44476318359375
+            },
+            "yaw": -1.933135986328125,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": -48.0,
+                "y": 0.029999999329447748,
+                "z": -33.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -39.666656494140628,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Motorbike_01.prefab",
+            "pos": {
+                "x": -39.639190673828128,
+                "y": 0.05000000074505806,
+                "z": -31.77313232421875
+            },
+            "yaw": -0.478668212890625,
+            "scale": {
+                "x": 1.0000001192092896,
+                "y": 1.0,
+                "z": 1.0000001192092896
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -43.0,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab",
+            "pos": {
+                "x": -43.00303649902344,
+                "y": 0.05000000074505806,
+                "z": -30.0582275390625
+            },
+            "yaw": -179.11557006835938,
+            "scale": {
+                "x": 0.9999999403953552,
+                "y": 1.0,
+                "z": 0.9999999403953552
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -46.333343505859378,
+                "y": 0.0,
+                "z": -33.0828857421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Supercar_01.prefab",
+            "pos": {
+                "x": -46.28471374511719,
+                "y": 0.05000000074505806,
+                "z": -30.2276611328125
+            },
+            "yaw": 0.184844970703125,
+            "scale": {
+                "x": 0.9999999403953552,
+                "y": 1.0,
+                "z": 0.9999999403953552
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": 32.0,
+                "y": 0.029999999329447748,
+                "z": -21.10003662109375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 40.33332824707031,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Motorbike_02.prefab",
+            "pos": {
+                "x": 40.25599670410156,
+                "y": 0.05000000074505806,
+                "z": -16.77093505859375
+            },
+            "yaw": -2.31573486328125,
+            "scale": {
+                "x": 0.9999999403953552,
+                "y": 1.0,
+                "z": 0.9999999403953552
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 37.0,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 33.66667175292969,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": 22.0,
+                "y": 0.029999999329447748,
+                "z": -21.10003662109375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 30.333328247070314,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab",
+            "pos": {
+                "x": 30.240509033203126,
+                "y": 0.05000000074505806,
+                "z": -18.15740966796875
+            },
+            "yaw": 1.5198211669921876,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 27.0,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab",
+            "pos": {
+                "x": 26.949630737304689,
+                "y": 0.05000000074505806,
+                "z": -17.85693359375
+            },
+            "yaw": -179.8406524658203,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 23.666671752929689,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Car_02.prefab",
+            "pos": {
+                "x": 23.763214111328126,
+                "y": 0.05000000074505806,
+                "z": -18.10113525390625
+            },
+            "yaw": 0.130401611328125,
+            "scale": {
+                "x": 0.9999999403953552,
+                "y": 1.0,
+                "z": 0.9999999403953552
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": 12.0,
+                "y": 0.029999999329447748,
+                "z": -21.10003662109375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 20.333328247070314,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab",
+            "pos": {
+                "x": 20.4049072265625,
+                "y": 0.05000000074505806,
+                "z": -18.17877197265625
+            },
+            "yaw": -1.06939697265625,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 17.0,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Motorbike_01.prefab",
+            "pos": {
+                "x": 17.018753051757814,
+                "y": 0.05000000074505806,
+                "z": -16.38555908203125
+            },
+            "yaw": 178.19338989257813,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 13.666671752929688,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": 2.0,
+                "y": 0.029999999329447748,
+                "z": -21.10003662109375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 10.333328247070313,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab",
+            "pos": {
+                "x": 10.345108032226563,
+                "y": 0.05000000074505806,
+                "z": -17.8079833984375
+            },
+            "yaw": 178.61080932617188,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 7.0,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Motorbike_02.prefab",
+            "pos": {
+                "x": 7.093719482421875,
+                "y": 0.05000000074505806,
+                "z": -16.7471923828125
+            },
+            "yaw": -0.454681396484375,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 3.6666717529296877,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Buggy_01.prefab",
+            "pos": {
+                "x": 3.5931549072265627,
+                "y": 0.05000000074505806,
+                "z": -17.294921875
+            },
+            "yaw": -2.123046875,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": -8.0,
+                "y": 0.029999999329447748,
+                "z": -21.10003662109375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": 0.3333282470703125,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Car_01.prefab",
+            "pos": {
+                "x": 0.2270355224609375,
+                "y": 0.05000000074505806,
+                "z": -17.85205078125
+            },
+            "yaw": -178.49256896972657,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -3.0,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Motorbike_02.prefab",
+            "pos": {
+                "x": -3.1080322265625,
+                "y": 0.05000000074505806,
+                "z": -16.80010986328125
+            },
+            "yaw": -1.03485107421875,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -6.3333282470703129,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab",
+            "pos": {
+                "x": -6.2825469970703129,
+                "y": 0.05000000074505806,
+                "z": -17.8424072265625
+            },
+            "yaw": 177.77081298828126,
+            "scale": {
+                "x": 0.9999999403953552,
+                "y": 1.0,
+                "z": 0.9999999403953552
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": -18.0,
+                "y": 0.029999999329447748,
+                "z": -21.10003662109375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -9.666671752929688,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Car_02.prefab",
+            "pos": {
+                "x": -9.736038208007813,
+                "y": 0.05000000074505806,
+                "z": -17.91815185546875
+            },
+            "yaw": 177.9925537109375,
+            "scale": {
+                "x": 0.9999999403953552,
+                "y": 1.0,
+                "z": 0.9999999403953552
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -13.0,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Sedan_01.prefab",
+            "pos": {
+                "x": -12.946090698242188,
+                "y": 0.05000000074505806,
+                "z": -17.78094482421875
+            },
+            "yaw": 177.61099243164063,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -16.333343505859376,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Car_02.prefab",
+            "pos": {
+                "x": -16.441513061523439,
+                "y": 0.05000000074505806,
+                "z": -18.16632080078125
+            },
+            "yaw": 1.4638671875,
+            "scale": {
+                "x": 0.9999999403953552,
+                "y": 1.0,
+                "z": 0.9999999403953552
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": -28.0,
+                "y": 0.029999999329447748,
+                "z": -21.10003662109375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -19.666656494140626,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Car_01.prefab",
+            "pos": {
+                "x": -19.761077880859376,
+                "y": 0.05000000074505806,
+                "z": -18.02880859375
+            },
+            "yaw": 0.872344970703125,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -23.0,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Motorbike_02.prefab",
+            "pos": {
+                "x": -22.893875122070314,
+                "y": 0.05000000074505806,
+                "z": -16.46923828125
+            },
+            "yaw": -178.6844482421875,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -26.333343505859376,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": -38.0,
+                "y": 0.029999999329447748,
+                "z": -21.10003662109375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -29.666656494140626,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab",
+            "pos": {
+                "x": -29.638519287109376,
+                "y": 0.05000000074505806,
+                "z": -17.87579345703125
+            },
+            "yaw": 179.90878295898438,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -33.0,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Buggy_01.prefab",
+            "pos": {
+                "x": -32.99737548828125,
+                "y": 0.05000000074505806,
+                "z": -17.2889404296875
+            },
+            "yaw": -177.82418823242188,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -36.333343505859378,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Motorbike_02.prefab",
+            "pos": {
+                "x": -36.345977783203128,
+                "y": 0.05000000074505806,
+                "z": -16.38690185546875
+            },
+            "yaw": 178.7091064453125,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_ParkingLines_01.prefab",
+            "pos": {
+                "x": -48.0,
+                "y": 0.029999999329447748,
+                "z": -21.10003662109375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.2800019979476929
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -39.666656494140628,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Car_02.prefab",
+            "pos": {
+                "x": -39.69207763671875,
+                "y": 0.05000000074505806,
+                "z": -18.10931396484375
+            },
+            "yaw": 1.647674560546875,
+            "scale": {
+                "x": 1.0000001192092896,
+                "y": 1.0,
+                "z": 1.0000001192092896
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -43.0,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Divider_End_01.prefab",
+            "pos": {
+                "x": -46.333343505859378,
+                "y": 0.0,
+                "z": -14.88287353515625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/SM_Veh_Motorbike_01.prefab",
+            "pos": {
+                "x": -46.311676025390628,
+                "y": 0.05000000074505806,
+                "z": -16.6649169921875
+            },
+            "yaw": -1.746002197265625,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Arrow_01.prefab",
+            "pos": {
+                "x": 49.5,
+                "y": 0.029999999329447748,
+                "z": -29.5999755859375
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_Parking_01.prefab",
+            "pos": {
+                "x": 49.30000305175781,
+                "y": 0.0,
+                "z": -33.90234375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Parking_Stand_01.prefab",
+            "pos": {
+                "x": 44.69999694824219,
+                "y": 0.0,
+                "z": -32.4000244140625
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Bollard_02.prefab",
+            "pos": {
+                "x": 49.649993896484378,
+                "y": 0.0,
+                "z": -33.9000244140625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Bollard_02.prefab",
+            "pos": {
+                "x": 44.350006103515628,
+                "y": 0.0,
+                "z": -33.9000244140625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Pier_Lamp_01.prefab",
+            "pos": {
+                "x": 43.0,
+                "y": 0.0,
+                "z": -30.4136962890625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Pier_Lamp_01.prefab",
+            "pos": {
+                "x": -49.0,
+                "y": 0.0,
+                "z": -30.4136962890625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 49.748199462890628,
+                "y": 0.0,
+                "z": -29.425048828125
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.0650001764297486,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 49.748199462890628,
+                "y": 0.0,
+                "z": -24.10003662109375
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.0650001764297486,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 49.748199462890628,
+                "y": 0.0,
+                "z": -18.7750244140625
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.0650001764297486,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 49.748199462890628,
+                "y": 0.0,
+                "z": -13.45001220703125
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.0650001764297486,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -49.748199462890628,
+                "y": 0.0,
+                "z": -34.75
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.0650001764297486,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -49.748199462890628,
+                "y": 0.0,
+                "z": -29.42498779296875
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.0650001764297486,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -49.748199462890628,
+                "y": 0.0,
+                "z": -24.0999755859375
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.0650001764297486,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -49.748199462890628,
+                "y": 0.0,
+                "z": -18.77496337890625
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.0650001764297486,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 44.774993896484378,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 39.80000305175781,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 34.82499694824219,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 29.849990844726564,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 24.875,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 19.899993896484376,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 14.925003051757813,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 9.949996948242188,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 4.9749908447265629,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -4.975006103515625,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -9.949996948242188,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -14.925003051757813,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -19.900009155273439,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -24.875,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -29.849990844726564,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -34.82499694824219,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -39.80000305175781,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -44.77500915527344,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -49.75,
+                "y": 0.0,
+                "z": -13.45184326171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.9950000047683716,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 44.0,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 39.06578063964844,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 34.13157653808594,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 29.197372436523439,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 24.263153076171876,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 19.328948974609376,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 14.394729614257813,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 9.460525512695313,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": 4.52630615234375,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -0.40789794921875,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -5.34210205078125,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -10.276321411132813,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -15.210525512695313,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -20.144744873046876,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -25.078948974609376,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -30.013153076171876,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -34.947357177734378,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -39.88157653808594,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_01.prefab",
+            "pos": {
+                "x": -44.8157958984375,
+                "y": 0.0,
+                "z": -34.7481689453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 0.9868420362472534,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_End_01.prefab",
+            "pos": {
+                "x": 43.99998474121094,
+                "y": 0.0,
+                "z": -34.75
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_End_01.prefab",
+            "pos": {
+                "x": 49.74998474121094,
+                "y": 0.0,
+                "z": -34.75
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_End_01.prefab",
+            "pos": {
+                "x": -49.75001525878906,
+                "y": 0.0,
+                "z": -34.75
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_End_01.prefab",
+            "pos": {
+                "x": 49.74998474121094,
+                "y": 0.0,
+                "z": -13.45001220703125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Fence_End_01.prefab",
+            "pos": {
+                "x": -49.75001525878906,
+                "y": 0.0,
+                "z": -13.45001220703125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrel_Burn_01.prefab",
+            "pos": {
+                "x": 48.85130310058594,
+                "y": 0.0,
+                "z": -12.48760986328125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrel_Burn_01.prefab",
+            "pos": {
+                "x": 48.03642272949219,
+                "y": 0.0,
+                "z": -12.48760986328125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Crate_01.prefab",
+            "pos": {
+                "x": 43.155792236328128,
+                "y": 0.0,
+                "z": -12.580810546875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Crate_01.prefab",
+            "pos": {
+                "x": 42.18022155761719,
+                "y": 0.0,
+                "z": -12.580810546875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Crate_01.prefab",
+            "pos": {
+                "x": 41.20466613769531,
+                "y": 0.0,
+                "z": -12.580810546875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Drinks_Cooler_01.prefab",
+            "pos": {
+                "x": 37.49281311035156,
+                "y": 0.0,
+                "z": -12.539306640625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Drinks_Cooler_01.prefab",
+            "pos": {
+                "x": 36.587860107421878,
+                "y": 0.0,
+                "z": -12.539306640625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Drinks_Cooler_01.prefab",
+            "pos": {
+                "x": 35.68290710449219,
+                "y": 0.0,
+                "z": -12.539306640625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Skip_01.prefab",
+            "pos": {
+                "x": 32.35993957519531,
+                "y": 0.0,
+                "z": -12.19464111328125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_04.prefab",
+            "pos": {
+                "x": 27.91046142578125,
+                "y": 0.0,
+                "z": -12.67877197265625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_04.prefab",
+            "pos": {
+                "x": 27.56561279296875,
+                "y": 0.0,
+                "z": -12.67877197265625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_04.prefab",
+            "pos": {
+                "x": 27.220748901367189,
+                "y": 0.0,
+                "z": -12.67877197265625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_PowerBox_01.prefab",
+            "pos": {
+                "x": 23.321853637695314,
+                "y": 0.0,
+                "z": -12.434814453125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_PowerBox_01.prefab",
+            "pos": {
+                "x": 21.229644775390626,
+                "y": 0.0,
+                "z": -12.434814453125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_PowerBox_01.prefab",
+            "pos": {
+                "x": 19.137451171875,
+                "y": 0.0,
+                "z": -12.434814453125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_04.prefab",
+            "pos": {
+                "x": 14.582672119140625,
+                "y": 0.0,
+                "z": -12.67877197265625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_04.prefab",
+            "pos": {
+                "x": 14.237823486328125,
+                "y": 0.0,
+                "z": -12.67877197265625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_02.prefab",
+            "pos": {
+                "x": 9.807952880859375,
+                "y": 0.0,
+                "z": -12.5557861328125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_02.prefab",
+            "pos": {
+                "x": 7.187957763671875,
+                "y": 0.0,
+                "z": -12.5557861328125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Skip_02.prefab",
+            "pos": {
+                "x": 0.1394195556640625,
+                "y": 0.0,
+                "z": -12.194580078125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_01.prefab",
+            "pos": {
+                "x": -5.92938232421875,
+                "y": 0.0,
+                "z": -12.4461669921875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_01.prefab",
+            "pos": {
+                "x": -6.939361572265625,
+                "y": 0.0,
+                "z": -12.4461669921875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_01.prefab",
+            "pos": {
+                "x": -7.9493408203125,
+                "y": 0.0,
+                "z": -12.4461669921875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Skip_01.prefab",
+            "pos": {
+                "x": -13.972869873046875,
+                "y": 0.0,
+                "z": -12.19464111328125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrel_Burn_01.prefab",
+            "pos": {
+                "x": -18.168014526367189,
+                "y": 0.0,
+                "z": -12.48760986328125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Skip_02.prefab",
+            "pos": {
+                "x": 46.48542785644531,
+                "y": 0.0,
+                "z": -5.305419921875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Skip_02.prefab",
+            "pos": {
+                "x": 43.93669128417969,
+                "y": 0.0,
+                "z": -5.305419921875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Skip_02.prefab",
+            "pos": {
+                "x": 41.38795471191406,
+                "y": 0.0,
+                "z": -5.305419921875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_02.prefab",
+            "pos": {
+                "x": 35.38435363769531,
+                "y": 0.0,
+                "z": -4.9442138671875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_02.prefab",
+            "pos": {
+                "x": 32.76435852050781,
+                "y": 0.0,
+                "z": -4.9442138671875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_02.prefab",
+            "pos": {
+                "x": 30.144363403320314,
+                "y": 0.0,
+                "z": -4.9442138671875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_02.prefab",
+            "pos": {
+                "x": 24.703872680664064,
+                "y": 0.0,
+                "z": -4.9442138671875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_02.prefab",
+            "pos": {
+                "x": 22.0838623046875,
+                "y": 0.0,
+                "z": -4.9442138671875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Skip_01.prefab",
+            "pos": {
+                "x": 15.493392944335938,
+                "y": 0.0,
+                "z": -5.30535888671875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Drinks_Cooler_01.prefab",
+            "pos": {
+                "x": 11.6412353515625,
+                "y": 0.0,
+                "z": -4.960693359375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Barrier_01.prefab",
+            "pos": {
+                "x": 8.22882080078125,
+                "y": 0.0,
+                "z": -4.98199462890625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Barrier_01.prefab",
+            "pos": {
+                "x": 6.674072265625,
+                "y": 0.0,
+                "z": -4.98199462890625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_02.prefab",
+            "pos": {
+                "x": 3.511627197265625,
+                "y": 0.0,
+                "z": -4.54443359375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_02.prefab",
+            "pos": {
+                "x": 2.212738037109375,
+                "y": 0.0,
+                "z": -4.54443359375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_TrashCan_01.prefab",
+            "pos": {
+                "x": -1.01190185546875,
+                "y": 0.0,
+                "z": -5.0157470703125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_TrashCan_01.prefab",
+            "pos": {
+                "x": -1.8634185791015626,
+                "y": 0.0,
+                "z": -5.0157470703125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Barrier_01.prefab",
+            "pos": {
+                "x": -6.448394775390625,
+                "y": 0.0,
+                "z": -4.98199462890625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_01.prefab",
+            "pos": {
+                "x": -8.04443359375,
+                "y": 0.0,
+                "z": 33.962646484375
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_01.prefab",
+            "pos": {
+                "x": -8.04443359375,
+                "y": 0.0,
+                "z": 33.13861083984375
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_01.prefab",
+            "pos": {
+                "x": -8.04443359375,
+                "y": 0.0,
+                "z": 30.2330322265625
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_01.prefab",
+            "pos": {
+                "x": -8.04443359375,
+                "y": 0.0,
+                "z": 29.40899658203125
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Trashbin_02.prefab",
+            "pos": {
+                "x": -8.441146850585938,
+                "y": 0.0,
+                "z": 25.297607421875
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Trashbin_02.prefab",
+            "pos": {
+                "x": -8.441146850585938,
+                "y": 0.0,
+                "z": 24.45672607421875
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Trashbin_02.prefab",
+            "pos": {
+                "x": -8.441146850585938,
+                "y": 0.0,
+                "z": 23.61578369140625
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_06.prefab",
+            "pos": {
+                "x": 45.89366149902344,
+                "y": 5.237119674682617,
+                "z": 35.10833740234375
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_Hotel_01.prefab",
+            "pos": {
+                "x": 38.896270751953128,
+                "y": 4.545753002166748,
+                "z": 35.270751953125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Vines_05.prefab",
+            "pos": {
+                "x": 30.9007568359375,
+                "y": 1.1158382892608643,
+                "z": 35.2705078125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Vines_04.prefab",
+            "pos": {
+                "x": 20.705520629882814,
+                "y": 0.6665021777153015,
+                "z": 35.247314453125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Poster_03.prefab",
+            "pos": {
+                "x": 12.88751220703125,
+                "y": 1.8045058250427247,
+                "z": 35.1070556640625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Light_Wall_01.prefab",
+            "pos": {
+                "x": 6.438385009765625,
+                "y": 3.68746018409729,
+                "z": 35.1400146484375
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_06.prefab",
+            "pos": {
+                "x": 0.141937255859375,
+                "y": 3.476346969604492,
+                "z": 35.10833740234375
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Pipe_Small_01.prefab",
+            "pos": {
+                "x": -4.625091552734375,
+                "y": 0.0,
+                "z": 35.23248291015625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Street_Lamp_04.prefab",
+            "pos": {
+                "x": 47.4620361328125,
+                "y": 4.162633419036865,
+                "z": -4.25
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_04.prefab",
+            "pos": {
+                "x": 40.76118469238281,
+                "y": 4.612269878387451,
+                "z": -4.245849609375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Satelite_Dish_01.prefab",
+            "pos": {
+                "x": 35.33428955078125,
+                "y": 6.9780426025390629,
+                "z": -4.41455078125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Aircon_01.prefab",
+            "pos": {
+                "x": 31.89447021484375,
+                "y": 3.118475914001465,
+                "z": -4.25
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Poster_01.prefab",
+            "pos": {
+                "x": 28.038848876953126,
+                "y": 2.1976394653320314,
+                "z": -4.24383544921875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Light_Wall_01.prefab",
+            "pos": {
+                "x": 20.757858276367189,
+                "y": 3.1686787605285646,
+                "z": -4.27679443359375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Washingline_01.prefab",
+            "pos": {
+                "x": 13.952407836914063,
+                "y": 5.491515159606934,
+                "z": -4.34906005859375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_01.prefab",
+            "pos": {
+                "x": 4.129547119140625,
+                "y": 4.927416801452637,
+                "z": -4.2430419921875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Light_Wall_01.prefab",
+            "pos": {
+                "x": 0.7762908935546875,
+                "y": 4.381129741668701,
+                "z": -4.27679443359375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Washingline_02.prefab",
+            "pos": {
+                "x": -2.3863067626953127,
+                "y": 6.083619594573975,
+                "z": -4.36151123046875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Street_Lamp_05.prefab",
+            "pos": {
+                "x": -7.75,
+                "y": 4.796938896179199,
+                "z": 33.626708984375
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Poster_03.prefab",
+            "pos": {
+                "x": -7.74383544921875,
+                "y": 1.3709810972213746,
+                "z": 26.8189697265625
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Aircon_01.prefab",
+            "pos": {
+                "x": -7.75,
+                "y": 4.457100868225098,
+                "z": 19.57208251953125
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_08.prefab",
+            "pos": {
+                "x": -7.7459869384765629,
+                "y": 3.8199195861816408,
+                "z": 15.84466552734375
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_SatDish_01.prefab",
+            "pos": {
+                "x": -7.94989013671875,
+                "y": 4.814911365509033,
+                "z": 12.54364013671875
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Satelite_Dish_01.prefab",
+            "pos": {
+                "x": -7.9145355224609379,
+                "y": 4.657684326171875,
+                "z": 6.503662109375
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_DeliPizza_01.prefab",
+            "pos": {
+                "x": -7.81976318359375,
+                "y": 4.852646827697754,
+                "z": 1.47357177734375
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_10.prefab",
+            "pos": {
+                "x": 48.2491455078125,
+                "y": 3.0267281532287599,
+                "z": 32.84619140625
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_Chinese_Noodles_01.prefab",
+            "pos": {
+                "x": 48.25,
+                "y": 3.55843448638916,
+                "z": 26.11614990234375
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_Pizza_01.prefab",
+            "pos": {
+                "x": 48.3221435546875,
+                "y": 3.936931610107422,
+                "z": 18.273193359375
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_DeliPizza_01.prefab",
+            "pos": {
+                "x": 48.31976318359375,
+                "y": 4.807184219360352,
+                "z": 11.53082275390625
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_Pub_01.prefab",
+            "pos": {
+                "x": 48.30615234375,
+                "y": 3.432736873626709,
+                "z": 6.94537353515625
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Poster_02.prefab",
+            "pos": {
+                "x": 48.24383544921875,
+                "y": 1.7432942390441895,
+                "z": 3.67156982421875
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Poster_Frame_01.prefab",
+            "pos": {
+                "x": 48.26866149902344,
+                "y": 2.3839008808135988,
+                "z": 0.11004638671875
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_Chinese_Noodles_01.prefab",
+            "pos": {
+                "x": -48.25,
+                "y": 3.799203395843506,
+                "z": 12.24029541015625
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Poster_Frame_01.prefab",
+            "pos": {
+                "x": -48.26866149902344,
+                "y": 2.465911865234375,
+                "z": 6.147216796875
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Light_Wall_01.prefab",
+            "pos": {
+                "x": -48.27679443359375,
+                "y": 3.9778707027435304,
+                "z": 0.856201171875
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Washingline_04.prefab",
+            "pos": {
+                "x": -48.277496337890628,
+                "y": 4.101372718811035,
+                "z": -9.96014404296875
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 50.0,
+                "y": 0.0,
+                "z": 35.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.564103841781616,
+                "y": 1.0,
+                "z": 2.9166672229766847
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 50.0,
+                "y": 0.0,
+                "z": 17.5
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.564103364944458
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 34.61537170410156,
+                "y": 0.0,
+                "z": 35.0
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.564103364944458
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 42.30767822265625,
+                "y": 0.0,
+                "z": 17.5
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.564103364944458
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 26.923065185546876,
+                "y": -7.450580596923828e-9,
+                "z": 26.25
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.538461446762085,
+                "y": 1.0,
+                "z": 1.75
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 34.615386962890628,
+                "y": 0.0,
+                "z": 17.5
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.564103364944458
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 19.230758666992189,
+                "y": 0.0,
+                "z": 35.0
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.564103364944458
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 26.923065185546876,
+                "y": 0.0,
+                "z": 17.5
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.564103364944458
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 11.5384521484375,
+                "y": -7.450580596923828e-9,
+                "z": 35.0
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.7500004768371583,
+                "y": 1.0,
+                "z": 1.5384619235992432
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 19.23077392578125,
+                "y": 0.0,
+                "z": 17.5
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.564103364944458
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 11.538467407226563,
+                "y": 0.0,
+                "z": 35.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.564103841781616,
+                "y": 1.0,
+                "z": 2.9166672229766847
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 3.8461456298828127,
+                "y": 0.0,
+                "z": 26.25
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.564103364944458
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 3.846160888671875,
+                "y": 0.0,
+                "z": 26.25
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.564103364944458
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -3.846160888671875,
+                "y": 0.0,
+                "z": 17.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.564103841781616,
+                "y": 1.0,
+                "z": 2.9166672229766847
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -11.538467407226563,
+                "y": 0.0,
+                "z": 26.25
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.564103841781616,
+                "y": 1.0,
+                "z": 2.9166672229766847
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -11.538467407226563,
+                "y": 0.0,
+                "z": 26.25
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.564103364944458
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -19.23077392578125,
+                "y": -7.450580596923828e-9,
+                "z": 35.0
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.7500004768371583,
+                "y": 1.0,
+                "z": 1.5384619235992432
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -19.23077392578125,
+                "y": 0.0,
+                "z": 26.25
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.564103364944458
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -26.923080444335939,
+                "y": 0.0,
+                "z": 26.25
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.564103841781616,
+                "y": 1.0,
+                "z": 2.9166672229766847
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -19.230758666992189,
+                "y": -7.450580596923828e-9,
+                "z": 26.25
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.538461446762085,
+                "y": 1.0,
+                "z": 1.75
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -26.923065185546876,
+                "y": 0.0,
+                "z": 26.25
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.564103364944458
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -26.923065185546876,
+                "y": 0.0,
+                "z": 17.5
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.564103364944458
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -34.61537170410156,
+                "y": -7.450580596923828e-9,
+                "z": 35.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.538461446762085,
+                "y": 1.0,
+                "z": 1.75
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -34.61537170410156,
+                "y": -7.450580596923828e-9,
+                "z": 26.25
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.538461446762085,
+                "y": 1.0,
+                "z": 1.75
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -42.30767822265625,
+                "y": -7.450580596923828e-9,
+                "z": 26.25
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.7500004768371583,
+                "y": 1.0,
+                "z": 1.5384619235992432
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -50.0,
+                "y": 0.0,
+                "z": 17.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.564103841781616,
+                "y": 1.0,
+                "z": 2.9166672229766847
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 42.5,
+                "y": -7.450580596923828e-9,
+                "z": 17.5
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.7500004768371583,
+                "y": 1.0,
+                "z": 1.5000004768371583
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 50.0,
+                "y": -7.450580596923828e-9,
+                "z": 0.0
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.7500004768371583,
+                "y": 1.0,
+                "z": 1.5000004768371583
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 42.5,
+                "y": 0.0,
+                "z": 8.75
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.5000009536743166
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 35.0,
+                "y": -7.450580596923828e-9,
+                "z": 0.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.5,
+                "y": 1.0,
+                "z": 1.75
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 27.5,
+                "y": 0.0,
+                "z": 8.75
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.5000014305114748,
+                "y": 1.0,
+                "z": 2.9166672229766847
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 35.0,
+                "y": -7.450580596923828e-9,
+                "z": 0.0
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.7500004768371583,
+                "y": 1.0,
+                "z": 1.5000004768371583
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 27.5,
+                "y": 0.0,
+                "z": 8.75
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.5000009536743166
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 8.75
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.5000009536743166
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 12.5,
+                "y": 0.0,
+                "z": 17.5
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.5000009536743166
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 8.75
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.5000014305114748,
+                "y": 1.0,
+                "z": 2.9166672229766847
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 5.0,
+                "y": 0.0,
+                "z": 8.75
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.5000014305114748,
+                "y": 1.0,
+                "z": 2.9166672229766847
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 12.5,
+                "y": -7.450580596923828e-9,
+                "z": 8.75
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.5,
+                "y": 1.0,
+                "z": 1.75
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 5.0,
+                "y": -7.450580596923828e-9,
+                "z": 17.5
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.5,
+                "y": 1.0,
+                "z": 1.75
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -2.5,
+                "y": 0.0,
+                "z": 8.75
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.5000009536743166
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -10.0,
+                "y": 0.0,
+                "z": 17.5
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.5000009536743166
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -2.5,
+                "y": -7.450580596923828e-9,
+                "z": 8.75
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.5,
+                "y": 1.0,
+                "z": 1.75
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -17.5,
+                "y": 0.0,
+                "z": 17.5
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.5000009536743166
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -10.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.916668653488159,
+                "y": 1.0,
+                "z": 2.5000009536743166
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -22.916656494140626,
+                "y": -0.13793718814849854,
+                "z": 10.625
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -14.791656494140625,
+                "y": -0.13793718814849854,
+                "z": 8.33331298828125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -22.916656494140626,
+                "y": -0.13793718814849854,
+                "z": 1.4583740234375
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -22.916656494140626,
+                "y": -0.13793718814849854,
+                "z": -3.125
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -22.916656494140626,
+                "y": -0.13793718814849854,
+                "z": -7.70831298828125
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_01.prefab",
+            "pos": {
+                "x": -17.5,
+                "y": 0.0,
+                "z": -10.0
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.5277791023254395,
+                "y": 1.0,
+                "z": 1.805556297302246
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -22.916671752929689,
+                "y": -0.13793718814849854,
+                "z": 19.7916259765625
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -31.041671752929689,
+                "y": -0.13793718814849854,
+                "z": 12.91668701171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -20.208328247070314,
+                "y": -0.13793718814849854,
+                "z": 3.75
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -22.916671752929689,
+                "y": -0.13793718814849854,
+                "z": 6.0416259765625
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -31.041671752929689,
+                "y": -0.13793718814849854,
+                "z": -0.83331298828125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -31.041671752929689,
+                "y": -0.13793718814849854,
+                "z": -5.4166259765625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -36.458343505859378,
+                "y": -0.13793718814849854,
+                "z": 17.5
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -36.458343505859378,
+                "y": -0.13793718814849854,
+                "z": 12.91668701171875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -25.625,
+                "y": -0.13793718814849854,
+                "z": 3.75
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -33.75,
+                "y": -0.13793718814849854,
+                "z": -3.125
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -33.75,
+                "y": -0.13793718814849854,
+                "z": -7.70831298828125
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_01.prefab",
+            "pos": {
+                "x": -28.333343505859376,
+                "y": 0.0,
+                "z": -10.0
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.5277791023254395,
+                "y": 1.0,
+                "z": 1.805556297302246
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -31.041656494140626,
+                "y": -0.13793718814849854,
+                "z": 12.9166259765625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -31.041656494140626,
+                "y": -0.13793718814849854,
+                "z": 8.33331298828125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -33.75,
+                "y": -0.13793718814849854,
+                "z": 10.625
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_01.prefab",
+            "pos": {
+                "x": -33.75,
+                "y": 0.0,
+                "z": -0.8333740234375
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.5277791023254395,
+                "y": 1.0,
+                "z": 1.805556297302246
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -33.75,
+                "y": -0.13793718814849854,
+                "z": 1.45831298828125
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -41.875,
+                "y": -0.13793718814849854,
+                "z": -5.4166259765625
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -36.45832824707031,
+                "y": -0.13793718814849854,
+                "z": 12.9166259765625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -44.58332824707031,
+                "y": -0.13793718814849854,
+                "z": 6.04168701171875
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_01.prefab",
+            "pos": {
+                "x": -44.58332824707031,
+                "y": 0.0,
+                "z": 3.75
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.8055565357208253,
+                "y": 1.0,
+                "z": 1.5277780294418336
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -44.58332824707031,
+                "y": -0.13793718814849854,
+                "z": -3.125
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -36.45832824707031,
+                "y": -0.13793718814849854,
+                "z": -5.41668701171875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -44.58332824707031,
+                "y": -0.13793718814849854,
+                "z": -12.2916259765625
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -41.875,
+                "y": -0.13793718814849854,
+                "z": 12.9166259765625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -50.0,
+                "y": -0.13793718814849854,
+                "z": 6.04168701171875
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_01.prefab",
+            "pos": {
+                "x": -50.0,
+                "y": 0.0,
+                "z": 8.3333740234375
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.5277791023254395,
+                "y": 1.0,
+                "z": 1.805556297302246
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -52.708343505859378,
+                "y": -0.13793718814849854,
+                "z": 3.75
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -50.0,
+                "y": -0.13793718814849854,
+                "z": -7.70831298828125
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.8333338499069214,
+                "y": 1.0,
+                "z": 1.0833334922790528
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -41.875,
+                "y": -0.13793718814849854,
+                "z": -10.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.1666665077209474,
+                "y": 1.0,
+                "z": 0.9166666865348816
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 42.8125,
+                "y": 0.0,
+                "z": -5.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.3958346843719484,
+                "y": 1.0,
+                "z": 1.6666669845581055
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 42.8125,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.3958346843719484,
+                "y": 1.0,
+                "z": 1.6666669845581055
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 35.625,
+                "y": 0.0,
+                "z": -5.0
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.6666680574417115,
+                "y": 1.0,
+                "z": 2.39583420753479
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 21.25,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.6666680574417115,
+                "y": 1.0,
+                "z": 2.39583420753479
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 21.25,
+                "y": 0.0,
+                "z": -5.0
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.6666680574417115,
+                "y": 1.0,
+                "z": 2.39583420753479
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 14.0625,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.3958346843719484,
+                "y": 1.0,
+                "z": 1.6666669845581055
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -0.3125,
+                "y": 0.0,
+                "z": -5.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.3958346843719484,
+                "y": 1.0,
+                "z": 1.6666669845581055
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -0.3125,
+                "y": -7.450580596923828e-9,
+                "z": 0.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.4375,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Path_Straight_01.prefab",
+            "pos": {
+                "x": -6.25,
+                "y": -0.13793718814849854,
+                "z": -5.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_01.prefab",
+            "pos": {
+                "x": -10.0,
+                "y": 0.0,
+                "z": -5.0
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.6666680574417115,
+                "y": 1.0,
+                "z": 0.8333337306976318
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -17.5,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.3333351612091066,
+                "y": 1.0,
+                "z": 2.5000009536743166
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -17.5,
+                "y": 0.0,
+                "z": -7.0
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.3333351612091066,
+                "y": 1.0,
+                "z": 2.5000009536743166
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -10.0,
+                "y": 0.0,
+                "z": -14.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.5000014305114748,
+                "y": 1.0,
+                "z": 2.333333730697632
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -10.0,
+                "y": -7.450580596923828e-9,
+                "z": -21.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.5,
+                "y": 1.0,
+                "z": 1.399999976158142
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -17.5,
+                "y": -7.450580596923828e-9,
+                "z": -35.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.5,
+                "y": 1.0,
+                "z": 1.399999976158142
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 42.142852783203128,
+                "y": 0.0,
+                "z": -5.0
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.500001907348633,
+                "y": 1.0,
+                "z": 2.619048595428467
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 42.142852783203128,
+                "y": 0.0,
+                "z": -20.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.619049072265625,
+                "y": 1.0,
+                "z": 2.500000476837158
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 50.0,
+                "y": 0.0,
+                "z": -27.5
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.500001907348633,
+                "y": 1.0,
+                "z": 2.619048595428467
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 42.142852783203128,
+                "y": -7.450580596923828e-9,
+                "z": -35.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.5714285373687745,
+                "y": 1.0,
+                "z": 1.5
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 34.28570556640625,
+                "y": 0.0,
+                "z": -5.0
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.500001907348633,
+                "y": 1.0,
+                "z": 2.619048595428467
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 42.142852783203128,
+                "y": 0.0,
+                "z": -20.0
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.500001907348633,
+                "y": 1.0,
+                "z": 2.619048595428467
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 34.28570556640625,
+                "y": 0.0,
+                "z": -27.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.619049072265625,
+                "y": 1.0,
+                "z": 2.500000476837158
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 34.28570556640625,
+                "y": 0.0,
+                "z": -27.5
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.500001907348633,
+                "y": 1.0,
+                "z": 2.619048595428467
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 34.28572082519531,
+                "y": 0.0,
+                "z": -12.5
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.500001907348633,
+                "y": 1.0,
+                "z": 2.619048595428467
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 26.428573608398439,
+                "y": 0.0,
+                "z": -20.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.619049072265625,
+                "y": 1.0,
+                "z": 2.500000476837158
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 34.28572082519531,
+                "y": 0.0,
+                "z": -20.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.619049072265625,
+                "y": 1.0,
+                "z": 2.500000476837158
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 26.428573608398439,
+                "y": 0.0,
+                "z": -35.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.619049072265625,
+                "y": 1.0,
+                "z": 2.500000476837158
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 26.428573608398439,
+                "y": -7.450580596923828e-9,
+                "z": -12.5
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.5000004768371583,
+                "y": 1.0,
+                "z": 1.5714290142059327
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 26.428573608398439,
+                "y": 0.0,
+                "z": -20.0
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.500001907348633,
+                "y": 1.0,
+                "z": 2.619048595428467
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 26.428573608398439,
+                "y": 0.0,
+                "z": -27.5
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.500001907348633,
+                "y": 1.0,
+                "z": 2.619048595428467
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 18.571426391601564,
+                "y": 0.0,
+                "z": -35.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.619049072265625,
+                "y": 1.0,
+                "z": 2.500000476837158
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 18.571426391601564,
+                "y": 0.0,
+                "z": -5.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.619049072265625,
+                "y": 1.0,
+                "z": 2.500000476837158
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 10.714279174804688,
+                "y": 0.0,
+                "z": -20.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.619049072265625,
+                "y": 1.0,
+                "z": 2.500000476837158
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 10.714279174804688,
+                "y": 0.0,
+                "z": -20.0
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.500001907348633,
+                "y": 1.0,
+                "z": 2.619048595428467
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 10.714279174804688,
+                "y": 0.0,
+                "z": -35.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.619049072265625,
+                "y": 1.0,
+                "z": 2.500000476837158
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 2.857147216796875,
+                "y": -7.450580596923828e-9,
+                "z": -12.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.5714285373687745,
+                "y": 1.0,
+                "z": 1.5
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 10.71429443359375,
+                "y": 0.0,
+                "z": -20.0
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.500001907348633,
+                "y": 1.0,
+                "z": 2.619048595428467
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 2.857147216796875,
+                "y": 0.0,
+                "z": -27.5
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.619049072265625,
+                "y": 1.0,
+                "z": 2.500000476837158
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 10.71429443359375,
+                "y": -7.450580596923828e-9,
+                "z": -35.0
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.5000004768371583,
+                "y": 1.0,
+                "z": 1.5714290142059327
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 2.857147216796875,
+                "y": -7.450580596923828e-9,
+                "z": -5.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.5714285373687745,
+                "y": 1.0,
+                "z": 1.5
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": 2.857147216796875,
+                "y": -7.450580596923828e-9,
+                "z": -12.5
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.5714285373687745,
+                "y": 1.0,
+                "z": 1.5
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 2.857147216796875,
+                "y": 0.0,
+                "z": -20.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.619049072265625,
+                "y": 1.0,
+                "z": 2.500000476837158
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": 2.857147216796875,
+                "y": 0.0,
+                "z": -27.5
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 2.619049072265625,
+                "y": 1.0,
+                "z": 2.500000476837158
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_01.prefab",
+            "pos": {
+                "x": -5.0,
+                "y": 0.0,
+                "z": -5.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 0.8333337903022766,
+                "y": 1.0,
+                "z": 1.6666669845581055
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -10.0,
+                "y": 0.0,
+                "z": -10.0
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 2.7777795791625978,
+                "y": 1.0,
+                "z": 1.6666674613952637
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -5.0,
+                "y": 0.0,
+                "z": -18.33331298828125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.6666675806045533,
+                "y": 1.0,
+                "z": 2.777778148651123
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -5.0,
+                "y": -7.450580596923828e-9,
+                "z": -35.0
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.666667103767395,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -17.5,
+                "y": 0.0,
+                "z": -18.3333740234375
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.7777795791625978,
+                "y": 1.0,
+                "z": 2.70833420753479
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -25.625,
+                "y": -7.450580596923828e-9,
+                "z": -26.66668701171875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.625,
+                "y": 1.0,
+                "z": 1.6666666269302369
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -25.625,
+                "y": -7.450580596923828e-9,
+                "z": -35.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.625,
+                "y": 1.0,
+                "z": 1.6666666269302369
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -33.75,
+                "y": 0.0,
+                "z": -18.3333740234375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.7083349227905275,
+                "y": 1.0,
+                "z": 2.777778148651123
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -33.75,
+                "y": 0.0,
+                "z": -26.66668701171875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.7083349227905275,
+                "y": 1.0,
+                "z": 2.777778148651123
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -33.75,
+                "y": 0.0,
+                "z": -35.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.7083349227905275,
+                "y": 1.0,
+                "z": 2.777778148651123
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -33.75,
+                "y": -7.450580596923828e-9,
+                "z": -10.0
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.625,
+                "y": 1.0,
+                "z": 1.6666666269302369
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -33.75,
+                "y": 0.0,
+                "z": -26.66668701171875
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 2.7777795791625978,
+                "y": 1.0,
+                "z": 2.70833420753479
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -41.875,
+                "y": -7.450580596923828e-9,
+                "z": -35.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.625,
+                "y": 1.0,
+                "z": 1.6666666269302369
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -41.875,
+                "y": -7.450580596923828e-9,
+                "z": -18.3333740234375
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.666667103767395,
+                "y": 1.0,
+                "z": 1.6250004768371583
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab",
+            "pos": {
+                "x": -50.0,
+                "y": -7.450580596923828e-9,
+                "z": -26.66668701171875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.625,
+                "y": 1.0,
+                "z": 1.6666666269302369
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/SM_Bld_Floor_Asphalt_01.prefab",
+            "pos": {
+                "x": -50.0,
+                "y": 0.0,
+                "z": -35.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 2.7083349227905275,
+                "y": 1.0,
+                "z": 2.777778148651123
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Environment/SM_Env_Ground_Patch_01.prefab",
+            "pos": {
+                "x": -41.25,
+                "y": -0.029999999329447748,
+                "z": 21.25
+            },
+            "yaw": -90.87838745117188,
+            "scale": {
+                "x": 0.9999999403953552,
+                "y": 1.0,
+                "z": 0.9999999403953552
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Environment/SM_Env_Ground_Patch_01.prefab",
+            "pos": {
+                "x": 41.25,
+                "y": -0.029999999329447748,
+                "z": -8.75
+            },
+            "yaw": 156.11953735351563,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Environment/SM_Env_Ground_Patch_01.prefab",
+            "pos": {
+                "x": -46.25,
+                "y": -0.029999999329447748,
+                "z": 18.75
+            },
+            "yaw": 91.77474975585938,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Patch_01.prefab",
+            "pos": {
+                "x": -33.75,
+                "y": -0.029999999329447748,
+                "z": 21.25
+            },
+            "yaw": -63.83251953125,
+            "scale": {
+                "x": 0.9999998807907105,
+                "y": 1.0,
+                "z": 0.9999998807907105
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Patch_01.prefab",
+            "pos": {
+                "x": -16.25,
+                "y": -0.029999999329447748,
+                "z": 21.25
+            },
+            "yaw": 81.39096069335938,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Patch_01.prefab",
+            "pos": {
+                "x": -21.25,
+                "y": -0.029999999329447748,
+                "z": 28.75
+            },
+            "yaw": -63.54803466796875,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Environment/SM_Env_Ground_Patch_01.prefab",
+            "pos": {
+                "x": -18.75,
+                "y": -0.029999999329447748,
+                "z": 26.25
+            },
+            "yaw": 2.895477294921875,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPoliceStation/Prefabs/Environment/SM_Env_Ground_Patch_01.prefab",
+            "pos": {
+                "x": -11.25,
+                "y": -0.029999999329447748,
+                "z": -1.25
+            },
+            "yaw": 67.67630004882813,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Props/SM_Prop_Grass_Cracks_02.prefab",
+            "pos": {
+                "x": 3.75,
+                "y": 0.009999999776482582,
+                "z": -11.25
+            },
+            "yaw": -18.20062255859375,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Props/SM_Prop_Grass_Cracks_04.prefab",
+            "pos": {
+                "x": -13.75,
+                "y": 0.009999999776482582,
+                "z": 13.75
+            },
+            "yaw": -36.9576416015625,
+            "scale": {
+                "x": 0.9999998807907105,
+                "y": 1.0,
+                "z": 0.9999998807907105
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Props/SM_Prop_Grass_Cracks_03.prefab",
+            "pos": {
+                "x": -11.25,
+                "y": 0.009999999776482582,
+                "z": 11.25
+            },
+            "yaw": -121.66799926757813,
+            "scale": {
+                "x": 1.0000001192092896,
+                "y": 1.0,
+                "z": 1.0000001192092896
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Props/SM_Prop_Grass_Cracks_04.prefab",
+            "pos": {
+                "x": -16.25,
+                "y": 0.009999999776482582,
+                "z": -1.25
+            },
+            "yaw": 2.780853271484375,
+            "scale": {
+                "x": 1.0000003576278687,
+                "y": 1.0,
+                "z": 1.0000003576278687
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Props/SM_Prop_Grass_Cracks_02.prefab",
+            "pos": {
+                "x": -46.25,
+                "y": 0.009999999776482582,
+                "z": 21.25
+            },
+            "yaw": 149.08560180664063,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Props/SM_Prop_Grass_Cracks_05.prefab",
+            "pos": {
+                "x": -31.25,
+                "y": 0.009999999776482582,
+                "z": 28.75
+            },
+            "yaw": -131.9506072998047,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Props/SM_Prop_Grass_Cracks_03.prefab",
+            "pos": {
+                "x": -26.25,
+                "y": 0.009999999776482582,
+                "z": 16.25
+            },
+            "yaw": -58.419342041015628,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Manhole_01.prefab",
+            "pos": {
+                "x": -11.25,
+                "y": 0.009999999776482582,
+                "z": -1.25
+            },
+            "yaw": -64.29373168945313,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        }
+    ]
+}
