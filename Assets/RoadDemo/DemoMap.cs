@@ -68,6 +68,11 @@ namespace RoadDemo
         static readonly Color Avenue = new Color(0.082f, 0.125f, 0.170f, 1f);
         static readonly Color Median = new Color(0.42f, 0.35f, 0.16f, 0.85f);
         static readonly Color BlockFace = new Color(0.100f, 0.170f, 0.230f, 1f);
+        // the seams: the river a shade of the navy that reads as water beside the
+        // slabs, the park a muted green in the same key
+        static readonly Color River = new Color(0.075f, 0.200f, 0.330f, 1f);
+        static readonly Color Lawn = new Color(0.090f, 0.200f, 0.150f, 1f);
+        static readonly Color Deck = new Color(0.150f, 0.190f, 0.230f, 1f);
 
         /// <summary>A footprint's own outline. Buildings are drawn as rims and not as
         /// slabs on purpose: an outline says "this box takes a click" without painting
@@ -347,6 +352,14 @@ namespace RoadDemo
         {
             var town = DemoUi.Block(view, "Town", Asphalt);
             _plan.Add((town.rectTransform, _world));
+
+            // the seams under the roads: the water the bridges cross, the park's lawn
+            var seams = DemoUi.NewRect("Seams", view);
+            DemoUi.Fill(seams);
+            foreach (var seam in _builder.SeamPlans)
+                _plan.Add((DemoUi.Block(seams, seam.Kind.ToString(),
+                    seam.Kind == SeamKind.River ? River : seam.Kind == SeamKind.Park ? Lawn : Deck).rectTransform,
+                    seam.Area));
 
             var roads = DemoUi.NewRect("Roads", view);
             DemoUi.Fill(roads);

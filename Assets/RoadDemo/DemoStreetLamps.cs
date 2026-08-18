@@ -43,6 +43,12 @@ namespace RoadDemo
         const float ResortInterval = 0.4f;
 
         readonly List<Light> _lamps = new List<Light>();
+        // the lamps never move: their positions are read once, and each resort
+        // ranks an index table by plain arithmetic - no transform reads, no closure
+        Vector3[] _at;
+        float[] _key;
+        int[] _order;
+        bool[] _burning;
         float _nextResort;
         float _lit = -1f;
 
@@ -89,6 +95,16 @@ namespace RoadDemo
                 _lamps.Add(light);
             }
 
+            _at = new Vector3[_lamps.Count];
+            _key = new float[_lamps.Count];
+            _order = new int[_lamps.Count];
+            _burning = new bool[_lamps.Count];
+            for (int i = 0; i < _lamps.Count; i++)
+            {
+                _at[i] = _lamps[i].transform.position;
+                _order[i] = i;
+            }
+
             Debug.Log($"[RoadDemo] {_lamps.Count} street lamp bulbs wired.", this);
         }
 
@@ -107,9 +123,9 @@ namespace RoadDemo
             }
             else if (!Mathf.Approximately(target, _lit))
             {
-                foreach (var lamp in _lamps)
-                    if (lamp && lamp.enabled)
-                        lamp.intensity = target;
+                for (int i = 0; i < _lamps.Count; i++)
+                    if (_burning[i] && _lamps[i])
+                        _lamps[i].intensity = target;
             }
 
             _lit = target;
@@ -128,25 +144,53 @@ namespace RoadDemo
                 if (forward.y < -0.05f && eye.y > 0f)
                     eye += forward * (eye.y / -forward.y);
 
-                _lamps.Sort((a, b) =>
-                {
-                    if (!a || !b)
-                        return 0;
-                    return (a.transform.position - eye).sqrMagnitude
-                        .CompareTo((b.transform.position - eye).sqrMagnitude);
-                });
+                for (int i = 0; i < _at.Length; i++)
+                    _key[i] = (_at[i] - eye).sqrMagnitude;
+                // the nearest LitLampBudget to the front; a full sort of the rest is
+                // not needed and not done
+                Nearest(_key, _order, LitLampBudget);
             }
 
-            for (int i = 0; i < _lamps.Count; i++)
+            for (int rank = 0; rank < _order.Length; rank++)
             {
+                int i = _order[rank];
                 var lamp = _lamps[i];
                 if (!lamp)
                     continue;
 
-                bool burn = i < LitLampBudget && intensity > 0.001f;
-                lamp.enabled = burn;
+                bool burn = rank < LitLampBudget && intensity > 0.001f;
+                // a light re-registers with the renderer on every enable/disable, so
+                // only the ones that actually change state are touched
+                if (burn != _burning[i])
+                {
+                    lamp.enabled = burn;
+                    _burning[i] = burn;
+                }
                 if (burn)
                     lamp.intensity = intensity;
+            }
+        }
+
+        /// <summary>Partial selection: after it, order[0..count) are the count smallest
+        /// keys (in no particular order among themselves) and the rest follow. Quickselect,
+        /// in place, no allocation.</summary>
+        internal static void Nearest(float[] key, int[] order, int count)
+        {
+            int lo = 0, hi = order.Length - 1;
+            if (count >= order.Length) return;
+            while (lo < hi)
+            {
+                float pivot = key[order[(lo + hi) >> 1]];
+                int i = lo, j = hi;
+                while (i <= j)
+                {
+                    while (key[order[i]] < pivot) i++;
+                    while (key[order[j]] > pivot) j--;
+                    if (i <= j) { (order[i], order[j]) = (order[j], order[i]); i++; j--; }
+                }
+                if (count <= j) hi = j;
+                else if (count >= i) lo = i;
+                else break;
             }
         }
     }

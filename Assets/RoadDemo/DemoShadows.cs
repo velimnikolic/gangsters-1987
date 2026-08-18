@@ -40,8 +40,9 @@ namespace RoadDemo
 
         [Tooltip("Ceiling on the range. Tilted flat the visible ground runs to the " +
                  "horizon, and chasing it would stretch one cascade over a kilometre " +
-                 "for shadows the fog has already swallowed.")]
-        public float maxDistance = 750f;
+                 "for shadows the fog has already swallowed - and every caster in that " +
+                 "range is drawn once more per cascade, so the ceiling is a frame budget.")]
+        public float maxDistance = 420f;
 
         // Below this the ground plane is nearly edge-on to the view ray and the
         // slant range runs away to infinity; the ceiling above takes over there.

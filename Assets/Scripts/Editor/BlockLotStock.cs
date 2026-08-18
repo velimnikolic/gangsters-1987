@@ -45,8 +45,10 @@ namespace LivingCity.EditorTools
         /// Nothing else may be named this way.</summary>
         internal const string Prefix = "auto_";
 
-        /// <summary>How many blocks are rolled for each lot size.</summary>
-        const int PerLot = 3;
+        /// <summary>How many blocks are rolled for each lot size. Five, since the city
+        /// grew to two dozen interiors: a size that comes up four times in one grid
+        /// still shows four different blocks.</summary>
+        const int PerLot = 5;
 
         /// <summary>
         /// Which roller made the stock on disk. Bumped whenever the roll's LOOK changes -
@@ -55,9 +57,9 @@ namespace LivingCity.EditorTools
         /// instead of the change waiting for someone to remember the menu command.
         ///   1 - first stock; 2 - one calm tile per surface, trimmed rows in place of
         ///   single slices, seeds measured by their pad; 3 - storefronts on the frontage
-        ///   the rows leave.
+        ///   the rows leave; 4 - five rolls per pad for the four-district city.
         /// </summary>
-        const int Version = 3;
+        const int Version = 4;
         static readonly string VersionPath = BlockRecipeStore.Dir + "/stock-version.txt";
 
         /// <summary>Whether the stock on disk was rolled by an older roller than this one -

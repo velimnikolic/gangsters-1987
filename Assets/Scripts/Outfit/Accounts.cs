@@ -37,7 +37,7 @@ namespace LivingCity.Outfit
     public sealed class Accounts
     {
         /// <summary>Week one's stake.</summary>
-        public const int StartingSafe = 5_000;
+        public const int StartingSafe = 15_000;
 
         public int Safe = StartingSafe;
 

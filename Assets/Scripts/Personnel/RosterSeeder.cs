@@ -127,6 +127,22 @@ namespace LivingCity.Personnel
             return roster;
         }
 
+        /// <summary>One more man off the corner, dealt the way the starting six were -
+        /// a name nobody on the books has, eleven rolled attributes, middling loyalty -
+        /// and put on the books unassigned. The recruiting door: the street bar's
+        /// empty chip, later the ledger's own hire page.</summary>
+        public static Character Recruit(Roster roster, System.Random rng)
+        {
+            var member = new Character { Id = roster.NextCharacterId() };
+            DrawName(rng, roster, member);
+            for (var a = 0; a < AttributeScale.Count; a++)
+                member.SetHalfSteps((CharacterAttribute)a,
+                    rng.Next(AttributeScale.MinHalfSteps, AttributeScale.MaxHalfSteps + 1));
+            member.Loyalty = rng.Next(35, 86);
+            roster.Members.Add(member);
+            return member;
+        }
+
         static void DrawName(System.Random rng, Roster roster, Character member)
         {
             var firsts = PedestrianIdentity.AllMaleNames;

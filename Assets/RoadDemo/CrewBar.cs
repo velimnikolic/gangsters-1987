@@ -55,6 +55,7 @@ namespace RoadDemo
             public RawImage Portrait;
             public Image Plus, Shade, Skull;
             public CrewWalker Man;
+            public float RefusedUntil; // the plus flashes red after a refused recruit
         }
 
         sealed class Block
@@ -263,7 +264,8 @@ namespace RoadDemo
 
             var mouse = Mouse.current;
             bool click = show && mouse != null && mouse.leftButton.wasPressedThisFrame;
-            var at = click ? mouse.position.ReadValue() : Vector2.zero;
+            bool look = show && mouse != null && mouse.rightButton.wasPressedThisFrame;
+            var at = click || look ? mouse.position.ReadValue() : Vector2.zero;
 
             // the feeds take turns: one camera a frame, round-robin
             _turn = _shown.Count > 0 ? (_turn + 1) % _shown.Count : 0;
@@ -278,8 +280,23 @@ namespace RoadDemo
                 if (!live) continue;
                 block.Rect.anchoredPosition = new Vector2(i * (BlockWidth + Gap), 0f);
                 Bind(block, _shown[i]);
+                // a right click on a block swings the camera onto that crew
+                if (look && RectTransformUtility.RectangleContainsScreenPoint(block.Rect, at))
+                    LookAt(_shown[i]);
                 if (click && RectTransformUtility.RectangleContainsScreenPoint(block.Rect, at))
-                    _crews.Select(_shown[i]);
+                {
+                    // an empty chip is the recruiting door: a click on it brings a new man
+                    // in for that crew; anywhere else on the block selects the crew
+                    bool recruited = false;
+                    foreach (var chip in block.Chips)
+                    {
+                        if (chip.Man != null || !RectTransformUtility.RectangleContainsScreenPoint(chip.Rect, at)) continue;
+                        recruited = true;
+                        if (!_crews.Recruit(_shown[i])) chip.RefusedUntil = Time.unscaledTime + 0.7f;
+                        break;
+                    }
+                    if (!recruited) _crews.Select(_shown[i]);
+                }
             }
         }
 
@@ -319,6 +336,21 @@ namespace RoadDemo
             if (boss.Weapon != null && boss.Weapon.gameObject.layer != FeedLayer) SetLayer(boss.Weapon, FeedLayer);
 
             var tf = boss.Tf;
+            // in the car the feed rides the car instead - the man is out of sight in it
+            var car = block.Unit != null ? block.Unit.Car : null;
+            if (car != null && car.Tf != null)
+            {
+                if (car.Tf.gameObject.layer != FeedLayer) SetLayer(car.Tf, FeedLayer);
+                float wantCar = car.Tf.eulerAngles.y + 35f;
+                if (float.IsNaN(block.CamYaw)) block.CamYaw = wantCar;
+                block.CamYaw = Mathf.MoveTowardsAngle(block.CamYaw, wantCar, 110f * Time.unscaledDeltaTime);
+                var side = Quaternion.Euler(0f, block.CamYaw, 0f) * Vector3.forward;
+                var carEye = car.Position + side * 7.5f + Vector3.up * 2.4f;
+                var carLook = car.Position + Vector3.up * 0.7f;
+                block.Cam.transform.SetPositionAndRotation(carEye, Quaternion.LookRotation(carLook - carEye, Vector3.up));
+                return;
+            }
+
             float want = tf.eulerAngles.y;
             if (float.IsNaN(block.CamYaw)) block.CamYaw = want;
             block.CamYaw = Mathf.MoveTowardsAngle(block.CamYaw, want, 110f * Time.unscaledDeltaTime);
@@ -367,10 +399,26 @@ namespace RoadDemo
                     PortraitStudio.Request(man.SourcePrefab, PortraitStudio.Framing.Bust, chip.Portrait);
             }
             Condition(man, chip.Shade, chip.Skull);
+            if (man == null)
+                chip.Plus.color = Time.unscaledTime < chip.RefusedUntil
+                    ? new Color(1f, 0.36f, 0.30f, 0.9f)
+                    : new Color(DemoUi.InkDim.r, DemoUi.InkDim.g, DemoUi.InkDim.b, 0.35f);
         }
 
         /// <summary>"Sal Ricci" fits; a long name is trimmed to initial and surname
         /// so a block never wraps.</summary>
+        // The demo camera pans to the crew - its lieutenant, or the car he rides in.
+        static void LookAt(DemoCrews.Unit unit)
+        {
+            var cam = Object.FindAnyObjectByType<DemoCamera>();
+            if (cam == null || unit == null) return;
+            Vector3 at;
+            if (unit.Car != null && unit.Car.Tf != null) at = unit.Car.Position;
+            else if (unit.Boss != null && unit.Boss.Tf != null) at = unit.Boss.Tf.position;
+            else at = unit.Position;
+            cam.pivot = at;
+        }
+
         static string ShortName(string full)
         {
             if (string.IsNullOrEmpty(full)) return string.Empty;

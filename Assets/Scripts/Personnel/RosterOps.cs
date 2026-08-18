@@ -424,6 +424,54 @@ namespace LivingCity.Personnel
 
         /// <summary>Removes the member from wherever he stands - crew or front. After this
         /// he is, by derivation, in the pool.</summary>
+        /// <summary>
+        /// A man shot dead on the street. He stays on the books, struck through (the
+        /// record keeps his line), his gear goes back to the pool unheld, and his post
+        /// is his no longer: a hood leaves his crew; a lieutenant's crew passes to his
+        /// most loyal living hood - the outfit does not lose a crew to one bullet - or,
+        /// with nobody left to take it, folds.
+        /// </summary>
+        public static OpResult Kill(Roster roster, int id)
+        {
+            var member = roster.Find(id);
+            if (member == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            if (member.Status == CharacterStatus.Dead)
+                return OpResult.Fail(LedgerText.ReasonDead);
+
+            member.Status = CharacterStatus.Dead;
+            member.Wanted = false;
+            for (var i = 0; i < roster.Equipment.Count; i++)
+                if (roster.Equipment[i].HolderId == id)
+                    roster.Equipment[i].HolderId = RosterEquipment.Unheld;
+
+            var crew = roster.CrewOf(id);
+            if (crew != null && crew.LieutenantId == id)
+            {
+                Character heir = null;
+                foreach (var hoodId in crew.HoodIds)
+                {
+                    var hood = roster.Find(hoodId);
+                    if (hood == null || hood.Status != CharacterStatus.Active) continue;
+                    if (heir == null || hood.Loyalty > heir.Loyalty) heir = hood;
+                }
+                if (heir != null)
+                {
+                    crew.HoodIds.Remove(heir.Id);
+                    heir.Rank = Rank.Lieutenant;
+                    crew.LieutenantId = heir.Id;
+                }
+                else
+                    roster.Crews.Remove(crew);
+            }
+            else
+                Detach(roster, id);
+
+            if (roster.FrontId == id)
+                roster.FrontId = -1;
+            return OpResult.Success;
+        }
+
         static void Detach(Roster roster, int id)
         {
             if (roster.FrontId == id)

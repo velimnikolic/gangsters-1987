@@ -25,13 +25,16 @@ namespace RoadDemo
         const float Intensity = 16f;
         static readonly Color BeamColour = new Color(1f, 0.85f, 0.45f);
 
-        struct Rig
+        class Rig
         {
             public Transform Car;
             public Light L, R;
+            public bool Burning;
         }
 
         readonly List<Rig> _rigs = new List<Rig>();
+        float[] _key = new float[0];
+        int[] _order = new int[0];
         float _nextResort;
         float _lit = -1f;
 
@@ -95,26 +98,46 @@ namespace RoadDemo
                 if (forward.y < -0.05f && eye.y > 0f)
                     eye += forward * (eye.y / -forward.y);
 
-                _rigs.Sort((a, b) =>
+                // one position read per car, then a partial selection over plain
+                // floats: the nearest 24 cars to the front, the rest in any order
+                if (_key.Length != _rigs.Count)
                 {
-                    if (!a.Car || !b.Car)
-                        return 0;
-                    return (a.Car.position - eye).sqrMagnitude
-                        .CompareTo((b.Car.position - eye).sqrMagnitude);
-                });
+                    _key = new float[_rigs.Count];
+                    _order = new int[_rigs.Count];
+                }
+                for (int i = 0; i < _rigs.Count; i++)
+                {
+                    _order[i] = i;
+                    var car = _rigs[i].Car;
+                    _key[i] = car ? (car.position - eye).sqrMagnitude : float.MaxValue;
+                }
+                DemoStreetLamps.Nearest(_key, _order, LitBeamBudget / 2);
+            }
+            else if (_order.Length != _rigs.Count)
+            {
+                _order = new int[_rigs.Count];
+                for (int i = 0; i < _rigs.Count; i++) _order[i] = i;
             }
 
-            for (int i = 0; i < _rigs.Count; i++)
+            for (int rank = 0; rank < _order.Length; rank++)
             {
-                var rig = _rigs[i];
+                var rig = _rigs[_order[rank]];
                 if (!rig.L || !rig.R)
                     continue;   // car despawned; lights died with it
 
-                bool burns = burn && i * 2 < LitBeamBudget;
-                rig.L.enabled = burns;
-                rig.R.enabled = burns;
-                rig.L.intensity = target;
-                rig.R.intensity = target;
+                bool burns = burn && rank * 2 < LitBeamBudget;
+                // enabling a light re-registers it with the renderer: touched only on change
+                if (burns != rig.Burning)
+                {
+                    rig.L.enabled = burns;
+                    rig.R.enabled = burns;
+                    rig.Burning = burns;
+                }
+                if (burns)
+                {
+                    rig.L.intensity = target;
+                    rig.R.intensity = target;
+                }
             }
         }
     }

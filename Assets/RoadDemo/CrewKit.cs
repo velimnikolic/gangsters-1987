@@ -27,6 +27,7 @@ namespace RoadDemo
                 Walk = PeopleClip("Standard Walk"),
                 Idle = PeopleClip("Breathing Idle"),
                 Talk = PeopleClip("Standing_Talking"),
+                SitLoop = PeopleClip("Sitting_Bench_Idle"), // the seat in the car
                 Shout = PeopleClip("Standing_Shouting"),
                 PistolIdle = UalClip("Pistol_Idle_Loop"),
                 Aim = UalClip("Pistol_Aim_Neutral"),
@@ -55,6 +56,7 @@ namespace RoadDemo
             crowd.Death = arms.Death;
             crowd.Jog = arms.Jog;
             if (crowd.Talk == null) crowd.Talk = arms.Talk;
+            if (crowd.SitLoop == null) crowd.SitLoop = arms.SitLoop;
             if (crowd.Shout == null) crowd.Shout = arms.Shout;
             return crowd;
         }
@@ -65,10 +67,16 @@ namespace RoadDemo
         // gait, his own fall and his own flinch out of these at spawn (DemoCrews),
         // so a line of hoods is a line of people. Loaded once, kept.
 
-        static List<AnimationClip> walks, deaths, hits;
+        static List<AnimationClip> walks, deaths, hits, runs;
 
         public static IReadOnlyList<AnimationClip> Walks =>
             walks ??= Gather(PeopleClip("Standard Walk"), UalClip("Walk_Loop"), UalClip("Walk_Formal_Loop"));
+
+        /// <summary>The runs a man may break into - the library's jog and its flat-out
+        /// sprint; the jog listed twice so it is the commoner draw. A crew that runs is
+        /// then a crew of different runners, not one runner copied.</summary>
+        public static IReadOnlyList<AnimationClip> Runs =>
+            runs ??= Gather(UalClip("Jog_Fwd_Loop"), UalClip("Jog_Fwd_Loop"), UalClip("Sprint_Loop"));
 
         public static IReadOnlyList<AnimationClip> Deaths =>
             deaths ??= Gather(PeopleClip("Death"), UalClip("Death01"));
@@ -83,6 +91,7 @@ namespace RoadDemo
             if (Walks.Count > 0) clips.Walk = Walks[rng.Next(Walks.Count)];
             if (Deaths.Count > 0) clips.Death = Deaths[rng.Next(Deaths.Count)];
             if (Hits.Count > 0) clips.Hit = Hits[rng.Next(Hits.Count)];
+            if (Runs.Count > 0) clips.Jog = Runs[rng.Next(Runs.Count)];
             return clips;
         }
 

@@ -65,6 +65,9 @@ namespace RoadDemo
         string _shownTitle, _shownLine;
 
         Image _mark;
+        (string text, float until) _refusal;
+        readonly List<Image> _carDots = new List<Image>();
+        readonly List<TMP_Text> _carTags = new List<TMP_Text>();
         Color _markTint = MarkTint;
         Vector3 _markWorld;
         float _markAge = MarkLife;
@@ -215,6 +218,17 @@ namespace RoadDemo
                 return true;
             }
             var unit = PickAt(screen);
+            // a click on the outfit's car picks the crew that owns it (or rides in it)
+            if (unit == null)
+            {
+                var car = PickCarAt(screen);
+                if (car != null)
+                {
+                    var owner = car.Occupant ?? car.Owner;
+                    if (owner != null && owner.Faction == 0) _crews.Select(owner);
+                    return true;
+                }
+            }
             // a click on a rival is a look, not a choice: the outfit's selection stands
             if (unit != null && unit.Faction != 0) return true;
             _crews.Select(unit);
@@ -230,7 +244,7 @@ namespace RoadDemo
             for (int i = 0; i < _men.Count; i++)
             {
                 var tf = _men[i].Tf;
-                if (tf == null || _men[i].Dead) continue;
+                if (tf == null || _men[i].Dead || _crews.IsAboard(_men[i])) continue;
                 var body = _cam.WorldToScreenPoint(tf.position + Vector3.up * 0.9f);
                 var dotP = _cam.WorldToScreenPoint(tf.position + Vector3.up * MarkerHeight(_men[i]));
                 foreach (var p in new[] { body, dotP })
@@ -244,6 +258,25 @@ namespace RoadDemo
         }
 
         static float MarkerHeight(CrewWalker man) => man.IsLieutenant ? 2.25f : 2.05f;
+
+        /// <summary>The outfit's car under the pointer - within the same slack as a man,
+        /// measured to its roof.</summary>
+        CrewCar PickCarAt(Vector2 screen)
+        {
+            if (_cam == null) return null;
+            float radius = (PickRadius + 12f) * (_canvas != null ? _canvas.scaleFactor : 1f);
+            float bestD = radius * radius;
+            CrewCar best = null;
+            foreach (var car in _crews.Cars)
+            {
+                if (car.Tf == null) continue;
+                var p = _cam.WorldToScreenPoint(car.Position + Vector3.up * 0.9f);
+                if (p.z <= 0f) continue;
+                float d = ((Vector2)p - screen).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = car; }
+            }
+            return best;
+        }
 
         static bool PointerOverUi() =>
             (UnityEngine.EventSystems.EventSystem.current &&
@@ -271,6 +304,17 @@ namespace RoadDemo
                 Time.unscaledTime - _rightDownAt > ClickHold)
                 return;
             if (BookOpen || _crews.Selected == null) return;
+
+            // the outfit's car under the click: get in (or out) if it is this crew's
+            var car = PickCarAt(up);
+            if (car != null)
+            {
+                if (_crews.OrderCar(car))
+                    ShowMark(car.Position + Vector3.up * 1.0f, MarkTint);
+                else if (_crews.CarRefusal != null)
+                    _refusal = (_crews.CarRefusal, Time.unscaledTime + 2.5f);
+                return;
+            }
 
             // a rival's man under the click: the crew goes for his crew
             var picked = PickAt(up);
@@ -347,7 +391,7 @@ namespace RoadDemo
                 var img = _dots[i];
                 var tag = _tags[i];
                 var glyph = _glyphs[i];
-                if (i >= _men.Count || _men[i].Tf == null || _men[i].Dead)
+                if (i >= _men.Count || _men[i].Tf == null || _men[i].Dead || _crews.IsAboard(_men[i]))
                 {
                     if (img.enabled) img.enabled = false;
                     if (tag != null && tag.enabled) tag.enabled = false;
@@ -407,8 +451,64 @@ namespace RoadDemo
                 }
             }
 
+            DrawCars(w, h, scale);
             UpdateMark();
             UpdatePopup(w, h, scale);
+        }
+
+        // The outfit's car: a dot over its roof - gold when a crew owns it, dim when the
+        // book has given it to nobody yet - and a tag naming it and whose it is.
+        void DrawCars(float w, float h, float scale)
+        {
+            var cars = _crews.Cars;
+            while (_carDots.Count < cars.Count)
+            {
+                var img = DemoUi.Icon(_dotRoot, "car", DemoUi.Dot, BossSize, BossOn);
+                img.enabled = false;
+                _carDots.Add(img);
+                TMP_Text tag = null;
+                if (_popup != null)
+                {
+                    tag = DemoUi.Text(_dotRoot, "car tag", 11f, BossOn, TextAlignmentOptions.Bottom, display: true);
+                    tag.characterSpacing = 3f;
+                    tag.rectTransform.pivot = new Vector2(0.5f, 0f);
+                    tag.rectTransform.sizeDelta = new Vector2(260f, 16f);
+                    tag.enabled = false;
+                }
+                _carTags.Add(tag);
+            }
+            for (int i = 0; i < _carDots.Count; i++)
+            {
+                var img = _carDots[i];
+                var tag = _carTags[i];
+                if (i >= cars.Count || cars[i].Tf == null)
+                {
+                    if (img.enabled) img.enabled = false;
+                    if (tag != null && tag.enabled) tag.enabled = false;
+                    continue;
+                }
+                var car = cars[i];
+                var screen = _cam.WorldToScreenPoint(car.Position + Vector3.up * 2.0f);
+                bool on = screen.z > 0f && screen.x >= 0f && screen.x <= w && screen.y >= 0f && screen.y <= h;
+                if (img.enabled != on) img.enabled = on;
+                if (tag != null && tag.enabled != on) tag.enabled = on;
+                if (!on) continue;
+                bool owned = car.Owner != null;
+                bool lit = owned && _crews.Selected == car.Owner;
+                float bob = Mathf.Sin(Time.time * (2f * Mathf.PI / BobPeriod) + 2.1f) * BobAmplitude * scale;
+                img.transform.position = new Vector3(screen.x, screen.y + bob, 0f);
+                img.color = owned ? BossOn : new Color(DemoUi.InkDim.r, DemoUi.InkDim.g, DemoUi.InkDim.b, 0.8f);
+                img.rectTransform.localScale = Vector3.one * (lit ? SelectedScale : 1f);
+                if (tag != null)
+                {
+                    string name = car.DisplayName.ToUpperInvariant() + " · " +
+                                  (owned ? Surname(car.Owner.Name) : "NOBODY'S");
+                    if (tag.text != name) tag.text = name;
+                    tag.transform.position = new Vector3(
+                        screen.x, screen.y + bob + (BossSize * 0.5f + TagLift) * scale, 0f);
+                    tag.color = owned ? BossOn : DemoUi.InkDim;
+                }
+            }
         }
 
         static string Surname(string fullName)
@@ -453,9 +553,11 @@ namespace RoadDemo
             int standing = unit.Standing(), size = unit.Size();
             string line = (standing == size ? size + (size == 1 ? " man" : " men")
                                             : standing + " of " + size + " standing") +
-                          "  ·  " + boss.StatusLine;
-            if (!boss.HasOrder && boss.Target == null && !boss.Dead)
-                line += "  ·  right-click: move / attack";
+                          "  ·  " + (unit.Car != null ? unit.Car.StatusLine
+                                     : unit.Boarding != null ? "Getting in the car" : boss.StatusLine);
+            if (unit.Car == null && unit.Boarding == null && !boss.HasOrder && boss.Target == null && !boss.Dead)
+                line += "  ·  right-click: move / attack" + (_crews.CarOf(unit) != null ? " / car" : "");
+            if (_refusal.until > Time.unscaledTime) line = _refusal.text;
             if (title != _shownTitle) { _shownTitle = title; _popupTitle.text = title; }
             if (line != _shownLine) { _shownLine = line; _popupLine.text = line; }
 

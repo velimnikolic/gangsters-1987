@@ -82,6 +82,42 @@ namespace LivingCity.Gameplay
 
         // ------------------------------------------------------------------ mutations
 
+        /// <summary>What a new man costs to bring in - the signing money, before wages.</summary>
+        public const int RecruitPrice = 500;
+
+        System.Random recruitRng;
+
+        /// <summary>
+        /// Brings a new hood onto the books and straight into this crew: the money
+        /// through the outfit's one purchase gate (refused with the shortfall spelled
+        /// out), the man dealt by RosterSeeder off the city seed, the crew's cap
+        /// respected before a dollar moves. The street bar's empty chip.
+        /// </summary>
+        public OpResult Recruit(int crewId, out int newId)
+        {
+            newId = -1;
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchCrew);
+            var crew = Roster.FindCrew(crewId);
+            if (crew == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchCrew);
+            if (crew.HoodIds.Count >= Crew.MaxHoods)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonCrewFull);
+
+            var outfit = OutfitDirector.Instance;
+            if (outfit != null)
+            {
+                var paid = outfit.Purchase(RecruitPrice, "a new man");
+                if (!paid.Ok)
+                    return paid;
+            }
+
+            recruitRng ??= new System.Random(seed * 31 + 7);
+            var member = RosterSeeder.Recruit(Roster, recruitRng);
+            newId = member.Id;
+            return Commit(RosterOps.AssignToCrew(Roster, member.Id, crewId), "recruited", member.Id);
+        }
+
         public PromoteCheck CheckPromote(int id) =>
             Roster == null
                 ? new PromoteCheck(false, false, LivingCity.UI.LedgerText.ReasonNoSuchMember)
@@ -97,6 +133,11 @@ namespace LivingCity.Gameplay
 
         public OpResult Demote(int id) =>
             Apply(RosterOps.Demote, id, "demoted");
+
+        /// <summary>The street reports a man shot dead: struck through, his gear pooled,
+        /// his crew passed on. Version moves so every book and bar re-deals.</summary>
+        public OpResult Kill(int id) =>
+            Apply(RosterOps.Kill, id, "shot dead");
 
         public OpResult AssignToPool(int id) =>
             Apply(RosterOps.AssignToPool, id, "sent to the pool");

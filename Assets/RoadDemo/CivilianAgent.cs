@@ -55,6 +55,7 @@ namespace RoadDemo
             State = Mode.Inside;
             _timer = delay;
             Tf.gameObject.SetActive(false);
+            Suspend(true);
         }
 
         bool ChatReady => State == Mode.Walking && !_waiting && !_link.Gated
@@ -228,6 +229,7 @@ namespace RoadDemo
                     State = Mode.Inside;
                     _timer = Random.Range(_life.InsideSeconds.x, _life.InsideSeconds.y);
                     Tf.gameObject.SetActive(false);
+                    Suspend(true);
                     break;
 
                 case Mode.WalkOut:
@@ -250,6 +252,7 @@ namespace RoadDemo
             _door = door;
             _doorFwd = Random.value < 0.5f;
             Tf.gameObject.SetActive(true);
+            Suspend(false);
             Tf.SetPositionAndRotation(door.Pos, Quaternion.LookRotation(door.Outward));
             DemoAudio.At(DemoSounds.DoorOpen, door.Pos, DemoSounds.DoorVolume, 0.08f);
             BeginLeg(door.Pos, door.EntryPos, Mode.WalkOut);
@@ -289,19 +292,44 @@ namespace RoadDemo
         /// <summary>Two walkers meeting head-on on the same stretch stop for a
         /// word - or, now and then, an argument. Scanned on a slow throttle by
         /// the builder; O(n^2) but only over ChatReady walkers.</summary>
+        // scratch for PairChats: the ready walkers, and who is on which stretch,
+        // kept between scans so a scan over three hundred walkers allocates nothing
+        static readonly List<CivilianAgent> Ready = new List<CivilianAgent>();
+        static readonly Dictionary<PedLink, List<CivilianAgent>> OnLink = new Dictionary<PedLink, List<CivilianAgent>>();
+        static readonly Stack<List<CivilianAgent>> Spare = new Stack<List<CivilianAgent>>();
+
         public static void PairChats(List<CivilianAgent> all, Vector2 chatSeconds)
         {
+            // bucket the ready walkers by the stretch they are on: a meeting is two
+            // walkers on the two directions of one stretch, so only those are compared
+            Ready.Clear();
+            foreach (var kv in OnLink) { kv.Value.Clear(); Spare.Push(kv.Value); }
+            OnLink.Clear();
             for (int i = 0; i < all.Count; i++)
             {
                 var a = all[i];
                 if (!a.ChatReady) continue;
-
-                for (int j = i + 1; j < all.Count; j++)
+                Ready.Add(a);
+                if (!OnLink.TryGetValue(a._link, out var list))
                 {
-                    var b = all[j];
-                    if (!b.ChatReady) continue;
-                    // head-on: b walks the reverse of a's link
-                    if (a._link.From != b._link.To || a._link.To != b._link.From) continue;
+                    list = Spare.Count > 0 ? Spare.Pop() : new List<CivilianAgent>();
+                    OnLink[a._link] = list;
+                }
+                list.Add(a);
+            }
+
+            for (int i = 0; i < Ready.Count; i++)
+            {
+                var a = Ready[i];
+                if (!a.ChatReady) continue;
+                // the reverse of a's stretch, and whoever walks it
+                var back = ReverseOf(a._link);
+                if (back == null || !OnLink.TryGetValue(back, out var facing)) continue;
+
+                for (int j = 0; j < facing.Count; j++)
+                {
+                    var b = facing[j];
+                    if (b == a || !b.ChatReady) continue;
                     if ((a.Tf.position - b.Tf.position).sqrMagnitude > 2.2f * 2.2f) continue;
 
                     if (Random.value > 0.4f)
@@ -319,6 +347,15 @@ namespace RoadDemo
                     break;
                 }
             }
+        }
+
+        /// <summary>The other direction of a stretch: the link from its To back to its From.</summary>
+        static PedLink ReverseOf(PedLink link)
+        {
+            var links = link.To.Links;
+            for (int k = 0; k < links.Count; k++)
+                if (links[k].To == link.From) return links[k];
+            return null;
         }
 
         void BeginChat(CivilianAgent partner, bool shout, float seconds)

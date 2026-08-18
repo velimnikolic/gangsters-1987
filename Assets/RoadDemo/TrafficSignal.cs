@@ -52,16 +52,29 @@ namespace RoadDemo
 
         public void AddBulbs(BulbSet set) => _bulbs.Add(set);
 
+        // the phase the bulbs were last set to, per axis: 0 red, 1 yellow, 2 green,
+        // -1 never - so a material is written when the light changes, not every frame
+        int _shownNS = -1, _shownEW = -1;
+
         public void UpdateBulbs(SignalMaterials mats)
         {
-            for (int i = 0; i < _bulbs.Count; i++)
+            if (_bulbs.Count == 0) return;
+            for (int axis = 0; axis < 2; axis++)
             {
-                var b = _bulbs[i];
-                bool g = GreenFor(b.NorthSouth);
-                bool y = YellowFor(b.NorthSouth);
-                b.R.sharedMaterial = !g && !y ? mats.RedOn : mats.RedOff;
-                b.Y.sharedMaterial = y ? mats.YellowOn : mats.YellowOff;
-                b.G.sharedMaterial = g ? mats.GreenOn : mats.GreenOff;
+                bool ns = axis == 0;
+                bool g = GreenFor(ns);
+                bool y = YellowFor(ns);
+                int phase = g ? 2 : y ? 1 : 0;
+                if ((ns ? _shownNS : _shownEW) == phase) continue;
+                if (ns) _shownNS = phase; else _shownEW = phase;
+                for (int i = 0; i < _bulbs.Count; i++)
+                {
+                    var b = _bulbs[i];
+                    if (b.NorthSouth != ns) continue;
+                    b.R.sharedMaterial = !g && !y ? mats.RedOn : mats.RedOff;
+                    b.Y.sharedMaterial = y ? mats.YellowOn : mats.YellowOff;
+                    b.G.sharedMaterial = g ? mats.GreenOn : mats.GreenOff;
+                }
             }
         }
     }

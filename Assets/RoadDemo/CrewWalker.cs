@@ -15,7 +15,7 @@ namespace RoadDemo
     // arena (DemoCrews) rolls the dice and hands out the wounds.
     public class CrewWalker : PedestrianAgent
     {
-        public enum Mode { Standing, Walking, Homing, Striding, Engaging, Dead }
+        public enum Mode { Standing, Walking, Homing, Striding, Engaging, Fleeing, Riding, Dead }
 
         public Mode State { get; private set; } = Mode.Standing;
 
@@ -69,7 +69,7 @@ namespace RoadDemo
         Dictionary<PedNode, PedLink> _route;
         Vector3 _legTo;    // the free stride's end
 
-        public bool HasOrder => State == Mode.Walking || State == Mode.Homing || State == Mode.Striding;
+        public bool HasOrder => State == Mode.Walking || State == Mode.Homing || State == Mode.Striding || State == Mode.Fleeing;
         public bool OnGraph => _link != null;
 
         /// <summary>Where the current order ends - a point on the ordered sidewalk,
@@ -90,12 +90,15 @@ namespace RoadDemo
         // ------------------------------------------------------------------ orders
 
         /// <summary>Send the walker to metre <paramref name="t"/> along
-        /// <paramref name="link"/> (either direction of a stretch is fine).</summary>
-        public void OrderTo(PedLink link, float t)
+        /// <paramref name="link"/> (either direction of a stretch is fine), after
+        /// <paramref name="delay"/> seconds stood - a hood falling in a beat behind
+        /// his boss rather than in the same frame.</summary>
+        public void OrderTo(PedLink link, float t, float delay = 0f)
         {
-            if (Dead || link == null || link.Length <= 0.01f || _link == null) return;
+            if (Dead || Riding || link == null || link.Length <= 0.01f || _link == null) return;
             Target = null;
             EndChat();
+            _hold = delay;
             var back = Reverse(link);
             _destFwd = link;
             _destBack = back;
@@ -130,11 +133,12 @@ namespace RoadDemo
 
         /// <summary>Walk straight to this point over open ground - the empty floor's
         /// order. Off the graph only; on it the sidewalks are the way.</summary>
-        public void OrderToPoint(Vector3 point)
+        public void OrderToPoint(Vector3 point, float delay = 0f)
         {
             if (Dead) return;
             Target = null;
             EndChat();
+            _hold = delay;
             point.y = Tf.position.y;
             _legTo = point;
             _bestLegDist = float.MaxValue;
@@ -145,7 +149,7 @@ namespace RoadDemo
         /// <summary>Close on this man and shoot him. Nothing happens unarmed.</summary>
         public void Engage(CrewWalker target)
         {
-            if (Dead || !Armed || target == null || target.Dead || target == this) return;
+            if (Dead || Riding || !Armed || Panicked || target == null || target.Dead || target == this) return;
             Target = target;
             EndChat();
             State = Mode.Engaging;
@@ -260,11 +264,13 @@ namespace RoadDemo
                     return;
 
                 case Mode.Standing:
+                    if (_shaken > 0f) _shaken -= dt;
                     TickLoiter(dt);
                     return;
 
                 case Mode.Striding:
                 {
+                    if (HoldingBeat(dt)) return;
                     TickStride(dt, _legTo, 0.15f);
                     var gap = _legTo - Tf.position;
                     gap.y = 0f;
@@ -282,7 +288,41 @@ namespace RoadDemo
                     TickEngage(dt);
                     return;
 
+                case Mode.Riding:
+                    // seated in the car (the arena carries him); gun out of the window
+                    // when there is someone to shoot at, else just sitting
+                    SetPose(RidingAim && HasPose(PoseAim) ? PoseAim : HasPose(PoseSit) ? PoseSit : PoseIdle);
+                    TickBlend(dt);
+                    return;
+
+                case Mode.Fleeing:
+                {
+                    // the beat before he bolts: the flinch finishes, or he just stands a
+                    // moment - no two men break at the same instant
+                    if (_hold > 0f)
+                    {
+                        _hold -= dt;
+                        if (_flinch > 0f) { _flinch -= dt; SetPose(PoseHit); }
+                        else SetPose(PoseIdle);
+                        TickBlend(dt);
+                        return;
+                    }
+                    TickStride(dt, _fleeTo, 0.4f, run: true);
+                    var gap = _fleeTo - Tf.position;
+                    gap.y = 0f;
+                    float left = gap.magnitude;
+                    if (left < _bestLegDist - 0.03f) { _bestLegDist = left; _stall = 0f; }
+                    else _stall += dt;
+                    if (left <= 0.4f || _stall > 0.7f)
+                    {
+                        State = Mode.Standing;
+                        _shaken = Random.Range(8f, 14f); // out of it a while, then game again
+                    }
+                    return;
+                }
+
                 default: // Walking, Homing - the graph
+                    if (HoldingBeat(dt)) return;
                     Tick(dt);
                     if (State == Mode.Homing && _t >= _targetT)
                         State = Mode.Standing;
@@ -290,23 +330,54 @@ namespace RoadDemo
             }
         }
 
-        /// <summary>Metres a second at the jog - the pace a man closes on a fight at.
-        /// Dealt per man (SetJog) so a crew does not close in step.</summary>
+        // ------------------------------------------------------------------ the beat
+
+        // Seconds an order waits before the legs move: a hood does not set off the
+        // frame his boss does, and a man does not bolt the frame he is hit. Held,
+        // he stands (or finishes his flinch); then he goes.
+        float _hold;
+
+        /// <summary>Spends the beat, standing; true while there is beat left.</summary>
+        bool HoldingBeat(float dt)
+        {
+            if (_hold <= 0f) return false;
+            _hold -= dt;
+            Loco(dt, false);
+            return true;
+        }
+
+        /// <summary>Metres a second at the run - the pace a man gets away at. Dealt per
+        /// man (SetJog) so a crew does not run in step; a man dealt the sprint clip
+        /// runs quicker than one dealt the jog, since his feet say so.</summary>
         public float JogSpeed = 3.1f;
 
-        /// <summary>The library's jog covers about this much ground a second at speed 1;
-        /// the clip is played faster or slower to match the man's own pace.</summary>
+        /// <summary>The library's jog covers about this much ground a second at speed 1
+        /// - the figure used only when the clip itself does not say.</summary>
         const float JogClipPace = 3.0f;
+
+        /// <summary>How far off its natural rate a run clip may be played before the
+        /// feet read wrong - a sprint at half speed is a moon-walk, so a man asked to
+        /// jog on a sprint clip runs a real sprint instead.</summary>
+        const float RunRateMin = 0.85f, RunRateMax = 1.25f;
+
+        float _runRate = 1f;
 
         public void SetJog(float speed)
         {
-            JogSpeed = speed;
-            SetPoseSpeed(PoseJog, speed / JogClipPace);
+            float natural = ClipPace(PoseJog, JogClipPace);
+            _runRate = Mathf.Clamp(speed / natural, RunRateMin, RunRateMax);
+            JogSpeed = _runRate * natural;
+            SetPoseSpeed(PoseJog, _runRate);
         }
 
-        // The stride: straight at the point, turning as it goes - at a walk, or at a
-        // jog when there is a fight to get to and the clip for it.
-        void TickStride(float dt, Vector3 to, float stopWithin, bool hurry = false)
+        /// <summary>How much quicker a man walks when he is closing on a fight - a
+        /// hurried walk, not a run; running is for getting away.</summary>
+        const float HurryFactor = 1.3f;
+
+        // The stride: straight at the point, turning as it goes - at a walk, at the
+        // hurried walk when there is a fight to get to, or flat out when he is
+        // running from one (the jog clip, if there is one).
+        void TickStride(float dt, Vector3 to, float stopWithin, bool hurry = false, bool run = false)
         {
             var delta = to - Tf.position;
             delta.y = 0f;
@@ -316,13 +387,90 @@ namespace RoadDemo
                 Loco(dt, false);
                 return;
             }
-            bool jog = hurry && HasPose(PoseJog);
-            float pace = jog ? JogSpeed : Speed;
+            bool jog = run && HasPose(PoseJog);
+            float pace = jog ? JogSpeed : hurry ? Speed * HurryFactor : Speed;
             var dir = delta / dist;
             Tf.rotation = Quaternion.Slerp(Tf.rotation, Quaternion.LookRotation(dir), 8f * dt);
             Tf.position += dir * Mathf.Min(pace * dt, dist);
             if (jog) { SetPose(PoseJog); TickBlend(dt); }
-            else Loco(dt, true);
+            else
+            {
+                Loco(dt, true);
+                // the walk clip keeps step with the pace: quicker feet for the hurried walk
+                SetPoseSpeed(PoseWalk, pace / ClipPace(PoseWalk, WalkClipPace));
+            }
+        }
+
+        // ------------------------------------------------------------------ the car
+
+        /// <summary>In a car seat, carried by the car; takes no orders of his own.</summary>
+        public bool Riding => State == Mode.Riding;
+
+        /// <summary>While riding: gun up and out of the window (the drive-by).</summary>
+        public bool RidingAim;
+
+        /// <summary>What he is shooting at out of the window (or nothing) - the arena's
+        /// call while he rides; the seat, not the man, decides what he can see.</summary>
+        public void AimAt(CrewWalker mark) => Target = mark != null && !mark.Dead ? mark : null;
+
+        /// <summary>Put in a seat, or set down beside the car again.</summary>
+        public void SetRiding(bool on)
+        {
+            if (Dead) return;
+            if (on)
+            {
+                Target = null;
+                EndChat();
+                State = Mode.Riding;
+            }
+            else if (State == Mode.Riding)
+            {
+                RidingAim = false;
+                State = Mode.Standing;
+            }
+        }
+
+        // ------------------------------------------------------------------ nerve
+
+        Vector3 _fleeTo;
+        float _shaken;
+        bool _nerveRolled;
+
+        /// <summary>Running from the fight, or too shaken to be sent back into it yet -
+        /// the arena leaves such a man alone.</summary>
+        public bool Panicked => State == Mode.Fleeing || _shaken > 0f;
+
+        /// <summary>A hit that leaves him one from the ground may break him: not
+        /// every man - the roll is made once - but the one it breaks drops the
+        /// fight and runs from whoever hit him, and stays out of it a while after.</summary>
+        public void MaybePanic(CrewWalker threat, float chance)
+        {
+            if (Dead || _nerveRolled || Health > 1) return;
+            _nerveRolled = true;
+            if (Random.value >= chance) return;
+            Flee(threat != null && threat.Tf ? threat.Tf.position : Tf.position - Tf.forward);
+        }
+
+        public void Flee(Vector3 from)
+        {
+            if (Dead) return;
+            Target = null;
+            EndChat();
+            var away = Tf.position - from;
+            away.y = 0f;
+            if (away.sqrMagnitude < 1e-3f) away = -Tf.forward;
+            away.Normalize();
+            // not straight back: a little off the line, so two men do not run one road
+            away = Quaternion.Euler(0f, Random.Range(-30f, 30f), 0f) * away;
+            _fleeTo = Tf.position + away * Random.Range(18f, 28f);
+            _bestLegDist = float.MaxValue;
+            _stall = 0f;
+            // a beat of nerve failing before the legs go, and the run picked up at a
+            // random stride, at a rate of his own - not the crew's one run, in step
+            _hold = Random.Range(0.1f, 0.6f);
+            ScatterPhase(PoseJog);
+            SetPoseSpeed(PoseJog, _runRate * Random.Range(0.94f, 1.06f));
+            State = Mode.Fleeing;
         }
 
         void TickEngage(float dt)
@@ -348,7 +496,7 @@ namespace RoadDemo
             _wasClosing = closing;
             if (closing)
             {
-                TickStride(dt, Target.Tf.position, range * RangeFactor, hurry: true);
+                TickStride(dt, Target.Tf.position, range * RangeFactor, hurry: true); // a quick walk, no running
                 return;
             }
 
@@ -638,6 +786,8 @@ namespace RoadDemo
             Mode.Striding => "On the move, heading " + PatrolInfo.Heading(Tf),
             Mode.Homing => "Almost there",
             Mode.Engaging => Target != null ? "Shooting at " + Target.DisplayName : "Engaging",
+            Mode.Fleeing => "Running for it",
+            Mode.Riding => "In the car",
             Mode.Dead => "Down",
             _ => string.Empty,
         };

@@ -85,6 +85,10 @@ namespace RoadDemo
         AnimationMixerPlayable _mixer;
         readonly AnimationClipPlayable[] _poses = new AnimationClipPlayable[PoseCount];
         readonly float[] _weights = new float[PoseCount];
+        // clip lengths and paces read once at wiring: TickBlend runs for every
+        // agent every frame, and GetAnimationClip() is a native call each time
+        readonly float[] _clipLength = new float[PoseCount];
+        readonly float[] _clipPace = new float[PoseCount];
         int _pose = PoseWalk;
 
         public void Init(Transform tf, AnimationClip walk, AnimationClip idle, PedLink start, float t)
@@ -120,6 +124,10 @@ namespace RoadDemo
             if (animator != null)
             {
                 animator.applyRootMotion = false;
+                // the walker moves the transform himself, so an off-screen body need not
+                // be retargeted every frame - the graph keeps time and he steps back into
+                // frame mid-stride, not frozen where the camera left him
+                animator.cullingMode = AnimatorCullingMode.CullCompletely;
                 HumanScale = animator.avatar != null && animator.avatar.isHuman
                     ? animator.humanScale : 1f;
                 _graph = PlayableGraph.Create("Pedestrian");
@@ -134,6 +142,8 @@ namespace RoadDemo
                     _graph.Connect(playable, 0, _mixer, pose);
                     _mixer.SetInputWeight(pose, 0f);
                     _poses[pose] = playable;
+                    _clipLength[pose] = clip.length;
+                    _clipPace[pose] = clip.averageSpeed.magnitude;
                 }
 
                 Wire(PoseWalk, clips.Walk);
@@ -154,9 +164,9 @@ namespace RoadDemo
                 // men breathing, walking or jogging in lockstep reads as a machine
                 for (int i = 0; i < PoseCount; i++)
                     if (LoopByHand[i] && _poses[i].IsValid())
-                        _poses[i].SetTime(Random.value * _poses[i].GetAnimationClip().length);
+                        _poses[i].SetTime(Random.value * _clipLength[i]);
                 if (_poses[PoseWalk].IsValid())
-                    _poses[PoseWalk].SetSpeed(Speed / 1.5f);
+                    _poses[PoseWalk].SetSpeed(Speed / ClipPace(PoseWalk, WalkClipPace));
                 _weights[PoseWalk] = 1f;
                 _mixer.SetInputWeight(PoseWalk, 1f);
                 output.SetSourcePlayable(_mixer);
@@ -247,11 +257,42 @@ namespace RoadDemo
             if (_poses[pose].IsValid()) _poses[pose].SetSpeed(speed);
         }
 
+        /// <summary>Metres a second the crowd's stock walk covers at playback speed 1
+        /// (the Mixamo walk is animated in place and says nothing about it itself).</summary>
+        public const float WalkClipPace = 1.5f;
+
+        /// <summary>Metres a second this pose's clip covers at playback speed 1: read
+        /// off the clip's own root motion when it carries any (the library takes do),
+        /// else the caller's figure. Feet keyed to this do not skate - a Walk_Formal
+        /// dealt to one man and a Walk_Loop to the next each play at their own rate.</summary>
+        protected float ClipPace(int pose, float fallback)
+        {
+            if (!_poses[pose].IsValid()) return fallback;
+            float measured = _clipPace[pose];
+            return measured > 0.5f ? measured : fallback;
+        }
+
+        /// <summary>Start a loop pose at a random point along itself - so men who
+        /// break into the same clip in the same second are not in step.</summary>
+        protected void ScatterPhase(int pose)
+        {
+            if (!_poses[pose].IsValid()) return;
+            _poses[pose].SetTime(Random.value * _clipLength[pose]);
+        }
+
+        /// <summary>Halt the whole graph (a civilian gone indoors) or let it run
+        /// again: a body switched off still costs its animation otherwise.</summary>
+        public void Suspend(bool suspended)
+        {
+            if (!_graph.IsValid()) return;
+            if (suspended) { if (_graph.IsPlaying()) _graph.Stop(); }
+            else if (!_graph.IsPlaying()) _graph.Play();
+        }
+
         /// <summary>Seconds into the pose's clip, and the clip's length - a one-shot
         /// (the shot, the flinch, the fall) is over when the first passes the second.</summary>
         protected float PoseTime(int pose) => _poses[pose].IsValid() ? (float)_poses[pose].GetTime() : 0f;
-        protected float PoseLength(int pose) =>
-            _poses[pose].IsValid() ? _poses[pose].GetAnimationClip().length : 0f;
+        protected float PoseLength(int pose) => _poses[pose].IsValid() ? _clipLength[pose] : 0f;
 
         /// <summary>Freeze a pose on its current frame - the fall stays fallen.</summary>
         protected void HoldPose(int pose)
@@ -271,9 +312,12 @@ namespace RoadDemo
                 if (!_poses[i].IsValid()) continue;
                 if (LoopByHand[i])
                 {
-                    float len = _poses[i].GetAnimationClip().length;
-                    if (len > 0.01f && _poses[i].GetTime() >= len)
-                        _poses[i].SetTime(_poses[i].GetTime() % len);
+                    float len = _clipLength[i];
+                    if (len > 0.01f)
+                    {
+                        double at = _poses[i].GetTime();
+                        if (at >= len) _poses[i].SetTime(at % len);
+                    }
                 }
                 float target = i == _pose ? 1f : 0f;
                 if (Mathf.Approximately(_weights[i], target)) continue;
@@ -312,8 +356,10 @@ namespace RoadDemo
             {
                 Vector3 dirN = dir.normalized;
                 pos += new Vector3(dirN.z, 0f, -dirN.x) * _lateral;
-                Tf.rotation = Quaternion.Slerp(
+                var rot = Quaternion.Slerp(
                     Tf.rotation, Quaternion.LookRotation(dirN), dt <= 0f ? 1f : 8f * dt);
+                Tf.SetPositionAndRotation(pos, rot);
+                return;
             }
             Tf.position = pos;
         }

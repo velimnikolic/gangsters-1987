@@ -9,12 +9,18 @@ namespace RoadDemo
     // vehicles: a grid of boulevards and ordinary two-way streets with sidewalks,
     // signalised intersections and cars driving the lane graph.
     //
+    // The grid is the whole city, districts and all: some of the gaps between two
+    // road lines are not blocks but SEAMS - a river with the boulevards bridging it
+    // and the streets ending on its quays, a park the streets stop at and the
+    // boulevards drive through (RoadDemoBuilder.Seams.cs). What lies between two
+    // seams is a district; nothing but the seams tells one from the next.
+    //
     // Piece convention (measured against the pack's own demo scene): every kit
     // piece has its pivot on a corner and covers the 5x5 m square towards local
     // -X/-Z, so a cell (min corner mx,mz) is filled by pivots:
     //   yaw 0 -> (mx+5, mz+5), yaw 90 -> (mx+5, mz), yaw 180 -> (mx, mz),
     //   yaw 270 -> (mx, mz+5).
-    public class RoadDemoBuilder : MonoBehaviour
+    public partial class RoadDemoBuilder : MonoBehaviour
     {
         [Header("Grid (centreline positions, multiples of 5)")]
         // How many roads there are and which of them are boulevards is authored
@@ -22,10 +28,30 @@ namespace RoadDemo
         // below is switched off. The authored X/Z are then the even fallback
         // spacing, one residentialblock1 bake per interior (70 x 50 m). Re-spaced,
         // the interiors take their sizes from blockWidths / blockDepths below.
-        public float[] verticalRoadX = { 0f, 100f, 200f, 300f, 400f };
-        public bool[] verticalIsBoulevard = { false, true, false, true, false };
-        public float[] horizontalRoadZ = { 0f, 80f, 160f, 230f };
-        public bool[] horizontalIsBoulevard = { false, true, false, false };
+        //
+        // The default plan is a city of districts: three columns of blocks, a park,
+        // three more columns, the elevated highway, one more column beyond it; two
+        // rows of blocks, the river, two more rows. Vertical roads 1, 4 and 7 are
+        // boulevards - 4 is the park's east edge, 7 runs under the highway's west
+        // side, all three bridge the river; horizontal 1 and 4 run through the middle
+        // of the south and north halves.
+        public float[] verticalRoadX = { 0f, 100f, 200f, 300f, 400f, 500f, 600f, 700f, 800f, 900f };
+        public bool[] verticalIsBoulevard = { false, true, false, false, true, false, false, true, false, false };
+        public float[] horizontalRoadZ = { 0f, 80f, 160f, 240f, 320f, 400f };
+        public bool[] horizontalIsBoulevard = { false, true, false, false, true, false };
+
+        [Header("Seams between districts")]
+        [Tooltip("The gaps between two road lines that are not blocks: a river (the boulevards " +
+                 "bridge it, the streets end on its quays), a park (boulevards through, streets " +
+                 "stop) or an elevated highway (every road passes under it). 'gap' counts the " +
+                 "spaces between lines from the south / west; a vertical seam runs north-south " +
+                 "between two vertical roads.")]
+        public Seam[] seams =
+        {
+            new Seam { vertical = false, gap = 2, kind = SeamKind.River, width = 90f },
+            new Seam { vertical = true, gap = 3, kind = SeamKind.Park, width = 60f },
+            new Seam { vertical = true, gap = 7, kind = SeamKind.Highway, width = 40f },
+        };
 
         [Header("Block sizes")]
         [Tooltip("Re-space the grid so columns and rows differ in size instead of " +
@@ -246,9 +272,11 @@ namespace RoadDemo
             _cars = new GameObject("Cars").transform;
 
             Respace();
+            ScaleLifeToCity();
             BuildNodes();
             BuildRoadsAndSidewalks();
             BuildBlocks();
+            BuildSeams();
             DressStreets();
             BuildGraph();
             BuildSignals();
@@ -265,6 +293,7 @@ namespace RoadDemo
             BuildLotOverlay();
 
             StaticBatchingUtility.Combine(_geometry.gameObject);
+            OptimiseScene();
 #else
             Debug.LogError("[RoadDemo] This demo loads Synty prefabs through the AssetDatabase and only runs in the editor.");
 #endif
@@ -308,11 +337,33 @@ namespace RoadDemo
                 horizontalIsBoulevard == null || horizontalIsBoulevard.Length < nh) return;
 
             // the sketch draws the plan Play would build, not the authored spacing
-            float[] vx = PlanLine(verticalRoadX, verticalIsBoulevard, blockWidths, 0);
-            float[] hz = PlanLine(horizontalRoadZ, horizontalIsBoulevard, blockDepths, 1);
+            float[] vx = PlanLine(verticalRoadX, verticalIsBoulevard, blockWidths, 0, true);
+            float[] hz = PlanLine(horizontalRoadZ, horizontalIsBoulevard, blockDepths, 1, false);
 
             var street = new Color(1f, 1f, 1f, 0.35f);
             var avenue = new Color(1f, 0.8f, 0.2f, 0.5f);
+            var water = new Color(0.25f, 0.5f, 0.9f, 0.45f);
+            var lawn = new Color(0.3f, 0.7f, 0.3f, 0.45f);
+            var deck = new Color(0.6f, 0.6f, 0.65f, 0.5f);
+            Color SeamColour(Seam s) => s.kind == SeamKind.River ? water : s.kind == SeamKind.Park ? lawn : deck;
+
+            // the seams first, under the roads: the river's water, the park's lawn
+            for (int j = 0; j + 1 < nh; j++)
+                if (SeamAt(false, j) is Seam s)
+                {
+                    float a = hz[j] + HHalf(j) + Cell, b = hz[j + 1] - HHalf(j + 1) - Cell;
+                    Gizmos.color = SeamColour(s);
+                    Gizmos.DrawCube(new Vector3((vx[0] + vx[nv - 1]) * 0.5f, -0.05f, (a + b) * 0.5f),
+                        new Vector3(vx[nv - 1] - vx[0] + 2f * BoulevardHalf, 0.1f, b - a));
+                }
+            for (int i = 0; i + 1 < nv; i++)
+                if (SeamAt(true, i) is Seam s)
+                {
+                    float a = vx[i] + VHalf(i) + Cell, b = vx[i + 1] - VHalf(i + 1) - Cell;
+                    Gizmos.color = SeamColour(s);
+                    Gizmos.DrawCube(new Vector3((a + b) * 0.5f, -0.05f, (hz[0] + hz[nh - 1]) * 0.5f),
+                        new Vector3(b - a, 0.1f, hz[nh - 1] - hz[0] + 2f * BoulevardHalf));
+                }
 
             for (int i = 0; i < nv; i++)
                 for (int j = 0; j < nh; j++)
@@ -325,6 +376,7 @@ namespace RoadDemo
             for (int i = 0; i < nv; i++)
                 for (int j = 0; j + 1 < nh; j++)
                 {
+                    if (!SegmentOpen(true, i, j)) continue;
                     float a = hz[j] + HHalf(j), b = hz[j + 1] - HHalf(j + 1);
                     Gizmos.color = verticalIsBoulevard[i] ? avenue : street;
                     Gizmos.DrawCube(new Vector3(vx[i], 0f, (a + b) * 0.5f),
@@ -334,6 +386,7 @@ namespace RoadDemo
             for (int j = 0; j < nh; j++)
                 for (int i = 0; i + 1 < nv; i++)
                 {
+                    if (!SegmentOpen(false, j, i)) continue;
                     float a = vx[i] + VHalf(i), b = vx[i + 1] - VHalf(i + 1);
                     Gizmos.color = horizontalIsBoulevard[j] ? avenue : street;
                     Gizmos.DrawCube(new Vector3((a + b) * 0.5f, 0f, hz[j]),
@@ -724,11 +777,13 @@ namespace RoadDemo
 
         // Every road runs the full width of the map: the network is the plain grid
         // the verticalRoadX / horizontalRoadZ arrays describe. A junction only lacks
-        // a leg where the map itself ends.
-        bool NorthOpen(int i, int j) => j + 1 < horizontalRoadZ.Length;
-        bool SouthOpen(int i, int j) => j > 0;
-        bool EastOpen(int i, int j) => i + 1 < verticalRoadX.Length;
-        bool WestOpen(int i, int j) => i > 0;
+        // a leg where the map itself ends - or where a seam lies that this road does
+        // not cross: a street ends on the river's quay and at the park's edge, a
+        // boulevard bridges the one and drives through the other (SegmentOpen).
+        bool NorthOpen(int i, int j) => j + 1 < horizontalRoadZ.Length && SegmentOpen(true, i, j);
+        bool SouthOpen(int i, int j) => j > 0 && SegmentOpen(true, i, j - 1);
+        bool EastOpen(int i, int j) => i + 1 < verticalRoadX.Length && SegmentOpen(false, j, i);
+        bool WestOpen(int i, int j) => i > 0 && SegmentOpen(false, j, i - 1);
 
         float VHalf(int i) => verticalIsBoulevard[i] ? BoulevardHalf : StreetHalf;
         float HHalf(int j) => horizontalIsBoulevard[j] ? BoulevardHalf : StreetHalf;
@@ -832,18 +887,22 @@ namespace RoadDemo
         // hands them back the authored values when Play stops.
         void Respace()
         {
-            if (!randomiseBlockSizes) return;
-            verticalRoadX = PlanLine(verticalRoadX, verticalIsBoulevard, blockWidths, 0);
-            horizontalRoadZ = PlanLine(horizontalRoadZ, horizontalIsBoulevard, blockDepths, 1);
+            if (!randomiseBlockSizes && !AnySeam(true) && !AnySeam(false)) return;
+            verticalRoadX = PlanLine(verticalRoadX, verticalIsBoulevard, blockWidths, 0, true);
+            horizontalRoadZ = PlanLine(horizontalRoadZ, horizontalIsBoulevard, blockDepths, 1, false);
 
             var sizes = new List<string>();
             for (int i = 0; i + 1 < verticalRoadX.Length; i++)
                 for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
+                {
+                    if (InSeam(i, j)) continue;
                     sizes.Add((verticalRoadX[i + 1] - VHalf(i + 1) - Cell - verticalRoadX[i] - VHalf(i) - Cell)
                               .ToString("F0") + "x" +
                               (horizontalRoadZ[j + 1] - HHalf(j + 1) - Cell - horizontalRoadZ[j] - HHalf(j) - Cell)
                               .ToString("F0"));
-            Debug.Log($"[RoadDemo] block interiors (seed {spacingSeed}): " + string.Join(", ", sizes));
+                }
+            Debug.Log($"[RoadDemo] block interiors (seed {spacingSeed}): " + string.Join(", ", sizes) +
+                      SeamStory());
         }
 
         // The interiors between two roads are what the eye reads as a block, so the
@@ -860,45 +919,78 @@ namespace RoadDemo
         // widths nothing was ever built for. More gaps than palette entries wraps,
         // so a size comes up twice. Every size is snapped to the 5 m cell, so the
         // kit's pieces still tile and every centreline stays a multiple of 5.
-        float[] PlanLine(float[] authored, bool[] boulevard, float[] palette, int salt)
+        //
+        // A gap that is a seam (the river, the park) is not dealt from the palette at
+        // all: it takes the seam's own width, and the palette is dealt over the block
+        // gaps only, so a river through the middle costs no block its size.
+        float[] PlanLine(float[] authored, bool[] boulevard, float[] palette, int salt, bool verticalLines)
         {
             int n = authored == null ? 0 : authored.Length;
             if (n == 0 || boulevard == null || boulevard.Length < n) return authored;
-            if (!randomiseBlockSizes || n < 2) return (float[])authored.Clone();
+            if (n < 2) return (float[])authored.Clone();
+            if (!randomiseBlockSizes && !AnySeam(verticalLines)) return (float[])authored.Clone();
             if (palette == null || palette.Length == 0) return (float[])authored.Clone();
 
             int gaps = n - 1;
             var spans = new float[gaps];
+            var seamAt = new bool[gaps];
+            var blockGaps = new List<int>();
             for (int k = 0; k < gaps; k++)
-                spans[k] = Mathf.Max(MinInterior,
+            {
+                var seam = SeamAt(verticalLines, k);
+                if (seam != null)
+                {
+                    seamAt[k] = true;
+                    spans[k] = Mathf.Max(MinInterior, Mathf.Round(seam.width / Cell) * Cell);
+                }
+                else blockGaps.Add(k);
+            }
+            int free = blockGaps.Count;
+            var dealt = new float[free];
+            for (int k = 0; k < free; k++)
+                dealt[k] = Mathf.Max(MinInterior,
                     Mathf.Round(palette[k % palette.Length] / Cell) * Cell);
+            if (!randomiseBlockSizes)
+            {
+                // seams only, no shuffle: the authored spacing for the blocks
+                for (int k = 0; k < free; k++)
+                {
+                    int g = blockGaps[k];
+                    float halfA = boulevard[g] ? BoulevardHalf : StreetHalf;
+                    float halfB = boulevard[g + 1] ? BoulevardHalf : StreetHalf;
+                    dealt[k] = Mathf.Max(MinInterior, authored[g + 1] - authored[g] - halfA - halfB - 2f * Cell);
+                }
+            }
 
             // its own generator rather than UnityEngine.Random: the street plan must
             // not shift because some later pass drew one more bush
             var rng = new System.Random(spacingSeed * 397 + salt);
-            for (int k = gaps - 1; k > 0; k--)
-            {
-                int swap = rng.Next(k + 1);
-                (spans[k], spans[swap]) = (spans[swap], spans[k]);
-            }
+            if (randomiseBlockSizes)
+                for (int k = free - 1; k > 0; k--)
+                {
+                    int swap = rng.Next(k + 1);
+                    (dealt[k], dealt[swap]) = (dealt[swap], dealt[k]);
+                }
 
             // Two identical sizes side by side read as one overlong block sliced in
             // half - the very look the shuffle is here to break. With more gaps than
             // palette entries the repeat itself is unavoidable, so it gets pushed
             // apart rather than removed: the second of the pair trades places with
             // the first later span that leaves neither of them beside its own size.
-            for (int k = 1; k < gaps; k++)
-            {
-                if (spans[k] != spans[k - 1]) continue;
-                for (int m = k + 1; m < gaps; m++)
+            if (randomiseBlockSizes)
+                for (int k = 1; k < free; k++)
                 {
-                    if (spans[m] == spans[k]) continue;                  // nothing gained
-                    if (m - 1 > k && spans[m - 1] == spans[k]) continue; // pair only moves
-                    if (m + 1 < gaps && spans[m + 1] == spans[k]) continue;
-                    (spans[k], spans[m]) = (spans[m], spans[k]);
-                    break;
+                    if (dealt[k] != dealt[k - 1]) continue;
+                    for (int m = k + 1; m < free; m++)
+                    {
+                        if (dealt[m] == dealt[k]) continue;                  // nothing gained
+                        if (m - 1 > k && dealt[m - 1] == dealt[k]) continue; // pair only moves
+                        if (m + 1 < free && dealt[m + 1] == dealt[k]) continue;
+                        (dealt[k], dealt[m]) = (dealt[m], dealt[k]);
+                        break;
+                    }
                 }
-            }
+            for (int k = 0; k < free; k++) spans[blockGaps[k]] = dealt[k];
 
             var line = new float[n];
             line[0] = Mathf.Round(authored[0] / Cell) * Cell;
@@ -1029,29 +1121,37 @@ namespace RoadDemo
 
         void FillVerticalSegment(int i, RoadNode a, RoadNode b)
         {
+            // a street that ends on the river or at the park lays nothing here: the
+            // junction caps at both ends already closed it (BuildNodeGeometry)
+            if (!SegmentOpen(true, i, a.J)) return;
+            // a boulevard over the river is a bridge: the same carriageway, but the
+            // sidewalks are the bridge kit's walkway-and-parapet, and the median
+            // carries no palms out over the water
+            bool bridge = IsBridge(true, i, a.J);
             float cx = verticalRoadX[i];
             bool blvd = verticalIsBoulevard[i];
             for (float mz = a.ZMax; mz < b.ZMin - 0.1f; mz += Cell)
             {
                 if (blvd)
                 {
-                    PlaceCellOnce(_swStraight, cx - 20f, mz, 90);
+                    if (!bridge) PlaceCellOnce(_swStraight, cx - 20f, mz, 90);
                     PlaceCellOnce(_laneEdge, cx - 15f, mz, 180);
                     PlaceCellOnce(_laneDash, cx - 10f, mz, 180);
                     PlaceCellOnce(_median, cx - 5f, mz, 180);
                     PlaceCellOnce(_median, cx, mz, 0);
                     PlaceCellOnce(_laneDash, cx + 5f, mz, 0);
                     PlaceCellOnce(_laneEdge, cx + 10f, mz, 0);
-                    PlaceCellOnce(_swStraight, cx + 15f, mz, 270);
+                    if (!bridge) PlaceCellOnce(_swStraight, cx + 15f, mz, 270);
                 }
                 else
                 {
-                    PlaceCellOnce(_swStraight, cx - 10f, mz, 90);
+                    if (!bridge) PlaceCellOnce(_swStraight, cx - 10f, mz, 90);
                     PlaceCellOnce(_roadWest, cx - 5f, mz, 0);
                     PlaceCellOnce(_roadEast, cx, mz, 0);
-                    PlaceCellOnce(_swStraight, cx + 5f, mz, 270);
+                    if (!bridge) PlaceCellOnce(_swStraight, cx + 5f, mz, 270);
                 }
             }
+            if (bridge) { DressBridge(true, i, a, b); return; }
 
             if (!blvd) return;
             int step = 0;
@@ -1078,29 +1178,32 @@ namespace RoadDemo
 
         void FillHorizontalSegment(int j, RoadNode a, RoadNode b)
         {
+            if (!SegmentOpen(false, j, a.I)) return;
+            bool bridge = IsBridge(false, j, a.I);
             float cz = horizontalRoadZ[j];
             bool blvd = horizontalIsBoulevard[j];
             for (float mx = a.XMax; mx < b.XMin - 0.1f; mx += Cell)
             {
                 if (blvd)
                 {
-                    PlaceCellOnce(_swStraight, mx, cz - 20f, 0);
+                    if (!bridge) PlaceCellOnce(_swStraight, mx, cz - 20f, 0);
                     PlaceCellOnce(_laneEdge, mx, cz - 15f, 90);
                     PlaceCellOnce(_laneDash, mx, cz - 10f, 90);
                     PlaceCellOnce(_median, mx, cz - 5f, 90);
                     PlaceCellOnce(_median, mx, cz, 270);
                     PlaceCellOnce(_laneDash, mx, cz + 5f, 270);
                     PlaceCellOnce(_laneEdge, mx, cz + 10f, 270);
-                    PlaceCellOnce(_swStraight, mx, cz + 15f, 180);
+                    if (!bridge) PlaceCellOnce(_swStraight, mx, cz + 15f, 180);
                 }
                 else
                 {
-                    PlaceCellOnce(_swStraight, mx, cz - 10f, 0);
+                    if (!bridge) PlaceCellOnce(_swStraight, mx, cz - 10f, 0);
                     PlaceCellOnce(_roadEast, mx, cz - 5f, 90);
                     PlaceCellOnce(_roadWest, mx, cz, 90);
-                    PlaceCellOnce(_swStraight, mx, cz + 5f, 180);
+                    if (!bridge) PlaceCellOnce(_swStraight, mx, cz + 5f, 180);
                 }
             }
+            if (bridge) { DressBridge(false, j, a, b); return; }
 
             if (!blvd) return;
             int step = 0;
@@ -1488,6 +1591,9 @@ namespace RoadDemo
                 Rect slab)>();
             for (int i = 0; i + 1 < verticalRoadX.Length; i++)
                 for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
+                {
+                    // the river and the park are not lots: BuildSeams lays them
+                    if (InSeam(i, j)) continue;
                     lots.Add((i, j,
                         verticalRoadX[i] + VHalf(i) + Cell,
                         verticalRoadX[i + 1] - VHalf(i + 1) - Cell,
@@ -1500,6 +1606,7 @@ namespace RoadDemo
                             horizontalRoadZ[j] + HHalf(j),
                             verticalRoadX[i + 1] - VHalf(i + 1),
                             horizontalRoadZ[j + 1] - HHalf(j + 1))));
+                }
 
             // biggest first, ties broken by position so the order never wobbles
             lots.Sort((a, b) =>
@@ -1894,25 +2001,32 @@ namespace RoadDemo
 
         void DressStreets()
         {
+            // a closed segment (a street ending on the river or at the park) has no
+            // sides to dress; a bridge dresses itself (DressBridge) - no palm grates
+            // out over the water
             for (int i = 0; i < verticalRoadX.Length; i++)
                 for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
                 {
+                    if (!SegmentOpen(true, i, j) || IsBridge(true, i, j)) continue;
                     var a = _nodes[i, j];
                     var b = _nodes[i, j + 1];
                     var start = new Vector3(verticalRoadX[i], 0f, a.ZMax);
                     float len = b.ZMin - a.ZMax;
-                    DressSide(start, Vector3.forward, len, Vector3.right, verticalIsBoulevard[i]);
-                    DressSide(start, Vector3.forward, len, Vector3.left, verticalIsBoulevard[i]);
+                    // an embankment road's water side is the promenade, dressed by the
+                    // river itself (BuildRiver): lamps at the coping, benches to the water
+                    if (!RiverBeside(true, i, +1)) DressSide(start, Vector3.forward, len, Vector3.right, verticalIsBoulevard[i]);
+                    if (!RiverBeside(true, i, -1)) DressSide(start, Vector3.forward, len, Vector3.left, verticalIsBoulevard[i]);
                 }
             for (int j = 0; j < horizontalRoadZ.Length; j++)
                 for (int i = 0; i + 1 < verticalRoadX.Length; i++)
                 {
+                    if (!SegmentOpen(false, j, i) || IsBridge(false, j, i)) continue;
                     var a = _nodes[i, j];
                     var b = _nodes[i + 1, j];
                     var start = new Vector3(a.XMax, 0f, horizontalRoadZ[j]);
                     float len = b.XMin - a.XMax;
-                    DressSide(start, Vector3.right, len, Vector3.forward, horizontalIsBoulevard[j]);
-                    DressSide(start, Vector3.right, len, Vector3.back, horizontalIsBoulevard[j]);
+                    if (!RiverBeside(false, j, +1)) DressSide(start, Vector3.right, len, Vector3.forward, horizontalIsBoulevard[j]);
+                    if (!RiverBeside(false, j, -1)) DressSide(start, Vector3.right, len, Vector3.back, horizontalIsBoulevard[j]);
                 }
 
             PowerlinePass();
@@ -1932,7 +2046,7 @@ namespace RoadDemo
                 // kerb strip: palms in pavement grates, street lamps, saplings
                 for (float t = 5f; t < len - 5f; t += 7f)
                 {
-                    var pos = At(t + Random.Range(-1.2f, 1.2f), half + 1.15f);
+                    var pos = At(t + Random.Range(-1.2f, 1.2f), half + 1.45f); // grate clear of the kerb stone, trunk clear of the walkers
                     float r = Random.value;
                     if (r < 0.4f && _grates.Count > 0 && _palms.Count > 0)
                     {
@@ -2046,6 +2160,7 @@ namespace RoadDemo
             for (int i = 0; i < verticalRoadX.Length; i++)
                 for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
                 {
+                    if (!SegmentOpen(true, i, j) || IsBridge(true, i, j)) continue;
                     var a = _nodes[i, j];
                     var b = _nodes[i, j + 1];
                     int count = verticalIsBoulevard[i] ? 3 : Random.Range(1, 3);
@@ -2061,6 +2176,7 @@ namespace RoadDemo
             for (int j = 0; j < horizontalRoadZ.Length; j++)
                 for (int i = 0; i + 1 < verticalRoadX.Length; i++)
                 {
+                    if (!SegmentOpen(false, j, i) || IsBridge(false, j, i)) continue;
                     var a = _nodes[i, j];
                     var b = _nodes[i + 1, j];
                     int count = horizontalIsBoulevard[j] ? 3 : Random.Range(1, 3);
@@ -2085,19 +2201,35 @@ namespace RoadDemo
 
             int nv = verticalRoadX.Length, nh = horizontalRoadZ.Length;
 
+            // one line per unbroken stretch of street: a street that ends on the
+            // river starts its poles again on the far bank, and no wire spans the water
             for (int i = 0; i < nv; i++)
             {
                 if (verticalIsBoulevard[i]) continue;
-                PoleRun(PoleSpots(_nodes[i, 0].ZMax + 2f, _nodes[i, nh - 1].ZMin - 2f,
-                                  z => InsideNodeZoneZ(i, z)),
-                        verticalRoadX[i] + StreetHalf + 4.3f, true);
+                int j = 0;
+                while (j + 1 < nh)
+                {
+                    if (!SegmentOpen(true, i, j)) { j++; continue; }
+                    int first = j;
+                    while (j + 1 < nh && SegmentOpen(true, i, j)) j++;
+                    PoleRun(PoleSpots(_nodes[i, first].ZMax + 2f, _nodes[i, j].ZMin - 2f,
+                                      z => InsideNodeZoneZ(i, z)),
+                            verticalRoadX[i] + StreetHalf + 4.3f, true);
+                }
             }
             for (int j = 0; j < nh; j++)
             {
                 if (horizontalIsBoulevard[j]) continue;
-                PoleRun(PoleSpots(_nodes[0, j].XMax + 2f, _nodes[nv - 1, j].XMin - 2f,
-                                  x => InsideNodeZoneX(j, x)),
-                        horizontalRoadZ[j] - StreetHalf - 4.3f, false);
+                int i = 0;
+                while (i + 1 < nv)
+                {
+                    if (!SegmentOpen(false, j, i)) { i++; continue; }
+                    int first = i;
+                    while (i + 1 < nv && SegmentOpen(false, j, i)) i++;
+                    PoleRun(PoleSpots(_nodes[first, j].XMax + 2f, _nodes[i, j].XMin - 2f,
+                                      x => InsideNodeZoneX(j, x)),
+                            horizontalRoadZ[j] - StreetHalf - 4.3f, false);
+                }
             }
         }
 
@@ -2213,6 +2345,7 @@ namespace RoadDemo
                 float limit = blvd ? boulevardSpeed : streetSpeed;
                 for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
                 {
+                    if (!SegmentOpen(true, i, j)) continue; // ends on the quay: no lane
                     var a = _nodes[i, j];
                     var b = _nodes[i, j + 1];
                     foreach (float off in LaneOffsets(blvd))
@@ -2231,6 +2364,7 @@ namespace RoadDemo
                 float limit = blvd ? boulevardSpeed : streetSpeed;
                 for (int i = 0; i + 1 < verticalRoadX.Length; i++)
                 {
+                    if (!SegmentOpen(false, j, i)) continue;
                     var a = _nodes[i, j];
                     var b = _nodes[i + 1, j];
                     foreach (float off in LaneOffsets(blvd))
@@ -2394,19 +2528,25 @@ namespace RoadDemo
                 }
 
             // the pavement down both sides of every segment, linking one
-            // intersection's corners to the next
+            // intersection's corners to the next - a closed segment has no pavement
+            // (its junctions were capped), a bridge's walkways are pavement like any
             for (int i = 0; i < nv; i++)
                 for (int j = 0; j + 1 < nh; j++)
                 {
+                    if (!SegmentOpen(true, i, j)) continue;
                     AddPedLink(_corners[i, j, NE], _corners[i, j + 1, SE], false, false, null);
                     AddPedLink(_corners[i, j, NW], _corners[i, j + 1, SW], false, false, null);
                 }
             for (int j = 0; j < nh; j++)
                 for (int i = 0; i + 1 < nv; i++)
                 {
+                    if (!SegmentOpen(false, j, i)) continue;
                     AddPedLink(_corners[i, j, NE], _corners[i + 1, j, NW], false, false, null);
                     AddPedLink(_corners[i, j, SE], _corners[i + 1, j, SW], false, false, null);
                 }
+
+            // the quays and the park paths: pavement of the seams' own
+            BuildSeamPaths();
         }
 
         // ------------------------------------------------------------- city life
@@ -2527,6 +2667,10 @@ namespace RoadDemo
                 var go = Instantiate(prefab, root);
                 foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
                 foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
+                // the crowd casts no shadow: a few pixels of shadow under three hundred
+                // walkers is four cascade passes of skinned meshes for nothing
+                foreach (var r in go.GetComponentsInChildren<Renderer>())
+                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
                 var agent = new CivilianAgent { Speed = Random.Range(1.25f, 1.85f) };
                 agent.Init(go.transform, clips, link, Random.value * link.Length * 0.9f);
@@ -2830,10 +2974,17 @@ namespace RoadDemo
                 }
                 strip.GetComponent<MeshRenderer>().sharedMaterial = mat;
             }
-            SandStrip(gx0 - Fringe, gx1 + Fringe, gz0 - Fringe, gz0);
-            SandStrip(gx0 - Fringe, gx1 + Fringe, gz1, gz1 + Fringe);
-            SandStrip(gx0 - Fringe, gx0, gz0, gz1);
-            SandStrip(gx1, gx1 + Fringe, gz0, gz1);
+            // the river runs on out of town: where it leaves the grid the fringe strip
+            // is cut and the water (BuildSeams lays it that far) shows through
+            void SandRun(float x0, float x1, float z0, float z1, bool alongX)
+            {
+                float from = alongX ? x0 : z0, to = alongX ? x1 : z1;
+                foreach (var (a, b) in SeamFreeRuns(from, to, alongX))
+                    if (alongX) SandStrip(a, b, z0, z1); else SandStrip(x0, x1, a, b);
+            }
+            // what lies past the grid on each side: plain sand, a skyline standing on
+            // more of it, or the harbour's water (RoadDemoBuilder.Edges.cs)
+            LayEdges(gx0, gx1, gz0, gz1, Fringe, SandRun);
 
             var sunGo = new GameObject("Sun");
             _sun = sunGo.AddComponent<Light>();
@@ -2861,7 +3012,8 @@ namespace RoadDemo
             // ear on the camera's FOCUS instead.
             var dc = camGo.AddComponent<DemoCamera>();
             dc.pivot = centre;
-            dc.distance = 190f;
+            // the boom the old four-by-three grid was framed at, stretched with the city
+            dc.distance = Mathf.Max(190f, 0.43f * Mathf.Max(maxX - minX, maxZ - minZ));
             dc.yaw = 33f;
             dc.pitch = 52f;
 
@@ -2948,6 +3100,9 @@ namespace RoadDemo
             headlights.clock = clock;
             foreach (var v in _vehicles)
                 headlights.Register(v.Tf, v.HalfLen);
+            foreach (var traffic in _highwayTraffic)
+                foreach (var car in traffic.Cars())
+                    headlights.Register(car, 2.3f);
 
             var barGo = new GameObject("TopBar");
             var bar = barGo.AddComponent<DemoTopBar>();

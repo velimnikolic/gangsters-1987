@@ -49,12 +49,19 @@ namespace RoadDemo
             Place();
         }
 
+        // scratch for PlanNext, shared: it is read out synchronously in PickNext, and
+        // two hundred cars entering junctions must not each hand the GC two lists
+        static readonly List<RoadEdge> Lefts = new List<RoadEdge>();
+        static readonly List<RoadEdge> Rights = new List<RoadEdge>();
+
         void PlanNext()
         {
             var node = _edge.To;
             RoadEdge straight = null;
-            var lefts = new List<RoadEdge>();
-            var rights = new List<RoadEdge>();
+            var lefts = Lefts;
+            var rights = Rights;
+            lefts.Clear();
+            rights.Clear();
             for (int i = 0; i < node.Outgoing.Count; i++)
             {
                 var e = node.Outgoing[i];
