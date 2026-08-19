@@ -38,6 +38,11 @@ namespace RoadDemo
         public Transform Tf;
         public float HalfLen = 2.3f;
         public float HalfWide = 0.95f;
+        /// <summary>Metres from the body's origin back to the rear axle: the point that
+        /// follows the line, the front swinging into the bend ahead of it (a car steers
+        /// with its front wheels). Unset: read as six tenths of the half length.</summary>
+        public float AxleBack = float.NaN;
+        float Axle => float.IsNaN(AxleBack) || AxleBack <= 0f ? HalfLen * 0.6f : Mathf.Min(AxleBack, HalfLen);
         /// <summary>The road surface's height: where the body sits.</summary>
         public float RoadY;
         public DriverProfile Profile = DriverProfile.Traffic;
@@ -302,6 +307,7 @@ namespace RoadDemo
             _goalStop = stopAtGoal || park;
             _goalLane = goalLane;
             _spotFrom = float.NaN;
+            _turnBackFor = 0f;
             if (park) ChooseKerbSpot();
             if (Parked) PullOut();
             Replan();
@@ -401,11 +407,17 @@ namespace RoadDemo
         // The route to the goal from wherever the car is now.
         float _retry;
 
+        float _turnBackFor;     // seconds spent looking for the turn-round on this road
+
         void Replan()
         {
             Route = null;
             if (!_hasGoal || Road == null) return;
             if (Road == _goalRoad && Heading == _goalHeading && (_goalS - S) * Heading > -3f) return; // straight down this road
+            // on the right road the wrong way round, or past the spot: the turn in the
+            // road is the way back when the driver may make one - the route round the
+            // block is only for failing that (TickRoad gives up on the turn near the junction)
+            if (Road == _goalRoad && Road.TwoWay && Profile.UTurnsInRoad && Road.MedianHalf <= 0f && _turnBackFor < 12f) return;
             Route = Net.RouteToward(_goalLane);
             _next = null; // think the next turn over again
             _committed = false;
@@ -448,6 +460,23 @@ namespace RoadDemo
             float v = Cruise();
             if (Sliding) v = Mathf.Min(v, LateralCap(_sLen, Mathf.Abs(_dTo - _dFrom)));
             bool hard = false;
+
+            // the right road, the wrong way: turn round here as soon as the sweep is clear
+            // (slowed right down for it); only near the junction, or after long enough,
+            // is the long way round taken instead
+            if (_hasGoal && road == _goalRoad && Heading != _goalHeading && _man != Manoeuvre.UTurn && Route == null &&
+                road.TwoWay && Profile.UTurnsInRoad && road.MedianHalf <= 0f)
+            {
+                _turnBackFor += dt;
+                v = Mathf.Min(v, Profile.UTurnSpeed + 2f);
+                _retry -= dt;
+                if (_retry <= 0f && _man == Manoeuvre.None)
+                {
+                    _retry = 0.3f;
+                    if (!TryUTurn() && (toEnd < 22f || _turnBackFor > 12f)) { _turnBackFor = 99f; Replan(); }
+                }
+            }
+            else _turnBackFor = 0f;
 
             // the goal on this road
             if (_hasGoal && road == _goalRoad && Heading == _goalHeading && _man != Manoeuvre.UTurn)
@@ -566,8 +595,10 @@ namespace RoadDemo
                 else v = Mathf.Min(v, Follow(vLead, gap));
                 // something stood at the kerb or dead in the road that we mean to go round:
                 // held back far enough that the swing out is still possible from here
-                if ((leader.Parked || leader.Car == null) && !leader.Moving && !IsOurParkingSpot(leader) && !Sliding && _man == Manoeuvre.None)
-                    v = Mathf.Min(v, Allowed(0f, gap - PassHoldBack));
+                bool queue = leader.Car != null && leader.Car.InQueue && !Profile.RunsRed;
+                bool roundIt = leader.Parked || leader.Car == null || (Profile.Patience <= 1f && !queue);
+                if (roundIt && !leader.Moving && !IsOurParkingSpot(leader) && !Sliding && _man == Manoeuvre.None)
+                    v = Mathf.Min(v, Allowed(0f, gap - (leader.Parked ? KerbHoldBack : PassHoldBack)));
             }
             _blocker = leader;
             InQueue = heldByNode || (leader != null && leader.Car != null && leader.Car.InQueue && !leader.Moving);
@@ -671,11 +702,26 @@ namespace RoadDemo
         /// <summary>A derived driver's last word on the target speed.</summary>
         protected virtual float LimitTarget(float target) => target;
 
+        // The body's pose from the line it is on. The REAR AXLE is the point that
+        // follows the line - where it is, which way the line runs there - and the
+        // body's centre rides the axle's length ahead of it along the heading: the nose
+        // points into a bend before the body has moved across, the tail follows, the
+        // way a front-steered car goes (no crabbing sideways into a lane).
         void Pose(out Vector3 pos, out Vector3 fwd)
         {
+            float a = Axle;
             if (Via != null)
             {
-                Via.Pose(ViaS, out pos, out fwd);
+                Vector3 axle;
+                float sa = ViaS - a;
+                if (sa >= 0f) Via.Pose(sa, out axle, out fwd);
+                else
+                {
+                    // the axle still on the lane behind the box
+                    axle = Via.Pts[0] + Via.From.Dir * sa;
+                    fwd = Via.From.Dir;
+                }
+                pos = axle + fwd * a;
                 if (Mathf.Abs(_viaD0) > 0.01f)
                 {
                     float t = Mathf.Clamp01(ViaS / Mathf.Max(1f, Via.Length * 0.6f));
@@ -686,19 +732,42 @@ namespace RoadDemo
             }
             if (_man == Manoeuvre.UTurn)
             {
-                // on the arc about (arcS0, 0): s = s0 + h r sin a, d = side r cos a
-                float s = _arcS0 + _arcHeading0 * _arcR * Mathf.Sin(_arcAng);
-                float d = _arcSide * _arcR * Mathf.Cos(_arcAng);
-                pos = Road.Pose(s, d);
-                var tan = Road.Axis * (_arcHeading0 * Mathf.Cos(_arcAng)) + Road.Right * (-_arcSide * Mathf.Sin(_arcAng));
-                fwd = tan.normalized;
+                // the axle on the arc about (arcS0, 0), a little behind the body's angle
+                float angBack = _arcAng - a / _arcR;
+                Vector3 axle;
+                if (angBack >= 0f)
+                {
+                    axle = Road.Pose(_arcS0 + _arcHeading0 * _arcR * Mathf.Sin(angBack), _arcSide * _arcR * Mathf.Cos(angBack));
+                    var tan = Road.Axis * (_arcHeading0 * Mathf.Cos(angBack)) + Road.Right * (-_arcSide * Mathf.Sin(angBack));
+                    fwd = tan.normalized;
+                }
+                else
+                {
+                    // not yet into the arc: the axle on the straight behind its start
+                    axle = Road.Pose(_arcS0 + _arcHeading0 * _arcR * angBack, _arcSide * _arcR);
+                    fwd = Road.Axis * _arcHeading0;
+                }
+                pos = axle + fwd * a;
                 return;
             }
-            pos = Road.Pose(S, D);
-            float slope = Sliding ? LateralSlope(S) : 0f;
-            var f = Road.Axis * Heading + Road.Right * (slope * Heading);
-            fwd = f.normalized;
-            if (_man == Manoeuvre.Reverse) { /* facing forward still */ }
+            {
+                float sa = S - Heading * a;
+                float da = LateralValue(sa);
+                float slope = Sliding ? LateralSlope(sa) : 0f;
+                var f = Road.Axis * Heading + Road.Right * (slope * Heading);
+                fwd = f.normalized;
+                pos = Road.Pose(sa, da) + fwd * a;
+            }
+        }
+
+        // The lateral position the line has at s, read without moving anything.
+        float LateralValue(float s)
+        {
+            if (!Sliding) return D;
+            float p = (s - _sFrom) * Heading / _sLen;
+            if (p >= 1f) return _dTo;
+            if (p <= 0f) return _dFrom;
+            return Mathf.Lerp(_dFrom, _dTo, Mathf.SmoothStep(0f, 1f, p));
         }
 
         // ------------------------------------------------------------------ lateral
@@ -750,7 +819,8 @@ namespace RoadDemo
         float BodyLo() => D - HalfWide;
         float BodyHi() => D + HalfWide;
         const float SideAir = 0.3f;   // metres of air the car wants off anything it passes
-        float PassHoldBack => SlideLength(1.2f, 0f) + 2.5f;   // metres kept back from something to be gone round
+        float PassHoldBack => SlideLength(5f, 0f) + 2f;       // metres kept back from something stood in the lane: room to swing right across
+        float KerbHoldBack => SlideLength(1.2f, 0f) + 2.5f;   // and from a car at the kerb: room for the little swing round it
         float BandLo() => (Sliding ? Mathf.Min(D, _dTo) : D) - HalfWide - SideAir;
         float BandHi() => (Sliding ? Mathf.Max(D, _dTo) : D) + HalfWide + SideAir;
 

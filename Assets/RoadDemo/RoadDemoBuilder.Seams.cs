@@ -664,12 +664,23 @@ namespace RoadDemo
         /// <summary>The elevated deck's road surface above the street.</summary>
         const float DeckY = 9f;
 
+        /// <summary>The deck's level once it has come down off the pillars, out of
+        /// town: just proud of the island's plain, an embankment rather than a bridge.</summary>
+        const float GradeY = 0.45f;
+
+        /// <summary>Metres the ramp takes to come down from the deck to the grade -
+        /// about a four-degree descent, which is what a freeway takes.</summary>
+        const float RampRun = 130f;
+
         // An elevated freeway down the strip: two decks side by side on pillars, one
         // for each direction, running out past the grid both ways; every road of the
         // grid passes under it. The ground beneath is what such ground is - worn
         // asphalt behind chain-link, a fence along both sides of every reach between
-        // the crossing roads. Its own traffic runs on it (HighwayTraffic): cars that
-        // never leave the deck, wrapping round out of sight in the fringe.
+        // the crossing roads. Past the last junction the deck ramps DOWN: out of town
+        // it runs at grade over the island's ground - the hills held off it - and on
+        // out over the water to the mainland off-stage. Its own traffic runs on it
+        // (HighwayTraffic): cars that never leave the deck, following the ramps,
+        // wrapping round out of sight in the fringe.
         void BuildHighway(Seam s)
         {
             bool alongZ = s.vertical;
@@ -680,6 +691,34 @@ namespace RoadDemo
             float uMax = ext.hi + (alongZ ? islandNorth : islandEast) + 160f;
             float mid = (edgeLo + edgeHi) * 0.5f;
             Vector3 W(float u, float v, float y) => alongZ ? new Vector3(v, y, u) : new Vector3(u, y, v);
+
+            // the deck's height along its run: full height over the grid and a step
+            // past it, then down the ramp, then at grade all the way off-stage
+            float loTop = ext.lo - 25f, hiTop = ext.hi + 25f;
+            float DeckHeight(float u)
+            {
+                if (u >= loTop && u <= hiTop) return DeckY;
+                float off = u < loTop ? loTop - u : u - hiTop;
+                return Mathf.Lerp(DeckY, GradeY, Mathf.Clamp01(off / RampRun));
+            }
+
+            // the ground where the ramps land: held dead flat and bare, so each ramp's
+            // foot meets a level shoulder. The rest of the grade-level run needs no
+            // rectangle - the island's own hills part around the freeway's corridor
+            // (IslandHeight fades them out across it) and the shore takes over at the
+            // coast, the deck flying the last reach out over the beach and the water.
+            float shoulder = (edgeHi - edgeLo) * 0.5f + 9f;
+            float rampLo = loTop - RampRun - 40f, rampHi = hiTop + RampRun + 40f;
+            {
+                var r = alongZ ? Rect.MinMaxRect(mid - shoulder, rampLo, mid + shoulder, ext.lo)
+                               : Rect.MinMaxRect(rampLo, mid - shoulder, ext.lo, mid + shoulder);
+                _reservations.Level(r, 0f);
+                _reservations.NoFlora(r);
+                r = alongZ ? Rect.MinMaxRect(mid - shoulder, ext.hi, mid + shoulder, rampHi)
+                           : Rect.MinMaxRect(ext.hi, mid - shoulder, rampHi, mid + shoulder);
+                _reservations.Level(r, 0f);
+                _reservations.NoFlora(r);
+            }
 
             // the ground under the deck, reach by reach between the crossing roads
             int roads = alongZ ? horizontalRoadZ.Length : verticalRoadX.Length;
@@ -721,27 +760,34 @@ namespace RoadDemo
             {
                 for (float u = uMin; u < uMax - 0.1f; u += DeckLen)
                 {
+                    // each piece is a straight chord of the height profile: both of its
+                    // ends sit ON the profile, so neighbours always meet, and on the
+                    // ramp the pieces pitch nose-down toward the grade
+                    float h0 = DeckHeight(u), h1 = DeckHeight(u + DeckLen);
+                    float pitch = Mathf.Atan2(h0 - h1, DeckLen) * Mathf.Rad2Deg;
                     if (alongZ)
                     {
-                        Instantiate(_highwayDeck, new Vector3(mid - DeckHalf + 5f, DeckY, u), Quaternion.identity, SeamsRoot).name = "Deck";
-                        Instantiate(_highwayDeck, new Vector3(mid + DeckHalf - 5f, DeckY, u + DeckLen), Quaternion.Euler(0f, 180f, 0f), SeamsRoot).name = "Deck";
+                        Instantiate(_highwayDeck, new Vector3(mid - DeckHalf + 5f, h0, u), Quaternion.Euler(pitch, 0f, 0f), SeamsRoot).name = "Deck";
+                        Instantiate(_highwayDeck, new Vector3(mid + DeckHalf - 5f, h1, u + DeckLen), Quaternion.Euler(-pitch, 180f, 0f), SeamsRoot).name = "Deck";
                     }
                     else
                     {
                         // yaw 90: local +Z -> +X (along u), local +X -> -Z: the -10.7..0.7 spread lands
                         // at z in [pz - 0.7, pz + 10.7]; yaw -90: local +Z -> -X, +X -> +Z
-                        Instantiate(_highwayDeck, new Vector3(u, DeckY, mid + DeckHalf - 5f), Quaternion.Euler(0f, 90f, 0f), SeamsRoot).name = "Deck";
-                        Instantiate(_highwayDeck, new Vector3(u + DeckLen, DeckY, mid - DeckHalf + 5f), Quaternion.Euler(0f, -90f, 0f), SeamsRoot).name = "Deck";
+                        Instantiate(_highwayDeck, new Vector3(u, h0, mid + DeckHalf - 5f), Quaternion.Euler(pitch, 90f, 0f), SeamsRoot).name = "Deck";
+                        Instantiate(_highwayDeck, new Vector3(u + DeckLen, h1, mid - DeckHalf + 5f), Quaternion.Euler(-pitch, -90f, 0f), SeamsRoot).name = "Deck";
                     }
                 }
             }
             // a pier under the middle of the twin deck every 20 m, its T-head across
-            // the strip; the pillar hangs 16 m below its pivot, so its foot is buried
+            // the strip; the pillar hangs 16 m below its pivot, so its foot is buried.
+            // None once the ramp is down near the grade: an embankment needs no piers.
             if (_highwayPillar != null)
             {
                 var rot = alongZ ? Quaternion.identity : Quaternion.Euler(0f, 90f, 0f);
                 for (float u = uMin + DeckLen * 0.5f; u < uMax; u += DeckLen)
                 {
+                    if (DeckHeight(u) < 3.5f) continue;
                     // never in a road: a pier standing in a carriageway is a wreck waiting
                     bool inRoad = false;
                     for (int r = 0; r < roads; r++)
@@ -751,11 +797,11 @@ namespace RoadDemo
                         if (Mathf.Abs(u - c) < h + 2f) inRoad = true;
                     }
                     if (inRoad) continue;
-                    Prop(_highwayPillar, W(u, mid, DeckY), rot.eulerAngles.y, SeamsRoot).name = "Pier";
+                    Prop(_highwayPillar, W(u, mid, DeckHeight(u)), rot.eulerAngles.y, SeamsRoot).name = "Pier";
                 }
             }
 
-            // the through traffic
+            // the through traffic, riding the same height profile down the ramps
             if (_carPrefabs.Count > 0)
             {
                 var traffic = SeamsRoot.gameObject.AddComponent<HighwayTraffic>();
@@ -770,8 +816,8 @@ namespace RoadDemo
                             Direction = alongZ ? (side < 0f ? -1f : 1f) : (side < 0f ? 1f : -1f),
                         });
                 int cars = Mathf.Max(6, Mathf.RoundToInt((uMax - uMin) / 45f));
-                traffic.Init(alongZ, uMin, uMax, DeckY + 0.02f, lanes, cars, _carPrefabs, _cars,
-                    _pedPrefabs, _sitLoopClip, CrowdLayer);
+                traffic.Init(alongZ, uMin, uMax, 0.02f, lanes, cars, _carPrefabs, _cars,
+                    _pedPrefabs, _sitLoopClip, CrowdLayer, DeckHeight);
                 _highwayTraffic.Add(traffic);
             }
         }
@@ -898,17 +944,20 @@ namespace RoadDemo
         bool _alongZ;
         float _uMin, _uMax, _y;
         List<Lane> _lanes;
+        System.Func<float, float> _deckAt;
         readonly List<Car> _cars = new List<Car>();
 
         public void Init(bool alongZ, float uMin, float uMax, float y, List<Lane> lanes, int count,
             List<GameObject> prefabs, Transform parent,
-            IList<GameObject> people = null, AnimationClip sitLoop = null, int peopleLayer = -1)
+            IList<GameObject> people = null, AnimationClip sitLoop = null, int peopleLayer = -1,
+            System.Func<float, float> deckAt = null)
         {
             _alongZ = alongZ;
             _uMin = uMin;
             _uMax = uMax;
             _y = y;
             _lanes = lanes;
+            _deckAt = deckAt;
             float length = uMax - uMin;
             for (int k = 0; k < count; k++)
             {
@@ -954,9 +1003,17 @@ namespace RoadDemo
         {
             var c = _cars[k];
             var lane = _lanes[c.Lane];
-            Vector3 pos = _alongZ ? new Vector3(lane.Across, _y, c.U) : new Vector3(c.U, _y, lane.Across);
+            // the deck's height under the car, and its slope for the nose to follow
+            float deck = _deckAt != null ? _deckAt(c.U) : 0f;
+            float pitch = 0f;
+            if (_deckAt != null)
+            {
+                float slope = (_deckAt(c.U + 3f) - _deckAt(c.U - 3f)) / 6f;
+                pitch = -Mathf.Atan(slope * lane.Direction) * Mathf.Rad2Deg;
+            }
+            Vector3 pos = _alongZ ? new Vector3(lane.Across, _y + deck, c.U) : new Vector3(c.U, _y + deck, lane.Across);
             float yaw = _alongZ ? (lane.Direction > 0f ? 0f : 180f) : (lane.Direction > 0f ? 90f : 270f);
-            c.Tf.SetPositionAndRotation(pos, Quaternion.Euler(0f, yaw, 0f));
+            c.Tf.SetPositionAndRotation(pos, Quaternion.Euler(pitch, yaw, 0f));
         }
 
         /// <summary>The cars, for the headlights.</summary>

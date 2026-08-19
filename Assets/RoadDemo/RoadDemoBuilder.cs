@@ -31,12 +31,13 @@ namespace RoadDemo
         //
         // The default plan is a city of some ninety blocks in a dozen districts:
         // west to east, four columns of blocks, a park, five columns, a wild strip,
-        // four more columns; south to north, three rows, the river, three rows, a
-        // second park, one more row. Vertical roads 1, 5, 8, 11 and 14 are boulevards
-        // (5 the first park's east edge, 11 the wild strip's, all bridging the
-        // river); horizontal 1, 5 and 8 cross the halves. (An elevated highway is a
-        // seam kind too, but a freeway from nowhere to nowhere on an island is not
-        // in the plan for now.)
+        // one more column, the elevated freeway, two last columns; south to north,
+        // three rows, the river, three rows, a second park, one more row. Vertical
+        // roads 1, 5, 8, 11 and 14 are boulevards (5 the first park's east edge, 11
+        // the wild strip's, all bridging the river); horizontal 1, 5 and 8 cross the
+        // halves. The freeway rides over every street on pillars, ramps down past
+        // the last junction and runs out at grade across the island both ways -
+        // the road between the mainland off-stage and everything on the island.
         public float[] verticalRoadX =
             { 0f, 100f, 200f, 300f, 400f, 500f, 600f, 700f, 800f, 900f, 1000f, 1100f, 1200f, 1300f, 1400f, 1500f };
         public bool[] verticalIsBoulevard =
@@ -56,6 +57,7 @@ namespace RoadDemo
             new Seam { vertical = true, gap = 4, kind = SeamKind.Park, width = 60f },
             new Seam { vertical = true, gap = 10, kind = SeamKind.Wild, width = 80f },
             new Seam { vertical = false, gap = 7, kind = SeamKind.Park, width = 60f },
+            new Seam { vertical = true, gap = 12, kind = SeamKind.Highway, width = 30f },
         };
 
         [Header("Block sizes")]
@@ -3236,7 +3238,7 @@ namespace RoadDemo
             var camGo = new GameObject("Demo Camera") { tag = "MainCamera" };
             var cam = camGo.AddComponent<Camera>();
             cam.fieldOfView = 45f;
-            cam.farClipPlane = 1600f;
+            cam.farClipPlane = 2200f;   // the island grew: the far shore must still draw
             // only what is worth drawing at the distance: the small stuff, the crowd
             // and the trees drop out past their ranges (AssignCullLayers puts them on
             // the layers) - a bin at four hundred metres is not a pixel

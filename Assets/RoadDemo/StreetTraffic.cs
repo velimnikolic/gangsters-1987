@@ -90,7 +90,7 @@ namespace RoadDemo
                     var car = new Car
                     {
                         Tf = go.transform, Body = body, HalfLen = body.HalfLength, HalfWide = body.HalfWidth,
-                        RoadY = roadY, Net = net, Profile = DriverProfile.Traffic,
+                        AxleBack = body.AxleBack, RoadY = roadY, Net = net, Profile = DriverProfile.Traffic,
                     };
                     // the body is measured first (CarBody reads the renderers); then the driver
                     CarOccupant.Crew(go.transform, people, sitLoop, passengerChance: 0.3f);

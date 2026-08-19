@@ -19,15 +19,37 @@ namespace AirportDemo.EditorTools
     /// this only brings the newcomer into line. Re-importing the package puts the
     /// Standard shader back; run the menu item again if that happens.
     ///
-    /// Only the shader is touched. Which prefabs the project actually uses out of
-    /// this pack is a separate rule, and a narrow one: the aircraft, and nothing else
-    /// (see the note at the top of AirportKit).
+    /// It also softens the aircraft. The pack imports its models with the hard
+    /// normals baked into the FBX, so every facet of a fuselage reads as a facet; the
+    /// Synty models in this project are all imported with calculated normals instead,
+    /// which rounds a low-poly shape off without adding a triangle to it. Only the
+    /// aircraft are touched, because they are the only thing out of this pack the
+    /// project uses (see the note at the top of AirportKit) - and re-importing a
+    /// pack's characters is a good way to disturb rigs nobody asked about.
     /// </summary>
     public static class SimpleAirportUrp
     {
         const string PackDir = "Assets/SimpleAirport";
+        const string AircraftDir = PackDir + "/Models";
         const string MarkerPath = "Assets/CityKit/Airport/SimpleAirportUrpVersion.txt";
-        const int Version = 1;
+        // v1: materials onto URP.  v2: the aircraft imported with calculated normals
+        const int Version = 2;
+
+        /// <summary>How far two facets may lean apart and still be smoothed together.
+        /// Sixty degrees rounds a fuselage barrel and a nose cone off while leaving a
+        /// wing's leading edge and the creases of a tail crisp - the two faces of a
+        /// thin wing are nearly back to back, which is far outside it.</summary>
+        const float SmoothingAngle = 60f;
+
+        /// <summary>The models the project flies. Nothing else in the pack is used, so
+        /// nothing else is re-imported.</summary>
+        static readonly string[] AircraftModels =
+        {
+            "Jet01", "Jet02", "Jet03", "Jet04", "Jet05",
+            "Plane01", "Plane02", "Plane03", "Plane_Propellor01",
+            "Small_Plane01", "Small_Plane02", "Small_Plane03", "Small_Plane04",
+            "Small_Heli01", "Small_Heli02", "Small_Heli03",
+        };
 
         [MenuItem("Tools/City/Catalog/Convert Simple Airport To URP", priority = 7)]
         public static void ForceConvert()
@@ -35,6 +57,10 @@ namespace AirportDemo.EditorTools
             AssetDatabase.DeleteAsset(MarkerPath);
             ConvertIfStale();
         }
+
+        /// <summary>Just the normals, for trying the smoothing angle out.</summary>
+        [MenuItem("Tools/City/Catalog/Smooth Simple Airport Aircraft", priority = 8)]
+        public static void ForceSmooth() => SmoothAircraft();
 
         public static bool IsFresh()
         {
@@ -47,6 +73,35 @@ namespace AirportDemo.EditorTools
             if (IsFresh()) return;
             if (!AssetDatabase.IsValidFolder(PackDir)) return;   // the pack is not installed
             Convert();
+            SmoothAircraft();
+        }
+
+        /// <summary>Re-imports the aircraft with calculated normals, which is what
+        /// rounds a faceted low-poly aeroplane off. The geometry is untouched - only
+        /// how it is lit.</summary>
+        static void SmoothAircraft()
+        {
+            int done = 0, already = 0;
+            foreach (var model in AircraftModels)
+            {
+                var path = $"{AircraftDir}/{model}.fbx";
+                var importer = AssetImporter.GetAtPath(path) as ModelImporter;
+                if (importer == null) continue;
+                if (importer.importNormals == ModelImporterNormals.Calculate &&
+                    Mathf.Approximately(importer.normalSmoothingAngle, SmoothingAngle))
+                {
+                    already++;
+                    continue;
+                }
+                importer.importNormals = ModelImporterNormals.Calculate;
+                importer.normalSmoothingAngle = SmoothingAngle;
+                importer.weldVertices = true;   // nothing is smoothed across split vertices
+                importer.SaveAndReimport();
+                done++;
+            }
+            if (done > 0 || already > 0)
+                Debug.Log($"[SimpleAirportUrp] {done} aircraft re-imported with normals calculated at {SmoothingAngle:F0} degrees " +
+                          $"({already} already were) - which is what rounds the faceting off them.");
         }
 
         static void Convert()

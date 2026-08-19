@@ -35,6 +35,12 @@ namespace RoadDemo
         /// against.</summary>
         public float Radius => _radius;
 
+        /// <summary>Where the rear and front hubs sit along the body (its own z), for
+        /// whoever steers it: the rear axle is what follows a path, the front swings.
+        /// NaN without wheels.</summary>
+        public float RearAxle { get; private set; } = float.NaN;
+        public float FrontAxle { get; private set; } = float.NaN;
+
         /// <summary>The wheel parts of a body, and which of them steer: the packs name
         /// them Wheel_fl / Wheel_LF / Wheel_rl_01 - an f in the side token is a front
         /// wheel, and a name that says nothing is judged by where it sits.</summary>
@@ -43,6 +49,7 @@ namespace RoadDemo
             _wheels.Clear();
             _steerShown = 0f;
             float radius = 0f, front = float.MinValue, back = float.MaxValue;
+            RearAxle = FrontAxle = float.NaN;
 
             foreach (var t in body.GetComponentsInChildren<Transform>(true))
             {
@@ -80,6 +87,7 @@ namespace RoadDemo
             }
 
             _radius = Mathf.Max(0.2f, radius);
+            if (_wheels.Count > 0) { RearAxle = back; FrontAxle = front; }
         }
 
         /// <summary>Rolling with the road, the front pair turned into the corner.</summary>

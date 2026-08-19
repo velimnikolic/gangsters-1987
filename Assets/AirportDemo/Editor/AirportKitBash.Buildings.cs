@@ -8,10 +8,16 @@ namespace AirportDemo.EditorTools
     // the kerb with the turn).
     //
     // The sheds are the gang pack's industrial shell on its 3 m module, two or three
-    // courses of wall high, closed with a generated gable roof in the same atlas as
-    // the walls; the terminal, the tower's shaft, the FBO and the gatehouse are the
-    // Generic Base kit on its 2.5 m module with the Plaza's glass for the glazing.
-    // The two modules are never mixed in one wall.
+    // courses of wall high, closed with a generated gable roof; the terminal, the
+    // tower's shaft, the FBO and the gatehouse are the Generic Base kit on its 2.5 m
+    // module with the Plaza's glass for the glazing. The two modules are never mixed
+    // in one wall.
+    //
+    // The pack pieces wear the pack's atlas material; anything generated here wears a
+    // flat colour instead. That is not a style choice - a Synty atlas is one texture
+    // page shared by a whole pack, and a mesh whose UVs run over its own surface in
+    // metres tiles the entire page across itself. See the note on paint in
+    // AirportKitBash.cs.
     public static partial class AirportKitBash
     {
         const float MetalModule = 3f;       // measured: SM_Bld_Wall_Metal_01 is 3.00 x 3.13
@@ -96,7 +102,7 @@ namespace AirportDemo.EditorTools
                 Slab(t, "door rail", new Vector3(0f, h - 0.12f, hz + 0.34f), new Vector3(w + 3.5f, 0.16f, 0.16f), Steel);
             }
 
-            Gable(t, "roof", -hx, hx, -hz, hz, h, 2.0f, Metal);
+            Gable(t, "roof", -hx, hx, -hz, hz, h, 2.0f, RoofMetal);
             // the ridge vent every metal shed carries
             Slab(t, "ridge", new Vector3(0f, h + 2.05f, 0f), new Vector3(w * 0.7f, 0.3f, 1.1f), Steel);
             Bake(root, closed ? "airport-hangar-box" : "airport-hangar-box-open");
@@ -137,9 +143,13 @@ namespace AirportDemo.EditorTools
             Slab(t, "lean-to roof", new Vector3(hx + lw * 0.5f, 3.35f, 0f), new Vector3(lw + 0.5f, 0.2f, d * 0.6f + 0.5f), Steel);
             Put(t, AirportKit.MetalManDoor, new Vector3(hx + lw - 0.1f, 0f, -2f), 90f);
 
-            Gable(t, "roof", -hx, hx, -hz, hz, h, 3.0f, Metal);
-            for (int i = -1; i <= 1; i++)
-                Slab(t, "roof light", new Vector3(i * 9f, h + 1.6f, 0f), new Vector3(5f, 0.12f, 3f), Glass ?? White);
+            Gable(t, "roof", -hx, hx, -hz, hz, h, 3.0f, RoofMetal);
+            // a raised lantern along the ridge, which is how a workshop this deep is
+            // daylit - the old roof lights sat INSIDE the roof, where nothing could
+            // ever see them
+            Slab(t, "ridge lantern", new Vector3(0f, h + 3.1f, 0f), new Vector3(w * 0.55f, 0.9f, 3.2f), RoofMetal);
+            for (int s = -1; s <= 1; s += 2)
+                Slab(t, "lantern glazing", new Vector3(0f, h + 3.1f, s * 1.62f), new Vector3(w * 0.5f, 0.55f, 0.06f), Glass);
             Bake(root, "airport-hangar-maint");
         }
 
@@ -163,7 +173,7 @@ namespace AirportDemo.EditorTools
                 WallRun(t, AirportKit.MetalWall, new Vector3(-hx + 7.5f, 0f, hz), new Vector3(hx - 7.5f, 0f, hz), inside, y, Metal);
                 WallRun(t, AirportKit.MetalWall, new Vector3(hx - 1.5f, 0f, hz), new Vector3(hx, 0f, hz), inside, y, Metal);
             }
-            Gable(t, "roof", -hx, hx, -hz, hz, h, 1.6f, Metal);
+            Gable(t, "roof", -hx, hx, -hz, hz, h, 1.6f, RoofMetal);
             // the hose tower, and the red band a fire station wears
             Slab(t, "hose tower", new Vector3(hx - 2f, 4.5f, -hz + 2f), new Vector3(3.4f, 9f, 3.4f), Plaster);
             Slab(t, "tower cap", new Vector3(hx - 2f, 9.1f, -hz + 2f), new Vector3(3.8f, 0.25f, 3.8f), Steel);
@@ -190,7 +200,7 @@ namespace AirportDemo.EditorTools
                 WallRun(t, AirportKit.MetalWall, new Vector3(-hx, 0f, hz), new Vector3(-6f, 0f, hz), inside, y, Metal);
                 WallRun(t, AirportKit.MetalWall, new Vector3(6f, 0f, hz), new Vector3(hx, 0f, hz), inside, y, Metal);
             }
-            Gable(t, "roof", -hx, hx, -hz, hz, h, 1.8f, Metal);
+            Gable(t, "roof", -hx, hx, -hz, hz, h, 1.8f, RoofMetal);
             // the dock on the landside, with its two roller doors and a canopy
             var dock = Put(t, AirportKit.LoadingDock, new Vector3(-3f, 0f, -hz), 180f);
             if (dock != null) Paint(dock, Concrete);
@@ -329,7 +339,7 @@ namespace AirportDemo.EditorTools
             if (cab == null)
             {
                 // no prison pack: a glazed box of our own rather than a headless tower
-                Slab(t, "cab", new Vector3(0f, shaftTop + 1.9f, 0f), new Vector3(6.2f, 3.2f, 6.2f), Glass ?? White);
+                Slab(t, "cab", new Vector3(0f, shaftTop + 1.9f, 0f), new Vector3(6.2f, 3.2f, 6.2f), Glass);
                 Slab(t, "cab roof", new Vector3(0f, shaftTop + 3.7f, 0f), new Vector3(7f, 0.35f, 7f), Steel);
             }
             float cabTop = shaftTop + 4.7f;

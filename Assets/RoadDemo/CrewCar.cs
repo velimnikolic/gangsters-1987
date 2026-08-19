@@ -50,7 +50,7 @@ namespace RoadDemo
         /// way at once. The arena sets it each frame; a drive-by is hot on its own.</summary>
         public bool Hot;
 
-        const float PassOvershoot = 30f;    // metres past the target before the turn-round
+        const float PassOvershoot = 22f;    // metres past the target before the turn-round
 
         int _passDir = 1;
 
@@ -70,6 +70,7 @@ namespace RoadDemo
             Body = new CarBody(tf);
             HalfLen = Body.HalfLength;
             HalfWide = Body.HalfWidth;
+            AxleBack = Body.AxleBack;
             Net ??= LaneNet.Active;
             PlaceAt(tf.position, tf.forward);
         }
@@ -189,8 +190,9 @@ namespace RoadDemo
             }
             var road = Net.Locate(t, out float ts, out float td, within: 14f);
             if (road == null) { ParkNear(t); return; }
-            // which way along the target's road this pass runs
-            int dir = Road == road ? Heading : _passDir;
+            // which way along the target's road this pass runs: on it already, the way
+            // the passes alternate; coming from elsewhere, the lane on the mark's side
+            int dir = Road == road ? _passDir : (td >= 0f ? 1 : -1);
             float endS = Mathf.Clamp(ts + dir * PassOvershoot, 8f, road.Length - 8f);
             var lane = road.LaneFor(dir, td) ?? road.LaneFor(-dir, td);
             if (lane == null) { ParkNear(t); return; }

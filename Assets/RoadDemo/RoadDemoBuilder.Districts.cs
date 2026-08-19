@@ -276,6 +276,10 @@ namespace RoadDemo
                 ReserveCorridor(faceWorld, world);
                 WeldRoads(cityNode, portal, faceWorld, world, frame);
                 WeldPavement(cityNode, portal, slot);
+
+                // the first road out to each quarter gets a filling station halfway,
+                // now that halfway is a real drive through the wild
+                if (p == 0) WaysideStation(faceWorld, world, slot);
             }
         }
 

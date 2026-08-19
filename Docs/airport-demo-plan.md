@@ -604,3 +604,47 @@ Menjaju se materijali **samog paketa**, ne kopije — magenta paket je pokvaren 
 dotakne, uključujući njegovu demo scenu, a Synty paketi u projektu su ionako već URP.
 **Reimport paketa vraća Standard** → pustiti meni ponovo. Uz to, `MakePlane` u runtime-u
 loguje upozorenje ako naiđe na materijal van URP-a, da se sledeći put ne pogađa.
+
+### 11.2 Providni krovovi hangara i zaobljenje aviona
+
+**Krovovi.** `AirportKitBash.Gable` je namotavao trouglove **suprotno** od svega ostalog u
+projektu. Konvencija (`Slab`, `FlatPlane`, `Painter`): quad `a,b,c,d` → trouglovi `(a,c,b)` i
+`(a,d,c)`, spoljna normala = `cross(c−a, b−a)`; provereno na podu koji se vidi. Gable je radio
+`(a,b,c)`/`(a,c,d)`, pa je **svako lice krova gledalo nadole** i backface culling ga je brisao
+iz pogleda odozgo — hangari, vatrogasna i teretna hala bili su bez krova. Ispravljeno; pet lica
+(dve strane, dva zabata, potkrovna ploča) su provereni računski da gledaju napolje.
+`AirportKitBash.Version` → **3**, pa se kit peče iznova.
+
+**Zaobljenje aviona.** Paket importuje modele sa tvrdim normalama iz FBX-a
+(`normalImportMode: 0`), pa se svaka faseta vidi kao faseta; Synty modeli u projektu koriste
+**izračunate** normale (`normalImportMode: 1`). Dodat pass `SimpleAirportUrp.SmoothAircraft()`:
+za 16 letelica postavlja `importNormals = Calculate`, `normalSmoothingAngle = 60`,
+`weldVertices` i radi `SaveAndReimport`. Šezdeset stepeni zaobli trup i nos, a ostavlja oštru
+napadnu ivicu krila i prelome repa (dve strane tankog krila su skoro leđa uz leđa, daleko van
+praga). Menja se **samo osvetljenje, ne geometrija** — silueta ostaje ista. Meni
+`Tools/City/Catalog/Smooth Simple Airport Aircraft` za probu drugog ugla; marker verzija → 2,
+pa se pusti i sam pre Play-a.
+
+### 11.3 Krov je pokazivao ceo atlas (v4)
+
+Posle popravke namotavanja krov se video — ali je na sebi imao **celu Synty teksturnu stranu**,
+swatch po swatch, tiled preko cele površine.
+
+**Uzrok, i pravilo koje iz njega sledi.** Synty pack materijal je **atlas**: svako lice svakog
+pack komada ima UV koji pokazuje na jedan mali swatch zajedničke strane. Farbanje *pack komada*
+pack materijalom je ispravno — UV već pada gde treba. Ali mreža **generisana ovde** (krov, ploča,
+tank) ima UV razvučen po sopstvenoj površini u metrima, pa atlas materijal **tila celu stranu**
+preko nje → šarena tabla umesto lima.
+
+Zato: `Metal` (gang atlas) se od sada daje **isključivo** `WallRun`/`Paint`-u za pack komade, a
+sve generisano nosi **ravnu boju**. Konkretno:
+- `Tinted()` sada čisti `_BaseMap`/`_MainTex`/`_BumpMap` (novi `Flatten`) — dotad je tintovana
+  kopija vukla atlas izvora sa sobom, pa su i `Steel`/`Concrete`/`White`… bili u riziku.
+- `Concrete`, `Plaster`, `Glass` više nisu sirovi pack materijali nego ravne tintovane boje.
+- Novi `RoofMetal` (0.46/0.43/0.40, smoothness 0.22) ide na sva četiri gable krova — boja zidova,
+  nijansu sivlja, da se zgrada čita kao jedna stvar iz vazduha.
+- Krovna svetla radionice su bila **unutar** krova (y = 10.6 pod slemenom na 12) gde ih ništa ne
+  može videti; zamenjena **slemenskom lanternom** (kutija na slemenu + zastakljene strane), što je
+  i realan način da se osvetli hala te dubine.
+
+`AirportKitBash.Version` → **4**.

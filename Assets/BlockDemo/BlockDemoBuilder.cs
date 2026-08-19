@@ -3,52 +3,62 @@ using UnityEngine;
 
 namespace BlockDemo
 {
-    // One block of the city, on its own.
+    // A quarter of the city, on its own.
     //
-    // The city is ninety blocks, and opening it to look at one of them costs a minute
-    // of building and a frame time to match. This scene stands up exactly ONE: the
-    // interior, the four streets round it with their pavements, the four junctions
-    // that close them, and enough life to see it move. Nothing here draws a block:
-    // it is RoadDemoBuilder itself, the city's own builder, handed a grid of two road
-    // lines by two - so the pad, the bake, the floor, the kerb dressing and the doors
-    // are the same code that lays them in Game.unity, and what is fixed here is fixed
-    // there (the same bargain the port and the suburb scenes make: one object, two
-    // hosts).
+    // The city is ninety blocks, and opening it to look at one corner costs a minute
+    // of building and a frame time to match. This scene stands up a HANDFUL: a few
+    // block columns by a few block rows, with the streets between them, the avenues
+    // that cross them, the junctions, the pavements and enough life to see it move -
+    // which is what a quarter is (in the city proper, whatever lies between two seams).
     //
-    // The knobs are what a block IS: which pad size it stands on, which of the blocks
-    // filed for that pad, and whether an avenue or an ordinary street runs down its
-    // west and south sides. Change them and press Play again - a one-block city is up
-    // in a couple of seconds.
+    // Nothing here draws a block: it is RoadDemoBuilder itself, the city's own
+    // builder, handed a small grid. The pad sizes, the bakes, the floors, the kerb
+    // dressing, the doors and the crowd are the same code that lays them in
+    // Game.unity, so what is fixed here is fixed there - the same bargain the port
+    // and the suburb scenes make (one object, two hosts).
+    //
+    // Change a knob, press Play again: a quarter is up in a few seconds.
     public class BlockDemoBuilder : MonoBehaviour
     {
-        [Header("The lot")]
-        [Tooltip("The catalog's pad code: a letter for the width column (A/B/C = the " +
-                 "first/second/third entry of the widths below) and a number for the " +
-                 "depth row. B2 is the 85 x 70 m pad.")]
-        public string lot = "B2";
-        [Tooltip("Which block filed under that pad stands here. 0 is the one the city " +
-                 "puts down first; step it to see the next composed block or rolled " +
-                 "stock for the same rectangle.")]
-        [Min(0)] public int block = 0;
-        [Tooltip("Kept the same list as the city's, so a pad code means the same size here.")]
+        [Header("The quarter")]
+        [Tooltip("Block columns, west to east. 3 gives four road lines with three " +
+                 "interiors between them.")]
+        [Min(1)] public int columns = 3;
+        [Tooltip("Block rows, south to north.")]
+        [Min(1)] public int rows = 3;
+        [Tooltip("Deal the sizes below across the columns and rows the way the city " +
+                 "does, so no two blocks beside each other come out the same. Off " +
+                 "takes them in palette order, which is the plainest grid they allow.")]
+        public bool randomiseSizes = true;
+        [Tooltip("Same seed, same quarter.")]
+        public int spacingSeed = 7;
+        [Tooltip("Kept the same list as the city's, so a size means the same pad here. " +
+                 "Only sizes with a lot pad in the catalog scene belong here.")]
         public float[] blockWidths = { 70f, 85f, 100f };
         public float[] blockDepths = { 50f, 70f, 95f };
 
-        [Header("The streets round it")]
-        [Tooltip("A boulevard down the west side instead of an ordinary street - the " +
-                 "wider carriageway, the planted median, the longer crossings.")]
-        public bool boulevardWest = false;
-        [Tooltip("The same for the south side.")]
-        public bool boulevardSouth = false;
+        [Header("The avenues")]
+        [Tooltip("Which of the north-south road lines are boulevards rather than " +
+                 "ordinary streets, counted from the west (0 is the west edge line).")]
+        public int[] avenuesNorthSouth = { 1 };
+        [Tooltip("The same for the east-west lines, counted from the south.")]
+        public int[] avenuesEastWest = new int[0];
+
+        [Header("Which blocks stand")]
+        [Tooltip("Which of the blocks filed under a pad code the quarter starts handing " +
+                 "out at. 0 is the city's own order; step it to walk the whole catalog " +
+                 "past the same lots.")]
+        [Min(0)] public int blockCycle = 0;
 
         [Header("Life")]
-        [Tooltip("Cars on the four streets. They are what the kerb strips and the " +
-                 "crossings are for, so a handful is worth having.")]
-        public int carCount = 6;
-        public int pedestrianCount = 16;
-        [Range(0f, 1f)] public float insideAtStart = 0.3f;
-        [Tooltip("A patrol car and an officer on the beat - only if the block that " +
-                 "lands here carries the police station, since the patrols dock at its forecourt.")]
+        [Tooltip("Cars on the streets. The city runs about a hundred over twelve " +
+                 "blocks; this is deliberately lighter, because a quarter is looked at " +
+                 "rather than played.")]
+        public int carCount = 40;
+        public int pedestrianCount = 70;
+        [Range(0f, 1f)] public float insideAtStart = 0.35f;
+        [Tooltip("A patrol car and an officer on the beat - only if a block that lands " +
+                 "here carries the police station, since the patrols dock at its forecourt.")]
         public bool police = false;
 
         [Header("Day")]
@@ -56,45 +66,48 @@ namespace BlockDemo
         [Tooltip("Real seconds per game hour; 15 runs a day in six minutes.")]
         public float realSecondsPerGameHour = 15f;
 
-        [Header("Round the block")]
-        [Tooltip("Metres of wild ground from the outer kerbs to the water. The block " +
+        [Header("Round the quarter")]
+        [Tooltip("Metres of wild ground from the outer kerbs to the water. The quarter " +
                  "stands on its own islet - the same island code the city uses, so the " +
                  "grass, the beach and the sea meet the pavement the way they really do.")]
-        public float greenBelt = 70f;
+        public float greenBelt = 80f;
 
         void Awake()
         {
 #if UNITY_EDITOR
-            float width = Pick(blockWidths, Column(), 85f);
-            float depth = Pick(blockDepths, Row(), 70f);
+            int nv = Mathf.Max(1, columns) + 1;
+            int nh = Mathf.Max(1, rows) + 1;
 
-            // The grid: two lines each way, one interior between them. The spacing is
-            // the city's own arithmetic - half a carriageway, the pavement, the
-            // interior, the pavement, half a carriageway - so the block comes out at
-            // exactly the pad size and the kit tiles it the way it tiles the city.
-            float pave = RoadDemoBuilder.PavementWidth;
-            float x1 = RoadDemoBuilder.RoadHalf(boulevardWest) + pave + width + pave +
-                       RoadDemoBuilder.RoadHalf(false);
-            float z1 = RoadDemoBuilder.RoadHalf(boulevardSouth) + pave + depth + pave +
-                       RoadDemoBuilder.RoadHalf(false);
+            var vBlvd = Avenues(nv, avenuesNorthSouth);
+            var hBlvd = Avenues(nh, avenuesEastWest);
+            // The spacing is the city's own arithmetic - half a carriageway, the
+            // pavement, the interior, the pavement, half a carriageway - so every
+            // interior lands on a pad size the catalog has blocks for. Written out here
+            // in full because the quarter must hit the pads with the randomiser OFF
+            // too; with it on, RoadDemoBuilder.Respace deals the palette again and
+            // shuffles it, exactly as it does for the city.
+            var vx = Centrelines(nv, vBlvd, blockWidths);
+            var hz = Centrelines(nh, hBlvd, blockDepths);
 
             // built on a GameObject that is switched off, so every field below is set
             // before RoadDemoBuilder.Awake reads them
-            var go = new GameObject("City (one block)");
+            var go = new GameObject("City (one quarter)");
             go.SetActive(false);
             var city = go.AddComponent<RoadDemoBuilder>();
 
-            city.verticalRoadX = new[] { 0f, x1 };
-            city.verticalIsBoulevard = new[] { boulevardWest, false };
-            city.horizontalRoadZ = new[] { 0f, z1 };
-            city.horizontalIsBoulevard = new[] { boulevardSouth, false };
+            city.verticalRoadX = vx;
+            city.verticalIsBoulevard = vBlvd;
+            city.horizontalRoadZ = hz;
+            city.horizontalIsBoulevard = hBlvd;
             city.blockWidths = blockWidths;
             city.blockDepths = blockDepths;
-            city.blockCycle = Mathf.Max(0, block);
-            // the spacing is authored above, exactly; nothing is re-rolled
-            city.randomiseBlockSizes = false;
+            city.randomiseBlockSizes = randomiseSizes;
+            city.spacingSeed = spacingSeed;
+            city.blockCycle = Mathf.Max(0, blockCycle);
+            // a quarter is what lies BETWEEN the seams: no river, no park, no wild strip
             city.seams = new Seam[0];
-            // no port, no suburbs: a block is not a quarter
+            // and no port and no suburbs either - those are quarters of their own, and
+            // they have scenes of their own
             city.rollDistricts = false;
             city.harborDistrict = false;
             city.districts = new DistrictSlot[0];
@@ -106,7 +119,7 @@ namespace BlockDemo
             city.policeOfficerCount = police ? 1 : 0;
             city.rivalCrewsInCity = 0;
             city.rivalHoodsInCity = 0;
-            // the counts above are what one block wants; the city's scaling is for a city
+            // the counts above are what this quarter wants; the city's scaling is for a city
             city.scaleLifeToCity = false;
             city.updateProfile = false;
 
@@ -121,58 +134,72 @@ namespace BlockDemo
             city.coastWander = belt * 0.3f;
             city.treesPerHectare = 14f;
 
-            go.SetActive(true);   // and the city - all one block of it - is built
+            go.SetActive(true);   // and the quarter is built
 
-            FrameTheBlock(width, depth);
-            Report(city, width, depth);
+            FrameTheQuarter(city);
+            Report(city);
 #else
             Debug.LogError("[BlockDemo] This scene loads Synty prefabs through the AssetDatabase and only runs in the editor.");
 #endif
         }
 
-        // Close enough that the shopfronts read, high enough to see over the terrace.
-        void FrameTheBlock(float width, float depth)
+        /// <summary>Which lines are boulevards, out of the line numbers named above.</summary>
+        static bool[] Avenues(int count, int[] named)
+        {
+            var blvd = new bool[count];
+            if (named != null)
+                foreach (int at in named)
+                    if (at >= 0 && at < count) blvd[at] = true;
+            return blvd;
+        }
+
+        /// <summary>Road centrelines for one axis: the palette dealt across the gaps in
+        /// order, each line a pavement, an interior and a pavement on from the last.
+        /// The same formula as RoadDemoBuilder.PlanLine, which may re-deal them.</summary>
+        static float[] Centrelines(int count, bool[] boulevard, float[] palette)
+        {
+            var at = new float[count];
+            float pave = RoadDemoBuilder.PavementWidth;
+            for (int k = 0; k + 1 < count; k++)
+            {
+                float interior = palette != null && palette.Length > 0
+                    ? palette[k % palette.Length] : 85f;
+                at[k + 1] = at[k] + RoadDemoBuilder.RoadHalf(boulevard[k]) + pave +
+                            interior + pave + RoadDemoBuilder.RoadHalf(boulevard[k + 1]);
+            }
+            return at;
+        }
+
+        // High enough to hold the whole quarter, low enough that the frontages read.
+        void FrameTheQuarter(RoadDemoBuilder city)
         {
             var rig = FindFirstObjectByType<DemoCamera>();
             if (rig == null) return;
-            rig.distance = Mathf.Max(90f, 1.35f * Mathf.Max(width, depth));
-            rig.pitch = 42f;
+            // the grid as it ended up: Respace may have re-dealt every size
+            float across = city.verticalRoadX[city.verticalRoadX.Length - 1];
+            float deep = city.horizontalRoadZ[city.horizontalRoadZ.Length - 1];
+            rig.distance = Mathf.Max(110f, 0.95f * Mathf.Max(across, deep));
+            rig.pitch = 45f;
             rig.yaw = 30f;
             rig.showHint = true;
             rig.hint = "WASD/arrows: move   Q/E or right-drag: rotate   wheel: zoom   " +
                        "click a building: card   O: the lot plan   Space: pause   , . : slower/faster";
         }
 
-        // What actually landed, on the console: the pad, the size and the block's name,
-        // so stepping the block number reads as a list rather than a guess.
-        void Report(RoadDemoBuilder city, float width, float depth)
+        // What actually landed, on the console: every lot, its pad and its block, so
+        // stepping blockCycle reads as a list rather than a guess.
+        void Report(RoadDemoBuilder city)
         {
             if (city.LotPlans == null || city.LotPlans.Count == 0)
             {
-                Debug.LogWarning("[BlockDemo] no lot was planned - check the pad code against the palettes.");
+                Debug.LogWarning("[BlockDemo] no lots were planned - check the sizes against the palettes.");
                 return;
             }
-            var plan = city.LotPlans[0];
-            Debug.Log($"[BlockDemo] lot {plan.Code ?? "(no pad)"} - {width:F0} x {depth:F0} m, " +
-                      $"block {block}: {plan.Contents}");
-        }
-
-        int Column()
-        {
-            var code = (lot ?? "").Trim().ToUpperInvariant();
-            return code.Length > 0 ? code[0] - 'A' : 1;
-        }
-
-        int Row()
-        {
-            var code = (lot ?? "").Trim();
-            return code.Length > 1 ? code[1] - '1' : 1;
-        }
-
-        static float Pick(float[] palette, int at, float fallback)
-        {
-            if (palette == null || palette.Length == 0) return fallback;
-            return palette[Mathf.Clamp(at, 0, palette.Length - 1)];
+            var said = new System.Text.StringBuilder();
+            foreach (var plan in city.LotPlans)
+                said.Append($"\n    {plan.Code ?? "(no pad)"} {plan.Width:F0}x{plan.Depth:F0}: {plan.Contents}");
+            Debug.Log($"[BlockDemo] {city.LotPlans.Count} blocks (seed {spacingSeed}, " +
+                      $"from block {blockCycle}):{said}");
         }
     }
 }

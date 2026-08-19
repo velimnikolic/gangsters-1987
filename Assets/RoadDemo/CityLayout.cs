@@ -69,7 +69,7 @@ namespace RoadDemo
         }
 
         /// <summary>Metres two districts on the same shore keep between them.</summary>
-        const float SideGap = 90f;
+        const float SideGap = 170f;
 
         /// <summary>How many blocks of the grid a port's two gates may stand apart.</summary>
         static readonly int[] HarborGateSpans = { 2, 3 };
@@ -129,7 +129,9 @@ namespace RoadDemo
                     kind = DistrictKind.Harbor,
                     edge = edge,
                     pinLines = new[] { a, b },
-                    strip = 40f + rng.Next(3) * 5f,
+                    // a real approach road, not an alley: the port stands well off the
+                    // grid and the island's wild ground runs between
+                    strip = 130f + rng.Next(5) * 20f,
                     seed = 1987 + rng.Next(400),
                     sizeAcross = 2 + rng.Next(3),      // berths
                 };
@@ -166,7 +168,9 @@ namespace RoadDemo
                         kind = DistrictKind.Suburb,
                         edge = edge,
                         pinLines = pins.ToArray(),
-                        strip = 40f + rng.Next(5) * 5f,
+                        // a drive out of town: hills and woods between the city and the
+                        // suburb, so the quarter reads as its own place, not an annex
+                        strip = 110f + rng.Next(7) * 20f,
                         seed = citySeed * 977 + index * 131 + 7,
                         sizeDeep = 2 + rng.Next(3),        // rows of blocks
                     };

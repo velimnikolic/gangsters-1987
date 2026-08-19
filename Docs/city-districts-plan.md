@@ -436,15 +436,18 @@ editor osveži projekat). Prvi Play u editoru je i dalje jedina prava provera.
 | scena | šta je | ko gradi |
 |---|---|---|
 | `Assets/Scenes/Game.unity` | **prava igra**: ceo grad — grid, šavovi, ostrvo, luka i predgrađa | `RoadDemoBuilder` (objekat `City`) |
-| `Assets/Scenes/BlockDemo.unity` | **jedan blok** sa svoje 4 ulice i 4 raskrsnice — sto za fine-tune | `BlockDemoBuilder` → isti `RoadDemoBuilder`, grid 2×2 linije |
+| `Assets/Scenes/BlockDemo.unity` | **jedan kvart**: mreža blokova sa ulicama, avenijama i raskrsnicama između njih — sto za fine-tune | `BlockDemoBuilder` → isti `RoadDemoBuilder`, mali grid |
 | `Assets/Scenes/HarborDemo.unity` | luka sama | `HarborDemoBuilder` → `HarborDistrict` |
 | `Assets/Scenes/SuburbDemo.unity` | predgrađe samo | `SuburbDemoBuilder` → `SuburbDistrict` |
 
 `RoadDemo.unity` je preimenovana u `Game.unity` (isti GUID, Build Settings ažuriran).
 
-**BlockDemo** je ista pogodba kao luka/predgrađe: ne crta blok sam, nego pušta gradski
-builder na grid od dve linije po dve, pa su plac, bake, pod, ivičnjak i vrata isti kod
-koji ih postavlja u gradu. Podešavanja: `lot` (šifra pada, npr. `B2`), `block` (koji po
-redu bake za taj pad — `RoadDemoBuilder.blockCycle`), bulevar sa zapada/juga, život,
-`greenBelt` (koliko divljine do vode). Bez kvartova, bez šavova, `scaleLifeToCity`
-isključen — brojevi sa inspektora važe kakvi jesu.
+**BlockDemo** je ista pogodba kao luka/predgrađe: ne crta ništa sam, nego pušta gradski
+builder na mali grid (podrazumevano 3×3 bloka = 4×4 linije), pa su placevi, bake, pod,
+ivičnjak, vrata i gomila isti kod koji ih postavlja u gradu. Podešavanja: `columns`/`rows`
+(koliko blokova), `randomiseSizes` + `spacingSeed` (mere se dele iz istih paleta i mešaju
+kao u gradu), `avenuesNorthSouth`/`avenuesEastWest` (koje linije su bulevari),
+`blockCycle` (od kog bakea po pad šifri kreće deljenje), život, `greenBelt`. Bez šavova
+(kvart je ono što je IZMEĐU šavova), bez luke i predgrađa, `scaleLifeToCity` isključen —
+brojevi sa inspektora važe kakvi jesu. Konzola ispiše spisak svih placeva sa pad šifrom
+i imenom bakea koji je stao.

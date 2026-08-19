@@ -43,6 +43,11 @@ namespace LivingCity.UI
 
             /// <summary>The whole object, front three-quarter from above - the lot photo.</summary>
             Vehicle,
+
+            /// <summary>The whole object dead straight on, tight - a sign, not a
+            /// photograph. The icon packs' little models are modelled facing +Z and
+            /// read at 20 pixels only if nothing is turned away from the lens.</summary>
+            Icon,
         }
 
         /// <summary>
@@ -634,9 +639,12 @@ namespace LivingCity.UI
             else
             {
                 focus = bounds.center;
-                halfSpan = Mathf.Max(bounds.extents.magnitude, 0.05f) * 1.06f;
+                halfSpan = Mathf.Max(bounds.extents.magnitude, 0.05f) *
+                           (framing == Framing.Icon ? 0.92f : 1.06f); // a sign fills its square
                 around = framing == Framing.Vehicle
                     ? Quaternion.Euler(-18f, 45f, 0f)   // front three-quarter, from above
+                    : framing == Framing.Icon
+                    ? Quaternion.identity                // straight on the face of it
                     : Quaternion.Euler(-12f, 75f, 0f);  // near side-on - how a gun reads
             }
 

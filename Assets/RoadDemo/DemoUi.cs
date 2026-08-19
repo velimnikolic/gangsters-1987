@@ -73,6 +73,7 @@ namespace RoadDemo
         const string Chrome = Pack + "Sprites/ModernMenus/";
         const string General = Pack + "Sprites/General/";
         const string Flat = Pack + "Sprites/Icons_ModernMenus_Flat/";
+        const string Icons = "Assets/Synty/PolygonIcons/Prefabs/";
         const string Fonts = Pack + "Fonts/";
 
         /// <summary>A white vertical alpha ramp, clear at the top and solid at the
@@ -113,6 +114,12 @@ namespace RoadDemo
         /// <summary>The soft glow dot the world markers ride on.</summary>
         public static Sprite Dot => Slot(ref dot, Pack + "Sprites/FX/SPR_ModernMenus_FX_Glow_Dot_01.png");
 
+        /// <summary>The little car the crew bar's key wears. Modern Menus has no
+        /// vehicle glyph, so it comes out of Synty's icon pack - a model, not a
+        /// sprite, printed dead straight on by PortraitStudio like every other object
+        /// the screens show.</summary>
+        public static GameObject CarGlyph => ModelSlot(ref carGlyph, Icons + "SM_Icon_Car_01.prefab");
+
         /// <summary>The display face: the clock, a popup's title.</summary>
         public static TMP_FontAsset Headline => FontSlot(ref headline,
             Fonts + "SairaCondensed/SairaCondensed-ExtraBold SDF.asset");
@@ -123,6 +130,7 @@ namespace RoadDemo
 
         static Sprite gradient, chip, box, iconTimer, iconPlay, iconFaster, dot;
         static Sprite iconArrow, iconCombat, iconChat, iconDeath, iconPlus, iconBack;
+        static GameObject carGlyph;
         static TMP_FontAsset headline, body;
         static bool warned;
 
@@ -133,6 +141,7 @@ namespace RoadDemo
         {
             gradient = chip = box = iconTimer = iconPlay = iconFaster = dot = null;
             iconArrow = iconCombat = iconChat = iconDeath = iconPlus = iconBack = null;
+            carGlyph = null;
             headline = body = null;
             warned = false;
         }
@@ -143,6 +152,18 @@ namespace RoadDemo
                 return cached;
 #if UNITY_EDITOR
             cached = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(path);
+#endif
+            if (!cached)
+                Warn();
+            return cached;
+        }
+
+        static GameObject ModelSlot(ref GameObject cached, string path)
+        {
+            if (cached)
+                return cached;
+#if UNITY_EDITOR
+            cached = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
 #endif
             if (!cached)
                 Warn();

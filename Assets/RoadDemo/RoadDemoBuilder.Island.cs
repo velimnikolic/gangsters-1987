@@ -16,14 +16,17 @@ namespace RoadDemo
     {
         [Header("The island")]
         [Tooltip("Metres of wild ground from the last road to the water on each side, before the coast wanders.")]
-        public float islandWest = 280f;
-        public float islandEast = 150f;
-        public float islandNorth = 130f;
-        public float islandSouth = 170f;
+        public float islandWest = 460f;
+        public float islandEast = 380f;
+        public float islandNorth = 360f;
+        public float islandSouth = 420f;
         [Tooltip("How far the coastline strays in and out from those widths.")]
-        public float coastWander = 60f;
+        public float coastWander = 90f;
         [Tooltip("Woods per hectare, roughly - the wilderness's tree density.")]
-        public float treesPerHectare = 22f;
+        public float treesPerHectare = 30f;
+        [Tooltip("How high the island's proper hills stand over the plain, out where the " +
+                 "wild ground is wide enough to carry them (the knolls near the roads stay low).")]
+        public float hillHeight = 26f;
 
         /// <summary>Metres between heightfield vertices; the shore's slope is a few of these.</summary>
         const float GroundStep = 8f;
@@ -42,6 +45,7 @@ namespace RoadDemo
         readonly List<GameObject> _wildBushes = new List<GameObject>();
         readonly List<GameObject> _wildGrass = new List<GameObject>();
         readonly List<GameObject> _wildLogs = new List<GameObject>();
+        readonly List<GameObject> _wildCliffs = new List<GameObject>();
         bool _wildKitLoaded;
 
         void LoadWildKit()
@@ -66,8 +70,14 @@ namespace RoadDemo
             Bag(_wildBushes, "SM_Gen_Env_Shrub", 1, 3);
             Bag(_wildGrass, "SM_Gen_Env_Grass_Tall", 1, 4);
             Bag(_wildGrass, "SM_Gen_Env_Grass", 1, 7);
+            Bag(_wildGrass, "SM_Gen_Env_Fern", 1, 3);
+            Bag(_wildGrass, "SM_Gen_Env_Flowers", 1, 8);
             Bag(_wildLogs, "SM_Gen_Env_Log", 1, 2);
             Bag(_wildLogs, "SM_Gen_Env_Stump", 1, 3);
+            // the rock faces the military warehouse demo kitbashes its hill from:
+            // dirt cliffs on the slopes, grey cliff heads at the crowns
+            Bag(_wildCliffs, "SM_Gen_Env_Dirt_Cliff", 1, 8);
+            Bag(_wildCliffs, "SM_Gen_Env_Cliff", 1, 4);
             // the city's own trees stand nearer the streets
             foreach (var t in _parkTrees) _wildTrees.Add(t);
         }
@@ -142,6 +152,21 @@ namespace RoadDemo
             // rolling ground: low knolls, never a cliff, and dead flat by the road
             float hills = (Mathf.PerlinNoise((x + 311f) * 0.010f, (z - 173f) * 0.010f) - 0.32f) * 9f;
             hills += (Mathf.PerlinNoise(x * 0.041f, z * 0.041f) - 0.5f) * 1.2f;
+
+            // the proper hills, after the military warehouse demo's: a slow noise whose
+            // high lobes stand up as real relief, only out where the wild ground is deep
+            // (never shouldering the last sidewalk) and dying away again well before the
+            // coast so the beach stays a beach and no summit drops sheer into the sea
+            float lobe = Mathf.PerlinNoise((x - 1907f) * 0.0042f, (z + 1313f) * 0.0042f);
+            lobe = Mathf.Max(0f, lobe - 0.45f) / 0.55f;                  // hills, and plains between them
+            float far = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(55f, 210f, d));
+            float coastFade = Mathf.SmoothStep(1f, 0f, Mathf.InverseLerp(coast - 150f, coast - 60f, d));
+            hills += far * coastFade * hillHeight * lobe * lobe;
+
+            // the freeway's corridor: the relief dies away across a broad shoulder on
+            // both sides of its grade-level run, or a knoll would bury the deck
+            hills *= HighwayFade(x, z);
+
             float rise = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(14f, 70f, d));
             float land = 0.03f + rise * Mathf.Max(0.05f, hills);
 
@@ -171,8 +196,10 @@ namespace RoadDemo
             return h;
         }
 
-        /// <summary>Over how many metres a district's flat ground eases into the hills.</summary>
-        const float FlatBlend = 26f;
+        /// <summary>Over how many metres a district's flat ground eases into the hills.
+        /// Wider than it was when the knolls were knee-high: a 25 m hill needs a longer
+        /// shoulder to come down onto an apron without a wall of grass.</summary>
+        const float FlatBlend = 38f;
 
         // ------------------------------------------------------------------ build
 
@@ -322,22 +349,39 @@ namespace RoadDemo
                     // a district's yard, apron and approach are its own ground
                     if (_reservations.InPaved(px, pz) || _reservations.InBare(px, pz)) continue;
 
+                    // the ground's grade here: how steep, and which way is downhill
+                    float gx = (IslandHeight(px + 4f, pz) - IslandHeight(px - 4f, pz)) / 8f;
+                    float gz = (IslandHeight(px, pz + 4f) - IslandHeight(px, pz - 4f)) / 8f;
+                    float grade = Mathf.Sqrt(gx * gx + gz * gz);
+
                     // woods where the slow noise is high; clearings where it is low
                     float woods = Mathf.PerlinNoise((px - 900f) * 0.0075f, (pz + 400f) * 0.0075f);
                     float roll = (float)rng.NextDouble();
                     // per-hectare density -> per 12 m cell (144 m^2 = 0.0144 ha)
                     float treeChance = treesPerHectare * 0.0144f * (woods > 0.55f ? 2.6f : woods > 0.4f ? 1f : 0.25f);
                     if (nearShore) treeChance *= 0.5f;
+                    if (grade > 0.5f) treeChance *= 0.3f;   // little takes root on a rock face
 
                     GameObject prefab = null;
-                    float yaw = Next(0f, 360f), scale = 1f;
-                    if (roll < treeChance)
+                    float yaw = Next(0f, 360f), scale = 1f, sink = 0.05f;
+                    // a steep face wears the military demo's rock: a cliff piece turned
+                    // to look downhill, sunk into the slope, with rubble round its foot
+                    if (grade > 0.38f && h > 2f && roll < 0.55f && _wildCliffs.Count > 0)
+                    {
+                        prefab = PickOf(_wildCliffs);
+                        yaw = Mathf.Atan2(-gx, -gz) * Mathf.Rad2Deg + Next(-18f, 18f);
+                        scale = Next(0.9f, 1.7f);
+                        sink = 0.6f * scale;
+                    }
+                    else if (roll < treeChance)
                     {
                         float kind = (float)rng.NextDouble();
-                        prefab = kind < 0.6f ? PickOf(_wildTrees) : kind < 0.88f ? PickOf(_wildPines) : PickOf(_wildDead);
+                        // pine takes the high ground, the way it does on the warehouse hill
+                        float pineAt = h > 9f ? 0.25f : 0.6f;
+                        prefab = kind < pineAt ? PickOf(_wildTrees) : kind < 0.88f ? PickOf(_wildPines) : PickOf(_wildDead);
                         scale = Next(0.85f, 1.25f);
                     }
-                    else if (roll < treeChance + (nearShore ? 0.22f : 0.05f))
+                    else if (roll < treeChance + (nearShore || grade > 0.35f ? 0.22f : 0.05f))
                     {
                         prefab = PickOf(_wildRocks);
                         scale = Next(0.7f, 1.6f);
@@ -353,12 +397,31 @@ namespace RoadDemo
                     }
                     if (prefab == null) continue;
 
-                    var go = Instantiate(prefab, new Vector3(px, h - 0.05f, pz), Quaternion.Euler(0f, yaw, 0f), IslandRoot);
+                    var go = Instantiate(prefab, new Vector3(px, h - sink, pz), Quaternion.Euler(0f, yaw, 0f), IslandRoot);
                     go.transform.localScale = Vector3.one * scale;
                     go.name = "Wild " + prefab.name;
                     placed++;
                 }
             Debug.Log($"[RoadDemo] island: {placed} wild things on the ground");
+        }
+
+        /// <summary>How much of the island's relief survives at (x, z) against the
+        /// freeway: 0 in its corridor, easing to 1 over a broad shoulder either side,
+        /// so the grade-level run lies in a natural-looking flat the hills stand back
+        /// from rather than a trench cut through them.</summary>
+        float HighwayFade(float x, float z)
+        {
+            if (seams == null) return 1f;
+            float fade = 1f;
+            foreach (var s in seams)
+            {
+                if (s == null || s.kind != SeamKind.Highway) continue;
+                var span = SeamSpan(s);
+                float across = s.vertical ? x : z;
+                float outOf = Mathf.Max(0f, span.lo - across, across - span.hi);
+                fade = Mathf.Min(fade, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(18f, 95f, outOf)));
+            }
+            return fade;
         }
 
         /// <summary>Whether the highway runs out over this spot or a river's channel
@@ -371,7 +434,7 @@ namespace RoadDemo
                 if (s == null) continue;
                 var span = SeamSpan(s);
                 float across = s.vertical ? x : z;
-                float margin = s.kind == SeamKind.River ? 16f : s.kind == SeamKind.Highway ? 4f : -1f;
+                float margin = s.kind == SeamKind.River ? 16f : s.kind == SeamKind.Highway ? 12f : -1f;
                 if (margin < 0f) continue;
                 if (across > span.lo - margin && across < span.hi + margin) return true;
             }

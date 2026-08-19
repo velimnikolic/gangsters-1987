@@ -24,6 +24,11 @@ namespace RoadDemo
     // crew, the same as clicking the man. Dressed out of DemoUi like every other
     // screen in the demo.
     //
+    // A crew the book has given a car wears its keys at the end of the name line -
+    // a little car glyph: click and they walk to the doors and get in, click again
+    // on the way and the walk is called off, and once they are aboard the glyph is
+    // the arrow back out - click and the car pulls in and lets them down.
+    //
     // The feeds are cheap on purpose: a low-res target each, no shadows, no post,
     // and the cameras take turns - one renders per frame - so a bar of four crews
     // costs one small extra render a frame, not four.
@@ -52,6 +57,14 @@ namespace RoadDemo
         const float ChipHeight = BlockHeight - Pad - ChipTop;
         const float ChipWidth = (ColumnWidth - (MaxHoods - 1) * ChipGap) / MaxHoods;
         const float SignSize = 16f;                    // the activity sign's badge in the feed
+        // The wheels: a crew the book has given a car wears a key at the end of its
+        // name line - the icon pack's little car, pressed to send them to the doors;
+        // once they are in, the key turns into the arrow back out. The line keeps the
+        // room for it whether the crew has a car or not, so a name never jumps when
+        // the book hands the keys over.
+        const float CarKeyWidth = 19f;
+        const float CarKeyGap = 3f;
+        const float NameWidth = ColumnWidth - CarKeyWidth - CarKeyGap;
         // A bust print (PortraitStudio) is square and puts the head about this far
         // up it; a chip that is not square shows a window of the print, not a
         // squashed print, and the window is centred on the head.
@@ -71,6 +84,7 @@ namespace RoadDemo
         static readonly Color DeadShade = new Color(0.02f, 0.02f, 0.03f, 0.8f);
         static readonly Color Skull = new Color(1f, 0.36f, 0.30f, 0.95f);
         static readonly Color ChipFace = new Color(0.02f, 0.045f, 0.07f, 1f);
+        static readonly Color Refused = new Color(1f, 0.36f, 0.30f, 0.95f);
         static readonly Color FeedBackdrop = new Color(0.10f, 0.13f, 0.17f, 1f);
 
         sealed class Chip
@@ -94,6 +108,11 @@ namespace RoadDemo
             public TMP_Text ArmLabel;
             public GameObject ArmPrefab;
             public bool ArmKnown;
+            public RectTransform CarKey;   // the keys, when the book has given the crew a car
+            public Image CarFace, CarArrow;
+            public RawImage CarGlyph;      // the icon pack's car, printed
+            public bool CarAsked;          // the print is asked for once, not once a frame
+            public float CarRefusedUntil;  // the key flashes red on a refused order
             public Chip[] Chips;
             public DemoCrews.Unit Unit;
             public CrewWalker Boss;
@@ -223,7 +242,7 @@ namespace RoadDemo
                 nr.anchorMin = nr.anchorMax = new Vector2(0f, 1f);
                 nr.pivot = new Vector2(0f, 1f);
                 nr.anchoredPosition = new Vector2(ColumnX, -Pad);
-                nr.sizeDelta = new Vector2(ColumnWidth, NameHeight);
+                nr.sizeDelta = new Vector2(NameWidth, NameHeight);
             }
 
             // the gun: the studio's side-on print of the piece is square with the
@@ -257,6 +276,8 @@ namespace RoadDemo
                 block.Chips[k] = BuildChip(rect,
                     new Vector2(ColumnX + k * (ChipWidth + ChipGap), -ChipTop));
 
+            BuildCarKey(block, rect);
+
             // the camera behind the feed: low-res, no shadows, no post, off until its turn
             block.Target = new RenderTexture(FeedPixels, FeedPixels, 16, RenderTextureFormat.ARGB32)
                 { name = "Crew Feed" };
@@ -279,6 +300,39 @@ namespace RoadDemo
             block.Feed.texture = block.Target;
 
             return block;
+        }
+
+        // The car key, hard against the right end of the name line: the icon pack's
+        // little car while they are on the pavement, the back arrow while they are
+        // sat in it - the same arrow the hint over the car in the street shows for
+        // GET OUT. A chip under it so it reads as something to press, and the whole
+        // key hidden on a crew the book has given no car.
+        void BuildCarKey(Block block, RectTransform parent)
+        {
+            var key = DemoUi.NewRect("Car", parent);
+            key.anchorMin = key.anchorMax = new Vector2(0f, 1f);
+            key.pivot = new Vector2(0f, 1f);
+            key.anchoredPosition = new Vector2(ColumnX + NameWidth + CarKeyGap, -Pad);
+            key.sizeDelta = new Vector2(CarKeyWidth, NameHeight);
+            block.CarKey = key;
+
+            block.CarFace = key.gameObject.AddComponent<Image>();
+            block.CarFace.raycastTarget = false;
+            DemoUi.Dress(block.CarFace, DemoUi.Chip, 4f, ChipFace);
+
+            // the print is square with the glyph in the middle of it, so the key shows
+            // the band across that middle - the car full width, the air above cropped
+            block.CarGlyph = DemoUi.NewRect("Glyph", key).gameObject.AddComponent<RawImage>();
+            block.CarGlyph.raycastTarget = false;
+            DemoUi.Fill(block.CarGlyph.rectTransform, 1.5f);
+            float band = (NameHeight - 3f) / (CarKeyWidth - 3f);
+            block.CarGlyph.uvRect = new Rect(0f, (1f - band) * 0.5f, 1f, band);
+            block.CarGlyph.enabled = false;
+
+            block.CarArrow = DemoUi.Icon(key, "Out", DemoUi.IconBack, NameHeight - 5f, DemoUi.Gold);
+            block.CarArrow.enabled = false;
+
+            key.gameObject.SetActive(false);
         }
 
         Chip BuildChip(RectTransform parent, Vector2 at)
@@ -360,29 +414,52 @@ namespace RoadDemo
                 if (block.Cam.enabled != film) block.Cam.enabled = film;
                 if (!live) continue;
                 block.Rect.anchoredPosition = new Vector2(i * (BlockWidth + Gap), 0f);
-                Bind(block, _shown[i]);
+                var car = _crews.CarOf(_shown[i]);
+                Bind(block, _shown[i], car);
                 // a right click on a block puts the camera on that crew and leaves it
                 // there - it rides him until the player pans the camera off himself
                 if (look && RectTransformUtility.RectangleContainsScreenPoint(block.Rect, at))
                     Ride(_shown[i]);
                 if (click && RectTransformUtility.RectangleContainsScreenPoint(block.Rect, at))
                 {
-                    // an empty chip is the recruiting door: a click on it brings a new man
-                    // in for that crew; anywhere else on the block selects the crew
-                    bool recruited = false;
+                    // the car key sends them to the doors, calls the walk off again, and
+                    // lets them out once they are in; an empty chip is the recruiting
+                    // door - a click on it brings a new man in for that crew; anywhere
+                    // else on the block selects the crew
+                    bool handled = false;
+                    if (car != null && block.CarKey.gameObject.activeSelf &&
+                        RectTransformUtility.RectangleContainsScreenPoint(block.CarKey, at))
+                    {
+                        handled = true;
+                        _crews.Select(_shown[i]);
+                        if (!OrderCar(_shown[i], car)) block.CarRefusedUntil = Time.unscaledTime + 0.7f;
+                    }
                     foreach (var chip in block.Chips)
                     {
+                        if (handled) break;
                         if (chip.Man != null || !RectTransformUtility.RectangleContainsScreenPoint(chip.Rect, at)) continue;
-                        recruited = true;
+                        handled = true;
                         if (!_crews.Recruit(_shown[i])) chip.RefusedUntil = Time.unscaledTime + 0.7f;
                         break;
                     }
-                    if (!recruited) _crews.Select(_shown[i]);
+                    if (!handled) _crews.Select(_shown[i]);
                 }
             }
         }
 
-        void Bind(Block block, DemoCrews.Unit unit)
+        /// <summary>What the car key orders for this crew: out of the car when they are
+        /// in it, back onto the pavement when they are only walking to it, and into it
+        /// otherwise. False - and the key flashes - when the order is refused (nobody
+        /// left standing, somebody else's crew already in the seats).</summary>
+        bool OrderCar(DemoCrews.Unit unit, CrewCar car)
+        {
+            if (unit == null || car == null || unit.Wiped) return false;
+            // on their way to the doors and not in yet: the same key calls the walk off
+            if (unit.Car == null && unit.Boarding == car) return _crews.OrderOut();
+            return _crews.OrderCar(car);
+        }
+
+        void Bind(Block block, DemoCrews.Unit unit, CrewCar car)
         {
             var boss = unit.Boss;
             if (block.Unit != unit || block.Boss != boss)
@@ -402,6 +479,7 @@ namespace RoadDemo
             Condition(boss, block.Shade, block.Skull);
             Signal(block, boss);
             BindArm(block, boss);
+            BindCar(block, unit, car);
 
             for (int k = 0; k < MaxHoods; k++)
                 BindChip(block.Chips[k], k < unit.Hoods.Count ? unit.Hoods[k] : null);
@@ -454,6 +532,53 @@ namespace RoadDemo
             block.ArmLabel.color = armed
                 ? DemoUi.InkDim
                 : new Color(DemoUi.InkDim.r, DemoUi.InkDim.g, DemoUi.InkDim.b, 0.5f);
+        }
+
+        // The crew's wheels. The glyph is the icon pack's car printed straight on -
+        // one print for the whole bar, whatever body the book gave them - and it turns
+        // into the arrow back out the moment they are aboard, so the key always shows
+        // what pressing it does rather than what they own. Gold while they are in or
+        // on their way, breathing while the walk is on, red for a beat on an order the
+        // crew could not take, dim when there is nobody left to give it to.
+        static void BindCar(Block block, DemoCrews.Unit unit, CrewCar car)
+        {
+            bool has = car != null;
+            if (block.CarKey.gameObject.activeSelf != has) block.CarKey.gameObject.SetActive(has);
+            if (!has) return;
+
+            if (!block.CarAsked)
+            {
+                block.CarAsked = true;
+                PortraitStudio.Request(DemoUi.CarGlyph, PortraitStudio.Framing.Icon, block.CarGlyph);
+            }
+
+            bool aboard = unit.Car == car;
+            bool boarding = !aboard && unit.Boarding == car;
+            bool onTheMove = boarding || (aboard && unit.Leaving);
+            bool dead = unit.Wiped;
+
+            // in the car the key is the way out; out of it, the car itself - and the
+            // arrow stands in until the print lands
+            bool printed = block.CarGlyph.texture != null;
+            if (block.CarGlyph.enabled != (printed && !aboard)) block.CarGlyph.enabled = printed && !aboard;
+            if (block.CarArrow.enabled != (aboard || !printed)) block.CarArrow.enabled = aboard || !printed;
+            var sprite = aboard ? DemoUi.IconBack : DemoUi.IconArrow;
+            if (block.CarArrow.sprite != sprite) block.CarArrow.sprite = sprite;
+
+            var tint = Time.unscaledTime < block.CarRefusedUntil ? Refused
+                     : dead ? new Color(DemoUi.InkDim.r, DemoUi.InkDim.g, DemoUi.InkDim.b, 0.35f)
+                     : aboard || boarding ? DemoUi.Gold
+                     : DemoUi.Accent;
+            if (onTheMove && !dead)
+                tint.a *= 0.55f + 0.45f * Mathf.Sin((Time.unscaledTime + block.Phase) * 5f);
+            block.CarArrow.color = tint;
+            // the printed car is coloured art, so the state rides its tint gently
+            block.CarGlyph.color = Time.unscaledTime < block.CarRefusedUntil ? Refused
+                                 : dead ? new Color(1f, 1f, 1f, 0.35f)
+                                 : Color.white;
+            block.CarFace.color = boarding || aboard
+                ? new Color(DemoUi.Gold.r * 0.30f, DemoUi.Gold.g * 0.26f, DemoUi.Gold.b * 0.16f, 1f)
+                : ChipFace;
         }
 
         // The camera in front of the man, at chest height, its heading easing after
@@ -563,13 +688,13 @@ namespace RoadDemo
             return null;
         }
 
-        /// <summary>"Bernie Hayes" fits; a name wider than the column, measured in the
+        /// <summary>"Bernie Hayes" fits; a name wider than the line, measured in the
         /// label's own face, is trimmed to initial and surname so a block never
         /// wraps or runs under its margin.</summary>
         static string FitName(TMP_Text label, string full)
         {
             if (string.IsNullOrEmpty(full)) return string.Empty;
-            if (label.GetPreferredValues(full).x <= ColumnWidth) return full;
+            if (label.GetPreferredValues(full).x <= NameWidth) return full;
             int cut = full.LastIndexOf(' ');
             return cut > 0 ? full.Substring(0, 1) + ". " + full.Substring(cut + 1) : full;
         }

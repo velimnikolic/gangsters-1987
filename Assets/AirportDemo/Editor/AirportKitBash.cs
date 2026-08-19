@@ -32,8 +32,11 @@ namespace AirportDemo.EditorTools
     public static partial class AirportKitBash
     {
         // v2: the field grew to ADG III for the Simple Airport jets - a wider terminal,
-        // a taller tower, and every dimension re-read from AirportSpec
-        public const int Version = 2;
+        //     a taller tower, and every dimension re-read from AirportSpec
+        // v3: the gable roofs were wound inside out and so were invisible from above
+        // v4: generated meshes no longer wear a Synty atlas material - a roof lit by
+        //     one showed the whole texture page, swatch by swatch, tiled across it
+        public const int Version = 4;
         const string KitDir = "Assets/CityKit/Airport";
         const string MeshDir = KitDir + "/Meshes";
         const string MatDir = KitDir + "/Materials";
@@ -105,12 +108,28 @@ namespace AirportDemo.EditorTools
 
         // ------------------------------------------------------------ paint
 
-        static Material _metal, _concrete, _plaster, _glass, _white, _yellow, _black, _red, _orange, _green, _blue, _amber, _steel, _rust;
+        // Two kinds of material, and mixing them up is what put a texture page on a
+        // roof. A Synty pack material is an ATLAS: every face of every pack piece has
+        // UVs pointing at one small swatch of one shared page. Painting a pack piece
+        // with a pack material is fine - its UVs already land where they should. But
+        // a mesh generated here (a roof, a slab, a tank) has UVs laid out over its own
+        // surface in metres, so an atlas material tiles the WHOLE PAGE across it and
+        // you get a patchwork of signs and swatches instead of a roof.
+        //
+        // So: Metal is the pack atlas, and is only ever handed to WallRun/Paint for
+        // pack pieces. Everything generated wears a flat tinted colour, which is what
+        // sheet steel, concrete and paint are anyway.
+        static Material _metal, _concrete, _plaster, _glass, _roof, _white, _yellow, _black, _red, _orange, _green, _blue, _amber, _steel, _rust;
 
+        /// <summary>The gang pack's industrial atlas - for PACK PIECES ONLY.</summary>
         static Material Metal => _metal ??= Load(AirportKit.MetalMat);
-        static Material Concrete => _concrete ??= Load(AirportKit.GenericConcreteMat);
-        static Material Plaster => _plaster ??= Load(AirportKit.GenericPlasterMat);
-        static Material Glass => _glass ??= Load(AirportKit.GenericGlassMat);
+        /// <summary>Flat colours for the generated geometry.</summary>
+        static Material Concrete => _concrete ??= Tinted("airport-concrete", AirportKit.GenericConcreteMat, new Color(0.63f, 0.63f, 0.60f), 0.08f);
+        static Material Plaster => _plaster ??= Tinted("airport-plaster", AirportKit.GenericPlasterMat, new Color(0.74f, 0.71f, 0.66f), 0.10f);
+        static Material Glass => _glass ??= Tinted("airport-glass", AirportKit.GenericPlasterMat, new Color(0.38f, 0.53f, 0.62f), 0.85f);
+        /// <summary>The sheet roof over a shed: the walls' own colour, a shade greyer,
+        /// so the building reads as one thing from the air.</summary>
+        static Material RoofMetal => _roof ??= Tinted("airport-roof", AirportKit.GenericConcreteMat, new Color(0.46f, 0.43f, 0.40f), 0.22f);
         static Material White => _white ??= Tinted("airport-white", AirportKit.GenericPlasterMat, new Color(0.90f, 0.90f, 0.88f));
         static Material Yellow => _yellow ??= Tinted("airport-yellow", AirportKit.GenericPlasterMat, new Color(0.86f, 0.70f, 0.10f));
         static Material Black => _black ??= Tinted("airport-black", AirportKit.GenericPlasterMat, new Color(0.08f, 0.08f, 0.09f));
@@ -132,20 +151,29 @@ namespace AirportDemo.EditorTools
             var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (existing)
             {
-                existing.SetColor("_BaseColor", colour);
-                if (existing.HasProperty("_Color")) existing.SetColor("_Color", colour);
-                if (smoothness >= 0f && existing.HasProperty("_Smoothness")) existing.SetFloat("_Smoothness", smoothness);
+                Flatten(existing, colour, smoothness);
                 EditorUtility.SetDirty(existing);
                 return existing;
             }
             var src = AssetDatabase.LoadAssetAtPath<Material>(sourcePath);
             var mat = src ? new Material(src) : new Material(Shader.Find("Universal Render Pipeline/Lit"));
             mat.name = name;
-            mat.SetColor("_BaseColor", colour);
-            if (mat.HasProperty("_Color")) mat.SetColor("_Color", colour);
-            if (smoothness >= 0f && mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
+            Flatten(mat, colour, smoothness);
             AssetDatabase.CreateAsset(mat, path);
             return mat;
+        }
+
+        /// <summary>Colour only: the albedo map is cleared, because the source is a
+        /// Synty atlas page and a generated mesh has no UVs that point into it.</summary>
+        static void Flatten(Material mat, Color colour, float smoothness)
+        {
+            mat.SetColor("_BaseColor", colour);
+            if (mat.HasProperty("_Color")) mat.SetColor("_Color", colour);
+            if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", null);
+            if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", null);
+            if (mat.HasProperty("_BumpMap")) mat.SetTexture("_BumpMap", null);
+            mat.DisableKeyword("_NORMALMAP");
+            if (smoothness >= 0f && mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
         }
 
         /// <summary>Every opaque pack material on the piece swapped for ours; glass
@@ -336,25 +364,30 @@ namespace AirportDemo.EditorTools
             var n = new List<Vector3>();
             var uv = new List<Vector2>();
             var tris = new List<int>();
+            // Winding, once and for all: everything generated in this project - Slab,
+            // FlatPlane, the Painter - lays a quad a,b,c,d as (a,c,b) then (a,d,c),
+            // and its outward normal is cross(c - a, b - a). The gable used to do the
+            // opposite, so every roof faced the ground and was culled from above:
+            // the hangars had no roofs at all.
             void Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
             {
                 int i = v.Count;
-                var nm = Vector3.Cross(b - a, d - a).normalized;
+                var nm = Vector3.Cross(c - a, b - a).normalized;
                 v.Add(a); v.Add(b); v.Add(c); v.Add(d);
                 for (int k = 0; k < 4; k++) n.Add(nm);
                 uv.Add(new Vector2(a.x * 0.2f, a.z * 0.2f)); uv.Add(new Vector2(b.x * 0.2f, b.z * 0.2f));
                 uv.Add(new Vector2(c.x * 0.2f, c.z * 0.2f)); uv.Add(new Vector2(d.x * 0.2f, d.z * 0.2f));
-                tris.Add(i); tris.Add(i + 1); tris.Add(i + 2);
-                tris.Add(i); tris.Add(i + 2); tris.Add(i + 3);
+                tris.Add(i); tris.Add(i + 2); tris.Add(i + 1);
+                tris.Add(i); tris.Add(i + 3); tris.Add(i + 2);
             }
             void Tri(Vector3 a, Vector3 b, Vector3 c)
             {
                 int i = v.Count;
-                var nm = Vector3.Cross(b - a, c - a).normalized;
+                var nm = Vector3.Cross(c - a, b - a).normalized;
                 v.Add(a); v.Add(b); v.Add(c);
                 for (int k = 0; k < 3; k++) n.Add(nm);
                 uv.Add(new Vector2(a.x * 0.2f, a.y * 0.2f)); uv.Add(new Vector2(b.x * 0.2f, b.y * 0.2f)); uv.Add(new Vector2(c.x * 0.2f, c.y * 0.2f));
-                tris.Add(i); tris.Add(i + 1); tris.Add(i + 2);
+                tris.Add(i); tris.Add(i + 2); tris.Add(i + 1);
             }
             var eN0 = new Vector3(x0, eaveY, z1); var eN1 = new Vector3(x1, eaveY, z1);
             var eS0 = new Vector3(x0, eaveY, z0); var eS1 = new Vector3(x1, eaveY, z0);

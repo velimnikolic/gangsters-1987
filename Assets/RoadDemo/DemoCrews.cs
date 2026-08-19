@@ -223,6 +223,16 @@ namespace RoadDemo
         /// crew demo's four streets, the city's grid). Null: open ground, straight lines.</summary>
         public LaneNet Net;
 
+        /// <summary>Give a man a car on the armory page and it is standing at the kerb
+        /// beside him the moment the book closes. Off: a scene stands its own cars and
+        /// the ledger only says whose they are (which is all it used to do).</summary>
+        public bool LedgerCarsStand = true;
+
+        /// <summary>The asphalt's height - where a car sits, as against GroundY, which
+        /// is the pavement a man walks on. The city's roads are at zero; a scene that
+        /// sinks its street says so here.</summary>
+        public float CarRoadY = 0f;
+
         /// <summary>The bang, the flash and the blood - set by the scene builder;
         /// missing pieces are simply silent.</summary>
         public GameObject MuzzleFlashPrefab, BloodPrefab, ImpactPrefab;
@@ -1034,6 +1044,115 @@ namespace RoadDemo
                     Disembark(car.Occupant); // the book took the keys away mid-ride
                 car.Owner = owner;
             }
+
+            StandLedgerCars(roster);
+        }
+
+        /// <summary>Which crew's man drives a vehicle on the books, or null.</summary>
+        Unit OwnerFor(Roster roster, RosterEquipment item)
+        {
+            int keeper = CrewCars.KeeperOf(item);
+            if (keeper < 0) return null;
+            var crew = roster.CrewOf(keeper);
+            return crew == null ? null : Units.Find(u => u.Faction == 0 && u.CrewId == crew.Id);
+        }
+
+        /// <summary>The cars the outfit was GIVEN, standing where they were left.
+        ///
+        /// A car on the armory page is a line in a book until somebody has the keys;
+        /// the moment the ledger deals it to a man, the body turns up at the kerb
+        /// beside him - his side of the road, the nearest length of it nothing else has
+        /// claimed. Sell it, or take the keys back into the safe, and it is gone from
+        /// the street too: the book is the truth, and the street follows it.
+        ///
+        /// A car the SCENE stood (the crew demo's own) is nobody's business here - it
+        /// binds to the book the old way and is never taken away.</summary>
+        void StandLedgerCars(Roster roster)
+        {
+            if (!LedgerCarsStand) return;
+
+            // gone from the books, or the keys handed back: off the street
+            for (int i = Cars.Count - 1; i >= 0; i--)
+            {
+                var car = Cars[i];
+                if (!_ledgerCars.Contains(car)) continue;
+                RosterEquipment item = null;
+                foreach (var e in roster.Equipment)
+                    if (e.Id == car.ItemId && e.Kind == EquipmentKind.Vehicle) { item = e; break; }
+                if (item != null && CrewCars.KeeperOf(item) >= 0) continue;
+                DropCar(car);
+            }
+
+            foreach (var item in roster.Equipment)
+            {
+                if (item.Kind != EquipmentKind.Vehicle) continue;
+                int keeper = CrewCars.KeeperOf(item);
+                if (keeper < 0) continue;                       // in the lock-up, nobody's
+                if (Cars.Exists(c => c.ItemId == item.Id)) continue;   // already on the street
+
+                // beside the man with the keys, or his lieutenant if the hood is not out
+                if (!_byCharacter.TryGetValue(keeper, out var man) || man == null || man.Dead || !man.Tf)
+                {
+                    var unit = OwnerFor(roster, item);
+                    man = unit?.Boss;
+                    if (man == null || man.Dead || !man.Tf) continue;
+                }
+
+                var prefab = CrewCars.BodyFor(item);
+                if (prefab == null)
+                {
+                    WarnOnce("body:" + item.DisplayName,
+                        $"[Crews] no body for the ledger's '{item.DisplayName}' in any Synty vehicle folder.");
+                    continue;
+                }
+
+                CrewCars.MeasurePrefab(prefab, out float halfLength, out float halfWidth);
+                if (!CrewCars.KerbSlotNear(Net ?? LaneNet.Active, man.Tf.position,
+                        halfLength, halfWidth, out var at, out var facing))
+                {
+                    WarnOnce("kerb:" + item.Id,
+                        $"[Crews] nowhere to leave {man.DisplayName}'s {item.DisplayName} - no free kerb near him.");
+                    continue;
+                }
+
+                var car = AddCar(prefab, at, facing, CarRoadY);
+                if (car == null) continue;
+                car.ItemId = item.Id;
+                car.DisplayName = string.IsNullOrEmpty(item.DisplayName) ? "Car" : item.DisplayName;
+                car.Owner = OwnerFor(roster, item);
+                _ledgerCars.Add(car);
+                Debug.Log($"[Crews] {man.DisplayName}'s {car.DisplayName} is at the kerb beside him.");
+            }
+        }
+
+        /// <summary>The cars this deal stood, as against the ones the scene put down.</summary>
+        readonly HashSet<CrewCar> _ledgerCars = new HashSet<CrewCar>();
+
+        readonly HashSet<string> _warned = new HashSet<string>();
+
+        void WarnOnce(string key, string message)
+        {
+            if (_warned.Add(key)) Debug.LogWarning(message);
+        }
+
+        /// <summary>Take a car off the street for good: anyone riding gets out where it
+        /// stands, and the body goes with its claim on the road.</summary>
+        void DropCar(CrewCar car)
+        {
+            if (car == null) return;
+            foreach (var man in new List<CrewWalker>(car.Aboard))
+                LetOut(car, man, car.SeatOf.TryGetValue(man, out int seat) ? seat : 0);
+            car.Occupant = null;
+            foreach (var unit in Units)
+            {
+                if (unit.Car == car) { unit.Car = null; unit.PendingDrive = null; }
+                if (unit.Boarding == car) unit.Boarding = null;
+            }
+            car.Despawn();
+            StreetTraffic.Users.Remove(car);
+            Cars.Remove(car);
+            _ledgerCars.Remove(car);
+            if (car.Tf) Destroy(car.Tf.gameObject);
         }
 
         // ------------------------------------------------------------------ combat

@@ -329,6 +329,10 @@ namespace RoadDemo
         void FindWheels() => _wheels.Read(Tf);
 
         /// <summary>Rolling with the road, the front pair turned into the corner.</summary>
+        /// <summary>Metres from the body's origin back to its rear axle - the point
+        /// that follows a path while the front swings (NaN without wheels).</summary>
+        public float AxleBack => float.IsNaN(_wheels.RearAxle) ? float.NaN : -_wheels.RearAxle;
+
         public void TickWheels(float dt, float speed, float steerDegrees) =>
             _wheels.Tick(dt, speed, steerDegrees);
     }
