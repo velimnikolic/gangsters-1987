@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LivingCity.Personnel;
 using UnityEngine;
 
 namespace RoadDemo
@@ -122,26 +123,62 @@ namespace RoadDemo
         public static GameObject MuzzleFlash => Load<GameObject>(FlashPath);
         public static GameObject Blood => Load<GameObject>(BloodPath);
         public static GameObject Impact => Load<GameObject>(ImpactPath);
-        /// <summary>The four reports, drawn at random per shot: KuraiWolf's light
-        /// machine gun off OpenGameArt, rendered four ways by
-        /// Tools/audio/import_sounds.py. CC-BY 4.0 - it has to be credited, see
-        /// Tools/audio/sources/SOURCES.md.</summary>
-        public static AudioClip[] Gunshots => _shots ??= Sounds(
-            ShotDir + "gunshot_1.wav", ShotDir + "gunshot_2.wav",
-            ShotDir + "gunshot_3.wav", ShotDir + "gunshot_4.wav");
+        /// <summary>The reports for one weapon, drawn at random per shot. Real
+        /// recordings of the gun the armoury actually sells - a .45 and a .38 for the
+        /// pistols, two 12 gauges, a Swedish K, an AK, a PPSh - cut by
+        /// Tools/audio/import_sounds.py, which is where the choices are argued.
+        ///
+        /// Empty for anything that is not a firearm, and empty is not an error: the
+        /// crews already treat a missing clip as a silent shot.</summary>
+        public static AudioClip[] Gunshots(EquipmentKind kind)
+        {
+            if (_shots.TryGetValue(kind, out var cached)) return cached;
+            var clips = Numbered(ShotPrefix(kind));
+            _shots[kind] = clips;
+            return clips;
+        }
+
+        /// <summary>Every firearm's set at once, in the shape DemoCrews serialises.</summary>
+        public static DemoCrews.WeaponSounds[] GunshotSets()
+        {
+            var sets = new List<DemoCrews.WeaponSounds>();
+            foreach (EquipmentKind kind in System.Enum.GetValues(typeof(EquipmentKind)))
+            {
+                var clips = Gunshots(kind);
+                if (clips.Length > 0)
+                    sets.Add(new DemoCrews.WeaponSounds { Kind = kind, Clips = clips });
+            }
+            return sets.ToArray();
+        }
 
         /// <summary>The round going past: a whip crack, which is the same physics.</summary>
         public static AudioClip Crack => Load<AudioClip>(ShotDir + "bullet_crack.wav");
 
-        static AudioClip[] _shots;
+        static readonly Dictionary<EquipmentKind, AudioClip[]> _shots = new();
 
-        static AudioClip[] Sounds(params string[] paths)
+        static string ShotPrefix(EquipmentKind kind) => kind switch
         {
-            var list = new List<AudioClip>(paths.Length);
-            foreach (var path in paths)
+            // Two pistols in a coat are the same gun twice, so they sound like one.
+            EquipmentKind.Pistol or EquipmentKind.TwinPistols => "pistol",
+            EquipmentKind.Shotgun => "shotgun",
+            EquipmentKind.MachinePistol => "machinepistol",
+            EquipmentKind.Rifle => "rifle",
+            EquipmentKind.TommyGun => "tommygun",
+            _ => null,
+        };
+
+        /// <summary>Loads name_1, name_2 ... until one is missing. The counts differ per
+        /// weapon and change whenever the bake picks up another usable report, so
+        /// counting here rather than listing means a re-bake needs no edit.</summary>
+        static AudioClip[] Numbered(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return System.Array.Empty<AudioClip>();
+            var list = new List<AudioClip>();
+            for (int i = 1; ; i++)
             {
-                var clip = Load<AudioClip>(path);
-                if (clip) list.Add(clip);
+                var clip = Load<AudioClip>($"{ShotDir}{name}_{i}.wav");
+                if (!clip) break;
+                list.Add(clip);
             }
             return list.ToArray();
         }

@@ -91,6 +91,7 @@ namespace RoadDemo
                     {
                         Tf = go.transform, Body = body, HalfLen = body.HalfLength, HalfWide = body.HalfWidth,
                         AxleBack = body.AxleBack, RoadY = roadY, Net = net, Profile = DriverProfile.Traffic,
+                        Tag = "traffic",
                     };
                     // the body is measured first (CarBody reads the renderers); then the driver
                     CarOccupant.Crew(go.transform, people, sitLoop, passengerChance: 0.3f);

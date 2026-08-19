@@ -249,6 +249,69 @@ for westerly in (True, False):
     check(PATTERN_WIDTH > 300, '%s: the downwind leg is %.0f m off the centreline' % (tag, PATTERN_WIDTH))
     check(side * PATTERN_WIDTH != 0, '%s: the circuit has a side' % tag)
 
+# ---------------------------------------------------------------- the boarding walk
+# The route AirportBoarding walks a passenger: down the steps, out from under the
+# wing, forward past the nose, over the service road and in at the gate door. It is
+# checked here because it is the one path on this field that a person walks across
+# live aircraft stands, and a route that clipped a wing would look like a passenger
+# walking through a Boeing.
+TERM_W    = num('TerminalWidth')
+DOOR_SIDE = 1.9                          # AirportSpec.Door, jet
+DOOR_FORE = 0.55
+STEP_REACH = 10 * 0.30 + 0.85            # ten treads of 0.3 m plus the platform
+NOSE      = JET_LEN * 0.55               # the stand node is 0.45 of the length back
+
+def gate_x(sx):
+    limit = TERM_W * 0.5 - 8.0
+    return max(-limit, min(limit, sx))
+
+def seg_min_x(a, b):
+    return min(a[0], b[0])
+
+def seg_max_x(a, b):
+    return max(a[0], b[0])
+
+for i, sx in enumerate(STAND_X):
+    origin_z = STAND_Z - JET_LEN * 0.45
+    foot  = (sx - (DOOR_SIDE + STEP_REACH + 1.0), origin_z + NOSE * DOOR_FORE)
+    clear = (sx - (JET_SPAN * 0.5 + 3.0),         origin_z + NOSE * DOOR_FORE)
+    ahead = (sx - (JET_SPAN * 0.5 + 3.0),         origin_z + NOSE + 6.0)
+    gx    = gate_x(sx)
+    cross = (gx, SERVICE_Z)
+    gate  = (gx, FRONT_Z - 2.0)
+    route = [foot, clear, ahead, cross, gate]
+
+    check(abs(clear[0] - sx) > JET_SPAN * 0.5,
+          'stand %d: the walk comes out %.1f m clear of its own wingtip' % (i + 1, abs(clear[0] - sx) - JET_SPAN * 0.5))
+    check(foot[1] < origin_z + NOSE,
+          'stand %d: the foot of the steps is behind the nose' % (i + 1))
+    check(abs(gx) <= TERM_W * 0.5,
+          'stand %d: the gate door is in the terminal wall (x %.0f, wall +/- %.0f)' % (i + 1, gx, TERM_W * 0.5))
+    check(gate[1] < FRONT_Z and gate[1] > num('ApronZ1'),
+          'stand %d: the gate door is on the paved strip behind the ramp' % (i + 1))
+
+    # and it must not walk into anybody else standing on the ramp
+    for j, ox in enumerate(STAND_X):
+        if j == i:
+            continue
+        lo, hi = ox - JET_SPAN * 0.5, ox + JET_SPAN * 0.5
+        worst = None
+        for k in range(len(route) - 1):
+            a, b = route[k], route[k + 1]
+            oz0, oz1 = origin_z + JET_LEN * -0.55, origin_z + NOSE
+            # the neighbour occupies the same band of z, so an overlap in x is a hit
+            if seg_max_x(a, b) > lo and seg_min_x(a, b) < hi and min(a[1], b[1]) < oz1:
+                worst = (k, seg_min_x(a, b), seg_max_x(a, b))
+        check(worst is None,
+              'stand %d: the walk keeps out of stand %d (x %.0f..%.0f)%s'
+              % (i + 1, j + 1, lo, hi, '' if worst is None else ' - leg %d runs %.0f..%.0f' % worst))
+
+check(num('DisembarkGap') > 0.5 and num('BoardingGap') > 0.5,
+      'the file down the steps moves at a sensible rate')
+check(num('LightGroundMin') > 120,
+      'a light aeroplane sits at least %.0f s between movements - the circuit is not a conveyor'
+      % num('LightGroundMin'))
+
 print('%d checks, %d failures' % (len(fails) + len(notes), len(fails)))
 for f in fails:
     print(f)

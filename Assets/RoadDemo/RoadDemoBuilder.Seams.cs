@@ -132,6 +132,70 @@ namespace RoadDemo
                     horizontalRoadZ[horizontalRoadZ.Length - 1] + HHalf(horizontalRoadZ.Length - 1) + Sidewalk);
         }
 
+        /// <summary>How far a river's bank reaches outside its own channel: the island
+        /// carves the bed down over this much either side of the seam (IslandHeight), so
+        /// this is the ground that belongs to the river and to nothing else.</summary>
+        internal const float RiverBank = 14f;
+
+        /// <summary>Metres of clear bank a road held flat leaves either side of a
+        /// channel. Anything nearer and the flat ground the road stands on fills the
+        /// river in: the belt used to dam every river it rang the city with, because
+        /// the whole of its shoulder was held level whatever lay under it.</summary>
+        internal const float RiverClear = 26f;
+
+        /// <summary>The rivers that CROSS a line running along an axis, as spans of the
+        /// crossed line's own coordinate, bank to bank. A road running north-south is cut
+        /// by the east-west rivers and by nothing else: a river running the same way as
+        /// the road never meets it. Sorted, lowest first.</summary>
+        internal List<(float lo, float hi)> RiverCrossings(bool alongZ)
+        {
+            var cuts = new List<(float lo, float hi)>();
+            if (seams == null) return cuts;
+            foreach (var s in seams)
+            {
+                if (s == null || s.kind != SeamKind.River) continue;
+                if (s.vertical == alongZ) continue;      // parallel: never crossed
+                var span = SeamSpan(s);
+                cuts.Add((span.lo - RiverBank, span.hi + RiverBank));
+            }
+            cuts.Sort((a, b) => a.lo.CompareTo(b.lo));
+            return cuts;
+        }
+
+        /// <summary>The rivers that leave the grid across a shore, as spans of that
+        /// shore's OWN axis (X for the south and north shores, Z for west and east):
+        /// the ground a quarter may not be laid astride. Same sense as
+        /// <see cref="LineCarriesSeam"/>: true asks about the vertical road lines.</summary>
+        internal List<Vector2> RiverBands(bool verticalLines)
+        {
+            var list = new List<Vector2>();
+            if (seams == null) return list;
+            foreach (var s in seams)
+            {
+                if (s == null || s.kind != SeamKind.River) continue;
+                if (s.vertical != verticalLines) continue;
+                var span = SeamSpan(s);
+                list.Add(new Vector2(span.lo - RiverBank, span.hi + RiverBank));
+            }
+            return list;
+        }
+
+        /// <summary>The stretches of [from, to] along a line that no river's channel
+        /// crosses, each channel taken with <paramref name="clear"/> metres of bank
+        /// either side: what may be held flat or paved without damming a river.</summary>
+        IEnumerable<(float lo, float hi)> ClearOfRivers(float from, float to, bool alongZ, float clear)
+        {
+            float at = from;
+            foreach (var c in RiverCrossings(alongZ))
+            {
+                float lo = c.lo - clear, hi = c.hi + clear;
+                if (hi <= at || lo >= to) continue;
+                if (lo > at) yield return (at, lo);
+                at = Mathf.Max(at, hi);
+            }
+            if (at < to) yield return (at, to);
+        }
+
         /// <summary>The stretches of [from, to] along one axis that no river takes -
         /// the sand fringe is laid in these, and the water shows between them.</summary>
         IEnumerable<(float, float)> SeamFreeRuns(float from, float to, bool alongX)
@@ -200,7 +264,7 @@ namespace RoadDemo
         GameObject _quayStraight, _quayStraightWorn, _quayCorner, _quayPipe;
         GameObject _waterTile, _bridgeEdge, _bridgeUnderside, _bridgeSupport, _bridgePillar, _bridgeWall;
         GameObject _pierLamp, _fountain, _courtBasketball, _courtTennis, _pavilion;
-        GameObject _highwayDeck, _highwayPillar, _chainFence;
+        GameObject _highwayDeck, _highwayPillar, _highwayRamp, _chainFence;
         readonly List<GameObject> _boats = new List<GameObject>();
         readonly List<GameObject> _parkTrees = new List<GameObject>();
         readonly List<GameObject> _bigTrees = new List<GameObject>();
@@ -232,6 +296,7 @@ namespace RoadDemo
             _courtTennis = Load(SeamPalmEnv + "SM_Env_Court_Tennis_01.prefab");
             _highwayDeck = Load(SeamPalmEnv + "SM_Env_Road_Highway_01.prefab");
             _highwayPillar = Load(SeamPalmEnv + "SM_Env_Road_Highway_Pillar_01.prefab");
+            _highwayRamp = Load(SeamPalmEnv + "SM_Env_Road_Highway_Ramp_01.prefab");
             _chainFence = Load(SeamCityEnv + "SM_Env_Fence_01.prefab");
             foreach (var name in new[] { "SM_Veh_Power_Boat_01", "SM_Veh_RIB_Boat_01", "SM_Veh_Party_Boat_01", "SM_Veh_Sailboat_01" })
             {
@@ -665,60 +730,128 @@ namespace RoadDemo
         const float DeckY = 9f;
 
         /// <summary>The deck's level once it has come down off the pillars, out of
-        /// town: just proud of the island's plain, an embankment rather than a bridge.</summary>
-        const float GradeY = 0.45f;
+        /// town: flush with the island's plain, a road rather than a bridge.</summary>
+        const float GradeY = 0.12f;
 
-        /// <summary>Metres the ramp takes to come down from the deck to the grade -
-        /// about a four-degree descent, which is what a freeway takes.</summary>
-        const float RampRun = 130f;
+        /// <summary>Where a freeway's end meets the island: the coordinate of the
+        /// ground-level link road (along the freeway's own axis) that Ts into it and
+        /// runs to the districts' roads on that shore.</summary>
+        struct HighwayEnd
+        {
+            public float Mid;      // the strip's centre line, across
+            public float LinkU;    // the link road's centre line, along the freeway
+            public bool Vertical;  // the freeway's axis
+            /// <summary>The junction the freeway ends in. The belt stops at it (it was
+            /// already breaking its decks for the pad), so the deck is a road that
+            /// actually joins the network at both ends instead of a dead one.</summary>
+            public RoadNode Node;
+        }
+
+        /// <summary>The freeway ends, by the shore they land on. Written by
+        /// BuildHighway, read when the district connectors are laid (they stop
+        /// short of the link road's crossroads), by BuildHighwayLinks (a city with
+        /// no belt) and by the belt (its decks break for the T pad).</summary>
+        readonly Dictionary<CityEdge, HighwayEnd> _highwayEnds = new Dictionary<CityEdge, HighwayEnd>();
+
+        /// <summary>Where a district connector crosses a freeway end's link road: a
+        /// crossroads to lay once the connectors are in.</summary>
+        readonly List<(CityEdge edge, float across)> _linkJunctions = new List<(CityEdge, float)>();
+
+        /// <summary>Each freeway's actual footprint: the strip across, and how far
+        /// along its axis it really runs - the island's relief and flora keep clear
+        /// of THIS, and grow back beyond the termini.</summary>
+        internal readonly List<(bool vertical, float lo, float hi, float uLo, float uHi)> _highwayRuns
+            = new List<(bool, float, float, float, float)>();
 
         // An elevated freeway down the strip: two decks side by side on pillars, one
-        // for each direction, running out past the grid both ways; every road of the
-        // grid passes under it. The ground beneath is what such ground is - worn
-        // asphalt behind chain-link, a fence along both sides of every reach between
-        // the crossing roads. Past the last junction the deck ramps DOWN: out of town
-        // it runs at grade over the island's ground - the hills held off it - and on
-        // out over the water to the mainland off-stage. Its own traffic runs on it
-        // (HighwayTraffic): cars that never leave the deck, following the ramps,
-        // wrapping round out of sight in the fringe.
+        // for each direction, riding over every street of the grid. The ground
+        // beneath is what such ground is - worn asphalt behind chain-link. Past the
+        // last junction the deck ramps DOWN - pitched deck pieces, then the pack's
+        // own moulded ramp for the last five metres of height - and ends ON the
+        // island at grade, in a T with a ground-level link road that runs to the
+        // district roads on that shore: the freeway is how you drive from the city's
+        // far side to the port road or the suburb road without crossing downtown.
+        // Its own traffic runs on it (HighwayTraffic): cars that ride deck and ramps
+        // end to end and turn round in a loop at each terminus.
         void BuildHighway(Seam s)
         {
             bool alongZ = s.vertical;
             var (edgeLo, edgeHi) = SeamSpan(s);
             var ext = GridExtent(!alongZ);
-            // out over the island and the water beyond it, to the mainland off-stage
-            float uMin = ext.lo - (alongZ ? islandSouth : islandWest) - 160f;
-            float uMax = ext.hi + (alongZ ? islandNorth : islandEast) + 160f;
             float mid = (edgeLo + edgeHi) * 0.5f;
             Vector3 W(float u, float v, float y) => alongZ ? new Vector3(v, y, u) : new Vector3(u, y, v);
 
-            // the deck's height along its run: full height over the grid and a step
-            // past it, then down the ramp, then at grade all the way off-stage
-            float loTop = ext.lo - 25f, hiTop = ext.hi + 25f;
+            // the run, laid out from the grid outward on both sides: full height a
+            // step past the last junction, two pitched pieces down to the moulded
+            // ramp's top, the moulded ramp to the ground, a flat tail the traffic
+            // turns round on, and the T with the link road just beyond
+            const float ChordRun = 44f, MoldRun = 40f, TailRun = 40f;
+            float rampTopY = GradeY + 5f;                    // what the moulded piece climbs
+            float sTop = ext.lo - 20f, nTop = ext.hi + 20f;
+            float sMid = sTop - ChordRun, nMid = nTop + ChordRun;
+            float sFoot = sMid - MoldRun, nFoot = nMid + MoldRun;
+            float sEnd = sFoot - TailRun, nEnd = nFoot + TailRun;
+            // the T: on the belt freeway's line (Belt.cs) - which is exactly 22 m past
+            // the tail, the descent being measured to land there
+            float linkS = ext.lo - BeltOut, linkN = ext.hi + BeltOut;
+
             float DeckHeight(float u)
             {
-                if (u >= loTop && u <= hiTop) return DeckY;
-                float off = u < loTop ? loTop - u : u - hiTop;
-                return Mathf.Lerp(DeckY, GradeY, Mathf.Clamp01(off / RampRun));
+                if (u >= sTop && u <= nTop) return DeckY;
+                if (u < sTop)
+                {
+                    if (u >= sMid) return Mathf.Lerp(rampTopY, DeckY, Mathf.InverseLerp(sMid, sTop, u));
+                    if (u >= sFoot) return Mathf.Lerp(GradeY, rampTopY, Mathf.InverseLerp(sFoot, sMid, u));
+                    return GradeY;
+                }
+                if (u <= nMid) return Mathf.Lerp(DeckY, rampTopY, Mathf.InverseLerp(nTop, nMid, u));
+                if (u <= nFoot) return Mathf.Lerp(rampTopY, GradeY, Mathf.InverseLerp(nMid, nFoot, u));
+                return GradeY;
             }
 
-            // the ground where the ramps land: held dead flat and bare, so each ramp's
-            // foot meets a level shoulder. The rest of the grade-level run needs no
-            // rectangle - the island's own hills part around the freeway's corridor
-            // (IslandHeight fades them out across it) and the shore takes over at the
-            // coast, the deck flying the last reach out over the beach and the water.
-            float shoulder = (edgeHi - edgeLo) * 0.5f + 9f;
-            float rampLo = loTop - RampRun - 40f, rampHi = hiTop + RampRun + 40f;
+            // the frontage roads, the diamond and the nodes the graph will need: the
+            // profile is known now, and BuildGraph has not run yet, which is the one
+            // moment both those things are true (Interchange.cs)
+            var plan = PlanInterchange(s, mid, linkS, linkN, DeckHeight);
+
+            // where the ends land, for the connectors, the island and the belt
+            if (alongZ)
             {
-                var r = alongZ ? Rect.MinMaxRect(mid - shoulder, rampLo, mid + shoulder, ext.lo)
-                               : Rect.MinMaxRect(rampLo, mid - shoulder, ext.lo, mid + shoulder);
-                _reservations.Level(r, 0f);
+                _highwayEnds[CityEdge.South] = new HighwayEnd { Mid = mid, LinkU = linkS, Vertical = true, Node = plan.SEnd };
+                _highwayEnds[CityEdge.North] = new HighwayEnd { Mid = mid, LinkU = linkN, Vertical = true, Node = plan.NEnd };
+            }
+            else
+            {
+                _highwayEnds[CityEdge.West] = new HighwayEnd { Mid = mid, LinkU = linkS, Vertical = false, Node = plan.SEnd };
+                _highwayEnds[CityEdge.East] = new HighwayEnd { Mid = mid, LinkU = linkN, Vertical = false, Node = plan.NEnd };
+            }
+            _highwayRuns.Add((s.vertical, edgeLo, edgeHi, linkS - 30f, linkN + 30f));
+
+            // the ground of the descent, the tails and the T pads: held dead flat
+            // and bare - the island's hills part around the corridor besides
+            float shoulder = (edgeHi - edgeLo) * 0.5f + 9f;
+            {
+                var r = alongZ ? Rect.MinMaxRect(mid - shoulder, linkS - 25f, mid + shoulder, ext.lo)
+                               : Rect.MinMaxRect(linkS - 25f, mid - shoulder, ext.lo, mid + shoulder);
+                _reservations.Level(r, RoadBed);
                 _reservations.NoFlora(r);
-                r = alongZ ? Rect.MinMaxRect(mid - shoulder, ext.hi, mid + shoulder, rampHi)
-                           : Rect.MinMaxRect(ext.hi, mid - shoulder, rampHi, mid + shoulder);
-                _reservations.Level(r, 0f);
+                r = alongZ ? Rect.MinMaxRect(mid - shoulder, ext.hi, mid + shoulder, linkN + 25f)
+                           : Rect.MinMaxRect(ext.hi, mid - shoulder, linkN + 25f, mid + shoulder);
+                _reservations.Level(r, RoadBed);
                 _reservations.NoFlora(r);
             }
+            // the terminal pads: the freeway's own carriageway from the foot of the
+            // ramp round to the T on the belt. ROAD asphalt - a lot floor is what made
+            // these read as empty squares (Interchange.cs, PaveFreewayJunction)
+            void Pad(float u0, float u1)
+            {
+                float lo = Mathf.Min(u0, u1), hi = Mathf.Max(u0, u1);
+                float c = (lo + hi) * 0.5f, halfAlong = (hi - lo) * 0.5f;
+                if (alongZ) PaveFreewayJunction(mid, c, 17.5f, halfAlong);
+                else PaveFreewayJunction(c, mid, halfAlong, 17.5f);
+            }
+            Pad(linkS - 17.5f, sEnd + 2f);
+            Pad(nEnd - 2f, linkN + 17.5f);
 
             // the ground under the deck, reach by reach between the crossing roads
             int roads = alongZ ? horizontalRoadZ.Length : verticalRoadX.Length;
@@ -736,13 +869,17 @@ namespace RoadDemo
                         if (span.lo < hi && span.hi > lo) water = true;
                     }
                 if (water) continue;
-                if (alongZ) BuildBlockFloor(edgeLo, edgeHi, lo, hi, null, false);
-                else BuildBlockFloor(lo, hi, edgeLo, edgeHi, null, false);
+                // only the middle of the corridor is waste ground now: the frontage
+                // roads have the outer thirteen metres of it either side, and the ramps
+                // the strip between (Interchange.cs)
+                float underLo = Mathf.Max(edgeLo, mid - UnderHalf), underHi = Mathf.Min(edgeHi, mid + UnderHalf);
+                if (alongZ) BuildBlockFloor(underLo, underHi, lo, hi, null, false);
+                else BuildBlockFloor(lo, hi, underLo, underHi, null, false);
 
                 // chain-link down both long sides of the reach (the piece runs 5 m
                 // along local +X from its pivot), a gap left where nothing meets it
                 if (_chainFence != null)
-                    foreach (float v in new[] { edgeLo + 0.3f, edgeHi - 0.3f })
+                    foreach (float v in new[] { underLo + 0.3f, underHi - 0.3f })
                         for (float u = lo + 2.5f; u + Cell <= hi - 2.5f + 0.1f; u += Cell)
                         {
                             var rot = alongZ ? Quaternion.Euler(0f, -90f, 0f) : Quaternion.identity; // +X -> +Z, or +X
@@ -756,36 +893,84 @@ namespace RoadDemo
             // one running +u (yaw 0, pivot at u), the far one turned about (yaw 180,
             // pivot at u + 20) so both carry their outer barrier outward.
             const float DeckLen = 20f, DeckHalf = 5.7f;
-            if (_highwayDeck != null)
+
+            // A row of deck pieces from u0 to u1, each a straight chord of the height
+            // profile: both ends sit ON the profile, so neighbours always meet, and
+            // on a ramp the pieces pitch nose-down toward the grade. The row's length
+            // is absorbed by stretching every piece a hair, never by leaving a gap.
+            void LayDeckRow(float u0, float u1)
             {
-                for (float u = uMin; u < uMax - 0.1f; u += DeckLen)
+                int count = Mathf.Max(1, Mathf.RoundToInt((u1 - u0) / DeckLen));
+                float len = (u1 - u0) / count;
+                for (int k = 0; k < count; k++)
                 {
-                    // each piece is a straight chord of the height profile: both of its
-                    // ends sit ON the profile, so neighbours always meet, and on the
-                    // ramp the pieces pitch nose-down toward the grade
-                    float h0 = DeckHeight(u), h1 = DeckHeight(u + DeckLen);
-                    float pitch = Mathf.Atan2(h0 - h1, DeckLen) * Mathf.Rad2Deg;
+                    float u = u0 + k * len;
+                    float h0 = DeckHeight(u), h1 = DeckHeight(u + len);
+                    float pitch = Mathf.Atan2(h0 - h1, len) * Mathf.Rad2Deg;
+                    GameObject a, b;
                     if (alongZ)
                     {
-                        Instantiate(_highwayDeck, new Vector3(mid - DeckHalf + 5f, h0, u), Quaternion.Euler(pitch, 0f, 0f), SeamsRoot).name = "Deck";
-                        Instantiate(_highwayDeck, new Vector3(mid + DeckHalf - 5f, h1, u + DeckLen), Quaternion.Euler(-pitch, 180f, 0f), SeamsRoot).name = "Deck";
+                        a = Instantiate(_highwayDeck, new Vector3(mid - DeckHalf + 5f, h0, u), Quaternion.Euler(pitch, 0f, 0f), SeamsRoot);
+                        b = Instantiate(_highwayDeck, new Vector3(mid + DeckHalf - 5f, h1, u + len), Quaternion.Euler(-pitch, 180f, 0f), SeamsRoot);
                     }
                     else
                     {
                         // yaw 90: local +Z -> +X (along u), local +X -> -Z: the -10.7..0.7 spread lands
                         // at z in [pz - 0.7, pz + 10.7]; yaw -90: local +Z -> -X, +X -> +Z
-                        Instantiate(_highwayDeck, new Vector3(u, h0, mid + DeckHalf - 5f), Quaternion.Euler(pitch, 90f, 0f), SeamsRoot).name = "Deck";
-                        Instantiate(_highwayDeck, new Vector3(u + DeckLen, h1, mid - DeckHalf + 5f), Quaternion.Euler(-pitch, -90f, 0f), SeamsRoot).name = "Deck";
+                        a = Instantiate(_highwayDeck, new Vector3(u, h0, mid + DeckHalf - 5f), Quaternion.Euler(pitch, 90f, 0f), SeamsRoot);
+                        b = Instantiate(_highwayDeck, new Vector3(u + len, h1, mid - DeckHalf + 5f), Quaternion.Euler(-pitch, -90f, 0f), SeamsRoot);
                     }
+                    a.name = b.name = "Deck";
+                    if (Mathf.Abs(len - DeckLen) > 0.01f)
+                        a.transform.localScale = b.transform.localScale = new Vector3(1f, 1f, len / DeckLen);
+                }
+            }
+
+            if (_highwayDeck != null)
+            {
+                LayDeckRow(sTop, nTop);      // the elevated run over the grid
+                LayDeckRow(sMid, sTop);      // the pitched descents...
+                LayDeckRow(nTop, nMid);
+                LayDeckRow(sEnd, sFoot);     // ...and the flat tails to the termini
+                LayDeckRow(nFoot, nEnd);
+
+                // the last five metres of height: the pack's own moulded ramp - 40 m
+                // along local +Z climbing 5 m from its pivot at the ground end, the
+                // same footprint convention as the deck (chords stand in if missing)
+                if (_highwayRamp != null)
+                {
+                    if (alongZ)
+                    {
+                        // north foot: the pieces climb back toward the city (yaw 180)
+                        Instantiate(_highwayRamp, new Vector3(mid - DeckHalf - 5f, GradeY, nFoot), Quaternion.Euler(0f, 180f, 0f), SeamsRoot).name = "Ramp";
+                        Instantiate(_highwayRamp, new Vector3(mid + DeckHalf - 5f, GradeY, nFoot), Quaternion.Euler(0f, 180f, 0f), SeamsRoot).name = "Ramp";
+                        // south foot: climbing north (yaw 0)
+                        Instantiate(_highwayRamp, new Vector3(mid - DeckHalf + 5f, GradeY, sFoot), Quaternion.identity, SeamsRoot).name = "Ramp";
+                        Instantiate(_highwayRamp, new Vector3(mid + DeckHalf + 5f, GradeY, sFoot), Quaternion.identity, SeamsRoot).name = "Ramp";
+                    }
+                    else
+                    {
+                        // east foot: climbing back west (yaw -90)
+                        Instantiate(_highwayRamp, new Vector3(nFoot, GradeY, mid + DeckHalf + 5f), Quaternion.Euler(0f, -90f, 0f), SeamsRoot).name = "Ramp";
+                        Instantiate(_highwayRamp, new Vector3(nFoot, GradeY, mid - DeckHalf + 5f), Quaternion.Euler(0f, -90f, 0f), SeamsRoot).name = "Ramp";
+                        // west foot: climbing east (yaw 90)
+                        Instantiate(_highwayRamp, new Vector3(sFoot, GradeY, mid + DeckHalf - 5f), Quaternion.Euler(0f, 90f, 0f), SeamsRoot).name = "Ramp";
+                        Instantiate(_highwayRamp, new Vector3(sFoot, GradeY, mid - DeckHalf - 5f), Quaternion.Euler(0f, 90f, 0f), SeamsRoot).name = "Ramp";
+                    }
+                }
+                else
+                {
+                    LayDeckRow(sFoot, sMid);
+                    LayDeckRow(nMid, nFoot);
                 }
             }
             // a pier under the middle of the twin deck every 20 m, its T-head across
             // the strip; the pillar hangs 16 m below its pivot, so its foot is buried.
-            // None once the ramp is down near the grade: an embankment needs no piers.
+            // None once the ramp is down near the grade: a road needs no piers.
             if (_highwayPillar != null)
             {
                 var rot = alongZ ? Quaternion.identity : Quaternion.Euler(0f, 90f, 0f);
-                for (float u = uMin + DeckLen * 0.5f; u < uMax; u += DeckLen)
+                for (float u = sMid + DeckLen * 0.5f; u < nMid; u += DeckLen)
                 {
                     if (DeckHeight(u) < 3.5f) continue;
                     // never in a road: a pier standing in a carriageway is a wreck waiting
@@ -801,12 +986,18 @@ namespace RoadDemo
                 }
             }
 
-            // the through traffic, riding the same height profile down the ramps
-            if (_carPrefabs.Count > 0)
+            // the frontage roads and the slip roads, which is what the corridor is for
+            BuildInterchangeGeometry(plan);
+
+            // With a belt, the deck is two one-way carriageways of the lane graph
+            // (Interchange.cs, BuildDeckLanes) and the city's own cars drive it: up a
+            // slip road, along, and off again. Without one it ends on a turnaround pad
+            // that is in no graph, so it keeps the traffic of its own it always had -
+            // cars that ride it end to end and loop at each terminus.
+            if (!BeltOn && _carPrefabs.Count > 0)
             {
                 var traffic = SeamsRoot.gameObject.AddComponent<HighwayTraffic>();
                 var lanes = new List<HighwayTraffic.Lane>();
-                // two lanes a deck, 2.6 m either side of each deck's centre line
                 foreach (float side in new[] { -1f, 1f })
                     foreach (float lane in new[] { -2.6f, 2.6f })
                         lanes.Add(new HighwayTraffic.Lane
@@ -815,14 +1006,83 @@ namespace RoadDemo
                             // right-hand traffic: heading +Z the right side is +X, heading +X it is -Z
                             Direction = alongZ ? (side < 0f ? -1f : 1f) : (side < 0f ? 1f : -1f),
                         });
-                int cars = Mathf.Max(6, Mathf.RoundToInt((uMax - uMin) / 45f));
-                traffic.Init(alongZ, uMin, uMax, 0.02f, lanes, cars, _carPrefabs, _cars,
-                    _pedPrefabs, _sitLoopClip, CrowdLayer, DeckHeight);
+                int cars = Mathf.Max(6, Mathf.RoundToInt((nEnd - sEnd) / 40f));
+                traffic.Init(alongZ, sEnd + 10f, nEnd - 10f, 0.02f, lanes, cars, _carPrefabs, _cars,
+                    _pedPrefabs, _sitLoopClip, CrowdLayer, DeckHeight, mid);
                 _highwayTraffic.Add(traffic);
             }
         }
 
         readonly List<HighwayTraffic> _highwayTraffic = new List<HighwayTraffic>();
+
+        /// <summary>The link roads at the freeway's termini, laid AFTER the districts:
+        /// a ground-level street from each terminal T along the shore to every district
+        /// connector on it, with a proper crossroads where the two meet - which is how
+        /// the port and the suburbs hang off the freeway. A shore with a freeway end
+        /// and no districts keeps just the turnaround pad.</summary>
+        void BuildHighwayLinks()
+        {
+            if (BeltOn) return;     // the belt IS the link road, and goes right round
+            if (_highwayEnds.Count == 0 || _linkJunctions.Count == 0) return;
+            if (_connectorKit == null)
+            {
+                var root = ((IDistrictHost)this).StaticRoot("District Roads");
+                _connectorKit = new StreetKit(root) { Palms = false };
+            }
+            const float Gap = StreetKit.StreetHalf + StreetKit.Cell;  // a street stops this short of a square
+
+            foreach (var kv in _highwayEnds)
+            {
+                var edge = kv.Key;
+                var end = kv.Value;
+                var vs = new List<float>();
+                foreach (var j in _linkJunctions)
+                    if (j.edge == edge) vs.Add(j.across);
+                if (vs.Count == 0) continue;
+
+                // the junctions all lie to one side of the freeway; march from the
+                // farthest toward the terminal pad
+                vs.Sort();
+                float sign = vs[0] < end.Mid ? 1f : -1f;    // the pad lies at +sign of them
+                float padV = end.Mid - sign * 17.5f;
+                if (sign < 0f) vs.Reverse();
+
+                for (int i = 0; i < vs.Count; i++)
+                {
+                    float v = vs[i];
+                    // the stretch of link road from this square toward the next - or,
+                    // from the last of them, up to the terminal pad's asphalt
+                    float next = i + 1 < vs.Count ? vs[i + 1] - sign * Gap : padV;
+                    float from = Mathf.Min(v + sign * Gap, next), to = Mathf.Max(v + sign * Gap, next);
+                    if (to - from > 1f)
+                    {
+                        if (end.Vertical) _connectorKit.LayAlongX(end.LinkU, from, to);
+                        else _connectorKit.LayAlongZ(end.LinkU, from, to);
+                    }
+                    // the crossroads: the connector drives through; the link road goes
+                    // on toward the freeway, and outward only past the first junction
+                    bool away = i > 0;
+                    if (end.Vertical)
+                        _connectorKit.LayCrossroads(v, end.LinkU, north: true, south: true,
+                            east: sign > 0f || away, west: sign < 0f || away);
+                    else
+                        _connectorKit.LayCrossroads(end.LinkU, v, north: sign > 0f || away,
+                            south: sign < 0f || away, east: true, west: true);
+                }
+
+                // the ground: flat and bare under the whole link road (after the
+                // conditional reverse vs[0] is always the junction farthest from the pad)
+                float vFar = vs[0] - sign * 20f;
+                float lo = Mathf.Min(vFar, padV), hi = Mathf.Max(vFar, padV);
+                float half = StreetKit.OuterHalf + 5f;
+                var r = end.Vertical
+                    ? Rect.MinMaxRect(lo, end.LinkU - half, hi, end.LinkU + half)
+                    : Rect.MinMaxRect(end.LinkU - half, lo, end.LinkU + half, hi);
+                _reservations.Level(r, RoadBed);
+                _reservations.NoFlora(r);
+                Debug.Log($"[RoadDemo] freeway link road on the {edge}: {vs.Count} crossroads");
+            }
+        }
 
         /// <summary>A wild reach: woods and scrub over the lawn, thicker in the middle,
         /// a few rocks and a fallen log; nothing a stride from the edge roads.</summary>
@@ -918,9 +1178,9 @@ namespace RoadDemo
 
     /// <summary>
     /// The freeway's own cars: they ride the deck's lanes end to end at a steady
-    /// clip and wrap round in the fringe, out of sight - no junctions, no lights,
-    /// no lane graph, which is what a through road is. Each lane keeps one speed,
-    /// so nobody overtakes into anybody.
+    /// clip, follow the ramps down, and turn round in a loop on the terminal tail
+    /// at each end - no junctions, no lights, no lane graph, which is what a
+    /// through road is. Each lane keeps one speed, so nobody overtakes into anybody.
     /// </summary>
     public class HighwayTraffic : MonoBehaviour
     {
@@ -936,28 +1196,46 @@ namespace RoadDemo
             public int Lane;
             public float U;
             public float Speed;
+            public float Turn;      // metres into the terminal U-turn arc; < 0 on the straight
+            public float TurnEnd;   // which terminus the arc rounds: +1 the far end, -1 the near
         }
 
         /// <summary>Metres a second the slowest lane keeps up.</summary>
         const float HighwayPace = 17f;
 
         bool _alongZ;
-        float _uMin, _uMax, _y;
+        float _uMin, _uMax, _y, _mid;
         List<Lane> _lanes;
+        int[] _mirror;
         System.Func<float, float> _deckAt;
         readonly List<Car> _cars = new List<Car>();
 
         public void Init(bool alongZ, float uMin, float uMax, float y, List<Lane> lanes, int count,
             List<GameObject> prefabs, Transform parent,
             IList<GameObject> people = null, AnimationClip sitLoop = null, int peopleLayer = -1,
-            System.Func<float, float> deckAt = null)
+            System.Func<float, float> deckAt = null, float mid = 0f)
         {
             _alongZ = alongZ;
             _uMin = uMin;
             _uMax = uMax;
             _y = y;
+            _mid = mid;
             _lanes = lanes;
             _deckAt = deckAt;
+            // the lane a U-turn lands in: the one mirrored across the strip's centre
+            // line, which runs the other way
+            _mirror = new int[lanes.Count];
+            for (int i = 0; i < lanes.Count; i++)
+            {
+                _mirror[i] = i;
+                float best = float.MaxValue;
+                for (int j = 0; j < lanes.Count; j++)
+                {
+                    if (Mathf.Approximately(lanes[j].Direction, lanes[i].Direction)) continue;
+                    float d = Mathf.Abs((lanes[j].Across - mid) + (lanes[i].Across - mid));
+                    if (d < best) { best = d; _mirror[i] = j; }
+                }
+            }
             float length = uMax - uMin;
             for (int k = 0; k < count; k++)
             {
@@ -979,6 +1257,7 @@ namespace RoadDemo
                     Lane = lane,
                     U = u,
                     Speed = HighwayPace + 1.3f * (lane % 2) + 0.9f * (lane / 2),
+                    Turn = -1f,
                 });
                 Place(_cars.Count - 1);
             }
@@ -990,10 +1269,32 @@ namespace RoadDemo
             for (int k = 0; k < _cars.Count; k++)
             {
                 var c = _cars[k];
-                var lane = _lanes[c.Lane];
-                c.U += lane.Direction * c.Speed * dt;
-                if (c.U > _uMax) c.U -= _uMax - _uMin;
-                else if (c.U < _uMin) c.U += _uMax - _uMin;
+                if (c.Turn >= 0f)
+                {
+                    c.Turn += c.Speed * dt;
+                    float r = Mathf.Max(1.5f, Mathf.Abs(_lanes[c.Lane].Across - _mid));
+                    if (c.Turn >= Mathf.PI * r)
+                    {
+                        // out of the loop, into the mirrored lane, headed back
+                        float over = c.Turn - Mathf.PI * r;
+                        c.Lane = _mirror[c.Lane];
+                        c.U = c.TurnEnd > 0f ? _uMax - over : _uMin + over;
+                        c.Turn = -1f;
+                    }
+                }
+                else
+                {
+                    var lane = _lanes[c.Lane];
+                    c.U += lane.Direction * c.Speed * dt;
+                    if (lane.Direction > 0f && c.U > _uMax)
+                    {
+                        c.Turn = c.U - _uMax; c.TurnEnd = 1f; c.U = _uMax;
+                    }
+                    else if (lane.Direction < 0f && c.U < _uMin)
+                    {
+                        c.Turn = _uMin - c.U; c.TurnEnd = -1f; c.U = _uMin;
+                    }
+                }
                 _cars[k] = c;
                 Place(k);
             }
@@ -1003,15 +1304,36 @@ namespace RoadDemo
         {
             var c = _cars[k];
             var lane = _lanes[c.Lane];
+
+            if (c.Turn >= 0f)
+            {
+                // the terminal loop: a half circle round the strip's centre line, from
+                // the car's own lane over to its mirror
+                float off = lane.Across - _mid;
+                float r = Mathf.Max(1.5f, Mathf.Abs(off));
+                float phi = Mathf.Min(Mathf.PI, c.Turn / r);
+                float uEnd = c.TurnEnd > 0f ? _uMax : _uMin;
+                float u = uEnd + c.TurnEnd * r * Mathf.Sin(phi);
+                float across = _mid + off * Mathf.Cos(phi);
+                float deck = _deckAt != null ? _deckAt(uEnd) : 0f;
+                // the tangent: du/ds and d(across)/ds, for the nose to follow the arc
+                float du = c.TurnEnd * Mathf.Cos(phi);
+                float da = -Mathf.Sign(off) * Mathf.Sin(phi);
+                Vector3 arcPos = _alongZ ? new Vector3(across, _y + deck, u) : new Vector3(u, _y + deck, across);
+                float arcYaw = _alongZ ? Mathf.Atan2(da, du) * Mathf.Rad2Deg : Mathf.Atan2(du, da) * Mathf.Rad2Deg;
+                c.Tf.SetPositionAndRotation(arcPos, Quaternion.Euler(0f, arcYaw, 0f));
+                return;
+            }
+
             // the deck's height under the car, and its slope for the nose to follow
-            float deck = _deckAt != null ? _deckAt(c.U) : 0f;
+            float deckY = _deckAt != null ? _deckAt(c.U) : 0f;
             float pitch = 0f;
             if (_deckAt != null)
             {
                 float slope = (_deckAt(c.U + 3f) - _deckAt(c.U - 3f)) / 6f;
                 pitch = -Mathf.Atan(slope * lane.Direction) * Mathf.Rad2Deg;
             }
-            Vector3 pos = _alongZ ? new Vector3(lane.Across, _y + deck, c.U) : new Vector3(c.U, _y + deck, lane.Across);
+            Vector3 pos = _alongZ ? new Vector3(lane.Across, _y + deckY, c.U) : new Vector3(c.U, _y + deckY, lane.Across);
             float yaw = _alongZ ? (lane.Direction > 0f ? 0f : 180f) : (lane.Direction > 0f ? 90f : 270f);
             c.Tf.SetPositionAndRotation(pos, Quaternion.Euler(pitch, yaw, 0f));
         }

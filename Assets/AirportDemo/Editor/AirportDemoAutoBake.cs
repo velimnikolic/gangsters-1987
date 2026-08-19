@@ -45,9 +45,23 @@ namespace AirportDemo.EditorTools
         static void OnPlayModeChanged(PlayModeStateChange state)
         {
             if (state != PlayModeStateChange.ExitingEditMode) return;
-            if (Object.FindAnyObjectByType<AirportDemoBuilder>() == null) return;
+            // the field's own scene, or the city with an airport district in it
+            if (Object.FindAnyObjectByType<AirportDemoBuilder>() == null && !CityWantsAnAirport()) return;
             SimpleAirportUrp.ConvertIfStale();
             AirportKitBash.BuildIfStale();
+        }
+
+        /// <summary>Whether the city in this scene has rolled an airport: the hangars and
+        /// the tower have to be baked before Play there too, not only in the field's own scene.</summary>
+        static bool CityWantsAnAirport()
+        {
+            var city = Object.FindAnyObjectByType<RoadDemo.RoadDemoBuilder>();
+            if (city == null) return false;
+            if (city.rollDistricts) return city.airportDistrict;
+            if (city.districts == null) return false;
+            foreach (var slot in city.districts)
+                if (slot != null && slot.kind == RoadDemo.DistrictKind.Airport) return true;
+            return false;
         }
     }
 }

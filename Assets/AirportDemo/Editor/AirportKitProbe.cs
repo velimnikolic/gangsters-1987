@@ -113,8 +113,11 @@ namespace AirportDemo.EditorTools
                 if (prefab == null) { sb.AppendLine(Path.GetFileNameWithoutExtension(path) + "  MISSING"); continue; }
                 var b = AirportKit.PrefabBounds(prefab);
                 var run = AirportKit.RunOf(prefab, out bool centred);
+                // a piece whose geometry is switched off measures its full size and
+                // then draws nothing - the one failure that looks like no failure
+                string dark = AirportKit.HasVisibleGeometry(prefab) ? "" : "   <<< NO VISIBLE GEOMETRY";
                 sb.AppendLine($"{prefab.name}  min({b.min.x:F2},{b.min.y:F2},{b.min.z:F2}) max({b.max.x:F2},{b.max.y:F2},{b.max.z:F2}) " +
-                              $"size({b.size.x:F2},{b.size.y:F2},{b.size.z:F2})  run({run.x:F2},{run.z:F2}){(centred ? " centred" : "")}");
+                              $"size({b.size.x:F2},{b.size.y:F2},{b.size.z:F2})  run({run.x:F2},{run.z:F2}){(centred ? " centred" : "")}{dark}");
             }
 
             sb.AppendLine();

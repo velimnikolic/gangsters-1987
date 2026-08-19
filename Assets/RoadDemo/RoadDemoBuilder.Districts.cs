@@ -18,7 +18,7 @@ namespace RoadDemo
     //     graphs so a patrol car can drive out to the suburb and a walker can walk in.
     public partial class RoadDemoBuilder : IDistrictHost
     {
-        [Header("Districts (the port, the suburbs)")]
+        [Header("Districts (the port, the suburbs, the airport)")]
         [Tooltip("Same seed, same town: which shore the port takes, how many suburbs " +
                  "there are and where they sit is rolled from this.")]
         public int cityLayoutSeed = 7;
@@ -27,9 +27,17 @@ namespace RoadDemo
         public bool rollDistricts = true;
         [Tooltip("A port on one shore. Only ever one.")]
         public bool harborDistrict = true;
-        [Tooltip("How many suburbs the roll may hang off the grid.")]
-        [Range(0, 4)] public int suburbsMin = 2;
-        [Range(0, 4)] public int suburbsMax = 3;
+        [Tooltip("A regional airport off one shore - the whole field, runway to car park - " +
+                 "with its approach road on the belt. Only ever one.")]
+        public bool airportDistrict = true;
+        [Tooltip("How many suburbs the roll may hang off the grid. The town is meant to " +
+                 "be more suburb than downtown - most of an American city of 1987 is - so " +
+                 "the roll goes round the island in rings and fills what the port and the " +
+                 "field leave it: a dozen small places with their own names, not two that " +
+                 "run the whole coast. It takes what it can get; a shore that is full " +
+                 "simply yields fewer.")]
+        [Range(0, 16)] public int suburbsMin = 10;
+        [Range(0, 16)] public int suburbsMax = 12;
         public DistrictSlot[] districts = new DistrictSlot[0];
 
         [Header("Frame budget")]
@@ -49,6 +57,26 @@ namespace RoadDemo
         public bool updateProfile = true;
 
         readonly List<IDistrict> _built = new List<IDistrict>();
+
+        /// <summary>One quarter as PLANNED: what it is called, what kind it is, and
+        /// the ground it stands on. The map washes the quarter in its own colour and
+        /// prints the name across it; nothing else needs the list.</summary>
+        public readonly struct DistrictPlan
+        {
+            public readonly string Name;
+            public readonly DistrictKind Kind;
+            public readonly Rect World;
+
+            public DistrictPlan(string name, DistrictKind kind, Rect world)
+            {
+                Name = name; Kind = kind; World = world;
+            }
+        }
+
+        readonly List<DistrictPlan> _districtPlans = new List<DistrictPlan>();
+
+        /// <summary>Every quarter that was planned, in the order they were rolled.</summary>
+        public IReadOnlyList<DistrictPlan> DistrictPlans => _districtPlans;
         readonly List<DistrictSlot> _builtSlots = new List<DistrictSlot>();
         readonly List<Transform> _districtLive = new List<Transform>();
         Transform _districtRoot;
@@ -71,17 +99,21 @@ namespace RoadDemo
 
         void PlanDistricts()
         {
+            // the field stands at the end of the island and the drive out to it goes PAST
+            // the villages on that shore, not instead of them: the shore it might take is
+            // held wide enough for a mile of runway, a row of suburbs in front of it and
+            // the road between. Without this the field filled its whole coast on its own
+            // and a quarter of the island carried nothing.
+            if (rollDistricts && airportDistrict)
+            {
+                float wanted = CityLayout.AirportDepth + CityLayout.SuburbRing + CityLayout.CoastMargin;
+                islandNorth = Mathf.Max(islandNorth, wanted);
+                islandSouth = Mathf.Max(islandSouth, wanted);
+            }
             if (rollDistricts)
             {
-                var grid = new CityLayout.Grid
-                {
-                    Vx = verticalRoadX,
-                    VBoulevard = verticalIsBoulevard,
-                    Hz = horizontalRoadZ,
-                    HBoulevard = horizontalIsBoulevard,
-                    Blocked = LineCarriesSeam,
-                };
-                var rolled = CityLayout.Roll(grid, cityLayoutSeed, suburbsMin, suburbsMax, harborDistrict);
+                var rolled = CityLayout.Roll(LayoutGrid(), cityLayoutSeed, suburbsMin, suburbsMax,
+                                             harborDistrict, airportDistrict);
                 districts = rolled.ToArray();
             }
             if (districts == null || districts.Length == 0) return;
@@ -100,17 +132,118 @@ namespace RoadDemo
                 district.Frame = frame;
                 district.Plan(links, slot.seed);
 
+                // a port and a field stand at the END of the island, and only now is it
+                // known how deep they came out: the strip is set again from the quarter's
+                // own measurements and the frame slid out to it, so the quay wall lands on
+                // the coast (a port cut into the middle of the wild is a pond, not a port)
+                // and the far runway threshold with it. The layout is the quarter's own
+                // business and does not depend on the frame, so nothing has to be planned
+                // twice - the whole thing is simply moved.
+                if (slot.toCoast && PushToCoast(slot, district) && FrameFor(slot, out var moved, out _))
+                {
+                    frame = moved;
+                    district.Frame = frame;
+                }
+
                 var world = frame.ToWorldRect(district.LocalBounds);
                 _landRects.Add(world);
+                string name = string.IsNullOrEmpty(slot.name) ? district.Name : slot.name;
+                _districtPlans.Add(new DistrictPlan(name, slot.kind, world));
+                // how far its ships run before the roll of the world takes them, first:
+                // the port keeps that water open in its own reservations
+                Seafare(slot, district, world);
                 district.Reserve(_reservations);
 
                 foreach (int line in slot.pinLines) OpenArm(slot.edge, line);
 
                 _built.Add(district);
                 _builtSlots.Add(slot);
-                Debug.Log($"[RoadDemo] district planned: {slot} -> {district.Name} at {frame}, " +
+                Debug.Log($"[RoadDemo] district planned: {slot} -> {name} at {frame}, " +
                           $"{world.width:F0} x {world.height:F0} m");
             }
+
+            int suburbs = 0;
+            foreach (var slot in _builtSlots) if (slot.kind == DistrictKind.Suburb) suburbs++;
+            string tally = $"[RoadDemo] quarters standing: {_built.Count} " +
+                           $"({suburbs} suburbs, asked for {suburbsMin}-{suburbsMax})";
+            if (suburbs < CityLayout.MinSuburbs)
+                Debug.LogWarning(tally + " - fewer than the town's minimum; the island has no room " +
+                                 "left on any shore (widen it, or take the field or the port off).");
+            else Debug.Log(tally);
+        }
+
+        /// <summary>The city as the roll sees it: its road lines, what may carry a quarter,
+        /// where the rivers leave, how much island each shore has and what the town is
+        /// called. One method so the editor's dump reads the same plan the builder builds
+        /// (Tools/City/Dump City Layout).</summary>
+        public CityLayout.Grid LayoutGrid() => new CityLayout.Grid
+        {
+            Vx = verticalRoadX,
+            VBoulevard = verticalIsBoulevard,
+            Hz = horizontalRoadZ,
+            HBoulevard = horizontalIsBoulevard,
+            Blocked = LineCarriesSeam,
+            Rivers = RiverBands,
+            Shore = ShoreWidth,
+            CityName = Streets != null ? Streets.City : null,
+        };
+
+        /// <summary>Metres of wild ground from the grid's outer kerb to the mean waterline
+        /// on that shore: how much island a quarter has to stand on.</summary>
+        float ShoreWidth(CityEdge edge)
+        {
+            switch (edge)
+            {
+                case CityEdge.South: return islandSouth;
+                case CityEdge.North: return islandNorth;
+                case CityEdge.West: return islandWest;
+                default: return islandEast;
+            }
+        }
+
+        /// <summary>Slide a quarter out until its own waterfront stands on the coast: the
+        /// port's quay wall, the field's far boundary. Its depth is only known once it has
+        /// planned itself, which is why the strip is set here and not in the roll.</summary>
+        bool PushToCoast(DistrictSlot slot, IDistrict district)
+        {
+            float depth = -district.LocalBounds.yMin;
+            // a port's own bounds run out past the quay to the water its ships need: that
+            // is sea and not ground, so the coast is measured to the quay wall
+            if (slot.kind == DistrictKind.Harbor) depth -= HarborDemo.HarborDistrict.BasinReach;
+            float strip = ShoreWidth(slot.edge) - depth - CityLayout.CoastMargin;
+            if (strip < 120f || Mathf.Abs(strip - slot.strip) < 1f) return false;
+            slot.strip = strip;
+            return true;
+        }
+
+        /// <summary>How far a port's ships run before they are out of the world: from the
+        /// quay to the end of the island either way along its own shore. A freighter that
+        /// appeared two hundred metres off the berth read as a toy popped into the water;
+        /// coming up over the horizon at one end of the map and standing out at the other
+        /// is what a working coast looks like.</summary>
+        void Seafare(DistrictSlot slot, IDistrict district, Rect world)
+        {
+            if (!(district is HarborDemo.HarborDistrict port)) return;
+            bool vertical = slot.edge == CityEdge.South || slot.edge == CityEdge.North;
+            // from the quay to whichever end of the island is further off along its own
+            // shore, and a little past the beach there. A port stands at a corner, so the
+            // two ends are not the same distance away and the ships run the longer of them
+            // both ways: the far end of the map either way is open sea in any case.
+            float lo, hi, at;
+            if (vertical)
+            {
+                lo = verticalRoadX[0] - 15f - islandWest;
+                hi = verticalRoadX[verticalRoadX.Length - 1] + 15f + islandEast;
+                at = world.center.x;
+            }
+            else
+            {
+                lo = horizontalRoadZ[0] - 15f - islandSouth;
+                hi = horizontalRoadZ[horizontalRoadZ.Length - 1] + 15f + islandNorth;
+                at = world.center.y;
+            }
+            float run = Mathf.Max(at - lo, hi - at) + 200f;
+            port.seaRun = Mathf.Max(port.QuayHalf + 300f, run);
         }
 
         /// <summary>A road line a seam runs out along - the river's mouth - which no
@@ -138,6 +271,7 @@ namespace RoadDemo
                 case DistrictKind.Pad: return new PadDistrict();
                 case DistrictKind.Suburb: return SuburbDemo.SuburbDistrict.ForCity(slot);
                 case DistrictKind.Harbor: return HarborDemo.HarborDistrict.ForCity(slot);
+                case DistrictKind.Airport: return AirportDemo.AirportDistrict.ForCity(slot);
                 default: return null;
             }
         }
@@ -225,10 +359,21 @@ namespace RoadDemo
             {
                 var district = _built[k];
                 var slot = _builtSlots[k];
+                // a dozen quarters used to lay a dozen roots called "Suburb Ground" side
+                // by side under one object: each one gets its own group, named after the
+                // place, so the hierarchy reads as a map of the island
+                string name = string.IsNullOrEmpty(slot.name) ? district.Name : slot.name;
+                _districtGroup = new GameObject(name).transform;
+                _districtGroup.SetParent(DistrictRoot, false);
                 district.Build(this);
                 ConnectDistrict(district, slot);
             }
+            _districtGroup = null;
         }
+
+        /// <summary>The quarter being built: everything it asks the host for goes under
+        /// this, so one place's roots stand together and are named for it.</summary>
+        Transform _districtGroup;
 
         /// <summary>The street across the wild strip, and the weld: the district's lane
         /// graph and pavement joined to the city's at the junction its pin line ends on.</summary>
@@ -259,18 +404,20 @@ namespace RoadDemo
                 if (cityNode == null) continue;
 
                 // the carriageway: along the axis the pin line runs on, from the
-                // district's boundary to the junction's face
+                // district's boundary to the junction's face - stopping short of the
+                // freeway's link road where one crosses, whose crossroads is laid
+                // later (BuildHighwayLinks)
                 if (vertical)
                 {
                     float cx = cityNode.X;
                     float z0 = Mathf.Min(world.z, faceWorld.z), z1 = Mathf.Max(world.z, faceWorld.z);
-                    if (z1 - z0 > 1f) _connectorKit.LayAlongZ(cx, z0, z1);
+                    LayConnector(slot.edge, true, cx, z0, z1);
                 }
                 else
                 {
                     float cz = cityNode.Z;
                     float x0 = Mathf.Min(world.x, faceWorld.x), x1 = Mathf.Max(world.x, faceWorld.x);
-                    if (x1 - x0 > 1f) _connectorKit.LayAlongX(cz, x0, x1);
+                    LayConnector(slot.edge, false, cz, x0, x1);
                 }
 
                 ReserveCorridor(faceWorld, world);
@@ -283,6 +430,49 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>The connector's carriageway, split around the freeway's link road
+        /// where that road crosses it: the crossroads there belongs to the link road's
+        /// own pass, and a street laid straight through it would double the tiles.</summary>
+        void LayConnector(CityEdge edge, bool vertical, float centre, float lo, float hi)
+        {
+            const float Gap = StreetKit.StreetHalf + StreetKit.Cell;
+            if (BeltOn && _beltU.TryGetValue(edge, out float beltU) && beltU > lo + 1f && beltU < hi - 1f)
+            {
+                // across the belt freeway: the street stops at the pad's edge either side
+                // of it (the pad and the junction are the belt's own, BuildBelt)
+                if (vertical)
+                {
+                    if (beltU - BeltPadHalf - lo > 1f) _connectorKit.LayAlongZ(centre, lo, beltU - BeltPadHalf);
+                    if (hi - (beltU + BeltPadHalf) > 1f) _connectorKit.LayAlongZ(centre, beltU + BeltPadHalf, hi);
+                }
+                else
+                {
+                    if (beltU - BeltPadHalf - lo > 1f) _connectorKit.LayAlongX(centre, lo, beltU - BeltPadHalf);
+                    if (hi - (beltU + BeltPadHalf) > 1f) _connectorKit.LayAlongX(centre, beltU + BeltPadHalf, hi);
+                }
+            }
+            else if (_highwayEnds.TryGetValue(edge, out var end) && end.Vertical == vertical &&
+                end.LinkU > lo + 1f && end.LinkU < hi - 1f)
+            {
+                if (vertical)
+                {
+                    if (end.LinkU - Gap - lo > 1f) _connectorKit.LayAlongZ(centre, lo, end.LinkU - Gap);
+                    if (hi - (end.LinkU + Gap) > 1f) _connectorKit.LayAlongZ(centre, end.LinkU + Gap, hi);
+                }
+                else
+                {
+                    if (end.LinkU - Gap - lo > 1f) _connectorKit.LayAlongX(centre, lo, end.LinkU - Gap);
+                    if (hi - (end.LinkU + Gap) > 1f) _connectorKit.LayAlongX(centre, end.LinkU + Gap, hi);
+                }
+                _linkJunctions.Add((edge, centre));
+            }
+            else if (hi - lo > 1f)
+            {
+                if (vertical) _connectorKit.LayAlongZ(centre, lo, hi);
+                else _connectorKit.LayAlongX(centre, lo, hi);
+            }
+        }
+
         /// <summary>The ground the connecting street stands on: flat at the city's own
         /// level and clear of the wild, from the junction out to the district. Without
         /// this the island's hills would run straight through the road.</summary>
@@ -291,7 +481,7 @@ namespace RoadDemo
             const float Half = StreetKit.OuterHalf + 4f;    // carriageway, pavements and a shoulder
             var rect = Rect.MinMaxRect(Mathf.Min(from.x, to.x) - Half, Mathf.Min(from.z, to.z) - Half,
                                        Mathf.Max(from.x, to.x) + Half, Mathf.Max(from.z, to.z) + Half);
-            _reservations.Level(rect, 0f);
+            _reservations.Level(rect, RoadBed);
             _reservations.NoFlora(rect);
         }
 
@@ -345,11 +535,63 @@ namespace RoadDemo
             // inbound at +X - which is what the network lays for a road from the face
             // to the portal. The two junctions' connectors are laid again over it.
             if (Net == null) return;
-            Net.AddRoad(faceWorld, portalWorld, StreetHalf, new[] { Lane }, streetSpeed, cityNode, portal.Node, ns);
+            // across the belt freeway the road is a CHAIN: the city's face, the foot of
+            // the near pair of slip roads, the belt's own crossroads, the foot of the far
+            // pair, and the quarter's gate. Before the slip roads it was two segments
+            // with the crossroads between them; the feet are where the right turns leave
+            // the street and rejoin it without ever entering the box (Belt.cs).
+            var cross = BeltOn ? BeltCrossFor(EdgeOf(frame), ns ? faceWorld.x : faceWorld.z) : null;
+            if (cross != null)
+            {
+                var belt = cross.Node;
+                float line = ns ? faceWorld.x : faceWorld.z;     // the street's own centre
+                Vector3 On(float s) => ns ? new Vector3(line, 0f, s) : new Vector3(s, 0f, line);
+                bool up = ns ? portalWorld.z > faceWorld.z : portalWorld.x > faceWorld.x;
+                // the box edge on the city's side of a node, and on the quarter's
+                float Near(RoadNode n) => ns ? (up ? n.ZMin : n.ZMax) : (up ? n.XMin : n.XMax);
+                float Far(RoadNode n) => ns ? (up ? n.ZMax : n.ZMin) : (up ? n.XMax : n.XMin);
+
+                void Link(Vector3 from, Vector3 to, RoadNode a, RoadNode b)
+                {
+                    if ((to - from).sqrMagnitude < 1f) return;
+                    Net.AddRoad(from, to, StreetHalf, new[] { Lane }, streetSpeed, a, b, ns);
+                }
+
+                if (cross.Slips)
+                {
+                    var nearFoot = up ? cross.FootLo : cross.FootHi;
+                    var farFoot = up ? cross.FootHi : cross.FootLo;
+                    Link(faceWorld, On(Near(nearFoot)), cityNode, nearFoot);
+                    Link(On(Far(nearFoot)), On(Near(belt)), nearFoot, belt);
+                    Link(On(Far(belt)), On(Near(farFoot)), belt, farFoot);
+                    Link(On(Far(farFoot)), portalWorld, farFoot, portal.Node);
+                    Net.Rebuild(nearFoot);
+                    Net.Rebuild(farFoot);
+                    Net.Rebuild(cross.GoreLo);
+                    Net.Rebuild(cross.GoreHi);
+                }
+                else
+                {
+                    Link(faceWorld, On(Near(belt)), cityNode, belt);
+                    Link(On(Far(belt)), portalWorld, belt, portal.Node);
+                }
+                Net.Rebuild(belt);
+            }
+            else Net.AddRoad(faceWorld, portalWorld, StreetHalf, new[] { Lane }, streetSpeed, cityNode, portal.Node, ns);
             Net.Rebuild(cityNode);
             Net.Rebuild(portal.Node);
             _edges.Clear();
             _edges.AddRange(Net.Edges);
+        }
+
+        /// <summary>The shore a district's frame faces the city from: the contract has
+        /// the city at local +Z, so the frame's +Z in the world says which way in.</summary>
+        static CityEdge EdgeOf(DistrictFrame frame)
+        {
+            var toCity = frame.ToWorldDir(Vector3.forward);
+            if (toCity.z > 0.5f) return CityEdge.South;
+            if (toCity.z < -0.5f) return CityEdge.North;
+            return toCity.x > 0.5f ? CityEdge.West : CityEdge.East;
         }
 
         /// <summary>The pavement across the strip: each of the district's two kerb
@@ -386,7 +628,7 @@ namespace RoadDemo
         Transform IDistrictHost.StaticRoot(string name)
         {
             var t = new GameObject(name).transform;
-            t.SetParent(DistrictRoot, false);
+            t.SetParent(_districtGroup != null ? _districtGroup : DistrictRoot, false);
             _districtStatic.Add(t);
             return t;
         }
@@ -394,12 +636,16 @@ namespace RoadDemo
         Transform IDistrictHost.LiveRoot(string name)
         {
             var t = new GameObject(name).transform;
-            t.SetParent(DistrictRoot, false);
+            t.SetParent(_districtGroup != null ? _districtGroup : DistrictRoot, false);
             _districtLive.Add(t);
             return t;
         }
 
         bool IDistrictHost.ProvidesGround => true;
+
+        // the island's own green, handed to the quarters so a suburb's lawns and the
+        // wild around it are one field of grass and not a Synty rectangle laid on it
+        Material IDistrictHost.GroundMaterial => GrassMaterial();
 
         PedClips _hostClips;
         bool _hostClipsMade;
@@ -452,7 +698,21 @@ namespace RoadDemo
             for (int i = 0; i < links.Count; i++) if (links[i] != null) _pedLinks.Add(links[i]);
         }
 
-        void IDistrictHost.Blocked(Bounds box) => WalkObstacles.Block(box);
+        void IDistrictHost.Blocked(Bounds box)
+        {
+            WalkObstacles.Block(box);
+            // A quarter's houses are not under the Blocks root and so are not in the
+            // map's pick set, but their footprints all come through here on their way
+            // to the walkers' obstacle field - which makes this the one list of what
+            // stands in the port and the suburbs. The map draws them as roofs.
+            _quarterRoofs.Add(Rect.MinMaxRect(box.min.x, box.min.z, box.max.x, box.max.z));
+        }
+
+        readonly List<Rect> _quarterRoofs = new List<Rect>();
+
+        /// <summary>Every footprint the quarters put on the ground, world XZ. Filled
+        /// as they are built; the map prints them.</summary>
+        public IReadOnlyList<Rect> QuarterRoofs => _quarterRoofs;
 
         void IDistrictHost.ReportMissing(string what)
             => Debug.LogWarning($"[RoadDemo] a district wanted a prefab it did not get: {what}");

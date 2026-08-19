@@ -451,3 +451,114 @@ kao u gradu), `avenuesNorthSouth`/`avenuesEastWest` (koje linije su bulevari),
 (kvart je ono što je IZMEĐU šavova), bez luke i predgrađa, `scaleLifeToCity` isključen —
 brojevi sa inspektora važe kakvi jesu. Konzola ispiše spisak svih placeva sa pad šifrom
 i imenom bakea koji je stao.
+
+---
+
+## 7. Autoput-prsten (belt) i aerodrom — mreža autoputeva na ostrvu (2026-08-19)
+
+Korisnik: *„mreža autoputeva treba da postoji na ostrvu u Game modu; mreža spaja velike
+rezidencijalne blokove, luku, a sad i aerodrom."*
+
+**Šta je bilo:** jedan nadvožnjak (seam `Highway`) preko grida, koji se spušta na ostrvo i završava
+T-om u kratku „link" ulicu duž te dve obale (`BuildHighwayLinks`) — kvartovi na druge dve obale
+nisu bili na autoputu, a link ulice nisu bile ni u grafu traka.
+
+**Šta je sada (`Assets/RoadDemo/RoadDemoBuilder.Belt.cs`):**
+- **Belt** = dvosmerni autoput u nivou tla (dve Highway deck pločice jedna uz drugu, 2×2 trake na
+  ±3.1/±8.3 m od ose, `BeltHalf` 11.4) koji **obilazi ceo grad** na `BeltOut = 166 m` od spoljnog
+  trotoara grida — tačno tamo gde se nadvožnjak spušta (20+44+40+40+22), pa se njegov T sada
+  završava NA prstenu (`BuildHighway`: `linkS/linkN = ext ± BeltOut`; deck pločice prstena se
+  prekidaju oko T-pada). Uglovi su asfaltni padovi 30×30 (`BuildBlockFloor`).
+- **Svaka ulica ka kvartu seče prsten** na raskrsnici u nivou: pad 25 m (duž prstena) × 30 m
+  (preko), `LayConnector` seče ulicu na `beltU ± BeltPadHalf(15)`; `WeldRoads` polaže DVA puta
+  (lice grada → belt čvor, belt čvor → portal). Kutija čvora: 7.5 duž prstena × 15 preko,
+  `StopSetback` 2.5, bez semafora (RoadCar daje prednost po konfliktima kao u predgrađu).
+- **Prsten JE u LaneNet-u** (`Net.AddRoad` sa `SurfaceY = GradeY` — nova `Carriageway.SurfaceY`,
+  `RoadCar.SurfaceLift()` diže auto na pločicu u nivou 0.12 i lerpuje kroz čvor): saobraćaj se
+  sam rasipa po njemu (`SpawnCars` po `_edges`), patrola BFS-om stiže iz predgrađa u luku/aerodrom
+  bez prolaska kroz centar, crew auto isto. Nadvožnjak ostaje `HighwayTraffic` (okretanje na repu).
+- Tlo: `Level(…,0)` + `NoFlora` duž koridora, upis u `_highwayRuns` (`HighwayFade` brda stoje
+  dalje, bez flore ±12 m). Mapa ga (kao ni kvartove) ne crta.
+- `beltFreeway` prekidač (off → stari `BuildHighwayLinks`), `beltSpeed` 17 m/s.
+- Redosled u `Awake`: `Respace → PlanBelt → PlanDistricts → … → BuildGraph → … → BuildBelt →
+  BuildDistricts → BuildHighwayLinks(samo bez prstena)`.
+
+**Aerodrom kao kvart:** `DistrictKind.Airport`, `AirportDemo.AirportDistrict` (v. `Docs/airport-demo-plan.md`
+§12), `CityLayout.Roll(..., wantAirport)` — aerodrom prvi, cela obala, `WorldRect` provera ugla.
+
+**Neprovereno u Play-u.** Kompajl Roslyn-om čist (4a). Provera posle Play-a: patrola iz predgrađa do
+aerodroma ide prstenom; auti na prstenu ne tonu u pločicu (SurfaceY); padovi u nivou sa deck-om
+(0.1 vs 0.12); obala svuda ≥ 50 m od prstena (min koast W/E/N/S 272/252 vs prsten 181).
+
+## 8. Prstenovi kvartova, imena, kraj ostrva (2026-08-19, posle Play feedback-a)
+
+Korisnik posle prvog Play-a: „luka je isečena umesto samo da bude na kraju ostrva… napravio si
+samo jedan suburb, hoću ih na ovu veličinu mape 10… svaki kvart/suburb mora da ima svoje ime…
+aerodrom isto makni na kraj ostrva… brodovi za luku treba da se spawn na kraju mape."
+
+**Autoputevi su izbačeni za sad**: `beltFreeway = false` i `Highway` seam izvađen iz
+`RoadDemoBuilder.seams` (gap 12 je sad običan blok). Belt/Interchange kod ostaje netaknut —
+vrati seam ili upali prekidač i sve se opet gradi.
+
+**Raspored (`CityLayout`):**
+- Suburbi u **3 PRSTENA** (`NearStrip 110`, `RingStep 330`), mali (3–4 × 3 blokova),
+  `suburbsMin/Max = 10/12`; realno ispadne 8–11 po seed-u.
+- Prstenovi se popunjavaju **spolja ka gradu** (dalji prvi): daljem kvartu pristupna ulica mora da
+  prođe između bližih, pa dalji prvi biraju svoje trake. Na kraju `Tighten()` svakog vuče na
+  najbliži prsten u koji još staje, da ne visi 800 m napolju bez razloga.
+- Zauzeće je **2D**: telo kvarta + koridor pristupne ulice (`Held.Road`). Telo od tela drži 45 m,
+  telo od tuđeg puta 12 m. Zato luka ide u **ćošak** obale (njen koridor ide kroz celu dubinu
+  ostrva pa bi po sredini presekao tu obalu na dva dela).
+- Pin linije: luka/aerodrom traže običnu ulicu (bez bulevara i seam-ova); **suburb sme na bilo
+  koju osim ivične** — obala ovog grida ima svega 2–3 „obične" linije, pa je grad inače dobijao
+  tri sela. Reka je i dalje zabrana (provera raspona sa `RiverGap`).
+- Imena: `DistrictSlot.name` iz pula (`CityLayout.Names`); mapa štampa ime kvarta (tip se skraćuje
+  na širinu kvarta), a `RoadDemoBuilder` grupiše korene kvarta pod objekat s tim imenom.
+
+**Kraj ostrva:**
+- `DistrictSlot.toCoast` + `RoadDemoBuilder.PushToCoast`: posle `Plan()` (kad se zna stvarna dubina
+  kvarta) strip se preračuna tako da lukin **kej padne na obalu**, a aerodromu daleki prag; okvir
+  se samo klizne napolje (raspored kvarta ne zavisi od okvira).
+- **Obala se meri od GRIDA, ne od kvarta** (`RoadDemoBuilder.Island.OutsideGrid` → `toSea`). Ranije
+  se merila od najbližeg tla, pa je svaki kvart oko sebe „izvlačio" još kilometar ostrva — zbog toga
+  je luka stajala u sred kopna i njen bazen je morao da se probija kanalom do mora (rupa na mapi).
+  Sad kvart TROŠI obalu; unutar `Beach = 70 m` od svog tla nikad ne potone.
+- Ako je obala uža nego što polje traži, ostrvo se na toj obali proširi
+  (`islandNorth/South ≥ AirportDepth + SuburbRing + CoastMargin`), da ispred aerodroma ostane red sela.
+
+**Brodovi:** `HarborDistrict.seaRun` (domaćin ga postavi na razdaljinu do kraja mape) — brod se
+pojavi na jednom kraju mape i nestane na drugom; trasa je rezervisana kao voda (`Sea(lane,
+mayOpen: false)` — taj pravougaonik se NE gura ka moru kao bazen, inače bi odneo celu obalu),
+`Stay()` i razmak prolaznika se skaliraju sa dužinom trase. Život suburba se skalira na veličinu
+kvarta (`ForCity`) — 10 sela po starim brojkama je bilo 1500 agenata.
+
+**Provereno:** Roslyn kompajl (4a) + konzolna simulacija `CityLayout.Roll` po seed-ovima (bez
+preklapanja, 8–11 suburba). **Play neproveren.**
+
+## 9. Autoputevi isključeni master-prekidačem, minimum sela, imenovani kvartovi grada (2026-08-19)
+
+Korisnik: „autoputevi su tu i dalje i idu preko suburbana, dodaj minimum 6 suburbana da ima na
+mapi, takođe kvartovi u gradu isto moraju da imaju imena, sam odredi koliko blokova je jedan kvart."
+
+**`freeways` (master prekidač, default OFF)** — `RoadDemoBuilder.NoFreeways()` se zove PRVI, pre
+`Respace()`: izbaci svaki `SeamKind.Highway` iz `seams` i obori `beltFreeway`. Znači ni seam
+ostavljen u inspektoru ni serijalizovan u staroj sceni ne može da vrati kolovoz kroz predgrađa;
+u konzoli piše `[RoadDemo] freeways off: N Highway seam(s) dropped`. Upali `freeways` i sve se
+vrati (Belt/Interchange kod je netaknut).
+
+**Minimum sela** — `CityLayout.Squeezes`: tri nivoa pakovanja. Nivo 0 je **širokogrud** (razmak
+60 m, tuđi put 28 m od placa, sela 4×3 i 3×3 bloka) — to je i odgovor na „putevi idu preko
+suburbana", jer je pristupna ulica ranije prolazila 12 m od ograde. Ako grad time ne stigne do
+`suburbsMin`, idu nivoi 1 i 2 (uži razmaci, manja sela, više koraka po prstenu) i popunjavaju
+rupe koje je prvi prolaz ostavio. `CityLayout.MinSuburbs = 6` je pod: builder loguje
+`[RoadDemo] quarters standing: N (M suburbs…)` i upozorava ako ih je manje.
+Sim: normalno ostrvo 9–11 sela, ostrvo od 900 m obale na sve četiri strane i dalje 6–7.
+
+**Kvartovi grada (`RoadDemoBuilder.Quarters.cs`)** — unutar grida se ništa ne gradi, samo se
+imenuje: kvart = **3 bloka široko × 2 duboko** (`quarterBlocksAcross/Deep`, ~300 × 170 m), nikad
+preko šava (reka/park/wild prekidaju niz — komšiluk se završava na vodi), ostatak od jednog bloka
+se pripaja prethodnoj grupi. Na ovom gridu ispadne **12 kvartova** (4 kolone × 3 reda). Imena iz
+`StreetNames.Quarter(i)` (Riverside, The Flats, Bricktown, Cannery Row…, bez ponavljanja, po
+seed-u grada), a onaj nad sredinom grida se uvek zove **Downtown**. Mapa ih štampa manjim slovima
+od kvartova van grada i gasi ih kad se dovoljno zumira (`QuarterType`, `QuarterMaxPx`).
+`CityQuarters` / `QuarterAt(x,z)` su javni — ledger/teritorije će ih koristiti.

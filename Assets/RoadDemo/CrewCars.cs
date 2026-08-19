@@ -56,6 +56,11 @@ namespace RoadDemo
             "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/",
         };
 
+        /// <summary>A body for a mob car by pack name (VehicleCatalog.GangsterCars):
+        /// what the lab stands at the kerb when the ledger has dealt the outfit no car
+        /// of its own.</summary>
+        public static GameObject BodyNamed(string name) => Body(name);
+
         static GameObject Body(string name)
         {
 #if UNITY_EDITOR

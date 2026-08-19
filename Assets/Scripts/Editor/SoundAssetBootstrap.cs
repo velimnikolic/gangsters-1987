@@ -74,13 +74,16 @@ namespace LivingCity.EditorTools
                 "Traffic/engine_idle_b.wav");
 
             // -- weapons ----------------------------------------------------------------
-            // Four renderings of one light machine gun take off OpenGameArt - the only
-            // firearm the project has, and the only clip in it that must be credited.
+            // The city's generic report is the sidearm's: a .45 automatic and a .38
+            // revolver, mid distance. The demo's crews pick per weapon instead, off the
+            // same folder - see CrewKit.Gunshots.
             db.gunshots = ClipArray(
-                "Weapons/gunshot_1.wav",
-                "Weapons/gunshot_2.wav",
-                "Weapons/gunshot_3.wav",
-                "Weapons/gunshot_4.wav");
+                "Weapons/pistol_1.wav",
+                "Weapons/pistol_2.wav",
+                "Weapons/pistol_3.wav",
+                "Weapons/pistol_4.wav",
+                "Weapons/pistol_5.wav",
+                "Weapons/pistol_6.wav");
 
             // -- pedestrians ------------------------------------------------------------
             db.footsteps = ClipArray(

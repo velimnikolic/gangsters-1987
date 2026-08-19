@@ -43,8 +43,18 @@ namespace AirportDemo
 
         Aircraft _runwayUser;
         float _runwayFreeIn;          // seconds until the current user is expected clear
-        float _commuterTimer;
         readonly float _commuterInterval;
+
+        /// <summary>Whoever is cleared to start up and taxi for departure. One at a
+        /// time, because a second aeroplane pushing off its stand while the first is
+        /// still working its way to the holding point is how you get two of them nose
+        /// to nose on a taxiway eighteen metres wide.</summary>
+        Aircraft _departing;
+
+        /// <summary>Set by the builder when there is somebody to walk the passengers
+        /// off and on. With it, an airline aeroplane that shuts down on a stand stays
+        /// there until the turnaround says it may go.</summary>
+        public bool Turnarounds;
 
         /// <summary>Whoever wants to know what is happening on the field - the fuel
         /// truck, the baggage train, the marshaller.</summary>
@@ -57,7 +67,6 @@ namespace AirportDemo
             _westerly = westerly;
             _half = runwayHalf;
             _commuterInterval = Mathf.Max(60f, commuterInterval);
-            _commuterTimer = 25f;
             BuildGraph();
         }
 
@@ -206,12 +215,37 @@ namespace AirportDemo
                     a.ApproachSpeed = AirportSpec.GaApproach; a.TakeoffRun = 450f;
                     break;
             }
+            a.Seats = a.Class == Aircraft.Kind.Jet ? AirportSpec.JetSeats
+                    : a.Class == Aircraft.Kind.Commuter ? AirportSpec.CommuterSeats : 0;
+            AirportSpec.Door(a.Class, out float side, out float fore, out float height);
+            a.DoorSide = side; a.DoorFore = fore; a.DoorHeight = height;
+
             var (pos, yaw) = _stands[a.Stand];
             a.Park(pos, yaw);
             a.State = Aircraft.Phase.Parked;
-            a.Timer = commuter ? _commuterInterval * 0.5f : (float)(_rng.NextDouble() * 90f + 20f);
+            a.Timer = commuter ? _commuterInterval * 0.4f : GroundTime();
             _fleet.Add(a);
         }
+
+        /// <summary>Adopts an aeroplane that is not here yet: it belongs to the stand,
+        /// but it is somewhere out to the west, and the first thing it will do is come
+        /// down final and land. That is the way round the demo wants to open - an
+        /// arrival, then the walk off, then the walk on, then the departure - rather
+        /// than with four aeroplanes sitting on stands waiting for a clock.</summary>
+        public void AdoptInbound(Aircraft a, int stand, bool commuter, float secondsOut)
+        {
+            Adopt(a, stand, commuter);
+            a.Show(false);
+            a.InCircuit = false;
+            a.State = Aircraft.Phase.Away;
+            a.Timer = Mathf.Max(4f, secondsOut);
+        }
+
+        /// <summary>How long a light aeroplane sits on its tie-down between its own
+        /// movements. Minutes, not seconds: a county field sees a handful of light
+        /// movements an hour, and a Cessna landing every half minute reads as a flying
+        /// school on a bank holiday rather than as an airport.</summary>
+        float GroundTime() => AirportKit.Range(_rng, AirportSpec.LightGroundMin, AirportSpec.LightGroundMax);
 
         // ------------------------------------------------------------ the runway
 
@@ -240,6 +274,73 @@ namespace AirportDemo
             if (_runwayUser != a) return;
             _runwayUser = null;
             a.HasRunway = false;
+        }
+
+        /// <summary>The longest a turnaround may hold an aeroplane on its stand before
+        /// it is let go anyway. A full one - fourteen seconds to the first passenger,
+        /// a file of seventeen down the steps, three quarters of a minute turning the
+        /// aeroplane round, the same file back up, and the last of them walking sixty
+        /// metres of concrete - runs to about four minutes, so seven is a safety net
+        /// and not a second timer.</summary>
+        const float HoldLimit = 420f;
+
+        /// <summary>The clearance to start up and taxi for departure. One at a time.</summary>
+        bool ClaimDeparture(Aircraft a)
+        {
+            if (_departing == a) return true;
+            if (_departing != null) return false;
+            _departing = a;
+            return true;
+        }
+
+        void ReleaseDeparture(Aircraft a)
+        {
+            if (_departing == a) _departing = null;
+        }
+
+        // ------------------------------------------------------------ separation
+        //
+        // Nothing on this field has a collision shape, so keeping two aeroplanes apart
+        // on the concrete is done by looking: if there is one ahead of me, inside my
+        // own length and a bit, and roughly in front rather than off to one side, I
+        // stop. The one in front is never the one that stops, so a queue unwinds from
+        // its head instead of jamming.
+
+        static bool OnConcrete(Aircraft a) =>
+            a.State == Aircraft.Phase.Parked || a.State == Aircraft.Phase.StartUp ||
+            a.State == Aircraft.Phase.Taxi || a.State == Aircraft.Phase.Hold ||
+            a.State == Aircraft.Phase.Shutdown;
+
+        void Separate(float dt)
+        {
+            for (int i = 0; i < _fleet.Count; i++)
+            {
+                var a = _fleet[i];
+                bool was = a.Blocked;
+                a.Blocked = false;
+                if (a.Idle || !OnConcrete(a)) { a.BlockedFor = 0f; continue; }
+
+                float reach = 16f + a.Nose;
+                for (int j = 0; j < _fleet.Count && !a.Blocked; j++)
+                {
+                    if (i == j) continue;
+                    var b = _fleet[j];
+                    if (b.Tf == null || !b.Tf.gameObject.activeSelf) continue;
+                    if (!OnConcrete(b) && b.State != Aircraft.Phase.Rollout) continue;
+                    var to = b.Position - a.Position;
+                    to.y = 0f;
+                    float d = to.magnitude;
+                    if (d > reach + b.HalfSpan * 0.5f) continue;
+                    if (Vector3.Dot(a.Forward, to / Mathf.Max(d, 0.001f)) < 0.72f) continue;   // off to one side
+                    a.Blocked = true;
+                }
+
+                // and the safety net: nobody waits for ever. Twenty seconds nose to
+                // tail means something has gone wrong with the graph, and a field that
+                // has stopped moving is a worse bug than one taxiing a little close.
+                a.BlockedFor = a.Blocked ? (was ? a.BlockedFor + dt : dt) : 0f;
+                if (a.BlockedFor > 20f) a.Blocked = false;
+            }
         }
 
         // ------------------------------------------------------------ geometry
@@ -303,7 +404,7 @@ namespace AirportDemo
                 _runwayFreeIn -= dt;
                 if (_runwayFreeIn <= 0f) ReleaseRunway(_runwayUser);   // the safety net, never the normal way out
             }
-            _commuterTimer -= dt;
+            Separate(dt);
 
             for (int i = 0; i < _fleet.Count; i++)
             {
@@ -319,12 +420,12 @@ namespace AirportDemo
             switch (a.State)
             {
                 case Aircraft.Phase.Parked:
-                    if (a.Commuter)
-                    {
-                        if (_commuterTimer > 0f) return;
-                        _commuterTimer = _commuterInterval;
-                    }
-                    else if (a.Timer > 0f) return;
+                    // the turnaround has it until the last passenger is aboard
+                    if (a.GroundHold) { a.HeldFor += dt; if (a.HeldFor < HoldLimit) return; a.GroundHold = false; }
+                    if (a.Timer > 0f) return;
+                    // and one aeroplane taxis for departure at a time
+                    if (!ClaimDeparture(a)) { a.Timer = 5f; return; }
+                    a.HeldFor = 0f;
                     a.State = Aircraft.Phase.StartUp;
                     a.Timer = 6f;
                     a.Doors(false);
@@ -339,7 +440,16 @@ namespace AirportDemo
                         int c = DepartureConnector();
                         var from = NearestNode(a.Position, n => n.Name.StartsWith("STAND")) ?? NearestNode(a.Position);
                         var path = Path(from, _holds[c]);
-                        if (path.Count == 0) { a.State = Aircraft.Phase.Parked; a.Timer = 30f; return; }
+                        if (path.Count == 0)
+                        {
+                            // no way out of where it is standing: back to Parked, and
+                            // the clearance goes back in the pot - held, it would stop
+                            // every other aeroplane on the field from ever departing
+                            ReleaseDeparture(a);
+                            a.State = Aircraft.Phase.Parked;
+                            a.Timer = 30f;
+                            return;
+                        }
                         a.Clear();
                         a.GoAll(path, AirportSpec.TaxiSpeed);
                         a.Throttle(0.22f);
@@ -388,6 +498,7 @@ namespace AirportDemo
                     a.Go(new Vector3(DepartureX + RunSign * 900f, AirportSpec.PatternAltitude, PatternSide * 320f), a.ClimbSpeed, ground: false);
                     a.State = Aircraft.Phase.Climb;
                     ReleaseRunway(a);
+                    ReleaseDeparture(a);      // the next one may push off its stand
                     break;
 
                 case Aircraft.Phase.Climb:
@@ -484,19 +595,24 @@ namespace AirportDemo
                     if (a.Timer > 900f)
                     {
                         // just arrived on the stand: swing to the parking heading,
-                        // shut down, open up
+                        // shut down, run the steps up
                         var (pos, yaw) = _stands[Mathf.Clamp(a.Stand, 0, _stands.Count - 1)];
                         a.Park(pos, yaw);
+                        a.State = Aircraft.Phase.Shutdown;
                         a.Throttle(0f);
                         a.Doors(true);
-                        a.Timer = a.Commuter ? 60f : (float)(_rng.NextDouble() * 180f + 90f);
+                        // an airline aeroplane goes nowhere until the passengers are
+                        // off and the next lot are aboard; a light one just sits
+                        a.GroundHold = Turnarounds && a.Commuter;
+                        a.HeldFor = 0f;
+                        a.Timer = a.Commuter ? 30f : GroundTime();
                         OnShutdown?.Invoke(a);
                         return;
                     }
+                    if (a.GroundHold) { a.HeldFor += dt; if (a.HeldFor < HoldLimit) return; a.GroundHold = false; }
                     if (a.Timer > 0f) return;
-                    a.Doors(false);
                     a.State = Aircraft.Phase.Parked;
-                    a.Timer = a.Commuter ? _commuterInterval : (float)(_rng.NextDouble() * 200f + 60f);
+                    a.Timer = a.Commuter ? 8f : GroundTime();
                     break;
             }
         }

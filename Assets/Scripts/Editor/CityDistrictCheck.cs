@@ -28,7 +28,7 @@ namespace LivingCity.EditorTools
 
             var sb = new StringBuilder();
             sb.AppendLine($"city layout seed {city.cityLayoutSeed}, roll {city.rollDistricts}, " +
-                          $"harbour {city.harborDistrict}, suburbs {city.suburbsMin}-{city.suburbsMax}");
+                          $"harbour {city.harborDistrict}, airport {city.airportDistrict}, suburbs {city.suburbsMin}-{city.suburbsMax}");
 
             var slots = city.rollDistricts ? RollLikeTheBuilder(city) : new List<DistrictSlot>(city.districts ?? new DistrictSlot[0]);
             if (slots.Count == 0) sb.AppendLine("  (no districts)");
@@ -40,7 +40,7 @@ namespace LivingCity.EditorTools
                 var at = new List<string>();
                 foreach (int line in slot.pinLines)
                     at.Add(line >= 0 && line < axis.Length ? $"{line}@{axis[line]:F0}" : $"{line}!");
-                sb.AppendLine($"  {slot.kind,-7} {slot.edge,-5} lines [{string.Join(" ", at)}] " +
+                sb.AppendLine($"  {slot.kind,-7} {slot.name,-18} {slot.edge,-5} lines [{string.Join(" ", at)}] " +
                               $"strip {slot.strip:F0} seed {slot.seed} size {slot.sizeAcross}x{slot.sizeDeep}");
                 // the rule of five, stated where it can be seen to hold
                 for (int k = 0; k + 1 < slot.pinLines.Length; k++)
@@ -58,24 +58,13 @@ namespace LivingCity.EditorTools
 
         static List<DistrictSlot> RollLikeTheBuilder(RoadDemoBuilder city)
         {
-            var grid = new CityLayout.Grid
-            {
-                Vx = city.verticalRoadX,
-                VBoulevard = city.verticalIsBoulevard,
-                Hz = city.horizontalRoadZ,
-                HBoulevard = city.horizontalIsBoulevard,
-                Blocked = (vertical, line) =>
-                {
-                    if (city.seams == null) return false;
-                    foreach (var s in city.seams)
-                        if (s != null && s.vertical != vertical && (line == s.gap || line == s.gap + 1)) return true;
-                    return false;
-                },
-            };
+            // the builder's own view of the city, so this prints the plan it builds and
+            // not a second guess at it
             // (edit mode: the axes are the authored ones, not the respaced ones - the
             // distances printed shift a little once Play respaces the grid, the line
             // indices do not)
-            return CityLayout.Roll(grid, city.cityLayoutSeed, city.suburbsMin, city.suburbsMax, city.harborDistrict);
+            return CityLayout.Roll(city.LayoutGrid(), city.cityLayoutSeed, city.suburbsMin, city.suburbsMax,
+                                   city.harborDistrict, city.airportDistrict);
         }
 
         [MenuItem("Tools/City/Check Districts (in Play)")]

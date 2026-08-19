@@ -648,3 +648,178 @@ sve generisano nosi **ravnu boju**. Konkretno:
   i realan način da se osvetli hala te dubine.
 
 `AirportKitBash.Version` → **4**.
+
+### 11.4 Terminalu i FBO-u je falio zid ka apronu (v5)
+
+**Simptom:** polovini zgrada fali po jedan zid. **Nije** falio metalnim halama (hangari,
+radionica, vatrogasna, teretna) — njima su sve četiri strane 100 % pokrivene — nego
+**Base-kit zgradama, i to baš strani ka apronu**.
+
+**Kako je nađeno bez editora:** dekodirani su verteksi iz ispečenih mreža
+(`scratchpad/meshwalls.py`, čita `_typelessdata` iz YAML mesh asseta) i prebrojani po
+stranama. Terminal: strana −Z (landside) **7506** verteksa, strana +Z (apron) **182** — samo
+parapet. Zatim su razrešeni GUID-ovi materijala u ispečenom prefabu: u terminalu i FBO-u
+**nema nijednog Plaza materijala**. A baš `side == 2` (apron) koristi Plaza staklo.
+
+**Uzrok.** `SyntyKitExtractor.BakeGroup` uzima samo renderere koji su **enabled i na
+aktivnom GameObject-u** — i to s razlogom, jer Synty prefabi nose ugašene alternative.
+Ali `AirportKit.PrefabBounds` namerno meri **i neaktivnu** geometriju (da bi mogao da izmeri
+bilo šta). Plaza staklene ploče su komadi sa **ugašenom geometrijom**: izmere se kao punih
+2.50 × 3.01 × 0.26 (vidi se i u probe logu), uredno se polože u red zidova — i ispeku se u
+ništa. Zid nestane, a nigde nema greške ni upozorenja.
+
+**Popravka (v5), na oba mesta:**
+- `AirportKit.HasVisibleGeometry(prefab)` — ima li bar jedan **enabled** renderer sa mesh-om na
+  **aktivnom** objektu (isti filter koji bake koristi).
+- `AirportKitBash.Usable(path, fallback)` — bira komad samo ako će se stvarno ispeći, inače
+  uzima zamenu i **glasno loguje**. Terminal i FBO sada uzimaju Plaza staklo ako radi, a ako ne —
+  veliki dupli prozor iz Base kita, koji dokazano peče.
+- `AirportKit.Prop` i `PlaceRun` pale koren instance (`SetActive(true)`) — paket ume da isporuči
+  komad ugašenog korena kao „alternativu koju sam upališ", pa bi inače bio nevidljiv i u sceni
+  (ne samo u bake-u).
+- Probe uz svaki komad ispisuje **`<<< NO VISIBLE GEOMETRY`** — ova vrsta kvara je jedina koja
+  izgleda kao da kvara nema, pa mora da se vidi u logu.
+
+### 11.5 Avioni još zaobljeniji (v3 konverzije)
+
+Prvi pokušaj (`Calculate` + 60°) jedva se video, i razlog nije bio ugao: paket se importuje sa
+**`normalSmoothingSource: 0` = „Prefer Smoothing Groups"**, pa Unity koristi smoothing grupe iz
+samog FBX-a i na ugao se oslanja samo tamo gde ih nema — a ovaj paket je izvezen tvrdo.
+
+Zato `SmoothAircraft()` sada postavlja i **`normalSmoothingSource = FromAngle`** (Unity ignoriše
+grupe iz fajla i glača po geometriji) i podiže ugao na **85°**. Osamdeset pet zaobli trup, nos,
+gondole i spojeve među njima, a staje **pre pravog ugla** — pa sve što je stvarno pravougaono
+zadržava ivicu, a dve strane tankog krila (preko 150° razmaka) ostaju oštre na izlaznoj ivici.
+Marker verzija konverzije → **3**, pa se pusti sama pre Play-a; ugao je konstanta `SmoothingAngle`,
+a meni `Tools/City/Catalog/Smooth Simple Airport Aircraft` je tu da se proba druga vrednost.
+
+## 12. Aerodrom je KVART grada (2026-08-19, isti dan) — `AirportDistrict : IDistrict`
+
+Isti rez kao luka i predgrađe (`Docs/city-districts-plan.md`, 1.1): `AirportDemoBuilder*.cs`
+partial-i su preimenovani u `AirportDistrict.*.cs`, klasa je običan objekat (`IDistrict`), a
+`AirportDemoBuilder` je **tanki MonoBehaviour** (inspector polja + `StandaloneDistrictHost`) —
+pa AirportDemo.unity i Game.unity grade polje istom funkcijom. Novo u `StandaloneDistrictHost`:
+`cameraFar` (4000 za aerodrom) i `fogRange/fogColour` (linearna magla 900–2600).
+
+- **Koordinate.** Polje se crta u svojim koordinatama (pista duž X na z=0, landside ka +Z,
+  prilazna ulica na z=432); ugovor: grad na +Z, granica kvarta = **severna ivica kvadrata
+  prilazne raskrsnice** (`BoundaryZ = StreetZ + 7.5 = 439.5`), jedan link na x=ApproachX=0.
+  Statika ide pod korene domaćina i na kraju se **`MoveIntoPlace`** (kao luka). **Sve što se
+  kreće — avioni, helikopteri, vozila, I ŠETAČI — radi u LOKALNIM koordinatama `Live` korena**
+  (`Tf.localPosition/localRotation`, `SetLocalPositionAndRotation`), a taj koren se pomera sa
+  ostalim: `FlightOps/GroundOps/AirportBoarding` i dalje računaju krugove, stajanke i rute u
+  koordinatama polja i **ne znaju za frame**. `AirportWalker` jedino pitanje o preprekama
+  (`WalkObstacles.Steer`) postavlja u svetu i odgovor vraća u lokalno. Blokovi za šetače
+  (zgrade, ograda, parkirana kola) se mere u svetu POSLE pomeranja (`BlockTheField`).
+- **Tlo.** U gradu polje ne polaže svoju travu (`host.ProvidesGround`): ostrvo je trava, držano
+  **ravno na 0** nad celim poljem (+30 m), bez flore (+14 m). U svojoj sceni travnata ploča kao
+  i pre. Prilazna ulica StreetKit-a je sada na `PaveY` (0.06) — ranije je bila na −0.04, ispod
+  trave (nikad viđeno u Play-u).
+- **Spoj sa gradom.** `AirportDistrict.Portals.cs`: mali graf traka duž prilazne ulice (čvorovi
+  na krajevima, obe kapije, prilaz; 2 trake ±2.5), portal na prilaznoj raskrsnici (u gradu ta
+  raskrsnica nema trotoarsku kapu ka severu, `Landside.cs`). Gradski auto/patrola može da uđe sa
+  autoputa-prstena, prođe ulicu i okrene se na kraju; kola sa kružne petlje i dalje voze svoje
+  rute (`AirportTraffic`), a „prolazna" kola po prilaznoj ulici postoje samo u samostalnoj sceni.
+- **Raspored.** `CityLayout.Roll(..., wantAirport)`: aerodrom se roluje PRVI, uzima **celu
+  obalu** (pin ± 1050 m — `AirportFlank`), po izboru dugu (J/S), linija blizu sredine obale;
+  strip 200–280. Nov **world-rect check** između kvartova na susednim obalama (`WorldRect` +
+  `CornerGap` 60 m) da lukin bazen ne useče ugao polja. `airportDistrict` prekidač na builderu,
+  `AirportDemoAutoBake` peče i kad je u sceni `RoadDemoBuilder` sa aerodromom.
+- Perf: sopstveni `AssignCullLayers` (NeverCulled imena) + `ScenePerf.AlwaysVisible` prefiksi;
+  merge/senke radi domaćin (`ScenePerf`).
+- **Neprovereno u Play-u** (kao i sve ostalo iz ovog plana); kompajl proveren Roslyn-om.
+
+---
+
+## 12. Okretanje aviona: sleti — izađu putnici — uđu putnici — poleti (2026-08-19, isti dan)
+
+Zahtev: *više aviona; hoću da avion sleti, izađu putnici, uđu putnici, odleti;
+manje cesni da sleću; helikopter svašta nešto.*
+
+### 12.1 Četiri linijska pozicija umesto dve
+
+`CommuterStandX` je sada `{ -90, -30, 30, 90 }` (korak 60 m → 27 m između vrhova
+krila dva trojca), a terminal je zbog toga širi: `TerminalWidth` 80 → **120 m**.
+Sve što je vezano za širinu terminala (predterasa, kolski prilaz, natkrivnica,
+podna ploča) računa se iz te konstante, pa se pomerilo samo.
+
+Gejt-vrata na apronskoj fasadi više nisu fiksni indeksi modula nego se računaju
+iz pozicija pozicija — `AirportKitBash.Buildings.GateModules(w)`. Skup je
+simetričan oko sredine, što ga čini ispravnim bez obzira na to sa koje strane je
+`WallRun` položio niz (a to ovaj kod ne može da vidi).
+
+`AirportSpec.GateDoorX(stand)` je vrata kroz koja se izlazi za tu poziciju,
+odsečena na fasadu terminala — spoljne pozicije su šire od zgrade, pa se do njih
+ide dijagonalno, kao što se i išlo.
+
+### 12.2 Okretanje (`AirportBoarding.cs`)
+
+Novi objekat. Kačen na `FlightOps.OnShutdown`; kad avion stane na poziciju:
+
+| korak | koliko | šta se vidi |
+|---|---|---|
+| `Waiting` | `DoorsToFirstOff` 14 s | stepenice odu na vrata |
+| `Disembarking` | `DisembarkGap` 1.5 s po putniku | red niz stepenice, preko platforme, u gejt |
+| `Break` | `TurnaroundGap` 45 s | cisterna, prtljag, čišćenje |
+| `Boarding` | `BoardingGap` 2.2 s po putniku | red iz gejta, preko platforme, uz stepenice |
+| `Ready` | `DoorsToStartUp` 22 s | stepenice se sklone, `GroundHold` se skida |
+
+`Aircraft.GroundHold` drži avion na poziciji sve to vreme; `FlightOps` ga ne
+pušta ni iz `Shutdown` ni iz `Parked` dok stoji. **Polazak stvarno čeka ukrcavanje**,
+a ne tajmer koji je slučajno otprilike iste dužine. Sigurnosna mreža: `HoldLimit`
+420 s (pun ciklus je ~4 min).
+
+Putnici su **bazen tela** (`boardingPool`, 20). Telo postoji samo dok hoda: kad
+stigne, gasi se i vraća u bazen. Četiri pozicije koje se okreću istovremeno
+koštaju dvadeset tela, ne četiri kabine. Ako bazen presuši, red je ređi — nikad
+zaglavljen (`Take()` vrati null, `Left` se svejedno smanji).
+
+Ruta ide u koordinatama samog polja (i avion i šetač rade u prostoru `Live`
+korena): stopa stepenica → van ispod krila → napred pored nosa → preko servisnog
+puta → gejt. Skretanje oko vrha krila nije ukras: prava linija od vrata do
+terminala prolazi kroz krilo trojca od 33 m. **`Docs/airplan.py` to sada
+proverava** — po 7 provera za svaku poziciju (346 ukupno).
+
+### 12.3 Stepenice
+
+`BuildAirStairs(steps, top, name)` je parametrizovan i peče dva komada:
+`airport-airstairs` (5 gazišta, 1.24 m — laki avion) i `airport-airstairs-tall`
+(10 gazišta, 2.60 m — linijski). Rukohvat sada prati stvarni nagib
+(`atan2(top, run)`) i diže se ka **−Z** kraju, gde je platforma; ranije je bio
+nagnut na pogrešnu stranu za 22°.
+
+`Aircraft.StepReach` se meri sa prefaba pri pravljenju aviona (`-bounds.min.z`) i
+kaže koliko izvan trupa stepenice moraju da stanu da bi im platforma pala na
+prag vrata. `Aircraft.Doors(open)` više nije prazan: to su stepenice.
+
+### 12.4 Raspored letenja
+
+- **Jedan polazak odjednom** (`_departing`): avion ne kreće sa pozicije dok
+  prethodni nije u vazduhu. Bez toga se dva sretnu nos u nos na stazi od 18 m.
+- **Razdvajanje na betonu** (`FlightOps.Separate`): ako je neko ispred mene
+  (unutar moje dužine, konus 44°), stajem. Onaj ispred nikad ne staje, pa se red
+  razmotava sa glave. Mreža: posle 20 s blokade se probija (polje koje je stalo
+  je gori bug od dva aviona koji taksiraju blizu).
+- **Otvara se dolaskom**: parne linijske mašine se usvajaju kao `AdoptInbound` —
+  nisu na polju, nego zapadno od njega, i prvo što urade je da slete. Neparne
+  stoje na pozicijama sa već pokrenutim okretanjem. Demo tako počinje na celom
+  ciklusu odjednom: jedan se ukrcava, drugi sleće.
+- **Manje cesni**: `lightAircraft` = 2 (bilo ih je 4 u `activeAircraft`), i
+  `LightGroundMin/Max` 260–620 s između sopstvenih pokreta. Ostali laki avioni su
+  vezani i ne lete (`parkedAircraft` 18).
+- Globalni `_commuterTimer` (jedna kapija za sve linijske) je izbačen; svaki avion
+  ima svoj raspored, a pistu i stazu serijalizuju brave.
+
+### 12.5 Helikopteri
+
+Tri. Novo stanje `Visiting` u `Rotorcraft`: mašina koja **ne živi ovde** — ništa
+se od nje ne crta dok je nema, pojavi se visoko van mape, uleti, spusti se na
+sam H, sedi 55–120 s i ode. To je sanitetski. Uz njega ostaju šerifov (rezident,
+patrola) i čarter.
+
+### 12.6 Provereno
+
+- Obe asembli se kompajliraju čisto (Roslyn, izvori sa diska).
+- `Docs/airplan.py`: **346 provera, 0 padova** (bilo 306; +40 za četiri pozicije
+  i za šetnju putnika).
+- **U Play-u još neviđeno.**

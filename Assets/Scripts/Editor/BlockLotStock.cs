@@ -57,9 +57,12 @@ namespace LivingCity.EditorTools
         /// instead of the change waiting for someone to remember the menu command.
         ///   1 - first stock; 2 - one calm tile per surface, trimmed rows in place of
         ///   single slices, seeds measured by their pad; 3 - storefronts on the frontage
-        ///   the rows leave; 4 - five rolls per pad for the four-district city.
+        ///   the rows leave; 4 - five rolls per pad for the four-district city;
+        ///   5 - units stand at the height their pack authored (nothing is lifted out of
+        ///   its own foundations any more) and no floor is laid under a building that
+        ///   reaches below the pad.
         /// </summary>
-        const int Version = 4;
+        const int Version = 5;
         static readonly string VersionPath = BlockRecipeStore.Dir + "/stock-version.txt";
 
         /// <summary>Whether the stock on disk was rolled by an older roller than this one -

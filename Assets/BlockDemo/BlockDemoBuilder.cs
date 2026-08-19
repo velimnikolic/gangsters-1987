@@ -51,15 +51,28 @@ namespace BlockDemo
         [Min(0)] public int blockCycle = 0;
 
         [Header("Life")]
-        [Tooltip("Cars on the streets. The city runs about a hundred over twelve " +
+        [Tooltip("Cars on the streets. The city runs about seventy over twelve " +
                  "blocks; this is deliberately lighter, because a quarter is looked at " +
                  "rather than played.")]
-        public int carCount = 40;
+        public int carCount = 28;
         public int pedestrianCount = 70;
         [Range(0f, 1f)] public float insideAtStart = 0.35f;
         [Tooltip("A patrol car and an officer on the beat - only if a block that lands " +
                  "here carries the police station, since the patrols dock at its forecourt.")]
         public bool police = false;
+
+        [Header("The lab run")]
+        [Tooltip("Rival mobs standing about the quarter for the outfit to go at. The city " +
+                 "deals them the same way; here they are the run's targets.")]
+        [Range(0, 3)] public int rivalCrews = 0;
+        [Range(1, 4)] public int rivalHoods = 3;
+        [Tooltip("Sim seconds after the quarter is up before the outfit gets in its car and " +
+                 "is sent at the rivals, one after another, and parks when they are down. " +
+                 "0: nobody is sent anywhere - a normal Play session.")]
+        public float missionAfter = 0f;
+        [Tooltip("Seconds of drive-by passes at one crew before the men get out and " +
+                 "finish it on foot.")]
+        public float missionPasses = 45f;
 
         [Header("Day")]
         [Range(0f, 24f)] public float startHour = 11f;
@@ -110,15 +123,18 @@ namespace BlockDemo
             // they have scenes of their own
             city.rollDistricts = false;
             city.harborDistrict = false;
+            city.airportDistrict = false;
             city.districts = new DistrictSlot[0];
+            // nor the belt freeway round the island: there is no island here
+            city.beltFreeway = false;
 
             city.carCount = carCount;
             city.pedestrianCount = pedestrianCount;
             city.insideAtStart = insideAtStart;
             city.policeCarCount = police ? 1 : 0;
             city.policeOfficerCount = police ? 1 : 0;
-            city.rivalCrewsInCity = 0;
-            city.rivalHoodsInCity = 0;
+            city.rivalCrewsInCity = rivalCrews;
+            city.rivalHoodsInCity = rivalHoods;
             // the counts above are what this quarter wants; the city's scaling is for a city
             city.scaleLifeToCity = false;
             city.updateProfile = false;
@@ -135,6 +151,13 @@ namespace BlockDemo
             city.treesPerHectare = 14f;
 
             go.SetActive(true);   // and the quarter is built
+
+            if (missionAfter > 0f)
+            {
+                var mission = gameObject.AddComponent<BlockDemoMission>();
+                mission.startAfter = missionAfter;
+                mission.passesBefore = missionPasses;
+            }
 
             FrameTheQuarter(city);
             Report(city);

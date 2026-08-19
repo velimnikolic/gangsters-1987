@@ -15,21 +15,41 @@
             "mirrorX": false
         },
         {
-            "prefab": "City_04",
+            "prefab": "City_08",
             "pos": {
-                "x": -35.94325256347656,
-                "y": 1.5,
-                "z": 11.8656005859375
+                "x": -8.523452758789063,
+                "y": 0.0,
+                "z": -12.5234375
             },
             "yaw": 0.0,
             "mirrorX": true
         },
         {
-            "prefab": "City_08",
+            "prefab": "City_07",
             "pos": {
-                "x": -8.523452758789063,
+                "x": -27.5,
                 "y": 0.0,
-                "z": -8.77337646484375
+                "z": 14.8731689453125
+            },
+            "yaw": -90.0,
+            "mirrorX": false
+        },
+        {
+            "prefab": "building-burger-joint",
+            "pos": {
+                "x": 45.59159851074219,
+                "y": 0.0,
+                "z": -15.6529541015625
+            },
+            "yaw": 90.0,
+            "mirrorX": false
+        },
+        {
+            "prefab": "building-store-01",
+            "pos": {
+                "x": -16.2171630859375,
+                "y": 0.0,
+                "z": -20.97564697265625
             },
             "yaw": 180.0,
             "mirrorX": false
@@ -37,41 +57,21 @@
         {
             "prefab": "building-coffeeshop",
             "pos": {
-                "x": 46.38407897949219,
-                "y": 0.1336841583251953,
+                "x": -46.11592102050781,
+                "y": 0.0,
                 "z": -21.65008544921875
             },
-            "yaw": 90.0,
-            "mirrorX": false
-        },
-        {
-            "prefab": "building-cafe",
-            "pos": {
-                "x": -7.939605712890625,
-                "y": 2.2544775009155275,
-                "z": 14.3248291015625
-            },
-            "yaw": 0.0,
-            "mirrorX": false
-        },
-        {
-            "prefab": "building-store-01",
-            "pos": {
-                "x": 46.53373718261719,
-                "y": 0.0,
-                "z": -11.2171630859375
-            },
-            "yaw": 90.0,
+            "yaw": -90.0,
             "mirrorX": false
         }
     ],
     "props": [
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_03.prefab",
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_02.prefab",
             "pos": {
-                "x": 22.000869750976564,
+                "x": -7.0500030517578129,
                 "y": 0.0,
-                "z": 8.103759765625
+                "z": 3.5557861328125
             },
             "yaw": 180.0,
             "scale": {
@@ -81,11 +81,11 @@
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_01.prefab",
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_02.prefab",
             "pos": {
-                "x": 16.681625366210939,
+                "x": -9.669998168945313,
                 "y": 0.0,
-                "z": 8.4461669921875
+                "z": 3.5557861328125
             },
             "yaw": 180.0,
             "scale": {
@@ -95,123 +95,11 @@
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_01.prefab",
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_02.prefab",
             "pos": {
-                "x": 15.671646118164063,
+                "x": -12.289993286132813,
                 "y": 0.0,
-                "z": 8.4461669921875
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Trashbin_01.prefab",
-            "pos": {
-                "x": 12.574630737304688,
-                "y": 0.0,
-                "z": 8.5264892578125
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_02.prefab",
-            "pos": {
-                "x": 8.427154541015625,
-                "y": 0.0,
-                "z": 8.56378173828125
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_02.prefab",
-            "pos": {
-                "x": 7.524078369140625,
-                "y": 0.0,
-                "z": 8.56378173828125
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_02.prefab",
-            "pos": {
-                "x": 4.3112030029296879,
-                "y": 0.0,
-                "z": 8.95556640625
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_02.prefab",
-            "pos": {
-                "x": 3.0123138427734377,
-                "y": 0.0,
-                "z": 8.95556640625
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrel_Burn_01.prefab",
-            "pos": {
-                "x": -10.646194458007813,
-                "y": 0.0,
-                "z": -20.51239013671875
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrel_Burn_01.prefab",
-            "pos": {
-                "x": -11.461074829101563,
-                "y": 0.0,
-                "z": -20.51239013671875
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrel_Burn_01.prefab",
-            "pos": {
-                "x": -12.275955200195313,
-                "y": 0.0,
-                "z": -20.51239013671875
+                "z": 3.5557861328125
             },
             "yaw": 180.0,
             "scale": {
@@ -223,9 +111,163 @@
         {
             "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_01.prefab",
             "pos": {
-                "x": -17.049697875976564,
+                "x": -18.278778076171876,
                 "y": 0.0,
-                "z": -20.6905517578125
+                "z": 3.3094482421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_01.prefab",
+            "pos": {
+                "x": -19.1044921875,
+                "y": 0.0,
+                "z": 3.3094482421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_01.prefab",
+            "pos": {
+                "x": -19.930206298828126,
+                "y": 0.0,
+                "z": 3.3094482421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Trashbin_02.prefab",
+            "pos": {
+                "x": -22.47418212890625,
+                "y": 0.0,
+                "z": 3.558837890625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_03.prefab",
+            "pos": {
+                "x": -27.35760498046875,
+                "y": 0.0,
+                "z": 3.103759765625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_03.prefab",
+            "pos": {
+                "x": -29.875869750976564,
+                "y": 0.0,
+                "z": 3.103759765625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_02.prefab",
+            "pos": {
+                "x": -34.134521484375,
+                "y": 0.0,
+                "z": 3.56378173828125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Skip_02.prefab",
+            "pos": {
+                "x": -37.423431396484378,
+                "y": 0.0,
+                "z": 3.194580078125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Skip_02.prefab",
+            "pos": {
+                "x": -39.97218322753906,
+                "y": 0.0,
+                "z": 3.194580078125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Skip_02.prefab",
+            "pos": {
+                "x": -42.52091979980469,
+                "y": 0.0,
+                "z": 3.194580078125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_01.prefab",
+            "pos": {
+                "x": -48.29335021972656,
+                "y": 0.0,
+                "z": 3.3094482421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_01.prefab",
+            "pos": {
+                "x": -49.11906433105469,
+                "y": 0.0,
+                "z": 3.3094482421875
             },
             "yaw": 180.0,
             "scale": {
@@ -237,9 +279,9 @@
         {
             "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_04.prefab",
             "pos": {
-                "x": -21.16107177734375,
+                "x": 23.062545776367189,
                 "y": 0.0,
-                "z": -20.32122802734375
+                "z": 8.67877197265625
             },
             "yaw": 180.0,
             "scale": {
@@ -249,11 +291,123 @@
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_04.prefab",
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_01.prefab",
             "pos": {
-                "x": -21.50592041015625,
+                "x": 19.33819580078125,
                 "y": 0.0,
-                "z": -20.32122802734375
+                "z": 8.95556640625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrel_Burn_01.prefab",
+            "pos": {
+                "x": 14.931594848632813,
+                "y": 0.0,
+                "z": 8.48760986328125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrel_Burn_01.prefab",
+            "pos": {
+                "x": 14.116714477539063,
+                "y": 0.0,
+                "z": 8.48760986328125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrel_Burn_01.prefab",
+            "pos": {
+                "x": 13.301834106445313,
+                "y": 0.0,
+                "z": 8.48760986328125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_02.prefab",
+            "pos": {
+                "x": 9.468048095703125,
+                "y": 0.0,
+                "z": 8.8172607421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_02.prefab",
+            "pos": {
+                "x": 8.927398681640625,
+                "y": 0.0,
+                "z": 8.8172607421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Trashbin_02.prefab",
+            "pos": {
+                "x": 4.8905029296875,
+                "y": 0.0,
+                "z": 8.558837890625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Trashbin_02.prefab",
+            "pos": {
+                "x": 4.049591064453125,
+                "y": 0.0,
+                "z": 8.558837890625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Trashbin_02.prefab",
+            "pos": {
+                "x": 3.2086639404296877,
+                "y": 0.0,
+                "z": 8.558837890625
             },
             "yaw": 180.0,
             "scale": {
@@ -265,25 +419,11 @@
         {
             "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Crate_01.prefab",
             "pos": {
-                "x": -24.90277099609375,
+                "x": -10.727783203125,
                 "y": 0.0,
-                "z": -20.419189453125
+                "z": -1.580810546875
             },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Powerbox_01.prefab",
-            "pos": {
-                "x": -29.298828125,
-                "y": 0.0,
-                "z": -20.737548828125
-            },
-            "yaw": 180.0,
+            "yaw": 0.0,
             "scale": {
                 "x": 1.0,
                 "y": 1.0,
@@ -293,123 +433,235 @@
         {
             "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_03.prefab",
             "pos": {
-                "x": -16.54443359375,
+                "x": -14.526535034179688,
                 "y": 0.0,
-                "z": 23.972900390625
+                "z": -1.95556640625
             },
-            "yaw": -90.0,
+            "yaw": 0.0,
             "scale": {
-                "x": 1.000000238418579,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.000000238418579
+                "z": 1.0
             }
         },
         {
             "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_03.prefab",
             "pos": {
-                "x": -16.54443359375,
+                "x": -15.114898681640625,
                 "y": 0.0,
-                "z": 23.384521484375
+                "z": -1.95556640625
             },
-            "yaw": -90.0,
+            "yaw": 0.0,
             "scale": {
-                "x": 1.000000238418579,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.000000238418579
+                "z": 1.0
             }
         },
         {
             "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_03.prefab",
             "pos": {
-                "x": -16.54443359375,
+                "x": -15.7032470703125,
                 "y": 0.0,
-                "z": 22.79620361328125
+                "z": -1.95556640625
             },
-            "yaw": -90.0,
+            "yaw": 0.0,
             "scale": {
-                "x": 1.000000238418579,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.000000238418579
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_02.prefab",
+            "pos": {
+                "x": -21.427017211914064,
+                "y": 0.0,
+                "z": -1.5557861328125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_02.prefab",
+            "pos": {
+                "x": -24.047027587890626,
+                "y": 0.0,
+                "z": -1.5557861328125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_02.prefab",
+            "pos": {
+                "x": -26.667022705078126,
+                "y": 0.0,
+                "z": -1.5557861328125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_02.prefab",
+            "pos": {
+                "x": -30.70172119140625,
+                "y": 0.0,
+                "z": -1.56378173828125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_02.prefab",
+            "pos": {
+                "x": -31.604782104492189,
+                "y": 0.0,
+                "z": -1.56378173828125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Trash_Bin_02.prefab",
+            "pos": {
+                "x": -32.50785827636719,
+                "y": 0.0,
+                "z": -1.56378173828125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_PowerBox_01.prefab",
+            "pos": {
+                "x": -11.786102294921875,
+                "y": 0.0,
+                "z": -9.565185546875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_PowerBox_01.prefab",
+            "pos": {
+                "x": -13.8782958984375,
+                "y": 0.0,
+                "z": -9.565185546875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_PowerBox_01.prefab",
+            "pos": {
+                "x": -15.970489501953125,
+                "y": 0.0,
+                "z": -9.565185546875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Crate_01.prefab",
+            "pos": {
+                "x": -19.914138793945314,
+                "y": 0.0,
+                "z": -9.419189453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Crate_01.prefab",
+            "pos": {
+                "x": -20.889694213867189,
+                "y": 0.0,
+                "z": -9.419189453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
             }
         },
         {
             "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Trashbin_02.prefab",
             "pos": {
-                "x": -16.941146850585939,
+                "x": -25.462142944335939,
                 "y": 0.0,
-                "z": 19.53204345703125
+                "z": -9.441162109375
             },
-            "yaw": -90.0,
+            "yaw": 180.0,
             "scale": {
-                "x": 1.000000238418579,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.000000238418579
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Trashbin_02.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Skip_01.prefab",
             "pos": {
-                "x": -16.941146850585939,
+                "x": -30.060150146484376,
                 "y": 0.0,
-                "z": 18.69110107421875
+                "z": -9.80535888671875
             },
-            "yaw": -90.0,
+            "yaw": 180.0,
             "scale": {
-                "x": 1.000000238418579,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.000000238418579
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_03.prefab",
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_04.prefab",
             "pos": {
-                "x": -16.682708740234376,
+                "x": -4.6787567138671879,
                 "y": 0.0,
-                "z": 14.80718994140625
+                "z": 24.06256103515625
             },
-            "yaw": -90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_03.prefab",
-            "pos": {
-                "x": -16.682708740234376,
-                "y": 0.0,
-                "z": 14.42431640625
-            },
-            "yaw": -90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_01.prefab",
-            "pos": {
-                "x": -16.54443359375,
-                "y": 0.0,
-                "z": 9.7742919921875
-            },
-            "yaw": -90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_01.prefab",
-            "pos": {
-                "x": -16.54443359375,
-                "y": 0.0,
-                "z": 8.95025634765625
-            },
-            "yaw": -90.0,
+            "yaw": 90.0,
             "scale": {
                 "x": 1.000000238418579,
                 "y": 1.0,
@@ -419,11 +671,11 @@
         {
             "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_04.prefab",
             "pos": {
-                "x": -16.821243286132814,
+                "x": -4.6787567138671879,
                 "y": 0.0,
-                "z": 5.8818359375
+                "z": 23.71771240234375
             },
-            "yaw": -90.0,
+            "yaw": 90.0,
             "scale": {
                 "x": 1.000000238418579,
                 "y": 1.0,
@@ -433,11 +685,11 @@
         {
             "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_04.prefab",
             "pos": {
-                "x": -16.821243286132814,
+                "x": -4.6787567138671879,
                 "y": 0.0,
-                "z": 5.5369873046875
+                "z": 23.37286376953125
             },
-            "yaw": -90.0,
+            "yaw": 90.0,
             "scale": {
                 "x": 1.000000238418579,
                 "y": 1.0,
@@ -445,13 +697,13 @@
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_04.prefab",
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Drinks_Cooler_01.prefab",
             "pos": {
-                "x": -16.821243286132814,
+                "x": -4.5392913818359379,
                 "y": 0.0,
-                "z": 5.192138671875
+                "z": 21.239990234375
             },
-            "yaw": -90.0,
+            "yaw": 90.0,
             "scale": {
                 "x": 1.000000238418579,
                 "y": 1.0,
@@ -459,11 +711,39 @@
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_02.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Skip_01.prefab",
             "pos": {
-                "x": -11.020980834960938,
+                "x": -4.194580078125,
                 "y": 0.0,
-                "z": -12.8172607421875
+                "z": 17.7388916015625
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrier_01.prefab",
+            "pos": {
+                "x": -4.4461517333984379,
+                "y": 0.0,
+                "z": 11.90374755859375
+            },
+            "yaw": 90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_05.prefab",
+            "pos": {
+                "x": -6.6417999267578129,
+                "y": 3.2793750762939455,
+                "z": 24.84722900390625
             },
             "yaw": 0.0,
             "scale": {
@@ -473,11 +753,11 @@
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_02.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_Bar_01.prefab",
             "pos": {
-                "x": -11.561630249023438,
-                "y": 0.0,
-                "z": -12.8172607421875
+                "x": -12.024139404296875,
+                "y": 3.7330503463745119,
+                "z": 24.9122314453125
             },
             "yaw": 0.0,
             "scale": {
@@ -487,207 +767,11 @@
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBox_02.prefab",
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_04.prefab",
             "pos": {
-                "x": -12.102264404296875,
-                "y": 0.0,
-                "z": -12.8172607421875
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_02.prefab",
-            "pos": {
-                "x": -15.484832763671875,
-                "y": 0.0,
-                "z": -12.95556640625
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_03.prefab",
-            "pos": {
-                "x": -20.630966186523439,
-                "y": 0.0,
-                "z": -12.95556640625
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_03.prefab",
-            "pos": {
-                "x": -21.219314575195314,
-                "y": 0.0,
-                "z": -12.95556640625
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrel_Burn_01.prefab",
-            "pos": {
-                "x": -24.098312377929689,
-                "y": 0.0,
-                "z": -12.48760986328125
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Trashbin_01.prefab",
-            "pos": {
-                "x": -27.566177368164064,
-                "y": 0.0,
-                "z": -12.5264892578125
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrel_Burn_01.prefab",
-            "pos": {
-                "x": 6.3538055419921879,
-                "y": 0.0,
-                "z": -20.01239013671875
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrel_Burn_01.prefab",
-            "pos": {
-                "x": 5.5389251708984379,
-                "y": 0.0,
-                "z": -20.01239013671875
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Barrel_Burn_01.prefab",
-            "pos": {
-                "x": 4.7240447998046879,
-                "y": 0.0,
-                "z": -20.01239013671875
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_01.prefab",
-            "pos": {
-                "x": 0.1558990478515625,
-                "y": 0.0,
-                "z": -19.54443359375
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_PowerBoxes_01.prefab",
-            "pos": {
-                "x": -0.66815185546875,
-                "y": 0.0,
-                "z": -19.54443359375
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Drinks_Cooler_01.prefab",
-            "pos": {
-                "x": -5.574951171875,
-                "y": 0.0,
-                "z": -19.960693359375
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Drinks_Cooler_01.prefab",
-            "pos": {
-                "x": -6.4799041748046879,
-                "y": 0.0,
-                "z": -19.960693359375
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Drinks_Cooler_01.prefab",
-            "pos": {
-                "x": -7.384857177734375,
-                "y": 0.0,
-                "z": -19.960693359375
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_DeliPizza_01.prefab",
-            "pos": {
-                "x": -24.666046142578126,
-                "y": 5.065333366394043,
-                "z": 24.9129638671875
+                "x": -17.9500732421875,
+                "y": 3.9264068603515627,
+                "z": 24.96588134765625
             },
             "yaw": 0.0,
             "scale": {
@@ -699,9 +783,9 @@
         {
             "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Light_Wall_01.prefab",
             "pos": {
-                "x": -29.619110107421876,
-                "y": 3.763728380203247,
-                "z": 24.996826171875
+                "x": -23.770553588867189,
+                "y": 4.135160446166992,
+                "z": 24.8699951171875
             },
             "yaw": 0.0,
             "scale": {
@@ -711,206 +795,24 @@
             }
         },
         {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_DeliPizza_01.prefab",
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Poster_02.prefab",
             "pos": {
-                "x": -34.22540283203125,
-                "y": 4.790549278259277,
-                "z": 25.039794921875
+                "x": -27.369094848632814,
+                "y": 2.436595916748047,
+                "z": 24.97003173828125
             },
             "yaw": 0.0,
             "scale": {
                 "x": 1.0,
                 "y": 1.0,
                 "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_SatDish_01.prefab",
-            "pos": {
-                "x": -38.37471008300781,
-                "y": 5.9569993019104,
-                "z": 25.169921875
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_XXX_01.prefab",
-            "pos": {
-                "x": -46.656646728515628,
-                "y": 3.1064085960388185,
-                "z": 24.94769287109375
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_SatDish_01.prefab",
-            "pos": {
-                "x": -49.94989013671875,
-                "y": 4.544485569000244,
-                "z": 22.4150390625
-            },
-            "yaw": -90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_DeliPizza_01.prefab",
-            "pos": {
-                "x": -49.81976318359375,
-                "y": 3.9748661518096926,
-                "z": 12.77984619140625
-            },
-            "yaw": -90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Poster_01.prefab",
-            "pos": {
-                "x": -49.75,
-                "y": 2.808075428009033,
-                "z": 5.57354736328125
-            },
-            "yaw": -90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_Bar_01.prefab",
-            "pos": {
-                "x": -49.819061279296878,
-                "y": 2.902223825454712,
-                "z": 0.79193115234375
-            },
-            "yaw": -90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_09.prefab",
-            "pos": {
-                "x": 30.456405639648439,
-                "y": 5.190810680389404,
-                "z": 24.8358154296875
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Washingline_01.prefab",
-            "pos": {
-                "x": 12.266891479492188,
-                "y": 4.383667945861816,
-                "z": 25.069091796875
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_10.prefab",
-            "pos": {
-                "x": 49.969146728515628,
-                "y": 5.443244457244873,
-                "z": -7.14129638671875
-            },
-            "yaw": 90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_10.prefab",
-            "pos": {
-                "x": 49.969146728515628,
-                "y": 4.129266738891602,
-                "z": -15.457763671875
-            },
-            "yaw": 90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_08.prefab",
-            "pos": {
-                "x": 49.96598815917969,
-                "y": 3.084529161453247,
-                "z": -21.5130615234375
-            },
-            "yaw": 90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_Pub_01.prefab",
-            "pos": {
-                "x": -49.80615234375,
-                "y": 4.117976665496826,
-                "z": -5.68817138671875
-            },
-            "yaw": -90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Poster_01.prefab",
-            "pos": {
-                "x": -49.74383544921875,
-                "y": 1.5610086917877198,
-                "z": -12.97808837890625
-            },
-            "yaw": -90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
             }
         },
         {
             "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Poster_Frame_01.prefab",
             "pos": {
-                "x": -1.23748779296875,
-                "y": 2.038379669189453,
+                "x": -30.829345703125,
+                "y": 1.4517040252685547,
                 "z": 25.0179443359375
             },
             "yaw": 0.0,
@@ -921,11 +823,123 @@
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Poster_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Poster_03.prefab",
             "pos": {
-                "x": -6.7886199951171879,
-                "y": 2.722538948059082,
-                "z": 24.969970703125
+                "x": -38.493316650390628,
+                "y": 2.258450508117676,
+                "z": 24.8370361328125
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Poster_02.prefab",
+            "pos": {
+                "x": -44.809539794921878,
+                "y": 2.4129600524902345,
+                "z": 24.84320068359375
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Aircon_01.prefab",
+            "pos": {
+                "x": -49.75,
+                "y": 3.4085309505462648,
+                "z": -3.3233642578125
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Pipe_Small_02.prefab",
+            "pos": {
+                "x": -49.86924743652344,
+                "y": 0.0,
+                "z": -6.8863525390625
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_Hotel_01.prefab",
+            "pos": {
+                "x": -49.90754699707031,
+                "y": 6.69834566116333,
+                "z": -15.80023193359375
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Billboard_01.prefab",
+            "pos": {
+                "x": -49.764617919921878,
+                "y": 4.638637542724609,
+                "z": -22.87091064453125
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Billboard_Sign_06.prefab",
+            "pos": {
+                "x": -49.764617919921878,
+                "y": 4.638637542724609,
+                "z": -22.87091064453125
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Above_Board_01.prefab",
+            "pos": {
+                "x": 30.221328735351564,
+                "y": 3.746633291244507,
+                "z": 24.88232421875
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Poster_Frame_01.prefab",
+            "pos": {
+                "x": 26.012725830078126,
+                "y": 2.069373846054077,
+                "z": 24.88531494140625
             },
             "yaw": 0.0,
             "scale": {
@@ -937,8 +951,8 @@
         {
             "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Street_Lamp_04.prefab",
             "pos": {
-                "x": -9.648788452148438,
-                "y": 3.9717326164245607,
+                "x": 23.0819091796875,
+                "y": 4.784961700439453,
                 "z": 24.969970703125
             },
             "yaw": 0.0,
@@ -949,13 +963,55 @@
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Light_Wall_01.prefab",
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Security_Camera_01.prefab",
             "pos": {
-                "x": 49.99678039550781,
-                "y": 3.2810585498809816,
-                "z": 13.94635009765625
+                "x": 18.985626220703126,
+                "y": 4.175236225128174,
+                "z": 24.969970703125
             },
-            "yaw": 90.0,
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Washingline_04.prefab",
+            "pos": {
+                "x": -49.99748229980469,
+                "y": 4.107048034667969,
+                "z": 17.36932373046875
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Street_Lamp_05.prefab",
+            "pos": {
+                "x": -49.96998596191406,
+                "y": 3.5960795879364015,
+                "z": 14.52081298828125
+            },
+            "yaw": -90.0,
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Street_Lamp_04.prefab",
+            "pos": {
+                "x": -49.96998596191406,
+                "y": 4.303586006164551,
+                "z": 8.96923828125
+            },
+            "yaw": -90.0,
             "scale": {
                 "x": 1.000000238418579,
                 "y": 1.0,
@@ -965,9 +1021,9 @@
         {
             "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Washingline_01.prefab",
             "pos": {
-                "x": 50.069061279296878,
-                "y": 6.229517459869385,
-                "z": 9.79473876953125
+                "x": 50.06907653808594,
+                "y": 4.60833740234375,
+                "z": -8.98760986328125
             },
             "yaw": 90.0,
             "scale": {
@@ -977,108 +1033,206 @@
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_05.prefab",
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Poster_01.prefab",
             "pos": {
-                "x": 47.565582275390628,
-                "y": 5.091464042663574,
-                "z": -24.75408935546875
+                "x": 49.96998596191406,
+                "y": 2.4531502723693849,
+                "z": 15.38970947265625
             },
-            "yaw": 180.0,
+            "yaw": 90.0,
             "scale": {
-                "x": 1.0,
+                "x": 1.000000238418579,
                 "y": 1.0,
-                "z": 1.0
+                "z": 1.000000238418579
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_05.prefab",
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_07.prefab",
             "pos": {
-                "x": 43.51698303222656,
-                "y": 3.1204333305358888,
-                "z": 24.75408935546875
+                "x": 49.9600830078125,
+                "y": 4.8305439949035648,
+                "z": 7.833251953125
             },
-            "yaw": 0.0,
+            "yaw": 90.0,
             "scale": {
-                "x": 1.0,
+                "x": 1.000000238418579,
                 "y": 1.0,
-                "z": 1.0
+                "z": 1.000000238418579
             }
         },
         {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Poster_03.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_Chinese_Noodles_01.prefab",
             "pos": {
-                "x": 38.97361755371094,
-                "y": 1.6132442951202393,
-                "z": 24.74383544921875
+                "x": 49.970001220703128,
+                "y": 3.4644269943237306,
+                "z": 3.9375
             },
-            "yaw": 0.0,
+            "yaw": 90.0,
             "scale": {
-                "x": 1.0,
+                "x": 1.000000238418579,
                 "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Street_Lamp_06.prefab",
-            "pos": {
-                "x": 21.397232055664064,
-                "y": 4.902431488037109,
-                "z": 9.25
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Light_Wall_03.prefab",
-            "pos": {
-                "x": 17.357696533203126,
-                "y": 4.11414098739624,
-                "z": 9.22320556640625
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Poster_03.prefab",
-            "pos": {
-                "x": 13.1717529296875,
-                "y": 2.608185291290283,
-                "z": 9.25
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Street_Lamp_05.prefab",
-            "pos": {
-                "x": 9.639083862304688,
-                "y": 4.792876720428467,
-                "z": 9.25
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
+                "z": 1.000000238418579
             }
         },
         {
             "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Poster_02.prefab",
             "pos": {
-                "x": 5.1231689453125,
-                "y": 2.542926788330078,
+                "x": -12.692947387695313,
+                "y": 2.74862003326416,
+                "z": -24.75
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Light_Wall_01.prefab",
+            "pos": {
+                "x": -15.397140502929688,
+                "y": 3.520216226577759,
+                "z": -24.77679443359375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Vines_05.prefab",
+            "pos": {
+                "x": -23.231781005859376,
+                "y": 0.9176842570304871,
+                "z": -24.9073486328125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_XXX_01.prefab",
+            "pos": {
+                "x": -44.87507629394531,
+                "y": 3.477018356323242,
+                "z": -24.85455322265625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Light_Wall_02.prefab",
+            "pos": {
+                "x": 41.56837463378906,
+                "y": 3.25614595413208,
+                "z": 24.77679443359375
+            },
+            "yaw": 0.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_11.prefab",
+            "pos": {
+                "x": -6.378265380859375,
+                "y": 5.290270805358887,
+                "z": 4.25885009765625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_Cafe_01.prefab",
+            "pos": {
+                "x": -12.34515380859375,
+                "y": 4.002888202667236,
+                "z": 4.195068359375
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_Pizza_01.prefab",
+            "pos": {
+                "x": -20.708663940429689,
+                "y": 2.943159580230713,
+                "z": 4.1778564453125
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Street_Lamp_04.prefab",
+            "pos": {
+                "x": -28.479751586914064,
+                "y": 4.751729488372803,
+                "z": 4.25
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Poster_Frame_01.prefab",
+            "pos": {
+                "x": -34.56282043457031,
+                "y": 2.0589632987976076,
+                "z": 4.2313232421875
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Washingline_01.prefab",
+            "pos": {
+                "x": -38.231781005859378,
+                "y": 6.022696495056152,
+                "z": 4.15093994140625
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Street_Lamp_06.prefab",
+            "pos": {
+                "x": 21.632781982421876,
+                "y": 4.601446628570557,
                 "z": 9.25
             },
             "yaw": 180.0,
@@ -1089,11 +1243,11 @@
             }
         },
         {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_XXX_01.prefab",
+            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Vines_03.prefab",
             "pos": {
-                "x": -12.000457763671875,
-                "y": 3.1139211654663088,
-                "z": -19.85455322265625
+                "x": 10.702529907226563,
+                "y": 2.8015263080596926,
+                "z": 7.41571044921875
             },
             "yaw": 180.0,
             "scale": {
@@ -1103,2995 +1257,2337 @@
             }
         },
         {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Sign_XXX_01.prefab",
-            "pos": {
-                "x": -20.680068969726564,
-                "y": 3.651718854904175,
-                "z": -19.85455322265625
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Sign_Neon_04.prefab",
-            "pos": {
-                "x": -16.245834350585939,
-                "y": 4.345776557922363,
-                "z": 23.05615234375
-            },
-            "yaw": -90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Vines_04.prefab",
-            "pos": {
-                "x": -16.384170532226564,
-                "y": 0.5499109029769898,
-                "z": 13.840576171875
-            },
-            "yaw": -90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Poster_Frame_01.prefab",
-            "pos": {
-                "x": -16.268661499023439,
-                "y": 2.6504335403442385,
-                "z": 8.5133056640625
-            },
-            "yaw": -90.0,
-            "scale": {
-                "x": 1.000000238418579,
-                "y": 1.0,
-                "z": 1.000000238418579
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Street_Lamp_06.prefab",
-            "pos": {
-                "x": -12.0966796875,
-                "y": 3.679549217224121,
-                "z": -13.1370849609375
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Poster_03.prefab",
-            "pos": {
-                "x": -16.739151000976564,
-                "y": 1.7098414897918702,
-                "z": -13.1431884765625
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Pier_Lamp_02.prefab",
-            "pos": {
-                "x": 34.995208740234378,
-                "y": 0.0,
-                "z": -23.9085693359375
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Pier_Lamp_02.prefab",
-            "pos": {
-                "x": 21.995208740234376,
-                "y": 0.0,
-                "z": -23.9085693359375
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Pier_Lamp_02.prefab",
-            "pos": {
-                "x": 8.995208740234375,
-                "y": 0.0,
-                "z": -23.9085693359375
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Pier_Lamp_02.prefab",
-            "pos": {
-                "x": -4.004791259765625,
-                "y": 0.0,
-                "z": -23.9085693359375
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Pier_Lamp_02.prefab",
-            "pos": {
-                "x": -17.004791259765626,
-                "y": 0.0,
-                "z": -23.9085693359375
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Pier_Lamp_02.prefab",
-            "pos": {
-                "x": -30.004791259765626,
-                "y": 0.0,
-                "z": -23.9085693359375
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Pier_Lamp_02.prefab",
-            "pos": {
-                "x": -43.004791259765628,
-                "y": 0.0,
-                "z": -23.9085693359375
-            },
-            "yaw": 0.0,
-            "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 45.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "y": -0.03420928120613098,
+                "z": 20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 45.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
+                "y": -0.03420928120613098,
+                "z": 15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 45.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
+                "y": -0.03420928120613098,
+                "z": 10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 45.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
+                "y": -0.03420928120613098,
+                "z": 5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 45.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
+                "y": -0.03420928120613098,
+                "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 45.0,
-                "y": -0.013145728036761284,
-                "z": 0.0
+                "y": -0.03420928120613098,
+                "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 45.0,
-                "y": -0.013145728036761284,
-                "z": -5.0
+                "y": -0.03420928120613098,
+                "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 45.0,
-                "y": -0.013145728036761284,
-                "z": -10.0
+                "y": -0.03420928120613098,
+                "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 45.0,
-                "y": -0.013145728036761284,
-                "z": -15.0
+                "y": -0.03420928120613098,
+                "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 45.0,
-                "y": -0.013145728036761284,
-                "z": -20.0
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 40.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "y": -0.03420928120613098,
+                "z": 20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 40.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
+                "y": -0.03420928120613098,
+                "z": 15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 40.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
+                "y": -0.03420928120613098,
+                "z": 10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 40.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
+                "y": -0.03420928120613098,
+                "z": 5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 40.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
+                "y": -0.03420928120613098,
+                "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 40.0,
-                "y": -0.013145728036761284,
-                "z": 0.0
+                "y": -0.03420928120613098,
+                "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 40.0,
-                "y": -0.013145728036761284,
-                "z": -5.0
+                "y": -0.03420928120613098,
+                "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 40.0,
-                "y": -0.013145728036761284,
-                "z": -10.0
+                "y": -0.03420928120613098,
+                "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 40.0,
-                "y": -0.013145728036761284,
-                "z": -15.0
+                "y": -0.03420928120613098,
+                "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 40.0,
-                "y": -0.013145728036761284,
-                "z": -20.0
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 35.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "y": -0.03420928120613098,
+                "z": 20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 35.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
+                "y": -0.03420928120613098,
+                "z": 15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 35.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
+                "y": -0.03420928120613098,
+                "z": 10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 35.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
+                "y": -0.03420928120613098,
+                "z": 5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 35.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
+                "y": -0.03420928120613098,
+                "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 35.0,
-                "y": -0.013145728036761284,
-                "z": 0.0
+                "y": -0.03420928120613098,
+                "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 35.0,
-                "y": -0.013145728036761284,
-                "z": -5.0
+                "y": -0.03420928120613098,
+                "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 35.0,
-                "y": -0.013145728036761284,
-                "z": -10.0
+                "y": -0.03420928120613098,
+                "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 35.0,
-                "y": -0.013145728036761284,
-                "z": -15.0
+                "y": -0.03420928120613098,
+                "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 35.0,
-                "y": -0.013145728036761284,
-                "z": -20.0
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 30.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "y": -0.03420928120613098,
+                "z": 20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 30.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
+                "y": -0.03420928120613098,
+                "z": 15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 30.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
+                "y": -0.03420928120613098,
+                "z": 10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 30.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
+                "y": -0.03420928120613098,
+                "z": 5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 30.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
+                "y": -0.03420928120613098,
+                "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 30.0,
-                "y": -0.013145728036761284,
-                "z": 0.0
+                "y": -0.03420928120613098,
+                "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 30.0,
-                "y": -0.013145728036761284,
-                "z": -5.0
+                "y": -0.03420928120613098,
+                "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 30.0,
-                "y": -0.013145728036761284,
-                "z": -10.0
+                "y": -0.03420928120613098,
+                "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 30.0,
-                "y": -0.013145728036761284,
-                "z": -15.0
+                "y": -0.03420928120613098,
+                "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 30.0,
-                "y": -0.013145728036761284,
-                "z": -20.0
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 25.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "y": -0.03420928120613098,
+                "z": 20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 25.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
+                "y": -0.03420928120613098,
+                "z": 15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 25.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
+                "y": -0.03420928120613098,
+                "z": 10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 25.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
+                "y": -0.03420928120613098,
+                "z": 5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 25.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
+                "y": -0.03420928120613098,
+                "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 25.0,
-                "y": -0.013145728036761284,
-                "z": 0.0
+                "y": -0.03420928120613098,
+                "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 25.0,
-                "y": -0.013145728036761284,
-                "z": -5.0
+                "y": -0.03420928120613098,
+                "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 25.0,
-                "y": -0.013145728036761284,
-                "z": -10.0
+                "y": -0.03420928120613098,
+                "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 25.0,
-                "y": -0.013145728036761284,
-                "z": -15.0
+                "y": -0.03420928120613098,
+                "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 25.0,
-                "y": -0.013145728036761284,
-                "z": -20.0
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 20.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "y": -0.03420928120613098,
+                "z": 20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 20.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
+                "y": -0.03420928120613098,
+                "z": 15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 20.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
+                "y": -0.03420928120613098,
+                "z": 10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 20.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
+                "y": -0.03420928120613098,
+                "z": 5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 20.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
+                "y": -0.03420928120613098,
+                "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 20.0,
-                "y": -0.013145728036761284,
-                "z": 0.0
+                "y": -0.03420928120613098,
+                "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 20.0,
-                "y": -0.013145728036761284,
-                "z": -5.0
+                "y": -0.03420928120613098,
+                "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 20.0,
-                "y": -0.013145728036761284,
-                "z": -10.0
+                "y": -0.03420928120613098,
+                "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 20.0,
-                "y": -0.013145728036761284,
-                "z": -15.0
+                "y": -0.03420928120613098,
+                "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 20.0,
-                "y": -0.013145728036761284,
-                "z": -20.0
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 15.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "y": -0.03420928120613098,
+                "z": 20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 15.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
+                "y": -0.03420928120613098,
+                "z": 15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 15.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
+                "y": -0.03420928120613098,
+                "z": 10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 15.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
+                "y": -0.03420928120613098,
+                "z": 5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 15.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
+                "y": -0.03420928120613098,
+                "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 15.0,
-                "y": -0.013145728036761284,
-                "z": 0.0
+                "y": -0.03420928120613098,
+                "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 15.0,
-                "y": -0.013145728036761284,
-                "z": -5.0
+                "y": -0.03420928120613098,
+                "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 15.0,
-                "y": -0.013145728036761284,
-                "z": -10.0
+                "y": -0.03420928120613098,
+                "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 15.0,
-                "y": -0.013145728036761284,
-                "z": -15.0
+                "y": -0.03420928120613098,
+                "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 15.0,
-                "y": -0.013145728036761284,
-                "z": -20.0
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 10.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "y": -0.03420928120613098,
+                "z": 20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 10.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
+                "y": -0.03420928120613098,
+                "z": 15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 10.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
+                "y": -0.03420928120613098,
+                "z": 10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 10.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
+                "y": -0.03420928120613098,
+                "z": 5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 10.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
+                "y": -0.03420928120613098,
+                "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 10.0,
-                "y": -0.013145728036761284,
-                "z": 0.0
+                "y": -0.03420928120613098,
+                "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 10.0,
-                "y": -0.013145728036761284,
-                "z": -5.0
+                "y": -0.03420928120613098,
+                "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 10.0,
-                "y": -0.013145728036761284,
-                "z": -10.0
+                "y": -0.03420928120613098,
+                "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 10.0,
-                "y": -0.013145728036761284,
-                "z": -15.0
+                "y": -0.03420928120613098,
+                "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 10.0,
-                "y": -0.013145728036761284,
-                "z": -20.0
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 5.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "y": -0.03420928120613098,
+                "z": 20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 5.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
+                "y": -0.03420928120613098,
+                "z": 15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 5.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
+                "y": -0.03420928120613098,
+                "z": 10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 5.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
+                "y": -0.03420928120613098,
+                "z": 5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 5.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
+                "y": -0.03420928120613098,
+                "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 5.0,
-                "y": -0.013145728036761284,
-                "z": 0.0
+                "y": -0.03420928120613098,
+                "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 5.0,
-                "y": -0.013145728036761284,
-                "z": -5.0
+                "y": -0.03420928120613098,
+                "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 5.0,
-                "y": -0.013145728036761284,
-                "z": -10.0
+                "y": -0.03420928120613098,
+                "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 5.0,
-                "y": -0.013145728036761284,
-                "z": -15.0
+                "y": -0.03420928120613098,
+                "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 5.0,
-                "y": -0.013145728036761284,
-                "z": -20.0
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 0.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "y": -0.03420928120613098,
+                "z": 20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 0.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
+                "y": -0.03420928120613098,
+                "z": 15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 0.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
+                "y": -0.03420928120613098,
+                "z": 10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 0.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
+                "y": -0.03420928120613098,
+                "z": 5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 0.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
+                "y": -0.03420928120613098,
+                "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 0.0,
-                "y": -0.013145728036761284,
-                "z": 0.0
+                "y": -0.03420928120613098,
+                "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 0.0,
-                "y": -0.013145728036761284,
-                "z": -5.0
+                "y": -0.03420928120613098,
+                "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 0.0,
-                "y": -0.013145728036761284,
-                "z": -10.0
+                "y": -0.03420928120613098,
+                "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 0.0,
-                "y": -0.013145728036761284,
-                "z": -15.0
+                "y": -0.03420928120613098,
+                "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": 0.0,
-                "y": -0.013145728036761284,
-                "z": -20.0
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -5.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -5.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -5.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -5.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -5.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -5.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -5.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -5.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -5.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -5.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
-                "x": -10.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "x": -5.0,
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -10.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -10.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -10.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -10.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -10.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -10.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -10.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -10.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -10.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
-                "x": -15.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "x": -10.0,
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -15.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -15.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -15.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -15.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -15.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -15.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -15.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -15.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -15.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
-                "x": -20.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "x": -15.0,
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -20.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -20.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -20.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -20.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -20.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -20.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -20.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -20.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -20.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
-                "x": -25.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "x": -20.0,
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -25.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -25.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -25.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -25.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -25.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -25.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -25.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -25.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -25.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
-                "x": -30.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "x": -25.0,
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -30.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -30.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -30.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -30.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -30.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -30.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -30.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -30.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -30.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
-                "x": -35.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "x": -30.0,
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -35.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -35.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -35.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -35.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -35.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -35.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -35.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -35.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -35.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
-                "x": -40.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "x": -35.0,
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -40.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -40.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -40.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -40.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -40.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -40.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -40.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -40.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -40.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
-                "x": -45.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "x": -40.0,
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -45.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -45.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -45.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -45.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -45.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -45.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -45.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -45.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -45.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
-                "x": -50.0,
-                "y": -0.013145728036761284,
-                "z": 25.0
+                "x": -45.0,
+                "y": -0.03420928120613098,
+                "z": -25.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -50.0,
-                "y": -0.013145728036761284,
-                "z": 20.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -50.0,
-                "y": -0.013145728036761284,
-                "z": 15.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -50.0,
-                "y": -0.013145728036761284,
-                "z": 10.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -50.0,
-                "y": -0.013145728036761284,
-                "z": 5.0
-            },
-            "yaw": 180.0,
-            "scale": {
-                "x": 1.999997854232788,
-                "y": 1.0,
-                "z": 1.9999983310699463
-            }
-        },
-        {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
-            "pos": {
-                "x": -50.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": 0.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -50.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -5.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -50.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -10.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -50.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -15.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
             }
         },
         {
-            "path": "Assets/Synty/PolygonPalmCity/Prefabs/Environment/SM_Env_Sidewalk_01.prefab",
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
             "pos": {
                 "x": -50.0,
-                "y": -0.013145728036761284,
+                "y": -0.03420928120613098,
                 "z": -20.0
             },
             "yaw": 180.0,
             "scale": {
-                "x": 1.999997854232788,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.9999983310699463
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab",
+            "pos": {
+                "x": -50.0,
+                "y": -0.03420928120613098,
+                "z": -25.0
+            },
+            "yaw": 180.0,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonGangWarfare/Prefabs/Props/SM_Prop_Grass_Cracks_03.prefab",
+            "pos": {
+                "x": 38.75,
+                "y": 0.009999999776482582,
+                "z": -23.75
+            },
+            "yaw": 27.567337036132814,
+            "scale": {
+                "x": 1.0000001192092896,
+                "y": 1.0,
+                "z": 1.0000001192092896
             }
         },
         {
             "path": "Assets/Synty/PolygonPalmCity/Prefabs/Props/SM_Prop_Manhole_01.prefab",
             "pos": {
-                "x": 16.25,
+                "x": 36.25,
                 "y": 0.009999999776482582,
-                "z": -23.75
+                "z": -16.25
             },
-            "yaw": -103.920654296875,
+            "yaw": 113.25192260742188,
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        {
+            "path": "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Manhole_01.prefab",
+            "pos": {
+                "x": 38.75,
+                "y": 0.009999999776482582,
+                "z": -6.25
+            },
+            "yaw": -118.31271362304688,
             "scale": {
                 "x": 1.0,
                 "y": 1.0,

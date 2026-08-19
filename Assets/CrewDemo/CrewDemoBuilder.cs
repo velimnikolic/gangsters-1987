@@ -64,7 +64,7 @@ namespace CrewDemo
         /// each Play.</summary>
         static string[] GangsterCars => LivingCity.Gameplay.VehicleCatalog.GangsterCars;
         [Tooltip("Pack cars on each of the two streets along the block's long sides, both ways, for the outfit's car to thread through.")]
-        [Range(0, 30)] public int trafficCars = 3;
+        [Range(0, 30)] public int trafficCars = 2;
         [Tooltip("Cars stood at the kerb of the two side streets - nothing drives those; they are there to be walked round and shot over.")]
         [Range(0, 20)] public int parkedCars = 6;
 
@@ -152,13 +152,16 @@ namespace CrewDemo
             _crews.MuzzleFlashPrefab = CrewKit.MuzzleFlash;
             _crews.BloodPrefab = CrewKit.Blood;
             _crews.ImpactPrefab = CrewKit.Impact;
-            _crews.GunshotClips = CrewKit.Gunshots;
+            _crews.GunshotSets = CrewKit.GunshotSets();
             _crews.CrackClip = CrewKit.Crack;
             // the four streets as a lane network, so a car can take a corner: the
             // ledger's cars are given it, and each starts on whichever street it is
             // parked on; it is the scene's active net for whatever else is stood on it
             _crews.Net = BuildRoadNet();
             LaneNet.Active = _crews.Net;
+            // this street is sunk a tenth: a car the ledger stands here sits on the
+            // asphalt with the rest, not on the pavement's level
+            _crews.CarRoadY = -0.08f;
             // the outfit gathers on the far pavement of the south street, on the stretch
             // west of the crossroads - the crews strung along it either side of the
             // anchor, facing the block. Seventy-odd metres of street from the nearest

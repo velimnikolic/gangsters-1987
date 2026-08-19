@@ -179,6 +179,16 @@ namespace RoadDemo
         public Transform Tf;
         public float Speed = 1.5f;
 
+        // ---- the black box (DriveTrace): who he is, and whether he is getting anywhere
+        static int _ids;
+        public readonly int Id = ++_ids;
+        /// <summary>What he is in the trace: crowd, crew, police.</summary>
+        public string Tag = "crowd";
+        int _traceFrame;
+        float _traceNext, _traceStill, _traceSaid;
+        Vector3 _tracePrev;
+        bool _traceStarted;
+
         protected PedLink _link;
         protected PedNode _cameFrom;
         protected float _t;
@@ -335,9 +345,57 @@ namespace RoadDemo
             // a man walking into the back of the man ahead of him stops instead
             BlendLocomotion(dt, !_waiting && _hold > 0.25f);
 
-            if (_waiting) { Jostle(dt); return; }
+            if (_waiting) { Jostle(dt); TracePed(dt); return; }
             _shuffle = 0f;
             Move(dt);
+            TracePed(dt);
+        }
+
+        /// <summary>What this man is doing, for the trace: the crowd has its errands,
+        /// a crew man has his fight.</summary>
+        protected virtual string TraceState() => _waiting ? "waiting" : "walking";
+
+        /// <summary>Whether he is trying to get anywhere at all - a man told to stand
+        /// still is not stuck, however long he stands.</summary>
+        protected virtual bool Moving => _link != null && !_waiting;
+
+        /// <summary>One frame of one man in the trace, and a note when he has plainly
+        /// stopped getting anywhere: stood still, not waiting at a kerb, for seconds on
+        /// end - a man wedged behind a bin or steering into a wall.</summary>
+        public void TracePed(float dt)
+        {
+            if (!DriveTrace.On || Tf == null) return;
+            if (_traceFrame == Time.frameCount) return;   // ticked twice a frame: once is enough
+            _traceFrame = Time.frameCount;
+
+            var at = Tf.position;
+            float moved = _traceStarted ? Vector3.Distance(at, _tracePrev) : 0f;
+            float pace = dt > 1e-4f ? moved / dt : 0f;
+            if (_traceStarted && moved < 0.02f && !_waiting) _traceStill += dt; else { _traceStill = 0f; _traceSaid = 0f; }
+            _tracePrev = at;
+            _traceStarted = true;
+
+            // a man standing because he has been told to stand is not stuck: only one
+            // who is trying to get somewhere and not getting there counts
+            bool say = Moving && _traceStill > 6f && _traceStill - _traceSaid > 8f;
+            if (say) _traceSaid = _traceStill;
+            if (!say && DriveTrace.Now < _traceNext) return;
+            _traceNext = DriveTrace.Now + DriveTrace.SampleEvery * 3f;   // a man is slower news than a car
+
+            var sb = DriveTrace.Take();
+            DriveTrace.Int(sb, "id", Id);
+            DriveTrace.Str(sb, "tag", Tag);
+            DriveTrace.Str(sb, "state", TraceState());
+            DriveTrace.Num(sb, "pace", pace);
+            DriveTrace.Num(sb, "want", Speed);
+            DriveTrace.Num(sb, "lt", _t, "F3");   // along his link; "t" is the trace's own clock
+            DriveTrace.Bool(sb, "wait", _waiting);
+            DriveTrace.Num(sb, "hold", _hold, "F2");
+            DriveTrace.Num(sb, "still", _traceStill, "F1");
+            DriveTrace.Bool(sb, "link", _link != null);
+            DriveTrace.Vec(sb, "p", at);
+            if (say) { DriveTrace.Str(sb, "fault", "walkstall"); DriveTrace.Str(sb, "what", $"still for {_traceStill:F0}s"); }
+            DriveTrace.Row(say ? "fault" : "ped", sb.ToString());
         }
 
         // ------------------------------------------------- the crowd around him

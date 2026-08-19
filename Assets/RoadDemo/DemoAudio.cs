@@ -29,7 +29,7 @@ namespace RoadDemo
     //   forth, restarting the loop every scan.
     //
     //   EVENTS - one pooled set of positional one-shots for footsteps, street
-    //   voices, horns, doors, and whatever else asks (DemoAudio.At). Footsteps are
+    //   voices, doors, and whatever else asks (DemoAudio.At). Footsteps are
     //   a budgeted trickle over walkers near the focus, not foot-to-ground sync:
     //   from this camera a plausible patter at the right density is
     //   indistinguishable, and sync would mean touching every walker every frame.
@@ -38,7 +38,12 @@ namespace RoadDemo
     // own click has to survive the frame that pauses the demo, and a hard cut on
     // space reads as a bug. Everything here runs on UNSCALED time for its fades and
     // on scaled time for its emission, so a paused demo goes quiet and a 4x demo
-    // walks and honks four times as often.
+    // walks four times as often.
+    //
+    // No horns. A city that honks on a timer is a city that honks at nothing, and at
+    // 4x it honks four times as often at nothing - it read as a fault rather than as
+    // traffic. Bringing them back means bringing back a reason to sound one, not a
+    // shorter interval.
     public class DemoAudio : MonoBehaviour
     {
         const int EngineVoices = 6;
@@ -78,7 +83,7 @@ namespace RoadDemo
         float _worldGain = 1f;   // 0 while the demo is paused, faded
         float _busy;             // cars near the focus, 0..1
         float _crowd;            // people near the focus, 0..1
-        float _rescan, _stepBudget, _voiceIn = 8f, _hornIn = 6f;
+        float _rescan, _stepBudget, _voiceIn = 8f;
         bool _muted;
 
         /// <summary>Wired by the builder once the city, the crowd and the clock all
@@ -204,7 +209,6 @@ namespace RoadDemo
             {
                 EmitFootsteps(scaled);
                 EmitStreetVoices(scaled);
-                EmitHorns(scaled);
             }
         }
 
@@ -395,42 +399,6 @@ namespace RoadDemo
 
             At(DemoSounds.Pick(DemoSounds.StreetVoices), walker.Tf.position,
                 DemoSounds.StreetVoiceVolume * Mathf.Lerp(0.4f, 1f, _detail), pitchJitter: 0.1f);
-        }
-
-        /// <summary>Somebody leans on the horn. Only cars actually held up sound one -
-        /// a honk from a car rolling freely reads as a mistake.</summary>
-        void EmitHorns(float dt)
-        {
-            if (DemoSounds.Horns.Length == 0) return;
-
-            _hornIn -= dt;
-            if (_hornIn > 0f) return;
-
-            var focus = rig.pivot;
-            float reachSqr = EngineReach * EngineReach;
-            DemoVehicle held = null;
-            int seen = 0;
-
-            for (int i = 0; i < CarCount; i++)
-            {
-                var car = CarAt(i);
-                if (car?.Tf == null || car.Speed > 0.4f) continue;
-                var delta = car.Tf.position - focus;
-                delta.y = 0f;
-                if (delta.sqrMagnitude > reachSqr) continue;
-                // reservoir pick: one stopped car, uniformly, in a single pass
-                if (Random.Range(0, ++seen) == 0) held = car;
-            }
-
-            if (held == null)
-            {
-                _hornIn = 2f; // nobody is queuing; look again shortly
-                return;
-            }
-
-            _hornIn = Random.Range(8f, 20f);
-            At(DemoSounds.Pick(DemoSounds.Horns), held.Tf.position,
-                DemoSounds.HornVolume * Mathf.Lerp(0.5f, 1f, _detail), pitchJitter: 0.06f);
         }
 
         /// <summary>A walker out on the pavement near the focus - not one sat on a

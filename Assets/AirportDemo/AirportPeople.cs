@@ -13,6 +13,11 @@ namespace AirportDemo
     /// A passenger's round is the whole of 1987 air travel at a county field: in at
     /// the kerb, across the hall, out of the gate door, across the ramp on his own
     /// two feet, up the steps. No airbridge, no carousel, no security worth the name.
+    ///
+    /// Like everything that moves on the field, he works in the coordinates of the
+    /// Live root he hangs under - the field's own plan - which the city carries onto
+    /// a shore; only the world's obstacle field (the parked cars, the sheds) is
+    /// turned into those coordinates for the step round it.
     /// </summary>
     public sealed class AirportWalker : PedestrianAgent
     {
@@ -39,7 +44,7 @@ namespace AirportDemo
             _dwell = AirportKit.Range(Rng, 0.5f, 3f);
             if (Points.Count == 0) return;
             if (!atFirst) _target = Rng.Next(Points.Count);
-            Tf.position = Points[_target];
+            Tf.localPosition = Points[_target];
             _target = (_target + 1) % Points.Count;
         }
 
@@ -59,7 +64,7 @@ namespace AirportDemo
                 return;
             }
             var goal = Points[_target];
-            var to = goal - Tf.position;
+            var to = goal - Tf.localPosition;
             to.y = 0f;
             float dist = to.magnitude;
             if (dist < 0.3f)
@@ -76,15 +81,19 @@ namespace AirportDemo
                 BlendLocomotion(dt, false);
                 return;
             }
-            // round whatever is in the way - the buildings, the props, the parked cars
+            // round whatever is in the way - the buildings, the props, the parked cars:
+            // the obstacle field is the world's, so the question is asked in the world
+            // and the answer turned back into the field's own coordinates
             var want = to / dist;
-            var steer = WalkObstacles.Steer(Tf.position, want, want, 0.45f, 4f, ref _side, out float clear);
-            if (steer.sqrMagnitude > 0.001f) want = steer;
+            var parent = Tf.parent;
+            var wantWorld = parent != null ? parent.TransformDirection(want) : want;
+            var steer = WalkObstacles.Steer(Tf.position, wantWorld, wantWorld, 0.45f, 4f, ref _side, out float clear);
+            if (steer.sqrMagnitude > 0.001f) want = parent != null ? parent.InverseTransformDirection(steer) : steer;
             var step = want * Mathf.Min(dist, Mathf.Min(clear, Speed * dt));
-            var p = Tf.position + step;
+            var p = Tf.localPosition + step;
             p.y = goal.y;
-            Tf.position = p;
-            Tf.rotation = Quaternion.Slerp(Tf.rotation, Quaternion.LookRotation(want, Vector3.up), dt * 6f);
+            Tf.localPosition = p;
+            Tf.localRotation = Quaternion.Slerp(Tf.localRotation, Quaternion.LookRotation(want, Vector3.up), dt * 6f);
             BlendLocomotion(dt, true);
         }
     }

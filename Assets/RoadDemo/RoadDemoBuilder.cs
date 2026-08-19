@@ -29,21 +29,52 @@ namespace RoadDemo
         // spacing, one residentialblock1 bake per interior (70 x 50 m). Re-spaced,
         // the interiors take their sizes from blockWidths / blockDepths below.
         //
-        // The default plan is a city of some ninety blocks in a dozen districts:
-        // west to east, four columns of blocks, a park, five columns, a wild strip,
-        // one more column, the elevated freeway, two last columns; south to north,
-        // three rows, the river, three rows, a second park, one more row. Vertical
-        // roads 1, 5, 8, 11 and 14 are boulevards (5 the first park's east edge, 11
-        // the wild strip's, all bridging the river); horizontal 1, 5 and 8 cross the
-        // halves. The freeway rides over every street on pillars, ramps down past
-        // the last junction and runs out at grade across the island both ways -
-        // the road between the mainland off-stage and everything on the island.
+        // The default plan is a city of some sixty-six blocks in a dozen districts
+        // (a fifth smaller than it was: the suburbs grew and downtown gave the
+        // ground): west to east, four columns of blocks, a park, five columns, a
+        // wild strip, one more column, the elevated freeway, one last column; south
+        // to north, three rows, the river, two rows, a second park, one more row.
+        // Vertical roads 1, 5, 8 and 11 are boulevards (5 the first park's east
+        // edge, 11 the wild strip's, all bridging the river); horizontal 1, 5 and 7
+        // cross the halves. The freeway rides over every street on pillars, ramps
+        // down past the last junction and ends ON the island both ways, in a T with
+        // a link road out to the district roads on that shore.
         public float[] verticalRoadX =
-            { 0f, 100f, 200f, 300f, 400f, 500f, 600f, 700f, 800f, 900f, 1000f, 1100f, 1200f, 1300f, 1400f, 1500f };
+            { 0f, 100f, 200f, 300f, 400f, 500f, 600f, 700f, 800f, 900f, 1000f, 1100f, 1200f, 1300f, 1400f };
         public bool[] verticalIsBoulevard =
-            { false, true, false, false, false, true, false, false, true, false, false, true, false, false, true, false };
-        public float[] horizontalRoadZ = { 0f, 80f, 160f, 240f, 320f, 400f, 480f, 560f, 640f, 720f };
-        public bool[] horizontalIsBoulevard = { false, true, false, false, false, true, false, false, true, false };
+            { false, true, false, false, false, true, false, false, true, false, false, true, false, false, false };
+        public float[] horizontalRoadZ = { 0f, 80f, 160f, 240f, 320f, 400f, 480f, 560f, 640f };
+        public bool[] horizontalIsBoulevard = { false, true, false, false, false, true, false, true, false };
+
+        [Header("Freeways")]
+        [Tooltip("Freeways at all: the elevated highway through the town (a Highway seam) " +
+                 "and the belt round it. OFF is the town as it stands - streets, and the " +
+                 "approach roads out to the quarters, and nothing else. It is a MASTER " +
+                 "switch and not a default: with it off every Highway seam is taken out of " +
+                 "the list before the grid is spaced, and the belt is forced off, so a seam " +
+                 "left on the inspector or serialised into an old scene cannot put a " +
+                 "carriageway back through the suburbs.")]
+        public bool freeways = false;
+
+        /// <summary>Take the freeways out. Called first of all, before Respace, because
+        /// the grid's own spacing is laid on the seam list.</summary>
+        void NoFreeways()
+        {
+            if (freeways) return;
+            beltFreeway = false;
+            if (seams == null) return;
+            var kept = new List<Seam>();
+            int dropped = 0;
+            foreach (var s in seams)
+            {
+                if (s != null && s.kind == SeamKind.Highway) { dropped++; continue; }
+                kept.Add(s);
+            }
+            if (dropped == 0) return;
+            seams = kept.ToArray();
+            Debug.Log($"[RoadDemo] freeways off: {dropped} Highway seam(s) dropped and the belt " +
+                      "with them; the gap they held is an ordinary block now.");
+        }
 
         [Header("Seams between districts")]
         [Tooltip("The gaps between two road lines that are not blocks: a river (the boulevards " +
@@ -56,8 +87,12 @@ namespace RoadDemo
             new Seam { vertical = false, gap = 3, kind = SeamKind.River, width = 90f },
             new Seam { vertical = true, gap = 4, kind = SeamKind.Park, width = 60f },
             new Seam { vertical = true, gap = 10, kind = SeamKind.Wild, width = 80f },
-            new Seam { vertical = false, gap = 7, kind = SeamKind.Park, width = 60f },
-            new Seam { vertical = true, gap = 12, kind = SeamKind.Highway, width = 30f },
+            new Seam { vertical = false, gap = 6, kind = SeamKind.Park, width = 60f },
+            // No freeway through the town, and no belt round it (beltFreeway): a city of
+            // this size is streets, and an elevated highway down the middle of it took a
+            // hundred and forty metres of grid, four ramps and a whole seam to be a road
+            // nothing drove to. The Highway seam and the interchange it builds are still
+            // here - put one back on a gap and it stands up again.
         };
 
         [Header("Block sizes")]
@@ -87,7 +122,7 @@ namespace RoadDemo
         [Min(0)] public int blockCycle = 0;
 
         [Header("Traffic")]
-        public int carCount = 100;
+        public int carCount = 70;
         public float streetSpeed = 9f;
         public float boulevardSpeed = 13f;
         public int pedestrianCount = 170;
@@ -182,7 +217,12 @@ namespace RoadDemo
         const string PalmGround =
             "Assets/Synty/PolygonPalmCity/Materials/Env/Grass_Triplanar_01.mat";
 
-        GameObject _roadWest, _roadEast;    // YellowLines halves of a two-way street
+        // One half of a two-way street. YellowLines_02 carries the yellow centre
+        // line at one edge and the white kerb line - the one a car parks outside of -
+        // at the other, so a street wants it twice, the second half turned about:
+        // YellowLines_01 is the same tile without the kerb line, which left the
+        // parking line painted down one side of every street only.
+        GameObject _roadHalf;
         GameObject _laneEdge, _laneDash;    // boulevard kerb lane / inner dashed lane
         GameObject _median, _bare, _crossing;
         GameObject _bareCracked, _roadPatch; // block-floor variation tiles
@@ -318,11 +358,20 @@ namespace RoadDemo
             _traffic = new GameObject("Traffic").transform;
             _cars = new GameObject("Cars").transform;
 
+            // no freeways in this town, whatever the inspector or an old scene says:
+            // the Highway seams come out of the list before the grid is spaced on them
+            NoFreeways();
             Respace();
-            // the quarters that are not the grid - the port, the suburbs - decide where
-            // they stand before anything is laid: the island has to ring them, and the
-            // junctions they hang off have to know their streets run on out
+            // the belt freeway's line round the grid, which the freeway lands on and the
+            // quarters stand outside of
+            PlanBelt();
+            // the quarters that are not the grid - the port, the suburbs, the airport -
+            // decide where they stand before anything is laid: the island has to ring
+            // them, and the junctions they hang off have to know their streets run on out
             PlanDistricts();
+            // and the city's own parts get their names: nothing is built for them, but
+            // the map prints them and the ledger will want to say which one a block is in
+            PlanQuarters();
             ScaleLifeToCity();
             BuildNodes();
             BuildRoadsAndSidewalks();
@@ -333,8 +382,14 @@ namespace RoadDemo
             BuildSignals();
             BuildPedGraph();
             BuildWalkClearance();
+            // the belt freeway round the city: into the lane graph before the quarters'
+            // streets are welded on, because those cross it at its junctions
+            BuildBelt();
             // the quarters themselves, and the streets that weld them to the grid
             BuildDistricts();
+            // the freeway's terminal link roads (a city with no belt), once the
+            // connectors they cross are in
+            BuildHighwayLinks();
             BuildCityLife();
             SpawnCars();
             SpawnPolice();
@@ -507,8 +562,7 @@ namespace RoadDemo
 
         bool LoadPrefabs()
         {
-            _roadWest = Load(CityEnv + "SM_Env_Road_YellowLines_02.prefab");
-            _roadEast = Load(CityEnv + "SM_Env_Road_YellowLines_01.prefab");
+            _roadHalf = Load(CityEnv + "SM_Env_Road_YellowLines_02.prefab");
             _laneEdge = Load(CityEnv + "SM_Env_Road_02.prefab");
             _laneDash = Load(CityEnv + "SM_Env_Road_Lines_01.prefab");
             _median = Load(CityEnv + "SM_Env_Road_Median_01.prefab");
@@ -698,7 +752,7 @@ namespace RoadDemo
             if (_talkClip == null)
                 Debug.LogWarning("[RoadDemo] Standing_Talking missing; nobody will stop to chat");
 
-            return _roadWest && _roadEast && _laneEdge && _laneDash && _median && _bare &&
+            return _roadHalf && _laneEdge && _laneDash && _median && _bare &&
                    _crossing && _swStraight && _swCorner && _divider &&
                    _poleBase && _poleArm && _poleLights && _carPrefabs.Count > 0;
         }
@@ -919,6 +973,16 @@ namespace RoadDemo
         /// <summary>Every block the demo laid out. Filled by BuildBlocks and never
         /// touched again: the map draws the slabs, the O overlay prints the rest.</summary>
         public IReadOnlyList<LotInfo> LotPlans => _lotPlans;
+
+        /// <summary>What the city calls its streets, rolled off the grid's own seed:
+        /// one name per road line, the same names every time this city is built. The
+        /// map letters them along the streets; anything else that has to name a place
+        /// (a card, a job in the ledger) should ask here rather than roll its own.</summary>
+        public StreetNames Streets => _streets ??
+            (_streets = new StreetNames(spacingSeed * 31 + cityLayoutSeed,
+                verticalIsBoulevard, horizontalIsBoulevard));
+
+        StreetNames _streets;
 
         /// <summary>
         /// One block interior as it was PLANNED - the rectangle a bake has to stay
@@ -1325,17 +1389,19 @@ namespace RoadDemo
                 float mz = from + k * len;
                 if (blvd)
                 {
-                    PlaceTile(_laneEdge, cx - 15f, mz, 180, Cell, len);
+                    PlaceTile(_laneEdge, cx - 15f, mz, 0, Cell, len);
                     PlaceTile(_laneDash, cx - 10f, mz, 180, Cell, len);
                     PlaceTile(_median, cx - 5f, mz, 180, Cell, len);
                     PlaceTile(_median, cx, mz, 0, Cell, len);
                     PlaceTile(_laneDash, cx + 5f, mz, 0, Cell, len);
-                    PlaceTile(_laneEdge, cx + 10f, mz, 0, Cell, len);
+                    PlaceTile(_laneEdge, cx + 10f, mz, 180, Cell, len);
                 }
                 else
                 {
-                    PlaceTile(_roadWest, cx - 5f, mz, 0, Cell, len);
-                    PlaceTile(_roadEast, cx, mz, 0, Cell, len);
+                    // the two halves face each other: each lays its yellow line on the
+                    // crown and its white line on its own kerb
+                    PlaceTile(_roadHalf, cx - 5f, mz, 0, Cell, len);
+                    PlaceTile(_roadHalf, cx, mz, 180, Cell, len);
                 }
                 // the kerb strips, outside the last marked lane on either side: plain
                 // asphalt, where a car is left standing (the meters on the pavement
@@ -1394,17 +1460,17 @@ namespace RoadDemo
                 float mx = from + k * len;
                 if (blvd)
                 {
-                    PlaceTile(_laneEdge, mx, cz - 15f, 90, len, Cell);
+                    PlaceTile(_laneEdge, mx, cz - 15f, 270, len, Cell);
                     PlaceTile(_laneDash, mx, cz - 10f, 90, len, Cell);
                     PlaceTile(_median, mx, cz - 5f, 90, len, Cell);
                     PlaceTile(_median, mx, cz, 270, len, Cell);
                     PlaceTile(_laneDash, mx, cz + 5f, 270, len, Cell);
-                    PlaceTile(_laneEdge, mx, cz + 10f, 270, len, Cell);
+                    PlaceTile(_laneEdge, mx, cz + 10f, 90, len, Cell);
                 }
                 else
                 {
-                    PlaceTile(_roadEast, mx, cz - 5f, 90, len, Cell);
-                    PlaceTile(_roadWest, mx, cz, 90, len, Cell);
+                    PlaceTile(_roadHalf, mx, cz - 5f, 270, len, Cell);
+                    PlaceTile(_roadHalf, mx, cz, 90, len, Cell);
                 }
                 PlaceTile(_bare, mx, cz - half, 90, len, ParkLane);
                 PlaceTile(_bare, mx, cz + half - ParkLane, 90, len, ParkLane);
@@ -2127,17 +2193,24 @@ namespace RoadDemo
         // ground, which plates cannot ring: Road_Bare_01 at random yaws with the
         // cracked Road_03 mixed in, tar patches sunk so only the raised blob
         // shows, plus a couple of manholes, at a wear level rolled per interior.
-        // Cells fully inside a hole rect (sunken bakes like the skatepark bowl)
-        // get no floor at all.
+        // A plate that would lap over a sunken bake (the skatepark bowl, and the
+        // City_04/City_07 brownstones whose lowest storey and area door sit 1.5 m
+        // under the pavement) is not laid at all - see InHole.
         void BuildBlockFloor(float xMin, float xMax, float zMin, float zMax, List<Rect> holes,
             bool paved)
         {
+            // Not "fully inside the hole" but "touches it at all": a plate lapping half
+            // over a brownstone's wall line runs straight across its area door, the thing
+            // the block's own floor is careful about too (BlockFloorFiller). The rect is
+            // pulled in by the width of the wall standing over it, so a plate may still
+            // reach as far under a wall as the wall hides - and no further.
+            const float wallHide = 0.3f;
             bool InHole(float x, float z, float w, float d)
             {
                 if (holes == null) return false;
                 foreach (var h in holes)
-                    if (x >= h.xMin - 0.01f && x + w <= h.xMax + 0.01f &&
-                        z >= h.yMin - 0.01f && z + d <= h.yMax + 0.01f) return true;
+                    if (x + w > h.xMin + wallHide && x < h.xMax - wallHide &&
+                        z + d > h.yMin + wallHide && z < h.yMax - wallHide) return true;
                 return false;
             }
 
@@ -2517,10 +2590,10 @@ namespace RoadDemo
                 for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
                 {
                     if (!SegmentOpen(true, i, j)) continue; // ends on the quay: no lane
-                    var a = _nodes[i, j];
-                    var b = _nodes[i, j + 1];
-                    net.AddRoad(new Vector3(cx, 0f, a.ZMax), new Vector3(cx, 0f, b.ZMin),
-                        blvd ? BoulevardHalf : StreetHalf, LaneOffsets(blvd), limit, a, b, true, blvd ? 5f : 0f);
+                    // one carriageway, or a chain of them through the crossroads a
+                    // freeway corridor stands in the middle of this segment
+                    LaneSegment(net, true, i, j, _nodes[i, j], _nodes[i, j + 1], cx,
+                        blvd ? BoulevardHalf : StreetHalf, LaneOffsets(blvd), limit, blvd ? 5f : 0f);
                 }
             }
             for (int j = 0; j < horizontalRoadZ.Length; j++)
@@ -2531,12 +2604,13 @@ namespace RoadDemo
                 for (int i = 0; i + 1 < verticalRoadX.Length; i++)
                 {
                     if (!SegmentOpen(false, j, i)) continue;
-                    var a = _nodes[i, j];
-                    var b = _nodes[i + 1, j];
-                    net.AddRoad(new Vector3(a.XMax, 0f, cz), new Vector3(b.XMin, 0f, cz),
-                        blvd ? BoulevardHalf : StreetHalf, LaneOffsets(blvd), limit, a, b, false, blvd ? 5f : 0f);
+                    LaneSegment(net, false, j, i, _nodes[i, j], _nodes[i + 1, j], cz,
+                        blvd ? BoulevardHalf : StreetHalf, LaneOffsets(blvd), limit, blvd ? 5f : 0f);
                 }
             }
+            // the freeway's own: its frontage roads, its decks as one-way carriageways
+            // that climb their profile, and the slip roads between them
+            BuildFreewayLanes(net);
             net.Finish();
             _edges.Clear();
             _edges.AddRange(net.Edges);
@@ -2873,7 +2947,7 @@ namespace RoadDemo
             _crews.MuzzleFlashPrefab = CrewKit.MuzzleFlash;
             _crews.BloodPrefab = CrewKit.Blood;
             _crews.ImpactPrefab = CrewKit.Impact;
-            _crews.GunshotClips = CrewKit.Gunshots;
+            _crews.GunshotSets = CrewKit.GunshotSets();
             _crews.CrackClip = CrewKit.Crack;
             _crews.BarTopInset = 52f; // under the top bar (42) with a little air
             _crews.Init(_pedLinks, clips, _pedPrefabs);
@@ -3238,7 +3312,10 @@ namespace RoadDemo
             var camGo = new GameObject("Demo Camera") { tag = "MainCamera" };
             var cam = camGo.AddComponent<Camera>();
             cam.fieldOfView = 45f;
-            cam.farClipPlane = 2200f;   // the island grew: the far shore must still draw
+            // the island is kilometres across now and the map's last click booms the
+            // camera five of them up; the fog eats everything past two, but the far
+            // plane must still be beyond the boom or the whole world clips away
+            cam.farClipPlane = 8000f;
             // only what is worth drawing at the distance: the small stuff, the crowd
             // and the trees drop out past their ranges (AssignCullLayers puts them on
             // the layers) - a bin at four hundred metres is not a pixel
@@ -3262,8 +3339,10 @@ namespace RoadDemo
             // ear on the camera's FOCUS instead.
             var dc = camGo.AddComponent<DemoCamera>();
             dc.pivot = centre;
-            // the boom the old four-by-three grid was framed at, stretched with the city
-            dc.distance = Mathf.Max(190f, 0.43f * Mathf.Max(maxX - minX, maxZ - minZ));
+            // In the street, not over it: past dc.mapAt the printed map takes the
+            // screen, so the city has to open on THIS side of that line - a few
+            // blocks in the frame, the map one pull of the wheel away.
+            dc.distance = Mathf.Min(165f, dc.mapAt - 15f);
             dc.yaw = 33f;
             dc.pitch = 52f;
 
@@ -3353,7 +3432,7 @@ namespace RoadDemo
 
         // The demo's mix, self-contained in this folder like everything else here:
         // wind and a traffic hum under the whole city, engines on the cars nearest
-        // the camera's focus, and a pooled trickle of footsteps, horns, doors and
+        // the camera's focus, and a pooled trickle of footsteps, voices, doors and
         // voices over the top. Built last of the world layers, because it reads the
         // builder's own live lists - anything spawned after this is heard too.
         void BuildAudio()
@@ -3373,7 +3452,7 @@ namespace RoadDemo
         void BuildMap()
         {
             var go = new GameObject("Map");
-            go.AddComponent<DemoMap>().Init(this, _blocks, _picker,
+            go.AddComponent<DemoMap>().Init(this, _blocks, _picker, _rig,
                 _pedestrians, _policeOfficers, _vehicles, _policeCars, _crews);
         }
 

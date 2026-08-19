@@ -32,14 +32,18 @@ namespace AirportDemo.EditorTools
         const string PackDir = "Assets/SimpleAirport";
         const string AircraftDir = PackDir + "/Models";
         const string MarkerPath = "Assets/CityKit/Airport/SimpleAirportUrpVersion.txt";
-        // v1: materials onto URP.  v2: the aircraft imported with calculated normals
-        const int Version = 2;
+        // v1: materials onto URP.  v2: the aircraft imported with calculated normals.
+        // v3: the angle actually applied - see the note on the smoothing source below
+        const int Version = 3;
 
         /// <summary>How far two facets may lean apart and still be smoothed together.
-        /// Sixty degrees rounds a fuselage barrel and a nose cone off while leaving a
-        /// wing's leading edge and the creases of a tail crisp - the two faces of a
-        /// thin wing are nearly back to back, which is far outside it.</summary>
-        const float SmoothingAngle = 60f;
+        ///
+        /// Eighty-five degrees rounds the fuselage, the nose, the nacelles and the
+        /// joins between them, and stops just short of a right angle - so anything
+        /// genuinely square keeps its edge, and the two faces of a thin wing (nearly
+        /// back to back, well over 150 degrees apart) stay crisp at the trailing edge.
+        /// Sixty was the first try and it barely showed; see the smoothing source.</summary>
+        const float SmoothingAngle = 85f;
 
         /// <summary>The models the project flies. Nothing else in the pack is used, so
         /// nothing else is re-imported.</summary>
@@ -88,20 +92,28 @@ namespace AirportDemo.EditorTools
                 var importer = AssetImporter.GetAtPath(path) as ModelImporter;
                 if (importer == null) continue;
                 if (importer.importNormals == ModelImporterNormals.Calculate &&
+                    importer.normalSmoothingSource == ModelImporterNormalSmoothingSource.FromAngle &&
                     Mathf.Approximately(importer.normalSmoothingAngle, SmoothingAngle))
                 {
                     already++;
                     continue;
                 }
                 importer.importNormals = ModelImporterNormals.Calculate;
+                // The pack imports with "Prefer Smoothing Groups", which means Unity
+                // uses whatever smoothing the FBX was exported with and only falls
+                // back to the angle where there is none - and this pack was exported
+                // hard-edged. Told to work FromAngle, Unity ignores the file's groups
+                // and smooths by the geometry, which is what actually rounds them off.
+                importer.normalSmoothingSource = ModelImporterNormalSmoothingSource.FromAngle;
                 importer.normalSmoothingAngle = SmoothingAngle;
                 importer.weldVertices = true;   // nothing is smoothed across split vertices
                 importer.SaveAndReimport();
                 done++;
             }
             if (done > 0 || already > 0)
-                Debug.Log($"[SimpleAirportUrp] {done} aircraft re-imported with normals calculated at {SmoothingAngle:F0} degrees " +
-                          $"({already} already were) - which is what rounds the faceting off them.");
+                Debug.Log($"[SimpleAirportUrp] {done} aircraft re-imported with normals calculated from a {SmoothingAngle:F0} degree " +
+                          $"angle ({already} already were) - which is what rounds the faceting off them. Raise or lower " +
+                          "SmoothingAngle and run Tools/City/Catalog/Smooth Simple Airport Aircraft to try another.");
         }
 
         static void Convert()

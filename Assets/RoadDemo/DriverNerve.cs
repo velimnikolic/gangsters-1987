@@ -21,7 +21,6 @@ namespace RoadDemo
         public float BoltUntil;
         public float HeardAt;
         public Vector3 Threat;
-        public bool Honked;
 
         public bool Holding => Time.time < HoldUntil;
         public bool Approaching => Time.time < SlowUntil;
@@ -47,11 +46,6 @@ namespace RoadDemo
                 {
                     Threat = StreetAlarm.LastShotPos;
                     HoldUntil = Mathf.Max(HoldUntil, now + Random.Range(3f, 6f));
-                    if (!Honked && Random.value < 0.3f)
-                    {
-                        Honked = true;
-                        DemoAudio.At(DemoSounds.Pick(DemoSounds.Horns), pos, DemoSounds.HornVolume, 0.06f);
-                    }
                 }
                 else if (d < NearShot)
                 {

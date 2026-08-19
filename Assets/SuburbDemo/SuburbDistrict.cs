@@ -5,7 +5,7 @@ using UnityEngine;
 namespace SuburbDemo
 {
     // An American suburb out of Synty POLYGON Town, built from nothing but the pack:
-    // a small grid of two-lane streets with a few cul-de-sacs, blocks carved into
+    // two-lane streets grown off a spine - T junctions, crescents, cul-de-sacs - blocks carved into
     // house lots (a preset house each, driveway, path, fences, a yard), a church, a
     // corner of shops with a gas pump, a pocket park with a playground - and life:
     // cars on the lane graph, residents on the pavements going in and out of their
@@ -19,8 +19,9 @@ namespace SuburbDemo
     // costs nothing to the code that draws houses.
     //
     // Geometry on a 5 m lattice. A street is 2 road tiles (10 m) with a 5 m sidewalk
-    // either side. Lots are cut off the block frontages in 15 / 20 / 25 / 30 m widths
-    // and up to `lotDepth` deep; two rows of lots stand back to back in a block.
+    // either side; the streets themselves are grown "loops and lollipops" fashion
+    // (Plan.cs), not a grid. Lots are cut off the block frontages in 15 / 20 / 25 / 30 m
+    // widths and up to `lotDepth` deep; two rows of lots stand back to back in a block.
     public partial class SuburbDistrict : IDistrict
     {
         public const float Cell = TownKit.Cell;
@@ -36,23 +37,45 @@ namespace SuburbDemo
         // and which seed. Change one here and both scenes change.
 
         public int seed = 1987;
-        public int columns = 4;
-        public int rows = 4;
-        /// <summary>Block lengths (metres, multiples of 5) dealt across the columns -
-        /// short, the Town demo's way: three to five houses a side.</summary>
-        public int[] blockLengths = { 70, 85, 100 };
+        /// <summary>Size: blocks' worth across (~90 m each; on its own - hung off the city
+        /// the width is the city's) and deep (~70 m each; the city says how deep).</summary>
+        public int columns = 9;
+        public int rows = 9;
+        /// <summary>How far the suburb's outline wobbles in from its ellipse (0 = the plain
+        /// ellipse, 0.3 = a proper potato).</summary>
+        public float outlineWobble = 0.3f;
         /// <summary>Lot depth, metres; a block is two lot rows back to back. 25 m: the
         /// demo's 3.5 m setback, the house, a 5-10 m yard.</summary>
         public float lotDepth = 25f;
-        public int culDeSacs = 4;
-        public float stubLength = 20f;
+        /// <summary>Streets are grown until this share of the map is within a lot's depth
+        /// of a pavement; the rest stays woods behind the back fences.</summary>
+        public float streetCoverage = 0.85f;
+        /// <summary>Kept parallel streets never nearer than this where they overlap (two
+        /// rows of lots between), and junctions along a street never nearer than this.</summary>
+        public float minParallel = 60f;
+        public float minJunction = 60f;
+        /// <summary>How readily the growth makes a crossroads (a fourth arm) and closes a
+        /// loop, against 1 for a plain T; small keeps it T junctions and crescents.</summary>
+        public float fourWayWeight = 0.05f;
+        public float loopWeight = 0.3f;
+        /// <summary>Cul-de-sacs with a turning bulb (a soft budget: a dead end that can go
+        /// nowhere else still gets one), and the least carriageway before the bulb.</summary>
+        public int culDeSacs = 20;
+        /// <summary>A few more little blocks: spurs pushed into the pockets the growth left.</summary>
+        public int extraBlocks = 8;
+        public float stubLengthMin = 25f;
+        /// <summary>The lie of the land: 0 flat, 1 gentle waves and hillocks of a couple of
+        /// metres (slopes of a few per cent), more for more.</summary>
+        public float relief = 1f;
         public float fencedFronts = 0.7f;
+        /// <summary>Share of back yards that get a pool (the pack's in-ground, above-ground or paddling one).</summary>
+        public float poolChance = 0.45f;
         public float treeDensity = 1f;
 
-        public int carCount = 14;
-        public int pedestrianCount = 40;
+        public int carCount = 28;
+        public int pedestrianCount = 110;
         public float insideAtStart = 0.4f;
-        public int yardIdlers = 6;
+        public int yardIdlers = 16;
         public float streetSpeed = 9f;
         public float enterChance = 0.35f;
         public Vector2 insideSeconds = new Vector2(20f, 90f);
@@ -71,6 +94,9 @@ namespace SuburbDemo
         readonly List<PedestrianAgent> _idlers = new List<PedestrianAgent>();
         readonly List<TrafficSignal> _signals = new List<TrafficSignal>();
         CityLife _life;
+        /// <summary>The green plain lawn cells are painted with: the host's ground
+        /// material in the city, null (the pack's own) in the suburb's demo scene.</summary>
+        Material _lawnMat;
 
         // ------------------------------------------------------------ the district
 
@@ -87,13 +113,25 @@ namespace SuburbDemo
 
         public string Name => "Suburb";
 
-        /// <summary>The suburb the city rolled: its own seed, and how deep it runs.
-        /// How WIDE is not asked - the columns are cut to fit the road lines it is
-        /// pinned to (SplitRun), which is the whole point of the pins.</summary>
+        /// <summary>The suburb the city rolled: its own seed, and how big it runs.
+        /// The road lines it is pinned to say where its spines land, NOT how wide it
+        /// is - a quarter pinned to one street is still a quarter, and what the pins
+        /// do not cover is carried by the flanks either side (PlanLines). The city
+        /// rolls the width from what the shore will take.</summary>
         public static SuburbDistrict ForCity(DistrictSlot slot)
         {
             var d = new SuburbDistrict { seed = slot.seed };
-            if (slot.sizeDeep > 0) d.rows = Mathf.Clamp(slot.sizeDeep, 1, 6);
+            if (slot.sizeAcross > 0) d.columns = Mathf.Clamp(slot.sizeAcross, 1, 12);
+            if (slot.sizeDeep > 0) d.rows = Mathf.Clamp(slot.sizeDeep, 1, 8);
+            d.extraBlocks = Mathf.Clamp(slot.sizeDeep, 1, 4) * 2;
+            // and the life to the size of the place. The counts on the inspector are for
+            // the demo scene's nine by nine quarter; a city ringed with a dozen villages
+            // that each spawned twenty-eight cars and a hundred and ten residents would
+            // put fifteen hundred agents on the island before downtown had woken up.
+            float share = Mathf.Clamp01(d.columns * d.rows / 81f);
+            d.carCount = Mathf.Max(3, Mathf.RoundToInt(d.carCount * share));
+            d.pedestrianCount = Mathf.Max(8, Mathf.RoundToInt(d.pedestrianCount * share));
+            d.yardIdlers = Mathf.Max(2, Mathf.RoundToInt(d.yardIdlers * share));
             return d;
         }
 
@@ -118,7 +156,8 @@ namespace SuburbDemo
 
             LoadKit();
             PlanLines();
-            PlanCuts();
+            RollRelief();
+            PlanStreets();
             BuildNetwork();
             OpenGates();
             MarkStreets();
@@ -132,7 +171,14 @@ namespace SuburbDemo
         {
             var world = _frame.ToWorldRect(_bounds);
             into.Pave(world);
-            into.Level(Grow(world, 30f), 0f);
+            // a hair UNDER the suburb's own tiles, never level with them: the island
+            // draws its ground a little way in past the paving (a heightfield cell is
+            // dropped only where the whole of it is paved, or the quarter wears a
+            // ragged hole of open air round its edge), and ground in the same plane as
+            // a lawn tile tears against it as the camera moves. The suburb's relief
+            // never goes below zero when it is hung off the city (Ground), so this is
+            // under every tile it lays.
+            into.Level(Grow(world, 30f), RoadDemoBuilder.RoadBed);
             into.NoFlora(Grow(world, 10f));
         }
 
@@ -147,6 +193,13 @@ namespace SuburbDemo
                 origin = _frame.ToWorld(new Vector3(-PinShift, 0f, -MapHeight)),
                 yaw = _frame.yaw,
             };
+
+            // everything placed from here on stands on the relief (the kit lifts and tilts)
+            TownKit.Ground = Ground;
+            TownKit.GroundNormal = GroundNormal;
+            // and the lawns take the host's own green where it has one, so the suburb's
+            // grass and the wild around it are one field (see Lawn)
+            _lawnMat = host.GroundMaterial;
 
             _groundRoot = Root("Suburb Ground");
             _streetRoot = Root("Suburb Streets");
@@ -176,6 +229,9 @@ namespace SuburbDemo
             SpawnResidents();
             SpawnIdlers();
             StripColliders();   // and the click boxes after them
+
+            TownKit.Ground = null;
+            TownKit.GroundNormal = null;
 
             host.RegisterRoads(_edges);
             host.RegisterPavement(_pedLinks);

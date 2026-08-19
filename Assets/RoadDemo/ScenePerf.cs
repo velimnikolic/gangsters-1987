@@ -105,6 +105,13 @@ namespace RoadDemo
               "House", "Church", "Shop", "Garage", "Hedge", "Pump Canopy", "Shed", "Warehouse",
               "Crane", "Container", "Ship", "Gate", "Apron" };
 
+        /// <summary>Names (by their start) that never cull either: the airfield's own
+        /// furniture, which is what tells you what you are looking at from a kilometre
+        /// away - a hangar, the tower, the windsock, the PAPI boxes, the runway.</summary>
+        static readonly string[] AlwaysVisible =
+            { "Hangar", "Terminal", "Control tower", "Fire station", "Air freight", "FBO", "Fuel farm",
+              "Comms mast", "Apron mast", "Windsock", "PAPI", "Runway", "Taxiway", "Ramp", "Belt Deck" };
+
         /// <summary>The small things onto the layers the camera drops at a range. A piece
         /// is classified by its top-level parent under the root, so a prop's parts travel
         /// together.</summary>
@@ -121,6 +128,9 @@ namespace RoadDemo
                     var piece = mr.transform;
                     while (piece.parent != null && piece.parent != root) piece = piece.parent;
                     if (System.Array.IndexOf(NeverCulled, piece.name) >= 0) continue;
+                    bool always = false;
+                    foreach (var n in AlwaysVisible) if (piece.name.StartsWith(n)) { always = true; break; }
+                    if (always) continue;
                     var b = mr.bounds;
                     float h = b.size.y, w = Mathf.Max(b.size.x, b.size.z);
                     if (h < 0.5f) continue;                       // flat: tiles, plates, decals

@@ -24,7 +24,11 @@ namespace LivingCity.EditorTools
     ///     nobody wheels a dumpster onto a lawn. Where the prop pass parked cars, the bays
     ///     and the room to swing into them are laid in asphalt whatever the rest of the
     ///     block is made of - the bay paint itself belongs to BlockParkingBay and is left
-    ///     to it.
+    ///     to it;
+    ///   * a building that reaches BELOW the pad gets no ground under it at all. City_04
+    ///     and City_07 are brownstones carrying their lowest storey and its area door
+    ///     1.50 m under the pavement, and a plate at zero cuts straight across that
+    ///     doorway - so their plan is taken out of the floor rather than plated over.
     ///
     /// So the order the passes run in does not matter. Dress the props first and the floor
     /// beds them in; lay the floor first and the prop pass ignores it (it is ground, not an
@@ -80,6 +84,12 @@ namespace LivingCity.EditorTools
         /// building the box flags as sunken and the cells the mesh reports cannot
         /// disagree.</summary>
         const float Sunk = -0.2f;
+
+        /// <summary>How far a plate may reach in under a wall before it is dropped: the
+        /// thickness of the wall standing over it, which is all that has to hide it. Wider
+        /// than this and the plate shows in the doorway; narrower, and every sunken
+        /// building stands in a bare band of its own.</summary>
+        const float WallHide = 0.3f;
 
         const string CityEnv = "Assets/Synty/PolygonCity/Prefabs/Environments/";
         const string CityProp = "Assets/Synty/PolygonCity/Prefabs/Props/";
@@ -371,18 +381,41 @@ namespace LivingCity.EditorTools
             foreach (var car in parked)
                 Stamp(surf, pad, Grow(car.Footprint, ParkRing), Surface.Asphalt);
 
-            // 7. a bake that digs below the pad must get no floor over the HOLE it needs -
-            //    and over nothing else. A bake is one mesh: the police station carries its
-            //    sunken garage, its shell and its forecourt in the same one, so its box
-            //    reaches four metres under the pad across the whole 56 x 39 m of it, and
-            //    holing the box left the entire station standing on bare lot pad. The hole
-            //    is therefore read cell by cell off the geometry - see Sunken - and only
-            //    where the bake really is below ground.
+            // 7. NOTHING is laid under a building that reaches below the pad. City_04 and
+            //    City_07 are brownstones: their lowest storey and its area door sit 1.50 m
+            //    under the pavement, and a plate at zero runs straight across that doorway,
+            //    which is what the user saw and asked to stop. So such a building takes its
+            //    whole plan out of the floor, less the width of its own wall (WallHide) -
+            //    that much a plate may still creep under, because the wall hides it.
+            //
+            //    Holed BUILDING BY BUILDING, never by the item's box: City_04 is eight
+            //    houses round a courtyard, and the courtyard is ground like any other.
+            //
+            //    A bake with no member buildings to hole one at a time keeps the older,
+            //    finer treatment. The police station is one mesh carrying its sunken garage,
+            //    its shell AND its forecourt, so its box reaches four metres under the pad
+            //    across the whole 56 x 39 m of it: holing that box left the entire station
+            //    standing on bare lot pad, and its hole is read cell by cell off the
+            //    geometry instead - see Sunken.
             var holes = 0;
             var open = 0;
             foreach (var b in buildings.Where(b => b.Digs))
             {
                 holes++;
+                var members = Members(b);
+                if (members.Count > 1)
+                {
+                    foreach (var member in members.Where(m => m.min.y < Sunk))
+                        foreach (var (i, j) in Cells(pad, Grow(PlanOf(member), -WallHide), nx, nz))
+                        {
+                            if (surf[i, j] == Surface.Hole)
+                                continue;
+                            surf[i, j] = Surface.Hole;
+                            open++;
+                        }
+                    continue;
+                }
+
                 var sunken = Sunken(pad, b, nx, nz);
                 if (sunken == null)
                 {
@@ -448,6 +481,33 @@ namespace LivingCity.EditorTools
             string.IsNullOrEmpty(item.path)
                 ? item.node.name
                 : System.IO.Path.GetFileNameWithoutExtension(item.path);
+
+        /// <summary>
+        /// The buildings one item is made of. A composed cluster stands on the pad as ONE
+        /// prefab instance whose children are the catalog's own buildings - City_04 is eight
+        /// houses round a courtyard - and each of them digs, or does not, on its own. An
+        /// item whose children render nothing is a single bake, and is its own one member.
+        /// </summary>
+        static List<Bounds> Members(BlockPad.Item item)
+        {
+            var members = new List<Bounds>();
+            foreach (Transform child in item.node)
+            {
+                var bounds = BlockLotCapture.RendererBounds(child.gameObject);
+                if (bounds.HasValue)
+                    members.Add(bounds.Value);
+            }
+            if (members.Count < 2)
+            {
+                members.Clear();
+                members.Add(item.bounds);
+            }
+            return members;
+        }
+
+        /// <summary>A box seen from above.</summary>
+        static Rect PlanOf(Bounds bounds) =>
+            Rect.MinMaxRect(bounds.min.x, bounds.min.z, bounds.max.x, bounds.max.z);
 
         /// <summary>Cells with nothing standing on them, buildings and props alike.</summary>
         static bool[,] FreeMask(BlockPad pad, List<BlockPad.Item> content, int nx, int nz,

@@ -25,7 +25,9 @@ namespace RoadDemo
             float len = along.magnitude;
             if (len < 90f) return;
             var dir = along / len;
-            var mid = (face + portal) * 0.5f;
+            // a fixed way out of town rather than halfway: clear of the city's last
+            // corner AND of the freeway's link road, which crosses the strip further out
+            var mid = face + dir * 62f;
 
             // which shoulder, out of the district's own seed - flipped if that side
             // would push the forecourt into the freeway's run or a river's channel
@@ -49,7 +51,7 @@ namespace RoadDemo
             // the ground: worn asphalt from the kerb back past the store, the island
             // holding it flat and growing nothing through it
             _reservations.Level(Rect.MinMaxRect(rect.xMin - 4f, rect.yMin - 4f,
-                                                rect.xMax + 4f, rect.yMax + 4f), 0f);
+                                                rect.xMax + 4f, rect.yMax + 4f), RoadBed);
             _reservations.NoFlora(rect);
             BuildBlockFloor(rect.xMin, rect.xMax, rect.yMin, rect.yMax, null, false);
 
@@ -59,6 +61,14 @@ namespace RoadDemo
             var rot = Quaternion.Euler(0f, SuburbDemo.TownKit.YawToFace(SuburbDemo.TownKit.Side.PlusZ, -n), 0f);
             if (_waysideRoot == null) _waysideRoot = ((IDistrictHost)this).StaticRoot("Wayside");
             int stood = 0;
+            // the anchor itself first - the CANOPY the offsets are measured from; the
+            // cluster's piece list holds everything BUT it
+            var canopy = SuburbDemo.TownKit.LoadByName(SuburbDemo.TownClusters.GasStation.Anchor);
+            if (canopy != null)
+            {
+                SuburbDemo.TownKit.Prop(canopy, anchor, rot, _waysideRoot);
+                stood++;
+            }
             foreach (var p in SuburbDemo.TownClusters.GasStation.Pieces)
             {
                 var prefab = SuburbDemo.TownKit.LoadByName(p.Name);

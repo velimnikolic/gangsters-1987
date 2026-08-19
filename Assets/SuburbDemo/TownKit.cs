@@ -335,32 +335,54 @@ namespace SuburbDemo
 
         // ------------------------------------------------------------ placing
 
+        /// <summary>The lie of the land under everything placed through here: height and
+        /// unit normal at a point of the plan, or null for flat ground. Every y a caller
+        /// passes is height above the ground, and is lifted by this.</summary>
+        public static System.Func<float, float, float> Ground;
+        public static System.Func<float, float, Vector3> GroundNormal;
+
+        public static float GroundAt(float x, float z) => Ground?.Invoke(x, z) ?? 0f;
+
         public static GameObject Prop(GameObject prefab, Vector3 pos, float yaw, Transform parent, string name = null)
             => Prop(prefab, pos, Quaternion.Euler(0f, yaw, 0f), parent, name);
 
-        /// <summary>A prop at a full rotation - the demo's solar panels lie on the roof pitch.</summary>
-        public static GameObject Prop(GameObject prefab, Vector3 pos, Quaternion rot, Transform parent, string name = null)
+        /// <summary>A prop at a full rotation - the demo's solar panels lie on the roof pitch.
+        /// Its y is lifted onto the ground under it, or onto <paramref name="groundY"/> when
+        /// the caller knows better (a building's roof gear stands at the building's ground).</summary>
+        public static GameObject Prop(GameObject prefab, Vector3 pos, Quaternion rot, Transform parent, string name = null, float? groundY = null)
         {
             if (prefab == null) return null;
+            pos.y += groundY ?? GroundAt(pos.x, pos.z);
             var go = Object.Instantiate(prefab, pos, rot, parent);
             go.name = name ?? prefab.name;
             return go;
         }
 
         /// <summary>A 5 m tile set into the cell with min corner (mx, mz) - the pack's
-        /// corner-pivot convention (see the header).</summary>
-        public static GameObject Tile(GameObject prefab, float mx, float mz, int yaw, Transform parent, float y = 0f)
+        /// corner-pivot convention (see the header) - on the ground and tilted to its
+        /// slope (about the tile's own centre, so neighbours still meet). A bigger
+        /// square piece set with the same corner-pivot (the 10 x 10 cap wrap) gives its size.</summary>
+        public static GameObject Tile(GameObject prefab, float mx, float mz, int yaw, Transform parent, float y = 0f, float size = Cell)
         {
             if (prefab == null) return null;
             Vector3 pivot;
-            switch (((yaw % 360) + 360) % 360)
+            int y4 = ((yaw % 360) + 360) % 360;
+            switch (y4)
             {
                 case 0: pivot = new Vector3(mx + Cell, y, mz + Cell); break;
                 case 90: pivot = new Vector3(mx + Cell, y, mz); break;
                 case 180: pivot = new Vector3(mx, y, mz); break;
                 default: pivot = new Vector3(mx, y, mz + Cell); break;
             }
-            return Object.Instantiate(prefab, pivot, Quaternion.Euler(0f, yaw, 0f), parent);
+            var yawRot = Quaternion.Euler(0f, yaw, 0f);
+            if (Ground == null) return Object.Instantiate(prefab, pivot, yawRot, parent);
+            // the piece covers local [-size, 0] x [-size, 0]: its centre is half a size in from the pivot
+            var half = new Vector3(size * 0.5f, 0f, size * 0.5f);
+            var centre = pivot - yawRot * half;
+            centre.y += Ground(centre.x, centre.z);
+            var n = GroundNormal != null ? GroundNormal(centre.x, centre.z) : Vector3.up;
+            var rot = Quaternion.FromToRotation(Vector3.up, n) * yawRot;
+            return Object.Instantiate(prefab, centre + rot * half, rot, parent);
         }
 
         /// <summary>The yaw that turns a tile's kerb (its local +Z) towards the given

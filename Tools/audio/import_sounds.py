@@ -13,9 +13,12 @@ the only place source paths appear. Re-running the script reproduces the folder
 byte for byte from the library, so a bad cut is fixed by editing an offset here
 rather than by hand-editing a WAV.
 
-Not everything comes from the bundle. Tools/audio/sources holds the few files that
-had to be found elsewhere, with their licences in SOURCES.md next to them - read it
-before shipping, because unlike the Sonniss bundle they are not all attribution-free.
+The bundle has no firearm in it, so the guns come from a second library: the Free
+Firearm Sound Library (CC0), extracted at C:/Users/N/free-firearm-library. It holds
+22 weapons recorded at two mic distances each, and the game takes the MID distance
+throughout - the demo's ear sits on the camera focus, not on the muzzle, and a
+near-mic report on a city street sounds like a foley booth. Provenance and licences
+for everything outside the Sonniss bundle: Tools/audio/sources/SOURCES.md.
 
 One role still has no recording at all: a POLICE SIREN, which is synthesized here as
 a Federal Signal style wail, the American electronic siren of the period.
@@ -34,6 +37,7 @@ from scipy import signal
 
 LIB = Path(sys.argv[1]) if len(sys.argv) > 1 and not sys.argv[1].startswith("-") \
     else Path("C:/Users/N/sonnis")
+GUNS = Path("C:/Users/N/free-firearm-library/Prepared SFX Library")
 SRC = Path(__file__).resolve().parent / "sources"   # what the bundle did not have
 OUT = Path(__file__).resolve().parents[2] / "Assets" / "Audio"
 DRY = "--dry" in sys.argv
@@ -44,13 +48,15 @@ RATE = 44100  # everything lands here; Unity re-encodes to Vorbis at import
 # --------------------------------------------------------------------- helpers
 
 def read(rel):
-    """A path is looked for in the library first and in sources second, so a manifest
-    entry does not have to know which of the two a clip came from."""
-    path = LIB / rel
-    if not path.exists():
-        path = SRC / rel
-    if not path.exists():
-        raise FileNotFoundError(f"{LIB / rel}  (nor {SRC / rel})")
+    """A path is looked for in each library in turn, so a manifest entry does not have
+    to know which one a clip came from."""
+    for root in (LIB, GUNS, SRC):
+        path = root / rel
+        if path.exists():
+            break
+    else:
+        raise FileNotFoundError(f"{rel}\n  looked in: "
+                                + "\n             ".join(str(r) for r in (LIB, GUNS, SRC)))
     try:
         x, sr = sf.read(str(path), always_2d=True, dtype="float64")
     except sf.LibsndfileError:
@@ -144,6 +150,22 @@ def decay(x, sr, tail):
     """Exponential tail shaper - keeps the attack, pulls the room in."""
     t = np.arange(len(x)) / sr
     return x * np.exp(-t / tail)[:, None]
+
+
+def trim(x, sr, floor_db=-45.0, keep=0.15):
+    """Length of the useful part: where the envelope last rises above floor_db under
+    the peak, plus a little. These takes were recorded outdoors and their tails are
+    real slapback rather than noise, so this rarely cuts a rifle short - what it does
+    cut is the second of near-silence a submachine gun's shorter tail leaves behind."""
+    b = int(sr * 0.01)
+    k = len(x) // b
+    if k < 2:
+        return len(x)
+    r = np.sqrt((x[:k * b, 0].reshape(k, b) ** 2).mean(axis=1))
+    above = np.where(r > r.max() * 10 ** (floor_db / 20))[0]
+    if len(above) == 0:
+        return len(x)
+    return min(len(x), int((above[-1] * 0.01 + keep) * sr))
 
 
 def snap_cycles(seconds, f0):
@@ -258,50 +280,62 @@ def engine(rel, src, at, length, speed=1.0, xfade=0.35, rms_db=-20.0, f0=44.0):
 
 WHIP = "David Dumais Audio - Melee Weapons Sound Effects Pack 2/WEAPWhip_WHIP Snap Crack 05_DDUMAIS_MWP2.wav"
 
-# KuraiWolf's light machine gun report, off OpenGameArt - the bundle has no firearm
-# in it at all, and a real report beats anything that can be built out of fireworks
-# and whip cracks. CC-BY 4.0: it must be credited. See sources/SOURCES.md.
+# The guns, one per weapon the armoury actually sells. Every take is the library's
+# MID distance rather than its near one: the shots play to an ear on the camera
+# focus, and the near mics are dry enough to sound indoors.
 #
-# The file arrives mono 44.1 kHz and needs no resampling, but it does need two
-# things. It overshoots full scale (337 clipped samples - mp3 encoder overshoot),
-# and a fifth of its entire energy sits below 20 Hz, which is a sub-sweep no
-# speaker in a laptop will ever move: high-passing it off is a free 20% of
-# headroom. What is left peaks at about 101 Hz, which is the thump, and that stays.
-LMG = "lmg_fire01.mp3"
+# Times are the individual reports inside each take, found by transient search and
+# then read off by hand. A shot is cut to TAIL seconds or to whatever room the next
+# report leaves it, whichever is shorter - which is why a burst weapon ends up with
+# a couple of stubby variants among its long ones, exactly as a burst sounds.
+TAIL = 2.2
+
+GUNS_BY_KIND = {
+    # Twin Pack Pistols / the default sidearm. A .45 automatic and a .38 revolver,
+    # which between them are what a 1987 hood is carrying.
+    "pistol": [("1911/A_34P.wav", [1.86, 2.53, 6.98, 7.65]),
+               ("Smith & Wesson 642/V_22P.wav", [0.67, 5.50])],
+    # Two 12 gauges: a Winchester Model 12 pump and a Mossberg 190.
+    "shotgun": [("Model 12/K_17P.wav", [0.91, 7.05]),
+                ("Mossberg/N_26P.wav", [0.79, 4.57, 7.95])],
+    # Carl Gustav M45 - a 9mm submachine gun, the closest the library has to the
+    # spray the armoury describes.
+    "machinepistol": [("Carl Gustav M45/G_20P.wav", [0.35, 2.25, 5.26])],
+    # AK-47. The rifle of the decade's drug wars, and the only assault rifle here
+    # that is not a modern AR.
+    "rifle": [("AK-47/C_34P.wav", [1.06, 5.53, 9.42, 17.95])],
+    # PPSh - a drum-fed submachine gun, which is a Thompson in everything the ear
+    # cares about.
+    "tommygun": [("PPSh/P_18P.wav", [1.23, 3.66, 7.54, 11.72])],
+}
 
 
-def gunshot(rel, speed=1.0, length=1.15, peak_db=-1.0):
-    """One take, four renderings. The source is a single shot, so the variation has
-    to come from somewhere - it comes from a small speed change baked into the file
-    rather than from runtime pitch, so that two shots in a burst differ in body and
-    decay and not only in pitch."""
-    x, sr = read(LMG)
-    x = cut(x, sr, 0.0, length)
-    if x.shape[1] > 1:
-        x = mono(x)
-    x = resample(x, sr)
-    if speed != 1.0:
-        x = respeed(x, speed)
-    x = butter(x, RATE, "highpass", 30)
-    x = fade(x, RATE, 0.0005, 0.12)
-    write(rel, level(x, peak_db=peak_db), RATE)
+def guns():
+    for kind, takes in GUNS_BY_KIND.items():
+        n = 0
+        for src, times in takes:
+            x, sr = read(src)
+            x = mono(resample(x, sr))
+            for i, t in enumerate(times):
+                room = times[i + 1] - t - 0.03 if i + 1 < len(times) else TAIL
+                y = cut(x, RATE, t - 0.02, t - 0.02 + min(TAIL, room))
+                y = butter(y, RATE, "highpass", 40)   # rumble no speaker will move
+                y = y[:trim(y, RATE)]
+                y = fade(y, RATE, 0.0005, min(0.15, len(y) / RATE * 0.3))
+                n += 1
+                write(f"Weapons/{kind}_{n}.wav", level(y, peak_db=-1.5), RATE)
 
 
-def distant_shot(rel, speed=1.0, peak_db=-7.0):
-    """The same weapon from the other side of the block: distance takes the crack
-    off a report long before it takes the boom, so this is the LMG low-passed and
-    run quiet - not a different recording pretending to be far away."""
-    x, sr = read(LMG)
-    x = cut(x, sr, 0.0, 1.40)
-    if x.shape[1] > 1:
-        x = mono(x)
-    x = resample(x, sr)
-    if speed != 1.0:
-        x = respeed(x, speed)
-    x = butter(x, RATE, "highpass", 60)
-    x = butter(x, RATE, "lowpass", 2800)
-    x = fade(x, RATE, 0.002, 0.25)
-    write(rel, level(x, peak_db=peak_db), RATE)
+def distant_shot(rel, src, at, peak_db=-7.0):
+    """A report from the other side of the block. Distance takes the crack off a
+    gun long before it takes the boom, so this is a real shot low-passed and run
+    quiet - not a different recording pretending to be far away."""
+    x, sr = read(src)
+    y = mono(resample(cut(x, sr, at - 0.03, at + 2.6), sr))
+    y = butter(y, RATE, "highpass", 60)
+    y = butter(y, RATE, "lowpass", 1800)
+    y = fade(y, RATE, 0.004, 0.5)
+    write(rel, level(y, peak_db=peak_db), RATE)
 
 
 def footsteps(src, prefix, times, hp, length=0.19, peak_db=-6.0):
@@ -410,15 +444,7 @@ def build():
            "BOATMotr_Diesel Engine Boat Idle Steady Rpm Hum Motor Mic One 01_ESM_CPS.wav",
            at=9.6, length=8.0, rms_db=-21.0, f0=25.4)
 
-    # Motorcycle horns taken down into a car's register: a bike horn and a car
-    # horn are the same two-reed part, the car's is simply bigger.
-    shot("Traffic/horn_short.wav",
-         "SoundBits - Motorcycles - Kawasaki/"
-         "VEHHorn_Kawasaki Ninja ZX 10R Horn Single 03_SNDBTS_MCK.wav",
-         at=0.0, length=0.42, speed=0.80, peak_db=-3.0)
-    shot("Traffic/horn_long.wav",
-         "SoundBits - Motorcycles - Honda/VEHHorn_Honda CB500F Horn Long 02_SNDBTS_MCH.wav",
-         at=0.02, length=1.20, speed=0.82, peak_db=-3.0)
+    # No horns: see the note in DemoAudio. The takes are still in the library.
 
     DOOR = ("SoundBits - Cars - Mad Mustang Mercury/"
             "VEHDoor_Car Foley Car Door Open and Close Exterior 04 Perspective A_SNDBTS_CRS-MMM.wav")
@@ -537,10 +563,10 @@ def build():
         hp=400, lp=3200, rms_db=-30.0)
 
     print("Weapons")
-    for n, speed in enumerate([1.0, 0.965, 1.035, 1.075], 1):
-        gunshot(f"Weapons/gunshot_{n}.wav", speed)
-    for n, speed in enumerate([1.0, 0.97], 1):
-        distant_shot(f"Weapons/gunshot_far_{n}.wav", speed)
+    guns()
+    # Gunfire somewhere else in the city: the rifle and a shotgun, heard badly.
+    distant_shot("Weapons/gunshot_far_1.wav", "AK-47/C_34P.wav", 17.95)
+    distant_shot("Weapons/gunshot_far_2.wav", "Model 12/K_17P.wav", 7.05)
     # The near miss: the whip crack whole, which is exactly the sound a round
     # going past makes and is why it replaces the old pack's slap.
     shot("Weapons/bullet_crack.wav", WHIP, at=0.44, length=0.32,

@@ -31,6 +31,13 @@ namespace HarborDemo
         public Vector2 stayRange = new Vector2(60f, 120f);
         public Vector2 gapRange = new Vector2(15f, 45f);
         public float sailSpeed = 8f;
+        [Tooltip("How far along the coast a ship runs before she is out of the world: " +
+                 "where she is first seen coming in and where she is let go standing out. " +
+                 "In the city this is set to the end of the island either way (the city " +
+                 "host works it out), so a freighter comes up over the horizon at one end " +
+                 "of the map and leaves at the other rather than popping into existence " +
+                 "off the berth. The water she runs on is kept open (Reserve).")]
+        public float seaRun = 240f;
         public bool passingTraffic = true;
         public bool quayCranes = true;
         public float shoreFoam = 0.25f;
@@ -40,7 +47,7 @@ namespace HarborDemo
         public int shipCrew = 6;
         public bool forklifts = true;
         public bool deliveryTruck = true;
-        public int lorries = 4;
+        public int lorries = 3;
 
         // ------------------------------------------------------------ levels
 
@@ -87,7 +94,7 @@ namespace HarborDemo
 
         /// <summary>How far the sea reaches out from the quay: the lane the ships run
         /// on and their turn in, which must be open water whatever the coast does.</summary>
-        const float BasinReach = 130f;
+        public const float BasinReach = 130f;
         /// <summary>Metres of ground behind the street, before the wild starts.</summary>
         const float BackMargin = 20f;
 
@@ -156,10 +163,33 @@ namespace HarborDemo
             into.Level(Grow(land, 24f), LandY);
             into.NoFlora(Grow(land, 10f));
             // the basin: from the quay wall out past the lanes the ships run on, the
-            // coast may not close in - a freighter has to be able to come alongside
-            var basin = _frame.ToWorldRect(Rect.MinMaxRect(_bounds.xMin - 260f, -(BasinReach + PlannedStreetZ),
+            // coast may not close in - a freighter has to be able to come alongside.
+            // And on OUT: the reservation runs far enough seaward to cut through the
+            // island's widest possible shore (the wild band plus its wander), so the
+            // port always opens onto the sea - a bay, never a landlocked pond.
+            const float OpenSeaReach = 900f;
+            var basin = _frame.ToWorldRect(Rect.MinMaxRect(_bounds.xMin - 260f,
+                                                           -(BasinReach + PlannedStreetZ + OpenSeaReach),
                                                            _bounds.xMax + 260f, -PlannedStreetZ - 1f));
             into.Sea(basin);
+            // and the shipping lane itself: a freighter is seen coming in from the end of
+            // the island and let go at the other end, and the whole of that run has to be
+            // water - a coast that wandered out into the lane put a hill through a ship.
+            // Only as deep as the lanes and their turn need, so this trims the coast
+            // rather than taking the shore off the island.
+            float run = Mathf.Max(seaRun, QuayHalf + 240f);
+            // out to three hundred metres off the quay: the lanes themselves want a
+            // hundred, and the rest is so the coast's own wander does not leave a headland
+            // standing in the water right in front of the port for a freighter to sail
+            // through. Further out than that the odd islet may stay - it is behind her.
+            const float LaneReach = BasinReach + 190f;
+            var lane = _frame.ToWorldRect(Rect.MinMaxRect(GateSpanCentre - run,
+                                                          -(LaneReach + PlannedStreetZ),
+                                                          GateSpanCentre + run, -PlannedStreetZ - 1f));
+            // and it is NOT to be pushed out to sea the way the basin is: it already lies
+            // along the coast, and a shove seaward at its far end would carry the island's
+            // whole shore with it
+            into.Sea(lane, mayOpen: false);
         }
 
         static Rect Grow(Rect r, float by)

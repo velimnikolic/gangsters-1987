@@ -36,7 +36,11 @@ namespace AirportDemo.EditorTools
         // v3: the gable roofs were wound inside out and so were invisible from above
         // v4: generated meshes no longer wear a Synty atlas material - a roof lit by
         //     one showed the whole texture page, swatch by swatch, tiled across it
-        public const int Version = 4;
+        // v5: the Plaza glass walls bake to nothing (their geometry is switched off in
+        //     the pack), so the terminal and the FBO had no wall on the apron side
+        // v6: four airline stands, so the terminal is half again as wide - and a tall
+        //     flight of airstairs, because the passengers now walk up them
+        public const int Version = 6;
         const string KitDir = "Assets/CityKit/Airport";
         const string MeshDir = KitDir + "/Meshes";
         const string MatDir = KitDir + "/Materials";
@@ -199,6 +203,33 @@ namespace AirportDemo.EditorTools
         // ------------------------------------------------------------ pieces
 
         static GameObject P(string path) => AssetDatabase.LoadAssetAtPath<GameObject>(path);
+
+        static readonly Dictionary<string, bool> Drawable = new Dictionary<string, bool>();
+
+        /// <summary>A piece the bake will actually take, or the stand-in if it will not.
+        ///
+        /// BakeGroup only keeps renderers that are enabled and on active GameObjects -
+        /// rightly, because Synty prefabs carry switched-off alternates. But
+        /// AirportKit.PrefabBounds measures inactive geometry as well, so a piece whose
+        /// geometry is switched off measures its full 2.5 x 3.0 m, gets laid in the
+        /// run, and then contributes nothing at all. The Plaza pack's glass walls are
+        /// like that, which is why the terminal and the FBO came out with no wall at
+        /// all on the apron side while every other face was fine.</summary>
+        static GameObject Usable(string path, GameObject fallback)
+        {
+            var prefab = P(path);
+            if (prefab == null) return fallback;
+            if (!Drawable.TryGetValue(path, out bool ok))
+            {
+                ok = AirportKit.HasVisibleGeometry(prefab);
+                Drawable[path] = ok;
+                if (!ok)
+                    Debug.LogWarning($"[AirportKitBash] '{prefab.name}' has no geometry switched on, so it would bake to " +
+                                     "nothing - using a plain wall in its place. (The piece still measures its full size, " +
+                                     "which is why this is worth saying out loud.)");
+            }
+            return ok ? prefab : fallback;
+        }
 
         static Transform Group(Transform parent, string name)
         {

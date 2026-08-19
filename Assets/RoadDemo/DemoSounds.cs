@@ -38,7 +38,6 @@ namespace RoadDemo
         public const float TrafficHumVolume = 0.30f;
         public const float MurmurVolume = 0.22f;
         public const float EngineVolume = 0.32f;
-        public const float HornVolume = 0.5f;
         public const float FootstepVolume = 0.3f;
         public const float StreetVoiceVolume = 0.24f;
         public const float DoorVolume = 0.35f;
@@ -82,12 +81,6 @@ namespace RoadDemo
 
         /// <summary>The diesel idle, for anything with a flatbed on it.</summary>
         public static AudioClip EngineDiesel => Load<AudioClip>(Root + "Traffic/engine_diesel.wav");
-
-        /// <summary>Horns: motorcycle horns taken down into a car's register, which
-        /// is the same two-reed part built bigger.</summary>
-        public static AudioClip[] Horns =>
-            _horns ??= Gather(Load<AudioClip>(Root + "Traffic/horn_short.wav"),
-                              Load<AudioClip>(Root + "Traffic/horn_long.wav"));
 
         public static AudioClip Skid => Load<AudioClip>(Root + "Traffic/tyre_skid.wav");
         public static AudioClip CarPassBy => Load<AudioClip>(Root + "Traffic/car_pass_by.wav");
@@ -166,7 +159,7 @@ namespace RoadDemo
         /// the overlay is drawn as.</summary>
         public static AudioClip Paper => Load<AudioClip>(Root + "Ui/paper_rustle.wav");
 
-        static AudioClip[] _engines, _horns, _footsteps, _gravel, _voices, _screams, _radio;
+        static AudioClip[] _engines, _footsteps, _gravel, _voices, _screams, _radio;
 
         public static AudioClip Pick(AudioClip[] clips) =>
             clips == null || clips.Length == 0 ? null : clips[Random.Range(0, clips.Length)];

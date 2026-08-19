@@ -52,3 +52,7 @@ LedgerDump_*.txt
 !Tools/RoadSim/RoadSim.csproj
 Tools/RoadSim/bin/
 Tools/RoadSim/obj/
+
+# Claude Code local state (project settings.json is tracked)
+.claude/settings.local.json
+.claude/worktrees/

@@ -164,6 +164,8 @@ static class Program
             if (f >= frames - 30 * 60) foreach (var c in cars) if (!c.Parked) { lateSpeed += Math.Abs(c.Speed); lateN++; }
         }
         int frozen = 0; foreach (var kv in st.StillFor) if (kv.Value > 60f) frozen++;
+        float maxStill = 0f; foreach (var kv in st.StillFor) maxStill = Math.Max(maxStill, kv.Value);
+        Console.WriteLine($"   longest stand at the end: {maxStill:F0}s");
         if (frozen > 0) foreach (var kv in st.StillFor) if (kv.Value > 60f && st.Notes.Count < 60) st.Notes.Add("   FROZEN car " + kv.Key.Id + " " + kv.Key.Profile.Name + " " + kv.Key.Describe() + " pass: " + kv.Key.PassWhy);
         st.BeltHits = RoadCar.BeltHits;
         Console.WriteLine($"== {title}: {cars.Count} cars, {seconds}s: overlaps={st.Overlaps} (max depth {st.MaxDepth:F2}) stalls={st.Stalls} beltHits={st.BeltHits} avgSpeed={(st.SpeedN > 0 ? st.SpeedSum / st.SpeedN : 0):F1} lastMinuteAvg={(lateN > 0 ? lateSpeed / lateN : 0):F1} frozen>60s={frozen} tick={tickMs / frames:F2}ms/frame");
@@ -387,6 +389,68 @@ static class Program
         Console.WriteLine($"   gang: road={g.Road?.Index} s={g.S:F1} parked={g.Parked} doing={g.DoingLine}; traffic: s={tcar.S:F1} d={tcar.D:F1} doing={tcar.DoingLine}");
     }
 
+
+    // Crab check: a car is a car when the rear axle moves along the heading. Measure the
+    // angle between the axle's velocity and fwd, by situation (box / slide / straight) and
+    // by heading sign; anything over a couple of degrees is a crab.
+    static void CrabScenario()
+    {
+        Reset();
+        var xs = new float[] { -200, -60, 80, 220 };
+        var zs = new float[] { -180, -40, 100, 240 };
+        var net = Grid(xs, zs, false);
+        var cars = new List<RoadCar>();
+        foreach (var e in net.Edges) { if (cars.Count >= 24) break; cars.Add(Spawn(net, e, 10f)); }
+        var prevAxle = new Dictionary<RoadCar, Vector3>();
+        var prevFwd = new Dictionary<RoadCar, Vector3>();
+        var acc = new Dictionary<string, (double sum, int n, double max, string where)>();
+        int spikes = 0;
+        void Note(string key, double ang, string where)
+        {
+            acc.TryGetValue(key, out var a);
+            a.sum += ang; a.n++; if (ang > a.max) { a.max = ang; a.where = where; }
+            acc[key] = a;
+        }
+        // two more stood at the kerbs of one road, one each way, ordered on along the
+        // kerb twice: pull-outs and pull-ins on both headings
+        var r0 = net.Roads.First(r => r.Length > 100);
+        var pk = new List<RoadCar>();
+        foreach (int h in new[] { 1, -1 })
+        {
+            var c = new RoadCar { Net = net, Profile = DriverProfile.Traffic, HalfLen = 2.3f, HalfWide = 0.95f };
+            c.PlaceAt(r0.Pose(h > 0 ? 20f : r0.Length - 20f, r0.KerbD(h, 0.95f)), r0.Axis * h);
+            StreetTraffic.Users.Add(c); cars.Add(c); pk.Add(c);
+        }
+        Console.WriteLine("   parkers: " + string.Join(", ", pk.Select(c => $"car{c.Id} h={c.Heading} road={c.Road?.Index} s={c.S:F1} d={c.D:F1}")));
+        int ph = 0;
+        Run("crab", net, cars, 240f, t =>
+        {
+            if (ph == 0 && t > 5f) { ph = 1; foreach (var c in pk) c.GoTo(r0.Pose(c.Heading > 0 ? 60f : r0.Length - 60f, r0.KerbD(c.Heading, 0.95f)), park: true); }
+            if (ph == 1 && t > 60f) { ph = 2; foreach (var c in pk) c.GoTo(r0.Pose(c.Heading > 0 ? 100f : r0.Length - 100f, r0.KerbD(c.Heading, 0.95f)), park: true); }
+            foreach (var c in cars)
+            {
+                float a = c.HalfLen * 0.6f;
+                var axle = c.RoadPosition - c.RoadForward * a;
+                if (prevAxle.TryGetValue(c, out var pa) && c.Speed > 1f)
+                {
+                    var v = axle - pa; v.y = 0f;
+                    if (v.magnitude > 0.01f)
+                    {
+                        double ang = Math.Abs(Vector3.SignedAngle(v.normalized, c.RoadForward, Vector3.up));
+                        string sit = c.Via != null ? "box:" + c.Via.Kind : c.Sliding ? "slide" : c.DoingLine.Contains("turn") ? "other" : "straight";
+                        string key = sit + " h=" + (c.Via != null ? c.Via.From.Heading : c.Heading);
+                        Note(key, ang, $"t={t:F1} car{c.Id} v={c.Speed:F1} {c.DoingLine} viaS={(c.Via != null ? c.ViaS : -1):F1} s={c.S:F1} step={v.magnitude:F2}");
+                        if (ang > 3.0 && spikes < 25) { spikes++; Console.WriteLine($"   spike {ang:F1}deg {key} t={t:F1} car{c.Id} v={c.Speed:F1} {c.DoingLine} viaS={(c.Via != null ? c.ViaS : -1):F1}/{(c.Via != null ? c.Via.Length : 0):F1} s={c.S:F1} road={(c.Road != null ? c.Road.Index : -1)} step={v.magnitude:F2} expected={c.Speed * Dt:F2}"); }
+                    }
+                }
+                prevAxle[c] = axle;
+                prevFwd[c] = c.RoadForward;
+            }
+        });
+        foreach (var kv in acc.OrderBy(k => k.Key))
+            Console.WriteLine($"   {kv.Key,-22} mean={kv.Value.sum / kv.Value.n:F2}deg max={kv.Value.max:F2}deg n={kv.Value.n} at {kv.Value.where}");
+    }
+
     static void Main(string[] args)
     {
         string only = args.Length > 0 ? args[0] : "all";
@@ -400,5 +464,6 @@ static class Program
         if (only == "all" || only == "wedged") WedgedScenario();
         if (only == "all" || only == "uturn") UTurnScenario();
         if (only == "all" || only == "standoff") StandoffScenario();
+        if (only == "all" || only == "crab") CrabScenario();
     }
 }

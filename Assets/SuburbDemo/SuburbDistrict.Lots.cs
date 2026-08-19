@@ -98,7 +98,8 @@ namespace SuburbDemo
         {
             int wc = lot.WidthCells, dc = lot.DepthCells;
             float W = lot.W, D = lot.D;
-            float vFront = Setback;
+            // the demo's facades stand 2-5 m back, not one line: a lot's own setback
+            float vFront = Setback + Rnd(-0.5f, 1.5f);
             var lotRect = Rect.MinMaxRect(lot.Cx0 * Cell, lot.Cz0 * Cell, lot.Cx1 * Cell, lot.Cz1 * Cell);
 
             // the driveway down one side, the door column the other side of centre
@@ -326,6 +327,7 @@ namespace SuburbDemo
                 if (clash) continue;
                 TownKit.Prop(prefab, world, Quaternion.Euler(0f, lotYaw + turn, 0f) * p.Rot, _lotRoot);
                 if (fp.width > 0.5f || fp.height > 0.5f) lot.Taken.Add(fp);
+                if (p.Name.StartsWith("SM_Prop_Pool_Inground") || p.Name.StartsWith("SM_Prop_Pool_Aboveground")) lot.HasPool = true;
                 placed++;
             }
             return placed;
@@ -383,9 +385,11 @@ namespace SuburbDemo
                     foreach (var t in lot.Taken) if (Overlaps(fp, t, -0.25f)) { clash = true; break; }
                     if (clash) continue;
                 }
-                var go = TownKit.Prop(prefab, world, rot * p.Rot, _lotRoot);
+                // a piece on the house (dormer, dish, panel, steps) stands at the house's own ground, level with it
+                var go = TownKit.Prop(prefab, world, rot * p.Rot, _lotRoot, null, onHouse ? Ground(lot.HousePivot.x, lot.HousePivot.z) : (float?)null);
                 if (p.Name == "SM_Bld_House_Preset_Garage_01") TownKit.ApplyPalette(go, lot.Palette);
                 if (!onHouse && (fp.width > 0.5f || fp.height > 0.5f)) lot.Taken.Add(fp);
+                if (p.Name.StartsWith("SM_Prop_Pool_Inground") || p.Name.StartsWith("SM_Prop_Pool_Aboveground")) lot.HasPool = true;
                 placed++;
             }
             return placed;
@@ -443,6 +447,46 @@ namespace SuburbDemo
             if (prefab != null) TownKit.Prop(prefab, centre, Rnd(360), _lotRoot);
         }
 
+        /// <summary>A pool behind the house, whichever of the pack's three the yard has
+        /// room for: the in-ground one (7.5 x 10 m) lengthwise in a deep yard or sideways
+        /// in the usual shallow one, with its ladder, a float on the water, a deckchair and
+        /// somebody to lie on it; else the above-ground one; else the paddling pool.</summary>
+        bool PlacePool(Lot lot, Rect lotRect, float uHouse, float vBack0, float vBack1)
+        {
+            float W = lot.W, depth = vBack1 - vBack0, vMid = (vBack0 + vBack1) * 0.5f;
+            if (_poolIn != null && W >= 12f && depth >= 8.5f)
+            {
+                // lengthwise (the pool's long side along v) where the yard is deep enough, else across
+                bool lengthwise = depth >= 11f && Chance(0.6f);
+                float margin = lengthwise ? 5.5f : 6.5f;
+                float u = Mathf.Clamp(uHouse + Rnd(-2f, 2f), margin, W - margin);
+                int yaw = TownKit.YawToFace(TownKit.Side.PlusZ, lengthwise ? lot.In : lot.Along);
+                if (TryPlace(_poolIn, lot, u, vMid, yaw, lotRect, 0.5f))
+                {
+                    // the ladder on a long side, a float, a deckchair at the foot, the idler by it
+                    var side = lengthwise ? lot.Along : lot.In;
+                    if (_poolLadder != null) TownKit.Prop(_poolLadder, lot.P(u, vMid) + side * 3.6f, TownKit.YawToFace(TownKit.Side.PlusZ, -side), _lotRoot);
+                    if (_poolFloats.Count > 0) TownKit.Prop(Pick(_poolFloats), lot.P(u + Rnd(-1.5f, 1.5f), vMid + Rnd(-1.5f, 1.5f)) + Vector3.up * 0.05f, Rnd(360), _lotRoot);
+                    float uChair = lengthwise ? u - 5.2f : u - 6.2f;
+                    if (_deckchairs.Count > 0) TryPlace(Pick(_deckchairs), lot, uChair, vMid + 1f, TownKit.YawToFace(TownKit.Side.PlusZ, lot.Along), lotRect, 0.2f);
+                    lot.IdleSpots.Add(lot.P(uChair + 0.4f, vMid - 1.5f));
+                    lot.HasPool = true;
+                    return true;
+                }
+            }
+            if (_poolAbove != null && W >= 9f && depth >= 6.5f && TryPlace(_poolAbove, lot, Rnd(3.5f, W - 3.5f), Rnd(vBack0 + 3f, vBack1 - 3f), Rnd(360), lotRect, 0.4f))
+            {
+                lot.HasPool = true;
+                return true;
+            }
+            if (_poolChild != null && TryPlace(_poolChild, lot, Rnd(2f, W - 2f), Rnd(vBack0 + 1.5f, vBack1 - 1.5f), Rnd(360), lotRect, 0.3f))
+            {
+                lot.HasPool = true;
+                return true;
+            }
+            return false;
+        }
+
         void BackYard(Lot lot, Rect lotRect, float vFront, float houseBack, float uHouse, float houseWidth, bool garage, bool driveLeft)
         {
             float W = lot.W, D = lot.D;
@@ -459,8 +503,13 @@ namespace SuburbDemo
                     if (_bushes.Count > 0 && Chance(0.5f)) TryPlace(Pick(_bushes), lot, u, vBack1 - 0.6f + Rnd(-0.2f, 0.3f), Rnd(360), lotRect, 0.05f);
             }
             if (vBack1 - vBack0 < 4f) return;
-            // first the demo's own yard corners - a vegetable garden, a pool, a barbecue, a
-            // patio, the junk - where the yard has the room; the generic list only if none fit
+            // a pool in a good share of the yards - the pack has three, and the demo's own
+            // yards are full of them: the in-ground one lengthwise where the yard is deep,
+            // sideways across the usual shallow yard, the above-ground one where that will
+            // not fit, the paddling pool in the smallest
+            if (!lot.HasPool && Chance(poolChance)) PlacePool(lot, lotRect, uHouse, vBack0, vBack1);
+            // then the demo's own yard corners - a vegetable garden, a barbecue, a patio,
+            // the junk - where the yard has the room; the generic list only if none fit
             int filled = PlaceFill(lot, lotRect, 1f, W - 1f, vBack0, vBack1);
             if (filled >= 5) return;
             if (_yardTrees.Count > 0 && vBack1 - vBack0 >= 6f && Chance(0.6f * treeDensity)) TryTree(Pick(_yardTrees), lot, Rnd(2f, W - 2f), Rnd(vBack0 + 1.5f, vBack1 - 1.5f), lotRect);
@@ -481,22 +530,7 @@ namespace SuburbDemo
                         }
                         break;
                     case "pool":
-                        if (_poolIn != null && W >= 15f && vBack1 - vBack0 >= 11f)
-                        {
-                            float u = Mathf.Clamp(uHouse + Rnd(-2f, 2f), 5.5f, W - 5.5f);
-                            ok = TryPlace(_poolIn, lot, u, (vBack0 + vBack1) * 0.5f, TownKit.YawToFace(TownKit.Side.PlusZ, lot.In), lotRect, 0.6f);
-                            if (ok)
-                            {
-                                if (_poolLadder != null) TownKit.Prop(_poolLadder, lot.P(u + 3.6f, (vBack0 + vBack1) * 0.5f), TownKit.YawToFace(TownKit.Side.PlusZ, -lot.Along), _lotRoot);
-                                if (_poolFloats.Count > 0) TownKit.Prop(Pick(_poolFloats), lot.P(u + Rnd(-1.5f, 1.5f), (vBack0 + vBack1) * 0.5f + Rnd(-2f, 2f)) + Vector3.up * 0.05f, Rnd(360), _lotRoot);
-                                if (_deckchairs.Count > 0) TryPlace(Pick(_deckchairs), lot, u - 5.2f, (vBack0 + vBack1) * 0.5f + 1f, TownKit.YawToFace(TownKit.Side.PlusZ, lot.Along), lotRect, 0.2f);
-                                lot.IdleSpots.Add(lot.P(u - 4.8f, (vBack0 + vBack1) * 0.5f - 1.5f));
-                            }
-                        }
-                        else if (_poolAbove != null && Chance(0.5f))
-                            ok = TryPlace(_poolAbove, lot, Rnd(3.5f, W - 3.5f), Rnd(vBack0 + 3f, vBack1 - 3f), Rnd(360), lotRect, 0.5f);
-                        else if (_poolChild != null)
-                            ok = TryPlace(_poolChild, lot, Rnd(2f, W - 2f), Rnd(vBack0 + 1.5f, vBack1 - 1.5f), Rnd(360), lotRect, 0.3f);
+                        ok = !lot.HasPool && PlacePool(lot, lotRect, uHouse, vBack0, vBack1);
                         break;
                     case "trampoline":
                         ok = _trampoline != null && TryPlace(_trampoline, lot, Rnd(3f, W - 3f), Rnd(vBack0 + 2.5f, vBack1 - 2.5f), Rnd(360), lotRect, 0.4f);
@@ -668,6 +702,7 @@ namespace SuburbDemo
             var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
             Object.Destroy(cube.GetComponent<Collider>());
             cube.transform.SetParent(_lotRoot, false);
+            at.y += Ground(at.x, at.z);
             cube.transform.position = at;
             cube.transform.localScale = Vector3.one * 0.8f;
             cube.GetComponent<MeshRenderer>().sharedMaterial = TownKit.Flat("Debug", colour);

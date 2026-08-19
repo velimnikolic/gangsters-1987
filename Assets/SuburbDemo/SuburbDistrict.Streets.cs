@@ -126,18 +126,10 @@ namespace SuburbDemo
                 for (int cz = -2; cz <= _h + 1; cz++)
                     if (cx < 0 || cz < 0 || cx >= _w || cz >= _h)
                         TownKit.Tile(_grass, cx * Cell, cz * Cell, 0, _groundRoot);
-            // the plane sits below the pavement tiles' gutter (they dip to -0.23 m at the kerb),
-            // or it shows green in every gutter
-            var plane = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            plane.name = "Ground";
-            Object.Destroy(plane.GetComponent<Collider>());
-            plane.transform.SetParent(_groundRoot, false);
-            plane.transform.position = new Vector3(MapWidth * 0.5f, -0.27f, MapHeight * 0.5f);
-            plane.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
-            plane.transform.localScale = new Vector3(MapWidth + 600f, MapHeight + 600f, 1f);
-            var mr = plane.GetComponent<MeshRenderer>();
-            mr.sharedMaterial = TownKit.Flat("Suburb Ground", new Color(0.33f, 0.47f, 0.2f));
-            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            // the ground sits below the pavement tiles' gutter (they dip to -0.23 m at the kerb),
+            // or it shows green in every gutter; it follows the relief under the map and
+            // runs out flat far past it
+            BuildGroundMesh(_groundRoot);
         }
 
         void LayCap(int cx, int cz)
@@ -149,7 +141,7 @@ namespace SuburbDemo
                 if (IsRoadish(cx + dx, cz + dz)) { if (n == 0) a = dir; else b = dir; n++; }
             int yaw = n >= 2 ? YawForTwoSides(a, b) : 0;
             TownKit.Tile(_roadCap, cx * Cell, cz * Cell, yaw, _streetRoot);
-            TownKit.Tile(_swCapWrap, cx * Cell, cz * Cell, yaw, _streetRoot);
+            TownKit.Tile(_swCapWrap, cx * Cell, cz * Cell, yaw, _streetRoot, 0f, 2f * Cell);
         }
 
         void LaySidewalk(int cx, int cz)
@@ -217,8 +209,8 @@ namespace SuburbDemo
             int yaw = _surfYaw[cx, cz];
             switch (_surface[cx, cz])
             {
-                case Surface.Grass: TownKit.Tile(_grass, mx, mz, 0, _groundRoot); break;   // laid straight: one calm lawn, no patchwork
-                case Surface.Grass2: TownKit.Tile(_grass2 ?? _grass, mx, mz, 0, _groundRoot); break;
+                case Surface.Grass: Lawn(_grass, mx, mz); break;   // laid straight: one calm lawn, no patchwork
+                case Surface.Grass2: Lawn(_grass2 ?? _grass, mx, mz); break;
                 case Surface.Driveway: TownKit.Tile(_driveway, mx, mz, yaw, _lotRoot); break;
                 case Surface.Path: TownKit.Tile(_path, mx, mz, yaw, _lotRoot); break;
                 case Surface.PathDoor: TownKit.Tile(_pathDoor ?? _path, mx, mz, yaw, _lotRoot); break;
@@ -228,6 +220,27 @@ namespace SuburbDemo
                 case Surface.Dirt: TownKit.Tile(_dirt ?? _grass, mx, mz, 0, _lotRoot); break;
                 case Surface.None: break;
             }
+        }
+
+        /// <summary>A cell of plain lawn. In the suburb's own scene it is the pack's own
+        /// grass tile as it comes; hung off the city it is that tile painted with the
+        /// ISLAND's green (IDistrictHost.GroundMaterial), because the island's ground
+        /// runs right up to the suburb's edge and two greens meeting on a straight line
+        /// is the one thing that reads as "a Synty demo dropped in the wild". The
+        /// island's material is triplanar and world-space, so it needs no UVs and the
+        /// tile takes it without a seam.</summary>
+        GameObject Lawn(GameObject prefab, float mx, float mz)
+        {
+            var go = TownKit.Tile(prefab, mx, mz, 0, _groundRoot);
+            if (go == null || _lawnMat == null) return go;
+            foreach (var r in go.GetComponentsInChildren<MeshRenderer>())
+            {
+                int n = Mathf.Max(1, r.sharedMaterials.Length);
+                var mats = new Material[n];
+                for (int k = 0; k < n; k++) mats[k] = _lawnMat;
+                r.sharedMaterials = mats;
+            }
+            return go;
         }
 
         // ------------------------------------------------------------ furniture
@@ -285,7 +298,7 @@ namespace SuburbDemo
                     // a bin by a corner
                     if (_bins.Count > 0 && Chance(0.35f)) TownKit.Prop(Pick(_bins), AW(s, Chance(0.5f) ? lo + 2.5f : hi - 2.5f, kerb + side * 1.6f) + Vector3.up * WalkY, Rnd(360), _streetRoot);
                 }
-                if (s.Stub && _speedBump != null)
+                if (s.Stub && !s.Open && _speedBump != null)
                 {
                     float a = s.DeadHi ? s.Lo + 10f : s.Hi - 10f;
                     foreach (float across in new[] { -2.5f, 2.5f })
@@ -297,15 +310,17 @@ namespace SuburbDemo
             }
 
             // junctions: a stop sign on the right of every approach, a street-name pole
-            // on one corner, a manhole in the middle of some, a drain at a kerb
+            // on one corner, a manhole in the middle of some, a drain at a kerb. A street
+            // merely turning a corner (two arms) gets neither sign nor pole.
             foreach (var n in _nodeList)
             {
                 float k = StreetHalf + 1.6f;   // a metre and a half in from the kerb corner
-                if (n.S) PlaceSign(_stopSign, new Vector3(n.X + k, WalkY, n.Z - k), Vector3.back);
-                if (n.N) PlaceSign(_stopSign, new Vector3(n.X - k, WalkY, n.Z + k), Vector3.forward);
-                if (n.W) PlaceSign(_stopSign, new Vector3(n.X - k, WalkY, n.Z - k), Vector3.left);
-                if (n.E) PlaceSign(_stopSign, new Vector3(n.X + k, WalkY, n.Z + k), Vector3.right);
-                if (n.Arms >= 3 && _signPole != null)
+                bool junction = n.Arms >= 3;
+                if (junction && n.S) PlaceSign(_stopSign, new Vector3(n.X + k, WalkY, n.Z - k), Vector3.back);
+                if (junction && n.N) PlaceSign(_stopSign, new Vector3(n.X - k, WalkY, n.Z + k), Vector3.forward);
+                if (junction && n.W) PlaceSign(_stopSign, new Vector3(n.X - k, WalkY, n.Z - k), Vector3.left);
+                if (junction && n.E) PlaceSign(_stopSign, new Vector3(n.X + k, WalkY, n.Z + k), Vector3.right);
+                if (junction && _signPole != null)
                 {
                     var p = new Vector3(n.X + k + 1.4f, WalkY, n.Z + k + 1.4f);
                     TownKit.Prop(_signPole, p, Rnd(4) * 90, _streetRoot);
@@ -338,13 +353,23 @@ namespace SuburbDemo
         // ------------------------------------------------------------ leftovers
 
         // Free cells no lot took: lawn with a tree or a bush here and there - never a
-        // bare slab.
+        // bare slab. Outside the suburb's outline the woods: thick along the edge of the
+        // suburb, thinning out with distance (a fringe of forest, not a forest to the
+        // horizon - and not ten thousand trees).
         void BuildLeftovers()
         {
+            var edgeDist = WildDistance();
             for (int cx = 0; cx < _w; cx++)
                 for (int cz = 0; cz < _h; cz++)
                 {
                     if (_kind[cx, cz] != CellKind.Free) continue;
+                    float thin = 1f;
+                    if (_wild[cx, cz])
+                    {
+                        int d = edgeDist[cx, cz];
+                        thin = d <= 4 ? 0.6f : d <= 10 ? 0.25f : 0.08f;
+                        if (Rnd() > thin) continue;
+                    }
                     float r = Rnd() / Mathf.Max(0.2f, treeDensity);
                     var centre = new Vector3((cx + 0.5f) * Cell + Rnd(-1.5f, 1.5f), 0f, (cz + 0.5f) * Cell + Rnd(-1.5f, 1.5f));
                     if (r < 0.42f && _tallTrees.Count > 0) PlaceTree(Pick(_tallTrees), centre, _floraRoot);
@@ -370,6 +395,30 @@ namespace SuburbDemo
                     if (Chance(0.85f)) PlaceTree(Pick(_tallTrees), new Vector3(MapWidth + Cell * 0.5f + Rnd(-1.5f, 1.5f), 0f, z + Rnd(-2f, 2f)), _floraRoot);
                 }
             }
+        }
+
+        /// <summary>For every cell, how many cells it lies outside the suburb's outline (0 inside).</summary>
+        int[,] WildDistance()
+        {
+            var dist = new int[_w, _h];
+            var q = new Queue<(int, int)>();
+            for (int x = 0; x < _w; x++)
+                for (int z = 0; z < _h; z++)
+                {
+                    dist[x, z] = _wild[x, z] ? int.MaxValue : 0;
+                    if (!_wild[x, z]) q.Enqueue((x, z));
+                }
+            while (q.Count > 0)
+            {
+                var (x, z) = q.Dequeue();
+                foreach (var (dx, dz) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+                {
+                    int nx = x + dx, nz = z + dz;
+                    if (nx < 0 || nz < 0 || nx >= _w || nz >= _h) continue;
+                    if (dist[nx, nz] > dist[x, z] + 1) { dist[nx, nz] = dist[x, z] + 1; q.Enqueue((nx, nz)); }
+                }
+            }
+            return dist;
         }
 
         void PlaceTree(GameObject tree, Vector3 at, Transform parent)

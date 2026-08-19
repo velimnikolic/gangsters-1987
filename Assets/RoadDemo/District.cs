@@ -4,7 +4,7 @@ using UnityEngine;
 namespace RoadDemo
 {
     /// <summary>What kind of quarter a district slot holds.</summary>
-    public enum DistrictKind { Pad, Suburb, Harbor }
+    public enum DistrictKind { Pad, Suburb, Harbor, Airport }
 
     /// <summary>Which side of the city grid a district hangs off.</summary>
     public enum CityEdge { South, West, North, East }
@@ -103,17 +103,43 @@ namespace RoadDemo
         public readonly List<(Rect area, float level)> Flat = new List<(Rect, float)>();
         /// <summary>Water: the coast may not cross into these - a harbour basin.</summary>
         public readonly List<Rect> Water = new List<Rect>();
+        /// <summary>Whether the island may push that water's seaward end further out to
+        /// reach the open sea. True of a BASIN, which has to be sailed into and cannot
+        /// know where the coast runs; false of a long lane along the shore - pushing one
+        /// of those out would take the whole coast off the island rather than opening a
+        /// way to it (RoadDemoBuilder.OpenBasinsToSea).</summary>
+        public readonly List<bool> WaterOpens = new List<bool>();
         /// <summary>Nothing wild grows here.</summary>
         public readonly List<Rect> Bare = new List<Rect>();
 
         public void Pave(Rect world) => Paved.Add(world);
         public void Level(Rect world, float y) => Flat.Add((world, y));
-        public void Sea(Rect world) => Water.Add(world);
+        public void Sea(Rect world) => Sea(world, true);
+
+        public void Sea(Rect world, bool mayOpen)
+        {
+            Water.Add(world);
+            WaterOpens.Add(mayOpen);
+        }
         public void NoFlora(Rect world) => Bare.Add(world);
 
-        public bool InPaved(float x, float z)
+        public bool InPaved(float x, float z) => InPaved(x, z, 0f);
+
+        /// <summary>Whether a point counts as paved once the rectangle is pulled in by
+        /// <paramref name="inset"/> metres. The island tests the CENTRE of a heightfield
+        /// cell and drops the cell whole, so a rectangle taken at face value drops cells
+        /// that stick out of it by up to half a cell - a ragged hole of open air round
+        /// every quarter, which from the water reads as the ground having been cut away.
+        /// Pulling the rectangle in by half a cell turns the error the safe way about:
+        /// the ground runs a little way UNDER the district's own tiles instead.</summary>
+        public bool InPaved(float x, float z, float inset)
         {
-            for (int i = 0; i < Paved.Count; i++) if (Paved[i].Contains(new Vector2(x, z))) return true;
+            for (int i = 0; i < Paved.Count; i++)
+            {
+                var r = Paved[i];
+                if (x > r.xMin + inset && x < r.xMax - inset &&
+                    z > r.yMin + inset && z < r.yMax - inset) return true;
+            }
             return false;
         }
 
@@ -121,6 +147,29 @@ namespace RoadDemo
         {
             for (int i = 0; i < Water.Count; i++) if (Water[i].Contains(new Vector2(x, z))) return true;
             return false;
+        }
+
+        /// <summary>How much of a basin's water there is at (x, z): 1 inside the
+        /// rectangle, easing to 0 over <paramref name="blend"/> metres outside it.
+        /// A basin used to be a plain in-or-out test, which cut the sea out of the
+        /// island as a rectangular pit - land at head height on one side of the line
+        /// and seabed on the other, a wall going down into the water all round the
+        /// port. With a blend the same rectangle reads as a bay: the ground slides
+        /// down a beach into it.</summary>
+        public bool WaterAt(float x, float z, float blend, out float weight)
+        {
+            weight = 0f;
+            for (int i = 0; i < Water.Count; i++)
+            {
+                var r = Water[i];
+                float dx = Mathf.Max(r.xMin - x, x - r.xMax, 0f);
+                float dz = Mathf.Max(r.yMin - z, z - r.yMax, 0f);
+                float d = Mathf.Sqrt(dx * dx + dz * dz);
+                if (d > blend) continue;
+                float w = 1f - Mathf.SmoothStep(0f, 1f, d / Mathf.Max(0.001f, blend));
+                if (w > weight) weight = w;
+            }
+            return weight > 0f;
         }
 
         public bool InBare(float x, float z)
@@ -191,6 +240,15 @@ namespace RoadDemo
         /// city's island does, a district's own demo scene does not, and there the
         /// district falls back on the ground it always built for itself.</summary>
         bool ProvidesGround { get; }
+
+        /// <summary>The green the host's own ground is painted with, or null where the
+        /// host has no ground of its own. A district tiles its lawns out of its own
+        /// pack, and a pack's green is never the island's green: a quarter laid in the
+        /// city with the pack's material reads as a rectangle of a different lawn
+        /// dropped in the wild. So the plain grass a district lays takes THIS material
+        /// where there is one - the island's triplanar ground, which needs no UVs and
+        /// so paints a 5 m tile as seamlessly as it paints the heightfield.</summary>
+        Material GroundMaterial { get; }
 
         /// <summary>The one city life: doors, benches, what a walker does at a stop.</summary>
         CityLife Life { get; }

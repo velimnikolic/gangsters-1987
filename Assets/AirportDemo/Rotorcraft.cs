@@ -5,9 +5,12 @@ namespace AirportDemo
 {
     /// <summary>
     /// A helicopter: sits on its pad, winds up, picks straight up into the hover,
-    /// noses over and goes wherever it is sent, comes back, comes down. Two of them
-    /// work the field - the sheriff's, which keeps the pad and flies a patrol, and a
-    /// charter that drops in, stands ten minutes and leaves.
+    /// noses over and goes wherever it is sent, comes back, comes down. Three of them
+    /// work the field - the sheriff's, which keeps its pad and flies a patrol; a
+    /// charter that goes out over the county and comes back; and the air ambulance,
+    /// which does not live here at all (Visiting): it is out at the county hospital
+    /// with nothing of it drawn, comes in over the wire when it is wanted, sits on the
+    /// pad itself, and goes away again.
     ///
     /// The pack's model carries both rotors as separate meshes with a blurred disc
     /// beside each, which is all the animation a helicopter at this distance needs:
@@ -15,10 +18,15 @@ namespace AirportDemo
     /// </summary>
     public sealed class Rotorcraft
     {
-        enum Phase { Idle, Spool, Lift, Transit, Return, Descend, Down }
+        enum Phase { Idle, Spool, Lift, Transit, Return, Descend, Down, Off, Arriving, Leaving }
 
         public Transform Tf;
         public bool Resident = true;          // the sheriff's; a charter comes and goes
+        /// <summary>It is based somewhere else: it flies in, sits a while and flies
+        /// out, and while it is away it is switched off rather than parked.</summary>
+        public bool Visiting;
+        /// <summary>Where a visitor comes from and goes back to - off the map, high.</summary>
+        public Vector3 Home = new Vector3(-1400f, 260f, -900f);
         public Vector3 Pad;
         public float PadYaw;
         public List<Vector3> Patrol = new List<Vector3>();
@@ -58,9 +66,22 @@ namespace AirportDemo
 
         public void Park()
         {
+            if (Tf != null) Tf.SetLocalPositionAndRotation(Pad + Vector3.up * _groundOffset, Quaternion.Euler(0f, PadYaw, 0f));
+            if (Visiting)
+            {
+                // it is not here: nothing of it is drawn until its time comes
+                _state = Phase.Off;
+                _timer = Random.Range(45f, 150f);
+                Show(false);
+                return;
+            }
             _state = Phase.Down;
             _timer = Resident ? Random.Range(30f, 90f) : Random.Range(60f, 160f);
-            if (Tf != null) Tf.SetPositionAndRotation(Pad + Vector3.up * _groundOffset, Quaternion.Euler(0f, PadYaw, 0f));
+        }
+
+        void Show(bool on)
+        {
+            if (Tf != null && Tf.gameObject.activeSelf != on) Tf.gameObject.SetActive(on);
         }
 
         public void Tick(float dt)
@@ -71,28 +92,57 @@ namespace AirportDemo
 
             switch (_state)
             {
+                case Phase.Off:
+                    // out at the hospital. When it is wanted it appears out where it
+                    // came from, high and a long way off, and flies the whole approach
+                    // in - which from the ramp reads as a helicopter arriving.
+                    if (_timer > 0f) break;
+                    Show(true);
+                    Tf.SetLocalPositionAndRotation(Home, Quaternion.Euler(0f, PadYaw, 0f));
+                    _throttle = 1f;
+                    _speed = TransitSpeed;
+                    _state = Phase.Arriving;
+                    break;
+
+                case Phase.Arriving:
+                    if (Fly(new Vector3(Pad.x, Pad.y + _groundOffset + HoverHeight, Pad.z), dt)) _state = Phase.Descend;
+                    break;
+
+                case Phase.Leaving:
+                    if (Fly(Home, dt))
+                    {
+                        Show(false);
+                        _state = Phase.Off;
+                        _timer = Random.Range(150f, 330f);
+                    }
+                    break;
+
                 case Phase.Down:
                     _throttle = Mathf.MoveTowards(_throttle, 0f, dt * 0.5f);
-                    if (_timer <= 0f && Patrol.Count > 0) { _state = Phase.Spool; _timer = 8f; }
+                    if (_timer > 0f) break;
+                    // a visitor is only ever waiting to go home again; the residents
+                    // want somewhere to go before they will start
+                    if (Visiting || Patrol.Count > 0) { _state = Phase.Spool; _timer = 8f; }
                     break;
 
                 case Phase.Spool:
                     _throttle = Mathf.MoveTowards(_throttle, 1f, dt * 0.18f);
-                    if (_wash != null && !_wash.isPlaying) { _wash.transform.position = Tf.position; _wash.Play(); }
+                    if (_wash != null && !_wash.isPlaying) { _wash.transform.localPosition = Tf.localPosition; _wash.Play(); }
                     if (_timer <= 0f) { _state = Phase.Lift; _leg = 0; }
                     break;
 
                 case Phase.Lift:
                     {
-                        var p = Tf.position;
+                        var p = Tf.localPosition;
                         p.y = Mathf.MoveTowards(p.y, Pad.y + _groundOffset + HoverHeight, ClimbRate * dt);
-                        Tf.position = p;
+                        Tf.localPosition = p;
                         // she noses over as she climbs away, the way one does
                         float lean = Mathf.Lerp(0f, -8f, (p.y - Pad.y - _groundOffset) / HoverHeight);
-                        Tf.rotation = Quaternion.Euler(lean, Tf.eulerAngles.y, 0f);
+                        Tf.localRotation = Quaternion.Euler(lean, Tf.localEulerAngles.y, 0f);
                         if (p.y >= Pad.y + _groundOffset + HoverHeight - 0.2f)
                         {
-                            _state = Phase.Transit;
+                            _state = Visiting ? Phase.Leaving : Phase.Transit;
+                            _leg = 0;
                             if (_wash != null) _wash.Stop();
                         }
                     }
@@ -112,16 +162,19 @@ namespace AirportDemo
 
                 case Phase.Descend:
                     {
-                        var p = Tf.position;
+                        var p = Tf.localPosition;
                         p.y = Mathf.MoveTowards(p.y, Pad.y + _groundOffset, ClimbRate * 0.7f * dt);
-                        Tf.position = p;
-                        float yaw = Mathf.MoveTowardsAngle(Tf.eulerAngles.y, PadYaw, 40f * dt);
-                        Tf.rotation = Quaternion.Euler(Mathf.Lerp(0f, -6f, (p.y - Pad.y - _groundOffset) / HoverHeight), yaw, 0f);
-                        if (_wash != null && !_wash.isPlaying && p.y < Pad.y + 12f) { _wash.transform.position = Pad; _wash.Play(); }
+                        Tf.localPosition = p;
+                        float yaw = Mathf.MoveTowardsAngle(Tf.localEulerAngles.y, PadYaw, 40f * dt);
+                        Tf.localRotation = Quaternion.Euler(Mathf.Lerp(0f, -6f, (p.y - Pad.y - _groundOffset) / HoverHeight), yaw, 0f);
+                        if (_wash != null && !_wash.isPlaying && p.y < Pad.y + 12f) { _wash.transform.localPosition = Pad; _wash.Play(); }
                         if (p.y <= Pad.y + _groundOffset + 0.05f)
                         {
                             _state = Phase.Down;
-                            _timer = Resident ? Random.Range(60f, 180f) : Random.Range(120f, 260f);
+                            // an ambulance is on the ground for as long as it takes to
+                            // walk somebody across to it; the others are here for hours
+                            _timer = Visiting ? Random.Range(55f, 120f)
+                                   : Resident ? Random.Range(60f, 180f) : Random.Range(120f, 260f);
                             if (_wash != null) _wash.Stop();
                         }
                     }
@@ -132,22 +185,22 @@ namespace AirportDemo
         /// <summary>Flies toward a point, banking into the turn. True when it is there.</summary>
         bool Fly(Vector3 goal, float dt)
         {
-            var to = goal - Tf.position;
+            var to = goal - Tf.localPosition;
             var flat = new Vector3(to.x, 0f, to.z);
             float dist = flat.magnitude;
             _speed = Mathf.MoveTowards(_speed, dist > 60f ? TransitSpeed : TransitSpeed * 0.4f, 6f * dt);
-            float yaw = Tf.eulerAngles.y;
+            float yaw = Tf.localEulerAngles.y;
             if (dist > 1f)
             {
                 float want = Mathf.Atan2(flat.x, flat.z) * Mathf.Rad2Deg;
                 float next = Mathf.MoveTowardsAngle(yaw, want, 34f * dt);
                 float bank = Mathf.Clamp(Mathf.DeltaAngle(yaw, next) / dt / 34f * 18f, -18f, 18f);
                 yaw = next;
-                Tf.rotation = Quaternion.Euler(-7f, yaw, -bank);
+                Tf.localRotation = Quaternion.Euler(-7f, yaw, -bank);
             }
-            var p = Tf.position + Tf.forward * (_speed * dt);
-            p.y = Mathf.MoveTowards(Tf.position.y, goal.y, ClimbRate * dt);
-            Tf.position = p;
+            var p = Tf.localPosition + (Tf.localRotation * Vector3.forward) * (_speed * dt);
+            p.y = Mathf.MoveTowards(Tf.localPosition.y, goal.y, ClimbRate * dt);
+            Tf.localPosition = p;
             return dist < Mathf.Max(12f, _speed * 0.6f);
         }
 

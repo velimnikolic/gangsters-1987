@@ -43,7 +43,7 @@ namespace AirportDemo
             // slide it along its own leg so two cars starting on the same one are not
             // in the same place
             var next = route[(leg + 1) % route.Count];
-            d.Tf.position = Vector3.Lerp(route[leg], next, (float)_rng.NextDouble());
+            d.Tf.localPosition = Vector3.Lerp(route[leg], next, (float)_rng.NextDouble());
             // and now and then it stops at the kerb, which is what a forecourt is for
             d.OnPoint = (drv, i) =>
             {
@@ -69,7 +69,7 @@ namespace AirportDemo
                 new Vector3(x1, AirportSpec.PaveY, z),
             };
             d.Start(route, closed: false, wrap: true);
-            d.Tf.position = new Vector3(Mathf.Lerp(x0, x1, alongFraction), AirportSpec.PaveY, z);
+            d.Tf.localPosition = new Vector3(Mathf.Lerp(x0, x1, alongFraction), AirportSpec.PaveY, z);
             _street.Add(d);
             _all.Add(d);
         }
@@ -79,7 +79,7 @@ namespace AirportDemo
         public void AddCab(GameObject cab, Vector3 at)
         {
             if (cab == null) return;
-            cab.transform.SetPositionAndRotation(at, Quaternion.Euler(0f, 90f, 0f));
+            cab.transform.SetLocalPositionAndRotation(at, Quaternion.Euler(0f, 90f, 0f));
         }
 
         public void Tick(float dt)

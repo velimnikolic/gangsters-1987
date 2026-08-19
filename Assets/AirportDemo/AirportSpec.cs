@@ -152,10 +152,23 @@ namespace AirportDemo
         public const int TieDownRows = 3;
         public const float TieDownRowZ0 = 178f;
 
-        // the airline stands, nose in to the terminal
-        public static readonly float[] CommuterStandX = { -45f, 45f };
+        // the airline stands, nose in to the terminal. Four of them: sixty metres
+        // of pitch leaves twenty-seven between two trijets' wingtips, which is what a
+        // regional field allowed itself, and four stands is what makes the ramp look
+        // worked rather than visited.
+        public static readonly float[] CommuterStandX = { -90f, -30f, 30f, 90f };
         /// <summary>Where an airliner's nosewheel stops on its stand.</summary>
         public const float CommuterStandZ = 246f;
+        /// <summary>The gate door a stand's passengers walk to and from, in the
+        /// terminal's apron wall. The outer stands are wider apart than the building,
+        /// so their walk is a diagonal to the end door - which is what it was.</summary>
+        public static float GateDoorX(int stand)
+        {
+            float x = CommuterStandX[Mathf.Clamp(stand, 0, CommuterStandX.Length - 1)];
+            float limit = TerminalWidth * 0.5f - 8f;
+            return Mathf.Clamp(x, -limit, limit);
+        }
+        public const float GateDoorZ = BuildingFrontZ - 2f;
         /// <summary>The helipad's centre, at the east end of the ramp.</summary>
         public const float HelipadX = 150f;
         public const float HelipadZ = 200f;
@@ -191,8 +204,8 @@ namespace AirportDemo
         public const float FuelIslandZ = 240f;
 
         public const float TerminalX = 0f;
-        /// <summary>Wide enough to front two airline stands and their gate doors.</summary>
-        public const float TerminalWidth = 80f;
+        /// <summary>Wide enough to front the airline stands and their gate doors.</summary>
+        public const float TerminalWidth = 120f;
         public const float TerminalDepth = 30f;
 
         public const float TowerX = 70f;
@@ -293,6 +306,46 @@ namespace AirportDemo
         public const float FinalLength = 1700f;
         public const float ClimbAngle = 6f;         // degrees
         public const float DescentAngle = 3f;
+
+        // ------------------------------------------------------------ the turnaround
+        //
+        // What happens on the stand, which is the whole point of an airline aeroplane:
+        // it lands, it is met, the passengers walk off across the concrete, the next
+        // lot walk out and up the steps, and it goes. In 1987 at a county field there
+        // is no airbridge and no bus - the walk IS the boarding.
+
+        /// <summary>Seats, which is how many people walk off and how many walk on.
+        /// A trijet out of a field like this is half empty; a turboprop is not.</summary>
+        public const int JetSeats = 24;
+        public const int CommuterSeats = 15;
+        /// <summary>Engines stopped to the first passenger on the steps.</summary>
+        public const float DoorsToFirstOff = 14f;
+        /// <summary>One passenger down the steps every so many seconds - a queue on a
+        /// set of airstairs moves about this fast.</summary>
+        public const float DisembarkGap = 1.5f;
+        /// <summary>The last one off to the first one on: the aeroplane is cleaned,
+        /// the bags are changed over, the bowser comes and goes.</summary>
+        public const float TurnaroundGap = 45f;
+        public const float BoardingGap = 2.2f;
+        /// <summary>The last one up the steps to the start-up.</summary>
+        public const float DoorsToStartUp = 22f;
+        /// <summary>How long a light aeroplane sits between its own movements. A field
+        /// like this sees a handful of light movements an hour, not one a minute -
+        /// which is why only a couple of the singles on the ramp ever fly.</summary>
+        public const float LightGroundMin = 260f;
+        public const float LightGroundMax = 620f;
+        /// <summary>Where the boarding door is, by class: out to the left of the
+        /// centreline, forward along the fuselage as a fraction of the nose, and its
+        /// sill above the concrete.</summary>
+        public static void Door(Aircraft.Kind kind, out float side, out float fore, out float height)
+        {
+            switch (kind)
+            {
+                case Aircraft.Kind.Jet: side = 1.9f; fore = 0.55f; height = 2.6f; break;
+                case Aircraft.Kind.Commuter: side = 1.5f; fore = 0.45f; height = 1.6f; break;
+                default: side = 0.7f; fore = 0.15f; height = 0.6f; break;
+            }
+        }
 
         /// <summary>The threshold an aircraft lands over, for the heading in use.</summary>
         public static float ThresholdX(bool westerly) => westerly ? RunwayHalf : -RunwayHalf;

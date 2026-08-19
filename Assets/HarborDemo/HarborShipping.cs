@@ -75,7 +75,11 @@ namespace HarborDemo
             _ripple = ripple;
             _smoke = smoke;
             _plank = plank;
-            _spawnX = builder.QuayHalf + 240f;
+            // where a ship is first seen and where she is let go: the end of the coast,
+            // not the end of the quay. In the city the host sets seaRun to the island's
+            // own reach, so she comes up over the horizon at one end of the map and
+            // stands out at the other; on her own the port keeps the old short run.
+            _spawnX = Mathf.Max(builder.QuayHalf + 240f, builder.seaRun);
             _passerTimer = 1f + (float)rng.NextDouble() * 3f;
         }
 
@@ -100,8 +104,19 @@ namespace HarborDemo
             Geometry(berth, spec);
             berth.Ship = Launch(spec, new Vector3(x, HarborDistrict.WaterY, berth.ShipZ), Vector3.right, 0.6f, "Ship " + berth.Index);
             berth.Phase = Phase.Alongside;
-            berth.Timer = HarborKit.Range(_rng, _b.stayRange.x, _b.stayRange.y) * HarborKit.Range(_rng, 0.25f, 0.6f);
+            berth.Timer = Stay() * HarborKit.Range(_rng, 0.25f, 0.6f);
             MakeFast(berth, midStay: true);
+        }
+
+        /// <summary>How long a ship lies alongside. The stay on the inspector is for a
+        /// port whose ships come in off the end of the quay; when the run is the length of
+        /// the island - four or five minutes each way - a berth worked for ninety seconds
+        /// and then stood empty for ten minutes, and the port read as abandoned. Stretched
+        /// with the run, so a berth is busy about as often as it was.</summary>
+        float Stay()
+        {
+            float scale = Mathf.Clamp(_spawnX / Mathf.Max(1f, _b.QuayHalf + 240f), 1f, 4f);
+            return HarborKit.Range(_rng, _b.stayRange.x, _b.stayRange.y) * scale;
         }
 
         HarborShipSpec ChooseSpec(Berth berth)
@@ -241,7 +256,7 @@ namespace HarborDemo
                     break;
                 case Phase.Approach:
                     b.Phase = Phase.Alongside;
-                    b.Timer = HarborKit.Range(_rng, _b.stayRange.x, _b.stayRange.y);
+                    b.Timer = Stay();
                     MakeFast(b, midStay: false);
                     break;
                 case Phase.Depart:
@@ -364,7 +379,14 @@ namespace HarborDemo
             if (!_b.passingTraffic) return;
             _passerTimer -= dt;
             if (_passerTimer > 0f) return;
-            _passerTimer = HarborKit.Range(_rng, PasserGapMin, PasserGapMax);
+            // the gap goes with the length of the run: a ship that crosses the whole map
+            // is on the water eight minutes, and at the old gap of half a minute there
+            // were a dozen freighters abreast of the town at once. Spaced so about three
+            // are in sight, which is a working coast and not a convoy.
+            const float Abreast = 3f;
+            float crossing = _spawnX * 2f / Mathf.Max(1f, _b.sailSpeed);
+            float gap = Mathf.Clamp(crossing / Abreast, PasserGapMin, 600f);
+            _passerTimer = HarborKit.Range(_rng, gap * 0.7f, gap * 1.3f);
 
             bool eastbound = _rng.Next(2) == 0;
             // outside the channel buoys (z = -66): a freighter is wider than the boats that used to run here

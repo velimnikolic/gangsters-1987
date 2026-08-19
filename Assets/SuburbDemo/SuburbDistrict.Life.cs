@@ -54,6 +54,10 @@ namespace SuburbDemo
 
             foreach (var s in _segments)
             {
+                // a street's flat-capped end at the map's edge carries no lanes: there is no
+                // turning in 10 m and no U-turn, so no car is sent down it (the plan sees to
+                // it that no junction forces one there)
+                if (s.Open) continue;
                 if (!s.Stub) { ThroughLanes(s); continue; }
                 StubLanes(s);
             }
@@ -119,7 +123,32 @@ namespace SuburbDemo
 
         // ------------------------------------------------------------ pavements
 
-        PedNode PedAt(float x, float z) => new PedNode { Pos = new Vector3(x, WalkY, z) };
+        PedNode PedAt(float x, float z) => new PedNode { Pos = new Vector3(x, WalkY + Ground(x, z), z) };
+
+        /// <summary>A pavement link from a to b in pieces no longer than 20 m, a node on
+        /// the ground at every joint - so a walker follows the lie of the land instead of
+        /// a chord through a hill.</summary>
+        void AddPedChain(PedNode a, PedNode b)
+        {
+            var d = b.Pos - a.Pos;
+            d.y = 0f;
+            float len = d.magnitude;
+            int pieces = Mathf.Max(1, Mathf.CeilToInt(len / 20f));
+            if (relief <= 0f) pieces = 1;
+            var prev = a;
+            for (int k = 1; k <= pieces; k++)
+            {
+                PedNode next;
+                if (k == pieces) next = b;
+                else
+                {
+                    float x = a.Pos.x + d.x * k / pieces, z = a.Pos.z + d.z * k / pieces;
+                    next = PedAt(x, z);
+                }
+                AddPedLink(prev, next, false, false, null);
+                prev = next;
+            }
+        }
 
         void AddPedLink(PedNode a, PedNode b, bool gated, bool blocksNS, TrafficSignal sig)
         {
@@ -157,13 +186,13 @@ namespace SuburbDemo
                 {
                     if (s.Vertical)
                     {
-                        AddPedLink(s.LoNode.Corner[NW], s.HiNode.Corner[SW], false, false, null);
-                        AddPedLink(s.LoNode.Corner[NE], s.HiNode.Corner[SE], false, false, null);
+                        AddPedChain(s.LoNode.Corner[NW], s.HiNode.Corner[SW]);
+                        AddPedChain(s.LoNode.Corner[NE], s.HiNode.Corner[SE]);
                     }
                     else
                     {
-                        AddPedLink(s.LoNode.Corner[SE], s.HiNode.Corner[SW], false, false, null);
-                        AddPedLink(s.LoNode.Corner[NE], s.HiNode.Corner[NW], false, false, null);
+                        AddPedChain(s.LoNode.Corner[SE], s.HiNode.Corner[SW]);
+                        AddPedChain(s.LoNode.Corner[NE], s.HiNode.Corner[NW]);
                     }
                     continue;
                 }
@@ -172,7 +201,8 @@ namespace SuburbDemo
             Debug.Log($"[SuburbDemo] pavement graph: {_pedLinks.Count} links");
         }
 
-        // Down both sides of the stub and round the ring of pavement about the bulb.
+        // Down both sides of the stub and round the ring of pavement about the bulb - or,
+        // at a flat-capped end, straight across the end under the cap's wrap.
         void StubPavement(Segment s)
         {
             float dirSign = s.DeadHi ? 1f : -1f;
@@ -180,7 +210,7 @@ namespace SuburbDemo
             float bNear = s.DeadHi ? s.BulbLo : s.BulbHi;
             float bFar = s.DeadHi ? s.BulbHi : s.BulbLo;
             float walkIn = StreetHalf + Walk * 0.5f;            // +-7.5: the stub's pavements
-            float ringOut = BulbHalf + Walk * 0.5f;             // +-12.5: the ring's sides
+            float ringOut = s.Open ? walkIn : BulbHalf + Walk * 0.5f;   // +-12.5: the ring's sides (the cap's wrap is no wider than the pavements)
             float ringNear = bNear - dirSign * Walk * 0.5f;     // along of the ring's near row
             float ringFar = bFar + dirSign * Walk * 0.5f;       // along of the ring's far row
 
@@ -192,17 +222,25 @@ namespace SuburbDemo
             PedNode N(float along, float across) { var p = AW(s, along, across); return PedAt(p.x, p.z); }
             var inL = N(ringNear, -walkIn);
             var inR = N(ringNear, walkIn);
-            var nearL = N(ringNear, -ringOut);
-            var nearR = N(ringNear, ringOut);
             var farL = N(ringFar, -ringOut);
             var farR = N(ringFar, ringOut);
-            AddPedLink(cLeft, inL, false, false, null);
-            AddPedLink(inL, nearL, false, false, null);
-            AddPedLink(nearL, farL, false, false, null);
+            AddPedChain(cLeft, inL);
+            if (s.Open)
+            {
+                AddPedLink(inL, farL, false, false, null);
+            }
+            else
+            {
+                var nearL = N(ringNear, -ringOut);
+                var nearR = N(ringNear, ringOut);
+                AddPedLink(inL, nearL, false, false, null);
+                AddPedLink(nearL, farL, false, false, null);
+                AddPedLink(farR, nearR, false, false, null);
+                AddPedLink(nearR, inR, false, false, null);
+            }
             AddPedLink(farL, farR, false, false, null);
-            AddPedLink(farR, nearR, false, false, null);
-            AddPedLink(nearR, inR, false, false, null);
-            AddPedLink(inR, cRight, false, false, null);
+            if (s.Open) AddPedLink(farR, inR, false, false, null);
+            AddPedChain(inR, cRight);
         }
 
         // ------------------------------------------------------------ doors
@@ -250,7 +288,7 @@ namespace SuburbDemo
                 if (back == null) continue;
                 var door = new DemoDoor
                 {
-                    Pos = new Vector3(lot.DoorPos.x, WalkY, lot.DoorPos.z), Outward = lot.DoorOut, LinkFwd = fwd, LinkBack = back, EntryT = t,
+                    Pos = new Vector3(lot.DoorPos.x, WalkY + Ground(lot.DoorPos.x, lot.DoorPos.z), lot.DoorPos.z), Outward = lot.DoorOut, LinkFwd = fwd, LinkBack = back, EntryT = t,
                     EntryPos = Vector3.Lerp(fwd.From.Pos, fwd.To.Pos, t / fwd.Length),
                 };
                 _life.Doors.Add(door);
@@ -271,7 +309,21 @@ namespace SuburbDemo
         {
             public bool Long;
             public HashSet<RoadEdge> Avoid;
+            public System.Func<float, float, float> GroundWorld;   // the relief under the car, in world coordinates
             static readonly List<RoadEdge> L = new List<RoadEdge>(), R = new List<RoadEdge>();
+
+            /// <summary>The shared driver places the car at the flat road level; the suburb
+            /// lifts it onto its hills and leans it to the slope ahead.</summary>
+            protected override void OnPlaced(float dt, float speed, float steerDegrees)
+            {
+                if (GroundWorld == null || Tf == null) return;
+                var p = Tf.position;
+                var f = Tf.forward;
+                float h = GroundWorld(p.x, p.z);
+                float ahead = GroundWorld(p.x + f.x * 2f, p.z + f.z * 2f), behind = GroundWorld(p.x - f.x * 2f, p.z - f.z * 2f);
+                float pitch = -Mathf.Atan2(ahead - behind, 4f) * Mathf.Rad2Deg;
+                Tf.SetPositionAndRotation(new Vector3(p.x, p.y + h, p.z), Quaternion.AngleAxis(pitch, Tf.right) * Tf.rotation);
+            }
 
             protected override RoadEdge PickNext(RoadEdge straight, List<RoadEdge> lefts, List<RoadEdge> rights)
             {
@@ -315,7 +367,7 @@ namespace SuburbDemo
                     TownKit.StripForStatic(go);
                     var bounds = new Bounds(go.transform.position, Vector3.zero);
                     foreach (var r in go.GetComponentsInChildren<Renderer>()) bounds.Encapsulate(r.bounds);
-                    var v = new SuburbVehicle { Tf = go.transform, HalfLen = bounds.extents.z + 0.3f, Long = isLong || bounds.size.z > 6.5f, Avoid = _stubEdges };
+                    var v = new SuburbVehicle { Tf = go.transform, HalfLen = bounds.extents.z + 0.3f, Long = isLong || bounds.size.z > 6.5f, Avoid = _stubEdges, GroundWorld = relief > 0f ? GroundWorld : null };
                     v.Spawn(e, sAlong);
                     if (!v.Long) CarOccupant.Crew(go.transform, drivers, sitLoop, passengerChance: 0.3f, layer: ScenePerf.CrowdLayer);
                     _vehicles.Add(v);
@@ -367,7 +419,7 @@ namespace SuburbDemo
             if (clips.Idle == null) return;
             var spots = new List<(Vector3, Vector3)>();
             foreach (var lot in _lots)
-                foreach (var p in lot.IdleSpots) spots.Add((W(p), _inner.ToWorldDir(lot.Front)));
+                foreach (var p in lot.IdleSpots) spots.Add((W(new Vector3(p.x, p.y + Ground(p.x, p.z), p.z)), _inner.ToWorldDir(lot.Front)));
             for (int k = spots.Count - 1; k > 0; k--) { int r = _rng.Next(k + 1); (spots[k], spots[r]) = (spots[r], spots[k]); }
             var root = new GameObject("Idlers").transform;
             root.SetParent(_lifeRoot, false);

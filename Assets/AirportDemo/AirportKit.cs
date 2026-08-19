@@ -145,6 +145,8 @@ namespace AirportDemo
         public const string HoldSign = Kit + "airport-sign-hold.prefab";
         public const string ApronMast = Kit + "airport-apron-mast.prefab";
         public const string AirStairs = Kit + "airport-airstairs.prefab";
+        /// <summary>The tall flight, for an airliner's door two and a half metres up.</summary>
+        public const string AirStairsTall = Kit + "airport-airstairs-tall.prefab";
         public const string BaggageCart = Kit + "airport-baggage-cart.prefab";
         public const string FuelBowser = Kit + "airport-fuel-bowser.prefab";
         public const string Chock = Kit + "airport-chock.prefab";
@@ -529,7 +531,28 @@ namespace AirportDemo
             if (prefab == null) return null;
             var go = Object.Instantiate(prefab, pos, Quaternion.Euler(0f, yaw, 0f), parent);
             go.name = name ?? prefab.name;
+            // some packs author a piece with its root switched off - an alternate you
+            // are meant to enable. Instantiating one gives an invisible object, and it
+            // is invisible in a way that measures perfectly (see HasVisibleGeometry).
+            if (!go.activeSelf) go.SetActive(true);
             return go;
+        }
+
+        /// <summary>Whether this prefab will actually draw: at least one renderer with
+        /// a mesh, ENABLED, on a GameObject that is active. PrefabBounds deliberately
+        /// measures inactive geometry too, so a piece can measure 2.5 x 3.0 m and still
+        /// put nothing on the screen or into a bake - which is exactly how the terminal
+        /// lost its glazed wall.</summary>
+        public static bool HasVisibleGeometry(GameObject prefab)
+        {
+            if (prefab == null) return false;
+            foreach (var r in prefab.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                if (!r.enabled || !r.gameObject.activeInHierarchy) continue;
+                var mf = r.GetComponent<MeshFilter>();
+                if (mf != null && mf.sharedMesh != null) return true;
+            }
+            return false;
         }
 
         /// <summary>A prop set down so its own underside rests on the given point,
@@ -601,6 +624,7 @@ namespace AirportDemo
             at.y = from.y;
             var go = Object.Instantiate(prefab, at, Quaternion.Euler(0f, yaw, 0f), parent);
             go.name = name ?? prefab.name;
+            if (!go.activeSelf) go.SetActive(true);
             if (fit)
             {
                 float k = want.magnitude / run.magnitude;

@@ -47,7 +47,9 @@ namespace RoadDemo
         const string PalmEnv = "Assets/Synty/PolygonPalmCity/Prefabs/Environment/";
         const string PalmProps = "Assets/Synty/PolygonPalmCity/Prefabs/Props/";
 
-        GameObject _roadWest, _roadEast, _swStraight, _roadBare, _crossing, _swCorner;
+        // RoadDemoBuilder._roadHalf: one half of a two-way street, laid twice, the
+        // second turned about, so the white kerb line lands on both kerbs
+        GameObject _roadHalf, _swStraight, _roadBare, _crossing, _swCorner;
         readonly List<GameObject> _palms = new List<GameObject>();
         static readonly List<GameObject> NoPalms = new List<GameObject>();
 
@@ -103,8 +105,7 @@ namespace RoadDemo
         {
 #if UNITY_EDITOR
             GameObject L(string path) => UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
-            _roadWest = L(CityEnv + "SM_Env_Road_YellowLines_02.prefab");
-            _roadEast = L(CityEnv + "SM_Env_Road_YellowLines_01.prefab");
+            _roadHalf = L(CityEnv + "SM_Env_Road_YellowLines_02.prefab");
             _swStraight = L(CityEnv + "SM_Env_Sidewalk_Straight_01.prefab");
             _roadBare = L(CityEnv + "SM_Env_Road_Bare_01.prefab");
             _crossing = L(CityEnv + "SM_Env_Road_Crossing_01.prefab");
@@ -151,7 +152,7 @@ namespace RoadDemo
             _payPhone = L(PalmProps + "SM_Prop_Pay_Phone_01.prefab");
             _menuStand = L(PalmProps + "SM_Prop_Menu_Stand_01.prefab");
 
-            _loaded = _roadWest && _roadEast && _swStraight;
+            _loaded = _roadHalf && _swStraight;
             if (!_loaded)
                 Debug.LogWarning("[StreetKit] PolygonCity road tiles missing - no street.");
             return _loaded;
@@ -185,8 +186,8 @@ namespace RoadDemo
             for (int k = 0; k < tiles; k++)
             {
                 float mx = xFrom + k * len;
-                PlaceTile(_roadEast, mx, cz - RoadHalf, 90, len, Cell);
-                PlaceTile(_roadWest, mx, cz, 90, len, Cell);
+                PlaceTile(_roadHalf, mx, cz - RoadHalf, 270, len, Cell);
+                PlaceTile(_roadHalf, mx, cz, 90, len, Cell);
                 // the kerb strips, outside the marked lanes: where a car is left standing
                 PlaceTile(_roadBare, mx, cz - StreetHalf, 90, len, ParkLane);
                 PlaceTile(_roadBare, mx, cz + RoadHalf, 90, len, ParkLane);
@@ -228,8 +229,8 @@ namespace RoadDemo
             for (int k = 0; k < tiles; k++)
             {
                 float mz = zFrom + k * len;
-                PlaceTile(_roadWest, cx - RoadHalf, mz, 0, Cell, len);
-                PlaceTile(_roadEast, cx, mz, 0, Cell, len);
+                PlaceTile(_roadHalf, cx - RoadHalf, mz, 0, Cell, len);
+                PlaceTile(_roadHalf, cx, mz, 180, Cell, len);
                 PlaceTile(_roadBare, cx - StreetHalf, mz, 0, ParkLane, len);
                 PlaceTile(_roadBare, cx + RoadHalf, mz, 0, ParkLane, len);
             }
@@ -265,8 +266,8 @@ namespace RoadDemo
             for (float mx = xFrom; mx < xTo - 0.1f; mx += Cell)
             {
                 float len = Mathf.Min(Cell, xTo - mx);   // the last cell cut to the end, so nothing overlaps a junction
-                PlaceTile(_roadEast, mx, cz - RoadHalf, 90, len, Cell);
-                PlaceTile(_roadWest, mx, cz, 90, len, Cell);
+                PlaceTile(_roadHalf, mx, cz - RoadHalf, 270, len, Cell);
+                PlaceTile(_roadHalf, mx, cz, 90, len, Cell);
             }
             return true;
         }
@@ -277,10 +278,10 @@ namespace RoadDemo
             if (!_loaded && !Load()) return false;
             for (float mz = zFrom; mz < zTo - 0.1f; mz += Cell)
             {
-                // RoadDemoBuilder's vertical street: west half then east half, unturned
+                // RoadDemoBuilder's vertical street: west half, then the east half turned about
                 float len = Mathf.Min(Cell, zTo - mz);
-                PlaceTile(_roadWest, cx - RoadHalf, mz, 0, Cell, len);
-                PlaceTile(_roadEast, cx, mz, 0, Cell, len);
+                PlaceTile(_roadHalf, cx - RoadHalf, mz, 0, Cell, len);
+                PlaceTile(_roadHalf, cx, mz, 180, Cell, len);
             }
             return true;
         }

@@ -55,6 +55,10 @@ namespace RoadDemo
         /// planning bug counter - it should read nought.</summary>
         public static int BeltHits;
 
+        /// <summary>Stopped for good where it should not be - across a junction, the
+        /// driver gone. It holds nothing against anybody: the street drives round it.</summary>
+        public bool Derelict { get; private set; }
+
         /// <summary>What held the car back this frame, for the overlay and the sim.</summary>
         public string Why = "";
         public string PassWhy = "";
@@ -112,8 +116,10 @@ namespace RoadDemo
         // ------------------------------------------------------------------ lateral profile
 
         float _dFrom, _dTo, _sFrom, _sLen;    // d runs dFrom -> dTo over sLen metres of travel from sFrom
-        bool Sliding => _sLen > 0f;
+        public bool Sliding => _sLen > 0f;
         float _viaD0;                          // lateral offset off the connector, eased out along it
+        Connector _tailVia;                    // the connector just left, while the axle is still on it
+        float _tailViaEndS;                    // the road s its end (the lane's start) is at
 
         // ------------------------------------------------------------------ route
 
@@ -154,6 +160,18 @@ namespace RoadDemo
         float _arcS0, _arcR, _arcAng;
         int _arcSide;
         float _stuckFor;
+
+        // ------------------------------------------------------------------ the black box
+
+        /// <summary>Who this car is in the trace: traffic, crew, police, lorry.</summary>
+        public string Tag = "car";
+        float _want;              // the speed the throttle was asked for this frame
+        bool _wantHard;           // and whether it was asked for with both feet
+        float _prevSpeed, _nextSample, _quietFor, _saidStall;
+        Vector3 _prevPos;
+        Manoeuvre _prevMan;
+        bool _prevVia, _prevParked, _traced;
+        int _traceEvents;
 
         // ------------------------------------------------------------------ setup
 
@@ -216,6 +234,7 @@ namespace RoadDemo
             SetLane(null);
             Road = null;
             Via = null;
+            _tailVia = null;
             _next = null;
             _via = null;
             _committed = false;
@@ -280,6 +299,7 @@ namespace RoadDemo
         public bool GoTo(Vector3 point, bool park, float standOff = 0f, bool stopAtGoal = true)
         {
             if (Net == null) return false;
+            _parkTrying = 0f;
             _halted = false;
             _freeGoal = null;
             var road = Net.Locate(point, out float s, out float d, within: 12f);
@@ -385,8 +405,25 @@ namespace RoadDemo
         /// <summary>Stop where it stands and stay stopped - gently, or both feet on
         /// the brake - until the next order. Stood in the lane it is in everyone's
         /// way, and they go round it; that is the caller's choice.</summary>
+        bool _haltWhenClear;
+
         public void Halt(bool hard)
         {
+            // Never dead in the middle of a junction. The box is everybody else's road,
+            // and a car left standing across one queues a whole quarter behind it - the
+            // lab found six cars nose to tail for four minutes behind one whose driver
+            // had been shot. Told to stop while crossing, the car finishes the crossing
+            // (a few metres) and stops on the far side.
+            if (Via != null)
+            {
+                _haltWhenClear = true;
+                _haltHard = hard;
+                _hasGoal = false;
+                Route = null;
+                _freeGoal = null;
+                return;
+            }
+            _haltWhenClear = false;
             _hasGoal = false;
             Route = null;
             _freeGoal = null;
@@ -406,11 +443,13 @@ namespace RoadDemo
 
         // The route to the goal from wherever the car is now.
         float _retry;
+        float _parkTrying;   // seconds spent looking for somewhere to pull in
 
         float _turnBackFor;     // seconds spent looking for the turn-round on this road
 
         void Replan()
         {
+            if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "replan", ManFields());
             Route = null;
             if (!_hasGoal || Road == null) return;
             if (Road == _goalRoad && Heading == _goalHeading && (_goalS - S) * Heading > -3f) return; // straight down this road
@@ -428,12 +467,36 @@ namespace RoadDemo
         public void Tick(float dt)
         {
             if (dt <= 0f) return;
+            WatchDerelict(dt);
             if (!OnRoad) { TickFree(dt); return; }
             if (Via != null) TickNode(dt);
             else TickRoad(dt);
         }
 
         bool _lastPlaced;
+        float _derelictFor;
+
+        /// <summary>A car that has stopped FOR GOOD with its nose in a junction - the
+        /// driver shot, the crew out on the pavement, the plan torn up - still holds the
+        /// box against everyone who would cross it, and a whole quarter queues behind a
+        /// body nobody is coming back for. (A run of the lab found six cars nose to tail
+        /// for four minutes behind one abandoned car.) A few seconds of that and the
+        /// claim is given up: the wreck is still there to be driven round like any other
+        /// stopped car, but the junction is a junction again.
+        ///
+        /// Only a car that was TOLD to stop, or parked - never one merely waiting its
+        /// turn in a queue, which still means to go and must keep its place.</summary>
+        void WatchDerelict(float dt)
+        {
+            bool derelict = Mathf.Abs(Speed) < 0.15f && _halted && !Parked;
+            if (!derelict) { _derelictFor = 0f; Derelict = false; return; }
+            _derelictFor += dt;
+            if (_derelictFor < 6f) return;
+            if (Derelict) return;
+            Derelict = true;
+            LeaveBox();
+            if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "gave up the box it had stopped in", ManFields());
+        }
 
         void TickRoad(float dt)
         {
@@ -445,6 +508,37 @@ namespace RoadDemo
                 Speed = 0f;
                 Place(dt);
                 return;
+            }
+
+            // LOOKING TOO LONG for somewhere to pull in. Every time the spot is thought
+            // over it can move on a little - somebody took it, somebody else pulled out
+            // - and a car can follow that up the street for ever; worse, a spot on
+            // another street it never manages to reach keeps it driving with its crew
+            // sat waiting to get out (two minutes of it, in the lab, twice). A driver
+            // gives up looking and takes the kerb he is beside. Counted wherever the car
+            // is, not only on the street the spot is on - it is the not-arriving that
+            // has to be caught.
+            if (_hasGoal && _goalPark && _man == Manoeuvre.None)
+            {
+                _parkTrying += dt;
+                if (_parkTrying > 25f)
+                {
+                    _parkTrying = 0f;   // and if this kerb cannot be had either, try again
+                    _goalRoad = road;
+                    _goalHeading = Heading;
+                    _goalLane = Lane;
+                    // far enough on to actually PULL IN: a spot three metres ahead
+                    // leaves no room to come off the lane, so the car stops where it
+                    // stands - in the running lane - and everything behind it queues
+                    // (156 seconds of it, in the run that found this).
+                    float room = PullInLength() + 4f;
+                    _goalS = Mathf.Clamp(S + Heading * room, 4f, road.Length - 4f);
+                    _goalD = road.KerbDOnSide(D, HalfWide);
+                    _goalStop = true;
+                    Route = null;
+                    _next = null;
+                    _committed = false;
+                }
             }
 
             // out of the lane ahead - the junction (or the end of the road)
@@ -484,12 +578,19 @@ namespace RoadDemo
                 float toGoal = (_goalS - S) * Heading;
                 if (toGoal < -3f)
                 {
-                    // overshot it: round, if the road lets us, else the long way
+                    // overshot it: round, if the road lets us, else the long way. The
+                    // throttle comes down first - a turn is refused above the speed its
+                    // arc can carry, so charging at it only means never being allowed one.
+                    bool mayTurn = Profile.UTurnsInRoad && road.TwoWay && road.MedianHalf <= 0f;
+                    if (mayTurn && _man == Manoeuvre.None) v = Mathf.Min(v, Profile.UTurnSpeed + 2f);
                     _retry -= dt;
                     if (_man == Manoeuvre.None && _retry <= 0f)
                     {
                         _retry = 0.5f;
-                        if (!TryUTurn() && Route == null) Replan();
+                        // still braking for it: ask again in a moment rather than give up
+                        // on the turn and send the car round the block
+                        if (!mayTurn || Mathf.Abs(Speed) <= Profile.UTurnSpeed + 2.5f)
+                            if (!TryUTurn() && Route == null) Replan();
                     }
                 }
                 else
@@ -514,7 +615,7 @@ namespace RoadDemo
                         Speed = 0f;
                         _hasGoal = false;
                         Route = null;
-                        if (_goalPark) { Parked = true; _man = Manoeuvre.None; _sLen = 0f; D = _goalD; ClearClaim(); }
+                        if (_goalPark) { Parked = true; _man = Manoeuvre.None; _sLen = 0f; D = _goalD; ClearClaim(); LeaveBox(); }
                         OnArrived();
                         UpdateOccupant();
                         Place(dt);
@@ -550,6 +651,15 @@ namespace RoadDemo
                             v = Mathf.Min(v, Allowed(0f, stopDist));
                             _heldAtLine += dt;
                             heldByNode = true;
+                            // held on a full exit long enough: pick another way out of
+                            // this junction (a wanderer only - a car on a route has
+                            // somewhere to be and waits its turn)
+                            if (_exitFull != null && Route == null)
+                            {
+                                _fullFor += dt;
+                                if (_fullFor > 5f) { _fullFor = 0f; PlanNext(node); _exitFull = null; }
+                            }
+                            else _fullFor = 0f;
                             // late: both feet on the brake; past the point of no return even
                             // so - in we go, and on the list, so everybody plans round us
                             if (stopDist < Speed * Speed / (2f * Profile.Brake)) hard = true;
@@ -558,6 +668,8 @@ namespace RoadDemo
                         else
                         {
                             _heldAtLine = 0f;
+                            _exitFull = null;
+                            _fullFor = 0f;
                             if (stopDist <= commitAt) EnterBox(node);
                         }
                     }
@@ -642,6 +754,7 @@ namespace RoadDemo
 
             float rate = v < Speed ? (hard || v <= 0.01f ? Profile.HardBrake : Profile.Brake) : Profile.Accel;
             if (v < Speed && v > 0.01f && !hard) rate = Profile.Brake;
+            _want = v; _wantHard = hard;
             Speed = Mathf.MoveTowards(Speed, Mathf.Max(0f, v), rate * dt);
             float step = Speed * dt;
             float prevS = S, prevD = D;
@@ -679,6 +792,17 @@ namespace RoadDemo
                 if (hit != null)
                 {
                     BeltHits++;
+                    if (DriveTrace.On)
+                    {
+                        var sb = DriveTrace.Take();
+                        DriveTrace.Int(sb, "id", Id);
+                        DriveTrace.Str(sb, "tag", Tag);
+                        DriveTrace.Str(sb, "hit", hit is RoadCar bc ? "car " + bc.Id : "static");
+                        DriveTrace.Num(sb, "v", Speed);
+                        DriveTrace.Str(sb, "why", Why);
+                        DriveTrace.Vec(sb, "p", pos);
+                        DriveTrace.Row("belt", sb.ToString());
+                    }
                     LastBeltHit = $"car {Id} {Describe()} v={Speed:F1} fwd={fwd} hit {(hit is RoadCar hc ? "car " + hc.Id + " " + hc.Describe() + " v=" + hc.Speed.ToString("F1") : "static at " + hit.RoadPosition + " fwd " + hit.RoadForward + " hl " + hit.HalfLength + " hw " + hit.HalfWidth)} at {pos} from {_pos} sliding={Sliding} slope={(Sliding ? LateralSlope(S) : 0f):F2}";
                     // stood where we were: the arithmetic let two bodies meet, the belt did not
                     if (!float.IsNaN(prevS)) { S = prevS; D = prevD; Pose(out pos, out fwd); }
@@ -689,11 +813,39 @@ namespace RoadDemo
                 float yawRate = Vector3.SignedAngle(_fwd, fwd, Vector3.up) * Mathf.Deg2Rad / Mathf.Max(dt, 1e-3f);
                 steer = Mathf.Clamp(Mathf.Rad2Deg * Mathf.Atan(2.6f * yawRate / Mathf.Max(Mathf.Abs(Speed), 1f)), -35f, 35f);
             }
+            if (DriveTrace.On) TraceStep(dt, pos, steer);
             _pos = pos;
             _fwd = fwd;
             _lastPlaced = true;
-            if (Tf != null) Tf.SetPositionAndRotation(new Vector3(pos.x, RoadY, pos.z), Quaternion.LookRotation(fwd, Vector3.up));
+            if (Tf != null) Tf.SetPositionAndRotation(new Vector3(pos.x, RoadY + SurfaceLift(), pos.z), Quaternion.LookRotation(fwd, Vector3.up));
             OnPlaced(dt, Speed, steer);
+        }
+
+        /// <summary>How much higher than the road level the surface under the car
+        /// stands: the carriageway's own - which on a slip road or a freeway's run down
+        /// off its pillars CLIMBS along the road, so it is asked where the car actually
+        /// is - or, in a junction, eased from the end of the road it came off to the
+        /// start of the one it is going onto.</summary>
+        float SurfaceLift()
+        {
+            if (Road != null) return Road.SurfaceOn(S);
+            var via = Via;
+            if (via == null) return 0f;
+            // the height at the end of the lane we came off, and at the start of the
+            // one we are joining: a lane runs A to B (heading +1) or B to A (-1)
+            float a = EndLift(via.From, leaving: true), b = EndLift(via.To, leaving: false);
+            if (Mathf.Approximately(a, b)) return a;
+            float t = via.Length > 0.01f ? Mathf.Clamp01(ViaS / via.Length) : 1f;
+            return Mathf.Lerp(a, b, t);
+        }
+
+        static float EndLift(RoadEdge lane, bool leaving)
+        {
+            var road = lane?.Road;
+            if (road == null) return 0f;
+            // leaving: the far end of that lane; joining: its near end
+            bool atB = leaving == (lane.Heading > 0);
+            return atB ? road.SurfaceB : road.SurfaceA;
         }
 
         /// <summary>The wheels, the doors - a subclass with a body animates it here.</summary>
@@ -752,9 +904,24 @@ namespace RoadDemo
             }
             {
                 float sa = S - Heading * a;
+                if (_tailVia != null)
+                {
+                    // just out of a box: the axle still on the connector behind the lane's
+                    // start (the body turns out of the corner, it does not snap straight)
+                    float behind = (_tailViaEndS - sa) * Heading;
+                    if (behind > 0f && behind <= _tailVia.Length)
+                    {
+                        _tailVia.Pose(_tailVia.Length - behind, out var axle, out fwd);
+                        pos = axle + fwd * a;
+                        return;
+                    }
+                    _tailVia = null;
+                }
                 float da = LateralValue(sa);
+                // the lateral slope is per metre travelled; the heading turns toward the
+                // side the line moves to, whichever way the road's axis runs
                 float slope = Sliding ? LateralSlope(sa) : 0f;
-                var f = Road.Axis * Heading + Road.Right * (slope * Heading);
+                var f = Road.Axis * Heading + Road.Right * slope;
                 fwd = f.normalized;
                 pos = Road.Pose(sa, da) + fwd * a;
             }
@@ -784,7 +951,10 @@ namespace RoadDemo
         {
             if (!Sliding) return D;
             float p = (s - _sFrom) * Heading / _sLen;
-            if (p >= 1f) { _sLen = 0f; return _dTo; }
+            // the slide is over when the AXLE is past its end, not the body's centre: the
+            // axle follows the curve and would otherwise jump to the line at the end
+            if (p >= 1f + Axle / _sLen) { _sLen = 0f; return _dTo; }
+            if (p >= 1f) return _dTo;
             if (p <= 0f) return _dFrom;
             return Mathf.Lerp(_dFrom, _dTo, Mathf.SmoothStep(0f, 1f, p));
         }
@@ -826,6 +996,7 @@ namespace RoadDemo
 
         void AbortLateral()
         {
+            if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "abort " + _man, ManFields());
             if (_man == Manoeuvre.PullIn || _man == Manoeuvre.PullOut) return;
             _man = Manoeuvre.None;
             ClearClaim();
@@ -869,7 +1040,11 @@ namespace RoadDemo
             }
             o.Vel = Speed * Heading;
             o.Heading = _man == Manoeuvre.UTurn ? 0 : Heading;
-            o.Parked = Parked;
+            // A car nobody is coming back for reads to the street as a PARKED one, which
+            // is what it is: everybody plans round it instead of queueing behind it for
+            // ever. Without this a crew shot in its car left eight minutes of traffic
+            // nose to tail behind a body in the lane.
+            o.Parked = Parked || Derelict;
             o.Priority = Profile.Priority;
         }
 
@@ -1243,6 +1418,14 @@ namespace RoadDemo
                 if (!Sliding && Road.Drivable(side * r, HalfWide)) Slide(side * r, 8f);
                 return false;
             }
+            // The arc is a couple of metres across. Taken at cruising speed it is a
+            // pirouette - half a turn in half a second, the body slewing round on the
+            // spot - which is what a car doing it at fifteen metres a second looked
+            // like. The driver slows FOR the turn (TickRoad holds the throttle down
+            // while it means to make one); until he has, the answer is no.
+            float arcSpeed = Mathf.Min(Profile.UTurnSpeed, Mathf.Sqrt(Profile.LateralG * r));
+            if (Mathf.Abs(Speed) > arcSpeed + 1.5f) return false;
+
             float sweepLo = -r - HalfWide - 0.3f, sweepHi = r + HalfWide + 0.3f;
             float s0 = S + Heading * 1f;
             float sweepS0 = Mathf.Min(s0 - Heading * HalfLen, s0 + Heading * (r + HalfLen + 0.5f));
@@ -1259,6 +1442,7 @@ namespace RoadDemo
             var behind = Road.Behind(_occ, -Heading, Heading > 0 ? sweepS1 : sweepS0, -side * r - HalfWide, -side * r + HalfWide, out float gb);
             if (behind != null && behind.Moving && gb < Mathf.Abs(behind.Vel) * seconds) return false;
             _man = Manoeuvre.UTurn;
+            _tailVia = null;
             _arcS0 = s0;
             _arcR = r;
             _arcSide = side;
@@ -1276,6 +1460,7 @@ namespace RoadDemo
         {
             float v = Mathf.Min(vCap, Profile.UTurnSpeed, Mathf.Sqrt(Profile.LateralG * _arcR));
             // a man in the sweep, a car that rolled into it: the belt and the walkers already cap v
+            _want = v; _wantHard = false;
             Speed = Mathf.MoveTowards(Speed, v, (v < Speed ? Profile.Brake : Profile.Accel) * dt);
             _arcAng += Speed * dt / _arcR;
             if (_arcAng >= Mathf.PI)
@@ -1417,6 +1602,26 @@ namespace RoadDemo
                 else if (Vector3.Cross(lane.Dir, e.Dir).y > 0f) rights.Add(e);
                 else lefts.Add(e);
             }
+            // The way on he had chosen is full and has been for a while: a man with
+            // nowhere particular to be turns instead. Junctions gridlock when four
+            // queues all wait on each other's full exits, and one car choosing another
+            // way out is what breaks the ring - which is what a driver does anyway.
+            if (_exitFull != null && Route == null)
+            {
+                if (straight == _exitFull) straight = null;
+                lefts.Remove(_exitFull);
+                rights.Remove(_exitFull);
+            }
+            // The route is a table of "from this lane, take that one". A car that comes
+            // off the table - a turn taken to get round something stopped, a junction
+            // whose exit was full, a set-down that put it on a street the table never
+            // covered - would go on picking at random with its goal still set: the lab
+            // watched one drive a quarter of the city for two minutes and never come
+            // within forty metres of where it had been sent. Off the table, the table is
+            // drawn again from where the car actually is.
+            if (_hasGoal && Route != null && _goalLane != null && Net != null && !Route.ContainsKey(lane))
+                Route = Net.RouteToward(_goalLane);
+
             RoadEdge next = null;
             if (Route != null && Route.TryGetValue(lane, out var toward) && toward != null && node.ConnectorFor(lane, toward) != null) next = toward;
             else if (straight != null || lefts.Count > 0 || rights.Count > 0) next = PickNext(straight, lefts, rights);
@@ -1432,6 +1637,10 @@ namespace RoadDemo
             _committed = false;
             _heldAtLine = 0f;
         }
+
+        /// <summary>The exit that was refused for want of room on the far side.</summary>
+        RoadEdge _exitFull;
+        float _fullFor;
 
         static readonly List<RoadEdge> _lefts = new List<RoadEdge>(), _rights = new List<RoadEdge>();
 
@@ -1512,7 +1721,12 @@ namespace RoadDemo
             float need = 2f * HalfLen + Profile.FollowGap + 0.5f;
             float free = far.FreeAhead(null, _next.Heading, farS0, farS0 - _next.Heading * 0.1f,
                 _next.Offset - HalfWide - 0.2f, _next.Offset + HalfWide + 0.2f, need + 1f);
-            if (free >= 0f && free < need && !(_heldAtLine > 12f && free > 2f * HalfLen)) { Why = "box: no room beyond"; return false; }
+            if (free >= 0f && free < need && !(_heldAtLine > 12f && free > 2f * HalfLen))
+            {
+                Why = "box: no room beyond";
+                _exitFull = _next;   // the way on is full: a wanderer takes another
+                return false;
+            }
             Why = "";
             return true;
         }
@@ -1614,7 +1828,23 @@ namespace RoadDemo
 
         void EnterBox(RoadNode node)
         {
+            if (Derelict) { _committed = true; return; }   // a wreck claims nothing: it is driven round
+            // ONE CLAIM AT A TIME, and neither half of that is optional.
+            //
+            // Taking a second claim while the first still stands leaves the first in ITS
+            // junction's list for ever - nothing gives it back - and every car whose way
+            // crosses that phantom waits at a green light until the scene is closed (the
+            // lab found six cars queued six minutes behind an empty junction). Simply
+            // dropping the old claim is no better: the car is still IN that junction, and
+            // dropping it lets somebody in on top of it (the belt then refuses both their
+            // steps, which is how this was found the second time).
+            //
+            // So: still in the box behind us, the commitment is not made at all. The car
+            // holds at the line until its tail is out of the one it is crossing, which is
+            // a rule of the road anyway - you do not enter a junction you cannot leave.
+            if (_inNode != null && _nodeOf != node) return;
             _committed = true;
+            if (_inNode != null) return;   // this one is already ours
             _inNode = new NodeOccupant { Car = this, Via = _via, S = -1f };
             _nodeOf = node;
             _boxLeft = false;
@@ -1654,8 +1884,20 @@ namespace RoadDemo
             Road = null;
             _sLen = 0f;
             ClearClaim();
+            // The claim must be on THIS junction. Still holding the last one - the tail
+            // not yet clear of it when the next was reached - the old entry was written
+            // to instead, and the car crossed this box invisible to everybody planning
+            // through it: two cars on crossing lines, and the belt refusing both their
+            // steps for minutes at a time. Whatever is held, it is given up here and the
+            // box we are actually in is claimed.
+            if (_inNode != null && _nodeOf != node)
+            {
+                if (DriveTrace.On)
+                    DriveTrace.Event("man", "car " + Id, "crossed a box on the last one's claim", ManFields());
+                LeaveBox();
+            }
             if (_inNode == null) EnterBox(node);
-            _inNode.S = ViaS;
+            if (_inNode != null) _inNode.S = ViaS;
         }
 
         void TickNode(float dt)
@@ -1675,7 +1917,22 @@ namespace RoadDemo
             float farNose = _next.RoadS(ViaS - via.Length) + _next.Heading * HalfLen;
             float farTail = farNose - _next.Heading * 2f * HalfLen;
             var lead = far.Ahead(_occNext, _next.Heading, farNose, farTail, _next.Offset - HalfWide - SideAir, _next.Offset + HalfWide + SideAir, out float fgap);
-            if (lead != null)
+            // Something STOOD in the lane we come out into - parked, or left there - is a
+            // thing to drive round once we are out, not a reason to sit in the middle of
+            // a junction waiting for it to move, which it never will. Waiting here blocks
+            // everybody crossing (the lab watched a quarter queue for five minutes behind
+            // one car parked at the mouth of a street). Out first, round it after: the
+            // road's own following and passing take it from there. Only if it is right on
+            // the exit is holding better than coming out on top of it.
+            bool standing = lead != null && (lead.Parked || (lead.Car != null && lead.Car.Derelict)) &&
+                            fgap > 2f * HalfLen + 2f;
+            if (lead != null && standing)
+            {
+                // out of the box and stopped short of it ON THE ROAD, where it can be
+                // driven round - not stopped across the junction, where nobody can pass
+                v = Mathf.Min(v, Allowed(0f, fgap - HalfLen - 1.2f));
+            }
+            else if (lead != null)
             {
                 float vl = Mathf.Max(0f, lead.Vel * _next.Heading);
                 if (lead.Vel * _next.Heading < -0.5f) vl = 0f;
@@ -1689,6 +1946,7 @@ namespace RoadDemo
             v = LimitTarget(v);
             if (_halted) { v = 0f; if (_haltHard) hard = true; }
             InQueue = v < 0.5f;
+            _want = v; _wantHard = hard;
             Speed = Mathf.MoveTowards(Speed, Mathf.Max(0f, v), (v < Speed ? (hard ? Profile.HardBrake : Profile.Brake) : Profile.Accel) * dt);
             ViaS += Speed * dt;
             if (ViaS >= via.Length)
@@ -1700,6 +1958,8 @@ namespace RoadDemo
                 S = lane.RoadS(over);
                 D = lane.Offset;
                 _laneD = D;
+                _tailVia = via;
+                _tailViaEndS = lane.RoadS(0f);
                 SetLane(lane);
                 _occ = _occNext ?? NewOccupant(Road);
                 _occNext = null;
@@ -1720,7 +1980,10 @@ namespace RoadDemo
         void TickBoxExit()
         {
             if (_inNode == null || Road == null || !_boxLeft) return;
-            if ((S - _boxEntryS) * Heading > HalfLen + 0.8f) LeaveBox();
+            if ((S - _boxEntryS) * Heading <= HalfLen + 0.8f) return;
+            LeaveBox();
+            // the stop that was asked for while we were crossing: here, clear of the box
+            if (_haltWhenClear) { _haltWhenClear = false; Halt(_haltHard); }
         }
 
         // ------------------------------------------------------------------ people
@@ -1768,7 +2031,8 @@ namespace RoadDemo
                     _fwd = Vector3.RotateTowards(_fwd, dir, Mathf.Deg2Rad * 90f * dt, 0f).normalized;
                     float v = Mathf.Min(Cruise(), Allowed(0f, dist));
                     v = Mathf.Min(v, WalkersAhead(StreetTraffic.Walkers));
-                    Speed = Mathf.MoveTowards(Speed, v, (v < Speed ? Profile.Brake : Profile.Accel) * dt);
+                    _want = v; _wantHard = false;
+            Speed = Mathf.MoveTowards(Speed, v, (v < Speed ? Profile.Brake : Profile.Accel) * dt);
                 }
             }
             var next = _pos + _fwd * Speed * dt;
@@ -1779,7 +2043,7 @@ namespace RoadDemo
             }
             _pos = next;
             _lastPlaced = true;
-            if (Tf != null) Tf.SetPositionAndRotation(new Vector3(_pos.x, RoadY, _pos.z), Quaternion.LookRotation(_fwd, Vector3.up));
+            if (Tf != null) Tf.SetPositionAndRotation(new Vector3(_pos.x, RoadY + SurfaceLift(), _pos.z), Quaternion.LookRotation(_fwd, Vector3.up));
             OnPlaced(dt, Speed, 0f);
         }
 
@@ -1803,6 +2067,125 @@ namespace RoadDemo
         }
 
         /// <summary>Where the car is, for a log line.</summary>
+        /// <summary>One frame of this car in the trace: what it was asked to do, what it
+        /// did, and anything that reads as a fault - a stop nobody asked for, braking
+        /// harder than the profile allows, a step longer than the speed, a speed over
+        /// the profile. Called from Place, which every path through the tick ends in.</summary>
+        void TraceStep(float dt, Vector3 pos, float steer)
+        {
+            // whatever changed about what the car is doing: a swing out, a turn in the
+            // road, a pull-in, a junction entered or left - the shape of the run
+            if (_man != _prevMan) { DriveTrace.Event("man", "car " + Id, _prevMan + " -> " + _man, ManFields()); _prevMan = _man; }
+            if ((Via != null) != _prevVia) { _prevVia = Via != null; DriveTrace.Event("man", "car " + Id, _prevVia ? "into the box" : "out of the box", ManFields()); }
+            if (Parked != _prevParked) { _prevParked = Parked; DriveTrace.Event("man", "car " + Id, Parked ? "parked" : "away", ManFields()); }
+
+            // the first frame of the trace has no frame before it: the speed and the
+            // place it would be compared against are nought, and every car would come
+            // out of the gate braking from ten and teleporting from the origin
+            bool first = !_traced;
+            _traced = true;
+            float acc = !first && dt > 1e-4f ? (Speed - _prevSpeed) / dt : 0f;
+            float step = !first && _lastPlaced ? Vector3.Distance(pos, _prevPos) : 0f;
+            float cruise = Cruise();
+
+            // a stop nobody asked for: the car is not moving and not parked. Whether it
+            // was ASKED to move is in the row (want), so a queue at a light reads apart
+            // from a car that has simply died in the road.
+            if (Mathf.Abs(Speed) < 0.3f && !Parked) _quietFor += dt; else { _quietFor = 0f; _saidStall = 0f; }
+
+            if (first) { }
+            // a car asked for nought is standing because it was told to (halted, parked,
+            // waiting for its crew): only one that WANTS to move and is not moving is stuck
+            else if (_want > 0.5f && _quietFor > 4f && _quietFor - _saidStall > 6f)
+            {
+                _saidStall = _quietFor;
+                Fault("stall", $"still for {_quietFor:F1}s", acc, step, steer);
+            }
+            // braking harder than the profile is meant to allow
+            else if (acc < -Profile.HardBrake * 1.15f && dt > 1e-4f)
+                Fault("overbrake", $"{acc:F1} m/s2, hard={_wantHard}", acc, step, steer);
+            // asked for a stop from cruising speed with nothing in front to explain it.
+            // A throttle asked for nought brakes hard by design (TickRoad), so that is
+            // not the fault being looked for here - an unexplained one is.
+            else if (acc < -Profile.Brake * 1.05f && !_wantHard && _want > 0.01f &&
+                     string.IsNullOrEmpty(Why) && Via == null)
+                Fault("brake", $"{acc:F1} m/s2 with no reason given", acc, step, steer);
+            // faster than the driver is allowed to go
+            else if (Mathf.Abs(Speed) > cruise * 1.25f + 0.5f)
+                Fault("speeding", $"{Speed:F1} over {cruise:F1}", acc, step, steer);
+            // a step the speed does not account for: the car was moved, not driven
+            else if (_lastPlaced && step > Mathf.Abs(Speed) * dt * 1.6f + 0.12f)
+                Fault("jump", $"{step:F2} m in one frame at {Speed:F1} m/s", acc, step, steer);
+            // the wheel wound right over AT SPEED: the line the car is following has a
+            // kink in it. Slowly, full lock is just a tight corner - every junction has one.
+            else if (Mathf.Abs(steer) > 33f && Mathf.Abs(Speed) > 7f)
+                Fault("steer", $"{steer:F0} deg at {Speed:F1} m/s", acc, step, steer);
+
+            _prevSpeed = Speed;
+            _prevPos = pos;
+
+            if (DriveTrace.Now < _nextSample) return;
+            _nextSample = DriveTrace.Now + DriveTrace.SampleEvery;
+            var sb = Sample(acc, step, steer);
+            DriveTrace.Row("car", sb.ToString());
+        }
+
+        System.Text.StringBuilder Sample(float acc, float step, float steer)
+        {
+            var sb = DriveTrace.Take();
+            DriveTrace.Int(sb, "id", Id);
+            DriveTrace.Str(sb, "tag", Tag);
+            DriveTrace.Str(sb, "prof", Profile.Name);
+            DriveTrace.Num(sb, "v", Speed);
+            DriveTrace.Num(sb, "want", _want);
+            DriveTrace.Num(sb, "acc", acc);
+            DriveTrace.Num(sb, "step", step, "F3");
+            DriveTrace.Num(sb, "steer", steer, "F0");
+            DriveTrace.Int(sb, "road", Road != null ? Road.Index : -1);
+            DriveTrace.Num(sb, "s", S);
+            DriveTrace.Num(sb, "d", D);
+            DriveTrace.Int(sb, "h", Heading);
+            DriveTrace.Str(sb, "man", _man.ToString());
+            DriveTrace.Bool(sb, "via", Via != null);
+            DriveTrace.Bool(sb, "box", _inNode != null);
+            DriveTrace.Bool(sb, "queue", InQueue);
+            DriveTrace.Bool(sb, "parked", Parked);
+            DriveTrace.Bool(sb, "goal", _hasGoal);
+            DriveTrace.Num(sb, "quiet", _quietFor, "F1");
+            DriveTrace.Num(sb, "held", _heldAtLine, "F1");
+            DriveTrace.Str(sb, "why", Why);
+            DriveTrace.Vec(sb, "p", _pos);
+            return sb;
+        }
+
+        /// <summary>Something the driving code should not have done. The whole state
+        /// goes down with it, so the run can be read without guessing.</summary>
+        void Fault(string kind, string what, float acc, float step, float steer)
+        {
+            if (_traceEvents > 4000) return;
+            _traceEvents++;
+            var sb = Sample(acc, step, steer);
+            DriveTrace.Str(sb, "fault", kind);
+            DriveTrace.Str(sb, "what", what);
+            DriveTrace.Row("fault", sb.ToString());
+        }
+
+        /// <summary>Where the car was when a manoeuvre began, ended or was given up on.</summary>
+        string ManFields()
+        {
+            var sb = DriveTrace.Take();
+            DriveTrace.Str(sb, "tag", Tag);
+            DriveTrace.Num(sb, "v", Speed);
+            DriveTrace.Int(sb, "road", Road != null ? Road.Index : -1);
+            DriveTrace.Num(sb, "s", S);
+            DriveTrace.Num(sb, "d", D);
+            DriveTrace.Str(sb, "man", _man.ToString());
+            DriveTrace.Str(sb, "why", Why);
+            DriveTrace.Str(sb, "passwhy", PassWhy);
+            DriveTrace.Vec(sb, "p", _pos);
+            return sb.ToString();
+        }
+
         public string Describe()
         {
             if (Via != null) return $"[box {Via.From.Road.Index}/{Via.From.Heading}->{Via.To.Road.Index}/{Via.To.Heading} {Via.Kind} viaS={ViaS:F1}/{Via.Length:F1} inNode={(_inNode != null)} why={Why}]";

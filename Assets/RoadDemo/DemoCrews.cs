@@ -117,6 +117,14 @@ namespace RoadDemo
         const float DeathReportDelay = 5f; // the skull stands this long, then the books are told
         const float CarCover = 0.55f;      // what the car's tin does to a round aimed at a rider
         const float BehindCover = 0.8f;    // what a car's flank does for a man crouched behind it
+        const float MovingCarCover = 0.3f; // and what SPEED does: a rider going past at pace
+        // A man leaning out of a window with his arm across the street is not shooting
+        // the way he does stood on the pavement: he takes it further out and further
+        // round. Without this a pass gave the guns about a second of the mark and a
+        // drive-by went by without a round fired - five windows in two minutes of passes.
+        // The accuracy still falls off with the range (Resolve), so the long ones mostly miss.
+        const float RidingReach = 1.4f;
+        const float RidingArc = 0.3f;      // how far round from abeam he can bring it (~72 deg)
         const float StrayChance = 0.12f;   // a round that missed its man, with a bystander in its way
         const float NerveRange = 8f;       // a friend going down this close may break a man
         const float HoodNerve = 0.25f, BossNerve = 0.05f;
@@ -236,7 +244,16 @@ namespace RoadDemo
         /// <summary>The bang, the flash and the blood - set by the scene builder;
         /// missing pieces are simply silent.</summary>
         public GameObject MuzzleFlashPrefab, BloodPrefab, ImpactPrefab;
-        public AudioClip[] GunshotClips = System.Array.Empty<AudioClip>();
+        /// <summary>One weapon's reports. An array of these rather than a dictionary
+        /// because Unity serialises the one and not the other.</summary>
+        [System.Serializable]
+        public sealed class WeaponSounds
+        {
+            public EquipmentKind Kind;
+            public AudioClip[] Clips = System.Array.Empty<AudioClip>();
+        }
+
+        public WeaponSounds[] GunshotSets = System.Array.Empty<WeaponSounds>();
         public AudioClip CrackClip;
 
         /// <summary>Reference pixels from the top of the screen to the crew bar - the
@@ -473,7 +490,7 @@ namespace RoadDemo
                 destination = world;
                 return true;
             }
-            Selected.Boarding = null; // a walk order cancels a walk to the car
+            Unboard(Selected, "a walk order"); // a walk order cancels a walk to the car
             Selected.PendingDrive = null;
 
             // in the car: the car goes there, the crew with it - unless the man at the
@@ -538,7 +555,7 @@ namespace RoadDemo
         public bool OrderAttack(Unit target)
         {
             if (Selected == null || target == null || target == Selected || target.Wiped) return false;
-            Selected.Boarding = null;
+            Unboard(Selected, "an attack order");
             // in the car: a drive-by - passes down the street past them, guns out the windows
             // (no driver: out, and at them on foot)
             if (Selected.Car != null)
@@ -560,9 +577,15 @@ namespace RoadDemo
 
         void Dispatch(Unit unit, PedLink link, float t)
         {
+            // a man who walked off his stretch (to a car door he never got into) sets
+            // off from where he stands
+            Reseat(unit.Boss);
             unit.Boss.OrderTo(link, t);
             for (int k = 0; k < unit.Hoods.Count; k++)
+            {
+                Reseat(unit.Hoods[k]);
                 unit.Hoods[k].OrderTo(link, FormationT(link, t, k), HoodBeat());
+            }
         }
 
         /// <summary>The beat a hood waits before he follows an order the boss got - each
@@ -644,6 +667,14 @@ namespace RoadDemo
             return null;
         }
 
+        /// <summary>The car this man is riding in, or null.</summary>
+        public CrewCar CarWith(CrewWalker man)
+        {
+            if (man == null) return null;
+            foreach (var car in Cars) if (car.Aboard.Contains(man)) return car;
+            return null;
+        }
+
         /// <summary>Riding in a car - hidden, carried, firing from a window if at all.</summary>
         public bool IsAboard(CrewWalker man)
         {
@@ -707,7 +738,7 @@ namespace RoadDemo
             var car = Selected.Boarding;
             if (car == null) return false;
             // nobody in yet: the walk to the doors is called off, each man where he stands
-            Selected.Boarding = null;
+            Unboard(Selected, "an order");
             Selected.PendingDrive = null;
             foreach (var man in Selected.All())
                 if (!man.Dead && !IsAboard(man) && car.SeatOf.ContainsKey(man))
@@ -737,8 +768,37 @@ namespace RoadDemo
         // so he goes round to the driver's side; the rest to the nearest free seat's
         // door - and get in when they reach it and it stands open (TickCars); the
         // rest stay on the pavement. A crew already in a fight lowers its guns.
+        /// <summary>Give up a walk to the car - and say who did, because a crew that
+        /// silently stops walking to its own doors is a very hard thing to see.</summary>
+        void Unboard(Unit unit, string why)
+        {
+            if (unit == null || unit.Boarding == null) return;
+            if (DriveTrace.On)
+            {
+                var sb = DriveTrace.Take();
+                DriveTrace.Str(sb, "who", unit.GangName);
+                DriveTrace.Str(sb, "what", "walk to the car called off: " + why);
+                DriveTrace.Int(sb, "aboard", unit.Boarding.Aboard.Count);
+                DriveTrace.Int(sb, "seats", unit.Boarding.SeatOf.Count);
+                DriveTrace.Row("crewcar", sb.ToString());
+            }
+            unit.Boarding = null;
+        }
+
         void Board(Unit unit, CrewCar car)
         {
+            if (DriveTrace.On)
+            {
+                var sb = DriveTrace.Take();
+                DriveTrace.Str(sb, "who", unit.GangName);
+                DriveTrace.Str(sb, "what", "told to get in");
+                DriveTrace.Int(sb, "standing", unit.Standing());
+                DriveTrace.Int(sb, "aboard", car.Aboard.Count);
+                DriveTrace.Int(sb, "seats", car.SeatOf.Count);
+                DriveTrace.Bool(sb, "driverdead", DriverDead(car));
+                DriveTrace.Bool(sb, "occupied", car.Occupant != null);
+                DriveTrace.Row("crewcar", sb.ToString());
+            }
             unit.TargetUnit = null;
             unit.OrderedAt = Time.time;
             unit.Boarding = car;
@@ -755,7 +815,7 @@ namespace RoadDemo
                 man.OrderToPoint(car.DoorPoint(seat));
                 given++;
             }
-            if (given == 0 && car.SeatOf.Count == 0) unit.Boarding = null;
+            if (given == 0 && car.SeatOf.Count == 0) Unboard(unit, "nobody could be given a seat");
         }
 
         // The crew gets out - once the car has pulled in at the kerb and the doors
@@ -766,7 +826,7 @@ namespace RoadDemo
             var car = unit.Car;
             if (car == null) return;
             unit.Leaving = true;
-            unit.Boarding = null;
+            Unboard(unit, "told to get out");
             unit.PendingDrive = null;
             // "Out" is an order to the MEN, and the car does the least driving that can
             // honour it. In a fight it is an emergency - both feet on the brake where it
@@ -784,6 +844,8 @@ namespace RoadDemo
         // left by it.
         void LetOut(CrewCar car, CrewWalker man, int seat)
         {
+            if (DriveTrace.On)
+                DriveTrace.Event("crewcar", man.DisplayName, $"set down out of seat {seat}");
             car.Aboard.Remove(man);
             car.SeatOf.Remove(man);
             var spot = car.DoorPoint(seat);
@@ -793,7 +855,28 @@ namespace RoadDemo
                 man.SetRiding(false);
                 man.Tf.SetPositionAndRotation(spot,
                     Quaternion.LookRotation(car.Tf.right * CrewCar.SeatSide(seat), Vector3.up));
+                // in the city he is streets from the stretch he got in on: his next
+                // order must start from this kerb, not snap him back to that one
+                Reseat(man);
             }
+        }
+
+        /// <summary>In the city, a man stood off the sidewalk stretch the graph still
+        /// has him on (set down out of a car, walked to a door) is put onto the nearest
+        /// stretch where he stands. On the free floor there is no graph: nothing to do.</summary>
+        void Reseat(CrewWalker man)
+        {
+            if (FreeRoam || man == null || man.Tf == null || !man.OnGraph || man.Dead || man.Riding) return;
+            // walking the graph he IS where it has him; and a man within a pavement's
+            // width of his metre is only on his own side of the walk
+            if (man.State == CrewWalker.Mode.Walking || man.State == CrewWalker.Mode.Homing) return;
+            var cur = man.CurrentLink;
+            var here = Vector3.Lerp(cur.From.Pos, cur.To.Pos, Mathf.Clamp01(man.CurrentT / Mathf.Max(cur.Length, 0.01f)));
+            var gap = man.Tf.position - here;
+            gap.y = 0f;
+            if (gap.sqrMagnitude < 2.5f * 2.5f) return;
+            if (!NearestSidewalk(man.Tf.position, out var link, out float t)) return;
+            man.Reseat(link, t);
         }
 
         /// <summary>Is the man in the driver's seat of this car dead (or nobody there)?</summary>
@@ -818,9 +901,19 @@ namespace RoadDemo
                 // where it is and the crew gets out of it (and, out, fights on or runs)
                 if (car.Occupant != null && !car.Occupant.Leaving && car.Moving && DriverDead(car))
                 {
+                    if (DriveTrace.On)
+                    {
+                        var sb = DriveTrace.Take();
+                        DriveTrace.Str(sb, "who", car.Occupant.GangName);
+                        DriveTrace.Str(sb, "what", "driver down - bailing out");
+                        DriveTrace.Int(sb, "aboard", car.Aboard.Count);
+                        DriveTrace.Int(sb, "seats", car.SeatOf.Count);
+                        DriveTrace.Bool(sb, "boarding", car.Occupant.Boarding == car);
+                        DriveTrace.Row("crewcar", sb.ToString());
+                    }
                     car.Stop();
                     car.Occupant.Leaving = true;
-                    car.Occupant.Boarding = null;
+                    Unboard(car.Occupant, "the driver was shot");
                     car.Occupant.DriverLost = true;
                     if (car.Occupant.Faction == 0)
                         CrewOverlay.Announce("DRIVER DOWN - THE CREW IS BAILING OUT", 4f, new Color(1f, 0.55f, 0.45f));
@@ -845,6 +938,20 @@ namespace RoadDemo
                             if (dist <= 1.8f) car.OpenDoorFor(seat); // hand on the handle, not from across the road
                             // at the door, or stopped short of it by the crowd right beside it
                             bool atDoor = dist <= 1.4f || (!man.HasOrder && dist <= 2.8f);
+                            if (DriveTrace.On)
+                            {
+                                var sb = DriveTrace.Take();
+                                DriveTrace.Str(sb, "who", man.DisplayName);
+                                DriveTrace.Int(sb, "seat", seat);
+                                DriveTrace.Num(sb, "toDoor", dist);
+                                DriveTrace.Bool(sb, "order", man.HasOrder);
+                                DriveTrace.Bool(sb, "open", car.DoorOpenFor(seat));
+                                DriveTrace.Bool(sb, "in", atDoor && car.DoorOpenFor(seat));
+                                DriveTrace.Str(sb, "state", man.State.ToString());
+                                DriveTrace.Vec(sb, "p", man.Tf.position);
+                                DriveTrace.Vec(sb, "door", door);
+                                DriveTrace.Row("board", sb.ToString());
+                            }
                             if (atDoor && car.DoorOpenFor(seat))
                             {
                                 car.Aboard.Add(man);
@@ -858,7 +965,7 @@ namespace RoadDemo
                         }
                         if (!anyOut)
                         {
-                            unit.Boarding = null;
+                            Unboard(unit, "everybody in");
                             // everybody in: the drive the player ordered while they were
                             // still climbing aboard goes now
                             if (unit.PendingDrive.HasValue && unit.Car == car && !DriverDead(car))
@@ -976,6 +1083,7 @@ namespace RoadDemo
         // the gun out of the window and fires on his own cadence. Same roll and the
         // same wounds as a shot from the pavement - only the muzzle moved.
         readonly Dictionary<CrewWalker, float> _windowTimers = new Dictionary<CrewWalker, float>();
+        readonly List<CrewWalker> _mates = new List<CrewWalker>(), _heard = new List<CrewWalker>();
 
         void TickRiders(CrewCar car, Unit target, float dt)
         {
@@ -1000,7 +1108,23 @@ namespace RoadDemo
                 // abeam. The window winds down while he has the gun out of it.
                 float sideOfMark = Vector3.Dot(toMark, car.Tf.right) >= 0f ? 1f : -1f;
                 float abeam = dist > 0.1f ? Vector3.Dot(toMark / dist, car.Tf.right * sideOfMark) : 0f;
-                bool canSee = dist <= man.Ballistics.Range && sideOfMark == CrewCar.SeatSide(seat) && abeam > 0.5f;
+                bool canSee = dist <= man.Ballistics.Range * RidingReach &&
+                              sideOfMark == CrewCar.SeatSide(seat) && abeam > RidingArc;
+                if (DriveTrace.On && dist < 60f)
+                {
+                    var sb = DriveTrace.Take();
+                    DriveTrace.Str(sb, "who", man.DisplayName);
+                    DriveTrace.Int(sb, "seat", seat);
+                    DriveTrace.Bool(sb, "armed", man.Armed);
+                    DriveTrace.Num(sb, "dist", dist);
+                    DriveTrace.Num(sb, "range", man.Ballistics.Range * RidingReach);
+                    DriveTrace.Num(sb, "abeam", abeam, "F2");
+                    DriveTrace.Num(sb, "side", sideOfMark, "F0");
+                    DriveTrace.Num(sb, "seatside", CrewCar.SeatSide(seat), "F0");
+                    DriveTrace.Bool(sb, "fires", canSee);
+                    DriveTrace.Str(sb, "at", mark.DisplayName);
+                    DriveTrace.Row("rider", sb.ToString());
+                }
                 man.RidingAim = canSee;
                 man.AimAt(canSee ? mark : null);
                 car.SetWindow(seat, canSee);
@@ -1022,6 +1146,13 @@ namespace RoadDemo
             foreach (var car in Cars)
             {
                 if (car.Civic) continue;
+                // A car the BOOK never stood is none of the book's business: one taken
+                // off the street, or one a scene put down, keeps whoever it was given to.
+                // Claiming it here bound it to whatever vehicle the roster happened to
+                // list first, found the owner did not match, and threw the crew out of
+                // its own car the moment the first man sat down - which is exactly what
+                // the lab watched, twice, and could not explain until the trace said so.
+                if (car.ItemId < 0 && !_ledgerCars.Contains(car)) continue;
                 RosterEquipment item = null;
                 foreach (var e in roster.Equipment)
                 {
@@ -1146,7 +1277,7 @@ namespace RoadDemo
             foreach (var unit in Units)
             {
                 if (unit.Car == car) { unit.Car = null; unit.PendingDrive = null; }
-                if (unit.Boarding == car) unit.Boarding = null;
+                if (unit.Boarding == car) Unboard(unit, "the car was taken off the street");
             }
             car.Despawn();
             StreetTraffic.Users.Remove(car);
@@ -1382,16 +1513,21 @@ namespace RoadDemo
             // the flash points where the shot goes - at the man, whatever the last
             // centimetre of the grip does to the barrel
             var line = target != null ? (target.ChestPosition - muzzle).normalized : shooter.MuzzleForward;
-            Flash(muzzle, line, follow);
+            Flash(muzzle, line, follow, shooter != null ? shooter.WeaponKind
+                                                       : EquipmentKind.Pistol);
             var stats = shooter.Ballistics;
             // the street hears it: the crowd, the traffic, the police - and every man of
             // every crew in earshot with nothing on his hands turns and draws
             StreetAlarm.Report(muzzle, shooter, shooter.Faction, stats.Loudness);
             float ear2 = stats.Loudness * stats.Loudness;
+            // a copy again, and of the crews as well as their men: hearing a shot can put
+            // a man on the run (and the law on the street), and either changes these lists
+            _heard.Clear();
             foreach (var unit in Units)
                 foreach (var man in unit.All())
                     if (man != shooter && !man.Dead && man.Tf && (man.Tf.position - muzzle).sqrMagnitude < ear2)
-                        man.HearShot(muzzle);
+                        _heard.Add(man);
+            foreach (var man in _heard) man.HearShot(muzzle);
             if (target == null || target.Dead) return;
 
             float dist = Vector3.Distance(from, target.Tf.position);
@@ -1404,7 +1540,19 @@ namespace RoadDemo
             if (shooter.IsLieutenant) p += 0.08f;
             // a man in a car has the door and the sill between him and the round; a man
             // crouched behind one has its flank
-            if (IsAboard(target)) p *= CarCover;
+            // A man in a car has the door and the sill between him and the round - and if
+            // the car is MOVING he has speed as well: hitting a rider going past at ten
+            // metres a second, from a pavement, with a pistol, is a different shot from
+            // hitting one sat still in traffic. Nothing else in the fight rewards keeping
+            // the car rolling; this does, and it is why a crew that is left standing in
+            // the road under fire is wiped and one making passes is not.
+            if (IsAboard(target))
+            {
+                p *= CarCover;
+                var carriage = CarWith(target);
+                if (carriage != null)
+                    p *= Mathf.Lerp(1f, MovingCarCover, Mathf.InverseLerp(1.5f, 11f, Mathf.Abs(carriage.Speed)));
+            }
             else if (target.InCover) p *= BehindCover;
             p = Mathf.Clamp(p, 0.04f, 0.98f);
 
@@ -1417,6 +1565,23 @@ namespace RoadDemo
                 (IsAboard(target) || Time.time - victimUnit.OrderedAt > HoldFireAfterOrder))
                 SetTarget(victimUnit, shooterUnit);
 
+            if (DriveTrace.On)
+            {
+                var sb = DriveTrace.Take();
+                DriveTrace.Str(sb, "from", shooter.DisplayName);
+                DriveTrace.Int(sb, "fac", shooter.Faction);
+                DriveTrace.Str(sb, "gun", shooter.WeaponKind.ToString());
+                DriveTrace.Str(sb, "at", target.DisplayName);
+                DriveTrace.Int(sb, "atfac", target.Faction);
+                DriveTrace.Num(sb, "dist", dist);
+                DriveTrace.Num(sb, "p", p, "F3");
+                DriveTrace.Bool(sb, "aboard", IsAboard(target));
+                DriveTrace.Bool(sb, "cover", target.InCover);
+                DriveTrace.Str(sb, "state", shooter.State.ToString());
+                DriveTrace.Vec(sb, "muzzle", muzzle);
+                DriveTrace.Row("shot", sb.ToString());
+            }
+
             if (Random.value >= p)
             {
                 Miss(muzzle, target);
@@ -1425,6 +1590,9 @@ namespace RoadDemo
                 return;
             }
             target.TakeHit(stats.Damage, shooter);
+            if (DriveTrace.On)
+                DriveTrace.Event("hit", shooter.DisplayName, target.DisplayName,
+                    $"\"dist\":{dist:F1},\"dead\":{(target.Dead ? "true" : "false")}");
             // a man hit in the car bleeds in the car - nothing on the road outside it
             CrewGore.Hit(target, from, GroundY, floor: !IsAboard(target));
             // a man one hit from the ground may lose his nerve and run - not all do
@@ -1446,7 +1614,13 @@ namespace RoadDemo
                 // a friend going down beside a man may break him: he runs, and comes
                 // back when his nerve does (the law does not run)
                 if (victimUnit != null && !victimUnit.IsPolice && !IsAboard(target))
-                    foreach (var mate in victimUnit.All())
+                {
+                    // A COPY of the crew: a man who breaks at the sight of it runs, and
+                    // the running takes him off his crew's books on the spot - the list
+                    // cannot be walked while that is happening to it.
+                    _mates.Clear();
+                    foreach (var mate in victimUnit.All()) _mates.Add(mate);
+                    foreach (var mate in _mates)
                     {
                         if (mate == target || mate.Dead || mate.Panicked || IsAboard(mate) || !mate.Tf) continue;
                         if ((mate.Tf.position - target.Tf.position).sqrMagnitude > NerveRange * NerveRange) continue;
@@ -1456,6 +1630,7 @@ namespace RoadDemo
                             OnFled(mate, from);
                         }
                     }
+                }
             }
             if (BloodPrefab)
             {
@@ -1471,6 +1646,7 @@ namespace RoadDemo
         {
             var civ = CivilianAgent.InLine(muzzle, line, reach * 1.5f, 0.7f);
             if (civ == null || Random.value >= StrayChance) return;
+            if (DriveTrace.On) DriveTrace.Event("stray", "round", "a civilian was hit");
             civ.TakeHit(1, from);
             CrewGore.Hit(civ, from, GroundY);
             if (civ.Dead) CrewGore.Death(civ, GroundY);
@@ -1502,14 +1678,15 @@ namespace RoadDemo
         // The flash rides whatever fired it - the gun in the hand, the car under
         // the window - so it stays on the muzzle of a moving car; the particles the
         // pack simulates in world space (the smoke) trail behind, as smoke does.
-        void Flash(Vector3 muzzle, Vector3 forward, Transform follow)
+        void Flash(Vector3 muzzle, Vector3 forward, Transform follow, EquipmentKind kind)
         {
             if (MuzzleFlashPrefab)
             {
                 var flash = Instantiate(MuzzleFlashPrefab, muzzle, Quaternion.LookRotation(forward), follow);
                 Destroy(flash, 2f);
             }
-            if (GunshotClips.Length > 0)
+            var shots = ShotsFor(kind);
+            if (shots.Length > 0)
             {
                 // one 2D source, pitch-jittered: the shot has to be heard from the
                 // demo's camera height, where a 3D one-shot at default rolloff is a whisper
@@ -1519,11 +1696,12 @@ namespace RoadDemo
                     _shots.spatialBlend = 0f;
                     _shots.playOnAwake = false;
                 }
-                // Four recorded reports, so the variation comes from the files and the
-                // pitch only has to keep two shots in a burst from being identical - a
-                // transposition wide enough to fake variety also changes the calibre.
+                // Several recorded reports per weapon, so the variation comes from the
+                // files and the pitch only has to keep two shots in a burst from being
+                // identical - a transposition wide enough to fake variety also changes
+                // the calibre, which is the one thing these files get right for free.
                 _shots.pitch = Random.Range(0.94f, 1.07f);
-                _shots.PlayOneShot(GunshotClips[Random.Range(0, GunshotClips.Length)], 0.5f);
+                _shots.PlayOneShot(shots[Random.Range(0, shots.Length)], 0.5f);
                 if (CrackClip)
                 {
                     if (_cracks == null)
@@ -1536,6 +1714,20 @@ namespace RoadDemo
                     _cracks.PlayOneShot(CrackClip, 0.3f);
                 }
             }
+        }
+
+        /// <summary>The reports for a weapon, falling back to the sidearm's: a kind with
+        /// no set of its own is a gun nobody recorded, not a gun that makes no noise.</summary>
+        AudioClip[] ShotsFor(EquipmentKind kind)
+        {
+            AudioClip[] fallback = System.Array.Empty<AudioClip>();
+            foreach (var set in GunshotSets)
+            {
+                if (set == null || set.Clips.Length == 0) continue;
+                if (set.Kind == kind) return set.Clips;
+                if (set.Kind == EquipmentKind.Pistol) fallback = set.Clips;
+            }
+            return fallback;
         }
 
         // ------------------------------------------------------------------ the deal
@@ -1792,6 +1984,7 @@ namespace RoadDemo
                     hood.OrderToPoint(spot, beat);
                 return;
             }
+            Reseat(hood);
             if (boss.HasOrder)
             {
                 hood.OrderTo(boss.DestinationLink, FormationT(boss.DestinationLink, boss.DestinationT, k), beat);

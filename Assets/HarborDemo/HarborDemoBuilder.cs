@@ -45,7 +45,7 @@ namespace HarborDemo
         [Tooltip("Lorries in off the approach road, through a gate, onto a shed door to " +
                  "be worked, and out through the other gate.")]
         public bool deliveryTruck = true;
-        [Range(0, 6)] public int lorries = 4;
+        [Range(0, 6)] public int lorries = 3;
 
         void Awake()
         {

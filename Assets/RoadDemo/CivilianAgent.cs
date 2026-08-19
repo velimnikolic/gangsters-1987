@@ -1010,6 +1010,13 @@ namespace RoadDemo
         }
 
         /// <summary>The overlay's word for what he is doing.</summary>
+        protected override string TraceState() => State.ToString();
+
+        /// <summary>Sat on a bench, stood at a window, waiting at a kerb: not stuck.</summary>
+        protected override bool Moving
+            => base.Moving && (State == Mode.Walking || State == Mode.Flee || State == Mode.ToDoor ||
+                               State == Mode.ToBench || State == Mode.FromBench);
+
         public string StatusLine => State switch
         {
             Mode.Flee => "Running from the shooting",

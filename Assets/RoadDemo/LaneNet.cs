@@ -79,6 +79,7 @@ namespace RoadDemo
         public float Length;
         public Vector3[] Pts;          // world points, y = 0
         public float[] Cum;            // cumulative length at each point
+        public Vector3[] Tan;          // the smoothed tangent at each point (blended between its neighbours)
         public bool[] Conflicts;       // by the node's connector index
         public bool UTurn;             // the dead-end turn-round
         /// <summary>The tightest radius on it (a straight: none).</summary>
@@ -94,10 +95,23 @@ namespace RoadDemo
             while (i < n - 1 && Cum[i] < s) i++;
             float seg = Cum[i] - Cum[i - 1];
             float t = seg > 1e-5f ? (s - Cum[i - 1]) / seg : 0f;
-            pos = Vector3.LerpUnclamped(Pts[i - 1], Pts[i], t);
-            var tan = Pts[i] - Pts[i - 1];
-            tan.y = 0f;
-            fwd = tan.sqrMagnitude > 1e-8f ? tan.normalized : To.Dir;
+            var p0 = Pts[i - 1]; var p1 = Pts[i];
+            if (Tan == null || seg <= 1e-5f)
+            {
+                pos = Vector3.LerpUnclamped(p0, p1, t);
+                var tan = p1 - p0; tan.y = 0f;
+                fwd = tan.sqrMagnitude > 1e-8f ? tan.normalized : To.Dir;
+                return;
+            }
+            // a cubic Hermite between the points on their tangents: the heading IS the
+            // direction the point moves (a chord with a blended tangent crabs by half
+            // the corner between the chords), and it turns smoothly through the points
+            var m0 = Tan[i - 1] * seg; var m1 = Tan[i] * seg;
+            float t2 = t * t, t3 = t2 * t;
+            pos = p0 * (2f * t3 - 3f * t2 + 1f) + m0 * (t3 - 2f * t2 + t) + p1 * (-2f * t3 + 3f * t2) + m1 * (t3 - t2);
+            var d = p0 * (6f * t2 - 6f * t) + m0 * (3f * t2 - 4f * t + 1f) + p1 * (-6f * t2 + 6f * t) + m1 * (3f * t2 - 2f * t);
+            d.y = 0f;
+            fwd = d.sqrMagnitude > 1e-8f ? d.normalized : To.Dir;
         }
 
         public Vector3 Point(float s)
@@ -118,6 +132,19 @@ namespace RoadDemo
         public float SpeedLimit;
         public RoadNode NodeA, NodeB;          // the junctions at either end (null: open end)
         public float MedianHalf;               // |d| under this is a median, not road (boulevards)
+        /// <summary>The road surface's height over the city's road level: a car on it
+        /// rides this much higher. The belt freeway's decks stand a hand over the plain.</summary>
+        public float SurfaceY;
+        /// <summary>A surface that CLIMBS: the height over the city's road level at a
+        /// given s along the road, for a slip road off an elevated freeway or the
+        /// freeway's own run down off its pillars. Null on a road that lies flat, which
+        /// is nearly all of them - then SurfaceY alone answers.</summary>
+        public System.Func<float, float> SurfaceAt;
+
+        /// <summary>The surface's height at a point along the road, and at its ends.</summary>
+        public float SurfaceOn(float s) => SurfaceAt != null ? SurfaceAt(Mathf.Clamp(s, 0f, Length)) : SurfaceY;
+        public float SurfaceA => SurfaceOn(0f);
+        public float SurfaceB => SurfaceOn(Length);
         public readonly List<RoadEdge> Lanes = new List<RoadEdge>();       // by offset, ascending
         public readonly List<RoadOccupant> Occupants = new List<RoadOccupant>();
         public bool ParkingA = true, ParkingB = true;                        // kerb parking allowed, left/right of axis
@@ -323,9 +350,20 @@ namespace RoadDemo
         static void ResetForPlay() { _shared = null; Active = null; }
 
         /// <summary>Metres between the points a connector is laid from.</summary>
-        const float ConnectorStep = 1.0f;
+        const float ConnectorStep = 0.5f;
         /// <summary>Two connectors nearer than this anywhere along their length cross.</summary>
-        const float ConflictReach = 2.4f;
+        // Two lines through the box this close count as crossing. It is not the width of
+        // a car but of a car AND ITS SWING: the line is what the rear axle follows, and
+        // the body swings wide of it through a turn, so two paths a car's width apart
+        // still put two bodies in the same place. At 2.4 m the lab watched pairs meet in
+        // the middle of junctions both had been let into (hundreds of refused steps in a
+        // single run); a car and a half of air is what actually keeps them apart.
+        const float ConflictReach = 3.6f;
+        /// <summary>Metres of car each side of the connector's ends - the body still on
+        /// the approach, and the nose already out the far side.</summary>
+        const float BodyOverhang = 2.6f;
+        /// <summary>The same, where either line bends: the body leans out of the bend.</summary>
+        const float ConflictReachTurn = 6.0f;
 
         // ------------------------------------------------------------ building
 
@@ -364,6 +402,30 @@ namespace RoadDemo
                 AddLane(road, +1, +off, nodeA, nodeB, northSouth, speedLimit);
                 AddLane(road, -1, -off, nodeB, nodeA, northSouth, speedLimit);
             }
+            road.Lanes.Sort((x, y) => x.Offset.CompareTo(y.Offset));
+            return road;
+        }
+
+        /// <summary>A carriageway that runs ONE WAY only - every lane with its axis,
+        /// A to B. An elevated freeway is two of these side by side rather than one
+        /// road with four lanes, and that is what lets a slip road join one deck
+        /// without a car having to cross the other one to reach it.</summary>
+        public Carriageway AddOneWay(Vector3 a, Vector3 b, float halfRoad, float[] laneOffsets, float speedLimit,
+            RoadNode nodeA, RoadNode nodeB, bool northSouth)
+        {
+            a.y = 0f; b.y = 0f;
+            var axis = b - a;
+            float len = axis.magnitude;
+            axis = len > 1e-5f ? axis / len : Vector3.forward;
+            var road = new Carriageway
+            {
+                A = a, B = b, Axis = axis, Right = Vector3.Cross(Vector3.up, axis), Length = len,
+                HalfRoad = halfRoad, SpeedLimit = speedLimit, NodeA = nodeA, NodeB = nodeB,
+                Index = Roads.Count, Net = this, ParkingA = false, ParkingB = false,
+            };
+            Roads.Add(road);
+            foreach (float off in laneOffsets)
+                AddLane(road, +1, off, nodeA, nodeB, northSouth, speedLimit);
             road.Lanes.Sort((x, y) => x.Offset.CompareTo(y.Offset));
             return road;
         }
@@ -532,6 +594,11 @@ namespace RoadDemo
                     if (c.Kind != Turn.Straight) c.MinRadius = Mathf.Max(1.5f, Mathf.Min((p1 - p0).magnitude, (p2 - p1).magnitude) * 0.7f);
                 }
             }
+            // no two points on top of each other (a corner whose straight leg is zero
+            // long would double its first point, and the doubled point's tangent would
+            // be the chord into the arc: a kink in the heading at the box's edge)
+            for (int i = pts.Count - 1; i > 0; i--)
+                if ((pts[i] - pts[i - 1]).sqrMagnitude < 1e-4f) pts.RemoveAt(i == pts.Count - 1 ? i - 1 : i);
             c.Pts = pts.ToArray();
             c.Cum = new float[c.Pts.Length];
             float s = 0f;
@@ -541,6 +608,19 @@ namespace RoadDemo
                 c.Cum[i] = s;
             }
             c.Length = Mathf.Max(0.1f, s);
+            // the tangent at each point: the chord over its neighbours; the ends are the
+            // lanes' own directions, so the heading meets the road without a kink
+            int m = c.Pts.Length;
+            c.Tan = new Vector3[m];
+            for (int i = 0; i < m; i++)
+            {
+                Vector3 d;
+                if (i == 0) d = a.Dir;
+                else if (i == m - 1) d = b.Dir;
+                else d = c.Pts[i + 1] - c.Pts[i - 1];
+                d.y = 0f;
+                c.Tan[i] = d.sqrMagnitude > 1e-8f ? d.normalized : (i > 0 ? c.Tan[i - 1] : a.Dir);
+            }
             n.Connectors.Add(c);
         }
 
@@ -560,23 +640,89 @@ namespace RoadDemo
                     bool conflict;
                     if (a.From == b.From) conflict = false;
                     else if (a.To == b.To) conflict = true;
-                    else conflict = Near(a, b, ConflictReach);
+                    else
+                    {
+                        // A car going straight through keeps to its line. One TURNING
+                        // does not: the line is the rear axle's, and the body leans out
+                        // of the bend the whole way round, further the wider the junction
+                        // (a boulevard's turns are the longest, and they were the ones
+                        // whose cars kept meeting). Where either way through the box is
+                        // a turn, the pair wants a car's width more air between them.
+                        bool turning = a.Kind != Turn.Straight || b.Kind != Turn.Straight;
+                        conflict = Near(a, b, turning ? ConflictReachTurn : ConflictReach);
+                    }
                     a.Conflicts[j] = conflict;
                     b.Conflicts[i] = conflict;
                 }
         }
 
+        /// <summary>Do these two lines through the box come within a car's width of one
+        /// another? SEGMENT to segment, not point to point: two lines crossing at a
+        /// shallow angle can slip between one another's sample points and be called
+        /// clear, and then two cars are given the box at once and meet in the middle of
+        /// it - which is what the belt was refusing three hundred times in one run.</summary>
         static bool Near(Connector a, Connector b, float reach)
         {
             float r2 = reach * reach;
-            for (int i = 0; i < a.Pts.Length; i++)
-                for (int j = 0; j < b.Pts.Length; j++)
-                {
-                    var d = a.Pts[i] - b.Pts[j];
-                    d.y = 0f;
-                    if (d.sqrMagnitude < r2) return true;
-                }
+            var pa = WithOverhang(a);
+            var pb = WithOverhang(b);
+            for (int i = 0; i + 1 < pa.Count; i++)
+                for (int j = 0; j + 1 < pb.Count; j++)
+                    if (SegmentGap(pa[i], pa[i + 1], pb[j], pb[j + 1]) < r2) return true;
             return false;
+        }
+
+        /// <summary>The line a car covers crossing the box, which is longer than the
+        /// connector: the line is what the rear axle follows, and at the near end the
+        /// body is still out on the approach while at the far end the nose is already
+        /// down the road. Two cars scraping at the MOUTH of a junction - one turning
+        /// through it, one just let off a red - are a pair whose connectors never come
+        /// near each other, and the belt was refusing their steps for seconds at a time
+        /// until the overhang was counted.</summary>
+        static readonly List<Vector3> _spanA = new List<Vector3>(), _spanB = new List<Vector3>();
+        static bool _spanFlip;
+
+        static List<Vector3> WithOverhang(Connector c)
+        {
+            var into = _spanFlip ? _spanB : _spanA;
+            _spanFlip = !_spanFlip;
+            into.Clear();
+            int n = c.Pts.Length;
+            if (n == 0) return into;
+            var head = n > 1 ? (c.Pts[1] - c.Pts[0]) : Vector3.forward;
+            var tail = n > 1 ? (c.Pts[n - 1] - c.Pts[n - 2]) : Vector3.forward;
+            head.y = tail.y = 0f;
+            if (head.sqrMagnitude > 1e-6f) head.Normalize();
+            if (tail.sqrMagnitude > 1e-6f) tail.Normalize();
+            into.Add(c.Pts[0] - head * BodyOverhang);
+            for (int i = 0; i < n; i++) into.Add(c.Pts[i]);
+            into.Add(c.Pts[n - 1] + tail * BodyOverhang);
+            return into;
+        }
+
+        /// <summary>The square of the closest approach of two segments, flat (y ignored).</summary>
+        static float SegmentGap(Vector3 p1, Vector3 p2, Vector3 q1, Vector3 q2)
+        {
+            p1.y = p2.y = q1.y = q2.y = 0f;
+            var u = p2 - p1;
+            var v = q2 - q1;
+            var w = p1 - q1;
+            float a = Vector3.Dot(u, u), b = Vector3.Dot(u, v), c = Vector3.Dot(v, v);
+            float d = Vector3.Dot(u, w), e = Vector3.Dot(v, w);
+            float det = a * c - b * b;
+            float s, t;
+            if (det < 1e-6f)   // near parallel: take the ends
+            {
+                s = 0f;
+                t = c > 1e-6f ? Mathf.Clamp01(e / c) : 0f;
+            }
+            else
+            {
+                s = Mathf.Clamp01((b * e - c * d) / det);
+                t = Mathf.Clamp01((a * e - b * d) / det);
+            }
+            var gap = w + u * s - v * t;
+            return gap.sqrMagnitude;
         }
 
         // ------------------------------------------------------------ where am I

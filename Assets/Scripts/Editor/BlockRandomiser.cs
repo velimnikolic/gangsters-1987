@@ -36,9 +36,15 @@ namespace LivingCity.EditorTools
     /// Two rules the user stated outright:
     ///   * nothing may hang over the kerb line - a unit fits inside the pad or it is not
     ///     placed at all - but everything is stood hard against the edges;
-    ///   * a unit whose geometry reaches below ground is RAISED until it sits on it, or
-    ///     the block floor cuts its lowest storey off. City_07 dips 1.50 m and the user
-    ///     lifted it 1.56 by eye; this pass measures the dip and lifts by exactly that.
+    ///   * a unit stands at the height its pack authored it at, and what reaches below
+    ///     zero stays buried. Every Synty group is assembled against a ground plane at
+    ///     zero, so the geometry under it is a foundation skirt, a sunken doorway or a
+    ///     bowl: City_04 and City_07 are brownstones whose area doors hang 1.50 m under
+    ///     the pavement, the police station carries its garage 3.40 m down. Measuring
+    ///     that dip and lifting the unit out of it - which this pass used to do - left
+    ///     the buildings floating over the block instead. Where a hole is really wanted
+    ///     the floor is what provides it: it reads the cells a bake is sunken in and lays
+    ///     no tile over those (see BlockFloorFiller).
     ///
     /// Units stay PACKED - a placed City_03 is one prefab instance, not eleven loose
     /// buildings - which is what the capture pass writes down (one member per unit, as the
@@ -108,10 +114,6 @@ namespace LivingCity.EditorTools
         /// ground the built target left over, so they push past it by design; this is
         /// where that stops, so a lot still keeps a yard for the parking and the props.</summary>
         const float CommerceCeiling = 0.85f;
-
-        /// <summary>Below this the unit is standing on the ground, not sunk into it - the
-        /// bakes' own floor plates sit a centimetre or two either way.</summary>
-        const float DipTolerance = 0.05f;
 
         [MenuItem("Tools/City/Catalog/Randomise Block On Lot", priority = 63)]
         public static void Roll()
@@ -262,8 +264,7 @@ namespace LivingCity.EditorTools
         /// <summary>
         /// One authored thing this pass may stand on a pad: the prefab, the footprints of
         /// the BUILDINGS inside it (never one box round the lot of them - that box is
-        /// mostly courtyard, and treating it as solid is what stops two units interlocking)
-        /// and how far its geometry reaches below the ground.
+        /// mostly courtyard, and treating it as solid is what stops two units interlocking).
         /// </summary>
         sealed class Unit
         {
@@ -272,7 +273,6 @@ namespace LivingCity.EditorTools
             internal string[] partNames; // the child each footprint belongs to, same order
             internal string[] partPaths; // that child's own prefab, or "" when it has none
             internal Rect box;          // their union
-            internal float dip;         // how far below y = 0 it reaches, 0 when it does not
 
             /// <summary>For a TRIMMED row: the children of the cluster prefab that this
             /// unit does without, deleted off the instance once it is stood. Null for a
@@ -487,7 +487,6 @@ namespace LivingCity.EditorTools
                         partNames = indices.Select(i => whole.partNames[i]).ToArray(),
                         partPaths = indices.Select(i => whole.partPaths[i]).ToArray(),
                         box = box,
-                        dip = whole.dip,
                         members = members.ToArray(),
                         landmarks = members.Where(IsLandmark)
                             .Select(System.IO.Path.GetFileNameWithoutExtension).ToArray(),
@@ -518,7 +517,7 @@ namespace LivingCity.EditorTools
         /// The unit measured by standing it in the scene - a prefab asset's renderer bounds
         /// are not the footprint the thing ends up with, and every other pass here measures
         /// the same way for the same reason. Each child that renders anything gives one
-        /// footprint; the whole instance gives the dip.
+        /// footprint.
         ///
         /// Kept between rolls (running this again is the whole interaction), keyed by guid
         /// with the prefab file's write time as the guard, so a catalog rebuild measures
@@ -542,7 +541,6 @@ namespace LivingCity.EditorTools
             var parts = new List<Rect>();
             var names = new List<string>();
             var paths = new List<string>();
-            var low = 0f;
             // A single baked building (a storefront out of the kit) is one mesh on its
             // own root with nothing under it but decals: the whole thing is one part,
             // and the part IS the prefab.
@@ -556,7 +554,6 @@ namespace LivingCity.EditorTools
                     parts.Add(Rect.MinMaxRect(b.min.x, b.min.z, b.max.x, b.max.z));
                     names.Add(prefab.name);
                     paths.Add(path);
-                    low = Mathf.Min(low, b.min.y);
                 }
             }
             for (var c = 0; !single && c < probe.transform.childCount && c < prefab.transform.childCount; c++)
@@ -569,7 +566,6 @@ namespace LivingCity.EditorTools
                 parts.Add(Rect.MinMaxRect(b.min.x, b.min.z, b.max.x, b.max.z));
                 names.Add(child.name);
                 paths.Add(BlockLotCapture.SourcePathOf(prefab.transform.GetChild(c)) ?? "");
-                low = Mathf.Min(low, b.min.y);
             }
             Object.DestroyImmediate(probe);
 
@@ -619,7 +615,6 @@ namespace LivingCity.EditorTools
                         partNames = names.ToArray(),
                         partPaths = paths.ToArray(),
                         box = box,
-                        dip = low < -DipTolerance ? -low : 0f,
                         members = members.ToArray(),
                         landmarks = members.Where(IsLandmark)
                             .Select(System.IO.Path.GetFileNameWithoutExtension).ToArray(),
@@ -762,9 +757,7 @@ namespace LivingCity.EditorTools
                 var unit = Measure(AssetDatabase.AssetPathToGUID(path), path, seed);
                 if (unit != null && yard.TryFit(unit, out var shape, out var cell))
                 {
-                    // Not raised: a composed block was stood on a pad at ground level
-                    // already, and what reaches below it (a skatepark bowl) is meant to.
-                    Stand(unit, shape, cell, yard, root, raise: false);
+                    Stand(unit, shape, cell, yard, root);
                     yard.Mark(shape, cell);
                     standing.UnionWith(unit.members);
                     cityLandmarks.UnionWith(unit.landmarks);
@@ -807,7 +800,7 @@ namespace LivingCity.EditorTools
                         continue;
                     }
 
-                    var lift = Stand(unit, shape, cell, yard, root);
+                    Stand(unit, shape, cell, yard, root);
                     yard.Mark(shape, cell);
                     standing.UnionWith(unit.members);
                     // The places it brought are spent for the whole city, not just this
@@ -815,8 +808,7 @@ namespace LivingCity.EditorTools
                     cityLandmarks.UnionWith(unit.landmarks);
                     told.Add(unit.Label +
                              (shape.turn > 0f ? $" turned {shape.turn:F0}" : "") +
-                             (shape.mirror ? " mirrored" : "") +
-                             (lift > 0f ? $" lifted {lift:F2} m" : ""));
+                             (shape.mirror ? " mirrored" : ""));
                     laid = true;
                 }
                 if (!laid)
@@ -842,12 +834,11 @@ namespace LivingCity.EditorTools
                     open.Remove(unit);
                     if (!yard.TryFit(unit, out var shape, out var cell, street: true))
                         continue;
-                    var lift = Stand(unit, shape, cell, yard, root);
+                    Stand(unit, shape, cell, yard, root);
                     yard.Mark(shape, cell);
                     standing.UnionWith(unit.members);
                     shops.Add(unit.Label +
-                              (shape.turn > 0f ? $" facing {Facing(shape.turn)}" : " facing north") +
-                              (lift > 0f ? $" lifted {lift:F2} m" : ""));
+                              (shape.turn > 0f ? $" facing {Facing(shape.turn)}" : " facing north"));
                 }
                 told.Add(shops.Count == 0
                     ? "no frontage left for a storefront"
@@ -901,11 +892,11 @@ namespace LivingCity.EditorTools
 
         /// <summary>
         /// Stands the unit at the cell the search chose, measured and aligned afterwards -
-        /// what the mask promised is checked against what the prefab really is - and raised
-        /// out of the ground when its geometry reaches below it. Returns the lift.
+        /// what the mask promised is checked against what the prefab really is. Only the
+        /// two ground axes are touched: the unit keeps the height its pack authored, so
+        /// whatever it carries below zero stays buried (see the rules at the top).
         /// </summary>
-        static float Stand(Unit unit, Shape shape, Vector2Int cell, Yard yard, Transform root,
-                           bool raise = true)
+        static void Stand(Unit unit, Shape shape, Vector2Int cell, Yard yard, Transform root)
         {
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(unit.prefab);
             instance.transform.SetParent(root, worldPositionStays: false);
@@ -940,18 +931,6 @@ namespace LivingCity.EditorTools
                 var b = measured.Value;
                 instance.transform.position += new Vector3(target.x - b.min.x, 0f, target.y - b.min.z);
             }
-
-            // Raised out of the ground: a unit whose lowest storey sits below zero is cut
-            // off by the block's own floor - the user's City_07 dips 1.50 m and was lifted
-            // by hand. Measured on the instance, so the palm blocks' baked ground counts.
-            var lift = 0f;
-            var after = raise ? BlockLotCapture.RendererBounds(instance) : null;
-            if (after.HasValue && after.Value.min.y < -DipTolerance)
-            {
-                lift = -after.Value.min.y;
-                instance.transform.position += new Vector3(0f, lift, 0f);
-            }
-            return lift;
         }
 
         // ---------------------------------------------------------------- the yard

@@ -18,6 +18,7 @@ namespace RoadDemo
         public DemoVehicle()
         {
             Profile = DriverProfile.Traffic;
+            Tag = "traffic";
         }
 
         protected override RoadEdge PickNext(RoadEdge straight, List<RoadEdge> lefts, List<RoadEdge> rights)

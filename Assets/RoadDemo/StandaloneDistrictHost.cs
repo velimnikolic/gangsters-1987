@@ -22,6 +22,9 @@ namespace RoadDemo
         public float cameraYaw = 20f;
         public float cameraPitch = 50f;
         public Vector3 cameraPivot;
+        [Tooltip("The camera's far plane: a city block wants a kilometre and a half, an airfield " +
+                 "with an aeroplane on final wants four.")]
+        public float cameraFar = 1500f;
         public string hint = "WASD/arrows: move   Q/E or right-drag: rotate   wheel: zoom   " +
                              "Space: pause   , . : slower/faster";
 
@@ -32,6 +35,9 @@ namespace RoadDemo
         public Color clearColour = new Color(0.62f, 0.74f, 0.85f);
         public Vector3 sunAngles = new Vector3(52f, 35f, 0f);
         public float sunIntensity = 1.3f;
+        [Tooltip("Linear fog from x to y metres; zero for none. A field a mile long wants the far end to haze.")]
+        public Vector2 fogRange = Vector2.zero;
+        public Color fogColour = new Color(0.70f, 0.78f, 0.86f);
 
         [Tooltip("One realtime probe over the whole district, so glass and car paint " +
                  "carry the street and not only the sky.")]
@@ -152,6 +158,14 @@ namespace RoadDemo
                 RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
                 RenderSettings.ambientLight = new Color(0.42f, 0.46f, 0.52f);
             }
+            if (fogRange.y > fogRange.x && fogRange.y > 0f)
+            {
+                RenderSettings.fog = true;
+                RenderSettings.fogMode = FogMode.Linear;
+                RenderSettings.fogColor = fogColour;
+                RenderSettings.fogStartDistance = fogRange.x;
+                RenderSettings.fogEndDistance = fogRange.y;
+            }
             DynamicGI.UpdateEnvironment();
         }
 
@@ -160,7 +174,7 @@ namespace RoadDemo
             var camGo = new GameObject("Demo Camera") { tag = "MainCamera" };
             var cam = camGo.AddComponent<Camera>();
             cam.fieldOfView = 45f;
-            cam.farClipPlane = 1500f;
+            cam.farClipPlane = Mathf.Max(300f, cameraFar);
             cam.clearFlags = skyboxSky ? CameraClearFlags.Skybox : CameraClearFlags.SolidColor;
             cam.backgroundColor = clearColour;
             var camData = cam.GetUniversalAdditionalCameraData();
@@ -229,6 +243,10 @@ namespace RoadDemo
         }
 
         bool IDistrictHost.ProvidesGround => false;
+
+        // no island here, so no island green: the district paints its lawns out of
+        // its own pack, the way its demo scene always looked
+        Material IDistrictHost.GroundMaterial => null;
 
         CityLife IDistrictHost.Life => _life ?? (_life = new CityLife
         {

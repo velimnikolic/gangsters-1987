@@ -8,16 +8,18 @@ Every sound in the game now lives in `Assets/Audio`, baked out of the Sonniss
 The bundle is royalty-free and needs no attribution, but the vendor is recorded per
 clip below anyway - a clip you cannot trace is a clip you cannot replace.
 
-> **One clip does need crediting.** The gunshot is KuraiWolf's light machine gun off
-> OpenGameArt, CC-BY 4.0. Terms and the credit line are in
-> `Tools/audio/sources/SOURCES.md`, next to the file itself. The game has no credits
-> screen yet; it will need one, or a line in whatever stands in for it.
-
 ## Where the sources are
 
-`C:/Users/N/sonnis` for the bundle, and `Tools/audio/sources` for anything the
-bundle could not supply. The script looks in the library first and in `sources`
-second, so a manifest entry does not have to say which it is.
+Two libraries, neither in the repo, both attribution-free:
+
+- `C:/Users/N/sonnis` - the Sonniss bundle, everything but the guns.
+- `C:/Users/N/free-firearm-library` - the Free Firearm Sound Library (CC0), 22
+  weapons at two mic distances each. The bundle has no firearm in it at all.
+
+The script looks in each in turn, so a manifest entry does not have to say which
+one a clip came from. Provenance and licences: `Tools/audio/sources/SOURCES.md`.
+**Nothing in the game currently needs crediting** - check that file before adding
+a source that does.
 
 ## Re-baking
 
@@ -63,7 +65,6 @@ Requires `numpy`, `scipy`, `soundfile`.
 | --- | --- |
 | `engine_idle_a/b` | SoundBits, Mad Mustang Mercury - steady-RPM window, looped on firing cycles |
 | `engine_diesel` | Epic Stock Media, Basic Transportation - diesel idle |
-| `horn_short/long` | SoundBits Kawasaki / Honda horns, dropped into a car's register |
 | `car_door_open/close` | SoundBits, Mad Mustang Mercury |
 | `tyre_skid` | SoundBits, Mad Mustang Mercury |
 | `car_pass_by`, `truck_pass_by` | SoundBits, Pass-By Trains Trucks & Cars 2 |
@@ -91,16 +92,30 @@ Requires `numpy`, `scipy`, `soundfile`.
 | `radio_call_1..3` | 344 Audio, British Police Radio - band-limited to 400-2800 Hz |
 | `radio_squelch`, `radio_static` | Epic Stock Media, Fake Advertisements |
 
-### Weapons
+### Weapons - one set per gun the armoury sells, all at the library's mid mic
+
+| Clip | Armoury kind | Weapon |
+| --- | --- | --- |
+| `pistol_1..6` | Pistol, TwinPistols | Colt 1911 .45 auto (4), S&W 642 .38 revolver (2) |
+| `shotgun_1..5` | Shotgun | Winchester Model 12 pump (2), Mossberg 190 (3) |
+| `machinepistol_1..3` | MachinePistol | Carl Gustav M45 "Swedish K", 9mm |
+| `rifle_1..4` | Rifle | AK-47, 7.62x39 |
+| `tommygun_1..4` | TommyGun | PPSh, 7.62x25 |
+| `gunshot_far_1..2` | - | the AK and the Model 12, low-passed to 1.8 kHz |
 
 | Clip | Source |
 | --- | --- |
-| `gunshot_1..4` | KuraiWolf, *Light Machine Gun* (OpenGameArt, **CC-BY 4.0**) |
-| `gunshot_far_1..2` | the same take, low-passed to 2.8 kHz and run quiet |
 | `bullet_crack` | David Dumais, Melee Weapons 2 - whip crack |
 | `punch_1..4` | 344 Audio, Cinematic Fight |
 | `bat_hit`, `blade_swing` | David Dumais, Melee Weapons 2 |
 | `explosion` | Federico Soler, Effective Trailer Booms 2 |
+
+`CrewKit.Gunshots(EquipmentKind)` maps a man's weapon to his set and
+`DemoCrews.Flash` draws from it, falling back to the pistol's for anything without
+one. The city's own `SoundDatabase.gunshots` stays generic and takes the pistols.
+
+The sets are found by counting - `pistol_1`, `pistol_2` ... until one is missing -
+so adding a usable report to the bake needs no C# edit.
 
 ### Ui - the ledger is paper and bakelite, so nothing here is designed or synthetic
 
@@ -113,36 +128,34 @@ Requires `numpy`, `scipy`, `soundfile`.
 | `stamp` | Epic Stock Media, HD Lock And Mechanism - deep latch thunk |
 | `type_key`, `type_carriage` | 344 Audio, Antique Typewriter |
 
-## The two things the bundle does not have
+## The guns, and the one thing still missing
 
-**No firearm, anywhere in 347 files.** The gunshot is therefore not from the bundle:
-it is KuraiWolf's light machine gun off OpenGameArt, committed at
-`Tools/audio/sources/lmg_fire01.mp3`. It arrives mono 44.1 kHz - no resampling - and
-needs exactly two things done to it. It overshoots full scale (337 clipped samples,
-mp3 encoder overshoot), and a fifth of its entire energy sits below 20 Hz as a
-sub-sweep nothing in a laptop can move, so a 30 Hz high-pass buys back that headroom
-for free. What survives peaks at 101 Hz - the thump - and spreads properly from there
-to 2 kHz.
+**No firearm anywhere in the Sonniss bundle**, which is why there is a second
+library. Every take used is the **mid** mic rather than the near one: the demo's ear
+sits on the camera focus and not on the muzzle, and the near mics are dry enough to
+sound indoors. The mid takes carry the range's slapback, which is what a shot on a
+street has - a rifle is still at -20 dB a full second after the report.
 
-It is one take, so `gunshot_1..4` are four renderings of it at slightly different
-speeds. Baking the variation into the files rather than leaving it to runtime pitch
-means two shots in a burst differ in body and decay, not only in pitch. `gunshot_far`
-is the same take low-passed: distance takes the crack off a report long before it
-takes the boom, so a far shot should be this weapon heard badly, not a different
-recording pretending.
+Individual shots inside each multi-shot take are found by transient search and then
+read off by hand into the manifest. Each is cut to 2.2 s or to whatever room the next
+report leaves it, whichever is shorter, then trimmed again to where its envelope
+falls 45 dB under its peak. That is why a burst weapon ends up with a couple of
+stubby variants among its long ones - which is exactly what a burst sounds like - and
+why the submachine guns come out around 1.5 s while the AK keeps the full 2.2.
 
-An LMG is a heavier weapon than the pistols the crews actually carry. It reads as a
-gunshot, which the previous firework-and-whip-crack build did not, and that trade is
-worth making until a pistol pack turns up.
+The crews carry pistols in the demo today, so most of what you hear is the .45 and
+the .38. The other four sets are wired and waiting on the armoury.
 
-**No siren of any kind.** `siren_loop` is synthesized: a Federal Signal style wail,
+**Still no siren of any kind.** `siren_loop` is synthesized: a Federal Signal style wail,
 which is the American electronic siren of the period - a 4.8 s sweep between 700 and
 1500 Hz with the harmonics a horn driver adds, built from a whole number of cycles so
 it seams without a crossfade.
 
 Because the clips are real now, the transpositions that used to carry them are gone:
 crew gunshots played at 1.35-1.6x and screams at 1.15-1.5x, and both now play at a
-jitter around unity. A recorded scream taken up a third is a cartoon.
+jitter around unity. A recorded scream taken up a third is a cartoon, and a
+transposition wide enough to fake variety changes the calibre - which is the one
+thing per-weapon recordings get right for free.
 
 ## Known compromises
 
@@ -156,10 +169,16 @@ jitter around unity. A recorded scream taken up a third is a cartoon.
 - **`city_night` and `crowd_walla` are recorded abroad.** Both are walla under a
   street or a hall; at bed level no word survives, and `crowd_walla_far` is
   low-passed until certainly none does.
-- **One gun, and it is the wrong one.** An LMG report for a pistol. It is a real
-  gunshot, which is the point; a pistol pack is the second thing to buy.
 - Nothing in the bundle is dated. These are modern recordings of things that also
   existed in 1987 - the typewriter, the rotary phone, the radio, the V8.
+
+## Removed on purpose
+
+**Car horns.** They were a timer: every 8-20 seconds the nearest stopped car sounded
+one, and at 4x speed it sounded four times as often. A city that honks on a timer
+honks at nothing, and it read as a fault rather than as traffic. The clips, the
+`DemoAudio.EmitHorns` pass and the `DriverNerve` panic honk are all gone; the takes
+are still in the Sonniss library if a real reason to sound one ever exists.
 
 ## Not imported, but there if wanted
 

@@ -122,28 +122,44 @@ namespace AirportDemo.EditorTools
         /// climb these, there is no airbridge on a field like this.</summary>
         static void BuildAirStairs()
         {
-            var root = Scratch("airstairs");
+            // a low flight for a light aeroplane and a tall one for an airliner: a
+            // passenger walking five steps up to a trijet's door reads wrong from
+            // anywhere on the ramp, and the walk up the steps is the whole of boarding
+            // at a field with no airbridge
+            BuildAirStairs(5, 1.24f, "airport-airstairs");
+            BuildAirStairs(10, 2.60f, "airport-airstairs-tall");
+        }
+
+        /// <summary>One flight of airstairs: wheels and drawbar at the origin, the
+        /// platform out along its own -Z at the height asked for, so parking it that
+        /// far outboard of a door puts the platform at the sill.</summary>
+        static void BuildAirStairs(int steps, float top, string name)
+        {
+            var root = Scratch(name);
             var t = root.transform;
-            const int steps = 5;
-            const float rise = 1.24f / steps, tread = 0.3f, wide = 1.1f;
+            float rise = top / steps, tread = 0.3f, wide = 1.1f, deck = 0.28f;
+            float run = steps * tread;
+            // the pitch the flight actually sits at, which is what the handrail follows
+            float pitch = Mathf.Atan2(top, run) * Mathf.Rad2Deg;
             for (int i = 0; i < steps; i++)
-                Slab(t, "tread", new Vector3(0f, 0.28f + rise * (i + 0.5f), -i * tread), new Vector3(wide, rise, tread), Steel);
-            Slab(t, "platform", new Vector3(0f, 0.28f + 1.24f + 0.05f, -steps * tread - 0.4f), new Vector3(wide, 0.1f, 0.9f), Steel);
+                Slab(t, "tread", new Vector3(0f, deck + rise * (i + 0.5f), -i * tread), new Vector3(wide, rise, tread), Steel);
+            Slab(t, "platform", new Vector3(0f, deck + top + 0.05f, -run - 0.4f), new Vector3(wide, 0.1f, 0.9f), Steel);
             for (int k = -1; k <= 1; k += 2)
             {
-                var rail = Slab(t, "rail", new Vector3(k * (wide * 0.5f - 0.05f), 1.15f, -steps * tread * 0.5f),
-                                new Vector3(0.06f, 0.06f, steps * tread * 1.25f), Steel);
-                rail.transform.localRotation = Quaternion.Euler(-22f, 0f, 0f);
-                Tube(t, "stanchion", new Vector3(k * (wide * 0.5f - 0.05f), 0.28f, -steps * tread - 0.3f), 0.035f, 1.05f, Steel, 6);
+                var rail = Slab(t, "rail", new Vector3(k * (wide * 0.5f - 0.05f), deck + top * 0.5f + 0.62f, -run * 0.5f),
+                                new Vector3(0.06f, 0.06f, Mathf.Sqrt(run * run + top * top) + 0.4f), Steel);
+                // the -Z end is the top of the flight, so a positive pitch lifts it
+                rail.transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+                Tube(t, "stanchion", new Vector3(k * (wide * 0.5f - 0.05f), deck + top, -run - 0.3f), 0.035f, 1.05f, Steel, 6);
             }
-            Slab(t, "chassis", new Vector3(0f, 0.2f, -steps * tread * 0.5f), new Vector3(wide + 0.2f, 0.16f, steps * tread + 1.4f), Yellow);
+            Slab(t, "chassis", new Vector3(0f, 0.2f, -run * 0.5f), new Vector3(wide + 0.2f, 0.16f, run + 1.4f), Yellow);
             for (int k = -1; k <= 1; k += 2)
                 for (int j = 0; j < 2; j++)
                 {
-                    var wheel = Tube(t, "wheel", new Vector3(k * (wide * 0.5f + 0.06f), 0.24f, j == 0 ? 0.3f : -steps * tread - 0.6f), 0.24f, 0.12f, Black, 10);
+                    var wheel = Tube(t, "wheel", new Vector3(k * (wide * 0.5f + 0.06f), 0.24f, j == 0 ? 0.3f : -run - 0.6f), 0.24f, 0.12f, Black, 10);
                     wheel.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
                 }
-            Bake(root, "airport-airstairs");
+            Bake(root, name);
         }
 
         /// <summary>A baggage dolly: the flat cart with side rails that a tug tows two

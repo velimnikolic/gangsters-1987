@@ -19,6 +19,8 @@ namespace RoadDemo
 
         public Mode State { get; private set; } = Mode.Standing;
 
+        public CrewWalker() { Tag = "crew"; }
+
         /// <summary>The roster id of the man this figure stands for (rivals carry
         /// their own negative ids - they are on nobody's books).</summary>
         public int CharacterId;
@@ -259,6 +261,7 @@ namespace RoadDemo
 
         public void TickCrew(float dt)
         {
+            if (DriveTrace.On) TracePed(dt);
             switch (State)
             {
                 case Mode.Dead:
@@ -718,7 +721,12 @@ namespace RoadDemo
 
         void TickEngage(float dt)
         {
-            if (Target == null || Target.Dead || !Armed)
+            // A man he was shooting at whose BODY has since been taken off the street
+            // (the gore cleans up, a rival that broke and ran is despawned) is not null
+            // the way a C# reference is null - his Tf is a destroyed Unity object, and
+            // reading it throws. It threw every frame for every engaged man, which is
+            // to say the fight stopped dead and nobody fired another round.
+            if (Target == null || !Target.Tf || Target.Dead || !Armed)
             {
                 Target = null;
                 State = Mode.Standing;
@@ -764,6 +772,22 @@ namespace RoadDemo
             _wasClosing = closing;
             if (closing)
             {
+                // He does not walk into a fight with the gun down. Inside his reach he
+                // fires as he comes on - slower and worse than a man stood squared up,
+                // but the alternative is what the lab watched three times over: a crew
+                // marching up to a mob that was already shooting, taking the whole
+                // exchange without answering a round of it, and going down to the last man.
+                _fireTimer -= dt;
+                if (dist <= range && _fireTimer <= 0f && Vector3.Angle(Tf.forward, toTarget) < 40f)
+                {
+                    _fireTimer = Ballistics.Interval * OnTheMove;
+                    if (HasPose(PoseShoot))
+                    {
+                        RestartPose(PoseShoot);
+                        _shootHold = Mathf.Min(PoseLength(PoseShoot), 0.45f);
+                    }
+                    Fired?.Invoke(this);
+                }
                 TickStride(dt, Target.Tf.position, range * RangeFactor, hurry: true); // a quick walk, no running
                 return;
             }
@@ -803,6 +827,9 @@ namespace RoadDemo
                 Fired?.Invoke(this);
             }
         }
+
+        /// <summary>How much slower a man shoots while he is still closing.</summary>
+        const float OnTheMove = 1.5f;
 
         bool _wasClosing, _coverLooked;
         bool _gunDropped;
@@ -994,6 +1021,34 @@ namespace RoadDemo
             State = Mode.Homing;
         }
 
+        /// <summary>Put back on the graph where he actually stands - set down out of a
+        /// car at a kerb streets away from the stretch he boarded on, or walked off his
+        /// stretch to a door. His link and metre are changed to the nearest sidewalk
+        /// the arena found; his feet stay where they are, the sideways gap kept as his
+        /// lateral so the first step of the next order is a step, not a jump. Off the
+        /// graph (the free floor) nothing changes.</summary>
+        public void Reseat(PedLink link, float t)
+        {
+            if (_link == null || link == null || link.Length <= 0.01f || Dead || Riding) return;
+            _link = link;
+            _t = Mathf.Clamp(t, 0f, link.Length);
+            _cameFrom = link.From;
+            Waiting = false;
+            _route = null;
+            _destFwd = _destBack = null;
+            var ab = link.To.Pos - link.From.Pos;
+            ab.y = 0f;
+            if (ab.sqrMagnitude > 1e-4f && Tf)
+            {
+                var dirN = ab.normalized;
+                var right = new Vector3(dirN.z, 0f, -dirN.x);
+                var q = Vector3.Lerp(link.From.Pos, link.To.Pos, _t / link.Length);
+                var off = Tf.position - q;
+                off.y = 0f;
+                Lateral = Mathf.Clamp(Vector3.Dot(off, right), -1.9f, 1.9f);
+            }
+        }
+
         static PedLink Reverse(PedLink link)
         {
             foreach (var l in link.To.Links)
@@ -1046,6 +1101,13 @@ namespace RoadDemo
         }
 
         /// <summary>The overlay's status line.</summary>
+        protected override string TraceState()
+            => State + (Target != null ? " at " + Target.DisplayName : "");
+
+        /// <summary>A crew man is going somewhere only under an order; stood on his
+        /// corner with his hands in his pockets, he is where he means to be.</summary>
+        protected override bool Moving => HasOrder;
+
         public string StatusLine => State switch
         {
             Mode.Standing => Retreating ? "Gone" : Alert ? "On alert - shots heard" : "Standing by",

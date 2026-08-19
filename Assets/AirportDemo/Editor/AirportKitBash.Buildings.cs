@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AirportDemo.EditorTools
@@ -228,10 +229,40 @@ namespace AirportDemo.EditorTools
             WallRun(root, AirportKit.BaseWall, new Vector3(x0, 0f, z1), new Vector3(x0, 0f, z0), inside, y, null, i => chooser(3, i));
         }
 
-        /// <summary>The commuter terminal: sixty metres of frontage, twenty-six deep,
-        /// a glazed departure hall looking out at the ramp, offices over the middle of
-        /// it, and the plain landside wall with its doors that the kerb pulls up to.
-        /// Baked apron-face on +Z like every other building here.</summary>
+        /// <summary>Which modules of an apron frontage this wide are gate doors: one
+        /// for each airline stand, worked from where the stands actually are, so the
+        /// doors move when the stands do rather than sitting at module numbers that
+        /// were right when there were two of them.
+        ///
+        /// Each door's mirror is taken as well. WallRun lays a run from whichever end
+        /// puts the piece's front outward, so the index a module has depends on a flip
+        /// this code cannot see - but the stands are symmetric about the centreline, so
+        /// a set that is symmetric too is right whichever way round the wall was laid.</summary>
+        static HashSet<int> GateModules(float w)
+        {
+            var set = new HashSet<int>();
+            var wall = P(AirportKit.BaseWall);
+            if (wall == null) return set;
+            float module = AirportKit.RunOf(wall).magnitude;
+            if (module < 0.01f) return set;
+            // the same count LayRun will arrive at, or the doors land a module out
+            int n = Mathf.Max(1, Mathf.RoundToInt(w / module));
+            if (n * module < w - 0.01f && w / n > module * 1.15f) n++;
+            float step = w / n;
+            for (int s = 0; s < AirportSpec.CommuterStandX.Length; s++)
+            {
+                int i = Mathf.Clamp(Mathf.FloorToInt((AirportSpec.GateDoorX(s) + w * 0.5f) / step), 0, n - 1);
+                set.Add(i);
+                set.Add(n - 1 - i);
+            }
+            return set;
+        }
+
+        /// <summary>The commuter terminal: the frontage the airline stands need, thirty
+        /// deep, a glazed departure hall looking out at the ramp with a gate door to
+        /// each stand, offices over the middle of it, and the plain landside wall with
+        /// its doors that the kerb pulls up to. Baked apron-face on +Z like every other
+        /// building here.</summary>
         static void BuildTerminal()
         {
             float w = AirportSpec.TerminalWidth, d = AirportSpec.TerminalDepth;
@@ -239,18 +270,22 @@ namespace AirportDemo.EditorTools
             var t = root.transform;
             float hx = w * 0.5f, hz = d * 0.5f;
 
-            var glass = P(AirportKit.GlassWall);
-            var glassDoor = P(AirportKit.GlassDoor);
             var window = P(AirportKit.BaseWindowDouble);
             var door = P(AirportKit.BaseDoorDouble);
             var wall = P(AirportKit.BaseWall);
+            // the Plaza glass if it will bake, the Base kit's own big window if not
+            var glass = Usable(AirportKit.GlassWall, window);
+            var glassDoor = Usable(AirportKit.GlassDoor, door);
 
-            // ground storey: the ramp side all glass with two gate doors, the landside
-            // plain with the entrance doors in the middle, the flanks windowed
+            // ground storey: the ramp side all glass with a gate door out to each
+            // stand, the landside plain with the entrance doors in the middle, the
+            // flanks windowed
+            var gates = GateModules(w);
+            int mid = Mathf.Max(1, Mathf.RoundToInt(w / Mathf.Max(0.01f, AirportKit.RunOf(P(AirportKit.BaseWall)).magnitude))) / 2;
             GameObject Ground(int side, int i)
             {
-                if (side == 2) return (i == 5 || i == 6 || i == 17 || i == 18) ? glassDoor : glass;   // apron
-                if (side == 0) return (i >= 10 && i <= 13) ? door : window;                            // landside
+                if (side == 2) return gates.Contains(i) ? glassDoor : glass;                  // apron
+                if (side == 0) return (i >= mid - 2 && i <= mid + 1) ? door : window;          // landside
                 return i % 2 == 0 ? window : wall;
             }
             BaseCourse(t, -hx, hx, -hz, hz, 0f, Ground);
@@ -281,11 +316,11 @@ namespace AirportDemo.EditorTools
             var root = Scratch("fbo");
             var t = root.transform;
             float hx = w * 0.5f, hz = d * 0.5f;
-            var glass = P(AirportKit.GlassWall);
-            var glassDoor = P(AirportKit.GlassDoor);
             var window = P(AirportKit.BaseWindow);
             var wall = P(AirportKit.BaseWall);
             var door = P(AirportKit.BaseDoor);
+            var glass = Usable(AirportKit.GlassWall, P(AirportKit.BaseWindowDouble) ?? window);
+            var glassDoor = Usable(AirportKit.GlassDoor, door);
             GameObject Choose(int side, int i)
             {
                 if (side == 2) return i == 3 ? glassDoor : glass;

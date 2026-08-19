@@ -21,8 +21,8 @@ namespace SuburbDemo
 
             foreach (int p in _pinColumns)
             {
-                if (p < 0 || p > columns) continue;
-                var node = _nodes[p, rows];
+                if (p < 0 || p > _nx) continue;
+                var node = _nodes[p, _nz];
                 if (node?.Road == null)
                 {
                     // the junction at the head of a pinned line went missing - a cul-de-sac
@@ -47,7 +47,7 @@ namespace SuburbDemo
 
                 // out of the suburb on the left-hand side of the axis as the map is
                 // drawn (+2.5 east), back in on the other - right-hand traffic either way
-                var face = new Vector3(_vx[p], 0f, _hz[rows] + StreetHalf);
+                var face = new Vector3(_vx[p], 0f, _hz[_nz] + StreetHalf);
                 AddEdge(node.Road, gate,
                         W(new Vector3(face.x + 2.5f, 0f, face.z)),
                         W(new Vector3(ownEdge.x + 2.5f, 0f, ownEdge.z)), true, false);

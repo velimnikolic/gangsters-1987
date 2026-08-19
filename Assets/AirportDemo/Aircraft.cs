@@ -50,6 +50,20 @@ namespace AirportDemo
         public float Timer;
         /// <summary>Set by FlightOps while this aeroplane holds a runway clearance.</summary>
         public bool HasRunway;
+        /// <summary>Held on the stand until somebody else says otherwise: the
+        /// turnaround has it, and nothing moves until the last passenger is aboard
+        /// and the steps are away.</summary>
+        public bool GroundHold;
+        /// <summary>Something ahead of it on the concrete. It keeps its orders and
+        /// stops where it is, which is what an aeroplane does when the one in front
+        /// has not cleared the taxiway.</summary>
+        public bool Blocked;
+        /// <summary>How many people walk off it and how many walk on.</summary>
+        public int Seats;
+        /// <summary>How long it has been stopped behind somebody, and how long the
+        /// turnaround has had it. Both are safety nets: a field that deadlocks and
+        /// stands still is worse than two aeroplanes taxiing a little close.</summary>
+        public float BlockedFor, HeldFor;
         /// <summary>Flying the circuit rather than leaving: it comes round onto final
         /// under its own power instead of going off the map and coming back.</summary>
         public bool InCircuit;
@@ -67,8 +81,40 @@ namespace AirportDemo
         public float Nose { get; private set; } = 4f;
         public float Tail { get; private set; } = -4f;
 
-        public Vector3 Position => Tf != null ? Tf.position : Vector3.zero;
-        public Vector3 Forward => Tf != null ? Tf.forward : Vector3.forward;
+        /// <summary>The boarding door, set from the class when FlightOps adopts it:
+        /// how far out to the left of the centreline, how far forward as a fraction of
+        /// the nose, and how high the sill stands above the concrete.</summary>
+        public float DoorSide = 1.5f, DoorFore = 0.45f, DoorHeight = 1.6f;
+
+        /// <summary>How far out from the fuselage the stairs have to be parked for
+        /// their platform to reach the door: the length of the flight plus its
+        /// platform, measured off the prefab by the builder.</summary>
+        public float StepReach = 1.2f;
+
+        /// <summary>Where a passenger joins the queue: on the concrete at the foot of
+        /// the steps, which is a stride outboard of where the stairs are parked.</summary>
+        public Vector3 DoorFoot
+        {
+            get
+            {
+                if (Tf == null) return Vector3.zero;
+                var at = Position - Right * (DoorSide + StepReach + 1f) + Forward * (Nose * DoorFore);
+                at.y = AirportSpec.PaveY;
+                return at;
+            }
+        }
+
+        /// <summary>The stairs at the door while it is on stand - run up when the
+        /// doors open and taken away when they shut.</summary>
+        public Transform Steps;
+
+        /// <summary>Where it is, in the field's own coordinates: every aircraft hangs
+        /// under the field's Live root and works in that root's space, so the field can
+        /// stand anywhere in the world (the city turns it onto a shore) and nothing here
+        /// has to know.</summary>
+        public Vector3 Position => Tf != null ? Tf.localPosition : Vector3.zero;
+        public Vector3 Forward => Tf != null ? (Tf.localRotation * Vector3.forward) : Vector3.forward;
+        public Vector3 Right => Tf != null ? (Tf.localRotation * Vector3.right) : Vector3.right;
         public float Speed => _speed;
         public bool Idle => _legs.Count == 0;
         /// <summary>Where the aeroplane is going, for whoever wants to keep out of it.</summary>
@@ -168,12 +214,30 @@ namespace AirportDemo
             _speed = 0f;
             _throttle = 0f;
             State = Phase.Parked;
-            if (Tf != null) Tf.SetPositionAndRotation(new Vector3(at.x, at.y + _groundOffset, at.z), Quaternion.Euler(0f, yaw, 0f));
+            if (Tf != null) Tf.SetLocalPositionAndRotation(new Vector3(at.x, at.y + _groundOffset, at.z), Quaternion.Euler(0f, yaw, 0f));
         }
 
-        /// <summary>Kept so the machinery reads the same for a model with doors and
-        /// one without: these aircraft have none that open.</summary>
-        public void Doors(bool open) { }
+        /// <summary>The models have no doors that open, so what "open" means here is
+        /// the steps: run up to the door sill, facing the fuselage, and taken away
+        /// again when they shut. That is what an onlooker actually reads as a door.</summary>
+        public void Doors(bool open)
+        {
+            if (Steps == null) return;
+            if (!open)
+            {
+                if (Steps.gameObject.activeSelf) Steps.gameObject.SetActive(false);
+                return;
+            }
+            if (Tf == null) return;
+            // the stairs are baked with their wheels at the origin and their platform
+            // out along their own -Z, so parking them a flight's length outboard of the
+            // door puts that platform at the sill. Turned a quarter left of the
+            // aeroplane, their -Z looks straight at its port side.
+            var at = Position - Right * (DoorSide + StepReach) + Forward * (Nose * DoorFore);
+            at.y = AirportSpec.PaveY;
+            Steps.SetLocalPositionAndRotation(at, Quaternion.Euler(0f, Tf.localEulerAngles.y - 90f, 0f));
+            if (!Steps.gameObject.activeSelf) Steps.gameObject.SetActive(true);
+        }
 
         /// <summary>Throttle, which is all the propellers and the sound care about.</summary>
         public void Throttle(float t) => _throttle = Mathf.Clamp01(t);
@@ -184,17 +248,24 @@ namespace AirportDemo
         {
             if (Tf == null) return;
             TickSpin(dt);
+            if (Blocked && _legs.Count > 0 && _legs[0].Ground)
+            {
+                // hold where it is: the orders stand, the wheels stop
+                _speed = Mathf.MoveTowards(_speed, 0f, TaxiBrake * 1.6f * dt);
+                if (_speed > 0.01f) Tf.localPosition += (Tf.localRotation * Vector3.forward) * (_speed * dt);
+                return;
+            }
             if (_legs.Count == 0)
             {
                 _speed = Mathf.MoveTowards(_speed, 0f, TaxiBrake * dt);
-                if (_speed > 0.01f) Tf.position += Tf.forward * (_speed * dt);
+                if (_speed > 0.01f) Tf.localPosition += (Tf.localRotation * Vector3.forward) * (_speed * dt);
                 _bank = Mathf.MoveTowards(_bank, 0f, 30f * dt);
                 ApplyBank();
                 return;
             }
 
             var leg = _legs[0];
-            var pos = Tf.position;
+            var pos = Tf.localPosition;
             var to = leg.To - pos;
             float planar = new Vector2(to.x, to.z).magnitude;
 
@@ -218,19 +289,19 @@ namespace AirportDemo
             if (planar > 0.05f)
             {
                 float targetYaw = Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg;
-                float yaw = Tf.eulerAngles.y;
+                float yaw = Tf.localEulerAngles.y;
                 float rate = leg.Ground
                     ? GroundTurnRate * Mathf.Clamp01(0.35f + _speed / AirportSpec.TaxiSpeed * 0.65f)
                     : AirTurnRate;
                 float next = Mathf.MoveTowardsAngle(yaw, targetYaw, rate * dt);
                 float delta = Mathf.DeltaAngle(yaw, next);
-                Tf.rotation = Quaternion.Euler(0f, next, 0f);
+                Tf.localRotation = Quaternion.Euler(0f, next, 0f);
                 float wantBank = leg.Ground ? 0f : Mathf.Clamp(delta / Mathf.Max(dt, 0.001f) / AirTurnRate * MaxBank, -MaxBank, MaxBank);
                 _bank = Mathf.MoveTowards(_bank, wantBank, 40f * dt);
             }
 
             // move, and take the climb or descent of the leg with it
-            var step = Tf.forward * (_speed * dt);
+            var step = (Tf.localRotation * Vector3.forward) * (_speed * dt);
             var p = pos + step;
             if (leg.Ground) p.y = leg.To.y + _groundOffset;
             else
@@ -239,7 +310,7 @@ namespace AirportDemo
                 float rise = (leg.To.y + _groundOffset - pos.y) * Mathf.Clamp01(step.magnitude / remain);
                 p.y = pos.y + rise;
             }
-            Tf.position = p;
+            Tf.localPosition = p;
             ApplyPitch(leg, planar);
 
             float reach = leg.Ground ? Mathf.Max(2f, _speed * 0.35f) : Mathf.Max(20f, _speed * 0.9f);
@@ -251,17 +322,17 @@ namespace AirportDemo
             float pitch = 0f;
             if (!leg.Ground)
             {
-                float rise = leg.To.y + _groundOffset - Tf.position.y;
+                float rise = leg.To.y + _groundOffset - Tf.localPosition.y;
                 pitch = -Mathf.Clamp(Mathf.Atan2(rise, Mathf.Max(planar, 1f)) * Mathf.Rad2Deg, -8f, 12f);
             }
-            var e = Tf.eulerAngles;
-            Tf.rotation = Quaternion.Euler(pitch, e.y, -_bank);
+            var e = Tf.localEulerAngles;
+            Tf.localRotation = Quaternion.Euler(pitch, e.y, -_bank);
         }
 
         void ApplyBank()
         {
-            var e = Tf.eulerAngles;
-            Tf.rotation = Quaternion.Euler(e.x, e.y, -_bank);
+            var e = Tf.localEulerAngles;
+            Tf.localRotation = Quaternion.Euler(e.x, e.y, -_bank);
         }
 
         /// <summary>The wheels roll at the speed the aeroplane is doing, and the
@@ -287,7 +358,7 @@ namespace AirportDemo
         {
             var fx = touchdown ? _touchdownFx : _startFx;
             if (fx == null || Tf == null) return;
-            fx.transform.position = Tf.position + Tf.forward * (touchdown ? Tail : Nose);
+            fx.transform.localPosition = Tf.localPosition + (Tf.localRotation * Vector3.forward) * (touchdown ? Tail : Nose);
             fx.Play();
         }
 

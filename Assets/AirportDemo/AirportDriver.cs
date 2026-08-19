@@ -43,7 +43,7 @@ namespace AirportDemo
         /// caller too, to park a vehicle that has nowhere to be yet.</summary>
         public bool Done { get; set; }
         public int Leg => _leg;
-        public Vector3 Position => Tf != null ? Tf.position : Vector3.zero;
+        public Vector3 Position => Tf != null ? Tf.localPosition : Vector3.zero;
 
         int _leg;
         float _speed;
@@ -83,9 +83,9 @@ namespace AirportDemo
             Done = false;
             if (Tf != null && Route.Count > 1)
             {
-                Tf.position = Route[_leg];
+                Tf.localPosition = Route[_leg];
                 var d = Route[(_leg + 1) % Route.Count] - Route[_leg];
-                if (d.sqrMagnitude > 0.01f) Tf.rotation = Quaternion.LookRotation(new Vector3(d.x, 0f, d.z).normalized, Vector3.up);
+                if (d.sqrMagnitude > 0.01f) Tf.localRotation = Quaternion.LookRotation(new Vector3(d.x, 0f, d.z).normalized, Vector3.up);
                 _leg = (_leg + 1) % Route.Count;
             }
         }
@@ -121,7 +121,7 @@ namespace AirportDemo
             }
 
             var goal = Route[_leg];
-            var to = goal - Tf.position;
+            var to = goal - Tf.localPosition;
             to.y = 0f;
             float dist = to.magnitude;
 
@@ -145,13 +145,13 @@ namespace AirportDemo
             if (dist > 0.05f)
             {
                 float targetYaw = Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg;
-                float yaw = Mathf.MoveTowardsAngle(Tf.eulerAngles.y, targetYaw, TurnRate * dt);
-                Tf.rotation = Quaternion.Euler(0f, yaw, 0f);
+                float yaw = Mathf.MoveTowardsAngle(Tf.localEulerAngles.y, targetYaw, TurnRate * dt);
+                Tf.localRotation = Quaternion.Euler(0f, yaw, 0f);
             }
-            var step = Tf.forward * (_speed * dt);
-            var p = Tf.position + step;
+            var step = (Tf.localRotation * Vector3.forward) * (_speed * dt);
+            var p = Tf.localPosition + step;
             p.y = goal.y;
-            Tf.position = p;
+            Tf.localPosition = p;
             Roll(dt);
 
             if (dist <= Mathf.Max(1.4f, _speed * 0.4f))
@@ -175,13 +175,13 @@ namespace AirportDemo
         {
             if (Traffic == null) return 999f;
             float best = 999f;
-            var pos = Tf.position;
-            var fwd = Tf.forward;
+            var pos = Tf.localPosition;
+            var fwd = (Tf.localRotation * Vector3.forward);
             for (int i = 0; i < Traffic.Count; i++)
             {
                 var o = Traffic[i];
                 if (o == this || o.Tf == null) continue;
-                var d = o.Tf.position - pos;
+                var d = o.Tf.localPosition - pos;
                 d.y = 0f;
                 float along = Vector3.Dot(d, fwd);
                 if (along <= 0f) continue;
@@ -197,9 +197,9 @@ namespace AirportDemo
         void TrailBreadcrumbs()
         {
             if (_tows.Count == 0) return;
-            if (_breadcrumbs.Count == 0 || (Tf.position - _breadcrumbs[0]).sqrMagnitude > 0.25f)
+            if (_breadcrumbs.Count == 0 || (Tf.localPosition - _breadcrumbs[0]).sqrMagnitude > 0.25f)
             {
-                _breadcrumbs.Insert(0, Tf.position);
+                _breadcrumbs.Insert(0, Tf.localPosition);
                 if (_breadcrumbs.Count > 120) _breadcrumbs.RemoveAt(_breadcrumbs.Count - 1);
             }
             for (int i = 0; i < _tows.Count; i++)
@@ -207,8 +207,8 @@ namespace AirportDemo
                 if (_tows[i] == null) continue;
                 float want = _towOffsets[i];
                 float run = 0f;
-                var at = Tf.position;
-                var face = -Tf.forward;
+                var at = Tf.localPosition;
+                var face = -(Tf.localRotation * Vector3.forward);
                 for (int k = 1; k < _breadcrumbs.Count; k++)
                 {
                     float seg = (_breadcrumbs[k] - _breadcrumbs[k - 1]).magnitude;
@@ -222,9 +222,9 @@ namespace AirportDemo
                     run += seg;
                     at = _breadcrumbs[k];
                 }
-                _tows[i].transform.position = at;
+                _tows[i].transform.localPosition = at;
                 if (face.sqrMagnitude > 0.001f)
-                    _tows[i].transform.rotation = Quaternion.LookRotation(new Vector3(-face.x, 0f, -face.z), Vector3.up);
+                    _tows[i].transform.localRotation = Quaternion.LookRotation(new Vector3(-face.x, 0f, -face.z), Vector3.up);
             }
         }
     }

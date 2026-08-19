@@ -174,7 +174,7 @@ namespace AirportDemo
             var plane = _fuelQueue.Dequeue();
             if (plane == null || plane.Tf == null) return;
             // beside the port wing, clear of the propeller arc
-            var at = plane.Position + plane.Tf.right * -(plane.HalfSpan + 4f) - plane.Forward * 1.5f;
+            var at = plane.Position + plane.Right * -(plane.HalfSpan + 4f) - plane.Forward * 1.5f;
             var route = new List<Vector3>
             {
                 new Vector3(_bowser.Position.x, AirportSpec.PaveY, _roadZ),
@@ -209,7 +209,7 @@ namespace AirportDemo
             float homeX = AirportSpec.TerminalX - 18f;
             if (onStand != null && Mathf.Abs(_baggage.Position.z - AirportSpec.ServiceRoadZ) < 6f)
             {
-                var at = onStand.Position + onStand.Tf.right * (onStand.HalfSpan * 0.8f) + onStand.Forward * (onStand.Tail + 4f);
+                var at = onStand.Position + onStand.Right * (onStand.HalfSpan * 0.8f) + onStand.Forward * (onStand.Tail + 4f);
                 _baggage.Divert(new List<Vector3>
                 {
                     new Vector3(_baggage.Position.x, AirportSpec.PaveY, _roadZ),

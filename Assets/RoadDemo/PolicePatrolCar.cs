@@ -76,6 +76,7 @@ namespace RoadDemo
             State = Mode.Resting;
             _restTimer = firstRest;
             Profile = DriverProfile.Patrol;
+            Tag = "police";
             Tf.SetPositionAndRotation(stall, stallRot);
         }
 

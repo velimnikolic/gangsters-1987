@@ -51,12 +51,14 @@ namespace RoadDemo
         public bool Hot;
 
         const float PassOvershoot = 22f;    // metres past the target before the turn-round
+        const float PassSpeed = 9f;         // metres a second alongside the mark
 
         int _passDir = 1;
 
         public CrewCar()
         {
             Profile = DriverProfile.Gangster;
+            Tag = "crew";
         }
 
         // ------------------------------------------------------------------ setup
@@ -258,6 +260,26 @@ namespace RoadDemo
         protected override void OnPlaced(float dt, float speed, float steerDegrees)
         {
             Body?.TickWheels(dt, speed, steerDegrees);
+        }
+
+        /// <summary>Coming up on the mark, the car comes off the throttle.
+        ///
+        /// A pistol reaches ten metres and the pavement is eight from the crown, so the
+        /// whole shot is one second of road; at the hot pace (eighteen a second) a man
+        /// with the gun out of the window gets his mark abeam for a heartbeat and the
+        /// pass goes by without a round fired, which is what the runs showed. Slowed to
+        /// a walking-pace nine, the same pass gives every gun on that side two or three.
+        /// Away from the mark the pace is the profile's own again - a getaway is a
+        /// getaway.</summary>
+        protected override float LimitTarget(float target)
+        {
+            if (DriveByTarget == null || Tf == null) return target;
+            var to = DriveByTarget.Position - Position;
+            to.y = 0f;
+            float dist = to.magnitude;
+            if (dist > 45f) return target;
+            float pace = Mathf.Lerp(PassSpeed, target, Mathf.InverseLerp(20f, 45f, dist));
+            return Mathf.Min(target, pace);
         }
 
         public string StatusLine => State switch

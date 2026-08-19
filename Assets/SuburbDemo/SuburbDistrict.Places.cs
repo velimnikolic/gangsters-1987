@@ -3,10 +3,11 @@ using UnityEngine;
 
 namespace SuburbDemo
 {
-    // The three places a suburb has besides houses - each once, each on a stretch
-    // of frontage the carve reserved for it: the church on its lawn, the corner of
-    // shops with a forecourt and a gas pump, the pocket park with the playground.
-    // Laid out by hand in the lot frame (u along the kerb, v in from it).
+    // The places a suburb has besides houses - each once, each on a stretch of
+    // frontage the carve reserved for it, in blocks of their own: the church on its
+    // lawn, the gas station, the hardware store and the corner shop each on a
+    // forecourt, the pocket park with the playground. Laid out by hand in the lot
+    // frame (u along the kerb, v in from it).
     public partial class SuburbDistrict
     {
         GameObject _church, _shopPad, _shopSign, _fountain, _fountainBase, _bikeStand, _vending, _gaspump, _gaspumpBase, _gaspumpCover,
@@ -45,7 +46,9 @@ namespace SuburbDemo
                 switch (lot.Use)
                 {
                     case LotUse.Church: ComposeChurch(lot); break;
-                    case LotUse.Shops: ComposeShops(lot); break;
+                    case LotUse.GasStation: ComposeGasStation(lot); break;
+                    case LotUse.Hardware: ComposeHardware(lot); break;
+                    case LotUse.Shop: ComposeShop(lot); break;
                     case LotUse.Park: ComposePark(lot); break;
                 }
             }
@@ -169,6 +172,24 @@ namespace SuburbDemo
 
             var anchorGo = TownKit.Prop(anchorPrefab, anchorPos, anchorYaw, _placeRoot, anchorName);
             lot.Taken.Add(TownKit.Footprint(anchorPrefab, anchorPos, anchorYaw, 0.3f));
+            // the buildings of the cluster stand level at their own ground; whatever stands on
+            // or in one (its interior, roof gear, signs) goes at that building's ground too
+            var buildings = new List<(Rect at, float ground)>();
+            if (c.Anchor.StartsWith("SM_Bld_")) buildings.Add((TownKit.Footprint(anchorPrefab, anchorPos, anchorYaw, 0.5f), Ground(anchorPos.x, anchorPos.z)));
+            foreach (var p in c.Pieces)
+            {
+                if (!p.Name.StartsWith("SM_Bld_")) continue;
+                var prefab = TownKit.LoadByName(p.Name);
+                if (prefab == null) continue;
+                var world = anchorPos + rot * new Vector3(p.X, p.Y, p.Z);
+                buildings.Add((TownKit.Footprint(prefab, world, anchorYaw + p.Yaw, 0.5f), Ground(world.x, world.z)));
+            }
+            float? GroundOf(Vector3 world, string name)
+            {
+                if (name.StartsWith("SM_Bld_")) return null;
+                foreach (var b in buildings) if (b.at.Contains(new Vector2(world.x, world.z))) return b.ground;
+                return null;
+            }
             int placed = 0, skipped = 0;
             foreach (var p in c.Pieces)
             {
@@ -185,7 +206,7 @@ namespace SuburbDemo
                     if (InGrid(cx, cz) && (_kind[cx, cz] == CellKind.Lot || _kind[cx, cz] == CellKind.Free)) _surface[cx, cz] = Surface.None;
                     else { skipped++; continue; }   // a tile that would land on the street
                 }
-                var go = TownKit.Prop(prefab, world, rot * p.Rot, _placeRoot, pieceNames != null && pieceNames.TryGetValue(p.Name, out var nm) ? nm : null);
+                var go = TownKit.Prop(prefab, world, rot * p.Rot, _placeRoot, pieceNames != null && pieceNames.TryGetValue(p.Name, out var nm) ? nm : null, GroundOf(world, p.Name));
                 if (p.Name.StartsWith("SM_Veh_")) TownKit.StripForStatic(go);
                 // the demo hangs the station's 24/7 sign at 5 m on a 2.6 m street-sign pole and
                 // leaves the air between; the pole is stretched into a proper pylon here
@@ -230,56 +251,60 @@ namespace SuburbDemo
             }
         }
 
-        /// <summary>A cluster at an exact world pose (the church's own pews inside the church).</summary>
+        /// <summary>A cluster at an exact world pose (the church's own pews inside the
+        /// church) - every piece at the anchor's ground, level with the building.</summary>
         void PlaceClusterAt(TownClusters.Cluster c, Vector3 anchorPos, int anchorYaw)
         {
             var rot = Quaternion.Euler(0f, anchorYaw, 0f);
+            float ground = Ground(anchorPos.x, anchorPos.z);
             foreach (var p in c.Pieces)
             {
                 var prefab = TownKit.LoadByName(p.Name);
                 if (prefab == null) continue;
-                TownKit.Prop(prefab, anchorPos + rot * new Vector3(p.X, p.Y, p.Z), rot * p.Rot, _placeRoot);
+                TownKit.Prop(prefab, anchorPos + rot * new Vector3(p.X, p.Y, p.Z), rot * p.Rot, _placeRoot, null, ground);
             }
         }
 
         // ------------------------------------------------------------ shops
 
-        // The corner of shops, the Town demo's own three places set side by side on one
-        // asphalt forecourt: the gas station (canopy, pumps, the pickup at the pump, the
-        // open store behind it), the hardware store on its concrete apron, and the corner
-        // shop - each with every prop the pack's author stood around it.
-        void ComposeShops(Lot lot)
+        // The Town demo's three places of business, each on a lot of its own somewhere
+        // in the suburb (never side by side): the gas station (canopy, pumps, the pickup
+        // at the pump, the open store behind it), the hardware store on its concrete
+        // apron, and the corner shop - each with every prop the pack's author stood
+        // around it, on an asphalt forecourt with dropped kerbs, a car or two, a tree
+        // line along the back and fences down the sides.
+        void ComposeGasStation(Lot lot)
         {
-            float W = lot.W, D = lot.D;
-            var lotRect = Rect.MinMaxRect(lot.Cx0 * Cell, lot.Cz0 * Cell, lot.Cx1 * Cell, lot.Cz1 * Cell);
-            int wc = lot.WidthCells;
-
-            // the forecourt: asphalt over the front two rows, the whole width, with dropped
-            // kerbs where cars turn in - at the station, at the hardware apron, at the far end
-            for (int i = 0; i < wc; i++)
-                for (int j = 0; j < 2; j++) SetSurface(lot, i, j, Surface.Asphalt, 0);
-            foreach (int i in new[] { 0, 1, 5, 6, wc - 2, wc - 1 }) SetFrontPavement(lot, i, SwVariant.Driveway);
-            // the gas station, the demo's whole: canopy centred 10 m in from the corner on the
-            // asphalt, the pumps and the pickup under it, the pole sign at the kerb, and the
-            // store (Shop_01) 11 m behind the canopy with its interior and its roof gear
-            var station = PlaceCluster(TownClusters.GasStation, lot, 10f, 6.5f, "Gas Station", false,
+            float W = lot.W;
+            Forecourt(lot);
+            // the demo's whole: canopy centred on the asphalt, the pumps and the pickup under
+            // it, the pole sign at the kerb, and the store (Shop_01) 11 m behind the canopy
+            // with its interior and its roof gear
+            PlaceCluster(TownClusters.GasStation, lot, W * 0.5f + 1.3f, 6.5f, "Gas Station", false,
                 new System.Collections.Generic.Dictionary<string, string> { { "SM_Bld_Shop_01", "Shop 0" } });
-            lot.IdleSpots.Add(lot.P(12.5f, 7.5f));
+            lot.IdleSpots.Add(lot.P(W * 0.5f + 3.8f, 7.5f));
             var store = _placeRoot.Find("Shop 0");
             if (store != null)
             {
-                // its glass doors are on the +Z face, 4.2 m from the pivot (read off the mesh)
+                // its glass doors are on the +Z face, 4.7 m from the pivot (read off the mesh)
                 lot.DoorPos = store.position + store.rotation * new Vector3(0f, 0f, 4.7f);
                 lot.DoorPos.y = 0f;
                 lot.DoorOut = lot.Front;
                 lot.HasDoor = true;
                 if (debugFronts) DebugMarker(lot.DoorPos + Vector3.up * 0.5f, Color.red);
             }
+            Customers(lot, new[] { W * 0.5f - 12f, W * 0.5f + 13f });
+            BackOfPlace(lot);
+        }
 
-            // the hardware store: an L, its glass doors in the notch on the +Z side (read off
-            // the mesh), the wing's face 8 m behind the kerb, the concrete apron under and about it
-            var hardware = PlaceCluster(TownClusters.Hardware, lot, 37f, 8f + 7.1f, "Shop 1", true);
-            if (hardware != null && !lot.HasDoor)
+        void ComposeHardware(Lot lot)
+        {
+            float W = lot.W;
+            Forecourt(lot);
+            // an L, its glass doors in the notch on the +Z side (read off the mesh), the
+            // wing's face 8 m behind the kerb, the concrete apron under and about it
+            var hardware = PlaceCluster(TownClusters.Hardware, lot, W * 0.5f + 0.7f, 8f + 7.1f, "Shop 1", true);
+            if (hardware != null)
             {
                 // the doors sit 6 m into the notch, 4 m left of the centre line
                 lot.DoorPos = hardware.transform.position + hardware.transform.rotation * new Vector3(-4f, 0f, 0.6f);
@@ -287,39 +312,66 @@ namespace SuburbDemo
                 lot.DoorOut = lot.Front;
                 lot.HasDoor = true;
                 if (debugFronts) DebugMarker(lot.DoorPos + Vector3.up * 0.5f, Color.red);
+                TownKit.ApplyPalette(hardware, PickPalette());
             }
-            // the corner shop
-            var shop = PlaceCluster(TownClusters.Shop, lot, 57f, 11.5f + 5.5f, "Shop 2", true);
-            if (shop != null && !lot.HasDoor)
+            Customers(lot, new[] { W * 0.5f - 10f, W * 0.5f + 10f });
+            BackOfPlace(lot);
+        }
+
+        void ComposeShop(Lot lot)
+        {
+            float W = lot.W;
+            Forecourt(lot);
+            var shop = PlaceCluster(TownClusters.Shop, lot, W * 0.5f - 0.4f, 11.5f + 5.5f, "Shop 2", true);
+            if (shop != null)
             {
-                lot.DoorPos = lot.P(57f, 11.5f);
+                lot.DoorPos = lot.P(W * 0.5f - 0.4f, 11.5f);
                 lot.DoorOut = lot.Front;
                 lot.HasDoor = true;
+                TownKit.ApplyPalette(shop, PickPalette());
             }
-            // palettes for the two buildings
-            if (hardware != null) TownKit.ApplyPalette(hardware, PickPalette());
-            if (shop != null) TownKit.ApplyPalette(shop, PickPalette());
+            Customers(lot, new[] { W * 0.5f - 5f, W * 0.5f + 5.5f });
+            // the bus stop out front, by the shop
+            _busStops.Add((lot, W - 6f));
+            BackOfPlace(lot);
+        }
 
-            // customers' cars on the forecourt
-            if (_carPrefabs.Count > 0)
-                foreach (float u in new[] { 25f, 47f, 52.5f })
-                {
-                    if (!Chance(0.7f)) continue;
-                    var at = lot.P(u + Rnd(-0.5f, 0.5f), 5.5f);
-                    at.y = 0.05f;
-                    var car = Pick(_carPrefabs);
-                    float yaw = TownKit.YawToFace(TownKit.Side.PlusZ, lot.In) + Rnd(-4f, 5f);
-                    var fp = TownKit.Footprint(car, at, yaw);
-                    bool clash = false;
-                    foreach (var t in lot.Taken) if (Overlaps(fp, t, 0.3f)) clash = true;
-                    if (clash) continue;
-                    var go = TownKit.Prop(car, at, yaw, _placeRoot);
-                    TownKit.StripForStatic(go);
-                    lot.Taken.Add(fp);
-                }
-            // the bus stops out front, by the shop, well clear of the station
-            _busStops.Add((lot, W - 9f));
-            // a tree line along the back, fences down the sides and across the back
+        /// <summary>Asphalt over the front two rows, the whole width, dropped kerbs at
+        /// both ends where the cars turn in.</summary>
+        void Forecourt(Lot lot)
+        {
+            int wc = lot.WidthCells;
+            for (int i = 0; i < wc; i++)
+                for (int j = 0; j < 2; j++) SetSurface(lot, i, j, Surface.Asphalt, 0);
+            foreach (int i in new[] { 0, 1, wc - 2, wc - 1 }) SetFrontPavement(lot, i, SwVariant.Driveway);
+        }
+
+        /// <summary>Customers' cars nosed in on the forecourt at the given u's, where they clash with nothing.</summary>
+        void Customers(Lot lot, float[] us)
+        {
+            if (_carPrefabs.Count == 0) return;
+            foreach (float u in us)
+            {
+                if (!Chance(0.7f)) continue;
+                var at = lot.P(u + Rnd(-0.5f, 0.5f), 5.5f);
+                at.y = 0.05f;
+                var car = Pick(_carPrefabs);
+                float yaw = TownKit.YawToFace(TownKit.Side.PlusZ, lot.In) + Rnd(-4f, 5f);
+                var fp = TownKit.Footprint(car, at, yaw);
+                bool clash = false;
+                foreach (var t in lot.Taken) if (Overlaps(fp, t, 0.3f)) clash = true;
+                if (clash) continue;
+                var go = TownKit.Prop(car, at, yaw, _placeRoot);
+                TownKit.StripForStatic(go);
+                lot.Taken.Add(fp);
+            }
+        }
+
+        /// <summary>A tree line along the back, fences down the sides (where no street runs) and across the back.</summary>
+        void BackOfPlace(Lot lot)
+        {
+            float W = lot.W, D = lot.D;
+            var lotRect = Rect.MinMaxRect(lot.Cx0 * Cell, lot.Cz0 * Cell, lot.Cx1 * Cell, lot.Cz1 * Cell);
             for (float t = 3f; t < W - 2f; t += Rnd(5f, 8f))
                 if (_tallTrees.Count > 0) TryTree(Pick(_tallTrees), lot, t, D - 2f + Rnd(-1f, 0.5f), lotRect);
             if (!lot.CornerLeft) LayFence(_fenceWood, _fenceWoodPost, lot, 0f, 12f, 0f, D, null);

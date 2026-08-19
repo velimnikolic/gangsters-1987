@@ -85,6 +85,7 @@ namespace UnityEngine
         public const float PI = MathF.PI;
         public const float Deg2Rad = MathF.PI / 180f;
         public const float Rad2Deg = 180f / MathF.PI;
+        public static bool Approximately(float a, float b) => Math.Abs(a - b) < 1e-5f;
         public static float Abs(float v) => MathF.Abs(v);
         public static int Abs(int v) => Math.Abs(v);
         public static float Min(float a, float b) => MathF.Min(a, b);
