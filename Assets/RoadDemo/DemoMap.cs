@@ -358,7 +358,7 @@ namespace RoadDemo
             DemoUi.Fill(seams);
             foreach (var seam in _builder.SeamPlans)
                 _plan.Add((DemoUi.Block(seams, seam.Kind.ToString(),
-                    seam.Kind == SeamKind.River ? River : seam.Kind == SeamKind.Park ? Lawn : Deck).rectTransform,
+                    seam.Kind == SeamKind.River ? River : seam.Kind == SeamKind.Highway ? Deck : Lawn).rectTransform,
                     seam.Area));
 
             var roads = DemoUi.NewRect("Roads", view);
@@ -652,10 +652,40 @@ namespace RoadDemo
         readonly List<CrewWalker> _crewSeen = new List<CrewWalker>();
         static readonly Color RivalRed = new Color(1f, 0.36f, 0.30f, 1f);
 
+        Image _incidentDot;
+
+        // Where the shooting is (or lately was): a red dot that pulses while it is on
+        // and fades once it is quiet.
+        void PlotIncident()
+        {
+            if (_moverRoot == null) return;
+            bool on = StreetAlarm.IncidentOpen;
+            if (!on) { if (_incidentDot && _incidentDot.enabled) _incidentDot.enabled = false; return; }
+            if (_incidentDot == null)
+            {
+                _incidentDot = DemoUi.Block(_moverRoot, "incident", RivalRed);
+                _incidentDot.sprite = DemoUi.Dot;
+                _incidentDot.raycastTarget = false;
+            }
+            float quiet = StreetAlarm.QuietFor;
+            float pulse = quiet < 5f
+                ? 0.65f + 0.35f * Mathf.Sin(Time.unscaledTime * 8f)
+                : Mathf.Lerp(0.6f, 0.15f, quiet / StreetAlarm.IncidentGap);
+            float size = quiet < 5f ? 22f : 16f;
+            _incidentDot.rectTransform.sizeDelta = new Vector2(size, size);
+            var p = StreetAlarm.Incident;
+            _incidentDot.rectTransform.anchoredPosition = ToView(new Vector2(p.x, p.z));
+            var c = RivalRed;
+            c.a = pulse;
+            _incidentDot.color = c;
+            if (!_incidentDot.enabled) _incidentDot.enabled = true;
+        }
+
         void PlotCrews()
         {
             if (_crews == null || _moverRoot == null)
                 return;
+            PlotIncident();
 
             _crewSeen.Clear();
             foreach (var unit in _crews.Units)
@@ -676,7 +706,7 @@ namespace RoadDemo
                     dot.rectTransform.sizeDelta = new Vector2(size, size);
                     var position = man.Tf.position;
                     dot.rectTransform.anchoredPosition = ToView(new Vector2(position.x, position.z));
-                    dot.color = lit ? Color.white : unit.Faction != 0 ? RivalRed : DemoUi.Gold;
+                    dot.color = lit ? Color.white : unit.IsPolice ? PoliceBlue : unit.Faction != 0 ? RivalRed : DemoUi.Gold;
                     if (!dot.enabled)
                         dot.enabled = true;
                 }

@@ -43,6 +43,11 @@ namespace RoadDemo
         /// <summary>A floating panel's face - one lit step above the world.</summary>
         public static readonly Color Panel = new Color(0.045f, 0.095f, 0.145f, 0.96f);
 
+        /// <summary>The same navy, meant to be MULTIPLIED with the picture behind it
+        /// rather than laid over it: a panel over the street darkens the street to its
+        /// own colour instead of hiding it. Only right with <see cref="Multiply"/>.</summary>
+        public static readonly Color PanelShade = new Color(0.34f, 0.44f, 0.62f, 1f);
+
         /// <summary>The top strip's own floor - a shade lighter than a panel so the
         /// bar reads as furniture bolted to the screen, not a window over it.</summary>
         public static readonly Color BarFace = new Color(0.055f, 0.115f, 0.175f, 0.94f);
@@ -102,6 +107,9 @@ namespace RoadDemo
         public static Sprite IconDeath => Slot(ref iconDeath, Flat + "ICON_ModernMenus_Death_01_Clean.png");
         public static Sprite IconPlus => Slot(ref iconPlus, Flat + "ICON_ModernMenus_Plus_01_Clean.png");
 
+        /// <summary>The car hint's glyphs: the back arrow for "get out", the plain one for "get in".</summary>
+        public static Sprite IconBack => Slot(ref iconBack, Flat + "ICON_ModernMenus_Arrow_Back_01_Clean.png");
+
         /// <summary>The soft glow dot the world markers ride on.</summary>
         public static Sprite Dot => Slot(ref dot, Pack + "Sprites/FX/SPR_ModernMenus_FX_Glow_Dot_01.png");
 
@@ -114,7 +122,7 @@ namespace RoadDemo
             Fonts + "BarlowCondensed/BarlowCondensed-Medium SDF.asset");
 
         static Sprite gradient, chip, box, iconTimer, iconPlay, iconFaster, dot;
-        static Sprite iconArrow, iconCombat, iconChat, iconDeath, iconPlus;
+        static Sprite iconArrow, iconCombat, iconChat, iconDeath, iconPlus, iconBack;
         static TMP_FontAsset headline, body;
         static bool warned;
 
@@ -124,7 +132,7 @@ namespace RoadDemo
         static void ResetForPlay()
         {
             gradient = chip = box = iconTimer = iconPlay = iconFaster = dot = null;
-            iconArrow = iconCombat = iconChat = iconDeath = iconPlus = null;
+            iconArrow = iconCombat = iconChat = iconDeath = iconPlus = iconBack = null;
             headline = body = null;
             warned = false;
         }
@@ -197,6 +205,22 @@ namespace RoadDemo
         /// otherwise swallow the key whole. A sprite-less call leaves the flat tint,
         /// which is exactly the no-pack fallback.
         /// </summary>
+        /// <summary>The material that makes an Image multiply with what is behind it
+        /// (Photoshop's multiply layer) instead of covering it - one for all of them.
+        /// Null when the shader is not in the project, and the caller keeps flat paint.</summary>
+        static Material multiply;
+        public static Material Multiply
+        {
+            get
+            {
+                if (multiply != null) return multiply;
+                var shader = Shader.Find("RoadDemo/UI Multiply");
+                if (shader == null) return null;
+                multiply = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+                return multiply;
+            }
+        }
+
         public static Image Dress(Image image, Sprite sprite, float drawnRim, Color tint)
         {
             if (!image)

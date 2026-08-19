@@ -88,6 +88,7 @@ namespace LivingCity.UI
             CharacterStatus.Jailed => "Jailed",
             CharacterStatus.Hospitalized => "Hospitalized",
             CharacterStatus.Dead => "Dead",
+            CharacterStatus.Deserted => "Deserted",
             _ => "",
         };
 
@@ -276,6 +277,7 @@ namespace LivingCity.UI
         public const string ReasonNoSuchCrew = "No such crew.";
         public const string ReasonNoSuchItem = "No such item in the stock.";
         public const string ReasonDead = "The man is dead.";
+        public const string ReasonDeserted = "The man deserted.";
         public const string ReasonSpecialist = "A specialist stays on retainer.";
         public const string ReasonAlreadyLieutenant = "He already runs a crew.";
         public const string ReasonNotLieutenant = "He does not run a crew.";

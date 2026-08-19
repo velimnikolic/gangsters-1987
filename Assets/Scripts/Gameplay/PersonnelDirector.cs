@@ -139,6 +139,11 @@ namespace LivingCity.Gameplay
         public OpResult Kill(int id) =>
             Apply(RosterOps.Kill, id, "shot dead");
 
+        /// <summary>The street reports a man who ran from the fight and kept running:
+        /// struck off as a deserter, his gear pooled, his post passed on.</summary>
+        public OpResult Desert(int id) =>
+            Apply(RosterOps.Desert, id, "deserted");
+
         public OpResult AssignToPool(int id) =>
             Apply(RosterOps.AssignToPool, id, "sent to the pool");
 

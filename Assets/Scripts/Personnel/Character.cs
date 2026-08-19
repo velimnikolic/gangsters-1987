@@ -25,6 +25,9 @@ namespace LivingCity.Personnel
         Jailed,
         Hospitalized,
         Dead,
+        /// <summary>Ran from a fight and never came back: struck off like the dead - his
+        /// line kept, his gear pooled, his post filled - but with no grave.</summary>
+        Deserted,
     }
 
     /// <summary>
@@ -47,6 +50,10 @@ namespace LivingCity.Personnel
         public Rank Rank = Rank.Hood;
         public Specialty Specialty = Specialty.None;
         public CharacterStatus Status = CharacterStatus.Active;
+
+        /// <summary>Off the books for good - dead or deserted: struck through, unpaid,
+        /// beyond promotion or a gun.</summary>
+        public bool Gone => Status == CharacterStatus.Dead || Status == CharacterStatus.Deserted;
 
         /// <summary>0-100 rather than stars: weekly drift will nudge this by single points,
         /// and a five-step scale would make every nudge invisible or enormous.</summary>

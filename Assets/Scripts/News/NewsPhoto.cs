@@ -55,21 +55,28 @@ namespace LivingCity.News
         public const int CaptionBudget = 52;
 
         /// <summary>The police officer and the patrol car. Neither lives in the crowd
-        /// groups (they hang off PrefabDatabase directly), which is why PortraitStudio's
-        /// resolvers check those two fields by name as a fallback.</summary>
+        /// groups, which is why PortraitStudio's resolvers check the database's two
+        /// police fields by name and then fall back to the packs themselves. The car is
+        /// the force's own marked body (VehicleCatalog.PoliceCars): the paper photographs
+        /// what is actually parked at the kerb.</summary>
         const string OfficerModel = "SM_Chr_Officer_Male_01_AI";
-        const string PoliceCarModel = "SM_Veh_Car_01_AI";
+        const string PoliceCarModel = "SM_Veh_Sedan_01_Preset_Police";
 
-        /// <summary>Faces that are not gang faces - the suits, the street, the law.</summary>
+        /// <summary>Faces that are not gang faces - the suits, the street, the law.
+        /// Held to that literally: nothing here is on GangLooks' cast tables, so the
+        /// face over "local businessman" is never the face of a capo two columns down.
+        /// (The business suits and the salesman the mob may be dealt were moved off
+        /// these lists for exactly that.)</summary>
         static readonly string[] SuitFaces =
         {
-            "SM_Gen_Chr_Business_Male_01_AI", "SM_Chr_Rich_Male_01_AI", "SM_Chr_Salesman_01_AI",
+            "SM_Chr_Rich_Male_01_AI", "SM_Gen_Chr_Business_Female_01_AI",
+            "SM_Chr_Rich_Female_01_AI",
         };
 
         static readonly string[] StreetFaces =
         {
             "SM_Chr_City_Male_01_AI", "SM_Chr_City_Female_01_AI", "SM_Chr_City_Male_02_AI",
-            "SM_Gen_Chr_Street_Male_01_AI", "SM_Chr_Surfer_Female_01_AI",
+            "SM_Gen_Chr_Street_Male_02_AI", "SM_Chr_Surfer_Female_01_AI",
         };
 
         static readonly string[] CriminalFaces =
@@ -179,9 +186,9 @@ namespace LivingCity.News
                         WorldCaptions[roll % WorldCaptions.Length]);
 
                 case HeadlineDesk.Business:
-                    // The limousine outside the exchange, or the trader himself.
+                    // The car outside the exchange, or the trader himself.
                     return roll % 4 == 0
-                        ? new NewsPhoto(PhotoSubject.Vehicle, "SM_Veh_Limousine_01",
+                        ? new NewsPhoto(PhotoSubject.Vehicle, "SM_Veh_Sedan_01",
                             BusinessCaptions[2])
                         : new NewsPhoto(PhotoSubject.Person, Pick(SuitFaces, roll, alreadyPrinted),
                             BusinessCaptions[roll % 2]);

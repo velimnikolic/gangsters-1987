@@ -6,29 +6,26 @@ using LivingCity.Data;
 namespace LivingCity.EditorTools
 {
     /// <summary>
-    /// Bakes Assets/Configs/SoundDatabase.asset from the 400 Sounds Pack, exactly as
+    /// Bakes Assets/Configs/SoundDatabase.asset from Assets/Audio, exactly as
     /// CityAssetBootstrap bakes PrefabDatabase from the model packs: paths are consts here,
     /// missing files collect into one warning, runtime only ever sees the asset.
     ///
     /// Its own file rather than another region of CityAssetBootstrap - that file is 2,600
     /// lines and the two bakers share nothing but a habit.
     ///
-    /// The pack is a general-purpose library, not a city soundscape, so some slots are
-    /// honest re-purposings rather than literal matches (documented per slot below). CLIP
-    /// choices are re-baked on every run; VOLUME/PITCH trims are seeded only when the asset
-    /// is first created, so tuning done in the Inspector survives a re-bake - the same
-    /// contract GetOrCreate gives CityConfig.
+    /// Assets/Audio is itself baked, out of the Sonniss GDC library by
+    /// Tools/audio/import_sounds.py. That script is where a clip is chosen, cut and
+    /// levelled, and where the two re-purposings it had to make are argued; this one only
+    /// says which of its clips fills which of the city's slots.
+    ///
+    /// CLIP choices are re-baked on every run; VOLUME/PITCH trims are seeded only when the
+    /// asset is first created, so tuning done in the Inspector survives a re-bake - the
+    /// same contract GetOrCreate gives CityConfig.
     /// </summary>
     public static class SoundAssetBootstrap
     {
-        const string PackRoot = "Assets/ci/400 Sounds Pack/";
-        const string GeneratedRoot = "Assets/ci/Generated Sounds/";
+        const string AudioRoot = "Assets/Audio/";
         const string ConfigDir = "Assets/Configs";
-
-        // The only crowd recording the project ever had shipped with the polyperfect people
-        // pack, which is gone. The 400 pack has no walla at all, so there is no murmur to
-        // point at until one is bought or recorded - PedestrianAudioSystem already treats an
-        // empty loop list as "no murmur" rather than as an error.
 
         static readonly List<string> Missing = new List<string>();
 
@@ -57,42 +54,50 @@ namespace LivingCity.EditorTools
             }
 
             // -- ambience ---------------------------------------------------------------
-            // The pack has exactly one outdoor bed, so day gets the wind and night gets
-            // silence on purpose: a city that goes quiet after dark reads as night, and the
-            // murmur and engines still carry the scene.
-            db.cityDayBed.clip = Clip("Environment/ambient_wind.wav");
-            db.cityNightBed.clip = null;
+            db.cityDayBed.clip = Clip("Ambience/city_day.wav");
+            db.cityNightBed.clip = Clip("Ambience/city_night.wav");
 
-            db.clearDuskLayer.clip = null;
-            db.overcastLayer.clip = null;
-            // Low white noise under the smog: the closest thing anywhere in the pack to an
-            // industrial haze hum. Lives or dies by its trim - seeded very low below.
-            db.smogLayer.clip = Clip("Other/white_noise_long.wav");
+            // Dusk keeps the ballast hum off the streetlights coming on; overcast gets the
+            // wind through the trees, and smog the rain bed run very low, which is the only
+            // layer in the library that reads as air you can see.
+            db.clearDuskLayer.clip = Clip("Ambience/neon_hum.wav");
+            db.overcastLayer.clip = Clip("Ambience/wind_gusts.wav");
+            db.smogLayer.clip = Clip("Ambience/rain_city.wav");
 
             // -- traffic ----------------------------------------------------------------
-            // No engine recording exists in the pack, and appliances pitched down read as
-            // mosquitoes - their energy lives in the kHz band however far the pitch drops.
-            // These two are SYNTHESIZED idle loops (scratchpad gen_engine.py): a ~30 Hz and
-            // a ~41 Hz firing fundamental with harmonic tails and lope wobble, seamless by
-            // construction. Regenerate with different parameters rather than re-tuning
-            // Unity-side pitch past ~0.8-1.4.
-            db.engineLoops = ClipArrayAt(GeneratedRoot,
-                "engine_idle_a.wav",
-                "engine_idle_b.wav");
+            // A 5-litre Mercury loafing, looped on whole firing cycles, and the same take a
+            // shade slower so two adjacent cars do not phase against one recording. Unity
+            // pitch on top of these stays inside about 0.85-1.35; past that a car changes
+            // displacement rather than speed.
+            db.engineLoops = ClipArray(
+                "Traffic/engine_idle_a.wav",
+                "Traffic/engine_idle_b.wav");
 
             // -- weapons ----------------------------------------------------------------
-            // The only firearm in the pack. Variants come from the one-shot pool's pitch
-            // jitter instead of from files.
-            db.gunshots = ClipArray("Weapons/shot_muffled.wav");
+            // Four renderings of one light machine gun take off OpenGameArt - the only
+            // firearm the project has, and the only clip in it that must be credited.
+            db.gunshots = ClipArray(
+                "Weapons/gunshot_1.wav",
+                "Weapons/gunshot_2.wav",
+                "Weapons/gunshot_3.wav",
+                "Weapons/gunshot_4.wav");
 
             // -- pedestrians ------------------------------------------------------------
             db.footsteps = ClipArray(
-                "Footsteps/foley_footstep_concrete_1.wav",
-                "Footsteps/foley_footstep_concrete_2.wav",
-                "Footsteps/foley_footstep_concrete_3.wav",
-                "Footsteps/foley_footstep_concrete_4.wav");
+                "People/footstep_concrete_1.wav",
+                "People/footstep_concrete_2.wav",
+                "People/footstep_concrete_3.wav",
+                "People/footstep_concrete_4.wav",
+                "People/footstep_concrete_5.wav",
+                "People/footstep_concrete_6.wav");
 
-            db.crowdMurmurLoops = System.Array.Empty<AudioClip>();
+            // The murmur slot, empty since the polyperfect people pack left with the only
+            // crowd recording the project had. Two loops: a hall of walla and footsteps for
+            // near, and a far one low-passed until no word in it survives - which is what
+            // makes a bed of somebody else's language safe to loop under this city.
+            db.crowdMurmurLoops = ClipArray(
+                "Ambience/crowd_walla.wav",
+                "Ambience/crowd_walla_far.wav");
 
             if (created)
                 SeedTrims(db);
@@ -104,7 +109,7 @@ namespace LivingCity.EditorTools
                 Debug.LogWarning(
                     $"[SoundBootstrap] {Missing.Count} clip(s) not found - those layers stay " +
                     $"silent:\n{string.Join("\n", Missing)}\n" +
-                    "Is the pack extracted at 'Assets/ci/400 Sounds Pack/'?");
+                    "Run 'python Tools/audio/import_sounds.py' to bake Assets/Audio.");
             else
                 Debug.Log("[SoundBootstrap] SoundDatabase refreshed, all slots filled.", db);
 
@@ -119,7 +124,9 @@ namespace LivingCity.EditorTools
         {
             db.cityDayBed.volume = 0.18f;
             db.cityNightBed.volume = 0.18f;
-            db.smogLayer.volume = 0.04f;
+            db.clearDuskLayer.volume = 0.06f;
+            db.overcastLayer.volume = 0.1f;
+            db.smogLayer.volume = 0.05f;
 
             db.engineVolume = 0.4f;
             db.enginePitchMin = 0.95f;
@@ -127,36 +134,22 @@ namespace LivingCity.EditorTools
 
             db.gunshotVolume = 1f;
             db.footstepVolume = 0.35f;
-            db.murmurVolume = 0.13f;
+            db.murmurVolume = 0.22f;
             db.masterVolume = 1f;
         }
 
-        static AudioClip Clip(string packRelative) => ClipAt(PackRoot, packRelative);
-
-        static AudioClip ClipAt(string root, string relative)
+        static AudioClip Clip(string relative)
         {
-            var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(root + relative);
+            var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioRoot + relative);
             if (!clip)
-                Missing.Add(root + relative);
+                Missing.Add(AudioRoot + relative);
             return clip;
         }
 
-        static AudioClip[] ClipArrayAt(string root, params string[] relatives)
+        static AudioClip[] ClipArray(params string[] relatives)
         {
             var clips = new List<AudioClip>(relatives.Length);
             foreach (var relative in relatives)
-            {
-                var clip = ClipAt(root, relative);
-                if (clip)
-                    clips.Add(clip);
-            }
-            return clips.ToArray();
-        }
-
-        static AudioClip[] ClipArray(params string[] packRelatives)
-        {
-            var clips = new List<AudioClip>(packRelatives.Length);
-            foreach (var relative in packRelatives)
             {
                 var clip = Clip(relative);
                 if (clip)

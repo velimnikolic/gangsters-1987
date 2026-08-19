@@ -13,38 +13,38 @@ MonoBehaviour:
   m_Name: SoundDatabase
   m_EditorClassIdentifier: Assembly-CSharp::LivingCity.Data.SoundDatabase
   cityDayBed:
-    clip: {fileID: 8300000, guid: 862a27a88209c4bb2b228fdce5190849, type: 3}
+    clip: {fileID: 0}
     volume: 0.18
   cityNightBed:
     clip: {fileID: 0}
     volume: 0.18
   clearDuskLayer:
     clip: {fileID: 0}
-    volume: 1
+    volume: 0.06
   overcastLayer:
     clip: {fileID: 0}
-    volume: 1
+    volume: 0.1
   smogLayer:
-    clip: {fileID: 8300000, guid: bf87262ad37ca4adbbdbb60ef4c3f840, type: 3}
-    volume: 0.04
+    clip: {fileID: 0}
+    volume: 0.05
   engineLoops:
-  - {fileID: 8300000, guid: caed81ea692d4cce9db6db45d72545dc, type: 3}
-  - {fileID: 8300000, guid: a084fa909537457bb5d9e1f2d9e7d0d0, type: 3}
+  - {fileID: 0}
+  - {fileID: 0}
   engineVolume: 0.311
   enginePitchMin: 0.95
   enginePitchMax: 1.35
   gunshots:
-  - {fileID: 8300000, guid: ffc3c234f27cf45f39815593be6bba6d, type: 3}
+  - {fileID: 0}
   gunshotVolume: 1
   footsteps:
-  - {fileID: 8300000, guid: 18e9a8413796c457aafca476571579c1, type: 3}
-  - {fileID: 8300000, guid: 65f9d46a5caa14006a34d5dfd7e4ea1a, type: 3}
-  - {fileID: 8300000, guid: bea075ec206944b6b976a9715b705e40, type: 3}
-  - {fileID: 8300000, guid: 8c43aa9d1d52b4dcd8e5b572a20813b2, type: 3}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
   footstepVolume: 0.04
   crowdMurmurLoops:
   - {fileID: 0}
-  murmurVolume: 0.13
+  murmurVolume: 0.22
   masterVolume: 1
   detailMaxDistance: 60
   oneShotVoices: 16

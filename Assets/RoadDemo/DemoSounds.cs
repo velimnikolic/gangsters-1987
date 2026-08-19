@@ -9,96 +9,164 @@ namespace RoadDemo
     // is deliberately not read: the demo owns its whole audio stack the way it owns
     // its clock and its sky.
     //
-    // The 400 Sounds Pack is a general-purpose library, not a city soundscape, so a
-    // few slots are honest re-purposings (noted per slot). What the pack simply does
-    // not have - an engine idle, a car horn - is synthesized into
-    // Assets/ci/Generated Sounds/ instead (scratchpad gen_engine.py, gen_horn.py);
-    // the project's audio postprocessor already covers that folder.
+    // The clips live in Assets/Audio, cut out of the Sonniss GDC library by
+    // Tools/audio/import_sounds.py - which is where a bad cut gets fixed, not here.
+    // Two things the library did not have: a gunshot, which comes from OpenGameArt
+    // and is the one clip in the project with an attribution obligation on it, and a
+    // siren, which is synthesized.
     //
     // Every slot may come back null and every array may come back empty. A missing
     // clip means that layer stays silent, never that anything throws - the crowd's
     // own rule for a missing animation clip.
     public static class DemoSounds
     {
-        const string Pack = "Assets/ci/400 Sounds Pack/";
-        const string Gen = "Assets/ci/Generated Sounds/";
+        const string Root = "Assets/Audio/";
 
         // ------------------------------------------------------------- the levels
         //
         // Trims live here rather than on the component so the whole mix is one
         // screen. Chosen against the demo's default boom (190 m out, ear parked on
         // the focus) - a closer camera hears the same balance louder, not different.
+        //
+        // The clips are levelled at import (beds to a common RMS, one-shots to a
+        // common peak), so these are balance decisions and not gain-staging: a bed
+        // that comes back too loud is a wrong number here, not a wrong file.
 
         public const float Master = 1f;
         public const float DayBedVolume = 0.16f;
-        public const float NightBedVolume = 0.05f;
-        public const float TrafficHumVolume = 0.13f;
+        public const float NightBedVolume = 0.16f;
+        public const float TrafficHumVolume = 0.30f;
+        public const float MurmurVolume = 0.22f;
         public const float EngineVolume = 0.32f;
         public const float HornVolume = 0.5f;
         public const float FootstepVolume = 0.3f;
         public const float StreetVoiceVolume = 0.24f;
         public const float DoorVolume = 0.35f;
         public const float UiVolume = 0.35f;
+        public const float ScreamVolume = 0.7f;
+        public const float SirenVolume = 0.55f;
 
         // ---------------------------------------------------------------- the beds
 
-        /// <summary>Daylight bed. The pack's one outdoor loop, and the only honest
-        /// ambience in it.</summary>
-        public static AudioClip Wind => Load<AudioClip>(Pack + "Environment/ambient_wind.wav");
+        /// <summary>Daylight bed: a calm courtyard street, distant traffic and
+        /// children two blocks over.</summary>
+        public static AudioClip DayBed => Load<AudioClip>(Root + "Ambience/city_day.wav");
 
-        /// <summary>After dark. Low white noise standing in for the air over a city
-        /// at night - it lives or dies by its trim, which is why NightBedVolume is a
-        /// third of the day bed's.</summary>
-        public static AudioClip NightAir => Load<AudioClip>(Pack + "Other/white_noise_long.wav");
+        /// <summary>After dark: the same city with the traffic thinned and the walla
+        /// come out of the bars.</summary>
+        public static AudioClip NightBed => Load<AudioClip>(Root + "Ambience/city_night.wav");
+
+        /// <summary>What a block of traffic sounds like from four streets away -
+        /// a downtown bed with its top rolled off. It replaces the old trick of
+        /// pitching an engine loop down an octave and a half, which sounded like
+        /// one enormous car rather than like many small ones.</summary>
+        public static AudioClip TrafficHum => Load<AudioClip>(Root + "Ambience/traffic_hum.wav");
+
+        /// <summary>Crowd murmur, scaled by how many people are near the focus.
+        /// Never a source per pedestrian.</summary>
+        public static AudioClip Murmur => Load<AudioClip>(Root + "Ambience/crowd_walla.wav");
+
+        /// <summary>The murmur from further off - low-passed until no word in it
+        /// survives, which is the only way a bed of English-language walla is safe
+        /// to loop under an English-language city.</summary>
+        public static AudioClip MurmurFar => Load<AudioClip>(Root + "Ambience/crowd_walla_far.wav");
 
         // -------------------------------------------------------------- the street
 
-        /// <summary>Engine idles. Synthesized: no recording in the pack is an engine,
-        /// and appliances pitched down read as mosquitoes - their energy sits in the
-        /// kHz band however far the pitch drops. Two of them so two cars side by side
-        /// do not phase against one recording.</summary>
+        /// <summary>Engine idles, off a 5-litre Mercury loafing: a stretch of steady
+        /// RPM looped on whole firing cycles. Two of them, the second a shade slower,
+        /// so two cars side by side do not phase against one recording.</summary>
         public static AudioClip[] EngineLoops =>
-            _engines ??= Gather(Load<AudioClip>(Gen + "engine_idle_a.wav"),
-                                Load<AudioClip>(Gen + "engine_idle_b.wav"));
+            _engines ??= Gather(Load<AudioClip>(Root + "Traffic/engine_idle_a.wav"),
+                                Load<AudioClip>(Root + "Traffic/engine_idle_b.wav"));
 
-        /// <summary>Horns, also synthesized - two reeds a rough major third apart,
-        /// a tap and a lean.</summary>
+        /// <summary>The diesel idle, for anything with a flatbed on it.</summary>
+        public static AudioClip EngineDiesel => Load<AudioClip>(Root + "Traffic/engine_diesel.wav");
+
+        /// <summary>Horns: motorcycle horns taken down into a car's register, which
+        /// is the same two-reed part built bigger.</summary>
         public static AudioClip[] Horns =>
-            _horns ??= Gather(Load<AudioClip>(Gen + "horn_short.wav"),
-                              Load<AudioClip>(Gen + "horn_long.wav"));
+            _horns ??= Gather(Load<AudioClip>(Root + "Traffic/horn_short.wav"),
+                              Load<AudioClip>(Root + "Traffic/horn_long.wav"));
+
+        public static AudioClip Skid => Load<AudioClip>(Root + "Traffic/tyre_skid.wav");
+        public static AudioClip CarPassBy => Load<AudioClip>(Root + "Traffic/car_pass_by.wav");
+        public static AudioClip TruckPassBy => Load<AudioClip>(Root + "Traffic/truck_pass_by.wav");
 
         public static AudioClip[] Footsteps =>
             _footsteps ??= Gather(
-                Load<AudioClip>(Pack + "Footsteps/foley_footstep_concrete_1.wav"),
-                Load<AudioClip>(Pack + "Footsteps/foley_footstep_concrete_2.wav"),
-                Load<AudioClip>(Pack + "Footsteps/foley_footstep_concrete_3.wav"),
-                Load<AudioClip>(Pack + "Footsteps/foley_footstep_concrete_4.wav"));
+                Load<AudioClip>(Root + "People/footstep_concrete_1.wav"),
+                Load<AudioClip>(Root + "People/footstep_concrete_2.wav"),
+                Load<AudioClip>(Root + "People/footstep_concrete_3.wav"),
+                Load<AudioClip>(Root + "People/footstep_concrete_4.wav"),
+                Load<AudioClip>(Root + "People/footstep_concrete_5.wav"),
+                Load<AudioClip>(Root + "People/footstep_concrete_6.wav"));
 
-        /// <summary>A man on the pavement, once in a while. The pack has no crowd
-        /// walla at all, so there is no murmur bed to point at - what it does have is
-        /// a whistle and a cough, which are unambiguous enough to carry the street on
-        /// their own. The male grunts next to them (Human/man_*) are game hurt
-        /// sounds, not chatter, and are left alone on purpose.</summary>
+        public static AudioClip[] FootstepsGravel =>
+            _gravel ??= Gather(
+                Load<AudioClip>(Root + "People/footstep_gravel_1.wav"),
+                Load<AudioClip>(Root + "People/footstep_gravel_2.wav"),
+                Load<AudioClip>(Root + "People/footstep_gravel_3.wav"),
+                Load<AudioClip>(Root + "People/footstep_gravel_4.wav"));
+
+        /// <summary>A man on the pavement, once in a while: a whistle, a cough, a
+        /// laugh. Not chatter - the murmur bed is the chatter, and a per-body voice
+        /// line at this camera distance only ever reads as one person shouting.</summary>
         public static AudioClip[] StreetVoices =>
-            _voices ??= Gather(Load<AudioClip>(Pack + "Human/whistle.wav"),
-                               Load<AudioClip>(Pack + "Human/cough_short.wav"),
-                               Load<AudioClip>(Pack + "Human/cough_double.wav"));
+            _voices ??= Gather(Load<AudioClip>(Root + "People/whistle.wav"),
+                               Load<AudioClip>(Root + "People/cough.wav"),
+                               Load<AudioClip>(Root + "People/laugh_m.wav"),
+                               Load<AudioClip>(Root + "People/laugh_f.wav"),
+                               Load<AudioClip>(Root + "People/dog_bark.wav"));
 
-        public static AudioClip DoorOpen => Load<AudioClip>(Pack + "Environment/door_open.wav");
-        public static AudioClip DoorClose => Load<AudioClip>(Pack + "Environment/door_close.wav");
+        /// <summary>The crowd under fire: a shocked gasp, two panic yells, and the
+        /// hurts for whoever the round found.</summary>
+        public static AudioClip[] Screams =>
+            _screams ??= Gather(Load<AudioClip>(Root + "People/panic_gasp.wav"),
+                                Load<AudioClip>(Root + "People/panic_yell_m.wav"),
+                                Load<AudioClip>(Root + "People/panic_scream_f.wav"),
+                                Load<AudioClip>(Root + "People/hurt_m.wav"),
+                                Load<AudioClip>(Root + "People/hurt_f.wav"));
+
+        // -------------------------------------------------------------- the police
+
+        /// <summary>The patrol car's wail - a Federal Signal style sweep, the
+        /// American electronic siren of the period. Synthesized: the library has no
+        /// siren of any kind. A loop; the car carries it.</summary>
+        public static AudioClip Siren => Load<AudioClip>(Root + "Police/siren_loop.wav");
+
+        /// <summary>Dispatch, band-limited to what a 1987 set passes.</summary>
+        public static AudioClip[] RadioCalls =>
+            _radio ??= Gather(Load<AudioClip>(Root + "Police/radio_call_1.wav"),
+                              Load<AudioClip>(Root + "Police/radio_call_2.wav"),
+                              Load<AudioClip>(Root + "Police/radio_call_3.wav"));
+
+        public static AudioClip RadioSquelch => Load<AudioClip>(Root + "Police/radio_squelch.wav");
+        public static AudioClip ShotsFired => Load<AudioClip>(Root + "Police/cop_shots_fired.wav");
+
+        /// <summary>The door a walker goes through - a stairwell door, heavy and
+        /// American. Not the car's: a Mercury's door shutting at a shop front is the
+        /// wrong weight and the wrong century of hinge.</summary>
+        public static AudioClip DoorOpen => Load<AudioClip>(Root + "People/door_open.wav");
+        public static AudioClip DoorClose => Load<AudioClip>(Root + "People/door_close.wav");
+
+        public static AudioClip CarDoorOpen => Load<AudioClip>(Root + "Traffic/car_door_open.wav");
+        public static AudioClip CarDoorClose => Load<AudioClip>(Root + "Traffic/car_door_close.wav");
 
         // ------------------------------------------------------------------- the UI
 
-        public static AudioClip UiClick => Load<AudioClip>(Pack + "UI/select_1.wav");
-        public static AudioClip UiToggleOn => Load<AudioClip>(Pack + "UI/toggle_on.wav");
-        public static AudioClip UiToggleOff => Load<AudioClip>(Pack + "UI/toggle_off.wav");
-        public static AudioClip MapOpen => Load<AudioClip>(Pack + "Items/map_open.wav");
-        public static AudioClip MapClose => Load<AudioClip>(Pack + "Items/map_close.wav");
+        // Mechanisms and paper, not glass: a bakelite double-click, a radio's power
+        // button, a sheet of the same paper the ledger is drawn on.
+        public static AudioClip UiClick => Load<AudioClip>(Root + "Ui/click.wav");
+        public static AudioClip UiToggleOn => Load<AudioClip>(Root + "Ui/toggle_on.wav");
+        public static AudioClip UiToggleOff => Load<AudioClip>(Root + "Ui/toggle_off.wav");
+        public static AudioClip MapOpen => Load<AudioClip>(Root + "Ui/map_open.wav");
+        public static AudioClip MapClose => Load<AudioClip>(Root + "Ui/map_close.wav");
         /// <summary>The lot plan going over the city - paper, because that is what
         /// the overlay is drawn as.</summary>
-        public static AudioClip Paper => Load<AudioClip>(Pack + "Materials/paper_move.wav");
+        public static AudioClip Paper => Load<AudioClip>(Root + "Ui/paper_rustle.wav");
 
-        static AudioClip[] _engines, _horns, _footsteps, _voices;
+        static AudioClip[] _engines, _horns, _footsteps, _gravel, _voices, _screams, _radio;
 
         public static AudioClip Pick(AudioClip[] clips) =>
             clips == null || clips.Length == 0 ? null : clips[Random.Range(0, clips.Length)];

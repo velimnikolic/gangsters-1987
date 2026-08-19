@@ -4,7 +4,7 @@ using UnityEngine;
 namespace LivingCity.Data
 {
     /// <summary>
-    /// Every sound the city plays, by role. Populated from the 400 Sounds Pack by
+    /// Every sound the city plays, by role. Populated from Assets/Audio by
     /// SoundAssetBootstrap the same way PrefabDatabase is populated from the model packs -
     /// paths live in the editor baker, runtime only ever reads this asset.
     ///

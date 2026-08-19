@@ -32,6 +32,7 @@ namespace LivingCity.EditorTools
         const string SectionPolice = "POLICE STATION";
         const string SectionGang = "GANG WARFARE";
         const string SectionCoffee = "COFFEE SHOP";
+        const string SectionWarehouse = "MILITARY WAREHOUSE";
 
         /// <summary>The nightclub pack ships no assembled exteriors - each demo SCENE is
         /// one venue (Scene root + Roof_Layer; Background_Layer is the surrounding street
@@ -242,6 +243,10 @@ namespace LivingCity.EditorTools
             ["building-factory-old"] = "Old Factory",
             ["building-factory-hall"] = "Factory Hall",
             ["building-workshop"] = "Workshop",
+            ["building-warehouse-large"] = "Port Warehouse",
+            ["building-warehouse-small"] = "Port Store",
+            ["building-depot-garage"] = "Depot Garage",
+            ["building-yard-shed"] = "Yard Shed",
             ["building-coffeeshop"] = "Coffee Shop",
         };
 
@@ -258,6 +263,10 @@ namespace LivingCity.EditorTools
             SyntyBakeUtil.ClearCache();
             SeamLog.Clear();
             PalmLedger.Clear();
+
+            // The Military Warehouse sheds show as kit references below; bake them first
+            // if they are stale, so a fresh clone's catalogue is not four holes.
+            SyntyWarehouseKit.BuildIfStale();
 
             // 1. Bake every demo group into Catalog prefabs, one pack at a time.
             var baked = new List<(string section, string name)>();
@@ -302,6 +311,11 @@ namespace LivingCity.EditorTools
                 (SectionGang, "building-factory-old"),
                 (SectionGang, "building-factory-hall"),
                 (SectionGang, "building-workshop"),
+                // The Military Warehouse pack's own sheds - the harbour's industrial set.
+                (SectionWarehouse, "building-warehouse-large"),
+                (SectionWarehouse, "building-warehouse-small"),
+                (SectionWarehouse, "building-depot-garage"),
+                (SectionWarehouse, "building-yard-shed"),
                 (SectionCoffee, "building-coffeeshop"),
             })
                 if (AssetDatabase.LoadAssetAtPath<GameObject>(

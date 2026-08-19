@@ -386,7 +386,7 @@ namespace LivingCity.UI
                 Highlight(rect, LedgerStyle.Highlighter);
 
             var x = 12f + (indent ? HoodIndent : 0f);
-            var dead = member.Status == CharacterStatus.Dead;
+            var dead = member.Gone; // struck through: dead or deserted
             var ink = dead ? LedgerStyle.InkDim : LedgerStyle.Ink;
 
             var name = Text("Name", rect, lieutenantRow ? LedgerStyle.MonoBold : LedgerStyle.Mono,
@@ -517,43 +517,15 @@ namespace LivingCity.UI
 
         // ------------------------------------------------------------------ the card
 
-        /// <summary>The Synty faces the Polaroids draw from - suits for the men who run
-        /// things, street muscle for the men who do them. Plain pack prefab names,
-        /// resolved through the cast baked into LedgerModelSet.</summary>
-        static readonly string[] LieutenantLooks =
-        {
-            "SM_Chr_Italian_Gangster_01",
-            "SM_Chr_Detective_Male_01",
-            "SM_Gen_Chr_Business_Male_01",
-            "SM_Chr_GangBoss_01",
-            "SM_Chr_City_Male_01",
-        };
-
-        static readonly string[] HoodLooks =
-        {
-            "SM_Chr_Gang_Male_01",
-            "SM_Chr_Gang_Male_02",
-            "SM_Chr_Goon_01",
-            "SM_Chr_GangMember_Male_01",
-            "SM_Chr_Criminal_Male_01",
-            "SM_Chr_GangMember_Male_02",
-            "SM_Gen_Chr_Street_Male_01",
-            "SM_Chr_GangMember_Male_03",
-            "SM_Gen_Chr_Street_Male_02",
-            "SM_Chr_City_Male_02",
-            "SM_Chr_Salesman_01",
-        };
-
-        /// <summary>The face this member wears in his photograph, picked by his stable
-        /// Id - sixty men are not one man in one coat. No rng: the same man always sits
-        /// for the same photo.</summary>
-        public static GameObject MemberModel(Character member)
-        {
-            var looks = member.Rank == Rank.Lieutenant ||
-                        member.Specialty != Specialty.None
-                ? LieutenantLooks : HoodLooks;
-            return PortraitStudio.FindPeoplePrefab(looks[member.Id % looks.Length]);
-        }
+        /// <summary>The face this member wears in his photograph and on the street - the
+        /// same man in both, and never a body one of his own crewmates is wearing. The
+        /// rule and the approved stock live together in Gangs.GangLooks; the book only
+        /// asks it who this man is, and the roster it asks against is the director's.
+        /// </summary>
+        public static GameObject MemberModel(Character member) =>
+            PortraitStudio.FindPeoplePrefab(Gangs.GangLooks.LookFor(member,
+                Gameplay.PersonnelDirector.Instance != null
+                    ? Gameplay.PersonnelDirector.Instance.Roster : null));
 
         /// <summary>First letters of the first and last word of a name - "Don Salvatore
         /// Ricci" prints DR in the slot until his photograph arrives.</summary>
@@ -671,6 +643,7 @@ namespace LivingCity.UI
                 Stamp(cardContent, member.Status switch
                 {
                     CharacterStatus.Dead => "DECEASED",
+                    CharacterStatus.Deserted => "DESERTED",
                     CharacterStatus.Jailed => "IN CUSTODY",
                     _ => "IN HOSPITAL",
                 }, 0f, -56f, 124f, 30f, tilt: -14f, size: 15f);
@@ -887,7 +860,7 @@ namespace LivingCity.UI
                 {
                     y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
                         item.DisplayName, LedgerStyle.Ink, y + 2f);
-                    if (member.Status != CharacterStatus.Dead)
+                    if (!member.Gone)
                         Tape(cardContent, "GIVE", CardInner - 96f, y + 23f, 88f, 20f, () =>
                         {
                             lastRefusal = "";
@@ -927,7 +900,7 @@ namespace LivingCity.UI
             if (lastRefusal.Length > 0)
                 y = DetailLine(lastRefusal, LedgerStyle.RedPen, y, LedgerStyle.MonoItalic);
 
-            if (member.Status == CharacterStatus.Dead || member.Specialty != Specialty.None)
+            if (member.Gone || member.Specialty != Specialty.None)
                 return;
 
             if (pendingConfirm == Confirm.Promote)

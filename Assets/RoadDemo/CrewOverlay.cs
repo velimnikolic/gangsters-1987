@@ -44,6 +44,8 @@ namespace RoadDemo
         static readonly Color MarkTint = new Color(1f, 0.78f, 0.32f, 0.9f);
         static readonly Color RivalBoss = new Color(1f, 0.36f, 0.30f, 1f);
         static readonly Color RivalHood = new Color(1f, 0.36f, 0.30f, 0.6f);
+        static readonly Color PoliceBoss = new Color(0.38f, 0.70f, 1f, 1f);
+        static readonly Color PoliceHood = new Color(0.38f, 0.70f, 1f, 0.6f);
         static readonly Color AttackTint = new Color(1f, 0.36f, 0.30f, 0.9f);
 
         static bool BookOpen => LivingCity.UI.PersonnelAlmanac.IsOpen;
@@ -68,6 +70,10 @@ namespace RoadDemo
         (string text, float until) _refusal;
         readonly List<Image> _carDots = new List<Image>();
         readonly List<TMP_Text> _carTags = new List<TMP_Text>();
+        RectTransform _carHint;        // "GET OUT" / "GET IN" over a car under the pointer
+        Image _carHintIcon;
+        TMP_Text _carHintText;
+        string _carHintShown;
         Color _markTint = MarkTint;
         Vector3 _markWorld;
         float _markAge = MarkLife;
@@ -115,6 +121,8 @@ namespace RoadDemo
             _mark.enabled = false;
 
             BuildPopup();
+            BuildBanner(root.transform);
+            BuildCarHint(root.transform);
 
             _previousVeto = BuildingCardPicker.ClickVeto;
             BuildingCardPicker.ClickVeto = ClaimsClick;
@@ -127,6 +135,114 @@ namespace RoadDemo
         }
 
         // ------------------------------------------------------------------ chrome
+
+        // A line of news over the street, under the crew bar: "Shots fired", "Police
+        // responding", the officer's shout. Anyone may post one (Announce); it fades.
+        static string bannerText;
+        static float bannerUntil;
+        static Color bannerTint = Color.white;
+        TMP_Text _banner;
+
+        /// <summary>Put a line up over the street for a few seconds.</summary>
+        public static void Announce(string text, float seconds, Color? tint = null)
+        {
+            bannerText = text;
+            bannerUntil = Time.unscaledTime + seconds;
+            bannerTint = tint ?? new Color(1f, 0.92f, 0.78f, 1f);
+        }
+
+        void BuildBanner(Transform root)
+        {
+            if (DemoUi.Dot == null) return;
+            _banner = DemoUi.Text(root, "Banner", 17f, Color.white, TextAlignmentOptions.Center, display: true);
+            _banner.characterSpacing = 4f;
+            var rect = _banner.rectTransform;
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.sizeDelta = new Vector2(900f, 26f);
+            rect.anchoredPosition = new Vector2(0f, -(_crews.BarTopInset + 84f));
+            _banner.enabled = false;
+        }
+
+        void UpdateBanner()
+        {
+            if (_banner == null) return;
+            bool on = Time.unscaledTime < bannerUntil && !string.IsNullOrEmpty(bannerText);
+            if (_banner.enabled != on) _banner.enabled = on;
+            if (!on) return;
+            if (_banner.text != bannerText) _banner.text = bannerText;
+            float left = bannerUntil - Time.unscaledTime;
+            var c = bannerTint;
+            c.a = Mathf.Clamp01(left / 0.8f);
+            _banner.color = c;
+        }
+
+        // The hint over a car the pointer is on: what a right-click on it does for the
+        // selected crew - GET OUT when they are sat in it, GET IN when it is theirs and
+        // they are on the pavement. A chip with the glyph and the word, riding above
+        // the car's tag.
+        void BuildCarHint(Transform root)
+        {
+            if (TMP_Settings.instance == null || TMP_Settings.defaultFontAsset == null) return;
+            _carHint = DemoUi.NewRect("Car Hint", root);
+            _carHint.sizeDelta = new Vector2(116f, 30f);
+            _carHint.pivot = new Vector2(0.5f, 0f);
+            var back = _carHint.gameObject.AddComponent<Image>();
+            back.raycastTarget = false;
+            DemoUi.Dress(back, DemoUi.Chip, 8f, DemoUi.Panel);
+
+            _carHintIcon = DemoUi.Icon(_carHint, "glyph", DemoUi.IconBack, 16f, BossOn);
+            var iconRect = _carHintIcon.rectTransform;
+            iconRect.anchorMin = iconRect.anchorMax = new Vector2(0f, 0.5f);
+            iconRect.pivot = new Vector2(0f, 0.5f);
+            iconRect.anchoredPosition = new Vector2(10f, 0f);
+
+            _carHintText = DemoUi.Text(_carHint, "word", 13f, BossOn, TextAlignmentOptions.MidlineLeft, display: true);
+            _carHintText.characterSpacing = 3f;
+            var textRect = _carHintText.rectTransform;
+            textRect.anchorMin = new Vector2(0f, 0f);
+            textRect.anchorMax = new Vector2(1f, 1f);
+            textRect.offsetMin = new Vector2(32f, 0f);
+            textRect.offsetMax = new Vector2(-8f, 0f);
+            _carHint.gameObject.SetActive(false);
+        }
+
+        // What a right-click on this car would do for the selected crew, or null.
+        string CarHintFor(CrewCar car)
+        {
+            var unit = _crews.Selected;
+            if (unit == null || car == null || car.Civic) return null;
+            if (unit.Car == car) return unit.Leaving ? "GETTING OUT" : "GET OUT";
+            if (car.Owner != unit || unit.Car != null) return null;
+            if (car.Occupant != null && car.Occupant != unit) return null;
+            return unit.Boarding == car ? "GETTING IN" : "GET IN";
+        }
+
+        void UpdateCarHint(Mouse mouse, float scale)
+        {
+            if (_carHint == null) return;
+            string hint = null;
+            CrewCar car = null;
+            if (mouse != null && !BookOpen && !PointerOverUi())
+            {
+                car = PickCarAt(mouse.position.ReadValue());
+                hint = CarHintFor(car);
+            }
+            bool on = hint != null;
+            if (_carHint.gameObject.activeSelf != on) _carHint.gameObject.SetActive(on);
+            if (!on) return;
+            if (hint != _carHintShown)
+            {
+                _carHintShown = hint;
+                _carHintText.text = hint;
+                _carHintIcon.sprite = hint.Contains("OUT") ? DemoUi.IconBack : DemoUi.IconArrow;
+            }
+            // over the car's tag, which is itself over the roof dot
+            var screen = _cam.WorldToScreenPoint(car.Position + Vector3.up * 2.0f);
+            if (screen.z <= 0f) { _carHint.gameObject.SetActive(false); return; }
+            _carHint.position = new Vector3(screen.x, screen.y + (BossSize * 0.5f + TagLift + 22f) * scale, 0f);
+        }
 
         void BuildPopup()
         {
@@ -142,9 +258,15 @@ namespace RoadDemo
             _popupRect.sizeDelta = new Vector2(PopupWidth, PopupHeight);
             _popupRect.pivot = new Vector2(0.5f, 0f);
 
+            // the block that opens over a man is a SHADE of the street, not a lid on
+            // it: it multiplies with what is behind (Photoshop's multiply layer), so
+            // the road, the car and the men read straight through it. Without the
+            // shader in the project it falls back to the flat panel.
             var background = _popup.AddComponent<Image>();
             background.raycastTarget = false;
-            DemoUi.Dress(background, DemoUi.Box, 15f, DemoUi.Panel);
+            var shade = DemoUi.Multiply;
+            DemoUi.Dress(background, DemoUi.Box, 15f, shade != null ? DemoUi.PanelShade : DemoUi.Panel);
+            if (shade != null) background.material = shade;
 
             var stripe = DemoUi.Block(_popupRect, "Accent", DemoUi.Gold);
             var stripeRect = stripe.rectTransform;
@@ -225,6 +347,12 @@ namespace RoadDemo
                 if (car != null)
                 {
                     var owner = car.Occupant ?? car.Owner;
+                    // the selected crew clicking its own car from inside: everybody out
+                    if (owner != null && owner == _crews.Selected && owner.Car == car)
+                    {
+                        _crews.OrderCar(car);
+                        return true;
+                    }
                     if (owner != null && owner.Faction == 0) _crews.Select(owner);
                     return true;
                 }
@@ -259,20 +387,32 @@ namespace RoadDemo
 
         static float MarkerHeight(CrewWalker man) => man.IsLieutenant ? 2.25f : 2.05f;
 
-        /// <summary>The outfit's car under the pointer - within the same slack as a man,
-        /// measured to its roof.</summary>
+        /// <summary>The outfit's car under the pointer: a click anywhere on the body -
+        /// the pointer's ray through the car's footprint at bonnet height, with a
+        /// little air round it - or within the same slack as a man of its middle. The
+        /// whole car, not just its middle: a click on the boot of the car the crew is
+        /// sat in is an order to get out, not an order to move the car a yard.</summary>
         CrewCar PickCarAt(Vector2 screen)
         {
             if (_cam == null) return null;
             float radius = (PickRadius + 12f) * (_canvas != null ? _canvas.scaleFactor : 1f);
             float bestD = radius * radius;
             CrewCar best = null;
+            var ray = _cam.ScreenPointToRay(screen);
             foreach (var car in _crews.Cars)
             {
                 if (car.Tf == null) continue;
                 var p = _cam.WorldToScreenPoint(car.Position + Vector3.up * 0.9f);
                 if (p.z <= 0f) continue;
                 float d = ((Vector2)p - screen).sqrMagnitude;
+                // on the body itself: as good as a click dead on its middle
+                var bonnet = new Plane(Vector3.up, new Vector3(0f, car.RoadY + 0.8f, 0f));
+                if (bonnet.Raycast(ray, out float enter))
+                {
+                    var local = car.Tf.InverseTransformPoint(ray.GetPoint(enter));
+                    if (Mathf.Abs(local.x) <= car.HalfWidth + 0.4f && Mathf.Abs(local.z) <= car.HalfLength + 0.4f)
+                        d = 0f;
+                }
                 if (d < bestD) { bestD = d; best = car; }
             }
             return best;
@@ -374,6 +514,14 @@ namespace RoadDemo
                     !BookOpen && !PointerOverUi())
                     ClaimsClick(mouse.position.ReadValue());
                 ReadRightClick(mouse);
+                // the middle button: the selected crew out of its car, wherever the
+                // pointer is - no aiming at the car needed
+                if (mouse.middleButton.wasPressedThisFrame && !BookOpen && !PointerOverUi())
+                {
+                    var ride = _crews.Selected?.Car ?? _crews.Selected?.Boarding;
+                    if (_crews.OrderOut() && ride != null)
+                        ShowMark(ride.Position + Vector3.up * 1.0f, MarkTint);
+                }
             }
             _claimedThisFrame = false;
 
@@ -402,6 +550,7 @@ namespace RoadDemo
                 var man = _men[i];
                 bool boss = _menBoss[i];
                 bool rival = _menUnit[i].Faction != 0;
+                bool police = _menUnit[i].IsPolice;
                 var screen = _cam.WorldToScreenPoint(
                     man.Tf.position + Vector3.up * MarkerHeight(man));
                 bool on = screen.z > 0f &&
@@ -419,7 +568,7 @@ namespace RoadDemo
                 float size = boss ? BossSize : HoodSize;
                 img.rectTransform.sizeDelta = new Vector2(size, size);
                 img.transform.position = new Vector3(screen.x, screen.y + bob, 0f);
-                img.color = rival ? (boss ? RivalBoss : RivalHood) : (boss ? BossOn : HoodOn);
+                img.color = police ? (boss ? PoliceBoss : PoliceHood) : rival ? (boss ? RivalBoss : RivalHood) : (boss ? BossOn : HoodOn);
                 img.rectTransform.localScale = Vector3.one * (lit ? SelectedScale : 1f);
 
                 if (tagOn)
@@ -429,7 +578,7 @@ namespace RoadDemo
                     if (tag.text != name) tag.text = name;
                     tag.transform.position = new Vector3(
                         screen.x, screen.y + bob + (size * 0.5f + TagLift) * scale, 0f);
-                    tag.color = rival ? RivalBoss : BossOn;
+                    tag.color = police ? PoliceBoss : rival ? RivalBoss : BossOn;
                 }
 
                 // what he is doing, as the sign his crew's block on the bar shows - beside
@@ -452,8 +601,10 @@ namespace RoadDemo
             }
 
             DrawCars(w, h, scale);
+            UpdateCarHint(mouse, scale);
             UpdateMark();
             UpdatePopup(w, h, scale);
+            UpdateBanner();
         }
 
         // The outfit's car: a dot over its roof - gold when a crew owns it, dim when the
@@ -497,16 +648,16 @@ namespace RoadDemo
                 bool lit = owned && _crews.Selected == car.Owner;
                 float bob = Mathf.Sin(Time.time * (2f * Mathf.PI / BobPeriod) + 2.1f) * BobAmplitude * scale;
                 img.transform.position = new Vector3(screen.x, screen.y + bob, 0f);
-                img.color = owned ? BossOn : new Color(DemoUi.InkDim.r, DemoUi.InkDim.g, DemoUi.InkDim.b, 0.8f);
+                img.color = car.Civic ? PoliceBoss : owned ? BossOn : new Color(DemoUi.InkDim.r, DemoUi.InkDim.g, DemoUi.InkDim.b, 0.8f);
                 img.rectTransform.localScale = Vector3.one * (lit ? SelectedScale : 1f);
                 if (tag != null)
                 {
-                    string name = car.DisplayName.ToUpperInvariant() + " · " +
+                    string name = car.Civic ? "POLICE" : car.DisplayName.ToUpperInvariant() + " · " +
                                   (owned ? Surname(car.Owner.Name) : "NOBODY'S");
                     if (tag.text != name) tag.text = name;
                     tag.transform.position = new Vector3(
                         screen.x, screen.y + bob + (BossSize * 0.5f + TagLift) * scale, 0f);
-                    tag.color = owned ? BossOn : DemoUi.InkDim;
+                    tag.color = car.Civic ? PoliceBoss : owned ? BossOn : DemoUi.InkDim;
                 }
             }
         }
@@ -557,6 +708,10 @@ namespace RoadDemo
                                      : unit.Boarding != null ? "Getting in the car" : boss.StatusLine);
             if (unit.Car == null && unit.Boarding == null && !boss.HasOrder && boss.Target == null && !boss.Dead)
                 line += "  ·  right-click: move / attack" + (_crews.CarOf(unit) != null ? " / car" : "");
+            else if (unit.Car != null && !unit.Leaving)
+                line += unit.Car.Hot || unit.Car.State == CrewCar.Mode.DriveBy
+                    ? "  ·  middle-click: bail out"
+                    : "  ·  middle-click: get out";
             if (_refusal.until > Time.unscaledTime) line = _refusal.text;
             if (title != _shownTitle) { _shownTitle = title; _popupTitle.text = title; }
             if (line != _shownLine) { _shownLine = line; _popupLine.text = line; }

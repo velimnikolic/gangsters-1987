@@ -148,8 +148,6 @@ MonoBehaviour:
     parkingChance: 0.12
     featureStrip: 1
     kioskPrefabs:
-    - {fileID: 5484056963938830244, guid: 75db5c7f3ef43c243b31ac66da05ec4d, type: 3}
-    - {fileID: 6738197820081907860, guid: 56b714d9e78f3c648be9919b8f14c239, type: 3}
     - {fileID: 6089172912566602198, guid: a4cda3d1ca1767748a4380deb116a1d8, type: 3}
     pocketParkProps:
     - {fileID: 1728377491344570331, guid: 2e3a97d8d0d027a479e2bcda0b366055, type: 3}
@@ -193,7 +191,6 @@ MonoBehaviour:
       - {fileID: 308407923373107156, guid: 880c282272417f4419e95eb219844618, type: 3}
       - {fileID: 376406817271566790, guid: b47edf037ac151348be7ad3264b86119, type: 3}
       - {fileID: 6070905509273079976, guid: 2bc9800a59a05bc43a7ae5b9fb4a793a, type: 3}
-      - {fileID: 2694096825007424419, guid: 22aa5aa21268e344886228d6e0caea54, type: 3}
   - zone: 1
     weight: 12
     maxShare: 0.4
@@ -757,7 +754,6 @@ MonoBehaviour:
       weight: 1
       prefabs:
       - {fileID: 2024528204330617279, guid: 505737acdfc7406498d0d810f24a2ee7, type: 3}
-      - {fileID: 2694096825007424419, guid: 22aa5aa21268e344886228d6e0caea54, type: 3}
     landmarkCars: []
   - zone: 9
     weight: 10
@@ -1138,7 +1134,6 @@ MonoBehaviour:
   - {fileID: 3171605492343519647, guid: 00656191163ed1441a515ec3479128d3, type: 3}
   - {fileID: 753575501737394738, guid: c3d0377d65204c148a78f5328d6c142c, type: 3}
   - {fileID: 753575501737394738, guid: c3d0377d65204c148a78f5328d6c142c, type: 3}
-  - {fileID: 5484056963938830244, guid: 75db5c7f3ef43c243b31ac66da05ec4d, type: 3}
   parkedCarGroups:
   - label: Everyday
     weight: 70

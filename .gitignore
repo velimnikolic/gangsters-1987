@@ -47,3 +47,8 @@ crashlytics-build.properties
 
 # Editor dump artefakti
 LedgerDump_*.txt
+
+# RoadSim headless harness (Tools/RoadSim): its project file is ours, its build output is not
+!Tools/RoadSim/RoadSim.csproj
+Tools/RoadSim/bin/
+Tools/RoadSim/obj/

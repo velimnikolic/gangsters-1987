@@ -194,17 +194,17 @@ namespace LivingCity.EditorTools
         /// </summary>
         static readonly (Fleet fleet, float share, float fill, string[] paths)[] Fleets =
         {
+            // The two marked cars are the force's (VehicleCatalog.PoliceCars) - the
+            // other packs' cruisers are deliberately absent, so a station yard is the
+            // same fleet the patrols drive. The van and the two bikes are not cars and
+            // stay: a yard with nothing but cruisers in it reads as a showroom.
             (Fleet.Police, 0.8f, 0.8f, new[]
             {
-                CopVeh + "SM_Veh_Car_01",
-                CopVeh + "SM_Veh_Car_02",
-                CopVeh + "SM_Veh_Van_01",
-                CopVeh + "SM_Veh_Pickup_01",
-                CopVeh + "SM_Veh_Motorbike_01",
-                CopVeh + "SM_Veh_Motorbike_02",
-                CityVeh + "SM_Veh_Car_Police_01",
                 PalmVeh + "SM_Veh_Sedan_01_Preset_Police",
                 PalmVeh + "SM_Veh_Pickup_01_Preset_Police",
+                CopVeh + "SM_Veh_Van_01",
+                CopVeh + "SM_Veh_Motorbike_01",
+                CopVeh + "SM_Veh_Motorbike_02",
             }),
             (Fleet.Emergency, 0.35f, 0.7f, new[]
             {
@@ -235,7 +235,7 @@ namespace LivingCity.EditorTools
             {
                 PalmVeh + "SM_Veh_Supercar_01",
                 PalmVeh + "SM_Veh_Supercar_02",
-                PalmVeh + "SM_Veh_Limousine_01",
+                PalmVeh + "SM_Veh_Suv_01",
                 CityVeh + "SM_Veh_Car_Muscle_01",
                 GangVeh + "SM_Veh_LowCar_01",
             }),

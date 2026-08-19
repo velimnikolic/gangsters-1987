@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace RoadDemo
 {
-    public enum SeamKind { River, Park, Highway }
+    public enum SeamKind { River, Park, Wild, Highway }
 
     /// <summary>
     /// One gap of the grid that is not blocks: what lies between two districts.
@@ -116,20 +116,20 @@ namespace RoadDemo
         (float lo, float hi) SeamSpan(Seam s)
         {
             if (s.vertical)
-                return (verticalRoadX[s.gap] + VHalf(s.gap) + Cell,
-                        verticalRoadX[s.gap + 1] - VHalf(s.gap + 1) - Cell);
-            return (horizontalRoadZ[s.gap] + HHalf(s.gap) + Cell,
-                    horizontalRoadZ[s.gap + 1] - HHalf(s.gap + 1) - Cell);
+                return (verticalRoadX[s.gap] + VHalf(s.gap) + Sidewalk,
+                        verticalRoadX[s.gap + 1] - VHalf(s.gap + 1) - Sidewalk);
+            return (horizontalRoadZ[s.gap] + HHalf(s.gap) + Sidewalk,
+                    horizontalRoadZ[s.gap + 1] - HHalf(s.gap + 1) - Sidewalk);
         }
 
         // The grid's own extent along an axis, outer sidewalk to outer sidewalk.
         (float lo, float hi) GridExtent(bool x)
         {
             if (x)
-                return (verticalRoadX[0] - VHalf(0) - Cell,
-                        verticalRoadX[verticalRoadX.Length - 1] + VHalf(verticalRoadX.Length - 1) + Cell);
-            return (horizontalRoadZ[0] - HHalf(0) - Cell,
-                    horizontalRoadZ[horizontalRoadZ.Length - 1] + HHalf(horizontalRoadZ.Length - 1) + Cell);
+                return (verticalRoadX[0] - VHalf(0) - Sidewalk,
+                        verticalRoadX[verticalRoadX.Length - 1] + VHalf(verticalRoadX.Length - 1) + Sidewalk);
+            return (horizontalRoadZ[0] - HHalf(0) - Sidewalk,
+                    horizontalRoadZ[horizontalRoadZ.Length - 1] + HHalf(horizontalRoadZ.Length - 1) + Sidewalk);
         }
 
         /// <summary>The stretches of [from, to] along one axis that no river takes -
@@ -159,14 +159,23 @@ namespace RoadDemo
         // crowd, or the same hundred cars would thin to nothing over it.
         void ScaleLifeToCity()
         {
+            // a scene that wants the counts above exactly as they stand - one block on
+            // its own (BlockDemo.unity), or the city with the life pinned for a
+            // frame-time reading - turns the scaling off
+            if (!scaleLifeToCity) return;
             int lots = 0;
             for (int i = 0; i + 1 < verticalRoadX.Length; i++)
                 for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
                     if (!InSeam(i, j)) lots++;
             float factor = Mathf.Max(0.5f, lots / 12f);
             if (Mathf.Approximately(factor, 1f)) return;
-            carCount = Mathf.RoundToInt(carCount * factor);
-            pedestrianCount = Mathf.RoundToInt(pedestrianCount * factor);
+            // capped: a city of ninety blocks does not need a thousand walkers, each an
+            // animated humanoid - the camera only ever holds a corner of it at a time.
+            // The caps are on the inspector because they are the one knob that trades
+            // the town's life for the frame: halve them and the frame halves with them,
+            // which is also how you find out whether the frame is the LIFE at all.
+            carCount = Mathf.RoundToInt(carCount * Mathf.Min(factor, maxCarScale));
+            pedestrianCount = Mathf.RoundToInt(pedestrianCount * Mathf.Min(factor, maxCrowdScale));
             policeCarCount = Mathf.Max(policeCarCount, Mathf.RoundToInt(policeCarCount * Mathf.Sqrt(factor)));
             policeOfficerCount = Mathf.Max(policeOfficerCount, Mathf.RoundToInt(policeOfficerCount * Mathf.Sqrt(factor)));
             Debug.Log($"[RoadDemo] {lots} blocks: {carCount} cars, {pedestrianCount} pedestrians, " +
@@ -260,9 +269,10 @@ namespace RoadDemo
         /// exactly this depth of wall showing above the water.</summary>
         const float WaterY = -2.65f;
 
-        /// <summary>How far past the grid the water and its quays run, out into the
-        /// fringe: the river came from somewhere and goes on somewhere.</summary>
-        const float RiverReach = 120f;
+        /// <summary>How far past the grid a river's quays run before the natural bank
+        /// takes over; the river itself is a channel through the island's ground out
+        /// to the sea (RoadDemoBuilder.Island.cs), the highway rides on out over it.</summary>
+        const float QuayReach = 10f;
 
         // ------------------------------------------------------------------ build
 
@@ -292,7 +302,7 @@ namespace RoadDemo
                     : Rect.MinMaxRect(ext.lo, span.lo, ext.hi, span.hi);
                 _seamPlans.Add(new SeamInfo(s.kind, area, s.vertical));
                 if (s.kind == SeamKind.River) BuildRiver(s);
-                else if (s.kind == SeamKind.Park) BuildPark(s);
+                else if (s.kind == SeamKind.Park || s.kind == SeamKind.Wild) BuildPark(s);
                 else BuildHighway(s);
             }
         }
@@ -307,13 +317,11 @@ namespace RoadDemo
             bool alongX = !s.vertical;
             var (bankLo, bankHi) = SeamSpan(s);
             var ext = GridExtent(alongX);
-            float uMin = ext.lo - RiverReach, uMax = ext.hi + RiverReach;
+            // the quays run a step past the grid, then the island's own banks take over;
+            // the water is the sea's, which fills the channel the island leaves for it
+            float uMin = ext.lo - QuayReach, uMax = ext.hi + QuayReach;
 
             Vector3 W(float u, float v, float y) => alongX ? new Vector3(u, y, v) : new Vector3(v, y, u);
-
-            // the water, bank to bank, out past the grid both ways
-            if (alongX) WaterTiles(uMin, uMax, bankLo, bankHi);
-            else WaterTiles(bankLo, bankHi, uMin, uMax);
 
             // where the bridges land: the boulevards of the OTHER axis crossing this gap
             var bridges = new List<(float centre, float half)>();
@@ -446,12 +454,12 @@ namespace RoadDemo
             // must point off the deck. Vertical road: west side +X -> -X (yaw 180), pivot at
             // the near end; east side yaw 0, pivot at the far end. Horizontal: north side
             // +X -> +Z (yaw -90), south side yaw 90.
-            for (float m = from; m < to - 0.1f; m += Cell)
+            // over the water only, bank to bank (the banks are on the 5 m beat: a
+            // seam's width is); the pavement at each end of the segment is the
+            // embankment's own, and the junction's corner slab stands there
+            for (float m = bankLo; m < bankHi - 0.1f; m += Cell)
             {
-                // over the water only: the cell at each end of the segment is the
-                // embankment's own sidewalk row, and the junction's corner slab stands there
-                bool overWater = m + Cell > bankLo + 0.1f && m < bankHi - 0.1f;
-                if (_bridgeEdge != null && overWater)
+                if (_bridgeEdge != null)
                 {
                     if (verticalRoad)
                     {
@@ -469,7 +477,7 @@ namespace RoadDemo
                 // the soffit under every roadway cell over the water (local +X / -Z from
                 // the pivot: pivot at the -X / +Z corner of the cell; a quarter turn puts
                 // it at the +X / +Z corner)
-                if (_bridgeUnderside != null && overWater)
+                if (_bridgeUnderside != null)
                     for (float x = -half; x < half - 0.1f; x += Cell)
                     {
                         var pivot = verticalRoad ? W(m + Cell, x, 0f) : W(m + Cell, x + Cell, 0f);
@@ -514,6 +522,10 @@ namespace RoadDemo
         // heart of the longest reach and a court or two.
         void BuildPark(Seam s)
         {
+            // a WILD seam is the same strip left to itself: no path, no bench, no
+            // fountain - woods, rock and scrub, the island's wilderness reaching in
+            bool wild = s.kind == SeamKind.Wild;
+            if (wild) LoadWildKit();
             bool alongZ = s.vertical; // the park runs along Z between two vertical roads
             var (edgeLo, edgeHi) = SeamSpan(s);          // across the park
             var ext = GridExtent(!alongZ);               // along the park (grid ends)
@@ -530,7 +542,7 @@ namespace RoadDemo
             {
                 float c = alongZ ? horizontalRoadZ[r] : verticalRoadX[r];
                 float h = alongZ ? HHalf(r) : VHalf(r);
-                if (SegmentOpen(!alongZ, r, s.gap)) cuts.Add((c - h - Cell, c + h + Cell));
+                if (SegmentOpen(!alongZ, r, s.gap)) cuts.Add((c - h - Sidewalk, c + h + Sidewalk));
                 else pathEnds.Add(c);
             }
             foreach (var other in seams)
@@ -538,7 +550,7 @@ namespace RoadDemo
                 {
                     var span = SeamSpan(other);
                     // the river takes its banks' sidewalks too - the quays run through
-                    cuts.Add((span.lo - Cell, span.hi + Cell));
+                    cuts.Add((span.lo - Sidewalk, span.hi + Sidewalk));
                 }
             cuts.Sort((x, y) => x.lo.CompareTo(y.lo));
             var reaches = new List<(float lo, float hi)>();
@@ -572,6 +584,12 @@ namespace RoadDemo
                     : new Vector3(len / 10f, 1f, breadth / 10f);
                 lawn.GetComponent<MeshRenderer>().sharedMaterial = _lawnMat;
 
+                if (wild)
+                {
+                    DressWildStrip(alongZ, lo, hi, edgeLo, edgeHi, floor);
+                    continue;
+                }
+
                 // the spine path, 5 m of concrete plates down the middle of the reach,
                 // and a cross path at every street that ends on the park's edge
                 if (alongZ) BuildBlockFloor(mid - 2.5f, mid + 2.5f, lo, hi, null, true);
@@ -603,7 +621,7 @@ namespace RoadDemo
                 if (k == longest && _fountain != null && len > 30f)
                 {
                     float u = (lo + hi) * 0.5f;
-                    Instantiate(_fountain, W(u, mid, floor), Quaternion.identity, SeamsRoot).name = "Fountain";
+                    Prop(_fountain, W(u, mid, floor), 0f, SeamsRoot).name = "Fountain";
                     // a plate apron round it, over the lawn
                     if (alongZ) BuildBlockFloor(mid - 7.5f, mid + 7.5f, u - 7.5f, u + 7.5f, null, true);
                     else BuildBlockFloor(u - 7.5f, u + 7.5f, mid - 7.5f, mid + 7.5f, null, true);
@@ -657,7 +675,9 @@ namespace RoadDemo
             bool alongZ = s.vertical;
             var (edgeLo, edgeHi) = SeamSpan(s);
             var ext = GridExtent(!alongZ);
-            float uMin = ext.lo - RiverReach, uMax = ext.hi + RiverReach;
+            // out over the island and the water beyond it, to the mainland off-stage
+            float uMin = ext.lo - (alongZ ? islandSouth : islandWest) - 160f;
+            float uMax = ext.hi + (alongZ ? islandNorth : islandEast) + 160f;
             float mid = (edgeLo + edgeHi) * 0.5f;
             Vector3 W(float u, float v, float y) => alongZ ? new Vector3(v, y, u) : new Vector3(u, y, v);
 
@@ -665,8 +685,8 @@ namespace RoadDemo
             int roads = alongZ ? horizontalRoadZ.Length : verticalRoadX.Length;
             for (int r = 0; r + 1 < roads; r++)
             {
-                float lo = (alongZ ? horizontalRoadZ[r] + HHalf(r) : verticalRoadX[r] + VHalf(r)) + Cell;
-                float hi = (alongZ ? horizontalRoadZ[r + 1] - HHalf(r + 1) : verticalRoadX[r + 1] - VHalf(r + 1)) - Cell;
+                float lo = (alongZ ? horizontalRoadZ[r] + HHalf(r) : verticalRoadX[r] + VHalf(r)) + Sidewalk;
+                float hi = (alongZ ? horizontalRoadZ[r + 1] - HHalf(r + 1) : verticalRoadX[r + 1] - VHalf(r + 1)) - Sidewalk;
                 if (hi - lo < Cell) continue;
                 // the river crossing under the highway is water, not asphalt
                 bool water = false;
@@ -687,7 +707,7 @@ namespace RoadDemo
                         for (float u = lo + 2.5f; u + Cell <= hi - 2.5f + 0.1f; u += Cell)
                         {
                             var rot = alongZ ? Quaternion.Euler(0f, -90f, 0f) : Quaternion.identity; // +X -> +Z, or +X
-                            Instantiate(_chainFence, W(u, v, FloorLevel()), rot, SeamsRoot).name = "Fence";
+                            Prop(_chainFence, W(u, v, FloorLevel()), rot.eulerAngles.y, SeamsRoot).name = "Fence";
                         }
             }
 
@@ -731,7 +751,7 @@ namespace RoadDemo
                         if (Mathf.Abs(u - c) < h + 2f) inRoad = true;
                     }
                     if (inRoad) continue;
-                    Instantiate(_highwayPillar, W(u, mid, DeckY), rot, SeamsRoot).name = "Pier";
+                    Prop(_highwayPillar, W(u, mid, DeckY), rot.eulerAngles.y, SeamsRoot).name = "Pier";
                 }
             }
 
@@ -750,12 +770,40 @@ namespace RoadDemo
                             Direction = alongZ ? (side < 0f ? -1f : 1f) : (side < 0f ? 1f : -1f),
                         });
                 int cars = Mathf.Max(6, Mathf.RoundToInt((uMax - uMin) / 45f));
-                traffic.Init(alongZ, uMin, uMax, DeckY + 0.02f, lanes, cars, _carPrefabs, _cars);
+                traffic.Init(alongZ, uMin, uMax, DeckY + 0.02f, lanes, cars, _carPrefabs, _cars,
+                    _pedPrefabs, _sitLoopClip, CrowdLayer);
                 _highwayTraffic.Add(traffic);
             }
         }
 
         readonly List<HighwayTraffic> _highwayTraffic = new List<HighwayTraffic>();
+
+        /// <summary>A wild reach: woods and scrub over the lawn, thicker in the middle,
+        /// a few rocks and a fallen log; nothing a stride from the edge roads.</summary>
+        void DressWildStrip(bool alongZ, float lo, float hi, float edgeLo, float edgeHi, float floor)
+        {
+            Vector3 W(float u, float v, float y) => alongZ ? new Vector3(v, y, u) : new Vector3(u, y, v);
+            float len = hi - lo, breadth = edgeHi - edgeLo;
+            int count = Mathf.RoundToInt(len * breadth / 45f);
+            for (int t = 0; t < count; t++)
+            {
+                float u = Random.Range(lo + 3f, hi - 3f);
+                float v = Random.Range(edgeLo + 3f, edgeHi - 3f);
+                float roll = Random.value;
+                GameObject prefab;
+                float scale = 1f;
+                if (roll < 0.42f) { prefab = _wildTrees.Count > 0 ? Pick(_wildTrees) : null; scale = Random.Range(0.85f, 1.25f); }
+                else if (roll < 0.55f) { prefab = _wildPines.Count > 0 ? Pick(_wildPines) : null; scale = Random.Range(0.85f, 1.2f); }
+                else if (roll < 0.62f) { prefab = _wildDead.Count > 0 ? Pick(_wildDead) : null; }
+                else if (roll < 0.72f) { prefab = _wildRocks.Count > 0 ? Pick(_wildRocks) : null; scale = Random.Range(0.6f, 1.4f); }
+                else if (roll < 0.95f) { prefab = _wildBushes.Count > 0 ? Pick(_wildBushes) : null; scale = Random.Range(0.8f, 1.3f); }
+                else { prefab = _wildLogs.Count > 0 ? Pick(_wildLogs) : null; }
+                if (prefab == null) continue;
+                var go = Instantiate(prefab, W(u, v, floor - 0.04f), Quaternion.Euler(0f, Random.value * 360f, 0f), _flora);
+                go.transform.localScale = Vector3.one * scale;
+                go.name = "Wild " + prefab.name;
+            }
+        }
 
         // ------------------------------------------------------------- the paths
 
@@ -853,7 +901,8 @@ namespace RoadDemo
         readonly List<Car> _cars = new List<Car>();
 
         public void Init(bool alongZ, float uMin, float uMax, float y, List<Lane> lanes, int count,
-            List<GameObject> prefabs, Transform parent)
+            List<GameObject> prefabs, Transform parent,
+            IList<GameObject> people = null, AnimationClip sitLoop = null, int peopleLayer = -1)
         {
             _alongZ = alongZ;
             _uMin = uMin;
@@ -868,6 +917,8 @@ namespace RoadDemo
                 go.name = "Highway " + prefab.name;
                 foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
                 foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
+                // a driver, now and then a passenger - nobody drives an empty car
+                CarOccupant.Crew(go.transform, people, sitLoop, passengerChance: 0.3f, layer: peopleLayer);
                 int lane = k % lanes.Count;
                 int inLane = k / lanes.Count;
                 int perLane = Mathf.Max(1, Mathf.CeilToInt((float)count / lanes.Count));

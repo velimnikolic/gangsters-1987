@@ -58,8 +58,8 @@ namespace LivingCity.Personnel
                 return new PromoteCheck(false, false, LedgerText.ReasonNoSuchMember);
             if (member.Specialty != Specialty.None)
                 return new PromoteCheck(false, false, LedgerText.ReasonSpecialist);
-            if (member.Status == CharacterStatus.Dead)
-                return new PromoteCheck(false, false, LedgerText.ReasonDead);
+            if (member.Gone)
+                return new PromoteCheck(false, false, GoneReason(member));
             if (member.Rank == Rank.Lieutenant)
                 return new PromoteCheck(false, false, LedgerText.ReasonAlreadyLieutenant);
 
@@ -165,8 +165,8 @@ namespace LivingCity.Personnel
             var member = roster.Find(id);
             if (member == null)
                 return OpResult.Fail(LedgerText.ReasonNoSuchMember);
-            if (member.Status == CharacterStatus.Dead)
-                return OpResult.Fail(LedgerText.ReasonDead);
+            if (member.Gone)
+                return OpResult.Fail(GoneReason(member));
 
             // The boss hands gear to his lieutenants, nobody else - each lieutenant
             // deals his crew in himself (NormalizeArms): guns by who can shoot,
@@ -415,8 +415,8 @@ namespace LivingCity.Personnel
                 return LedgerText.ReasonNoSuchMember;
             if (member.Specialty != Specialty.None)
                 return LedgerText.ReasonSpecialist;
-            if (member.Status == CharacterStatus.Dead)
-                return LedgerText.ReasonDead;
+            if (member.Gone)
+                return GoneReason(member);
             if (member.Rank == Rank.Lieutenant)
                 return LedgerText.ReasonLieutenantMoves;
             return null;
@@ -431,15 +431,24 @@ namespace LivingCity.Personnel
         /// most loyal living hood - the outfit does not lose a crew to one bullet - or,
         /// with nobody left to take it, folds.
         /// </summary>
-        public static OpResult Kill(Roster roster, int id)
+        public static OpResult Kill(Roster roster, int id) => StrikeOff(roster, id, CharacterStatus.Dead);
+
+        /// <summary>
+        /// A man who ran from a fight and kept running. Struck off the same way as the
+        /// dead - his line kept, his gear pooled, his post passed on - but marked as
+        /// what he is: a deserter, not a casualty.
+        /// </summary>
+        public static OpResult Desert(Roster roster, int id) => StrikeOff(roster, id, CharacterStatus.Deserted);
+
+        static OpResult StrikeOff(Roster roster, int id, CharacterStatus status)
         {
             var member = roster.Find(id);
             if (member == null)
                 return OpResult.Fail(LedgerText.ReasonNoSuchMember);
-            if (member.Status == CharacterStatus.Dead)
-                return OpResult.Fail(LedgerText.ReasonDead);
+            if (member.Gone)
+                return OpResult.Fail(GoneReason(member));
 
-            member.Status = CharacterStatus.Dead;
+            member.Status = status;
             member.Wanted = false;
             for (var i = 0; i < roster.Equipment.Count; i++)
                 if (roster.Equipment[i].HolderId == id)
@@ -471,6 +480,9 @@ namespace LivingCity.Personnel
                 roster.FrontId = -1;
             return OpResult.Success;
         }
+
+        static string GoneReason(Character member) =>
+            member.Status == CharacterStatus.Deserted ? LedgerText.ReasonDeserted : LedgerText.ReasonDead;
 
         static void Detach(Roster roster, int id)
         {

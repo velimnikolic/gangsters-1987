@@ -76,6 +76,7 @@ namespace RoadDemo
             public float Interval;  // seconds between shots
             public int Damage;      // hits taken off a man's health per hit
             public float Accuracy;  // hit chance inside half range; falls to half of it at full range
+            public float Loudness;  // metres the report carries - who on the street hears it
         }
 
         // The ladder the armory sells, weakest to strongest, and each gun's own
@@ -85,19 +86,19 @@ namespace RoadDemo
         public static Stats StatsFor(EquipmentKind kind) => kind switch
         {
             // .38: pistol range, one round a second, a fair shot - misses plenty
-            EquipmentKind.Pistol => new Stats { Range = 10f, Interval = 1.05f, Damage = 1, Accuracy = 0.55f },
+            EquipmentKind.Pistol => new Stats { Range = 10f, Interval = 1.05f, Damage = 1, Accuracy = 0.55f, Loudness = 45f },
             // twin pack: the same reach, twice the lead, wilder still
-            EquipmentKind.TwinPistols => new Stats { Range = 10f, Interval = 0.55f, Damage = 1, Accuracy = 0.45f },
+            EquipmentKind.TwinPistols => new Stats { Range = 10f, Interval = 0.55f, Damage = 1, Accuracy = 0.45f, Loudness = 45f },
             // shotgun: close, slow - and inside its reach it does not miss, and it
             // puts a man down in two
-            EquipmentKind.Shotgun => new Stats { Range = 6f, Interval = 1.6f, Damage = 2, Accuracy = 0.97f },
+            EquipmentKind.Shotgun => new Stats { Range = 6f, Interval = 1.6f, Damage = 2, Accuracy = 0.97f, Loudness = 65f },
             // machine pistol: pistol reach, sprayed - most of the clip goes wide
-            EquipmentKind.MachinePistol => new Stats { Range = 12f, Interval = 0.2f, Damage = 1, Accuracy = 0.3f },
+            EquipmentKind.MachinePistol => new Stats { Range = 12f, Interval = 0.2f, Damage = 1, Accuracy = 0.3f, Loudness = 50f },
             // rifle: the long gun - a street away, deliberate, hard-hitting, sure
-            EquipmentKind.Rifle => new Stats { Range = 26f, Interval = 1.7f, Damage = 2, Accuracy = 0.88f },
+            EquipmentKind.Rifle => new Stats { Range = 26f, Interval = 1.7f, Damage = 2, Accuracy = 0.88f, Loudness = 80f },
             // tommy gun: the strongest piece - reach and a stream of lead, a third of it on
-            EquipmentKind.TommyGun => new Stats { Range = 18f, Interval = 0.14f, Damage = 1, Accuracy = 0.35f },
-            _ => new Stats { Range = 10f, Interval = 1.05f, Damage = 1, Accuracy = 0.6f },
+            EquipmentKind.TommyGun => new Stats { Range = 18f, Interval = 0.14f, Damage = 1, Accuracy = 0.35f, Loudness = 65f },
+            _ => new Stats { Range = 10f, Interval = 1.05f, Damage = 1, Accuracy = 0.6f, Loudness = 45f },
         };
 
         // ------------------------------------------------------------- the fist

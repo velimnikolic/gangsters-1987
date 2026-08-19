@@ -36,13 +36,13 @@ namespace RoadDemo
         [Tooltip("Metres of shadow range past the far edge of the visible ground. " +
                  "Enough to keep the towers standing behind that edge - which are " +
                  "still in frame, over the horizon line - shadowing themselves.")]
-        public float margin = 90f;
+        public float margin = 60f;
 
         [Tooltip("Ceiling on the range. Tilted flat the visible ground runs to the " +
                  "horizon, and chasing it would stretch one cascade over a kilometre " +
                  "for shadows the fog has already swallowed - and every caster in that " +
                  "range is drawn once more per cascade, so the ceiling is a frame budget.")]
-        public float maxDistance = 420f;
+        public float maxDistance = 300f;
 
         // Below this the ground plane is nearly edge-on to the view ray and the
         // slant range runs away to infinity; the ceiling above takes over there.
@@ -54,6 +54,7 @@ namespace RoadDemo
         float _authoredDistance;
         int _authoredCascades;
         Vector3 _authoredSplit;
+        float _authoredSplit2;
 
         void Awake() => _cam = GetComponent<Camera>();
 
@@ -71,6 +72,7 @@ namespace RoadDemo
                 _authoredDistance = _urp.shadowDistance;
                 _authoredCascades = _urp.shadowCascadeCount;
                 _authoredSplit = _urp.cascade4Split;
+                _authoredSplit2 = _urp.cascade2Split;
             }
 
             float pitch = Mathf.Clamp(rig.pitch, 1f, 89f);
@@ -91,16 +93,17 @@ namespace RoadDemo
 
             // Dead range in front of the ground, as a fraction of the whole.
             // Cascade 0 absorbs it; the ceiling keeps every cascade a usable slice.
+            // Two cascades, not four: every caster in range is drawn once per
+            // cascade, and a city of ninety blocks cannot afford four passes.
             float dead = Mathf.Clamp(near / distance, 0f, 0.85f);
-            float step = (1f - dead) / 3f;
-            var split = new Vector3(dead, dead + step, dead + step * 2f);
+            float split = Mathf.Clamp(dead + (1f - dead) * 0.4f, 0.05f, 0.9f);
 
             if (!Mathf.Approximately(_urp.shadowDistance, distance))
                 _urp.shadowDistance = distance;
-            if (_urp.shadowCascadeCount != 4)
-                _urp.shadowCascadeCount = 4;
-            if ((_urp.cascade4Split - split).sqrMagnitude > 1e-6f)
-                _urp.cascade4Split = split;
+            if (_urp.shadowCascadeCount != 2)
+                _urp.shadowCascadeCount = 2;
+            if (Mathf.Abs(_urp.cascade2Split - split) > 1e-4f)
+                _urp.cascade2Split = split;
 
             _adjusted = true;
         }
@@ -126,6 +129,7 @@ namespace RoadDemo
             _urp.shadowDistance = _authoredDistance;
             _urp.shadowCascadeCount = _authoredCascades;
             _urp.cascade4Split = _authoredSplit;
+            _urp.cascade2Split = _authoredSplit2;
             _adjusted = false;
         }
     }

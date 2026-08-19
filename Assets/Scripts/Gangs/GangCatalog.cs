@@ -5,10 +5,12 @@ namespace LivingCity.Gangs
     /// their people wear. Engine-free tables - the headless suite asserts they stay
     /// aligned and inside the popup budgets.
     ///
-    /// Model names resolve against the shipped PrefabDatabase.pedestrianGroups by NAME
-    /// ONLY (GangDirector's read-only scan) - every entry below is already wired into
-    /// the groups, so no AuthorPedestrians menu re-run is needed. The lieutenant always
-    /// wears a different model from his soldiers, so rank reads at a glance.
+    /// Model names resolve by NAME against the cast baked into LedgerModelSet, which
+    /// accepts the "_AI" suffix the retired crowd prefabs carried - so an entry here
+    /// only has to be on LedgerArtBootstrap's people list to reach the street. WHICH
+    /// bodies may be named at all is <see cref="GangLooks"/>' decision, not this
+    /// table's; this one only says which of them each mob leads with. The lieutenant
+    /// always wears a different model from his soldiers, so rank reads at a glance.
     /// </summary>
     public static class GangCatalog
     {
@@ -35,24 +37,30 @@ namespace LivingCity.Gangs
             "DeMarco",
         };
 
-        /// <summary>Indexed by gang id.</summary>
+        /// <summary>Each gang's staple soldier - the body its crew leads with. Indexed by
+        /// gang id, and every entry drawn from the approved hood stock
+        /// (<see cref="GangLooks.Hoods"/>): a mob's muscle may only wear what a gangster
+        /// is allowed to wear. The REST of a rival crew is dealt out of that same stock
+        /// by GangLooks.HoodsFor, so no two men on one pavement are the same man.</summary>
         public static readonly string[] SoldierModels =
         {
             "SM_Chr_Gang_Male_01_AI",      // The Outfit - the classic crew
             "SM_Chr_Gang_Male_02_AI",      // Falcone
             "SM_Chr_Goon_01_AI",           // Santoro - heavy muscle
             "SM_Chr_Criminal_Male_01_AI",  // Lucchese - street crew
-            "SM_Gen_Chr_Street_Male_02_AI",// DeMarco - working outfit
+            "SM_Chr_GangMember_Male_01_AI",// DeMarco - working outfit
         };
 
-        /// <summary>Indexed by gang id.</summary>
+        /// <summary>Indexed by gang id, out of the approved capo stock
+        /// (<see cref="GangLooks.Lieutenants"/>) and never the model that gang's soldiers
+        /// wear - rank has to read across a street.</summary>
         public static readonly string[] LieutenantModels =
         {
-            "SM_Chr_Detective_Male_01_AI",
-            "SM_Chr_Gang_Male_01_AI",
+            "SM_Chr_Italian_Gangster_01_AI",
+            "SM_Chr_Kingpin_01_AI",
             "SM_Gen_Chr_Business_Male_01_AI",
             "SM_Chr_Goon_01_AI",
-            "SM_Chr_City_Male_01_AI",
+            "SM_Chr_Criminal_Male_01_AI",
         };
     }
 }

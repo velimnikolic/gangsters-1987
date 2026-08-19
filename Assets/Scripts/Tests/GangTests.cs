@@ -33,6 +33,12 @@ namespace LivingCity.Tests
             FrontSelectionIsDeterministic(failures);
             FrontTieBreaksToLowestIndex(failures);
             CatalogTablesAligned(failures);
+            CatalogWearsApprovedBodies(failures);
+            NoTwinsInOneCrew(failures);
+            RivalCrewsAreNotTwins(failures);
+            GangBodiesAreNotCrowdBodies(failures);
+            MarkedCarsAreNotCivilianTraffic(failures);
+            CostumesAndAnachronismsStayOffTheStreet(failures);
             IntentionFitsTheBudgets(failures);
 
             return failures;
@@ -310,6 +316,267 @@ namespace LivingCity.Tests
                     failures.Add($"Catalog: gang {i}'s lieutenant wears the soldiers' " +
                                  "model - rank would not read.");
             }
+        }
+
+        // ------------------------------------------------------------------ the cast
+
+        /// <summary>Every model a mob is dealt has to be on the approved stock. The two
+        /// tables in GangLooks are the whole decision about who may be a gangster; a
+        /// body named anywhere else is one the picking board never passed.</summary>
+        static void CatalogWearsApprovedBodies(List<string> failures)
+        {
+            var hoods = new HashSet<string>(GangLooks.Hoods);
+            var capos = new HashSet<string>(GangLooks.Lieutenants);
+
+            for (var i = 0; i < GangCatalog.GangCount; i++)
+            {
+                var soldier = GangLooks.Bare(GangCatalog.SoldierModels[i]);
+                if (!hoods.Contains(soldier))
+                    failures.Add($"Cast: gang {i}'s soldier '{soldier}' is not approved muscle.");
+
+                var capo = GangLooks.Bare(GangCatalog.LieutenantModels[i]);
+                if (!capos.Contains(capo))
+                    failures.Add($"Cast: gang {i}'s lieutenant '{capo}' is not an approved capo.");
+            }
+
+            if (GangLooks.Hoods.Length < Personnel.Crew.MaxHoods + 1)
+                failures.Add("Cast: fewer hood bodies than a full crew needs - a crew " +
+                             "would have to repeat one.");
+        }
+
+        /// <summary>No crew of the outfit is one man standing five times: lieutenant and
+        /// hoods all wear different bodies, at every roster size the seeder deals.</summary>
+        static void NoTwinsInOneCrew(List<string> failures)
+        {
+            for (var seed = 0; seed < 40; seed++)
+            {
+                var roster = RosterSeeder.Generate(seed);
+                foreach (var crew in roster.Crews)
+                {
+                    var worn = new HashSet<string>();
+                    foreach (var id in Members(roster, crew))
+                    {
+                        var member = roster.Find(id);
+                        if (member == null) continue;
+
+                        var look = GangLooks.LookFor(member, roster);
+                        if (look.Length == 0)
+                            failures.Add($"Cast: seed {seed} crew {crew.Id} left " +
+                                         $"{member.FullName} with no body.");
+                        else if (!worn.Add(look))
+                            failures.Add($"Cast: seed {seed} crew {crew.Id} has two men " +
+                                         $"in '{look}'.");
+
+                        if (PedestrianIdentity.IsFemale(look) != GangLooks.IsFemale(member))
+                            failures.Add($"Cast: seed {seed} put {member.FullName} in " +
+                                         $"'{look}' - the wrong sex's body.");
+                    }
+                }
+            }
+        }
+
+        /// <summary>And no rival mob is either - the hoods it is dealt are all different
+        /// and none of them is the body its lieutenant is standing in.</summary>
+        static void RivalCrewsAreNotTwins(List<string> failures)
+        {
+            for (var gang = 0; gang < GangCatalog.GangCount; gang++)
+            {
+                var capo = GangCatalog.LieutenantModels[gang];
+                var looks = GangLooks.HoodsFor(capo, GangCatalog.SoldierModels[gang],
+                                               Personnel.Crew.MaxHoods);
+
+                if (looks.Count != Personnel.Crew.MaxHoods)
+                    failures.Add($"Cast: gang {gang} was dealt {looks.Count} hood bodies " +
+                                 $"for {Personnel.Crew.MaxHoods} men.");
+
+                var worn = new HashSet<string> { GangLooks.Bare(capo) };
+                foreach (var look in looks)
+                {
+                    if (!worn.Add(look))
+                        failures.Add($"Cast: gang {gang} has two men in '{look}'.");
+                    // rival hoods are dealt male names by both builders
+                    if (PedestrianIdentity.IsFemale(look))
+                        failures.Add($"Cast: gang {gang}'s male hood was dealt '{look}'.");
+                }
+            }
+        }
+
+        /// <summary>The rule the crowd pools read: every body either table may deal is
+        /// spoken for, and nothing else is. RoadDemoBuilder and CrewDemoBuilder scan the
+        /// packs wholesale and drop what this answers true for, so a coat that stands on
+        /// a corner as one of Falcone's men never also walks past as a nobody - and the
+        /// bodies the crowd lives on (the city stock, the surfers, the families) must
+        /// still be free, or the pavement empties out with the tables.</summary>
+        static void GangBodiesAreNotCrowdBodies(List<string> failures)
+        {
+            foreach (var table in new[] { GangLooks.Hoods, GangLooks.Lieutenants })
+                foreach (var look in table)
+                {
+                    if (!GangLooks.IsGangBody(look))
+                        failures.Add($"Cast: '{look}' is dealt to gangsters but the crowd " +
+                                     "pools would still put it on a passer-by.");
+                    // GangCatalog still names its men the crowd's old way
+                    if (!GangLooks.IsGangBody(look + "_AI"))
+                        failures.Add($"Cast: '{look}_AI' slipped the crowd filter - a " +
+                                     "suffix must not make one body look like two.");
+                }
+
+            // a handful of the bodies the pavement is built out of: none of them may be
+            // claimed by the mob, or the crowd loses a face it cannot spare
+            string[] civilians =
+            {
+                "SM_Chr_City_Male_01", "SM_Chr_City_Female_01", "SM_Chr_Rich_Male_01",
+                "SM_Chr_Surfer_Male_01", "SM_Gen_Chr_Street_Male_02",
+                "SM_Gen_Chr_Jumpsuit_Male_01", "Character_Male_Jacket",
+                "SM_Chr_Officer_Male_01",
+            };
+            foreach (var look in civilians)
+                if (GangLooks.IsGangBody(look))
+                    failures.Add($"Cast: '{look}' is a civilian body the crowd pools " +
+                                 "need, but a table claims it for the mob.");
+
+            if (GangLooks.IsGangBody(null) || GangLooks.IsGangBody(""))
+                failures.Add("Cast: the crowd filter claims a body with no name.");
+        }
+
+        /// <summary>The other half of the same rule, for cars: what the law drives is
+        /// never ordinary traffic. The police pack's names give nothing away - its
+        /// cruisers are "SM_Veh_Car_01" and its van "SM_Veh_Van_01" - so the scans ask
+        /// with the asset PATH and the folder answers. A caller asking for a marked car
+        /// BY NAME still gets it: this is not a bar, it is a filter on the crowd.
+        /// </summary>
+        static void MarkedCarsAreNotCivilianTraffic(List<string> failures)
+        {
+            const string fleet = Gameplay.VehicleCatalog.PoliceFleetFolder;
+            string[] pack =
+            {
+                "SM_Veh_Car_01", "SM_Veh_Car_02", "SM_Veh_Van_01", "SM_Veh_Pickup_01",
+                "SM_Veh_Motorbike_01", "SM_Veh_Bike_01", "SM_Veh_Helicopter_01",
+            };
+            foreach (var name in pack)
+            {
+                if (!Gameplay.VehicleCatalog.IsPoliceVehicle(fleet + name + ".prefab"))
+                    failures.Add($"Fleet: '{name}' out of the police pack would drive " +
+                                 "as civilian traffic.");
+                // a windows scan hands back backslashes
+                if (!Gameplay.VehicleCatalog.IsPoliceVehicle(
+                        (fleet + name + ".prefab").Replace('/', '\\')))
+                    failures.Add($"Fleet: '{name}' slips the filter when the path comes " +
+                                 "back with backslashes.");
+            }
+
+            // the marked bodies that live outside that pack, by bare name
+            foreach (var name in Gameplay.VehicleCatalog.PoliceCars)
+                if (!Gameplay.VehicleCatalog.IsPoliceVehicle(name))
+                    failures.Add($"Fleet: the patrol car '{name}' is not held off " +
+                                 "civilian traffic.");
+            if (!Gameplay.VehicleCatalog.IsPoliceVehicle("SM_Veh_Car_Police_01"))
+                failures.Add("Fleet: the city pack's cruiser is not held off civilian " +
+                             "traffic.");
+
+            // the other services: on a call, so never idling in traffic either. Not the
+            // law, so the police half must NOT claim them - the two questions are asked
+            // separately and a station forecourt is not an ambulance bay.
+            string[] service = { "SM_Veh_Car_Ambo_01", "SM_Veh_Pickup_01_Preset_Coastguard" };
+            foreach (var name in service)
+            {
+                if (!Gameplay.VehicleCatalog.IsMarkedService(name))
+                    failures.Add($"Fleet: '{name}' would drive as civilian traffic.");
+                if (Gameplay.VehicleCatalog.IsPoliceVehicle(name))
+                    failures.Add($"Fleet: '{name}' is not the law's, but the police " +
+                                 "filter claims it.");
+            }
+
+            // and the cars the city actually runs are untouched. The liveried ones here
+            // are the point: a taxi, a caterer and a builder are all doing their job by
+            // being in the traffic, which is what tells them apart from a call.
+            string[] civilian =
+            {
+                "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Sedan_01.prefab",
+                "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Pickup_01.prefab",
+                "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Sedan_01_Preset_Taxi.prefab",
+                "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Pickup_01_Preset_Taxi.prefab",
+                "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Sedan_01_Preset_Food.prefab",
+                "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Pickup_01_Preset_Construction.prefab",
+                "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Sedan_01.prefab",
+                "SM_Veh_Suv_01", "SM_Veh_Van_01",
+            };
+            foreach (var path in civilian)
+                if (Gameplay.VehicleCatalog.IsMarkedService(path))
+                    failures.Add($"Fleet: '{path}' is a civilian car but the filter " +
+                                 "holds it off the street.");
+
+            if (Gameplay.VehicleCatalog.IsPoliceVehicle(null) ||
+                Gameplay.VehicleCatalog.IsPoliceVehicle("") ||
+                Gameplay.VehicleCatalog.IsMarkedService(null) ||
+                Gameplay.VehicleCatalog.IsMarkedService(""))
+                failures.Add("Fleet: the filter claims a car with no name.");
+        }
+
+        /// <summary>What a folder scan drags in behind the people and the cars: a man in
+        /// a prison jumpsuit, a technician in a scene suit, a survey car with a laser rig
+        /// on the roof. Every one of them is somebody somewhere - so the crowd table is a
+        /// filter and the vehicle table a bar, and the difference is whether the body has
+        /// a right place in this game at all.</summary>
+        static void CostumesAndAnachronismsStayOffTheStreet(List<string> failures)
+        {
+            foreach (var look in Entities.CrowdLooks.Barred)
+            {
+                if (!Entities.CrowdLooks.IsBarred(look))
+                    failures.Add($"Crowd: '{look}' is on the barred table and still walks.");
+                if (!Entities.CrowdLooks.IsBarred(look + "_AI"))
+                    failures.Add($"Crowd: '{look}_AI' slips the filter - a suffix must " +
+                                 "not make one body look like two.");
+                if (!Entities.CrowdLooks.IsBarred(
+                        "Assets/Synty/PolygonGeneric/Prefabs/Characters/" + look + ".prefab"))
+                    failures.Add($"Crowd: '{look}' slips the filter when asked by path.");
+            }
+
+            // the people the pavement is actually made of stay on it
+            string[] passersBy =
+            {
+                "SM_Chr_City_Male_01", "SM_Chr_Rich_Female_01", "SM_Chr_Surfer_Male_01",
+                "SM_Gen_Chr_Street_Male_02", "SM_Gen_Chr_Jumpsuit_Male_01",
+                "Character_Male_Jacket", "SM_Chr_Detective_Male_01",
+            };
+            foreach (var look in passersBy)
+                if (Entities.CrowdLooks.IsBarred(look))
+                    failures.Add($"Crowd: '{look}' is an ordinary passer-by but the " +
+                                 "filter keeps it off the street.");
+
+            if (Entities.CrowdLooks.IsBarred(null) || Entities.CrowdLooks.IsBarred(""))
+                failures.Add("Crowd: the filter claims a body with no name.");
+
+            // and the cars that were not on a 1987 street reach no scene at all
+            string[] anachronisms =
+            {
+                "SM_Veh_Sedan_01_Preset_Lidar", "SM_Veh_Delivery_Bot_01",
+                "SM_Veh_E_Bike_01", "SM_Veh_E_Scooter_01", "SM_Veh_Pickup_01_Preset_Taxi",
+            };
+            foreach (var name in anachronisms)
+            {
+                if (!Gameplay.VehicleCatalog.IsBarred(name))
+                    failures.Add($"Fleet: '{name}' was not on a street in 1987 and is " +
+                                 "not barred.");
+                // barred beats every other question - nothing may re-adopt it
+                if (!Gameplay.VehicleCatalog.IsBarred(
+                        "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/" + name + ".prefab"))
+                    failures.Add($"Fleet: '{name}' slips the bar when asked by path.");
+            }
+
+            // the sedan the taxi preset is built on is NOT caught with it
+            if (Gameplay.VehicleCatalog.IsBarred("SM_Veh_Sedan_01") ||
+                Gameplay.VehicleCatalog.IsBarred("SM_Veh_Sedan_01_Preset_Taxi") ||
+                Gameplay.VehicleCatalog.IsBarred("SM_Veh_Pickup_01"))
+                failures.Add("Fleet: the bar caught a car it was only meant to sit " +
+                             "beside - check the preset names.");
+        }
+
+        static IEnumerable<int> Members(Personnel.Roster roster, Personnel.Crew crew)
+        {
+            yield return crew.LieutenantId;
+            foreach (var id in crew.HoodIds)
+                yield return id;
         }
 
         static void IntentionFitsTheBudgets(List<string> failures)

@@ -44,6 +44,11 @@ namespace RoadDemo
             /// <summary>The car this crew is walking to get into, or null.</summary>
             public CrewCar Boarding;
 
+            /// <summary>A drive ordered while the crew was still climbing in: the car
+            /// goes there the moment the last man is in, not before - nobody is left
+            /// on the kerb by a click that came a second early.</summary>
+            public Vector3? PendingDrive;
+
             /// <summary>Told to get out - waiting on the car to pull in and the doors to open.</summary>
             public bool Leaving;
 
@@ -53,6 +58,17 @@ namespace RoadDemo
             /// <summary>When the player last gave this crew a move - for a few seconds
             /// after, being shot at does not turn it round (a crew can be pulled back).</summary>
             public float OrderedAt = -100f;
+
+            /// <summary>A rival crew that has had enough - its boss down and one man
+            /// left - and is getting off the street.</summary>
+            public bool Retreated;
+
+            /// <summary>The man at the wheel was shot: the car is rolling to a stop and
+            /// the crew is getting out of it.</summary>
+            public bool DriverLost;
+
+            /// <summary>The law: dealt in by the dispatcher, not a mob.</summary>
+            public bool IsPolice => Faction == StreetAlarm.PoliceFaction;
 
             public IEnumerable<CrewWalker> All()
             {
@@ -100,11 +116,55 @@ namespace RoadDemo
         const float PanicChance = 0.4f;   // of the men shot down to their last hit, this many run
         const float DeathReportDelay = 5f; // the skull stands this long, then the books are told
         const float CarCover = 0.55f;      // what the car's tin does to a round aimed at a rider
+        const float BehindCover = 0.8f;    // what a car's flank does for a man crouched behind it
+        const float StrayChance = 0.12f;   // a round that missed its man, with a bystander in its way
+        const float NerveRange = 8f;       // a friend going down this close may break a man
+        const float HoodNerve = 0.25f, BossNerve = 0.05f;
 
         // Men down and not yet written off: after the delay the ledger strikes an
         // outfit man through (RosterOps.Kill - his crew passes on, his chip frees for a
         // recruit) and a rival is simply taken off his crew's roll. The body stays.
         readonly List<(CrewWalker man, float at)> _deaths = new List<(CrewWalker, float)>();
+
+        // The outfit's men who ran from a fight: struck off the books as deserters the
+        // moment they bolted, they keep running until they are out of sight, then go.
+        readonly List<CrewWalker> _deserters = new List<CrewWalker>();
+
+        /// <summary>A hood of the outfit who has broken and run: no man of the outfit runs
+        /// and comes back - he is a deserter, off the crew and off the books (the ledger
+        /// strikes him through), and he keeps running until he is gone. Lieutenants and
+        /// rivals are not the books' business here: they run and stop, or come back.</summary>
+        void OnFled(CrewWalker man, Vector3 from)
+        {
+            if (man == null || man.Dead || man.Faction != 0 || man.IsLieutenant || man.Retreating) return;
+            var unit = UnitOf(man);
+            if (unit != null) unit.Hoods.Remove(man);
+            _byCharacter.Remove(man.CharacterId);
+            _deserters.Add(man);
+            if (man.Tf) man.Tf.SetParent(_root, true);
+            man.Retreat(from);
+            CrewOverlay.Announce(Surname(man.DisplayName).ToUpperInvariant() + " DESERTED", 4f, new Color(1f, 0.7f, 0.4f));
+            var director = PersonnelDirector.Instance;
+            if (director != null && director.Roster != null) director.Desert(man.CharacterId);
+        }
+
+        // Deserters run their own course: ticked here, off the street once they have
+        // stopped running (out of sight), or once a round has finished them and the
+        // body has been taken away.
+        void TickDeserters(float dt)
+        {
+            for (int i = _deserters.Count - 1; i >= 0; i--)
+            {
+                var man = _deserters[i];
+                if (man == null || man.Tf == null) { _deserters.RemoveAt(i); continue; }
+                man.TickCrew(dt);
+                bool gone = man.Dead ? !man.Tf.gameObject.activeSelf : man.State == CrewWalker.Mode.Standing;
+                if (!gone) continue;
+                _deserters.RemoveAt(i);
+                man.Dispose();
+                Destroy(man.Tf.gameObject);
+            }
+        }
 
         void ReportDeaths()
         {
@@ -159,10 +219,15 @@ namespace RoadDemo
         /// default sidearm here. Off, and he stands empty-handed as the book says.</summary>
         public bool EveryoneArmed = true;
 
+        /// <summary>The roads the cars drive - the scene's lane network (LaneNet: the
+        /// crew demo's four streets, the city's grid). Null: open ground, straight lines.</summary>
+        public LaneNet Net;
+
         /// <summary>The bang, the flash and the blood - set by the scene builder;
         /// missing pieces are simply silent.</summary>
         public GameObject MuzzleFlashPrefab, BloodPrefab, ImpactPrefab;
-        public AudioClip GunshotClip, CrackClip;
+        public AudioClip[] GunshotClips = System.Array.Empty<AudioClip>();
+        public AudioClip CrackClip;
 
         /// <summary>Reference pixels from the top of the screen to the crew bar - the
         /// road demo sets it under its top bar. Read at Init.</summary>
@@ -216,6 +281,60 @@ namespace RoadDemo
             _root = new GameObject("Crews").transform;
             gameObject.AddComponent<CrewOverlay>().Init(this);
             gameObject.AddComponent<CrewBar>().Init(this, BarTopInset);
+            CrewWalker.FindCover = CoverNear;
+        }
+
+        /// <summary>Take a unit off the street - its men gone (the police driving
+        /// away). Nothing for the outfit's own: the ledger owns those.</summary>
+        public void RemoveUnit(Unit unit)
+        {
+            if (unit == null || unit.Faction == 0) return;
+            foreach (var man in unit.All())
+            {
+                man.Dispose();
+                if (man.Tf) Destroy(man.Tf.gameObject);
+            }
+            _deaths.RemoveAll(d => d.man != null && (unit.Boss == d.man || unit.Hoods.Contains(d.man)));
+            unit.Boss = null;
+            unit.Hoods.Clear();
+            if (unit.Root) Destroy(unit.Root.gameObject);
+            Units.Remove(unit);
+            if (Selected == unit) Selected = null;
+        }
+
+        // Somewhere for a pressed man to get behind: the far flank of a car stood still
+        // within ten metres of him, opposite the man shooting at him - if the target is
+        // still in his gun's reach from there. Null: nothing near enough.
+        Vector3? CoverNear(CrewWalker man, Vector3 target)
+        {
+            var p = man.Tf.position;
+            Vector3? best = null;
+            float bestD = 10f * 10f;
+            foreach (var u in StreetTraffic.Users)
+            {
+                if (u.RoadSpeed > 0.5f) continue;
+                var c = u.RoadPosition;
+                var f = u.RoadForward;
+                f.y = 0f;
+                if (f.sqrMagnitude < 1e-4f) continue;
+                f.Normalize();
+                var right = Vector3.Cross(Vector3.up, f);
+                float side = Vector3.Dot(c - target, right) >= 0f ? 1f : -1f;
+                float along = Mathf.Clamp(Vector3.Dot(p - c, f), -u.HalfLength + 0.6f, u.HalfLength - 0.6f);
+                // off the flank by a shoulder and a bit - clear of the body the walk
+                // keeps out of (WalkObstacles), whatever its width
+                var spot = c + right * side * (u.HalfWidth + WalkObstacles.Radius + 0.4f) + f * along;
+                spot.y = p.y;
+                float d = (spot - p).sqrMagnitude;
+                if (d > bestD) continue;
+                // a flank he cannot stand at (the next car over, a wall) is no cover
+                if (WalkObstacles.Occupied(spot, WalkObstacles.Radius)) continue;
+                float toTarget = Vector3.Distance(spot, target);
+                if (toTarget < 3f || toTarget > man.Ballistics.Range * 1.2f) continue;
+                bestD = d;
+                best = spot;
+            }
+            return best;
         }
 
         /// <summary>A rival crew, dealt by hand: its lieutenant and hoods stood at the
@@ -284,9 +403,12 @@ namespace RoadDemo
                 foreach (var man in unit.All())
                     if (!man.Dead && man.Tf && man.Tf.gameObject.activeSelf && !IsAboard(man))
                         StreetTraffic.Bodies.Add(man.Tf.position);
+            foreach (var man in _deserters)
+                if (!man.Dead && man.Tf && man.Tf.gameObject.activeSelf) StreetTraffic.Bodies.Add(man.Tf.position);
+            TickDeserters(dt);
             foreach (var unit in Units)
                 foreach (var man in unit.All())
-                    if (!IsAboard(man)) man.TickCrew(dt);
+                    man.TickCrew(dt); // riders too: their pose (the seat, the gun out of the window) lives here
             TickCars(dt);
             if (FreeRoam) Separate();
 
@@ -330,11 +452,30 @@ namespace RoadDemo
             if (Selected == null || Selected.Boss == null || Selected.Boss.Dead) return false;
             Selected.TargetUnit = null;
             Selected.OrderedAt = Time.time;
-            Selected.Boarding = null; // a walk order cancels a walk to the car
 
-            // in the car: the car goes there, the crew with it
+            // half in the car - the first men in their seats, the rest still walking to
+            // their doors: the drive waits for them. The order is kept and the car goes
+            // the moment the last man is in (TickCars).
+            if (Selected.Boarding != null && Selected.Car == Selected.Boarding && StillBoarding(Selected))
+            {
+                world.y = Selected.Car.RoadY;
+                Selected.PendingDrive = world;
+                destination = world;
+                return true;
+            }
+            Selected.Boarding = null; // a walk order cancels a walk to the car
+            Selected.PendingDrive = null;
+
+            // in the car: the car goes there, the crew with it - unless the man at the
+            // wheel is dead, when the order is to get out
             if (Selected.Car != null)
             {
+                if (DriverDead(Selected.Car))
+                {
+                    Disembark(Selected);
+                    destination = Selected.Car.Position;
+                    return true;
+                }
                 world.y = Selected.Car.RoadY;
                 Selected.Leaving = false;
                 Selected.Car.DriveTo(world);
@@ -389,8 +530,15 @@ namespace RoadDemo
             if (Selected == null || target == null || target == Selected || target.Wiped) return false;
             Selected.Boarding = null;
             // in the car: a drive-by - passes down the street past them, guns out the windows
+            // (no driver: out, and at them on foot)
             if (Selected.Car != null)
             {
+                if (DriverDead(Selected.Car))
+                {
+                    Disembark(Selected);
+                    Selected.TargetUnit = target;
+                    return true;
+                }
                 Selected.TargetUnit = target;
                 Selected.Leaving = false;
                 Selected.Car.DriveBy(target);
@@ -469,12 +617,10 @@ namespace RoadDemo
             foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>()) Destroy(mb);
             foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
             foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
-            var car = new CrewCar { Tf = go.transform, RoadY = roadY, StreetZ = StreetZ };
-            // seats by body: the van takes six, a truck cab three, a car four
-            string n = prefab.name.ToLowerInvariant();
-            car.Seats = n.Contains("van") ? 6 : n.Contains("truck") ? 3 : 4;
-            car.FindDoors();
-            car.FindWheels();
+            // the roads it drives: the scene's network (or the one the builder set as
+            // active); off any road it stands on open ground
+            var car = new CrewCar { RoadY = roadY, Net = Net ?? LaneNet.Active };
+            car.Attach(go.transform); // reads the body: seats, doors, wheels, size; onto the road under it
             StreetTraffic.Users.Add(car);
             Cars.Add(car);
             return car;
@@ -496,6 +642,16 @@ namespace RoadDemo
             return false;
         }
 
+        /// <summary>Is any man of this crew who was given a seat still on his way to it?</summary>
+        bool StillBoarding(Unit unit)
+        {
+            var car = unit?.Boarding;
+            if (car == null) return false;
+            foreach (var man in unit.All())
+                if (!man.Dead && !car.Aboard.Contains(man) && car.SeatOf.ContainsKey(man)) return true;
+            return false;
+        }
+
         /// <summary>Why the last car order was refused, or null - the overlay's line.</summary>
         public string CarRefusal { get; private set; }
 
@@ -507,7 +663,8 @@ namespace RoadDemo
             if (Selected == null || car == null) return false;
             if (car.Owner != Selected)
             {
-                CarRefusal = car.Owner == null
+                CarRefusal = car.Civic ? "That is a police car"
+                    : car.Owner == null
                     ? "Nobody's car - assign it in the ledger"
                     : "That is " + Surname(car.Owner.Name) + "'s car";
                 return false;
@@ -526,12 +683,45 @@ namespace RoadDemo
             return true;
         }
 
+        /// <summary>The selected crew out of its car, wherever the pointer is - the
+        /// middle button's order: the car pulls in and lets them out; a crew still
+        /// walking to its doors turns back. False when there is no car in it.</summary>
+        public bool OrderOut()
+        {
+            if (Selected == null) return false;
+            if (Selected.Car != null)
+            {
+                Disembark(Selected);
+                return true;
+            }
+            var car = Selected.Boarding;
+            if (car == null) return false;
+            // nobody in yet: the walk to the doors is called off, each man where he stands
+            Selected.Boarding = null;
+            Selected.PendingDrive = null;
+            foreach (var man in Selected.All())
+                if (!man.Dead && !IsAboard(man) && car.SeatOf.ContainsKey(man))
+                {
+                    car.SeatOf.Remove(man);
+                    man.OrderToPoint(man.Tf.position);
+                }
+            if (car.Occupant == null) car.CloseAllDoors();
+            return true;
+        }
+
         static string Surname(string full)
         {
             if (string.IsNullOrEmpty(full)) return "";
             int cut = full.LastIndexOf(' ');
             return cut >= 0 ? full.Substring(cut + 1) : full;
         }
+
+        /// <summary>The dispatcher's calls on the same car plumbing: put this unit in
+        /// this car (they walk to their doors), let it out at the kerb, and set the
+        /// law on a crew.</summary>
+        public void BoardCar(Unit unit, CrewCar car) => Board(unit, car);
+        public void LeaveCar(Unit unit) => Disembark(unit);
+        public void Sic(Unit unit, Unit target) { if (unit != null && target != null && !target.Wiped) SetTarget(unit, target); }
 
         // As many as there are seats walk each to HIS door - the lieutenant drives,
         // so he goes round to the driver's side; the rest to the nearest free seat's
@@ -546,8 +736,9 @@ namespace RoadDemo
             int given = 0;
             foreach (var man in unit.All())
             {
-                if (man.Dead || IsAboard(man) || car.SeatOf.ContainsKey(man)) continue;
-                int seat = car.FreeSeat();
+                if (man.Dead || IsAboard(man)) continue;
+                // a seat he was already given (a walk to it cut short) is still his
+                if (!car.SeatOf.TryGetValue(man, out int seat)) seat = car.FreeSeat();
                 if (seat < 0) break;
                 car.SeatOf[man] = seat;
                 man.Disengage();
@@ -566,7 +757,16 @@ namespace RoadDemo
             if (car == null) return;
             unit.Leaving = true;
             unit.Boarding = null;
-            if (car.Moving) car.ParkNear(car.Position);
+            unit.PendingDrive = null;
+            // "Out" is an order to the MEN, and the car does the least driving that can
+            // honour it. In a fight it is an emergency - both feet on the brake where it
+            // stands, and out into the road (a car is a coffin when the shooting starts).
+            // Otherwise it pulls in at the nearest kerb it can actually reach - the
+            // stopping distance from here, no further, no turning round - and lets them
+            // down onto the pavement: a car of the outfit's is never left in the road.
+            if (!car.Moving) return;
+            if (car.Hot || car.State == CrewCar.Mode.DriveBy) car.HardStop();
+            else car.ParkNear(car.Position);
         }
 
         // One rider out through his own door onto the ground beside it, standing,
@@ -586,11 +786,35 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>Is the man in the driver's seat of this car dead (or nobody there)?</summary>
+        bool DriverDead(CrewCar car)
+        {
+            foreach (var kv in car.SeatOf)
+                if (kv.Value == 0) return kv.Key.Dead;
+            return false;
+        }
+
         void TickCars(float dt)
         {
             foreach (var car in Cars)
             {
+                // the crew aboard is in a fight - a drive-by, or shot at on the way
+                // somewhere: the driver puts his foot down (the law drives its own way)
+                var fight = car.Civic ? null : FightOf(car);
+                car.Hot = fight != null;
                 car.Tick(dt);
+
+                // the man at the wheel shot: nobody is driving - the car rolls to a stop
+                // where it is and the crew gets out of it (and, out, fights on or runs)
+                if (car.Occupant != null && !car.Occupant.Leaving && car.Moving && DriverDead(car))
+                {
+                    car.Stop();
+                    car.Occupant.Leaving = true;
+                    car.Occupant.Boarding = null;
+                    car.Occupant.DriverLost = true;
+                    if (car.Occupant.Faction == 0)
+                        CrewOverlay.Announce("DRIVER DOWN - THE CREW IS BAILING OUT", 4f, new Color(1f, 0.55f, 0.45f));
+                }
 
                 // men walking up to it: the door for a man's seat swings open as he
                 // arrives, he gets in once it stands open, and it shuts behind him
@@ -608,7 +832,7 @@ namespace RoadDemo
                             var d = man.Tf.position - door;
                             d.y = 0f;
                             float dist = d.magnitude;
-                            if (dist <= 6f) car.OpenDoorFor(seat);
+                            if (dist <= 1.8f) car.OpenDoorFor(seat); // hand on the handle, not from across the road
                             // at the door, or stopped short of it by the crowd right beside it
                             bool atDoor = dist <= 1.4f || (!man.HasOrder && dist <= 2.8f);
                             if (atDoor && car.DoorOpenFor(seat))
@@ -622,7 +846,18 @@ namespace RoadDemo
                             }
                             else anyOut = true;
                         }
-                        if (!anyOut) unit.Boarding = null;
+                        if (!anyOut)
+                        {
+                            unit.Boarding = null;
+                            // everybody in: the drive the player ordered while they were
+                            // still climbing aboard goes now
+                            if (unit.PendingDrive.HasValue && unit.Car == car && !DriverDead(car))
+                            {
+                                unit.Leaving = false;
+                                car.DriveTo(unit.PendingDrive.Value);
+                            }
+                            unit.PendingDrive = null;
+                        }
                     }
                 }
 
@@ -650,6 +885,27 @@ namespace RoadDemo
                         car.CloseAllDoors();
                         car.Occupant = null;
                         unit.Car = null;
+                        // out of it well away from the crew it was trading shots with on
+                        // the way: that fight is over - the men do not walk back into it
+                        if (unit.TargetUnit != null && (unit.TargetUnit.Position - car.Position).sqrMagnitude > 40f * 40f)
+                            unit.TargetUnit = null;
+                        // out of a car whose driver was shot: the fight goes on from the
+                        // road (TickCombat picks it up) - and some men's nerve goes
+                        if (unit.DriverLost)
+                        {
+                            unit.DriverLost = false;
+                            var fled = new List<CrewWalker>();
+                            foreach (var man in unit.All())
+                            {
+                                if (man.Dead || man.IsLieutenant || man.Panicked) continue;
+                                if (Random.value < HoodNerve * 1.6f) fled.Add(man);
+                            }
+                            foreach (var man in fled)
+                            {
+                                man.Flee(car.Position, 15f, 25f, comeBack: true);
+                                OnFled(man, car.Position);
+                            }
+                        }
                     }
                 }
 
@@ -669,40 +925,75 @@ namespace RoadDemo
                     man.Tf.SetPositionAndRotation(car.Seat(seat), rot);
                 }
 
-                if (car.State == CrewCar.Mode.DriveBy)
-                    TickDriveBy(car, dt);
+                // the guns out of the windows: on a drive-by, at the crew being driven
+                // past; on the way anywhere else, or stood at the kerb, at whoever is
+                // shooting at the car - the men in it defend themselves without an order
+                if (fight != null) TickRiders(car, fight, dt);
                 else
+                {
                     foreach (var man in car.Aboard) man.RidingAim = false;
+                    car.CloseAllWindows();
+                }
             }
         }
 
-        // The pass: every armed rider with a living man of the target crew inside his
-        // gun's reach on HIS side of the car puts the gun out of the window and fires
-        // on his own cadence. Same roll and the same wounds as a shot from the
-        // pavement - only the muzzle moved.
+        // The crew a car's riders have their guns out for: the drive-by's mark, else
+        // the crew its occupant is fighting (shot at, it fights back from the seats).
+        static Unit FightOf(CrewCar car)
+        {
+            if (car.State == CrewCar.Mode.DriveBy) return car.DriveByTarget;
+            var unit = car.Occupant;
+            if (unit == null || unit.TargetUnit == null || unit.TargetUnit.Wiped) return null;
+            if (Beaten(unit.TargetUnit)) return null;   // beaten or gone: the guns go in
+            return unit.TargetUnit;
+        }
+
+        // The mark is finished as far as the car is concerned: every man of it is down
+        // or running off the street. A crew does not keep driving passes at a pavement
+        // with nobody left stood on it - that is what looks mad from the kerb, and a man
+        // who has turned and run is off the board anyway (TakeOffRetreated). Distance is
+        // deliberately not in it: a drive-by ordered on a crew at the far end of the
+        // street is a long drive, not a finished job.
+        static bool Beaten(Unit target)
+        {
+            foreach (var man in target.All())
+                if (!man.Dead && !man.Retreating) return false;
+            return true;
+        }
+
+        // The pass, and the answer to being shot at: every armed rider with a living
+        // man of the target crew inside his gun's reach on HIS side of the car puts
+        // the gun out of the window and fires on his own cadence. Same roll and the
+        // same wounds as a shot from the pavement - only the muzzle moved.
         readonly Dictionary<CrewWalker, float> _windowTimers = new Dictionary<CrewWalker, float>();
 
-        void TickDriveBy(CrewCar car, float dt)
+        void TickRiders(CrewCar car, Unit target, float dt)
         {
-            var target = car.DriveByTarget;
-            if (target == null || target.Wiped)
+            if (target == null || target.Wiped || Beaten(target))
             {
-                car.ParkNear(car.Position); // the job is done: in at the kerb
+                car.TargetDone(); // the job is done: on a little and in at the kerb
                 foreach (var man in car.Aboard) man.RidingAim = false;
+                car.CloseAllWindows();
                 return;
             }
             foreach (var man in car.Aboard)
             {
-                if (man.Dead || !man.Armed) { man.RidingAim = false; continue; }
                 car.SeatOf.TryGetValue(man, out int seat);
+                if (man.Dead || !man.Armed) { man.RidingAim = false; car.SetWindow(seat, false); continue; }
                 var mark = NearestStanding(target, car.Position);
-                if (mark == null) { man.RidingAim = false; continue; }
-                float dist = Vector3.Distance(car.Position, mark.Tf.position);
-                // his own window has to face the man
-                float sideOfMark = Vector3.Dot(mark.Tf.position - car.Position, car.Tf.right) >= 0f ? 1f : -1f;
-                bool canSee = dist <= man.Ballistics.Range && sideOfMark == CrewCar.SeatSide(seat);
+                if (mark == null) { man.RidingAim = false; car.SetWindow(seat, false); continue; }
+                var toMark = mark.Tf.position - car.Position;
+                toMark.y = 0f;
+                float dist = toMark.magnitude;
+                // his own window has to face the man - and the man has to be out of the
+                // side of it, not ahead through the windscreen: within sixty degrees of
+                // abeam. The window winds down while he has the gun out of it.
+                float sideOfMark = Vector3.Dot(toMark, car.Tf.right) >= 0f ? 1f : -1f;
+                float abeam = dist > 0.1f ? Vector3.Dot(toMark / dist, car.Tf.right * sideOfMark) : 0f;
+                bool canSee = dist <= man.Ballistics.Range && sideOfMark == CrewCar.SeatSide(seat) && abeam > 0.5f;
                 man.RidingAim = canSee;
                 man.AimAt(canSee ? mark : null);
+                car.SetWindow(seat, canSee);
                 if (!canSee) { _windowTimers[man] = 0f; continue; }
 
                 _windowTimers.TryGetValue(man, out float timer);
@@ -720,6 +1011,7 @@ namespace RoadDemo
         {
             foreach (var car in Cars)
             {
+                if (car.Civic) continue;
                 RosterEquipment item = null;
                 foreach (var e in roster.Equipment)
                 {
@@ -741,7 +1033,6 @@ namespace RoadDemo
                 if (owner != car.Owner && car.Occupant != null && car.Occupant != owner)
                     Disembark(car.Occupant); // the book took the keys away mid-ride
                 car.Owner = owner;
-                car.StreetZ = StreetZ;
             }
         }
 
@@ -780,10 +1071,24 @@ namespace RoadDemo
                     foreach (var man in unit.All()) man.Disengage();
                 }
 
+                // a beaten crew - boss down, one man left - gets off the street; the men
+                // who have run out of sight are taken off it
+                if (unit.Faction != 0 && !unit.IsPolice && !unit.Retreated &&
+                    (unit.Boss == null || unit.Boss.Dead) && unit.Standing() <= 1 && unit.Standing() > 0)
+                {
+                    unit.Retreated = true;
+                    var threat = unit.TargetUnit != null ? unit.TargetUnit.Position : StreetAlarm.Incident;
+                    unit.TargetUnit = null;
+                    foreach (var man in unit.All())
+                        if (!man.Dead && !IsAboard(man)) man.Retreat(threat);
+                }
+                if (unit.Retreated) { TakeOffRetreated(unit); continue; }
+
                 // a rival crew watches for the OUTFIT only - the mobs are not at war with
                 // each other here, and two rival crews stood a street apart must not
-                // open up on one another before the player has taken a single look
-                if (unit.TargetUnit == null && unit.Faction != 0)
+                // open up on one another before the player has taken a single look;
+                // the police pick their own fights (PoliceDispatch)
+                if (unit.TargetUnit == null && unit.Faction != 0 && !unit.IsPolice)
                 {
                     var seen = EnemyWithin(unit, AlertRange, outfitOnly: true);
                     if (seen != null) SetTarget(unit, seen);
@@ -797,6 +1102,52 @@ namespace RoadDemo
                     if (man.Target == null || man.Target.Dead)
                         man.Engage(NearestStanding(unit.TargetUnit, man.Tf.position));
                 }
+            }
+        }
+
+        // A retreating man who has stopped running is out of sight: gone.
+        void TakeOffRetreated(Unit unit)
+        {
+            var gone = new List<CrewWalker>();
+            foreach (var man in unit.All())
+                if (!man.Dead && man.Retreating && man.State == CrewWalker.Mode.Standing) gone.Add(man);
+            foreach (var man in gone)
+            {
+                if (man.Tf) man.Tf.gameObject.SetActive(false);
+                if (unit.Boss == man) unit.Boss = null;
+                unit.Hoods.Remove(man);
+                man.Dispose();
+                if (man.Tf) Destroy(man.Tf.gameObject);
+            }
+        }
+
+        /// <summary>The law has shouted its warning at the scene: nobody at war lowers
+        /// their guns. The outfit stands its ground - it keeps the fight it has, and a
+        /// crew with its guns free answers the warning with them (retreat stays the
+        /// player's call); a rival crew in earshot either turns them on the police or
+        /// gets out. The law is a third side of the war, not a referee.</summary>
+        public void PoliceWarning(Vector3 from, Unit police)
+        {
+            foreach (var unit in Units)
+            {
+                if (unit.IsPolice || unit.Wiped) continue;
+                if ((unit.Position - from).sqrMagnitude > 45f * 45f) continue;
+                if (unit.Faction == 0)
+                {
+                    // the war does not pause for the law: mid-fight the crew stays on
+                    // its enemy (police rounds pull it round later, through the
+                    // shot-back rule); guns free, it turns them on the squad now
+                    if (unit.TargetUnit == null && police != null) SetTarget(unit, police);
+                    continue;
+                }
+                if (Random.value < 0.4f)
+                {
+                    unit.Retreated = true;
+                    unit.TargetUnit = null;
+                    foreach (var man in unit.All())
+                        if (!man.Dead && !IsAboard(man)) man.Retreat(from);
+                }
+                else if (police != null) SetTarget(unit, police);
             }
         }
 
@@ -869,8 +1220,11 @@ namespace RoadDemo
                     var dir = dist > 1e-3f ? d / dist
                         : new Vector3(Mathf.Cos(i * 2.4f), 0f, Mathf.Sin(i * 2.4f));
                     float push = (Elbow - dist) * 0.5f;
-                    a.position -= dir * push;
-                    b.position += dir * push;
+                    // elbowed apart - but not into the car or the bin beside him
+                    var pa = a.position - dir * push;
+                    var pb = b.position + dir * push;
+                    if (!WalkObstacles.Occupied(pa, WalkObstacles.Radius)) a.position = pa;
+                    if (!WalkObstacles.Occupied(pb, WalkObstacles.Radius)) b.position = pb;
                 }
             }
         }
@@ -885,8 +1239,9 @@ namespace RoadDemo
                 foreach (var a in unit.All())
                 {
                     if (a.Dead) continue;
+                    // a man in a car is just a car going by until somebody shoots
                     foreach (var b in other.All())
-                        if (!b.Dead && (a.Tf.position - b.Tf.position).sqrMagnitude < r2)
+                        if (!b.Dead && !IsAboard(b) && (a.Tf.position - b.Tf.position).sqrMagnitude < r2)
                             return other;
                 }
             }
@@ -909,10 +1264,17 @@ namespace RoadDemo
             // centimetre of the grip does to the barrel
             var line = target != null ? (target.ChestPosition - muzzle).normalized : shooter.MuzzleForward;
             Flash(muzzle, line, follow);
-            StreetTraffic.Alarm(muzzle); // every driver in earshot stands on the brake
+            var stats = shooter.Ballistics;
+            // the street hears it: the crowd, the traffic, the police - and every man of
+            // every crew in earshot with nothing on his hands turns and draws
+            StreetAlarm.Report(muzzle, shooter, shooter.Faction, stats.Loudness);
+            float ear2 = stats.Loudness * stats.Loudness;
+            foreach (var unit in Units)
+                foreach (var man in unit.All())
+                    if (man != shooter && !man.Dead && man.Tf && (man.Tf.position - muzzle).sqrMagnitude < ear2)
+                        man.HearShot(muzzle);
             if (target == null || target.Dead) return;
 
-            var stats = shooter.Ballistics;
             float dist = Vector3.Distance(from, target.Tf.position);
             // the gun's accuracy holds to half its reach and falls to half of itself at
             // the edge; a lieutenant is a better shot; nothing is ever certain, and a
@@ -921,35 +1283,81 @@ namespace RoadDemo
             float falloff = dist <= reach * 0.5f ? 1f : Mathf.Lerp(1f, 0.5f, (dist / reach - 0.5f) / 0.5f);
             float p = stats.Accuracy * falloff;
             if (shooter.IsLieutenant) p += 0.08f;
-            // a man in a car has the door and the sill between him and the round
+            // a man in a car has the door and the sill between him and the round; a man
+            // crouched behind one has its flank
             if (IsAboard(target)) p *= CarCover;
+            else if (target.InCover) p *= BehindCover;
             p = Mathf.Clamp(p, 0.04f, 0.98f);
 
+            // a crew shot at shoots back - unless it has just been ordered off (it can be
+            // pulled back); a crew shot at IN ITS CAR always does, from the windows,
+            // wherever the car is going: the order stands, the guns come out anyway
             var victimUnit = UnitOf(target);
             var shooterUnit = UnitOf(shooter);
             if (victimUnit != null && shooterUnit != null && victimUnit.TargetUnit == null &&
-                Time.time - victimUnit.OrderedAt > HoldFireAfterOrder)
+                (IsAboard(target) || Time.time - victimUnit.OrderedAt > HoldFireAfterOrder))
                 SetTarget(victimUnit, shooterUnit);
 
             if (Random.value >= p)
             {
                 Miss(muzzle, target);
+                target.UnderFire();
+                StrayRound(muzzle, line, reach, from);
                 return;
             }
             target.TakeHit(stats.Damage, shooter);
-            CrewGore.Hit(target, from, GroundY);
+            // a man hit in the car bleeds in the car - nothing on the road outside it
+            CrewGore.Hit(target, from, GroundY, floor: !IsAboard(target));
             // a man one hit from the ground may lose his nerve and run - not all do
             // (not out of a car: a rider has nowhere to run to)
-            if (!target.Dead) { if (!IsAboard(target)) target.MaybePanic(shooter, PanicChance); }
+            if (!target.Dead)
+            {
+                if (!IsAboard(target))
+                {
+                    target.MaybePanic(shooter, PanicChance);
+                    if (target.State == CrewWalker.Mode.Fleeing) OnFled(target, from);
+                }
+            }
             else
             {
-                CrewGore.Death(target, GroundY);
+                CrewGore.Death(target, GroundY, floor: !IsAboard(target));
                 _deaths.Add((target, Time.time + DeathReportDelay));
+                StreetAlarm.Death(target.Tf.position,
+                    target.Faction == StreetAlarm.PoliceFaction ? StreetAlarm.DeathOf.Officer : StreetAlarm.DeathOf.Gangster);
+                // a friend going down beside a man may break him: he runs, and comes
+                // back when his nerve does (the law does not run)
+                if (victimUnit != null && !victimUnit.IsPolice && !IsAboard(target))
+                    foreach (var mate in victimUnit.All())
+                    {
+                        if (mate == target || mate.Dead || mate.Panicked || IsAboard(mate) || !mate.Tf) continue;
+                        if ((mate.Tf.position - target.Tf.position).sqrMagnitude > NerveRange * NerveRange) continue;
+                        if (Random.value < (mate.IsLieutenant ? BossNerve : HoodNerve))
+                        {
+                            mate.Flee(from, 15f, 25f, comeBack: true);
+                            OnFled(mate, from);
+                        }
+                    }
             }
             if (BloodPrefab)
             {
                 var blood = Instantiate(BloodPrefab, target.ChestPosition,
                     Quaternion.LookRotation(-line));
+                Destroy(blood, 4f);
+            }
+        }
+
+        // A round that missed its man carries on: a bystander stood in its way past him
+        // may take it - the same wounds as anyone, and a killing the police weigh heaviest.
+        void StrayRound(Vector3 muzzle, Vector3 line, float reach, Vector3 from)
+        {
+            var civ = CivilianAgent.InLine(muzzle, line, reach * 1.5f, 0.7f);
+            if (civ == null || Random.value >= StrayChance) return;
+            civ.TakeHit(1, from);
+            CrewGore.Hit(civ, from, GroundY);
+            if (civ.Dead) CrewGore.Death(civ, GroundY);
+            if (BloodPrefab)
+            {
+                var blood = Instantiate(BloodPrefab, civ.Tf.position + Vector3.up * 1.2f, Quaternion.LookRotation(-line));
                 Destroy(blood, 4f);
             }
         }
@@ -982,7 +1390,7 @@ namespace RoadDemo
                 var flash = Instantiate(MuzzleFlashPrefab, muzzle, Quaternion.LookRotation(forward), follow);
                 Destroy(flash, 2f);
             }
-            if (GunshotClip)
+            if (GunshotClips.Length > 0)
             {
                 // one 2D source, pitch-jittered: the shot has to be heard from the
                 // demo's camera height, where a 3D one-shot at default rolloff is a whisper
@@ -992,10 +1400,11 @@ namespace RoadDemo
                     _shots.spatialBlend = 0f;
                     _shots.playOnAwake = false;
                 }
-                // the pack's only shot is a muffled thud; pitched up it is a report, and
-                // a slap pitched to a snap on top gives it the crack a pistol has
-                _shots.pitch = Random.Range(1.35f, 1.6f);
-                _shots.PlayOneShot(GunshotClip, 0.5f);
+                // Four recorded reports, so the variation comes from the files and the
+                // pitch only has to keep two shots in a burst from being identical - a
+                // transposition wide enough to fake variety also changes the calibre.
+                _shots.pitch = Random.Range(0.94f, 1.07f);
+                _shots.PlayOneShot(GunshotClips[Random.Range(0, GunshotClips.Length)], 0.5f);
                 if (CrackClip)
                 {
                     if (_cracks == null)
@@ -1004,7 +1413,7 @@ namespace RoadDemo
                         _cracks.spatialBlend = 0f;
                         _cracks.playOnAwake = false;
                     }
-                    _cracks.pitch = Random.Range(1.8f, 2.3f);
+                    _cracks.pitch = Random.Range(0.92f, 1.12f);
                     _cracks.PlayOneShot(CrackClip, 0.3f);
                 }
             }
@@ -1112,22 +1521,32 @@ namespace RoadDemo
                 float t = man.CurrentT;
                 var pos = man.Tf.position;
                 var rot = man.Tf.rotation;
+                var seatCar = CarAboard(man, out int seatHad); // recast in his seat: he keeps it
                 RemoveMan(id);
                 float pace = boss ? BossPace : HoodPace();
                 man = FreeRoam ? SpawnMember(member, pos, rot, pace) : SpawnMember(member, link, t, pace);
                 if (man == null) return;
                 _byCharacter[id] = man;
+                if (seatCar != null && seatHad >= 0)
+                {
+                    seatCar.Aboard.Add(man);
+                    seatCar.SeatOf[man] = seatHad;
+                    man.SetRiding(true);
+                }
             }
 
             if (fresh)
             {
-                // a new man walks in beside his boss; a new crew opens up on ground
-                // of its own, apart from the others
+                // a new man walks in beside his boss - beside the car, on the kerb side,
+                // when the boss is sat in it; a new crew opens up on ground of its own,
+                // apart from the others
                 if (FreeRoam)
                 {
                     var rot = Quaternion.LookRotation(_outfitFacing);
                     Vector3 pos;
-                    if (unit.Boss != null)
+                    if (unit.Car != null && unit.Car.Tf != null)
+                        pos = KerbSideOf(unit.Car);
+                    else if (unit.Boss != null)
                         pos = unit.Boss.Tf.position + unit.Boss.Tf.rotation * FormationOffset(unit.Hoods.Count);
                     else
                         pos = OutfitSpawnPoint(unit);
@@ -1168,10 +1587,43 @@ namespace RoadDemo
 
             ArmFromLedger(roster, man);
 
-            // a hood who changed crews - or just arrived - falls in on his boss
+            // a hood who changed crews - or just arrived - falls in on his boss; on a
+            // crew that is sat in its car he gets in with them (a seat for him, and the
+            // walk to his door - the rest is TickCars), or stands by it when it is full
             previousUnitOf.TryGetValue(man, out var was);
-            if (!boss && unit.Boss != null && (fresh || was != unit))
-                FallIn(unit, man, unit.Hoods.Count - 1);
+            if (!boss && (fresh || was != unit))
+            {
+                if (unit.Car != null && !IsAboard(man)) JoinCar(unit, man);
+                else if (unit.Boss != null) FallIn(unit, man, unit.Hoods.Count - 1);
+            }
+        }
+
+        // One man to the car his crew is sat in: a seat if there is one and the walk
+        // to its door; the door opens as he arrives and he gets in (TickCars).
+        void JoinCar(Unit unit, CrewWalker man)
+        {
+            var car = unit.Car;
+            if (car == null || man.Dead || car.SeatOf.ContainsKey(man)) return;
+            int seat = car.FreeSeat();
+            if (seat < 0) return;
+            car.SeatOf[man] = seat;
+            man.Disengage();
+            man.OrderToPoint(car.DoorPoint(seat));
+            unit.Boarding = car;
+        }
+
+        // Beside a car, on the side away from the middle of the road (the kerb, where
+        // a man steps off the pavement to it); a stride off its flank, level with its doors.
+        Vector3 KerbSideOf(CrewCar car)
+        {
+            var right = car.Tf.right;
+            right.y = 0f;
+            // which way is "away from the middle" is the road's own business (the car
+            // knows its kerb side on whatever street it stands on)
+            float side = Vector3.Dot(right, car.KerbSideDir) >= 0f ? 1f : -1f;
+            var p = car.Position + right.normalized * side * (car.HalfWidth + 1.6f);
+            p.y = GroundY;
+            return p;
         }
 
         /// <summary>The gun the ledger says he holds - re-checked on every deal, so a
@@ -1238,8 +1690,23 @@ namespace RoadDemo
         {
             if (!_byCharacter.TryGetValue(id, out var man)) return;
             _byCharacter.Remove(id);
+            // out of whatever car he sat in, or was walking to
+            foreach (var car in Cars)
+            {
+                car.Aboard.Remove(man);
+                car.SeatOf.Remove(man);
+            }
             man.Dispose();
             if (man.Tf) Destroy(man.Tf.gameObject);
+        }
+
+        /// <summary>The car this man sits in right now, and his seat; null if none.</summary>
+        CrewCar CarAboard(CrewWalker man, out int seat)
+        {
+            seat = -1;
+            foreach (var car in Cars)
+                if (car.Aboard.Contains(man)) { car.SeatOf.TryGetValue(man, out seat); return car; }
+            return null;
         }
 
         // ------------------------------------------------------------------ bodies

@@ -29,16 +29,20 @@ namespace RoadDemo
         // spacing, one residentialblock1 bake per interior (70 x 50 m). Re-spaced,
         // the interiors take their sizes from blockWidths / blockDepths below.
         //
-        // The default plan is a city of districts: three columns of blocks, a park,
-        // three more columns, the elevated highway, one more column beyond it; two
-        // rows of blocks, the river, two more rows. Vertical roads 1, 4 and 7 are
-        // boulevards - 4 is the park's east edge, 7 runs under the highway's west
-        // side, all three bridge the river; horizontal 1 and 4 run through the middle
-        // of the south and north halves.
-        public float[] verticalRoadX = { 0f, 100f, 200f, 300f, 400f, 500f, 600f, 700f, 800f, 900f };
-        public bool[] verticalIsBoulevard = { false, true, false, false, true, false, false, true, false, false };
-        public float[] horizontalRoadZ = { 0f, 80f, 160f, 240f, 320f, 400f };
-        public bool[] horizontalIsBoulevard = { false, true, false, false, true, false };
+        // The default plan is a city of some ninety blocks in a dozen districts:
+        // west to east, four columns of blocks, a park, five columns, a wild strip,
+        // four more columns; south to north, three rows, the river, three rows, a
+        // second park, one more row. Vertical roads 1, 5, 8, 11 and 14 are boulevards
+        // (5 the first park's east edge, 11 the wild strip's, all bridging the
+        // river); horizontal 1, 5 and 8 cross the halves. (An elevated highway is a
+        // seam kind too, but a freeway from nowhere to nowhere on an island is not
+        // in the plan for now.)
+        public float[] verticalRoadX =
+            { 0f, 100f, 200f, 300f, 400f, 500f, 600f, 700f, 800f, 900f, 1000f, 1100f, 1200f, 1300f, 1400f, 1500f };
+        public bool[] verticalIsBoulevard =
+            { false, true, false, false, false, true, false, false, true, false, false, true, false, false, true, false };
+        public float[] horizontalRoadZ = { 0f, 80f, 160f, 240f, 320f, 400f, 480f, 560f, 640f, 720f };
+        public bool[] horizontalIsBoulevard = { false, true, false, false, false, true, false, false, true, false };
 
         [Header("Seams between districts")]
         [Tooltip("The gaps between two road lines that are not blocks: a river (the boulevards " +
@@ -48,9 +52,10 @@ namespace RoadDemo
                  "between two vertical roads.")]
         public Seam[] seams =
         {
-            new Seam { vertical = false, gap = 2, kind = SeamKind.River, width = 90f },
-            new Seam { vertical = true, gap = 3, kind = SeamKind.Park, width = 60f },
-            new Seam { vertical = true, gap = 7, kind = SeamKind.Highway, width = 40f },
+            new Seam { vertical = false, gap = 3, kind = SeamKind.River, width = 90f },
+            new Seam { vertical = true, gap = 4, kind = SeamKind.Park, width = 60f },
+            new Seam { vertical = true, gap = 10, kind = SeamKind.Wild, width = 80f },
+            new Seam { vertical = false, gap = 7, kind = SeamKind.Park, width = 60f },
         };
 
         [Header("Block sizes")]
@@ -74,6 +79,11 @@ namespace RoadDemo
         [Tooltip("The same for interior depth, row by row. The bake needs 50 m.")]
         public float[] blockDepths = { 50f, 70f, 95f };  // lot pad rows 1, 2, 3
 
+        [Tooltip("Which of the blocks filed under a lot code the city starts handing " +
+                 "out at. 0 is the city's own order. The block lab (BlockDemo.unity) " +
+                 "steps it to walk through every block composed or rolled for one pad.")]
+        [Min(0)] public int blockCycle = 0;
+
         [Header("Traffic")]
         public int carCount = 100;
         public float streetSpeed = 9f;
@@ -95,6 +105,11 @@ namespace RoadDemo
         // radius (officers) - each one is a routed trip, not a wandered block
         public Vector2Int policePatrolWaypoints = new Vector2Int(2, 4);
 
+        [Header("Rivals")]
+        [Tooltip("Rival crews dealt onto the sidewalks by hand (the ledger has none) - so there is somebody to shoot it out with. 0 for a quiet town.")]
+        [Range(0, 3)] public int rivalCrewsInCity = 1;
+        [Range(0, 4)] public int rivalHoodsInCity = 3;
+
         [Header("City life")]
         [Tooltip("Share of the crowd that starts indoors and streams out of the doors over the first minute.")]
         [Range(0f, 1f)] public float insideAtStart = 0.45f;
@@ -106,11 +121,33 @@ namespace RoadDemo
         public Vector2 chatSeconds = new Vector2(6f, 14f);
 
         const float Cell = 5f;
-        const float StreetHalf = 5f;     // carriageway half width: 2 lanes
-        const float BoulevardHalf = 15f; // 2+2 lanes plus a 10 m median
+        // The kerb strip a car is left on. Without it a car parked at the kerb stands
+        // in the driving lane - its flank reaches to within a foot of the lane centre -
+        // and anything coming up behind has to cross the crown to get by, which it may
+        // only do with the far lane empty (StreetTraffic.ParkedAhead): two cars meeting
+        // with one parked between them is a jam. The strip takes the parked car off the
+        // lane, and nothing that drives moves an inch - the lane centres (LaneOffsets,
+        // IRoadModel.LaneZ) are measured off the crown and are where they always were.
+        const float ParkLane = 2.5f;
+        const float MedianHalf = 5f;     // the boulevard's planted divider, half width
+        const float StreetHalf = 5f + ParkLane;      // 2 lanes and a parking strip each side
+        const float BoulevardHalf = 15f + ParkLane;  // 2+2 lanes, the median, a strip each side
+        // The pavement, kerb to building line. Wider than the kit's 5 m tile: the
+        // tile is stretched across to it, the lots sit that much further from the
+        // kerb, and the few metres it leaves a carriageway short of the 5 m beat
+        // between two crossings are closed by stretching the road tiles a hair.
+        const float Sidewalk = SidewalkDressing.Width;
         // Narrowest interior worth calling a block: below this the courtyard pass
         // has no room to dress it and it reads as a gap between two streets.
         const float MinInterior = 20f;
+
+        /// <summary>Half a carriageway, crown to kerb - a boulevard's or an ordinary
+        /// street's. Public because a scene that lays out its own grid (the block lab)
+        /// has to place its road lines by the same measurements the city uses.</summary>
+        public static float RoadHalf(bool boulevard) => boulevard ? BoulevardHalf : StreetHalf;
+
+        /// <summary>The pavement, kerb to building line.</summary>
+        public static float PavementWidth => Sidewalk;
 
         // The generic terrace: the last-resort filler for a lot no other bake wanted.
         // It is the one block named here; everything else in the folder is found by
@@ -155,28 +192,31 @@ namespace RoadDemo
         AnimationClip _walkClip, _idleClip;
         AnimationClip _sitDownClip, _sitLoopClip, _standUpClip, _talkClip, _shoutClip;
 
-        // street dressing (PalmCity prop vocabulary, mined from its demo scene)
+        // street dressing (PalmCity prop vocabulary; what goes where and how often
+        // was read off the POLYGON City demo's pavements - see SidewalkDressing)
         readonly List<GameObject> _grates = new List<GameObject>();
         readonly List<GameObject> _lamps = new List<GameObject>();
-        readonly List<GameObject> _bins = new List<GameObject>();
+        readonly List<GameObject> _bins = new List<GameObject>();      // the public litter bin, at the kerb
+        readonly List<GameObject> _wallBins = new List<GameObject>();  // the building's own, against the wall
         readonly List<GameObject> _benches = new List<GameObject>();
         readonly List<GameObject> _planters = new List<GameObject>();
         readonly List<GameObject> _powerboxes = new List<GameObject>();
         readonly List<GameObject> _bushes = new List<GameObject>();
-        readonly List<GameObject> _saplings = new List<GameObject>();
         readonly List<GameObject> _wires = new List<GameObject>();
-        readonly List<GameObject> _hedges = new List<GameObject>();
-        readonly List<GameObject> _topiary = new List<GameObject>();
         readonly List<GameObject> _chairs = new List<GameObject>();
         readonly List<GameObject> _tables = new List<GameObject>();
         readonly List<GameObject> _umbrellas = new List<GameObject>();
         GameObject _bag, _bagOpen, _bollard, _hydrant, _mailbox, _newsstand, _powerpole;
         GameObject _bikeStand, _signPole, _manhole;
+        GameObject _treeCage, _banner, _meter, _payPhone, _menuStand;
         GameObject _pave;              // PalmCity 2.5 m concrete plate, the demo's court floor
         bool _paveMeasured;
         Vector3 _paveSize, _paveOffset;
         float _paveTop;
-        GameObject _policeCarPrefab;
+        /// <summary>The marked cruisers the patrol fleet draws from - the approved
+        /// pair (VehicleCatalog.PoliceCars), one per stall in turn, so a station yard
+        /// is a fleet rather than one car photocopied down the row.</summary>
+        readonly List<GameObject> _policeCarPrefabs = new List<GameObject>();
         readonly List<GameObject> _officerPrefabs = new List<GameObject>();
         GameObject _policeStation;     // the packed station instance, found at placement
         bool _forecourtPlanned;
@@ -239,6 +279,11 @@ namespace RoadDemo
         readonly HashSet<long> _cells = new HashSet<long>();
         RoadNode[,] _nodes;
         readonly List<RoadEdge> _edges = new List<RoadEdge>();
+        /// <summary>The city's lane network: the carriageways (both ways, with their
+        /// lanes and the kerbs cars park at), the junctions and their connectors -
+        /// what every car drives (RoadCar), and what the men on foot read to keep
+        /// off the road's users.</summary>
+        public LaneNet Net { get; private set; }
         readonly List<TrafficSignal> _signals = new List<TrafficSignal>();
         readonly List<DemoVehicle> _vehicles = new List<DemoVehicle>();
         readonly List<CivilianAgent> _pedestrians = new List<CivilianAgent>();
@@ -272,6 +317,10 @@ namespace RoadDemo
             _cars = new GameObject("Cars").transform;
 
             Respace();
+            // the quarters that are not the grid - the port, the suburbs - decide where
+            // they stand before anything is laid: the island has to ring them, and the
+            // junctions they hang off have to know their streets run on out
+            PlanDistricts();
             ScaleLifeToCity();
             BuildNodes();
             BuildRoadsAndSidewalks();
@@ -281,6 +330,9 @@ namespace RoadDemo
             BuildGraph();
             BuildSignals();
             BuildPedGraph();
+            BuildWalkClearance();
+            // the quarters themselves, and the streets that weld them to the grid
+            BuildDistricts();
             BuildCityLife();
             SpawnCars();
             SpawnPolice();
@@ -292,8 +344,10 @@ namespace RoadDemo
             BuildMap();
             BuildLotOverlay();
 
-            StaticBatchingUtility.Combine(_geometry.gameObject);
             OptimiseScene();
+            AssignCullLayers();
+            // the merge itself waits for the first Update: every Start (the night
+            // windows, the map, the lamps) must see the pieces first
 #else
             Debug.LogError("[RoadDemo] This demo loads Synty prefabs through the AssetDatabase and only runs in the editor.");
 #endif
@@ -301,12 +355,26 @@ namespace RoadDemo
 
         void Update()
         {
-            for (int i = 0; i < _signals.Count; i++) _signals[i].UpdateBulbs(_signalMats);
+            if (!_merged) MergeStaticGeometry();
             float dt = Time.deltaTime;
+            // where the frame goes, section by section, logged every few seconds while
+            // updateProfile is on: the crowd and the traffic are the two that scale with
+            // the city, and one of them being ten times the other is the whole story
+            TickTimer.Frame();
+            for (int i = 0; i < _signals.Count; i++) _signals[i].UpdateBulbs(_signalMats);
+            TickTimer.Mark(0, "signals");
             for (int i = 0; i < _vehicles.Count; i++) _vehicles[i].Tick(dt);
+            TickTimer.Mark(1, "cars");
             for (int i = 0; i < _policeCars.Count; i++) _policeCars[i].TickPatrol(dt);
+            TickTimer.Mark(2, "patrol cars");
             for (int i = 0; i < _pedestrians.Count; i++) _pedestrians[i].TickCivilian(dt);
+            TickTimer.Mark(3, "civilians");
+            CivilianAgent.TickCrowd(dt); // who is in the road, who drifts over to stare
+            TickTimer.Mark(4, "crowd");
             for (int i = 0; i < _policeOfficers.Count; i++) _policeOfficers[i].TickPatrol(dt);
+            TickTimer.Mark(5, "officers");
+            TickDistricts(dt);           // the ships, the cranes, the forklifts, the yard hands
+            TickTimer.Mark(6, "districts");
 
             // two civilians meeting head-on may stop for a word; scanned on a
             // slow throttle, not per frame
@@ -316,12 +384,17 @@ namespace RoadDemo
                 _chatScan = 1.5f;
                 CivilianAgent.PairChats(_pedestrians, chatSeconds);
             }
+            TickTimer.Mark(7, "chats");
+            TickTimer.Report(updateProfile, dt,
+                $"{_vehicles.Count} cars, {_pedestrians.Count} civilians, " +
+                $"{_policeCars.Count + _policeOfficers.Count} police, {_districtWalkers.Count} district hands");
         }
 
         void OnDestroy()
         {
             for (int i = 0; i < _pedestrians.Count; i++) _pedestrians[i].Dispose();
             for (int i = 0; i < _policeOfficers.Count; i++) _policeOfficers[i].Dispose();
+            DisposeDistricts();
         }
 
         // Edit-mode sketch of the network: the real geometry only exists after
@@ -345,13 +418,13 @@ namespace RoadDemo
             var water = new Color(0.25f, 0.5f, 0.9f, 0.45f);
             var lawn = new Color(0.3f, 0.7f, 0.3f, 0.45f);
             var deck = new Color(0.6f, 0.6f, 0.65f, 0.5f);
-            Color SeamColour(Seam s) => s.kind == SeamKind.River ? water : s.kind == SeamKind.Park ? lawn : deck;
+            Color SeamColour(Seam s) => s.kind == SeamKind.River ? water : s.kind == SeamKind.Highway ? deck : lawn;
 
             // the seams first, under the roads: the river's water, the park's lawn
             for (int j = 0; j + 1 < nh; j++)
                 if (SeamAt(false, j) is Seam s)
                 {
-                    float a = hz[j] + HHalf(j) + Cell, b = hz[j + 1] - HHalf(j + 1) - Cell;
+                    float a = hz[j] + HHalf(j) + Sidewalk, b = hz[j + 1] - HHalf(j + 1) - Sidewalk;
                     Gizmos.color = SeamColour(s);
                     Gizmos.DrawCube(new Vector3((vx[0] + vx[nv - 1]) * 0.5f, -0.05f, (a + b) * 0.5f),
                         new Vector3(vx[nv - 1] - vx[0] + 2f * BoulevardHalf, 0.1f, b - a));
@@ -359,7 +432,7 @@ namespace RoadDemo
             for (int i = 0; i + 1 < nv; i++)
                 if (SeamAt(true, i) is Seam s)
                 {
-                    float a = vx[i] + VHalf(i) + Cell, b = vx[i + 1] - VHalf(i + 1) - Cell;
+                    float a = vx[i] + VHalf(i) + Sidewalk, b = vx[i + 1] - VHalf(i + 1) - Sidewalk;
                     Gizmos.color = SeamColour(s);
                     Gizmos.DrawCube(new Vector3((a + b) * 0.5f, -0.05f, (hz[0] + hz[nh - 1]) * 0.5f),
                         new Vector3(b - a, 0.1f, hz[nh - 1] - hz[0] + 2f * BoulevardHalf));
@@ -472,17 +545,31 @@ namespace RoadDemo
             foreach (var path in ScanPrefabPaths(vehicleFolders, vehicleDeny))
             {
                 if (!System.IO.Path.GetFileName(path).StartsWith("SM_Veh")) continue;
+                // bodies that may not reach a scene at all, whatever the scan turns up
+                if (LivingCity.Gameplay.VehicleCatalog.IsBarred(path)) continue;
+                // anybody's marked vehicle - the law, the ambulance, the coastguard -
+                // is on a call, and a car on a call does not queue at a light with the
+                // rest of the traffic. Asked with the PATH, because the police pack's
+                // own names give nothing away: "SM_Veh_Car_01" and "SM_Veh_Van_01" are
+                // liveried cruisers, and the old name filter ("police" in the name)
+                // drove all four of them as ordinary traffic
+                if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(path)) continue;
                 var v = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
                 if (v != null) _carPrefabs.Add(v);
             }
 
-            // the patrol fleet gets the marked cruiser to itself; civilian traffic
-            // should not be driving black-and-whites around
-            _carPrefabs.RemoveAll(p => p.name.ToLowerInvariant().Contains("police"));
-            _policeCarPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
-                "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Police_01.prefab");
-            if (_policeCarPrefab == null)
-                Debug.LogWarning("[RoadDemo] SM_Veh_Car_Police_01 missing; police patrol disabled");
+            foreach (var name in LivingCity.Gameplay.VehicleCatalog.PoliceCars)
+                foreach (var folder in vehicleFolders)
+                {
+                    var car = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                        folder + "/" + name + ".prefab");
+                    if (car == null) continue;
+                    _policeCarPrefabs.Add(car);
+                    break; // the first pack that has it; the catalog names one body
+                }
+            if (_policeCarPrefabs.Count == 0)
+                Debug.LogWarning("[RoadDemo] No marked cruiser out of VehicleCatalog.PoliceCars; " +
+                                 "police patrol disabled");
 
             // the patrol overlay dresses itself out of DemoUi - the demo's one
             // wardrobe, so its dot and popup match the top bar and the ledger
@@ -503,10 +590,19 @@ namespace RoadDemo
                 if (chr == null) continue;
                 var animator = chr.GetComponentInChildren<Animator>();
                 if (animator == null || animator.avatar == null || !animator.avatar.isHuman) continue;
-                // uniformed officers walk the beat for the station, not the crowd
+                // The force is the police station pack and nothing else - one uniform,
+                // the way the patrols are one fleet (VehicleCatalog.PoliceCars). Its
+                // officers walk the beat.
                 if (System.IO.Path.GetFileName(path).StartsWith("SM_Chr_Officer"))
                     _officerPrefabs.Add(chr);
-                else
+                // costumes the scan drags in with the people - a prisoner, a forensic
+                // technician, a sea captain, the city pack's second uniform
+                else if (LivingCity.Entities.CrowdLooks.IsBarred(path))
+                    continue;
+                // a body the mob may be dealt is nobody's passer-by: a coat that stands
+                // on one corner as one of Falcone's men must not walk past on the next
+                // as a nobody (GangLooks.IsGangBody - the two cast tables are the rule)
+                else if (!LivingCity.Gangs.GangLooks.IsGangBody(chr.name))
                     _pedPrefabs.Add(chr);
             }
             const string PalmProps = "Assets/Synty/PolygonPalmCity/Prefabs/Props/";
@@ -526,16 +622,18 @@ namespace RoadDemo
             // furniture on a kerb, and the other Lamp_0x models have no bulb point in
             // DemoStreetLamps.LampKinds, so they would stand dark while neighbours burn.
             Bag(_lamps, "SM_Prop_Street_Lamp_01");
-            Bag(_bins, "SM_Prop_Trash_Bin_01", "SM_Prop_Trash_Bin_02", "SM_Prop_Trash_Bin_03", "SM_Prop_Trash_Bin_04");
+            // Bin_01 and Bin_04 are the public litter bins the palm city keeps at
+            // its kerbs; Bin_02 is a building's own bin (against the wall, with the
+            // bags); Bin_03 is a dumpster and belongs in an alley, not on a pavement
+            Bag(_bins, "SM_Prop_Trash_Bin_01", "SM_Prop_Trash_Bin_04");
+            Bag(_wallBins, "SM_Prop_Trash_Bin_02");
             Bag(_benches, "SM_Prop_Bench_Seat_01", "SM_Prop_Bench_Seat_02");
             Bag(_planters, "SM_Prop_Planter_01", "SM_Prop_Planter_02", "SM_Prop_Planter_03", "SM_Prop_Planter_04");
-            Bag(_powerboxes, "SM_Prop_Powerbox_01", "SM_Prop_PowerBox_02", "SM_Prop_PowerBoxes_02", "SM_Prop_PowerBoxes_03");
+            // only the free-standing cabinet: PowerBox_02 hangs from its pivot (laid on
+            // the ground it is sunk into it) and the PowerBoxes_0x are wall boards
+            Bag(_powerboxes, "SM_Prop_Powerbox_01");
             Bag(_bushes, "SM_Env_Bush_01", "SM_Env_Bush_02", "SM_Env_Bush_03");
-            Bag(_saplings, "SM_Env_Tree_Palm_Sapling_01", "SM_Env_Tree_Palm_Sapling_02", "SM_Env_Tree_Palm_Sapling_03",
-                "SM_Env_Tree_Palm_Small_01", "SM_Env_Tree_Palm_Small_03", "SM_Env_Tree_Palm_Small_04", "SM_Env_Tree_Palm_Small_05");
             Bag(_wires, "SM_Prop_Powerline_02", "SM_Prop_Powerline_03");
-            Bag(_hedges, "SM_Env_Hedge_02", "SM_Env_Hedge_03", "SM_Env_Hedge_04");
-            Bag(_topiary, "SM_Env_Hedge_Topiary_02", "SM_Env_Hedge_Topiary_04", "SM_Env_Hedge_Topiary_05", "SM_Env_Hedge_Topiary_06");
             Bag(_chairs, "SM_Prop_Chair_01", "SM_Prop_Chair_03", "SM_Prop_Chair_04");
             Bag(_tables, "SM_Prop_Table_01", "SM_Prop_Table_Outdoor_01");
             Bag(_umbrellas, "SM_Prop_Umbrella_01", "SM_Prop_Umbrella_02", "SM_Prop_Umbrella_03");
@@ -549,6 +647,12 @@ namespace RoadDemo
             _bikeStand = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Bike_Stand_02.prefab");
             _signPole = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Sign_Pole_02.prefab");
             _manhole = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Manhole_01.prefab");
+            // the rest of what a 1987 kerb carries, all of it in the palm city's props
+            _treeCage = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Tree_Cage_01.prefab");
+            _banner = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Street_Flag_Sign_02.prefab");
+            _meter = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Parking_Meter_01.prefab");
+            _payPhone = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Pay_Phone_01.prefab");
+            _menuStand = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Menu_Stand_01.prefab");
             _pave = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmEnv + "SM_Env_Sidewalk_01.prefab");
             if (_pave == null) Debug.LogWarning("[RoadDemo] SM_Env_Sidewalk_01 missing; courts fall back to asphalt");
 
@@ -780,10 +884,17 @@ namespace RoadDemo
         // a leg where the map itself ends - or where a seam lies that this road does
         // not cross: a street ends on the river's quay and at the park's edge, a
         // boulevard bridges the one and drives through the other (SegmentOpen).
-        bool NorthOpen(int i, int j) => j + 1 < horizontalRoadZ.Length && SegmentOpen(true, i, j);
-        bool SouthOpen(int i, int j) => j > 0 && SegmentOpen(true, i, j - 1);
-        bool EastOpen(int i, int j) => i + 1 < verticalRoadX.Length && SegmentOpen(false, j, i);
-        bool WestOpen(int i, int j) => i > 0 && SegmentOpen(false, j, i - 1);
+        // - or where a district hangs off this edge of the grid and its street runs on
+        // out of the city to it (OutwardArm): there the junction gets its zebra and its
+        // crossing like any other, and the connecting street is laid across the strip.
+        bool NorthOpen(int i, int j) => j + 1 < horizontalRoadZ.Length
+            ? SegmentOpen(true, i, j) : OutwardArm(i, j, 0);
+        bool SouthOpen(int i, int j) => j > 0
+            ? SegmentOpen(true, i, j - 1) : OutwardArm(i, j, 2);
+        bool EastOpen(int i, int j) => i + 1 < verticalRoadX.Length
+            ? SegmentOpen(false, j, i) : OutwardArm(i, j, 1);
+        bool WestOpen(int i, int j) => i > 0
+            ? SegmentOpen(false, j, i - 1) : OutwardArm(i, j, 3);
 
         float VHalf(int i) => verticalIsBoulevard[i] ? BoulevardHalf : StreetHalf;
         float HHalf(int j) => horizontalIsBoulevard[j] ? BoulevardHalf : StreetHalf;
@@ -801,7 +912,7 @@ namespace RoadDemo
         public float HorizontalHalfWidth(int j) => HHalf(j);
 
         /// <summary>The sidewalk ring between a carriageway and a block interior.</summary>
-        public static float SidewalkWidth => Cell;
+        public static float SidewalkWidth => Sidewalk;
 
         /// <summary>Every block the demo laid out. Filled by BuildBlocks and never
         /// touched again: the map draws the slabs, the O overlay prints the rest.</summary>
@@ -896,9 +1007,9 @@ namespace RoadDemo
                 for (int j = 0; j + 1 < horizontalRoadZ.Length; j++)
                 {
                     if (InSeam(i, j)) continue;
-                    sizes.Add((verticalRoadX[i + 1] - VHalf(i + 1) - Cell - verticalRoadX[i] - VHalf(i) - Cell)
+                    sizes.Add((verticalRoadX[i + 1] - VHalf(i + 1) - Sidewalk - verticalRoadX[i] - VHalf(i) - Sidewalk)
                               .ToString("F0") + "x" +
-                              (horizontalRoadZ[j + 1] - HHalf(j + 1) - Cell - horizontalRoadZ[j] - HHalf(j) - Cell)
+                              (horizontalRoadZ[j + 1] - HHalf(j + 1) - Sidewalk - horizontalRoadZ[j] - HHalf(j) - Sidewalk)
                               .ToString("F0"));
                 }
             Debug.Log($"[RoadDemo] block interiors (seed {spacingSeed}): " + string.Join(", ", sizes) +
@@ -918,7 +1029,9 @@ namespace RoadDemo
         // bake composed on it, and interpolating between two of them would invent
         // widths nothing was ever built for. More gaps than palette entries wraps,
         // so a size comes up twice. Every size is snapped to the 5 m cell, so the
-        // kit's pieces still tile and every centreline stays a multiple of 5.
+        // kit's pieces tile the lot frontages; the pavements are wider than the
+        // cell, so the centrelines are not multiples of 5, and a carriageway
+        // closes the odd metres between its crossings by stretching its tiles.
         //
         // A gap that is a seam (the river, the park) is not dealt from the palette at
         // all: it takes the seam's own width, and the palette is dealt over the block
@@ -958,7 +1071,7 @@ namespace RoadDemo
                     int g = blockGaps[k];
                     float halfA = boulevard[g] ? BoulevardHalf : StreetHalf;
                     float halfB = boulevard[g + 1] ? BoulevardHalf : StreetHalf;
-                    dealt[k] = Mathf.Max(MinInterior, authored[g + 1] - authored[g] - halfA - halfB - 2f * Cell);
+                    dealt[k] = Mathf.Max(MinInterior, authored[g + 1] - authored[g] - halfA - halfB - 2f * Sidewalk);
                 }
             }
 
@@ -998,13 +1111,49 @@ namespace RoadDemo
             {
                 float halfHere = boulevard[k] ? BoulevardHalf : StreetHalf;
                 float halfNext = boulevard[k + 1] ? BoulevardHalf : StreetHalf;
-                line[k + 1] = line[k] + halfHere + Cell + spans[k] + Cell + halfNext;
+                line[k + 1] = line[k] + halfHere + Sidewalk + spans[k] + Sidewalk + halfNext;
             }
             return line;
         }
 
+        // a tenth of a metre: the centrelines are off the 5 m grid by the pavements'
+        // odd half metres, so two cells can sit closer than a cell apart
         static long CellKey(float mx, float mz)
-            => ((long)Mathf.RoundToInt(mx / Cell) << 32) ^ (uint)Mathf.RoundToInt(mz / Cell);
+            => ((long)Mathf.RoundToInt(mx * 10f) << 32) ^ (uint)Mathf.RoundToInt(mz * 10f);
+
+        /// <summary>The kit's 5 m piece laid to cover [mx, mx+sizeX] x [mz, mz+sizeZ]
+        /// exactly: pivot at its +X/+Z corner (turned by the yaw), scaled to the
+        /// size. A pavement wider than the tile, a carriageway run a few per cent
+        /// off the beat - the same piece, stretched.</summary>
+        void PlaceTile(GameObject prefab, float mx, float mz, int yaw, float sizeX, float sizeZ, float y = 0f)
+        {
+            if (prefab == null) return;
+            Vector3 pivot, scale;
+            switch (yaw)
+            {
+                case 0:
+                    pivot = new Vector3(mx + sizeX, y, mz + sizeZ);
+                    scale = new Vector3(sizeX / Cell, 1f, sizeZ / Cell);
+                    break;
+                case 90:   // local +Z -> world +X, local +X -> world -Z
+                    pivot = new Vector3(mx + sizeX, y, mz);
+                    scale = new Vector3(sizeZ / Cell, 1f, sizeX / Cell);
+                    break;
+                case 180:
+                    pivot = new Vector3(mx, y, mz);
+                    scale = new Vector3(sizeX / Cell, 1f, sizeZ / Cell);
+                    break;
+                default:   // 270: local +Z -> world -X, local +X -> world +Z
+                    pivot = new Vector3(mx, y, mz + sizeZ);
+                    scale = new Vector3(sizeZ / Cell, 1f, sizeX / Cell);
+                    break;
+            }
+            var go = Instantiate(prefab, pivot, Quaternion.Euler(0f, yaw, 0f), _geometry);
+            if ((scale - Vector3.one).sqrMagnitude > 1e-6f) go.transform.localScale = scale;
+        }
+
+        /// <summary>How many tiles close [from, to] at nearest to the 5 m beat.</summary>
+        static int TileCount(float from, float to) => Mathf.Max(1, Mathf.RoundToInt((to - from) / Cell));
 
         void PlaceCell(GameObject prefab, float mx, float mz, int yaw, float y = 0f)
         {
@@ -1024,8 +1173,36 @@ namespace RoadDemo
             if (_cells.Add(CellKey(mx, mz))) PlaceCell(prefab, mx, mz, yaw);
         }
 
-        static float[] LaneRows(bool boulevard)
-            => boulevard ? new[] { -15f, -10f, 5f, 10f } : new[] { -5f, 0f };
+        void PlaceTileOnce(GameObject prefab, float mx, float mz, int yaw, float sizeX, float sizeZ)
+        {
+            if (_cells.Add(CellKey(mx, mz))) PlaceTile(prefab, mx, mz, yaw, sizeX, sizeZ);
+        }
+
+        /// <summary>Tiles that close [lo, hi] across a road at nearest to the 5 m
+        /// beat: each one's near edge (off the axis) and its width.</summary>
+        static (float off, float w)[] Band(float lo, float hi)
+        {
+            int n = TileCount(lo, hi);
+            float w = (hi - lo) / n;
+            var band = new (float, float)[n];
+            for (int k = 0; k < n; k++) band[k] = (lo + k * w, w);
+            return band;
+        }
+
+        /// <summary>The zebra across a carriageway, kerb to kerb - the parking strips
+        /// included, a crossing runs to the stone. A street is three 5 m tiles; a
+        /// boulevard is a band either side of the median, stretched a little since
+        /// 12.5 m does not sit on the beat (the median has its own pieces).</summary>
+        static (float off, float w)[] CrossingTiles(bool boulevard)
+        {
+            if (!boulevard) return Band(-StreetHalf, StreetHalf);
+            var west = Band(-BoulevardHalf, -MedianHalf);
+            var east = Band(MedianHalf, BoulevardHalf);
+            var both = new (float, float)[west.Length + east.Length];
+            west.CopyTo(both, 0);
+            east.CopyTo(both, west.Length);
+            return both;
+        }
 
         void BuildNodes()
         {
@@ -1062,12 +1239,12 @@ namespace RoadDemo
                     PlaceCellOnce(_bare, mx, mz, 0);
 
             // north / south: zebra across the vertical road, or a sidewalk cap
-            foreach (var side in new[] { (edge: n.ZMax, has: north, capYaw: 180), (edge: n.ZMin - Cell, has: south, capYaw: 0) })
+            foreach (var side in new[] { (edge: n.ZMax, capEdge: n.ZMax, has: north, capYaw: 180), (edge: n.ZMin - Cell, capEdge: n.ZMin - Sidewalk, has: south, capYaw: 0) })
             {
                 if (side.has)
                 {
-                    foreach (float off in LaneRows(vBlvd))
-                        PlaceCellOnce(_crossing, n.X + off, side.edge, 90);
+                    foreach (var t in CrossingTiles(vBlvd))
+                        PlaceTileOnce(_crossing, n.X + t.off, side.edge, 90, t.w, Cell);
                     if (vBlvd)
                     {
                         PlaceCellOnce(_median, n.X - Cell, side.edge, 180);
@@ -1076,18 +1253,19 @@ namespace RoadDemo
                 }
                 else
                 {
+                    // the cap is pavement, as deep as the pavement
                     for (float mx = n.XMin; mx < n.XMax - 0.1f; mx += Cell)
-                        PlaceCellOnce(_swStraight, mx, side.edge, side.capYaw);
+                        PlaceTile(_swStraight, mx, side.capEdge, side.capYaw, Cell, Sidewalk);
                 }
             }
 
             // east / west: zebra across the horizontal road, or a sidewalk cap
-            foreach (var side in new[] { (edge: n.XMax, has: east, capYaw: 270), (edge: n.XMin - Cell, has: west, capYaw: 90) })
+            foreach (var side in new[] { (edge: n.XMax, capEdge: n.XMax, has: east, capYaw: 270), (edge: n.XMin - Cell, capEdge: n.XMin - Sidewalk, has: west, capYaw: 90) })
             {
                 if (side.has)
                 {
-                    foreach (float off in LaneRows(hBlvd))
-                        PlaceCellOnce(_crossing, side.edge, n.Z + off, 0);
+                    foreach (var t in CrossingTiles(hBlvd))
+                        PlaceTileOnce(_crossing, side.edge, n.Z + t.off, 0, Cell, t.w);
                     if (hBlvd)
                     {
                         PlaceCellOnce(_median, side.edge, n.Z - Cell, 90);
@@ -1097,15 +1275,16 @@ namespace RoadDemo
                 else
                 {
                     for (float mz = n.ZMin; mz < n.ZMax - 0.1f; mz += Cell)
-                        PlaceCellOnce(_swStraight, side.edge, mz, side.capYaw);
+                        PlaceTile(_swStraight, side.capEdge, mz, side.capYaw, Sidewalk, Cell);
                 }
             }
 
-            // corner slabs, kerb turned towards the intersection centre
-            PlaceCellOnce(_swCorner, n.XMin - Cell, n.ZMin - Cell, 0);
-            PlaceCellOnce(_swCorner, n.XMin - Cell, n.ZMax, 90);
-            PlaceCellOnce(_swCorner, n.XMax, n.ZMax, 180);
-            PlaceCellOnce(_swCorner, n.XMax, n.ZMin - Cell, 270);
+            // corner slabs, kerb turned towards the intersection centre, as wide
+            // and as deep as the pavements they join
+            PlaceTile(_swCorner, n.XMin - Sidewalk, n.ZMin - Sidewalk, 0, Sidewalk, Sidewalk);
+            PlaceTile(_swCorner, n.XMin - Sidewalk, n.ZMax, 90, Sidewalk, Sidewalk);
+            PlaceTile(_swCorner, n.XMax, n.ZMax, 180, Sidewalk, Sidewalk);
+            PlaceTile(_swCorner, n.XMax, n.ZMin - Sidewalk, 270, Sidewalk, Sidewalk);
         }
 
         void BuildRoadsAndSidewalks()
@@ -1130,27 +1309,46 @@ namespace RoadDemo
             bool bridge = IsBridge(true, i, a.J);
             float cx = verticalRoadX[i];
             bool blvd = verticalIsBoulevard[i];
-            for (float mz = a.ZMax; mz < b.ZMin - 0.1f; mz += Cell)
+            float half = VHalf(i);
+
+            // the carriageway between the two zebra bands, closed exactly: the
+            // lot's frontage plus the pavements' odd metres, a few per cent off
+            // the 5 m beat, so the tiles are stretched a hair rather than left
+            // a gap or lapped over the crossing
+            float from = a.ZMax + Cell, to = b.ZMin - Cell;
+            int tiles = TileCount(from, to);
+            float len = (to - from) / tiles;
+            for (int k = 0; k < tiles; k++)
             {
+                float mz = from + k * len;
                 if (blvd)
                 {
-                    if (!bridge) PlaceCellOnce(_swStraight, cx - 20f, mz, 90);
-                    PlaceCellOnce(_laneEdge, cx - 15f, mz, 180);
-                    PlaceCellOnce(_laneDash, cx - 10f, mz, 180);
-                    PlaceCellOnce(_median, cx - 5f, mz, 180);
-                    PlaceCellOnce(_median, cx, mz, 0);
-                    PlaceCellOnce(_laneDash, cx + 5f, mz, 0);
-                    PlaceCellOnce(_laneEdge, cx + 10f, mz, 0);
-                    if (!bridge) PlaceCellOnce(_swStraight, cx + 15f, mz, 270);
+                    PlaceTile(_laneEdge, cx - 15f, mz, 180, Cell, len);
+                    PlaceTile(_laneDash, cx - 10f, mz, 180, Cell, len);
+                    PlaceTile(_median, cx - 5f, mz, 180, Cell, len);
+                    PlaceTile(_median, cx, mz, 0, Cell, len);
+                    PlaceTile(_laneDash, cx + 5f, mz, 0, Cell, len);
+                    PlaceTile(_laneEdge, cx + 10f, mz, 0, Cell, len);
                 }
                 else
                 {
-                    if (!bridge) PlaceCellOnce(_swStraight, cx - 10f, mz, 90);
-                    PlaceCellOnce(_roadWest, cx - 5f, mz, 0);
-                    PlaceCellOnce(_roadEast, cx, mz, 0);
-                    if (!bridge) PlaceCellOnce(_swStraight, cx + 5f, mz, 270);
+                    PlaceTile(_roadWest, cx - 5f, mz, 0, Cell, len);
+                    PlaceTile(_roadEast, cx, mz, 0, Cell, len);
                 }
+                // the kerb strips, outside the last marked lane on either side: plain
+                // asphalt, where a car is left standing (the meters on the pavement
+                // beside them are the road demo's, and always were)
+                PlaceTile(_bare, cx - half, mz, 0, ParkLane, len);
+                PlaceTile(_bare, cx + half - ParkLane, mz, 0, ParkLane, len);
             }
+            // the pavements down the lot frontage, between the corner slabs: the
+            // lot is on the 5 m beat, so these tile it exactly, wide as the pavement
+            if (!bridge)
+                for (float mz = a.ZMax + Sidewalk; mz < b.ZMin - Sidewalk - 0.1f; mz += Cell)
+                {
+                    PlaceTile(_swStraight, cx - half - Sidewalk, mz, 90, Sidewalk, Cell);
+                    PlaceTile(_swStraight, cx + half, mz, 270, Sidewalk, Cell);
+                }
             if (bridge) { DressBridge(true, i, a, b); return; }
 
             if (!blvd) return;
@@ -1159,20 +1357,22 @@ namespace RoadDemo
             {
                 Instantiate(_divider, new Vector3(cx, 0f, mz), Quaternion.identity, _geometry);
                 if (step % 3 == 1 && _palms.Count > 0)
-                    Instantiate(_palms[step % _palms.Count],
-                        new Vector3(cx, 0.18f, mz + 2.5f), Quaternion.Euler(0f, step * 77f, 0f), _flora);
+                    Prop(_palms[step % _palms.Count],
+                        new Vector3(cx, 0.18f, mz + 2.5f), step * 77f, _flora);
                 else if (step % 3 == 2 && _bushes.Count > 0)
-                    Instantiate(_bushes[step % _bushes.Count],
+                    Prop(_bushes[step % _bushes.Count],
                         new Vector3(cx + Random.Range(-0.4f, 0.4f), 0.15f, mz + 2.5f),
-                        Quaternion.Euler(0f, step * 53f, 0f), _flora);
+                        step * 53f, _flora);
             }
+            // the palm rows on the two pavements: laid through Prop like any other
+            // tree, so the people walking under them know they are there
             for (float mz = a.ZMax + 2f * Cell; mz <= b.ZMin - 2f * Cell; mz += 4f * Cell)
                 if (_palms.Count > 0)
                 {
-                    Instantiate(_palms[(int)(mz / Cell) % _palms.Count],
-                        new Vector3(cx - 18.9f, 0.1f, mz), Quaternion.Euler(0f, mz * 13f, 0f), _flora);
-                    Instantiate(_palms[(int)(mz / Cell + 3) % _palms.Count],
-                        new Vector3(cx + 18.9f, 0.1f, mz), Quaternion.Euler(0f, mz * 29f, 0f), _flora);
+                    Prop(_palms[(int)(mz / Cell) % _palms.Count],
+                        new Vector3(cx - (BoulevardHalf + Sidewalk - 1.1f), 0.1f, mz), mz * 13f, _flora);
+                    Prop(_palms[(int)(mz / Cell + 3) % _palms.Count],
+                        new Vector3(cx + (BoulevardHalf + Sidewalk - 1.1f), 0.1f, mz), mz * 29f, _flora);
                 }
         }
 
@@ -1182,27 +1382,37 @@ namespace RoadDemo
             bool bridge = IsBridge(false, j, a.I);
             float cz = horizontalRoadZ[j];
             bool blvd = horizontalIsBoulevard[j];
-            for (float mx = a.XMax; mx < b.XMin - 0.1f; mx += Cell)
+            float half = HHalf(j);
+
+            float from = a.XMax + Cell, to = b.XMin - Cell;
+            int tiles = TileCount(from, to);
+            float len = (to - from) / tiles;
+            for (int k = 0; k < tiles; k++)
             {
+                float mx = from + k * len;
                 if (blvd)
                 {
-                    if (!bridge) PlaceCellOnce(_swStraight, mx, cz - 20f, 0);
-                    PlaceCellOnce(_laneEdge, mx, cz - 15f, 90);
-                    PlaceCellOnce(_laneDash, mx, cz - 10f, 90);
-                    PlaceCellOnce(_median, mx, cz - 5f, 90);
-                    PlaceCellOnce(_median, mx, cz, 270);
-                    PlaceCellOnce(_laneDash, mx, cz + 5f, 270);
-                    PlaceCellOnce(_laneEdge, mx, cz + 10f, 270);
-                    if (!bridge) PlaceCellOnce(_swStraight, mx, cz + 15f, 180);
+                    PlaceTile(_laneEdge, mx, cz - 15f, 90, len, Cell);
+                    PlaceTile(_laneDash, mx, cz - 10f, 90, len, Cell);
+                    PlaceTile(_median, mx, cz - 5f, 90, len, Cell);
+                    PlaceTile(_median, mx, cz, 270, len, Cell);
+                    PlaceTile(_laneDash, mx, cz + 5f, 270, len, Cell);
+                    PlaceTile(_laneEdge, mx, cz + 10f, 270, len, Cell);
                 }
                 else
                 {
-                    if (!bridge) PlaceCellOnce(_swStraight, mx, cz - 10f, 0);
-                    PlaceCellOnce(_roadEast, mx, cz - 5f, 90);
-                    PlaceCellOnce(_roadWest, mx, cz, 90);
-                    if (!bridge) PlaceCellOnce(_swStraight, mx, cz + 5f, 180);
+                    PlaceTile(_roadEast, mx, cz - 5f, 90, len, Cell);
+                    PlaceTile(_roadWest, mx, cz, 90, len, Cell);
                 }
+                PlaceTile(_bare, mx, cz - half, 90, len, ParkLane);
+                PlaceTile(_bare, mx, cz + half - ParkLane, 90, len, ParkLane);
             }
+            if (!bridge)
+                for (float mx = a.XMax + Sidewalk; mx < b.XMin - Sidewalk - 0.1f; mx += Cell)
+                {
+                    PlaceTile(_swStraight, mx, cz - half - Sidewalk, 0, Cell, Sidewalk);
+                    PlaceTile(_swStraight, mx, cz + half, 180, Cell, Sidewalk);
+                }
             if (bridge) { DressBridge(false, j, a, b); return; }
 
             if (!blvd) return;
@@ -1211,20 +1421,20 @@ namespace RoadDemo
             {
                 Instantiate(_divider, new Vector3(mx, 0f, cz), Quaternion.Euler(0f, 90f, 0f), _geometry);
                 if (step % 3 == 1 && _palms.Count > 0)
-                    Instantiate(_palms[step % _palms.Count],
-                        new Vector3(mx + 2.5f, 0.18f, cz), Quaternion.Euler(0f, step * 61f, 0f), _flora);
+                    Prop(_palms[step % _palms.Count],
+                        new Vector3(mx + 2.5f, 0.18f, cz), step * 61f, _flora);
                 else if (step % 3 == 2 && _bushes.Count > 0)
-                    Instantiate(_bushes[step % _bushes.Count],
+                    Prop(_bushes[step % _bushes.Count],
                         new Vector3(mx + 2.5f, 0.15f, cz + Random.Range(-0.4f, 0.4f)),
-                        Quaternion.Euler(0f, step * 53f, 0f), _flora);
+                        step * 53f, _flora);
             }
             for (float mx = a.XMax + 2f * Cell; mx <= b.XMin - 2f * Cell; mx += 4f * Cell)
                 if (_palms.Count > 0)
                 {
-                    Instantiate(_palms[(int)(mx / Cell) % _palms.Count],
-                        new Vector3(mx, 0.1f, cz - 18.9f), Quaternion.Euler(0f, mx * 13f, 0f), _flora);
-                    Instantiate(_palms[(int)(mx / Cell + 3) % _palms.Count],
-                        new Vector3(mx, 0.1f, cz + 18.9f), Quaternion.Euler(0f, mx * 29f, 0f), _flora);
+                    Prop(_palms[(int)(mx / Cell) % _palms.Count],
+                        new Vector3(mx, 0.1f, cz - (BoulevardHalf + Sidewalk - 1.1f)), mx * 13f, _flora);
+                    Prop(_palms[(int)(mx / Cell + 3) % _palms.Count],
+                        new Vector3(mx, 0.1f, cz + (BoulevardHalf + Sidewalk - 1.1f)), mx * 29f, _flora);
                 }
         }
 
@@ -1398,7 +1608,9 @@ namespace RoadDemo
             // wraps, because the alternative there is the generic terrace.
             bool once = _autoBakes.Count > 0;
 
-            _lotBakeCursor.TryGetValue(code, out int cursor);
+            // the pool is handed out in turn from blockCycle, which is 0 for the city
+            // and stepped by the block lab to look at the next one on the same pad
+            if (!_lotBakeCursor.TryGetValue(code, out int cursor)) cursor = blockCycle;
             for (int k = 0; k < bakes.Count; k++)
             {
                 var bake = bakes[(cursor + k) % bakes.Count];
@@ -1465,7 +1677,7 @@ namespace RoadDemo
             // the city whichever block brings it, so a roll carrying a fairground that
             // is already up is passed over in both passes - a stock block laid twice
             // is allowed only when it is all terrace, which nobody can tell apart.
-            _autoBakeCursor.TryGetValue(code, out int cursor);
+            if (!_autoBakeCursor.TryGetValue(code, out int cursor)) cursor = blockCycle;
             int spent = 0;
             for (int pass = 0; pass < 2; pass++)
                 for (int k = 0; k < bakes.Count; k++)
@@ -1595,10 +1807,10 @@ namespace RoadDemo
                     // the river and the park are not lots: BuildSeams lays them
                     if (InSeam(i, j)) continue;
                     lots.Add((i, j,
-                        verticalRoadX[i] + VHalf(i) + Cell,
-                        verticalRoadX[i + 1] - VHalf(i + 1) - Cell,
-                        horizontalRoadZ[j] + HHalf(j) + Cell,
-                        horizontalRoadZ[j + 1] - HHalf(j + 1) - Cell,
+                        verticalRoadX[i] + VHalf(i) + Sidewalk,
+                        verticalRoadX[i + 1] - VHalf(i + 1) - Sidewalk,
+                        horizontalRoadZ[j] + HHalf(j) + Sidewalk,
+                        horizontalRoadZ[j + 1] - HHalf(j + 1) - Sidewalk,
                         // the map's slab: kerb to kerb, so the sidewalk ring reads as
                         // part of the block it belongs to rather than as road
                         Rect.MinMaxRect(
@@ -1625,6 +1837,11 @@ namespace RoadDemo
                 float xMin = lot.xMin, xMax = lot.xMax, zMin = lot.zMin, zMax = lot.zMax;
                 int i = lot.i, j = lot.j;
                 var centre = new Vector3((xMin + xMax) * 0.5f, FloorLevel() + 0.02f, (zMin + zMax) * 0.5f);
+
+                // whatever goes in, the interior is not walked through: a man off the
+                // sidewalk graph (a crew crossing to a fight, a man running from one)
+                // stops at the building line and goes round the block, not into it
+                WalkObstacles.Block(xMin, xMax, zMin, zMax);
 
                 string contents;
 
@@ -1984,10 +2201,14 @@ namespace RoadDemo
 
         static T Pick<T>(List<T> l) => l[Random.Range(0, l.Count)];
 
-        void Prop(GameObject prefab, Vector3 pos, float yaw, Transform parent)
+        // Every prop laid claims the ground it measures out, so the dressing that
+        // comes after it and the walkers that come after that both know it is there.
+        GameObject Prop(GameObject prefab, Vector3 pos, float yaw, Transform parent)
         {
-            if (prefab != null)
-                Instantiate(prefab, pos, Quaternion.Euler(0f, yaw, 0f), parent);
+            if (prefab == null) return null;
+            var go = Instantiate(prefab, pos, Quaternion.Euler(0f, yaw, 0f), parent);
+            if (SidewalkPlan.Footprint(prefab, pos, yaw, out var box)) _plan.Take(box);
+            return go;
         }
 
         // A bench that people can actually use: placed like any prop, and noted
@@ -2001,6 +2222,11 @@ namespace RoadDemo
 
         void DressStreets()
         {
+            PrepareDressing();
+            // the poles go in first: they stand on the frontage strip, and the
+            // dressing that follows has to work round them, not through them
+            PowerlinePass();
+
             // a closed segment (a street ending on the river or at the park) has no
             // sides to dress; a bridge dresses itself (DressBridge) - no palm grates
             // out over the water
@@ -2029,127 +2255,46 @@ namespace RoadDemo
                     if (!RiverBeside(false, j, -1)) DressSide(start, Vector3.right, len, Vector3.back, horizontalIsBoulevard[j]);
                 }
 
-            PowerlinePass();
             CornerProps();
             ManholePass();
         }
 
         void DressSide(Vector3 start, Vector3 dir, float len, Vector3 outward, bool boulevard)
         {
-            float half = boulevard ? BoulevardHalf : StreetHalf;
-            float faceRoad = YawOf(-outward);
-            float alongRoad = YawOf(dir);
-            Vector3 At(float t, float lat) => start + dir * t + outward * lat + Vector3.up * 0.1f;
-
             if (!boulevard)
             {
-                // kerb strip: palms in pavement grates, street lamps, saplings
-                for (float t = 5f; t < len - 5f; t += 7f)
-                {
-                    var pos = At(t + Random.Range(-1.2f, 1.2f), half + 1.45f); // grate clear of the kerb stone, trunk clear of the walkers
-                    float r = Random.value;
-                    if (r < 0.4f && _grates.Count > 0 && _palms.Count > 0)
-                    {
-                        Prop(Pick(_grates), pos, Random.Range(0, 4) * 90f, _geometry);
-                        Prop(Pick(_palms), pos, Random.value * 360f, _flora);
-                    }
-                    else if (r < 0.6f && _lamps.Count > 0)
-                        Prop(Pick(_lamps), pos, faceRoad, _geometry);
-                    else if (r < 0.72f && _saplings.Count > 0)
-                        Prop(Pick(_saplings), pos, Random.value * 360f, _flora);
-                }
-            }
-            else
-            {
-                // boulevard: lamps on the kerb strip, benches set back near the palm
-                // row (half+3.4) so they do not crowd the kerb; the palms out there
-                // repeat every 20 m starting 10 m in, so benches dodge those spots
-                int slot = 0;
-                for (float t = 6f; t < len - 6f; t += 12.5f, slot++)
-                {
-                    if (slot % 2 == 0 && _lamps.Count > 0)
-                    {
-                        Prop(Pick(_lamps), At(t, half + 1.2f), faceRoad, _geometry);
-                    }
-                    else if (_benches.Count > 0)
-                    {
-                        float bt = t;
-                        float nearestPalm = Mathf.Round((bt - 10f) / 20f) * 20f + 10f;
-                        if (Mathf.Abs(bt - nearestPalm) < 2.5f)
-                            bt = nearestPalm + (bt >= nearestPalm ? 3f : -3f);
-                        PlaceBench(At(bt, half + 3.4f), faceRoad);
-                        if (Random.value < 0.7f && _bins.Count > 0)
-                            Prop(Pick(_bins), At(bt + 2.2f, half + 3.4f), faceRoad, _geometry);
-                    }
-                }
-                return; // outer strip is the palm row; median carries the greenery
+                // an ordinary street: kerb strip, a clear walk, the frontage - and a
+                // terrace in front of whatever cafe or diner fronts this stretch
+                _dressing.Dress(Vocabulary(), start, dir, outward, len, StreetHalf,
+                    TerracesAlong(start, dir, outward, len, StreetHalf));
+                return;
             }
 
-            // outer strip of ordinary streets: furniture, junk and utilities
-            for (float t = 4f; t < len - 4f; t += 9f)
+            // boulevard: lamps on the kerb strip, benches set back near the palm
+            // row by the wall so they do not crowd the kerb; the palms out there
+            // repeat every 20 m starting 10 m in, so benches dodge those spots
+            float half = BoulevardHalf;
+            float faceRoad = YawOf(-outward);
+            Vector3 At(float t, float lat) => start + dir * t + outward * lat + Vector3.up * 0.1f;
+
+            int slot = 0;
+            for (float t = 6f; t < len - 6f; t += 12.5f, slot++)
             {
-                var pos = At(t + Random.Range(-2f, 2f), half + 4.1f);
-                float r = Random.value;
-                if (r < 0.16f && _benches.Count > 0)
+                if (slot % 2 == 0 && _lamps.Count > 0)
                 {
-                    PlaceBench(pos, faceRoad);
-                    if (Random.value < 0.6f && _bins.Count > 0)
-                        Prop(Pick(_bins), pos + dir * 2.1f, faceRoad, _geometry);
+                    Prop(Pick(_lamps), At(t, half + 1.2f), faceRoad, _geometry);
                 }
-                else if (r < 0.3f && _bins.Count > 0)
+                else if (_benches.Count > 0)
                 {
-                    Prop(Pick(_bins), pos, faceRoad + Random.Range(-25f, 25f), _geometry);
-                    int bags = Random.Range(0, 3);
-                    for (int k = 0; k < bags; k++)
-                        Prop(Random.value < 0.7f ? _bag : _bagOpen,
-                            pos + new Vector3(Random.Range(-0.9f, 0.9f), 0f, Random.Range(-0.9f, 0.9f)),
-                            Random.value * 360f, _geometry);
+                    float bt = t;
+                    float nearestPalm = Mathf.Round((bt - 10f) / 20f) * 20f + 10f;
+                    if (Mathf.Abs(bt - nearestPalm) < 2.5f)
+                        bt = nearestPalm + (bt >= nearestPalm ? 3f : -3f);
+                    PlaceBench(At(bt, half + Sidewalk - 1.6f), faceRoad);
+                    // a bin at the far end of the bench, not at the sitter's elbow
+                    if (Random.value < 0.5f && _bins.Count > 0)
+                        Prop(Pick(_bins), At(bt + 3.4f, half + Sidewalk - 1.6f), faceRoad, _geometry);
                 }
-                else if (r < 0.45f)
-                {
-                    int bags = Random.Range(1, 4);
-                    for (int k = 0; k < bags; k++)
-                        Prop(Random.value < 0.7f ? _bag : _bagOpen,
-                            pos + new Vector3(Random.Range(-1.1f, 1.1f), 0f, Random.Range(-1.1f, 1.1f)),
-                            Random.value * 360f, _geometry);
-                }
-                else if (r < 0.55f && _planters.Count > 0)
-                    Prop(Pick(_planters), pos, alongRoad, _flora);
-                else if (r < 0.66f && _bushes.Count > 0)
-                    Prop(Pick(_bushes), pos, Random.value * 360f, _flora);
-                else if (r < 0.73f && _tables.Count > 0 && _chairs.Count > 0)
-                {
-                    // sidewalk cafe: table, a few chairs facing it, often an umbrella
-                    Prop(Pick(_tables), pos, faceRoad + Random.Range(-20f, 20f), _geometry);
-                    int chairs = Random.Range(2, 4);
-                    for (int k = 0; k < chairs; k++)
-                    {
-                        float ang = Random.value * 360f;
-                        var cpos = pos + Quaternion.Euler(0f, ang, 0f) * Vector3.forward * 1.15f;
-                        Prop(Pick(_chairs), cpos, ang + 180f, _geometry);
-                    }
-                    if (Random.value < 0.6f && _umbrellas.Count > 0)
-                        Prop(Pick(_umbrellas), pos, Random.value * 360f, _flora);
-                }
-                else if (r < 0.79f && _bikeStand != null)
-                {
-                    int hoops = Random.Range(2, 4);
-                    for (int k = 0; k < hoops; k++)
-                        Prop(_bikeStand, pos + dir * (k * 0.9f), alongRoad, _geometry);
-                }
-                else if (r < 0.85f && _hedges.Count > 0)
-                {
-                    Prop(Pick(_hedges), pos, alongRoad, _flora);
-                    Prop(Pick(_hedges), pos + dir * 2.75f, alongRoad, _flora);
-                }
-                else if (r < 0.89f && _topiary.Count > 0)
-                    Prop(Pick(_topiary), pos, Random.value * 360f, _flora);
-                else if (r < 0.93f && _powerboxes.Count > 0)
-                    Prop(Pick(_powerboxes), pos, faceRoad, _geometry);
-                else if (r < 0.96f)
-                    Prop(_mailbox, pos, faceRoad, _geometry);
-                else
-                    Prop(_newsstand, pos, faceRoad, _geometry);
             }
         }
 
@@ -2214,7 +2359,7 @@ namespace RoadDemo
                     while (j + 1 < nh && SegmentOpen(true, i, j)) j++;
                     PoleRun(PoleSpots(_nodes[i, first].ZMax + 2f, _nodes[i, j].ZMin - 2f,
                                       z => InsideNodeZoneZ(i, z)),
-                            verticalRoadX[i] + StreetHalf + 4.3f, true);
+                            verticalRoadX[i] + StreetHalf + Sidewalk - 0.7f, true);
                 }
             }
             for (int j = 0; j < nh; j++)
@@ -2228,7 +2373,7 @@ namespace RoadDemo
                     while (i + 1 < nv && SegmentOpen(false, j, i)) i++;
                     PoleRun(PoleSpots(_nodes[first, j].XMax + 2f, _nodes[i, j].XMin - 2f,
                                       x => InsideNodeZoneX(j, x)),
-                            horizontalRoadZ[j] - StreetHalf - 4.3f, false);
+                            horizontalRoadZ[j] - StreetHalf - Sidewalk + 0.7f, false);
                 }
             }
         }
@@ -2288,6 +2433,11 @@ namespace RoadDemo
             return false;
         }
 
+        // A corner is where two crossings meet: the L of pavement between the
+        // kerb and the corner node is walking room, reserved in PrepareDressing
+        // and left bare. What a corner carries stands OFF that L - bollards and a
+        // hydrant down at the kerb corner, the box and the stand back against the
+        // buildings - and each of them still asks the plan before it stands.
         void CornerProps()
         {
             foreach (var n in _nodes)
@@ -2297,24 +2447,49 @@ namespace RoadDemo
                     float bz = sz > 0f ? n.ZMax : n.ZMin;
                     Vector3 C(float ox, float oz) => new Vector3(bx + sx * ox, 0.1f, bz + sz * oz);
                     float faceIn = YawOf(new Vector3(-sx, 0f, -sz));
+                    // the slab is as deep as the pavement: the kerb-side seat is just
+                    // past the kerb stone, the rest scales with the slab
+                    float kerb = SidewalkDressing.KerbSeat + 0.15f;
+                    float deep = Sidewalk - 0.9f;    // the building corner's side
 
-                    if (Random.value < 0.7f && _bollard != null)
+                    // the City demo's corners: a pair of bollards on a third of them,
+                    // a sign on a quarter, and one piece of kerb furniture or none
+                    if (Random.value < 0.35f && _bollard != null)
                     {
-                        Prop(_bollard, C(0.9f, 2.6f), 0f, _geometry);
-                        Prop(_bollard, C(2.6f, 0.9f), 0f, _geometry);
+                        Stand(_bollard, C(kerb, deep), 0f, _geometry);
+                        Stand(_bollard, C(deep, kerb), 0f, _geometry);
                     }
-                    if (Random.value < 0.4f && _signPole != null)
-                        Prop(_signPole, C(1.1f, 3.4f), faceIn + Random.Range(-10f, 10f), _geometry);
+                    if (Random.value < 0.25f && _signPole != null)
+                        Stand(_signPole, C(kerb, deep + 0.2f), faceIn + Random.Range(-10f, 10f), _geometry);
+
                     float r = Random.value;
-                    if (r < 0.25f)
-                        Prop(_hydrant, C(3.6f, 3.6f), Random.value * 360f, _geometry);
-                    else if (r < 0.5f && _bins.Count > 0)
-                        Prop(Pick(_bins), C(3.8f, 1.2f), faceIn, _geometry);
-                    else if (r < 0.62f)
-                        Prop(_newsstand, C(1.2f, 3.8f), faceIn, _geometry);
-                    else if (r < 0.75f && _powerboxes.Count > 0)
-                        Prop(Pick(_powerboxes), C(3.8f, 3.8f), faceIn, _geometry);
+                    if (r < 0.18f)
+                        Stand(_hydrant, C(kerb, kerb), Random.value * 360f, _geometry);
+                    else if (r < 0.42f && _bins.Count > 0)
+                        Stand(Pick(_bins), C(deep, deep), faceIn, _geometry);
+                    else if (r < 0.54f)
+                        Stand(_newsstand, C(deep, kerb), faceIn, _geometry);
+                    else if (r < 0.64f)
+                        Stand(_payPhone, C(kerb, deep), faceIn, _geometry);
+                    else if (r < 0.72f && _powerboxes.Count > 0)
+                        Stand(Pick(_powerboxes), C(kerb, deep), faceIn, _geometry);
                 }
+        }
+
+        /// <summary>Lay a prop only where the ground is free - no walking room to
+        /// keep here, just no standing one prop inside another.</summary>
+        bool Stand(GameObject prefab, Vector3 pos, float yaw, Transform parent)
+        {
+            if (prefab == null) return false;
+            if (!SidewalkPlan.Footprint(prefab, pos, yaw, out var box))
+            {
+                Instantiate(prefab, pos, Quaternion.Euler(0f, yaw, 0f), parent);
+                return true;
+            }
+            if (!_plan.Free(box, 0.12f)) return false;
+            _plan.Take(box);
+            Instantiate(prefab, pos, Quaternion.Euler(0f, yaw, 0f), parent);
+            return true;
         }
 
         // ------------------------------------------------------------------ graph
@@ -2322,22 +2497,16 @@ namespace RoadDemo
         static float[] LaneOffsets(bool boulevard)
             => boulevard ? new[] { 7.5f, 12.5f } : new[] { 2.5f };
 
-        void AddEdge(RoadNode from, RoadNode to, Vector3 start, Vector3 end, bool ns, float limit)
-        {
-            var e = new RoadEdge
-            {
-                From = from, To = to, Start = start, End = end,
-                Dir = (end - start).normalized,
-                Length = (end - start).magnitude,
-                NorthSouth = ns, SpeedLimit = limit,
-            };
-            from.Outgoing.Add(e);
-            to.Incoming.Add(e);
-            _edges.Add(e);
-        }
-
+        // The lane network: one carriageway per street segment between two
+        // junctions, its lanes at the offsets either side of the crown (one each way on
+        // a street, two each way on a boulevard with the median between), the kerbs
+        // beyond the outer lanes where cars park; the junctions' connectors and their
+        // conflict tables laid last (LaneNet.Finish). The edges list the rest of the
+        // builder reads (the spawns, the patrol routes) is the network's own.
         void BuildGraph()
         {
+            var net = new LaneNet();
+            foreach (var n in _nodes) if (n != null) net.Nodes.Add(n);
             for (int i = 0; i < verticalRoadX.Length; i++)
             {
                 float cx = verticalRoadX[i];
@@ -2348,13 +2517,8 @@ namespace RoadDemo
                     if (!SegmentOpen(true, i, j)) continue; // ends on the quay: no lane
                     var a = _nodes[i, j];
                     var b = _nodes[i, j + 1];
-                    foreach (float off in LaneOffsets(blvd))
-                    {
-                        AddEdge(a, b, new Vector3(cx + off, 0f, a.ZMax),
-                            new Vector3(cx + off, 0f, b.ZMin), true, limit);   // northbound
-                        AddEdge(b, a, new Vector3(cx - off, 0f, b.ZMin),
-                            new Vector3(cx - off, 0f, a.ZMax), true, limit);   // southbound
-                    }
+                    net.AddRoad(new Vector3(cx, 0f, a.ZMax), new Vector3(cx, 0f, b.ZMin),
+                        blvd ? BoulevardHalf : StreetHalf, LaneOffsets(blvd), limit, a, b, true, blvd ? 5f : 0f);
                 }
             }
             for (int j = 0; j < horizontalRoadZ.Length; j++)
@@ -2367,15 +2531,15 @@ namespace RoadDemo
                     if (!SegmentOpen(false, j, i)) continue;
                     var a = _nodes[i, j];
                     var b = _nodes[i + 1, j];
-                    foreach (float off in LaneOffsets(blvd))
-                    {
-                        AddEdge(a, b, new Vector3(a.XMax, 0f, cz - off),
-                            new Vector3(b.XMin, 0f, cz - off), false, limit);  // eastbound
-                        AddEdge(b, a, new Vector3(b.XMin, 0f, cz + off),
-                            new Vector3(a.XMax, 0f, cz + off), false, limit);  // westbound
-                    }
+                    net.AddRoad(new Vector3(a.XMax, 0f, cz), new Vector3(b.XMin, 0f, cz),
+                        blvd ? BoulevardHalf : StreetHalf, LaneOffsets(blvd), limit, a, b, false, blvd ? 5f : 0f);
                 }
             }
+            net.Finish();
+            _edges.Clear();
+            _edges.AddRange(net.Edges);
+            Net = net;
+            LaneNet.Active = net;
         }
 
         // ---------------------------------------------------------------- signals
@@ -2497,7 +2661,7 @@ namespace RoadDemo
         void BuildPedGraph()
         {
             const int NE = 0, NW = 1, SW = 2, SE = 3;
-            const float Off = 2.5f;   // middle of the corner slab
+            float Off = Sidewalk * 0.5f;   // middle of the corner slab - and of the zebra, which is 5 m deep
             const float WalkY = 0.1f; // sidewalk surface
 
             int nv = verticalRoadX.Length, nh = horizontalRoadZ.Length;
@@ -2565,8 +2729,12 @@ namespace RoadDemo
         // non-gated link, joined mid-stretch - the same join the beat officers
         // use for the station forecourt. Whatever lands too far from a sidewalk
         // (courtyard benches deep in an interior) simply stays decorative.
-        void BuildCityLife()
+        /// <summary>The one city life, made before anyone needs it: the districts wire
+        /// their doors into the same one the grid's blocks use, so a walker out of a
+        /// suburb house is the same crowd as the one on the boulevard.</summary>
+        void EnsureLife()
         {
+            if (_life != null) return;
             _life = new CityLife
             {
                 SitChance = sitChance,
@@ -2576,6 +2744,11 @@ namespace RoadDemo
                 CanSit = _sitDownClip != null && _sitLoopClip != null && _standUpClip != null,
                 CanChat = _talkClip != null,
             };
+        }
+
+        void BuildCityLife()
+        {
+            EnsureLife();
 
             bool NearestLink(Vector3 p, float maxDist, out PedLink fwd, out float t)
             {
@@ -2660,6 +2833,10 @@ namespace RoadDemo
                 ? Mathf.RoundToInt(pedestrianCount * insideAtStart)
                 : 0;
 
+            // the nerve's wardrobe - a run, a flinch, a fall, the cower - dealt per
+            // walker so a crowd running from gunfire is not one runner copied
+            var variety = new System.Random(1987);
+
             for (int k = 0; k < pedestrianCount; k++)
             {
                 var link = sidewalks[Random.Range(0, sidewalks.Count)];
@@ -2671,9 +2848,10 @@ namespace RoadDemo
                 // walkers is four cascade passes of skinned meshes for nothing
                 foreach (var r in go.GetComponentsInChildren<Renderer>())
                     r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                SetLayerDeep(go, CrowdLayer); // drawn only within CrowdCullDistance
 
                 var agent = new CivilianAgent { Speed = Random.Range(1.25f, 1.85f) };
-                agent.Init(go.transform, clips, link, Random.value * link.Length * 0.9f);
+                agent.Init(go.transform, CrewKit.ForCrowd(clips, variety), link, Random.value * link.Length * 0.9f);
                 agent.Setup(_life);
                 if (k < fromDoors)
                     agent.SpawnInside(Random.Range(2f, 60f));
@@ -2693,10 +2871,93 @@ namespace RoadDemo
             _crews.MuzzleFlashPrefab = CrewKit.MuzzleFlash;
             _crews.BloodPrefab = CrewKit.Blood;
             _crews.ImpactPrefab = CrewKit.Impact;
-            _crews.GunshotClip = CrewKit.Gunshot;
+            _crews.GunshotClips = CrewKit.Gunshots;
             _crews.CrackClip = CrewKit.Crack;
             _crews.BarTopInset = 52f; // under the top bar (42) with a little air
             _crews.Init(_pedLinks, clips, _pedPrefabs);
+
+            // the law: the patrol cars and beat officers already out answer the
+            // dispatcher's calls; the men who get out of a car are dealt by it
+            var dispatch = gameObject.AddComponent<PoliceDispatch>();
+            dispatch.Init(_crews, clips, _officerPrefabs, CrewKit.Weapon(CrewArms.DefaultSidearm));
+            foreach (var car in _policeCars) dispatch.Register(car);
+            foreach (var officer in _policeOfficers) dispatch.Register(officer);
+
+            SpawnRivals();
+        }
+
+        // Rival crews dealt by hand onto sidewalks of their own, so the city has
+        // somebody for the outfit to shoot it out with (the ledger deals none).
+        void SpawnRivals()
+        {
+            if (rivalCrewsInCity <= 0) return;
+            var sidewalks = _pedLinks.FindAll(l => !l.Gated && l.Length >= 24f);
+            if (sidewalks.Count == 0) return;
+            var rng = new System.Random(1987);
+            var gangNames = LivingCity.Gangs.GangCatalog.Names;
+            var bossModels = LivingCity.Gangs.GangCatalog.LieutenantModels;
+            var soldierModels = LivingCity.Gangs.GangCatalog.SoldierModels;
+            var arms = new[]
+            {
+                ("SM_Wep_Pistol_Revolver_01", LivingCity.Personnel.EquipmentKind.Pistol),
+                ("SM_Wep_Machine_Pistol_01", LivingCity.Personnel.EquipmentKind.MachinePistol),
+                ("SM_Wep_Shotgun_01", LivingCity.Personnel.EquipmentKind.Shotgun),
+            };
+            var taken = new List<Vector3>();
+            int count = Mathf.Min(rivalCrewsInCity, gangNames.Length - 1);
+            for (int i = 0; i < count; i++)
+            {
+                int gang = 1 + i;
+                var bossModel = bossModels[gang % bossModels.Length];
+                var staple = soldierModels[gang % soldierModels.Length];
+                var bossPrefab = Cast(bossModel);
+                if (bossPrefab == null) continue;
+
+                // a body per man, all different and none of them the lieutenant's - a
+                // rival crew is five men, not one man standing five times
+                var hoodPrefabs = new List<GameObject>();
+                foreach (var look in LivingCity.Gangs.GangLooks.HoodsFor(
+                             bossModel, staple, rivalHoodsInCity))
+                {
+                    var body = Cast(look);
+                    if (body) hoodPrefabs.Add(body);
+                }
+
+                // a sidewalk far from the other rivals (the outfit is dealt later, spread by its own rule)
+                PedLink link = null;
+                float bestD = -1f;
+                for (int tries = 0; tries < 12; tries++)
+                {
+                    var l = sidewalks[rng.Next(sidewalks.Count)];
+                    var mid = (l.From.Pos + l.To.Pos) * 0.5f;
+                    float near = float.MaxValue;
+                    foreach (var t in taken) near = Mathf.Min(near, (t - mid).sqrMagnitude);
+                    if (near > bestD) { bestD = near; link = l; }
+                }
+                var anchor = (link.From.Pos + link.To.Pos) * 0.5f;
+                taken.Add(anchor);
+                var along = (link.To.Pos - link.From.Pos).normalized;
+                var facing = Vector3.Cross(Vector3.up, along); // across the pavement: the line runs along it
+
+                var hoodNames = new List<string>();
+                for (int k = 0; k < rivalHoodsInCity; k++) hoodNames.Add(DrawName(rng));
+                var (weaponName, kind) = arms[i % arms.Length];
+                _crews.AddRival(gang, gangNames[gang], DrawName(rng), bossPrefab, hoodNames,
+                    hoodPrefabs, anchor, facing, CrewKit.Weapon(weaponName), kind, lineUp: true);
+            }
+        }
+
+        /// <summary>The plain pack body of this name - the ledger's baked cast first,
+        /// the picture desk's resolver behind it.</summary>
+        static GameObject Cast(string name) =>
+            LivingCity.UI.LedgerModelSet.PersonNamed(name) ??
+            LivingCity.UI.PortraitStudio.FindPeoplePrefab(name);
+
+        static string DrawName(System.Random rng)
+        {
+            var firsts = LivingCity.Entities.PedestrianIdentity.AllMaleNames;
+            var surnames = LivingCity.Entities.PedestrianIdentity.AllSurnames;
+            return firsts[rng.Next(firsts.Count)] + " " + surnames[rng.Next(surnames.Count)];
         }
 
         // ------------------------------------------------------------------- cars
@@ -2723,9 +2984,18 @@ namespace RoadDemo
                     foreach (var r in go.GetComponentsInChildren<Renderer>())
                         bounds.Encapsulate(r.bounds);
 
-                    var v = new DemoVehicle { Tf = go.transform, HalfLen = bounds.extents.z + 0.3f };
+                    var v = new DemoVehicle
+                    {
+                        Tf = go.transform,
+                        HalfLen = bounds.extents.z + 0.3f,
+                        HalfWide = Mathf.Clamp(bounds.extents.x, 0.7f, 1.3f),
+                    };
                     v.Spawn(e, s);
+                    // somebody at the wheel, now and then somebody beside him - bodies
+                    // out of the crowd's wardrobe, culled with the crowd
+                    CarOccupant.Crew(go.transform, _pedPrefabs, _sitLoopClip, passengerChance: 0.3f, layer: CrowdLayer);
                     _vehicles.Add(v);
+                    StreetTraffic.Users.Add(v); // the men on foot, and the outfit's drivers, see it
                     placed++;
                 }
                 if (!any) break;
@@ -2784,7 +3054,7 @@ namespace RoadDemo
 
         void SpawnPatrolCars(Transform parent, List<IPatrolMarker> markers)
         {
-            if (_policeCarPrefab == null || policeCarCount <= 0) return;
+            if (_policeCarPrefabs.Count == 0 || policeCarCount <= 0) return;
 
             // the kerb: the nearest lane point, where the fleet undocks onto the
             // graph and rolls to a stop coming home
@@ -2810,7 +3080,8 @@ namespace RoadDemo
             for (int i = 0; i < policeCarCount; i++)
             {
                 var stall = _stallCentre + _stallAlong * ((i - (policeCarCount - 1) * 0.5f) * StallSpacing);
-                var go = Instantiate(_policeCarPrefab, stall, Quaternion.identity, parent);
+                var go = Instantiate(_policeCarPrefabs[i % _policeCarPrefabs.Count],
+                                     stall, Quaternion.identity, parent);
                 go.name = "Patrol Car " + (i + 1);
                 foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
                 foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
@@ -2822,10 +3093,20 @@ namespace RoadDemo
                 go.transform.rotation = stallRot;
 
                 var car = new PolicePatrolCar
-                    { Tf = go.transform, HalfLen = bounds.extents.z + 0.3f, UnitNumber = i + 1 };
+                {
+                    Tf = go.transform,
+                    HalfLen = bounds.extents.z + 0.3f,
+                    HalfWide = Mathf.Clamp(bounds.extents.x, 0.7f, 1.3f),
+                    UnitNumber = i + 1,
+                };
                 car.InitParked(stall, stallRot, home, homeS, _edges, routeHome,
                     policeRestSeconds, policePatrolWaypoints, Random.Range(3f, 8f) + i * 5f);
+                // an officer at the wheel - the force's own uniform; he is indoors
+                // while the car stands in its stall (PolicePatrolCar shows him)
+                var officers = CarOccupant.Crew(go.transform, _officerPrefabs, _sitLoopClip, layer: CrowdLayer);
+                if (officers.Count > 0) car.Officer = officers[0];
                 _policeCars.Add(car);
+                StreetTraffic.Users.Add(car);
                 markers.Add(car);
             }
         }
@@ -2924,67 +3205,25 @@ namespace RoadDemo
         {
             float minX = verticalRoadX[0], maxX = verticalRoadX[verticalRoadX.Length - 1];
             float minZ = horizontalRoadZ[0], maxZ = horizontalRoadZ[horizontalRoadZ.Length - 1];
+            // the town is the grid AND its quarters: the camera must be able to look at
+            // the port and the suburbs too, so the boom is measured over all of it
+            foreach (var r in _landRects)
+            {
+                minX = Mathf.Min(minX, r.xMin); maxX = Mathf.Max(maxX, r.xMax);
+                minZ = Mathf.Min(minZ, r.yMin); maxZ = Mathf.Max(maxZ, r.yMax);
+            }
             var centre = new Vector3((minX + maxX) * 0.5f, 0f, (minZ + maxZ) * 0.5f);
 
-            // The fringe is PalmCity's triplanar ground with its sand face turned
-            // upwards: the material already carries sand on its sides and bottom
-            // and grass on top, so pointing the side textures up costs two lines
-            // and gives the strips the pack's sand, normal map and all, tiled in
-            // world space at whatever size they end up.
-            var sandMat = LoadMaterial(PalmGround);
-            bool sandTriplanar = sandMat != null;
-            if (sandTriplanar)
-            {
-                sandMat.SetTexture("_Triplanar_Texture_Top",
-                    sandMat.GetTexture("_Triplanar_Texture_Side"));
-                sandMat.SetTexture("_Triplanar_Normal_Texture_Top",
-                    sandMat.GetTexture("_Triplanar_Normal_Texture_Side"));
-            }
-            else
-            {
-                sandMat = new Material(Shader.Find("Universal Render Pipeline/Lit"))
-                    { color = new Color(0.76f, 0.72f, 0.58f) };
-                sandMat.SetFloat("_Smoothness", 0.08f);
-            }
-
-            // The grid rectangle is fully tiled by carriageways, sidewalks and the
-            // interior pads, so the sand only needs to fringe it. A single plane
-            // under everything would also slice through bakes that dig below
-            // street level (the skatepark bowl reaches -2 m) â€” so the middle
-            // stays open and the sand is four border strips instead.
-            float gx0 = verticalRoadX[0] - VHalf(0) - Cell;
-            float gx1 = verticalRoadX[verticalRoadX.Length - 1] + VHalf(verticalRoadX.Length - 1) + Cell;
-            float gz0 = horizontalRoadZ[0] - HHalf(0) - Cell;
-            float gz1 = horizontalRoadZ[horizontalRoadZ.Length - 1] + HHalf(horizontalRoadZ.Length - 1) + Cell;
-            const float Fringe = 90f;
-            void SandStrip(float x0, float x1, float z0, float z1)
-            {
-                var strip = GameObject.CreatePrimitive(PrimitiveType.Plane);
-                strip.name = "Sand";
-                Destroy(strip.GetComponent<Collider>());
-                strip.transform.position = new Vector3((x0 + x1) * 0.5f, -0.06f, (z0 + z1) * 0.5f);
-                strip.transform.localScale = new Vector3((x1 - x0) / 10f, 1f, (z1 - z0) / 10f);
-                // world-space tiling needs no per-strip material; the fallback,
-                // which tiles in UV space, does
-                var mat = sandMat;
-                if (!sandTriplanar)
-                {
-                    mat = new Material(sandMat);
-                    mat.mainTextureScale = new Vector2((x1 - x0) / 12f, (z1 - z0) / 12f);
-                }
-                strip.GetComponent<MeshRenderer>().sharedMaterial = mat;
-            }
-            // the river runs on out of town: where it leaves the grid the fringe strip
-            // is cut and the water (BuildSeams lays it that far) shows through
-            void SandRun(float x0, float x1, float z0, float z1, bool alongX)
-            {
-                float from = alongX ? x0 : z0, to = alongX ? x1 : z1;
-                foreach (var (a, b) in SeamFreeRuns(from, to, alongX))
-                    if (alongX) SandStrip(a, b, z0, z1); else SandStrip(x0, x1, a, b);
-            }
-            // what lies past the grid on each side: plain sand, a skyline standing on
-            // more of it, or the harbour's water (RoadDemoBuilder.Edges.cs)
-            LayEdges(gx0, gx1, gz0, gz1, Fringe, SandRun);
+            // The city stands on an island: past the last road the ground goes on as
+            // wilderness - grass, hills, woods, rock - down to a beach and into the sea
+            // that lies all round it (RoadDemoBuilder.Island.cs). The grid rectangle
+            // itself is fully tiled by carriageways, sidewalks and the interior pads,
+            // so the island's ground rings it and never runs beneath it.
+            float gx0 = verticalRoadX[0] - VHalf(0) - Sidewalk;
+            float gx1 = verticalRoadX[verticalRoadX.Length - 1] + VHalf(verticalRoadX.Length - 1) + Sidewalk;
+            float gz0 = horizontalRoadZ[0] - HHalf(0) - Sidewalk;
+            float gz1 = horizontalRoadZ[horizontalRoadZ.Length - 1] + HHalf(horizontalRoadZ.Length - 1) + Sidewalk;
+            BuildIsland(gx0, gx1, gz0, gz1);
 
             var sunGo = new GameObject("Sun");
             _sun = sunGo.AddComponent<Light>();
@@ -2998,6 +3237,15 @@ namespace RoadDemo
             var cam = camGo.AddComponent<Camera>();
             cam.fieldOfView = 45f;
             cam.farClipPlane = 1600f;
+            // only what is worth drawing at the distance: the small stuff, the crowd
+            // and the trees drop out past their ranges (AssignCullLayers puts them on
+            // the layers) - a bin at four hundred metres is not a pixel
+            var cull = new float[32];
+            cull[PropLayer] = PropCullDistance;
+            cull[CrowdLayer] = CrowdCullDistance;
+            cull[MidLayer] = MidCullDistance;
+            cam.layerCullDistances = cull;
+            cam.layerCullSpherical = true;
 
             // without this the DemoGrade volume renders to nothing: a URP camera
             // opts into post-processing per camera. SMAA rather than MSAA because
@@ -3053,20 +3301,8 @@ namespace RoadDemo
             sky.sun = _sun;
 
 #if UNITY_EDITOR
-            // the PalmCity cloud ring, at its own demo scene's height and scale
-            var cloudFbx = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
-                "Assets/Synty/PolygonPalmCity/Models/SM_Env_Cloud_Ring_01.fbx");
-            if (cloudFbx != null)
-            {
-                float ccx = (verticalRoadX[0] + verticalRoadX[verticalRoadX.Length - 1]) * 0.5f;
-                float ccz = (horizontalRoadZ[0] + horizontalRoadZ[horizontalRoadZ.Length - 1]) * 0.5f;
-                var clouds = Instantiate(cloudFbx, new Vector3(ccx, -67.3f, ccz),
-                    Quaternion.identity);
-                clouds.name = "Clouds";
-                clouds.transform.localScale = new Vector3(3.98f, 4.26f, 3.98f);
-                sky.cloudRing = clouds.transform;
-                sky.cloudRenderer = clouds.GetComponentInChildren<Renderer>();
-            }
+            // (no cloud ring: the PalmCity ring was a slab of geometry turning over
+            // the whole city for a few painted clouds, and it was asked off)
 
             // the sky sphere the PalmCity demo scene itself stands under - a Synty
             // dome wearing a painted gradient, which is what makes their sky read
@@ -3122,6 +3358,8 @@ namespace RoadDemo
         {
             var go = new GameObject("Audio");
             go.AddComponent<DemoAudio>().Init(_clock, _rig, _vehicles, _policeCars, _pedestrians);
+            // and the frame-time probe, writing Logs/perf-probe.txt every few seconds
+            new GameObject("Perf Probe").AddComponent<DemoPerfProbe>();
         }
 
         // ------------------------------------------------------------------- map

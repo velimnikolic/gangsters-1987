@@ -27,7 +27,7 @@ namespace LivingCity.Outfit
 
         public static int WageFor(Character member)
         {
-            if (member == null || member.Status == CharacterStatus.Dead)
+            if (member == null || member.Gone)
                 return 0;
 
             switch (member.Specialty)

@@ -15,8 +15,7 @@ namespace RoadDemo
         const string FlashPath = "Assets/Synty/PolygonGangWarfare/Prefabs/FX/FX_Gunshot_01.prefab";
         const string BloodPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_BloodSplat_Small_01.prefab";
         const string ImpactPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Impact_Small_01.prefab";
-        const string ShotPath = "Assets/ci/400 Sounds Pack/Weapons/shot_muffled.wav";
-        const string CrackPath = "Assets/ci/400 Sounds Pack/Combat and Gore/slap.wav";
+        const string ShotDir = "Assets/Audio/Weapons/";
 
         /// <summary>The crowd's walk and idle plus the gun wardrobe. Missing pieces stay
         /// null and simply switch their behaviour off, the crowd's own rule.</summary>
@@ -37,6 +36,7 @@ namespace RoadDemo
                 // brisker Death01 - a death has to read, and the longer one does
                 Death = PeopleClip("Death") ?? UalClip("Death01"),
                 Jog = UalClip("Jog_Fwd_Loop"),
+                Crouch = UalClip("Crouch_Idle_Loop"),
             };
             if (clips.PistolIdle == null || clips.Aim == null || clips.Shoot == null)
                 Debug.LogWarning("[RoadDemo] Pistol clips missing from " + UalPath +
@@ -55,6 +55,7 @@ namespace RoadDemo
             crowd.Hit = arms.Hit;
             crowd.Death = arms.Death;
             crowd.Jog = arms.Jog;
+            crowd.Crouch = arms.Crouch;
             if (crowd.Talk == null) crowd.Talk = arms.Talk;
             if (crowd.SitLoop == null) crowd.SitLoop = arms.SitLoop;
             if (crowd.Shout == null) crowd.Shout = arms.Shout;
@@ -77,6 +78,22 @@ namespace RoadDemo
         /// then a crew of different runners, not one runner copied.</summary>
         public static IReadOnlyList<AnimationClip> Runs =>
             runs ??= Gather(UalClip("Jog_Fwd_Loop"), UalClip("Jog_Fwd_Loop"), UalClip("Sprint_Loop"));
+
+        /// <summary>The crowd's cower - down behind whatever is nearest, head in.</summary>
+        public static AnimationClip Crouch => crouch ??= UalClip("Crouch_Idle_Loop");
+        static AnimationClip crouch;
+
+        /// <summary>The civilian wardrobe: the crowd's own clips plus a run, a flinch,
+        /// a fall and the cower - so a bystander can bolt, be hit, and go down.</summary>
+        public static PedClips ForCrowd(PedClips crowd, System.Random rng)
+        {
+            var clips = crowd;
+            if (Runs.Count > 0) clips.Jog = Runs[rng.Next(Runs.Count)];
+            if (Hits.Count > 0) clips.Hit = Hits[rng.Next(Hits.Count)];
+            if (Deaths.Count > 0) clips.Death = Deaths[rng.Next(Deaths.Count)];
+            clips.Crouch = Crouch;
+            return clips;
+        }
 
         public static IReadOnlyList<AnimationClip> Deaths =>
             deaths ??= Gather(PeopleClip("Death"), UalClip("Death01"));
@@ -105,8 +122,29 @@ namespace RoadDemo
         public static GameObject MuzzleFlash => Load<GameObject>(FlashPath);
         public static GameObject Blood => Load<GameObject>(BloodPath);
         public static GameObject Impact => Load<GameObject>(ImpactPath);
-        public static AudioClip Gunshot => Load<AudioClip>(ShotPath);
-        public static AudioClip Crack => Load<AudioClip>(CrackPath);
+        /// <summary>The four reports, drawn at random per shot: KuraiWolf's light
+        /// machine gun off OpenGameArt, rendered four ways by
+        /// Tools/audio/import_sounds.py. CC-BY 4.0 - it has to be credited, see
+        /// Tools/audio/sources/SOURCES.md.</summary>
+        public static AudioClip[] Gunshots => _shots ??= Sounds(
+            ShotDir + "gunshot_1.wav", ShotDir + "gunshot_2.wav",
+            ShotDir + "gunshot_3.wav", ShotDir + "gunshot_4.wav");
+
+        /// <summary>The round going past: a whip crack, which is the same physics.</summary>
+        public static AudioClip Crack => Load<AudioClip>(ShotDir + "bullet_crack.wav");
+
+        static AudioClip[] _shots;
+
+        static AudioClip[] Sounds(params string[] paths)
+        {
+            var list = new List<AudioClip>(paths.Length);
+            foreach (var path in paths)
+            {
+                var clip = Load<AudioClip>(path);
+                if (clip) list.Add(clip);
+            }
+            return list.ToArray();
+        }
 
         /// <summary>A Gang Warfare gun by prefab name - the ledger's baked cast first,
         /// the pack folder when the cast has not been baked yet.</summary>

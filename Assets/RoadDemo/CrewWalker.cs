@@ -97,6 +97,9 @@ namespace RoadDemo
         {
             if (Dead || Riding || link == null || link.Length <= 0.01f || _link == null) return;
             Target = null;
+            _coverSpot = null;
+            InCover = false;
+            _returnTo = null;
             EndChat();
             _hold = delay;
             var back = Reverse(link);
@@ -137,12 +140,13 @@ namespace RoadDemo
         {
             if (Dead) return;
             Target = null;
+            _coverSpot = null;
+            InCover = false;
             EndChat();
             _hold = delay;
             point.y = Tf.position.y;
             _legTo = point;
-            _bestLegDist = float.MaxValue;
-            _stall = 0f;
+            BeginLeg();
             State = Mode.Striding;
         }
 
@@ -150,8 +154,12 @@ namespace RoadDemo
         public void Engage(CrewWalker target)
         {
             if (Dead || Riding || !Armed || Panicked || target == null || target.Dead || target == this) return;
+            if (Target != target) { _coverLooked = false; _underFire = 0; }
             Target = target;
             EndChat();
+            _blockedFor = 0f;
+            _steerSide = 0;
+            _strideDir = Vector3.zero;
             State = Mode.Engaging;
             if (_fireTimer <= 0f)
                 _fireTimer = Ballistics.Interval * Random.Range(0.4f, 1f); // squares up first
@@ -162,6 +170,8 @@ namespace RoadDemo
         {
             if (Dead) return;
             Target = null;
+            _coverSpot = null;
+            InCover = false;
             if (State == Mode.Engaging) State = Mode.Standing;
         }
 
@@ -265,6 +275,16 @@ namespace RoadDemo
 
                 case Mode.Standing:
                     if (_shaken > 0f) _shaken -= dt;
+                    // ran and got his nerve back: back to where he stood
+                    if (_shaken <= 0f && _returnTo.HasValue && Target == null)
+                    {
+                        var back = _returnTo.Value;
+                        _returnTo = null;
+                        OrderToPoint(back, Random.Range(0.2f, 1f));
+                        return;
+                    }
+                    if (_shoutLeft > 0f) { TickShout(dt); return; }
+                    if (Alert) { TickAlert(dt); return; }
                     TickLoiter(dt);
                     return;
 
@@ -275,11 +295,10 @@ namespace RoadDemo
                     var gap = _legTo - Tf.position;
                     gap.y = 0f;
                     float left = gap.magnitude;
-                    // there, or as near as the crowd lets him: a spot another man is
-                    // stood on is not reached, it is stopped short of - no marching in place
-                    if (left < _bestLegDist - 0.03f) { _bestLegDist = left; _stall = 0f; }
-                    else _stall += dt;
-                    if (left <= 0.15f || _stall > 0.7f)
+                    // there, or as near as the street lets him: a spot another man is
+                    // stood on, or a car is parked on, is not reached, it is stopped
+                    // short of - no marching in place
+                    if (left <= 0.15f || LegStalled(left, dt))
                         State = Mode.Standing;
                     return;
                 }
@@ -311,9 +330,7 @@ namespace RoadDemo
                     var gap = _fleeTo - Tf.position;
                     gap.y = 0f;
                     float left = gap.magnitude;
-                    if (left < _bestLegDist - 0.03f) { _bestLegDist = left; _stall = 0f; }
-                    else _stall += dt;
-                    if (left <= 0.4f || _stall > 0.7f)
+                    if (left <= 0.4f || LegStalled(left, dt))
                     {
                         State = Mode.Standing;
                         _shaken = Random.Range(8f, 14f); // out of it a while, then game again
@@ -374,9 +391,25 @@ namespace RoadDemo
         /// hurried walk, not a run; running is for getting away.</summary>
         const float HurryFactor = 1.3f;
 
-        // The stride: straight at the point, turning as it goes - at a walk, at the
-        // hurried walk when there is a fight to get to, or flat out when he is
-        // running from one (the jog clip, if there is one).
+        // ------------------------------------------------------------------ the stride
+
+        /// <summary>Metres looked down the line for what is in the way - a car's
+        /// length, near enough: he leans off it early and passes it in one curve.</summary>
+        const float Lookahead = 3f;
+
+        int _steerSide;      // which way round the last thing in his way he went (WalkObstacles)
+        Vector3 _strideDir;  // the line he stepped along last frame; zero at the start of a leg
+        float _blockedFor;   // seconds stood on this leg with nowhere to step
+        bool _detouring;     // this frame's step was off the line to the spot, round something
+
+        // The stride: at the point, turning as it goes - at a walk, at the hurried
+        // walk when there is a fight to get to, or flat out when he is running from
+        // one (the jog clip, if there is one). Not through anything: the line he
+        // takes is the one the ground allows (WalkObstacles) - straight at the spot
+        // while that is clear, else the nearest line off it round the car, the bin,
+        // the wall, and straight again once he is past. A spot inside something (the
+        // click landed on a car; a hood's place in the formation fell on a bench) is
+        // walked straight at and stopped short of - there is no way round to it.
         void TickStride(float dt, Vector3 to, float stopWithin, bool hurry = false, bool run = false)
         {
             var delta = to - Tf.position;
@@ -385,20 +418,82 @@ namespace RoadDemo
             if (dist <= stopWithin)
             {
                 Loco(dt, false);
+                _blockedFor = 0f;
+                _detouring = false;
                 return;
             }
             bool jog = run && HasPose(PoseJog);
             float pace = jog ? JogSpeed : hurry ? Speed * HurryFactor : Speed;
-            var dir = delta / dist;
-            Tf.rotation = Quaternion.Slerp(Tf.rotation, Quaternion.LookRotation(dir), 8f * dt);
-            Tf.position += dir * Mathf.Min(pace * dt, dist);
-            if (jog) { SetPose(PoseJog); TickBlend(dt); }
+            var want = delta / dist;
+
+            Vector3 dir;
+            float clear;
+            if (WalkObstacles.Occupied(to, WalkObstacles.Radius))
+            {
+                dir = want;
+                clear = WalkObstacles.Clear(Tf.position, want, WalkObstacles.Radius, dist);
+            }
+            else
+                dir = WalkObstacles.Steer(Tf.position, want, _strideDir, WalkObstacles.Radius,
+                    Mathf.Min(Lookahead, dist), ref _steerSide, out clear);
+            _detouring = Vector3.Dot(dir, want) < 0.995f;
+
+            float step = Mathf.Min(pace * dt, Mathf.Min(dist, clear));
+            if (step > 1e-4f)
+            {
+                Tf.position += dir * step;
+                _strideDir = dir;
+                _blockedFor = 0f;
+            }
+            else _blockedFor += dt;
+
+            // he turns to the line he is walking; boxed in, he at least faces the spot
+            Tf.rotation = Quaternion.Slerp(Tf.rotation,
+                Quaternion.LookRotation(step > 1e-4f ? dir : want), 8f * dt);
+
+            bool moving = step > 1e-4f;
+            if (jog && moving) { SetPose(PoseJog); TickBlend(dt); }
+            else if (!moving) Loco(dt, false);
             else
             {
                 Loco(dt, true);
                 // the walk clip keeps step with the pace: quicker feet for the hurried walk
                 SetPoseSpeed(PoseWalk, pace / ClipPace(PoseWalk, WalkClipPace));
             }
+        }
+
+        // ------------------------------------------------------------------ the leg
+
+        // Has this leg come to its end short of the spot? A leg ends at the spot, or
+        // as near as he can get: stood still with nowhere to step (boxed in by cars
+        // and walls), walking straight at it and getting no nearer (another man is
+        // stood on it; the crowd will not let him through), or round something for so
+        // long that he has plainly lost it. While he is going round a thing and still
+        // moving he is given his time: a car's flank takes a while to pass.
+        float _bestLegDist = float.MaxValue, _stall, _wander;
+
+        void BeginLeg()
+        {
+            _bestLegDist = float.MaxValue;
+            _stall = 0f;
+            _wander = 0f;
+            _blockedFor = 0f;
+            _steerSide = 0;
+            _strideDir = Vector3.zero;
+        }
+
+        bool LegStalled(float left, float dt)
+        {
+            if (left < _bestLegDist - 0.03f)
+            {
+                _bestLegDist = left;
+                _stall = 0f;
+                _wander = 0f;
+                return false;
+            }
+            _wander += dt;
+            if (!_detouring || _blockedFor > 0f) _stall += dt;
+            return _stall > 0.7f || _wander > 8f;
         }
 
         // ------------------------------------------------------------------ the car
@@ -416,6 +511,8 @@ namespace RoadDemo
         /// <summary>Put in a seat, or set down beside the car again.</summary>
         public void SetRiding(bool on)
         {
+            // the legs go with the seat either way - a dead man is lifted out whole
+            HideLegs(on);
             if (Dead) return;
             if (on)
             {
@@ -430,11 +527,144 @@ namespace RoadDemo
             }
         }
 
+        // The pack's men are a size too big for the pack's cars: sat on the cushion
+        // their shins come out under the sills. In a seat the legs are folded away -
+        // the two thigh bones scaled to nothing, which takes the shins and feet with
+        // them - and unfolded the moment he is set down outside. It happens on the
+        // same frame he is moved into or out of the seat, so nothing shows.
+        Transform[] _legBones;
+        Vector3[] _legScales;
+        bool _legsHidden;
+
+        void HideLegs(bool hide)
+        {
+            if (hide == _legsHidden) return;
+            if (_legBones == null)
+            {
+                var found = new List<Transform>();
+                var animator = Tf ? Tf.GetComponentInChildren<Animator>() : null;
+                if (animator != null && animator.avatar != null && animator.avatar.isHuman)
+                {
+                    var l = animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg);
+                    var r = animator.GetBoneTransform(HumanBodyBones.RightUpperLeg);
+                    if (l) found.Add(l);
+                    if (r) found.Add(r);
+                }
+                _legBones = found.ToArray();
+                _legScales = new Vector3[_legBones.Length];
+                for (int i = 0; i < _legBones.Length; i++) _legScales[i] = _legBones[i].localScale;
+            }
+            for (int i = 0; i < _legBones.Length; i++)
+                if (_legBones[i]) _legBones[i].localScale = hide ? Vector3.one * 0.001f : _legScales[i];
+            _legsHidden = hide;
+        }
+
         // ------------------------------------------------------------------ nerve
 
         Vector3 _fleeTo;
         float _shaken;
         bool _nerveRolled;
+        Vector3? _returnTo;
+        float _alertUntil, _alertBeat;
+        Vector3 _alertAt;
+        float _shoutLeft;
+        int _underFire;
+
+        /// <summary>Heard shooting lately and stood ready for it - gun out, turned to
+        /// where it came from - though not in a fight himself.</summary>
+        public bool Alert => Time.time < _alertUntil;
+
+        /// <summary>Running from the scene for good: the arena takes him off the street
+        /// once he is out of sight.</summary>
+        public bool Retreating { get; private set; }
+
+        /// <summary>Behind a car's tin, firing over it - a harder man to hit.</summary>
+        public bool InCover { get; private set; }
+
+        Vector3? _coverSpot;
+
+        /// <summary>The arena's answer to "where can this man duck behind, this near
+        /// his target": a spot, or null. Set by whoever owns the cars.</summary>
+        public static System.Func<CrewWalker, Vector3, Vector3?> FindCover;
+
+        /// <summary>A shot went off within earshot: a man with nothing on draws and
+        /// turns toward it - and stays that way a while after the last one. Nothing
+        /// while he fights, runs or rides.</summary>
+        public void HearShot(Vector3 where)
+        {
+            if (Dead || Riding) return;
+            bool wasAlert = Alert;
+            _alertAt = where;
+            _alertUntil = Time.time + 12f;
+            if (State == Mode.Standing)
+            {
+                if (_chatPartner != null) EndChat();
+                // the beat of taking it in, only for the first shot he hears
+                if (!wasAlert) _alertBeat = Random.Range(0.2f, 0.8f);
+            }
+        }
+
+        // Ready: gun low in the hand, turned to where the shooting was, a look about now
+        // and then; the beat before it is the man taking it in.
+        void TickAlert(float dt)
+        {
+            if (_alertBeat > 0f)
+            {
+                _alertBeat -= dt;
+                Loco(dt, false);
+                return;
+            }
+            var to = _alertAt - Tf.position;
+            to.y = 0f;
+            _idleTimer -= dt;
+            if (_idleTimer <= 0f)
+            {
+                _idleTimer = Random.Range(1.5f, 4f);
+                _lookYaw = Random.value < 0.6f && to.sqrMagnitude > 1e-3f
+                    ? Quaternion.LookRotation(to.normalized).eulerAngles.y + Random.Range(-25f, 25f)
+                    : Tf.eulerAngles.y + Random.Range(-70f, 70f);
+            }
+            if (!float.IsNaN(_lookYaw))
+            {
+                var want = Quaternion.Euler(0f, _lookYaw, 0f);
+                Tf.rotation = Quaternion.RotateTowards(Tf.rotation, want, 150f * dt);
+                if (Quaternion.Angle(Tf.rotation, want) < 0.5f) _lookYaw = float.NaN;
+            }
+            SetPose(Armed && HasPose(PosePistolIdle) ? PosePistolIdle : PoseIdle);
+            TickBlend(dt);
+        }
+
+        /// <summary>Stand and shout for this long (the officer's warning).</summary>
+        public void Shout(float seconds)
+        {
+            if (Dead || Riding) return;
+            _shoutLeft = seconds;
+            if (HasPose(PoseShout)) RestartPose(PoseShout);
+        }
+
+        void TickShout(float dt)
+        {
+            _shoutLeft -= dt;
+            var to = _alertAt - Tf.position;
+            to.y = 0f;
+            if (to.sqrMagnitude > 1e-3f)
+                Tf.rotation = Quaternion.RotateTowards(Tf.rotation, Quaternion.LookRotation(to.normalized), 200f * dt);
+            SetPose(HasPose(PoseShout) ? PoseShout : Armed && HasPose(PosePistolIdle) ? PosePistolIdle : PoseIdle);
+            TickBlend(dt);
+        }
+
+        /// <summary>Off the scene for good: a long run away from here, and gone.</summary>
+        public void Retreat(Vector3 from)
+        {
+            if (Dead) return;
+            Retreating = true;
+            _returnTo = null;
+            Flee(from, 60f, 90f, comeBack: false);
+        }
+
+        /// <summary>A round came close (or landed): enough of them and he looks for
+        /// something to get behind.</summary>
+        public void UnderFire() => _underFire++;
 
         /// <summary>Running from the fight, or too shaken to be sent back into it yet -
         /// the arena leaves such a man alone.</summary>
@@ -451,20 +681,33 @@ namespace RoadDemo
             Flee(threat != null && threat.Tf ? threat.Tf.position : Tf.position - Tf.forward);
         }
 
-        public void Flee(Vector3 from)
+        public void Flee(Vector3 from) => Flee(from, 18f, 28f, comeBack: false);
+
+        /// <summary>Run from here, <paramref name="near"/>-<paramref name="far"/> metres;
+        /// with <paramref name="comeBack"/> he walks back to where he stood once his
+        /// nerve returns (a man rattled by a friend going down beside him).</summary>
+        public void Flee(Vector3 from, float near, float far, bool comeBack)
         {
             if (Dead) return;
             Target = null;
+            _coverSpot = null;
+            InCover = false;
+            if (comeBack && !_returnTo.HasValue) _returnTo = Tf.position;
             EndChat();
             var away = Tf.position - from;
             away.y = 0f;
             if (away.sqrMagnitude < 1e-3f) away = -Tf.forward;
             away.Normalize();
             // not straight back: a little off the line, so two men do not run one road
-            away = Quaternion.Euler(0f, Random.Range(-30f, 30f), 0f) * away;
-            _fleeTo = Tf.position + away * Random.Range(18f, 28f);
-            _bestLegDist = float.MaxValue;
-            _stall = 0f;
+            // - and not into a wall or a car: a few rolls for a spot he can stand on,
+            // then whatever the last roll gave (he stops short of it, as near as he gets)
+            for (int roll = 0; roll < 6; roll++)
+            {
+                var line = Quaternion.Euler(0f, Random.Range(-30f, 30f), 0f) * away;
+                _fleeTo = Tf.position + line * Random.Range(near, far);
+                if (!WalkObstacles.Occupied(_fleeTo, WalkObstacles.Radius)) break;
+            }
+            BeginLeg();
             // a beat of nerve failing before the legs go, and the run picked up at a
             // random stride, at a rate of his own - not the crew's one run, in step
             _hold = Random.Range(0.1f, 0.6f);
@@ -492,7 +735,32 @@ namespace RoadDemo
             // a step does not restart the walk); in range: square up and shoot
             // hysteresis both ways: he starts closing only once the man is well out of
             // range, and stops only once well inside it - no jogging in place at the line
-            bool closing = _wasClosing ? dist > range * RangeFactor : dist > range * 1.15f;
+            // pressed - one from the ground, or rounds landing all round him - and
+            // something to get behind close by: he goes behind it and fires from there
+            if (!_coverSpot.HasValue && !_coverLooked && (Health <= 1 || _underFire >= 3) && FindCover != null)
+            {
+                _coverLooked = true;
+                _coverSpot = FindCover(this, Target.Tf.position);
+            }
+            if (_coverSpot.HasValue)
+            {
+                var spot = _coverSpot.Value;
+                var gap = spot - Tf.position;
+                gap.y = 0f;
+                if (dist > range * 1.3f) { _coverSpot = null; InCover = false; } // out of reach from here: leave it
+                else if (gap.magnitude > 0.5f)
+                {
+                    InCover = false;
+                    TickStride(dt, spot, 0.4f, hurry: true);
+                    // no way through to it (the car has rolled on, something else
+                    // stands in the way): he fights from where he is instead
+                    if (_blockedFor > 0.8f) { _coverSpot = null; _blockedFor = 0f; }
+                    return;
+                }
+                else InCover = true;
+            }
+
+            bool closing = !_coverSpot.HasValue && (_wasClosing ? dist > range * RangeFactor : dist > range * 1.15f);
             _wasClosing = closing;
             if (closing)
             {
@@ -536,9 +804,8 @@ namespace RoadDemo
             }
         }
 
-        bool _wasClosing;
+        bool _wasClosing, _coverLooked;
         bool _gunDropped;
-        float _bestLegDist = float.MaxValue, _stall;
 
         /// <summary>How far inside his gun's range this man closes to before he stops
         /// and fires - dealt per man, so a crew fans out into a loose line instead of
@@ -591,7 +858,7 @@ namespace RoadDemo
         public bool Chatting => _chatPartner != null;
 
         /// <summary>Stood with nothing to do, free to be drawn into a word.</summary>
-        public bool Loitering => State == Mode.Standing && _chatPartner == null && ChatCooldown <= 0f;
+        public bool Loitering => State == Mode.Standing && _chatPartner == null && ChatCooldown <= 0f && !Alert && _shoutLeft <= 0f && !Retreating;
 
         /// <summary>Two men stop for a word: face each other, one talks, the other
         /// listens, and the floor changes hands every few seconds.</summary>
@@ -781,12 +1048,12 @@ namespace RoadDemo
         /// <summary>The overlay's status line.</summary>
         public string StatusLine => State switch
         {
-            Mode.Standing => "Standing by",
+            Mode.Standing => Retreating ? "Gone" : Alert ? "On alert - shots heard" : "Standing by",
             Mode.Walking => "On the move, heading " + PatrolInfo.Heading(Tf),
             Mode.Striding => "On the move, heading " + PatrolInfo.Heading(Tf),
             Mode.Homing => "Almost there",
-            Mode.Engaging => Target != null ? "Shooting at " + Target.DisplayName : "Engaging",
-            Mode.Fleeing => "Running for it",
+            Mode.Engaging => Target != null ? (InCover ? "Behind cover, shooting at " : "Shooting at ") + Target.DisplayName : "Engaging",
+            Mode.Fleeing => Retreating ? "Getting out of here" : "Running for it",
             Mode.Riding => "In the car",
             Mode.Dead => "Down",
             _ => string.Empty,

@@ -13,9 +13,9 @@ namespace RoadDemo
     // each reached by BFS-routed links - a random wander statistically never
     // leaves the home block. The radius keeps the beat on foot-sized ground while
     // the car fleet covers the far districts.
-    public class PoliceFootPatrol : PedestrianAgent, IPatrolMarker
+    public class PoliceFootPatrol : PedestrianAgent, IPatrolMarker, IPoliceUnit
     {
-        public enum Mode { Inside, WalkOut, Patrolling, Returning, Homing, WalkIn }
+        public enum Mode { Inside, WalkOut, Patrolling, Returning, Homing, WalkIn, Responding, OnScene }
 
         /// <summary>Metres from the station door a beat waypoint may reach.</summary>
         const float BeatRadius = 180f;
@@ -45,6 +45,13 @@ namespace RoadDemo
 
         Vector3 _legFrom, _legTo;
         float _legT, _legLen;
+
+        // the call: the corner nearest the scene, the scene itself, a call that came
+        // while he was indoors, and his beat pace to go back to
+        PedNode _sceneNode;
+        Vector3 _scenePos;
+        bool _sceneWanted;
+        float _beatSpeed;
 
         public void Configure(Vector3 door, PedLink homeFwd, PedLink homeBack, float entryT,
             List<PedNode> nodes, Dictionary<PedNode, PedLink> routeHome,
@@ -79,7 +86,7 @@ namespace RoadDemo
                 case Mode.Inside:
                     BlendLocomotion(dt, false);
                     _restTimer -= dt;
-                    if (_restTimer <= 0f)
+                    if (_restTimer <= 0f || _sceneWanted)
                     {
                         _waypointsLeft = Random.Range(_waypointRange.x, _waypointRange.y + 1);
                         _waypoint = null;
@@ -98,6 +105,7 @@ namespace RoadDemo
                         _link = _homeFwd;
                         _t = _entryT;
                         _cameFrom = _homeFwd.From;
+                        if (_sceneWanted) BeginResponding();
                     }
                     else
                     {
@@ -110,11 +118,80 @@ namespace RoadDemo
                 case Mode.Patrolling:
                 case Mode.Returning:
                 case Mode.Homing:
+                case Mode.Responding:
                     Tick(dt);
                     if (State == Mode.Homing && _t >= _targetT)
                         BeginLeg(Tf.position, _door, Mode.WalkIn);
                     break;
+
+                case Mode.OnScene:
+                {
+                    // stood at the corner, looking at it
+                    BlendLocomotion(dt, false);
+                    var to = _scenePos - Tf.position;
+                    to.y = 0f;
+                    if (to.sqrMagnitude > 1e-3f)
+                        Tf.rotation = Quaternion.Slerp(Tf.rotation, Quaternion.LookRotation(to.normalized), 3f * dt);
+                    break;
+                }
             }
+        }
+
+        // ------------------------------------------------------------ the call
+
+        Transform IPoliceUnit.Tf => Tf;
+        Vector3 IPoliceUnit.Position => Tf.position;
+        bool IPoliceUnit.Available => !_sceneWanted &&
+            (State == Mode.Inside || State == Mode.Patrolling || State == Mode.Returning || State == Mode.Homing);
+        bool IPoliceUnit.OnScene => State == Mode.OnScene;
+        bool IPoliceUnit.Carries => false;
+
+        /// <summary>Sent to a shooting: the corner nearest it, at a quick march.</summary>
+        public void RouteTo(Vector3 scene, float standOff)
+        {
+            _scenePos = scene;
+            PedNode best = null;
+            float bestD = float.MaxValue;
+            foreach (var n in _nodes)
+            {
+                float d = (n.Pos - scene).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = n; }
+            }
+            if (best == null) return;
+            _sceneNode = best;
+            _routeToWaypoint = RouteToward(best);
+            _waypoint = best;
+            if (_beatSpeed <= 0f) _beatSpeed = Speed;
+            switch (State)
+            {
+                case Mode.Inside:
+                case Mode.WalkOut:
+                case Mode.WalkIn:
+                    _sceneWanted = true;
+                    break;
+                default:
+                    BeginResponding();
+                    break;
+            }
+        }
+
+        void BeginResponding()
+        {
+            _sceneWanted = false;
+            State = Mode.Responding;
+            Speed = _beatSpeed * 1.4f;
+            SetPoseSpeed(PoseWalk, Speed / ClipPace(PoseWalk, WalkClipPace));
+        }
+
+        /// <summary>Done at the scene: back on the beat, home first.</summary>
+        public void Release()
+        {
+            _sceneWanted = false;
+            if (State != Mode.Responding && State != Mode.OnScene) return;
+            State = Mode.Returning;
+            _waypoint = null;
+            _routeToWaypoint = null;
+            if (_beatSpeed > 0f) { Speed = _beatSpeed; SetPoseSpeed(PoseWalk, Speed / ClipPace(PoseWalk, WalkClipPace)); }
         }
 
         void BeginLeg(Vector3 from, Vector3 to, Mode mode)
@@ -149,6 +226,12 @@ namespace RoadDemo
             if (State == Mode.Homing)
             {
                 BeginLeg(Tf.position, _door, Mode.WalkIn);
+                return false;
+            }
+
+            if (State == Mode.Responding && node == _sceneNode)
+            {
+                State = Mode.OnScene;
                 return false;
             }
 
@@ -201,7 +284,7 @@ namespace RoadDemo
 
         protected override PedLink ChooseLink(PedNode node, PedNode keepAwayFrom)
         {
-            if (State == Mode.Patrolling && _routeToWaypoint != null &&
+            if ((State == Mode.Patrolling || State == Mode.Responding) && _routeToWaypoint != null &&
                 _routeToWaypoint.TryGetValue(node, out var toward) && toward != null)
                 return toward;
 
@@ -263,6 +346,8 @@ namespace RoadDemo
             Mode.Returning => "Returning to the station",
             Mode.Homing => "Back on the home stretch",
             Mode.WalkIn => "Heading in to the station",
+            Mode.Responding => "Responding - shots fired " + PatrolInfo.Toward(Tf.position, _scenePos) + " of here",
+            Mode.OnScene => "At the scene",
             _ => string.Empty,
         };
     }

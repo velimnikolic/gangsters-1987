@@ -303,7 +303,7 @@ namespace LivingCity.UI
             for (var i = 0; i < roster.Members.Count; i++)
             {
                 var member = roster.Members[i];
-                if (member.Status == CharacterStatus.Dead ||
+                if (member.Gone ||
                     member.Rank != Rank.Lieutenant)
                     continue;
 

@@ -26,6 +26,7 @@ namespace LivingCity.Tests
             PhotosOnlyLeadThePage(failures);
             PhotosAreWellFormed(failures);
             CrimePhotoMatchesTheFamilyNamed(failures);
+            CivilianDesksPrintCivilianFaces(failures);
             NoFaceRunsTwiceOnAPage(failures);
             PictureDeskUsesOneDraw(failures);
             ScreenStaysInRange(failures);
@@ -229,6 +230,30 @@ namespace LivingCity.Tests
 
             if (!checkedAny)
                 failures.Add("Photos: 200 days produced no gang-named crime lead to check.");
+        }
+
+        /// <summary>Only the blotter prints gangsters. The nation, world, business and
+        /// culture desks draw off the civilian tables, and a body the mob may be dealt
+        /// (GangLooks) must not be on them - otherwise the face over "local businessman"
+        /// is the face of a capo two columns down, and the reader is being told a lie
+        /// the game did not mean to tell.</summary>
+        static void CivilianDesksPrintCivilianFaces(List<string> failures)
+        {
+            HeadlineDesk[] civilian =
+            {
+                HeadlineDesk.Nation, HeadlineDesk.World,
+                HeadlineDesk.Business, HeadlineDesk.Culture,
+            };
+
+            foreach (var desk in civilian)
+                for (var seed = 0; seed < 200; seed++)
+                {
+                    var photo = PictureDesk.For(desk, -1, new System.Random(seed));
+                    if (photo.Subject != PhotoSubject.Person) continue;
+                    if (Gangs.GangLooks.IsGangBody(photo.ModelName))
+                        failures.Add($"PictureDesk: the {desk} desk printed " +
+                                     $"'{photo.ModelName}' - a body the mob is dealt.");
+                }
         }
 
         /// <summary>

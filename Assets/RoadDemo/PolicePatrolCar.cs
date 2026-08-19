@@ -13,9 +13,9 @@ namespace RoadDemo
     // loiters around the station and never sees the far districts. The budget
     // counts waypoints; when it runs dry the same routing brings the car back to
     // the kerb in front of the station and it swings into its stall.
-    public class PolicePatrolCar : DemoVehicle, IPatrolMarker
+    public class PolicePatrolCar : DemoVehicle, IPatrolMarker, IPoliceUnit
     {
-        public enum Mode { Resting, Undocking, Patrolling, Returning, Docking }
+        public enum Mode { Resting, Undocking, Patrolling, Returning, Docking, Responding, OnScene }
 
         /// <summary>Redraws tolerated when a drawn waypoint has no route from
         /// here - the grid is strongly connected, so one draw normally lands.</summary>
@@ -45,6 +45,13 @@ namespace RoadDemo
         float _t;
         Quaternion _fromRot, _toRot;
 
+        // the call: the lane the scene is on, where along it to stop, and a call that
+        // came while the car was in its stall or swinging in or out of it
+        RoadEdge _sceneEdge;
+        float _sceneS;
+        Vector3 _scenePos;
+        bool _sceneWanted;
+
         /// <summary>Set for the leg the car drives FORWARDS - out of the bay - where
         /// the heading is the curve's own tangent instead of a slerp between the
         /// endpoints. Clear for the way in, which is a reversing manoeuvre: the car
@@ -68,16 +75,23 @@ namespace RoadDemo
 
             State = Mode.Resting;
             _restTimer = firstRest;
+            Profile = DriverProfile.Patrol;
             Tf.SetPositionAndRotation(stall, stallRot);
         }
 
+        /// <summary>The officer at the wheel (CarOccupant), set by the builder. Shown
+        /// whenever the car is out: in its stall he is indoors, and at a scene the
+        /// squad that climbed out (PoliceDispatch) is him.</summary>
+        public CarOccupant Officer;
+
         public void TickPatrol(float dt)
         {
+            if (Officer != null) Officer.Show(State != Mode.Resting && State != Mode.OnScene);
             switch (State)
             {
                 case Mode.Resting:
                     _restTimer -= dt;
-                    if (_restTimer <= 0f && KerbClear()) BeginUndock();
+                    if ((_restTimer <= 0f || _sceneWanted) && KerbClear()) BeginUndock();
                     break;
 
                 case Mode.Undocking:
@@ -95,6 +109,7 @@ namespace RoadDemo
                         _waypoint = null;
                         _routeToWaypoint = null;
                         Spawn(_home, _kerbS);
+                        if (_sceneWanted) { _sceneWanted = false; BeginResponding(); }
                     }
                     else
                     {
@@ -111,8 +126,78 @@ namespace RoadDemo
                         Progress >= _kerbS - 0.15f)
                         BeginDock();
                     break;
+
+                case Mode.Responding:
+                    Tick(dt);
+                    if (CurrentEdge == _sceneEdge && Progress >= _sceneS - 0.4f && Speed < 0.2f)
+                        State = Mode.OnScene;
+                    break;
+
+                case Mode.OnScene:
+                    break; // stood in the lane, doors open, men out; the traffic queues behind
             }
         }
+
+        // ------------------------------------------------------------ the call
+
+        Transform IPoliceUnit.Tf => Tf;
+        Vector3 IPoliceUnit.Position => Tf.position;
+        bool IPoliceUnit.Available => !_sceneWanted && (State == Mode.Resting || State == Mode.Patrolling || State == Mode.Returning);
+        bool IPoliceUnit.OnScene => State == Mode.OnScene;
+        bool IPoliceUnit.Carries => true;
+
+        /// <summary>Sent to a shooting: the lane nearest the scene, stopping short of
+        /// it - routed there like a patrol waypoint, at the wheel of the same car.</summary>
+        public void RouteTo(Vector3 scene, float standOff)
+        {
+            _scenePos = scene;
+            RoadEdge best = null;
+            float bestS = 0f, bestD = float.MaxValue;
+            foreach (var e in _allEdges)
+            {
+                if (e.Length < 12f) continue;
+                float s = Mathf.Clamp(Vector3.Dot(scene - e.Start, e.Dir), 0f, e.Length);
+                var p = e.Start + e.Dir * s;
+                float d = (p - scene).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = e; bestS = s; }
+            }
+            if (best == null) return;
+            _sceneEdge = best;
+            _sceneS = Mathf.Clamp(bestS - standOff, 6f, best.Length - 4f);
+            _routeToWaypoint = RouteToward(_allEdges, best);
+            _waypoint = best;
+            switch (State)
+            {
+                case Mode.Resting:
+                case Mode.Undocking:
+                case Mode.Docking:
+                    _sceneWanted = true; // out of the stall first (Resting starts the undock)
+                    break;
+                case Mode.Patrolling:
+                case Mode.Returning:
+                    BeginResponding();
+                    break;
+            }
+        }
+
+        void BeginResponding()
+        {
+            State = Mode.Responding;
+            _sceneWanted = false;
+            Profile = DriverProfile.Police;   // the lights on: brisk, the crown, a red when the box is clear
+        }
+
+        /// <summary>Done at the scene: back to the station.</summary>
+        public void Release()
+        {
+            if (State != Mode.Responding && State != Mode.OnScene) { _sceneWanted = false; return; }
+            State = Mode.Returning;
+            _waypoint = null;
+            _routeToWaypoint = null;
+            Profile = DriverProfile.Patrol;
+        }
+
+        protected override bool Fearless => true;
 
         // The same footprint test a gate spawn would apply: the kerb is the metre
         // of lane the car is about to occupy, and a busy moment costs only the
@@ -166,7 +251,7 @@ namespace RoadDemo
                 }
             }
 
-            if (State == Mode.Patrolling && _routeToWaypoint != null &&
+            if ((State == Mode.Patrolling || State == Mode.Responding) && _routeToWaypoint != null &&
                 _routeToWaypoint.TryGetValue(CurrentEdge, out var toward) && toward != null)
                 return toward;
 
@@ -203,6 +288,8 @@ namespace RoadDemo
         {
             if (State == Mode.Returning && CurrentEdge == _home && Progress <= _kerbS)
                 target = Mathf.Min(target, Allowed(0f, _kerbS - Progress));
+            if (State == Mode.Responding && CurrentEdge == _sceneEdge)
+                target = Mathf.Min(target, Allowed(0f, _sceneS - Progress));
             return target;
         }
 
@@ -264,6 +351,8 @@ namespace RoadDemo
                 : "On patrol heading " + PatrolInfo.Heading(Tf),
             Mode.Returning => "Returning to the station",
             Mode.Docking => "Parking at the station",
+            Mode.Responding => "Responding - shots fired " + PatrolInfo.Toward(Tf.position, _scenePos) + " of here",
+            Mode.OnScene => "At the scene",
             _ => string.Empty,
         };
 

@@ -331,7 +331,7 @@ namespace LivingCity.Outfit
             void Consider(int id)
             {
                 var member = roster.Find(id);
-                if (member == null || member.Status == CharacterStatus.Dead)
+                if (member == null || member.Gone)
                     return;
                 var value = member.GetHalfSteps(attribute);
                 if (value > best)

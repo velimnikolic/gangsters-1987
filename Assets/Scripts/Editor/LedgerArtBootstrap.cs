@@ -148,7 +148,10 @@ namespace LivingCity.EditorTools
             "Assets/Synty/PolygonGangWarfare/Prefabs/Character/SM_Chr_GangMember_Male_01.prefab",
             "Assets/Synty/PolygonGangWarfare/Prefabs/Character/SM_Chr_GangMember_Male_02.prefab",
             "Assets/Synty/PolygonGangWarfare/Prefabs/Character/SM_Chr_GangMember_Male_03.prefab",
+            "Assets/Synty/PolygonGangWarfare/Prefabs/Character/SM_Chr_GangMember_Female_01.prefab",
             "Assets/Synty/PolygonGangWarfare/Prefabs/Character/SM_Chr_DEA_Plainclothes_Male_01.prefab",
+            "Assets/Synty/PolygonNightclubs/Prefabs/Characters/SM_Chr_Bouncer_Male_01.prefab",
+            "Assets/Synty/PolygonCity/Prefabs/Characters/Character_BusinessMan_Suit.prefab",
         };
 
         /// <summary>Fills set.people with every PeoplePaths prefab it does not already

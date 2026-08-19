@@ -23,7 +23,7 @@ namespace RoadDemo
         static Material splatMaterial;
         static Transform root;
         static readonly Queue<GameObject> splats = new Queue<GameObject>();
-        static readonly Dictionary<CrewWalker, MaterialPropertyBlock> blocks = new Dictionary<CrewWalker, MaterialPropertyBlock>();
+        static readonly Dictionary<PedestrianAgent, MaterialPropertyBlock> blocks = new Dictionary<PedestrianAgent, MaterialPropertyBlock>();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
@@ -38,7 +38,7 @@ namespace RoadDemo
 
         /// <summary>A round hit this man: blood on the ground behind him along the
         /// shot's line, and a stain on him.</summary>
-        public static void Hit(CrewWalker man, Vector3 from, float groundY)
+        public static void Hit(PedestrianAgent man, Vector3 from, float groundY, bool floor = true)
         {
             if (man == null || man.Tf == null) return;
             var line = man.Tf.position - from;
@@ -47,15 +47,16 @@ namespace RoadDemo
             // exit side: past him, a little to either hand
             var spot = man.Tf.position + dir * Random.Range(0.4f, 1.4f) +
                        Vector3.Cross(Vector3.up, dir) * Random.Range(-0.5f, 0.5f);
-            Splat(spot, groundY, Random.Range(0.35f, 0.7f), Blood);
+            if (floor) Splat(spot, groundY, Random.Range(0.35f, 0.7f), Blood);
             Stain(man, from);
             Colour(man);
         }
 
         /// <summary>He is down: the pool under him, and his colour gone.</summary>
-        public static void Death(CrewWalker man, float groundY)
+        public static void Death(PedestrianAgent man, float groundY, bool floor = true)
         {
             if (man == null || man.Tf == null) return;
+            if (!floor) { Colour(man); return; } // he died in the car: no pool on the road
             // he falls forward of where he stood, more or less; the pool goes with him
             var spot = man.Tf.position + man.Tf.forward * Random.Range(0.2f, 0.7f);
             Splat(spot, groundY, Random.Range(1.3f, 1.9f), Pool);
@@ -123,7 +124,7 @@ namespace RoadDemo
 
         // A stain where the round went in: a small quad glued to the torso, on the
         // side facing the shooter, so the shirt front or the back reads shot.
-        static void Stain(CrewWalker man, Vector3 from)
+        static void Stain(PedestrianAgent man, Vector3 from)
         {
             if (splatMaterial == null) return;
             var animator = man.Tf.GetComponentInChildren<Animator>();
@@ -160,10 +161,18 @@ namespace RoadDemo
         // The whole man pulled toward blood-red with the damage: a property block on
         // every renderer he owns, the same trick BuildingCardPicker highlights with,
         // never a material instance.
-        static void Colour(CrewWalker man)
+        static void Colour(PedestrianAgent man)
         {
-            float frac = man.MaxHealth > 0 ? 1f - Mathf.Clamp01(man.Health / (float)man.MaxHealth) : 1f;
-            if (man.Dead) frac = 1f;
+            float frac = 1f;
+            Transform gun = null;
+            if (man is CrewWalker cw)
+            {
+                frac = cw.MaxHealth > 0 ? 1f - Mathf.Clamp01(cw.Health / (float)cw.MaxHealth) : 1f;
+                if (cw.Dead) frac = 1f;
+                gun = cw.Weapon;
+            }
+            else if (man is CivilianAgent civ)
+                frac = civ.Dead ? 1f : 1f - Mathf.Clamp01(civ.Health / 2f);
             var tint = Color.Lerp(Color.white, Bloodied, frac * 0.75f);
             if (!blocks.TryGetValue(man, out var block))
                 blocks[man] = block = new MaterialPropertyBlock();
@@ -173,7 +182,7 @@ namespace RoadDemo
             {
                 if (r.name == "Stain" || r.name == "Splat") continue;
                 // the gun keeps its own colour
-                if (man.Weapon != null && r.transform.IsChildOf(man.Weapon)) continue;
+                if (gun != null && r.transform.IsChildOf(gun)) continue;
                 r.SetPropertyBlock(block);
             }
         }
@@ -204,7 +213,7 @@ namespace RoadDemo
         /// <summary>Draw the outline where this man lies - the figure's head end toward
         /// his head, its feet toward his feet - and hand back the object, so the body
         /// can go and the chalk stay.</summary>
-        public static GameObject Chalk(CrewWalker man, float groundY)
+        public static GameObject Chalk(PedestrianAgent man, float groundY)
         {
             if (man == null || man.Tf == null) return null;
             if (chalkMaterial == null)

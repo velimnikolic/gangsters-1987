@@ -16,10 +16,12 @@ namespace RoadDemo
     //   whole street would be a whisper (which is exactly why the crews' gunshot
     //   plays 2D). On the focus, distances are the ones the player is looking at.
     //
-    //   BEDS - wind by day, a low hiss by night, crossfaded on DemoSky's own
-    //   nightness ramp, plus a traffic hum whose level follows how many cars are
-    //   near the focus. The hum rises as the camera pulls out and the individual
-    //   engines fade: a city seen from above still roars, it just stops being cars.
+    //   BEDS - a daylight street and a night street, crossfaded on DemoSky's own
+    //   nightness ramp, plus two censused layers: a traffic hum that follows how
+    //   many cars are near the focus and a crowd murmur that follows how many
+    //   people are. The hum rises as the camera pulls out and the individual
+    //   engines fade (a city seen from above still roars, it just stops being
+    //   cars); the murmur does the opposite, because a pavement does not carry.
     //
     //   ENGINES - six looping voices handed to the six nearest cars, pitched by
     //   speed. Thirty cars needing at most six audible; a voice already held gets a
@@ -66,7 +68,7 @@ namespace RoadDemo
         List<CivilianAgent> _walkers;
 
         Transform _ear;
-        AudioSource _dayBed, _nightBed, _hum;
+        AudioSource _dayBed, _nightBed, _hum, _murmur;
         readonly AudioSource[] _engines = new AudioSource[EngineVoices];
         readonly DemoVehicle[] _engineOf = new DemoVehicle[EngineVoices];
         readonly AudioSource[] _oneShots = new AudioSource[OneShotVoices];
@@ -75,6 +77,7 @@ namespace RoadDemo
         float _detail = 1f;      // 1 zoomed in, 0 zoomed out
         float _worldGain = 1f;   // 0 while the demo is paused, faded
         float _busy;             // cars near the focus, 0..1
+        float _crowd;            // people near the focus, 0..1
         float _rescan, _stepBudget, _voiceIn = 8f, _hornIn = 6f;
         bool _muted;
 
@@ -105,13 +108,17 @@ namespace RoadDemo
             ear.AddComponent<AudioListener>();
             _ear = ear.transform;
 
-            _dayBed = Bed(DemoSounds.Wind, "Day Bed");
-            _nightBed = Bed(DemoSounds.NightAir, "Night Bed");
+            _dayBed = Bed(DemoSounds.DayBed, "Day Bed");
+            _nightBed = Bed(DemoSounds.NightBed, "Night Bed");
 
-            // The hum is one engine idle taken down an octave and a half: a block of
-            // traffic heard from four streets away is not any one car, it is this.
-            _hum = Bed(DemoSounds.Pick(DemoSounds.EngineLoops), "Traffic Hum");
-            if (_hum) _hum.pitch = 0.55f;
+            // A block of traffic heard from four streets away is not any one car,
+            // it is its own recording - a downtown bed with the top rolled off.
+            _hum = Bed(DemoSounds.TrafficHum, "Traffic Hum");
+
+            // The crowd, once, scaled by how many people are near the focus. Never a
+            // source per pedestrian: thirty walkers would be thirty copies of one
+            // walla recording beating against itself.
+            _murmur = Bed(DemoSounds.Murmur, "Murmur");
 
             for (int i = 0; i < EngineVoices; i++)
             {
@@ -223,6 +230,14 @@ namespace RoadDemo
                 float zoom = Mathf.Lerp(1f, 0.45f, _detail);
                 _hum.volume = DemoSounds.TrafficHumVolume * _busy * zoom * master;
             }
+
+            if (_murmur)
+            {
+                // The other way round from the hum: the roar of a city carries to the
+                // far view, a pavement full of people does not.
+                _murmur.volume = DemoSounds.MurmurVolume * _crowd
+                                 * Mathf.Lerp(0.3f, 1f, _detail) * master;
+            }
         }
 
         // ------------------------------------------------------------- the engines
@@ -246,6 +261,17 @@ namespace RoadDemo
             // Square root: the third car on a street changes how busy it sounds far
             // more than the tenth.
             _busy = Mathf.Sqrt(Mathf.Clamp01(near / 10f));
+
+            int walking = 0;
+            for (int i = 0; i < (_walkers?.Count ?? 0); i++)
+            {
+                var walker = _walkers[i];
+                if (walker?.Tf == null) continue;
+                var delta = walker.Tf.position - focus;
+                delta.y = 0f;
+                if (delta.sqrMagnitude < reachSqr) walking++;
+            }
+            _crowd = Mathf.Sqrt(Mathf.Clamp01(walking / 16f));
 
             for (int slot = 0; slot < EngineVoices; slot++)
             {
@@ -423,7 +449,8 @@ namespace RoadDemo
             {
                 var walker = _walkers[Random.Range(0, _walkers.Count)];
                 if (walker?.Tf == null || !walker.Tf.gameObject.activeSelf) continue;
-                if (walker.State != CivilianAgent.Mode.Walking) continue;
+                if (walker.State != CivilianAgent.Mode.Walking &&
+                    walker.State != CivilianAgent.Mode.Flee) continue;
 
                 var delta = walker.Tf.position - focus;
                 delta.y = 0f;
@@ -439,10 +466,10 @@ namespace RoadDemo
 
         /// <summary>A one-shot out in the world, at a place.</summary>
         public static void At(AudioClip clip, Vector3 position, float volume,
-            float pitchJitter = 0f)
+            float pitchJitter = 0f, float pitch = 1f)
         {
             if (clip == null || Active == null) return;
-            Active.PlayLocal(clip, position, volume * DemoSounds.Master, pitchJitter);
+            Active.PlayLocal(clip, position, volume * DemoSounds.Master, pitchJitter, pitch: pitch);
         }
 
         /// <summary>A one-shot from the interface - 2D, unaffected by zoom, and NOT
@@ -454,7 +481,7 @@ namespace RoadDemo
         }
 
         void PlayLocal(AudioClip clip, Vector3 position, float volume, float pitchJitter,
-            bool ui = false)
+            bool ui = false, float pitch = 1f)
         {
             for (int i = 0; i < OneShotVoices; i++)
             {
@@ -464,9 +491,9 @@ namespace RoadDemo
 
                 voice.transform.position = position;
                 voice.spatialBlend = ui ? 0f : 1f;
-                voice.pitch = pitchJitter > 0f
+                voice.pitch = pitch * (pitchJitter > 0f
                     ? 1f + Random.Range(-pitchJitter, pitchJitter)
-                    : 1f;
+                    : 1f);
                 voice.PlayOneShot(clip, ui ? volume : volume * _worldGain);
                 return;
             }
