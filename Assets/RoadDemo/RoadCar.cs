@@ -612,10 +612,16 @@ namespace RoadDemo
             // way. Two left turns were let into the same boulevard box that way, sharing
             // nine metres of the same line, and the belt was the only thing between them.
             // And a claim on a box we are no longer going through is nobody's to hold.
-            if (_inNode != null && Via == null && !_boxLeft)
+            if (_inNode != null && Via == null)
             {
-                if (Parked || _man == Manoeuvre.UTurn || _nodeOf != node) LeaveBox();
-                else if (_via != null) _inNode.Via = _via;
+                // turning round in the road ends the crossing, tail or no tail: the car
+                // is not going that way any more, and its body is the road's business now
+                if (Parked || _man == Manoeuvre.UTurn) LeaveBox();
+                else if (!_boxLeft)
+                {
+                    if (_nodeOf != node) LeaveBox();
+                    else if (_via != null) _inNode.Via = _via;
+                }
             }
 
             float noseS = S + Heading * HalfLen;
@@ -2093,7 +2099,13 @@ namespace RoadDemo
         void TickBoxExit()
         {
             if (_inNode == null || Road == null || !_boxLeft) return;
-            if ((S - _boxEntryS) * Heading <= HalfLen + 0.8f) return;
+            // HOW FAR FROM THE BOX, not how far ON from it. Measured along the way the
+            // car was going, a car that turns round the moment it is out - a U-turn in
+            // the road, a reverse - counts backwards for ever and never clears the
+            // junction it is standing well clear of. It then holds that box against
+            // everybody for the rest of the run, and holds it under the name of the turn
+            // it made half a minute ago, so two cars are let into it on lines that cross.
+            if (Mathf.Abs(S - _boxEntryS) <= HalfLen + 0.8f) return;
             LeaveBox();
             // the stop that was asked for while we were crossing: here, clear of the box
             if (_haltWhenClear) { _haltWhenClear = false; Halt(_haltHard); }

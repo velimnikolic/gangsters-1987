@@ -20,6 +20,34 @@ namespace LivingCity.Gameplay
             "SM_Veh_Suv_01",
         };
 
+        /// <summary>The two-wheelers that may be ridden, in the order a street wants
+        /// them: a workaday motorcycle first, the moped that delivers everybody's
+        /// dinner behind it. All of them are 1987 machines - the two electric ones the
+        /// pack also ships are on the <see cref="Barred"/> list with the survey car and
+        /// the pavement robot, and belong to another decade.
+        ///
+        /// Kept apart from <see cref="GangsterCars"/> and from the folder scans on
+        /// purpose. Every scan in the project denies "bike", "moped" and "scooter" by
+        /// name (RoadDemoBuilder's vehicleDeny), because for years a two-wheeler in the
+        /// traffic was a car-shaped thing sliding along with nobody on it. That denial
+        /// stays; a bike now reaches the street the way a cruiser does, by being asked
+        /// for BY NAME, and what asks is the code that also knows how to seat a man on
+        /// it (StreetBikes, RoadBike).</summary>
+        public static readonly string[] Motorcycles =
+        {
+            "SM_Veh_Motorbike_01",
+            "SM_Veh_Moped_01",
+        };
+
+        /// <summary>The law's own two-wheeler: the police pack's tourer. Liveried, so
+        /// <see cref="IsMarkedService"/> already keeps it out of civilian traffic - it
+        /// is named here for whoever puts a patrolman on one.</summary>
+        public static readonly string[] PoliceMotorcycles =
+        {
+            "SM_Veh_Motorbike_01",
+            "SM_Veh_Motorbike_02",
+        };
+
         /// <summary>What the law drives. The marked cars, and the only bodies a patrol,
         /// a dispatch answer or a station forecourt is dealt.</summary>
         public static readonly string[] PoliceCars =

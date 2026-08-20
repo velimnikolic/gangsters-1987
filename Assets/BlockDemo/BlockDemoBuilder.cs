@@ -1,4 +1,4 @@
-using RoadDemo;
+﻿using RoadDemo;
 using UnityEngine;
 
 namespace BlockDemo
@@ -73,6 +73,10 @@ namespace BlockDemo
         [Tooltip("Seconds of drive-by passes at one crew before the men get out and " +
                  "finish it on foot.")]
         public float missionPasses = 45f;
+        [Tooltip("The mission on foot: no car at all. The crew walks the length of the " +
+                 "quarter to the mob furthest from it - over the lots, across the roads, " +
+                 "never mind the lights - and has it out with them there.")]
+        public bool missionOnFoot;
 
         [Header("Day")]
         [Range(0f, 24f)] public float startHour = 11f;
@@ -157,6 +161,7 @@ namespace BlockDemo
                 var mission = gameObject.AddComponent<BlockDemoMission>();
                 mission.startAfter = missionAfter;
                 mission.passesBefore = missionPasses;
+                mission.onFoot = missionOnFoot;
             }
 
             FrameTheQuarter(city);

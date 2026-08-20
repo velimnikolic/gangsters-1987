@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 namespace RoadDemo
@@ -35,12 +35,33 @@ namespace RoadDemo
         // the scene's own solids, kept in a plan of their own so they bucket the same way
         static SidewalkPlan _solids = new SidewalkPlan();
 
+        /// <summary>The corners of everything blocked off so far - the ground a man on
+        /// foot has to find his way across. Empty until something is blocked, which is
+        /// why Max is below Min to start with.</summary>
+        public static Vector2 Min = new Vector2(float.MaxValue, float.MaxValue);
+        public static Vector2 Max = new Vector2(float.MinValue, float.MinValue);
+
+        /// <summary>Bumped every time the ground changes, so anything that reads the
+        /// map (WalkRoute) can tell its own copy is out of date without comparing it.
+        /// </summary>
+        public static int Version;
+
+        static void Grew(float xMin, float xMax, float zMin, float zMax)
+        {
+            Min.x = Mathf.Min(Min.x, xMin); Min.y = Mathf.Min(Min.y, zMin);
+            Max.x = Mathf.Max(Max.x, xMax); Max.y = Mathf.Max(Max.y, zMax);
+            Version++;
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void Forget()
         {
             Props.Clear();
             _solids = new SidewalkPlan();
             Near.Clear();
+            Min = new Vector2(float.MaxValue, float.MaxValue);
+            Max = new Vector2(float.MinValue, float.MinValue);
+            Version++;
         }
 
         // ------------------------------------------------------------------ the solids
@@ -49,6 +70,7 @@ namespace RoadDemo
         public static void Block(float xMin, float xMax, float zMin, float zMax)
         {
             if (xMax <= xMin || zMax <= zMin) return;
+            Grew(xMin, xMax, zMin, zMax);
             _solids.Take(SidewalkPlan.Make(
                 new Vector2((xMin + xMax) * 0.5f, (zMin + zMax) * 0.5f), 0f,
                 new Vector2((xMax - xMin) * 0.5f, (zMax - zMin) * 0.5f), solid: true));
@@ -60,7 +82,11 @@ namespace RoadDemo
         /// <summary>Block off an oriented box: centre, yaw in degrees, half extents
         /// in its own frame.</summary>
         public static void Block(Vector3 centre, float yaw, Vector2 half)
-            => _solids.Take(SidewalkPlan.Make(new Vector2(centre.x, centre.z), yaw, half, solid: true));
+        {
+            float reach = half.magnitude;
+            Grew(centre.x - reach, centre.x + reach, centre.z - reach, centre.z + reach);
+            _solids.Take(SidewalkPlan.Make(new Vector2(centre.x, centre.z), yaw, half, solid: true));
+        }
 
         // ------------------------------------------------------------------ the road
 
@@ -120,6 +146,15 @@ namespace RoadDemo
             return false;
         }
 
+        /// <summary>Would a man of this radius stood here be inside something that does
+        /// not move - a wall, a lot, a bin? The traffic is left out on purpose: this is
+        /// the map a way across the city is worked out on, and a way that went round
+        /// wherever the cars happened to be standing when it was drawn would be a way
+        /// round nothing a moment later. The cars are what the walking itself steers
+        /// past, frame by frame (Steer).</summary>
+        public static bool Standing(Vector3 p, float radius) =>
+            OnGround(new Vector2(p.x, p.z), radius);
+
         /// <summary>Would a man of this radius stood here be inside something -
         /// furniture, a wall, a car?</summary>
         public static bool Occupied(Vector3 p, float radius)
@@ -127,6 +162,20 @@ namespace RoadDemo
             var q = new Vector2(p.x, p.z);
             GatherRoad(q, radius);
             return OnGround(q, radius) || InRoad(q, radius);
+        }
+
+        /// <summary>The same run as <see cref="Clear"/>, but past the FIXED things only -
+        /// no traffic. What a way across the city is drawn against (WalkRoute): a line
+        /// that dodged wherever the cars happened to be standing would be a line round
+        /// nothing a moment later.</summary>
+        public static float ClearStanding(Vector3 from, Vector3 dir, float radius, float ahead)
+        {
+            var p = new Vector2(from.x, from.z);
+            var h = new Vector2(dir.x, dir.z);
+            if (h.sqrMagnitude < 1e-6f) return 0f;
+            h.Normalize();
+            Near.Clear();          // the road is nobody's business here
+            return Run(p, h, radius, ahead);
         }
 
         /// <summary>How far a man of this radius can walk from <paramref name="from"/>

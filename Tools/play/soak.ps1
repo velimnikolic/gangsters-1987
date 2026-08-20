@@ -38,6 +38,7 @@ function Append-Ledger([string] $path, [string] $text) {
 
 $passed = 0
 $failed = @()
+$skipped = @()
 for ($i = 1; $i -le $Runs; $i++) {
     $seed = $FirstSeed + $i
     $dir = Join-Path $Out ("run-{0:D2}" -f $i)
@@ -47,10 +48,18 @@ for ($i = 1; $i -le $Runs; $i++) {
         -Scene $Scene -Seconds $Seconds -Step 0.05 -Out $dir -Set $sets -TimeoutMinutes 20 | Out-Null
 
     $verdict = & python (Join-Path $here "analyze.py") $dir --verdict 2>&1
-    $ok = $LASTEXITCODE -eq 0
-    if ($ok) { $passed++ } else { $failed += $i }
+    $code = $LASTEXITCODE
+    # A RUN THAT NEVER RAN IS NOT A RUN THAT FAILED. Unity refusing to play - the
+    # scripts caught half-written, the editor open, the machine short of memory -
+    # says nothing about the driving, and counting it against the city would send
+    # somebody hunting a fault that is not there. It is said out loud and skipped.
+    $ok = $code -eq 0
+    if ($code -eq 3) { $skipped += $i }
+    elseif ($ok) { $passed++ }
+    else { $failed += $i }
 
-    $line = ("run {0,2}/{1} seed {2}: {3}" -f $i, $Runs, $seed, ($(if ($ok) { "PASSED" } else { "FAILED" })))
+    $word = if ($code -eq 3) { "NO RUN" } elseif ($ok) { "PASSED" } else { "FAILED" }
+    $line = ("run {0,2}/{1} seed {2}: {3}" -f $i, $Runs, $seed, $word)
     $head = ($verdict | Select-Object -First 6) -join "`n"
     Write-Host $line
     Write-Host $head
@@ -63,6 +72,7 @@ for ($i = 1; $i -le $Runs; $i++) {
 
 $tally = "== $passed of $Runs passed"
 if ($failed.Count -gt 0) { $tally += "; the ones that did not: " + ($failed -join ", ") }
+if ($skipped.Count -gt 0) { $tally += "; never ran: " + ($skipped -join ", ") }
 Write-Host $tally
 Append-Ledger $ledger $tally
 Write-Host "[soak] $ledger"

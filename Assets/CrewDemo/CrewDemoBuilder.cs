@@ -67,6 +67,16 @@ namespace CrewDemo
         [Range(0, 30)] public int trafficCars = 2;
         [Tooltip("Cars stood at the kerb of the two side streets - nothing drives those; they are there to be walked round and shot over.")]
         [Range(0, 20)] public int parkedCars = 6;
+        [Tooltip("Two-wheelers in the traffic, each with a rider (and sometimes a mate behind him) posed onto the machine by BikePose.")]
+        [Range(0, 12)] public int trafficBikes = 2;
+        [Tooltip("Bikes left on their stands at the kerbs - nobody on them, the traffic goes round them.")]
+        [Range(0, 12)] public int parkedBikes = 2;
+        [Tooltip("A motorcycle of the outfit's, stood by the muster with two hoods on it. Press B in Play to send it on a drive-by at the first rival; press it again to call it off.")]
+        public bool outfitBike = true;
+        [Tooltip("The outfit's machine by name. Empty: the first of VehicleCatalog.Motorcycles the packs actually have.")]
+        public string outfitBikeBody = "";
+        [Tooltip("Send the bike at the first rival this many seconds into Play, with no key pressed. 0: only on B. What the headless harness sets to watch a drive-by go by.")]
+        [Min(0)] public float bikeAttackAfter = 0f;
 
         [Header("Arms")]
         [Tooltip("Arm the outfit out of the armory when the scene opens - one gun per man into each crew's deck. Off: every man carries the .38 in his coat.")]
@@ -176,6 +186,7 @@ namespace CrewDemo
             ParkCar(muster);
             BuildTraffic(clips);
             BuildParkedCars();
+            BuildBikes(clips);
             BuildPavementLife(clips);
             BuildPolice(clips);
 #else
@@ -189,6 +200,7 @@ namespace CrewDemo
         {
             GiveCarToFirstLieutenant();
             ArmTheOutfit();
+            TickOutfitBike();
             TickPavementLife(Time.deltaTime);
 
             // the grip is set by eye: change the numbers in the Inspector during Play
@@ -700,6 +712,142 @@ namespace CrewDemo
         // the mob's own coats (a crew's body is never a passer-by - the city's rule,
         // RoadDemoBuilder). Gathered once.
         List<GameObject> _passersBy;
+
+        // ------------------------------------------------------------------- bikes
+        //
+        // The bench for the whole two-wheeler business, all of it at once: bikes riding
+        // the streets with a rider posed onto them, bikes stood on their stands at a
+        // kerb, and one of the outfit's own with a hood at the bars and his mate behind
+        // him - press B and it goes hunting the first rival, which is the only way to
+        // see whether a pillion can actually hit anything at speed.
+        //
+        // None of it comes out of a folder scan. Every scan in the project denies
+        // "bike" and "moped" by name, and they stay denied; a machine reaches this
+        // street the way a marked cruiser does, by being asked for out of the
+        // catalogue (VehicleCatalog.Motorcycles).
+        void BuildBikes(PedClips clips)
+        {
+#if UNITY_EDITOR
+            var bodies = StreetBikes.Bodies();
+            if (bodies.Count == 0)
+            {
+                if (trafficBikes > 0 || parkedBikes > 0 || outfitBike)
+                    Debug.LogWarning("[CrewDemo] No two-wheeler out of VehicleCatalog.Motorcycles - no bikes today.");
+                return;
+            }
+
+            if (trafficBikes > 0 && _net != null)
+            {
+                var along = new List<Carriageway>();
+                foreach (var r in _net.Roads)
+                    if (Mathf.Abs(r.Axis.x) > 0.5f) along.Add(r);   // the streets along X
+                gameObject.AddComponent<StreetBikes>().Init(_net, trafficBikes, -0.08f,
+                    PassersBy(), clips.Ride != null ? clips.Ride : clips.SitLoop,
+                    pillionChance: 0.4f, layer: -1, roads: along, bodies: bodies);
+            }
+
+            if (parkedBikes > 0 && _net != null)
+            {
+                var root = new GameObject("Parked Bikes").transform;
+                var spots = new List<Vector3>(parkedBikes);
+                for (int i = 0; i < parkedBikes; i++)
+                {
+                    // along the two side streets, which nothing drives down
+                    float x = (i % 2 == 0) ? WestX : EastX;
+                    float z = Mathf.Lerp(BlockZMin + 6f, BlockZMax - 6f, (i + 0.5f) / parkedBikes);
+                    spots.Add(new Vector3(x, 0f, z));
+                }
+                StreetBikes.ParkSeveral(_net, root, spots, -0.08f, bodies);
+            }
+
+            if (outfitBike) BuildOutfitBike(bodies);
+#endif
+        }
+
+        CrewBike _outfitBike;
+
+        void BuildOutfitBike(List<GameObject> bodies)
+        {
+#if UNITY_EDITOR
+            if (_crews == null) return;
+            GameObject prefab = null;
+            if (!string.IsNullOrEmpty(outfitBikeBody)) prefab = FindCivilianVehicle(outfitBikeBody);
+            if (prefab == null) prefab = bodies[0];
+
+            // two gang bodies, and neither of them anybody else's face: the crews on the
+            // pavement are drawn from the same tables, so a pair off the far end of the
+            // hood table keeps the bike from being two men who are already standing
+            // over there (GangLooks, and the no-twins rule the cast is built on)
+            var looks = LivingCity.Gangs.GangLooks.Hoods;
+            GameObject riderBody = null, pillionBody = null;
+            for (int i = looks.Length - 1; i >= 0 && (riderBody == null || pillionBody == null); i--)
+            {
+                var body = Cast(looks[i]);
+                if (body == null) continue;
+                if (riderBody == null) riderBody = body;
+                else if (body != riderBody) pillionBody = body;
+            }
+            if (riderBody == null)
+            {
+                Debug.LogWarning("[CrewDemo] No gang body for the bike - the outfit walks.");
+                return;
+            }
+
+            // the south kerb, but the FAR end of it: the outfit's car is left by the
+            // muster at the west end, and both builders asking for "the south kerb,
+            // about here" put the bike inside the car for a whole headless run
+            var at = SouthKerb(BlockXMax - 8f, +1, 0.5f);
+            _outfitBike = _crews.AddBike(prefab, at, Quaternion.Euler(0f, 90f, 0f), roadY: -0.08f,
+                riderPrefab: riderBody, pillionPrefab: pillionBody,
+                weapon: CrewKit.Weapon("SM_Wep_Machine_Pistol_01"), kind: EquipmentKind.MachinePistol,
+                riderName: "The rider", pillionName: "The pillion");
+            if (_outfitBike != null)
+                Debug.Log("[CrewDemo] The outfit keeps a " + prefab.name + " as well - press B to send it at a rival.");
+#endif
+        }
+
+        // B sends the bike at the first rival still standing, and calls it off again.
+        // A key rather than the overlay on purpose: the overlay's orders go through a
+        // crew's CAR (DemoCrews.OrderAttack), and a bike is not a crew's car - it is two
+        // men and a machine nobody sold them.
+        bool _bikeSent;
+
+        void TickOutfitBike()
+        {
+            if (_outfitBike == null || _crews == null) return;
+
+            // the clock, for a run nobody is sat at: the harness sets the seconds and
+            // watches what the pass does
+            if (!_bikeSent && bikeAttackAfter > 0f && Time.timeSinceLevelLoad >= bikeAttackAfter)
+            {
+                _bikeSent = true;
+                SendBike();
+                return;
+            }
+
+            // the project runs InputSystem-only: UnityEngine.Input throws here
+            var kb = UnityEngine.InputSystem.Keyboard.current;
+            if (kb == null || !kb.bKey.wasPressedThisFrame) return;
+            if (_outfitBike.DriveByTarget != null)
+            {
+                _outfitBike.EndDriveBy();
+                Debug.Log("[CrewDemo] The bike breaks off.");
+                return;
+            }
+            SendBike();
+        }
+
+        void SendBike()
+        {
+            foreach (var unit in _crews.Units)
+            {
+                if (unit == null || unit.Faction == 0 || DemoCrews.Finished(unit)) continue;
+                _outfitBike.DriveBy(unit);
+                Debug.Log("[CrewDemo] The bike goes after " + unit.GangName + ".");
+                return;
+            }
+            Debug.Log("[CrewDemo] Nobody left to shoot at.");
+        }
 
         List<GameObject> PassersBy()
         {

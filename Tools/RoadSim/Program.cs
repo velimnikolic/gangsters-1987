@@ -451,6 +451,70 @@ static class Program
             Console.WriteLine($"   {kv.Key,-22} mean={kv.Value.sum / kv.Value.n:F2}deg max={kv.Value.max:F2}deg n={kv.Value.n} at {kv.Value.where}");
     }
 
+    // Two-wheelers in with the cars. What is being asked is not how a bike LOOKS -
+    // no stub here draws anything - but the one thing about it that touches the road
+    // core: a body a third the width of a car and half its length on the same lanes,
+    // in the same junction boxes, at the same kerbs. A narrow body that claims too
+    // little would let a car through itself; one that claims too much is a car with a
+    // motorcycle painted on it. Zero overlaps and zero belt hits, exactly as for cars.
+    static void BikeScenario(int cars, int bikes, float seconds)
+    {
+        Reset();
+        var xs = new float[] { -200, -60, 80, 220 };
+        var zs = new float[] { -180, -40, 100, 240 };
+        var net = Grid(xs, zs, signals: true);
+        var all = new List<RoadCar>();
+        int placed = 0;
+        for (int round = 0; placed < cars && round < 40; round++)
+        {
+            bool any = false;
+            foreach (var e in net.Edges)
+            {
+                if (placed >= cars) break;
+                float s = 6f + round * 18f;
+                if (s > e.Length - 12f) continue;
+                any = true;
+                all.Add(Spawn(net, e, s));
+                placed++;
+            }
+            if (!any) break;
+        }
+        // the bikes, measured off the Palm City motorbike: 2.1 m long, 0.8 m across
+        int laid = 0;
+        for (int round = 0; laid < bikes && round < 40; round++)
+        {
+            bool any = false;
+            foreach (var e in net.Edges)
+            {
+                if (laid >= bikes) break;
+                float s = 15f + round * 26f;
+                if (s > e.Length - 12f) continue;
+                any = true;
+                all.Add(Spawn(net, e, s, DriverProfile.Traffic, hl: 1.25f, hw: 0.45f));
+                laid++;
+            }
+            if (!any) break;
+        }
+        Run($"bikes in traffic ({cars} cars, {bikes} bikes)", net, all, seconds);
+
+        // and the lean those corners ask a bike for (RoadBike.LeanFor, which no stub
+        // here can hold): the pace against the rate the nose comes round. Read down a
+        // column for what one radius feels like as the pace rises; 30 degrees is the
+        // cap, and a bike upright in a junction is a bike that has stopped.
+        Console.WriteLine("   lean asked for (deg), by corner radius:");
+        foreach (float v in new[] { 3f, 5.5f, 8f, 12f })
+        {
+            var row = new List<string>();
+            foreach (float radius in new[] { 8f, 14f, 25f, 60f })
+            {
+                float yaw = v / radius;                       // rad/s round that circle
+                float lean = MathF.Atan(v * yaw / 9.81f) * Mathf.Rad2Deg;
+                row.Add($"r{radius:F0}->{Math.Min(30f, lean):F0}");
+            }
+            Console.WriteLine($"      {v,4:F1} m/s: " + string.Join("  ", row));
+        }
+    }
+
     static void Main(string[] args)
     {
         string only = args.Length > 0 ? args[0] : "all";
@@ -465,5 +529,6 @@ static class Program
         if (only == "all" || only == "uturn") UTurnScenario();
         if (only == "all" || only == "standoff") StandoffScenario();
         if (only == "all" || only == "crab") CrabScenario();
+        if (only == "all" || only == "bikes") BikeScenario(60, 20, 300f);
     }
 }

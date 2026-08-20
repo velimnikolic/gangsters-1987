@@ -156,6 +156,109 @@ namespace RoadDemo
             if (director != null && director.Roster != null) director.Desert(man.CharacterId);
         }
 
+        // ------------------------------------------------------------------ the bikes
+        //
+        // The outfit's two-wheelers, and the pairs of hoods on them. They are kept
+        // apart from the crews on purpose. A Unit is a boss, his hoods, a stretch of
+        // pavement he stands on and a car the ledger sold him - and a motorcycle is
+        // none of those: the book does not sell one, two men is not a crew, and the
+        // whole thing is a machine somebody took. So a bike is its own small thing with
+        // its own two men, ticked here, and everything it needs from the arena - who to
+        // shoot at, and what a bullet does - it asks for through the same doors any
+        // other shot uses (FireFrom, NearestOf, Finished).
+
+        /// <summary>The outfit's bikes on the street.</summary>
+        public readonly List<CrewBike> Bikes = new List<CrewBike>();
+
+        readonly List<CrewWalker> _bikeMen = new List<CrewWalker>();
+
+        /// <summary>A motorcycle stood here with a hood at the bars and, if a second
+        /// body is given and the machine has room, his mate behind him with the gun.
+        /// Both are armed with the weapon named; either may be left null to have the
+        /// pack's own cast picked. Null when there is no body for it.</summary>
+        public CrewBike AddBike(GameObject prefab, Vector3 pos, Quaternion rot, float roadY,
+            GameObject riderPrefab, GameObject pillionPrefab, GameObject weapon, EquipmentKind kind,
+            string riderName = "Rider", string pillionName = "Pillion")
+        {
+            if (prefab == null || riderPrefab == null) return null;
+            var net = Net ?? LaneNet.Active;
+            // NOT simply where the caller pointed. A kerb is a queue of things already
+            // standing on it, and two builders that both say "the south kerb, about
+            // here" put a motorcycle inside the outfit's car - which is what the first
+            // headless run of this did, for the whole run, the belt shoving at a bike
+            // nobody was ever going to move. So the same search a man's car gets: out
+            // from the point given, nearest first, to the first length of kerb nothing
+            // else has claimed (CrewCars.KerbSlotNear reads the lane net's occupancy).
+            if (net != null && CrewCars.MeasurePrefab(prefab, out float hl, out float hw))
+            {
+                hw = Mathf.Max(0.42f, hw);
+                if (CrewCars.KerbSlotNear(net, pos, hl, hw, out var slot, out var facing))
+                {
+                    pos = new Vector3(slot.x, roadY, slot.z);
+                    rot = facing;
+                }
+            }
+            var bike = RoadBike.Build<CrewBike>(prefab, _root, pos, rot, roadY, net);
+            if (bike == null) return null;
+            bike.Arena = this;
+            if (!bike.PlaceAt(pos, rot * Vector3.forward)) bike.GoFree(pos);
+
+            var rider = SpawnAt(riderPrefab, riderName, -1, pos, rot, Random.Range(1.35f, 1.55f));
+            if (rider == null) { Destroy(bike.Tf.gameObject); return null; }
+            Arm(rider, weapon, kind);
+            _bikeMen.Add(rider);
+            if (!bike.Mount(rider, pillion: false))
+            {
+                // the body would not take a rider's pose: better no bike than a man
+                // standing on the tank
+                Debug.LogWarning("[Crews] " + prefab.name + " would not seat a rider (not a humanoid body?)");
+                _bikeMen.Remove(rider);
+                rider.Dispose();
+                Destroy(rider.Tf.gameObject);
+                Destroy(bike.Tf.gameObject);
+                return null;
+            }
+
+            if (pillionPrefab != null && bike.Body != null && bike.Body.SeatsTwo)
+            {
+                var mate = SpawnAt(pillionPrefab, pillionName, -1, pos, rot, Random.Range(1.35f, 1.55f));
+                if (mate != null)
+                {
+                    Arm(mate, weapon, kind);
+                    if (bike.Mount(mate, pillion: true)) _bikeMen.Add(mate);
+                    else { mate.Dispose(); Destroy(mate.Tf.gameObject); }
+                }
+            }
+
+            bike.SettleStand();
+            Bikes.Add(bike);
+            return bike;
+        }
+
+        void Arm(CrewWalker man, GameObject weapon, EquipmentKind kind)
+        {
+            if (man == null || weapon == null) return;
+            man.Arm(weapon, kind);
+        }
+
+        void TickBikes(float dt)
+        {
+            for (int i = 0; i < _bikeMen.Count; i++)
+            {
+                var man = _bikeMen[i];
+                if (man != null && man.Tf != null) man.TickCrew(dt);
+            }
+            for (int i = 0; i < Bikes.Count; i++)
+            {
+                var bike = Bikes[i];
+                if (bike == null || bike.Tf == null) continue;
+                // a bike whose rider has been shot off it is a bike on its side in the
+                // road: it stops where it is and stops being anybody's ride
+                if (bike.Rider != null && bike.Rider.Dead) bike.DismountAll();
+                bike.Tick(dt);
+            }
+        }
+
         // Deserters run their own course: ticked here, off the street once they have
         // stopped running (out of sight), or once a round has finished them and the
         // body has been taken away.
@@ -436,6 +539,7 @@ namespace RoadDemo
             foreach (var unit in Units)
                 foreach (var man in unit.All())
                     man.TickCrew(dt); // riders too: their pose (the seat, the gun out of the window) lives here
+            TickBikes(dt);
             TickCars(dt);
             if (FreeRoam) Separate();
 
@@ -527,6 +631,44 @@ namespace RoadDemo
             if (!NearestSidewalk(world, out var link, out float t)) return false;
             Dispatch(Selected, link, t);
             destination = Selected.Boss.Destination;
+            return true;
+        }
+
+        /// <summary>Be over there - ON FOOT, and never mind the pavements.
+        ///
+        /// The crowd keeps to the sidewalk graph, goes round the blocks and waits at the
+        /// lights, because that is what a city looks like from the outside. A crew told
+        /// to be somewhere does not: it cuts over the lot, across the road against the
+        /// light, down the gap between two buildings, and it walks the length of the
+        /// quarter to do it. The only ground it will not cross is ground a man cannot
+        /// stand on - a wall, a lot, a parked car - and the fields outside the city,
+        /// which are not the city (WalkRoute).
+        ///
+        /// This is the order behind a march; the walking itself, the corners and the
+        /// steering past whatever has moved into the way since, is CrewWalker's.</summary>
+        public bool MarchTo(Unit unit, Vector3 world)
+        {
+            if (unit == null || unit.Boss == null || unit.Boss.Dead) return false;
+            unit.TargetUnit = null;
+            unit.OrderedAt = Time.time;
+            Unboard(unit, "a march order");
+            unit.PendingDrive = null;
+            world.y = GroundY;
+
+            var boss = unit.Boss;
+            var dir = world - boss.Tf.position;
+            dir.y = 0f;
+            var rot = Quaternion.LookRotation(dir.sqrMagnitude > 0.25f ? dir.normalized : boss.Tf.forward);
+            Reseat(boss);
+            boss.OrderAcross(world);
+            for (int k = 0; k < unit.Hoods.Count; k++)
+            {
+                var man = unit.Hoods[k];
+                if (man == null || man.Dead) continue;
+                Reseat(man);
+                // spread behind him, so three men arrive as a crew and not as a column
+                man.OrderAcross(world + rot * FormationOffset(k), HoodBeat());
+            }
             return true;
         }
 
@@ -1580,6 +1722,27 @@ namespace RoadDemo
         /// <summary>One shot, wherever it left from: a man's gun on the pavement, or a
         /// car window on a pass. <paramref name="from"/> is where the shooter stands
         /// for the range - the man, or the car he is in.</summary>
+        /// <summary>One shot, from a shooter the arena is not itself driving: the same
+        /// roll, the same wound, the same flash, the same report on the street. What it
+        /// is for is the pillion of a motorcycle (CrewBike) - a drive-by whose muzzle is
+        /// nowhere near a car window, and which would otherwise have had to grow a
+        /// second copy of the ballistics to fire a round.</summary>
+        public void FireFrom(CrewWalker shooter, CrewWalker mark, Transform follow = null)
+        {
+            if (shooter == null || shooter.Dead || shooter.Tf == null) return;
+            Resolve(shooter, mark, shooter.MuzzlePosition, shooter.Tf.position,
+                follow != null ? follow : (CrewArms.MuzzleOf(shooter.Weapon) ?? shooter.Tf));
+        }
+
+        /// <summary>The nearest man of this crew still on his feet - who a drive-by
+        /// shoots at as it comes past.</summary>
+        public static CrewWalker NearestOf(Unit unit, Vector3 from) =>
+            unit == null ? null : NearestStanding(unit, from);
+
+        /// <summary>Nothing left of this crew worth shooting: wiped, or every man of it
+        /// down or running. The drive-by is over.</summary>
+        public static bool Finished(Unit unit) => unit == null || unit.Wiped || Beaten(unit);
+
         void Resolve(CrewWalker shooter, CrewWalker target, Vector3 muzzle, Vector3 from, Transform follow)
         {
             // the flash points where the shot goes - at the man, whatever the last

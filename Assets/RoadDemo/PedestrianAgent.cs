@@ -142,6 +142,12 @@ namespace RoadDemo
 
         // Down with the head in - the crowd's cower under fire. Optional.
         public AnimationClip Crouch;
+
+        // Sat astride something with his hands out in front of him - the library's
+        // Driving_Loop. What a man on a motorcycle plays under BikePose, which writes
+        // his arms and legs over the top of it; without it he rides a bench sit, which
+        // is nearly as good because so little of the clip survives the pose.
+        public AnimationClip Ride;
     }
 
     public class PedestrianAgent
@@ -153,8 +159,8 @@ namespace RoadDemo
         public const int PoseWalk = 0, PoseIdle = 1, PoseSitDown = 2, PoseSit = 3,
             PoseStandUp = 4, PoseTalk = 5, PoseShout = 6,
             PosePistolIdle = 7, PoseAim = 8, PoseShoot = 9, PoseHit = 10, PoseDeath = 11,
-            PoseJog = 12, PoseCrouch = 13;
-        const int PoseCount = 14;
+            PoseJog = 12, PoseCrouch = 13, PoseRide = 14;
+        const int PoseCount = 15;
 
         // Clips cut straight out of an FBX (the pistol set) carry no loop flag, so
         // a loop pose is wrapped by hand in TickBlend; the .anim files loop themselves.
@@ -173,6 +179,7 @@ namespace RoadDemo
             table[PoseAim] = true;
             table[PoseJog] = true;
             table[PoseCrouch] = true;
+            table[PoseRide] = true;
             return table;
         }
 
@@ -286,6 +293,7 @@ namespace RoadDemo
                 Wire(PoseDeath, clips.Death);
                 Wire(PoseJog, clips.Jog);
                 Wire(PoseCrouch, clips.Crouch);
+                Wire(PoseRide, clips.Ride);
 
                 // every loop starts somewhere along itself, not at frame one - a line of
                 // men breathing, walking or jogging in lockstep reads as a machine

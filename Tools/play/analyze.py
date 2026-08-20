@@ -206,7 +206,12 @@ def verdict(dirpath):
     other mobs out, is never stuck with somewhere to be, and parks at the end."""
     import os
 
-    rows = load(os.path.join(dirpath, "trace.jsonl"))
+    trace = os.path.join(dirpath, "trace.jsonl")
+    if not os.path.exists(trace):
+        print(f"== {dirpath}")
+        print("   NO TRACE - the run never got as far as playing")
+        return 3
+    rows = load(trace)
     if not rows:
         print("no trace")
         return 2

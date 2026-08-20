@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.Personnel;
 using UnityEngine;
 
@@ -147,9 +147,82 @@ namespace RoadDemo
             EndChat();
             _hold = delay;
             point.y = Tf.position.y;
+            _legs.Clear();
             _legTo = point;
             BeginLeg();
             State = Mode.Striding;
+        }
+
+        // the corners of a way across the city, and which one he is walking at
+        readonly List<Vector3> _legs = new List<Vector3>();
+        int _legAt, _replans;
+        Vector3 _legEnd;
+
+        /// <summary>Be there, and never mind the pavements.
+        ///
+        /// The crowd keeps to the sidewalk graph and waits at its lights because that
+        /// is what a city looks like. The outfit does not: told to be somewhere, a man
+        /// cuts over the lot, across the road against the light, down the gap between
+        /// two buildings. The one thing he cannot do is walk through a wall, so the way
+        /// is drawn round the walls first (WalkRoute) and he walks its corners; the
+        /// cars and the crowd he steers past as he goes, like any other stride.
+        ///
+        /// No way at all - walled in, or a mark stood inside something - and he simply
+        /// walks at it and gets as near as the ground lets him.</summary>
+        public void OrderAcross(Vector3 point, float delay = 0f)
+        {
+            if (Dead) return;
+            Target = null;
+            _coverSpot = null;
+            InCover = false;
+            EndChat();
+            _hold = delay;
+            point.y = Tf.position.y;
+            _legEnd = point;
+            _replans = 0;
+            if (!WalkRoute.Plan(Tf.position, point, _legs)) _legs.Clear();
+            _legAt = 0;
+            _legTo = _legs.Count > 0 ? _legs[0] : point;
+            var far = point - Tf.position;
+            far.y = 0f;
+            _acrossBest = far.magnitude;
+            _acrossFor = 0f;
+            if (DriveTrace.On)
+                DriveTrace.Event("walk", DisplayName, _legs.Count > 0
+                    ? $"a way across: {_legs.Count} corners, {_acrossBest:F0} m"
+                    : $"NO WAY across the {_acrossBest:F0} m - walking straight at it");
+            BeginLeg();
+            State = Mode.Striding;
+        }
+
+        // How near the far end he has ever been on this order, and how long since he
+        // was nearer. A leg of its own can be walked perfectly while the WALK gets
+        // nowhere - a man who reaches a corner, is turned back by something the map
+        // does not know about, reaches it again, and paces that metre until the scene
+        // closes. Getting there is measured against the far end, not the next corner.
+        float _acrossBest, _acrossFor;
+
+        /// <summary>The next corner, when there is one. Reached one, he goes on to the
+        /// next; STOPPED SHORT of one, the way is drawn again from where he stands -
+        /// it was drawn before he set off and the street has moved since. A few of
+        /// those in a row and he is genuinely walled in, and he stands.</summary>
+        bool NextLeg(bool arrived)
+        {
+            if (arrived)
+            {
+                _replans = 0;
+                if (++_legAt < _legs.Count) { _legTo = _legs[_legAt]; BeginLeg(); return true; }
+                _legs.Clear();
+                return false;
+            }
+            if (_legs.Count == 0 || _replans >= 3) { _legs.Clear(); return false; }
+            _replans++;
+            if (!WalkRoute.Plan(Tf.position, _legEnd, _legs) || _legs.Count == 0)
+            { _legs.Clear(); return false; }
+            _legAt = 0;
+            _legTo = _legs[0];
+            BeginLeg();
+            return true;
         }
 
         /// <summary>Close on this man and shoot him. Nothing happens unarmed.</summary>
@@ -300,9 +373,50 @@ namespace RoadDemo
                     float left = gap.magnitude;
                     // there, or as near as the street lets him: a spot another man is
                     // stood on, or a car is parked on, is not reached, it is stopped
-                    // short of - no marching in place
-                    if (left <= 0.15f || LegStalled(left, dt))
-                        State = Mode.Standing;
+                    // short of - no marching in place. A corner on the way somewhere
+                    // else is not a spot to stand on either: near enough IS round it.
+                    bool last = _legAt >= _legs.Count - 1;
+                    // A CORNER IS ROUNDED CLOSELY. Counting it reached from a stride and a
+                    // half away starts the next line up to that much off the corner, and
+                    // the line to the corner after it was drawn from the corner itself -
+                    // so it can clip the very wall the corner was there to get round.
+                    bool there = left <= (last ? 0.15f : 0.5f);
+
+                    // pacing a metre back and forth is not walking anywhere
+                    if (!there && _legs.Count > 0)
+                    {
+                        var toEnd = _legEnd - Tf.position;
+                        toEnd.y = 0f;
+                        float end = toEnd.magnitude;
+                        if (end < _acrossBest - 1f) { _acrossBest = end; _acrossFor = 0f; }
+                        else if ((_acrossFor += dt) > 5f)
+                        {
+                            _acrossFor = 0f;
+                            if (DriveTrace.On)
+                            {
+                                var want = _legTo - Tf.position;
+                                want.y = 0f;
+                                float ahead = WalkObstacles.Clear(Tf.position, want, WalkObstacles.Radius, 6f);
+                                var sb = DriveTrace.Take();
+                                DriveTrace.Str(sb, "who", DisplayName);
+                                DriveTrace.Str(sb, "what", $"no nearer than {end:F0} m for five seconds");
+                                DriveTrace.Vec(sb, "p", Tf.position);
+                                DriveTrace.Vec(sb, "leg", _legTo);
+                                DriveTrace.Int(sb, "corner", _legAt);
+                                DriveTrace.Int(sb, "corners", _legs.Count);
+                                DriveTrace.Num(sb, "clear", ahead);
+                                DriveTrace.Bool(sb, "inside", WalkObstacles.Standing(Tf.position, WalkObstacles.Radius));
+                                DriveTrace.Row("walk", sb.ToString());
+                            }
+                            if (NextLeg(false)) return;
+                            State = Mode.Standing;
+                            return;
+                        }
+                    }
+
+                    if (!there && !LegStalled(left, dt)) return;
+                    if (NextLeg(there)) return;
+                    State = Mode.Standing;
                     return;
                 }
 
@@ -312,8 +426,17 @@ namespace RoadDemo
 
                 case Mode.Riding:
                     // seated in the car (the arena carries him); gun out of the window
-                    // when there is someone to shoot at, else just sitting
-                    SetPose(RidingAim && HasPose(PoseAim) ? PoseAim : HasPose(PoseSit) ? PoseSit : PoseIdle);
+                    // when there is someone to shoot at, else just sitting.
+                    //
+                    // On a bike none of that applies: BikePose writes his arms, his legs
+                    // and his spine every frame over whatever plays here, so what plays
+                    // here only has to sit his pelvis down and keep him breathing - and
+                    // it must never be the aim clip, which would fight the pose for the
+                    // gun arm and lose in a different place every frame.
+                    if (Astride)
+                        SetPose(HasPose(PoseRide) ? PoseRide : HasPose(PoseSit) ? PoseSit : PoseIdle);
+                    else
+                        SetPose(RidingAim && HasPose(PoseAim) ? PoseAim : HasPose(PoseSit) ? PoseSit : PoseIdle);
                     TickBlend(dt);
                     return;
 
@@ -511,11 +634,21 @@ namespace RoadDemo
         /// call while he rides; the seat, not the man, decides what he can see.</summary>
         public void AimAt(CrewWalker mark) => Target = mark != null && !mark.Dead ? mark : null;
 
+        /// <summary>Astride something rather than sat in it - a motorcycle. His legs
+        /// stay where everyone can see them and BikePose puts them on the pegs.</summary>
+        public bool Astride { get; private set; }
+
         /// <summary>Put in a seat, or set down beside the car again.</summary>
-        public void SetRiding(bool on)
+        public void SetRiding(bool on) => SetRiding(on, astride: false);
+
+        /// <summary>The same, saying which kind of seat it is. A car's seat folds his
+        /// legs away under the sill; a saddle cannot - on a bike his legs ARE the pose,
+        /// and folding them would leave a man riding side-saddle on his own stumps.</summary>
+        public void SetRiding(bool on, bool astride)
         {
+            Astride = on && astride;
             // the legs go with the seat either way - a dead man is lifted out whole
-            HideLegs(on);
+            HideLegs(on && !astride);
             if (Dead) return;
             if (on)
             {

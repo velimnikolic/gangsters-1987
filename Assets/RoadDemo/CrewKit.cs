@@ -38,6 +38,7 @@ namespace RoadDemo
                 Death = PeopleClip("Death") ?? UalClip("Death01"),
                 Jog = UalClip("Jog_Fwd_Loop"),
                 Crouch = UalClip("Crouch_Idle_Loop"),
+                Ride = Ride,
             };
             if (clips.PistolIdle == null || clips.Aim == null || clips.Shoot == null)
                 Debug.LogWarning("[RoadDemo] Pistol clips missing from " + UalPath +
@@ -57,6 +58,7 @@ namespace RoadDemo
             crowd.Death = arms.Death;
             crowd.Jog = arms.Jog;
             crowd.Crouch = arms.Crouch;
+            if (crowd.Ride == null) crowd.Ride = arms.Ride;
             if (crowd.Talk == null) crowd.Talk = arms.Talk;
             if (crowd.SitLoop == null) crowd.SitLoop = arms.SitLoop;
             if (crowd.Shout == null) crowd.Shout = arms.Shout;
@@ -83,6 +85,15 @@ namespace RoadDemo
         /// <summary>The crowd's cower - down behind whatever is nearest, head in.</summary>
         public static AnimationClip Crouch => crouch ??= UalClip("Crouch_Idle_Loop");
         static AnimationClip crouch;
+
+        /// <summary>Astride, hands out in front of him: the library's Driving_Loop, which
+        /// was made for a steering wheel and does for a handlebar because BikePose writes
+        /// the arms and the legs over it anyway. What is wanted from the clip is the one
+        /// thing the pose does not touch - a pelvis that is sitting down, and a man who
+        /// goes on breathing while he sits. The bench sit is the stand-in.</summary>
+        public static AnimationClip Ride => ride != null ? ride
+            : ride = UalClip("Driving_Loop") ?? PeopleClip("Sitting_Bench_Idle");
+        static AnimationClip ride;
 
         /// <summary>The civilian wardrobe: the crowd's own clips plus a run, a flinch,
         /// a fall and the cower - so a bystander can bolt, be hit, and go down.</summary>

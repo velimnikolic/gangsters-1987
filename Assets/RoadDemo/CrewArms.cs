@@ -154,9 +154,12 @@ namespace RoadDemo
 
         /// <summary>World rotation of this bone in the avatar's T-pose - the rig's own
         /// definition of "arms out, palms down", read off the HumanDescription that
-        /// built the avatar. Falls back to the bone's rest rotation when the avatar
+        /// built the avatar. Public because the same derivation seats a rider on a
+        /// motorcycle (BikePose): a fist on a handlebar and a boot on a peg are the
+        /// same problem as a gun in a hand - a part of the body turned to a thing in
+        /// the world, in a pose nobody authored. Falls back to the bone's rest rotation when the avatar
         /// keeps no skeleton (a hand-made avatar), which is the honest best guess.</summary>
-        static Quaternion TPoseRotation(Animator animator, Transform bone)
+        public static Quaternion TPoseRotation(Animator animator, Transform bone)
         {
             var avatar = animator.avatar;
             var byName = new Dictionary<string, Quaternion>();

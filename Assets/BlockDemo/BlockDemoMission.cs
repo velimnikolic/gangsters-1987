@@ -22,7 +22,7 @@ namespace BlockDemo
     /// </summary>
     public class BlockDemoMission : MonoBehaviour
     {
-        public enum Phase { Waiting, Boarding, Hunting, Storming, Reboarding, Parking, Done, Failed }
+        public enum Phase { Waiting, Boarding, Marching, Hunting, Storming, Reboarding, Parking, Done, Failed }
 
         [Tooltip("Sim seconds after the quarter is up before the crew is sent for its car.")]
         public float startAfter = 10f;
@@ -38,6 +38,15 @@ namespace BlockDemo
         public float passesBefore = 45f;
         [Tooltip("Seconds the car may stand still with somewhere to be before it counts as stuck.")]
         public float stuckAfter = 8f;
+
+        [Tooltip("The whole run on foot: no car at all. The crew is sent at the mob " +
+                 "FARTHEST from it - the length of the quarter on foot, over the lots " +
+                 "and across the roads - and has it out with them when it gets there.")]
+        public bool onFoot;
+        [Tooltip("On foot: metres off the mob at which the crew stops marching and opens up.")]
+        public float engageWithin = 30f;
+        [Tooltip("On foot: seconds the crew may fail to move at all before the march is a failure.")]
+        public float marchPatience = 45f;
 
         public Phase State { get; private set; } = Phase.Waiting;
 
@@ -73,6 +82,7 @@ namespace BlockDemo
             {
                 case Phase.Waiting: TickWaiting(); break;
                 case Phase.Boarding: TickBoarding(); break;
+                case Phase.Marching: TickMarching(); break;
                 case Phase.Hunting: TickHunting(); break;
                 case Phase.Storming: TickStorming(); break;
                 case Phase.Reboarding: TickReboarding(); break;
@@ -93,6 +103,18 @@ namespace BlockDemo
             foreach (var unit in _crews.Units)
                 if (unit.Faction == 0 && !unit.Wiped) { _ours = unit; break; }
             if (_ours == null) { Give("there is no crew of the outfit in the quarter"); return; }
+
+            // ON FOOT: no car is stood, none is looked for. The mob at the far end of
+            // the quarter is the mark, and the crew walks to it.
+            if (onFoot)
+            {
+                _quarry = Farthest();
+                if (_quarry == null) { Give("there is no rival crew in the quarter"); return; }
+                _marchMark = _ours.Position;
+                _marchStall = 0f;
+                March(true);
+                return;
+            }
 
             _car = _crews.CarOf(_ours);
             if (_car == null)
@@ -163,6 +185,86 @@ namespace BlockDemo
             if (InPhase > boardingPatience * 1.5f) Give($"only {aboard} of {standing} got in within {boardingPatience * 1.5f:F0}s");
         }
 
+        // ------------------------------------------------------------------ on foot
+
+        Vector3 _marchMark;
+        float _marchStall;
+
+        /// <summary>The mob FURTHEST from us - the far end of the map, which is the
+        /// point of a walk.</summary>
+        DemoCrews.Unit Farthest()
+        {
+            DemoCrews.Unit far = null;
+            float best = -1f;
+            foreach (var unit in _crews.Units)
+            {
+                if (unit.Faction == 0 || unit.IsPolice || unit.Wiped) continue;
+                float d = Vector3.SqrMagnitude(unit.Position - _ours.Position);
+                if (d > best) { best = d; far = unit; }
+            }
+            return far;
+        }
+
+        /// <summary>The man of ours nearest the mark - the crew's own front.</summary>
+        Vector3 FurthestOn()
+        {
+            var best = _ours.Position;
+            float near = float.MaxValue;
+            foreach (var man in _ours.All())
+            {
+                if (man.Dead || man.Tf == null) continue;
+                float d = Vector3.SqrMagnitude(man.Tf.position - _quarry.Position);
+                if (d < near) { near = d; best = man.Tf.position; }
+            }
+            return best;
+        }
+
+        void March(bool first)
+        {
+            if (_quarry == null) return;
+            float gap = Vector3.Distance(_ours.Position, _quarry.Position);
+            _crews.Select(_ours);
+            if (!_crews.MarchTo(_ours, _quarry.Position)) { Give("the crew could not be sent on foot"); return; }
+            _lastOrder = Now;
+            if (first) Go(Phase.Marching, $"on foot at {_quarry.GangName}, {gap:F0} m off");
+            else if (State != Phase.Marching) Go(Phase.Marching, $"on foot at {_quarry.GangName}, {gap:F0} m off");
+            else Note($"still walking at {_quarry.GangName} ({gap:F0} m)");
+        }
+
+        void TickMarching()
+        {
+            if (_quarry == null || _quarry.Wiped) { _quarry = null; Hunt("they went down before we got there"); return; }
+
+            float gap = Vector3.Distance(_ours.Position, _quarry.Position);
+            if (gap <= engageWithin)
+            {
+                _crews.Select(_ours);
+                if (!_crews.OrderAttack(_quarry)) { Give("the attack order was refused"); return; }
+                _lastOrder = Now;
+                Go(Phase.Hunting, $"at {_quarry.GangName}, {gap:F0} m off - on foot");
+                return;
+            }
+
+            // STILL WALKING is the test. How long a walk takes is the city's business -
+            // the way round a block, a lot that turns out to be walled - but a crew that
+            // has not moved at all has stopped, and that is a fault.
+            // ANY of them walking is the crew walking. Judging it by the lieutenant alone
+            // failed a crew whose other two were half way across the quarter and closing:
+            // one man in an awkward corner is a man to wait for, not a stopped crew.
+            var here = FurthestOn();
+            if (Vector3.Distance(here, _marchMark) > 2f) { _marchMark = here; _marchStall = 0f; }
+            else _marchStall += Time.deltaTime;
+            if (_marchStall > marchPatience)
+            {
+                Give($"the crew stopped walking {gap:F0} m short of {_quarry.GangName} " +
+                     $"({_marchStall:F0}s without moving)");
+                return;
+            }
+
+            // the way is drawn again now and then: the mob shifts, and so does the street
+            if (Now - _lastOrder > reorderEvery) March(false);
+        }
+
         void TickHunting()
         {
             if (_quarry != null && !_quarry.Wiped)
@@ -217,6 +319,28 @@ namespace BlockDemo
                 if (unit.Faction == 0 || unit.IsPolice || unit.Wiped) continue;
                 float d = Vector3.SqrMagnitude(unit.Position - Car());
                 if (d < best) { best = d; next = unit; }
+            }
+
+            if (next == null && _car == null)
+            {
+                Go(Phase.Done, $"done on foot after {Now:F0}s, {_killed} crews down");
+                return;
+            }
+
+            // on foot, and the next mob is across the quarter: walk there first. A crew
+            // told to attack something four streets away closes on it a stride at a time
+            // with nothing drawn round the buildings in between.
+            if (next != null && _car == null)
+            {
+                _quarry = next;
+                float far = Vector3.Distance(_ours.Position, next.Position);
+                if (far > engageWithin)
+                {
+                    _marchMark = _ours.Position;
+                    _marchStall = 0f;
+                    March(true);
+                    return;
+                }
             }
 
             if (next == null)

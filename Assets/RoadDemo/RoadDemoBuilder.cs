@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
 
@@ -123,6 +123,12 @@ namespace RoadDemo
 
         [Header("Traffic")]
         public int carCount = 70;
+        [Tooltip("Two-wheelers in the traffic, each with a rider and now and then a " +
+                 "mate behind him, plus about half as many again stood on their stands " +
+                 "at the kerbs. A handful is the point: a bike is a rider nobody can " +
+                 "hide behind glass, and a street reads as having motorcycles on it at " +
+                 "four of them, not forty.")]
+        [Min(0)] public int bikeCount = 8;
         public float streetSpeed = 9f;
         public float boulevardSpeed = 13f;
         public int pedestrianCount = 170;
@@ -392,6 +398,7 @@ namespace RoadDemo
             BuildHighwayLinks();
             BuildCityLife();
             SpawnCars();
+            SpawnBikes();
             SpawnPolice();
             SpawnPedestrians();
             SpawnCrews();
@@ -1906,10 +1913,12 @@ namespace RoadDemo
                 int i = lot.i, j = lot.j;
                 var centre = new Vector3((xMin + xMax) * 0.5f, FloorLevel() + 0.02f, (zMin + zMax) * 0.5f);
 
-                // whatever goes in, the interior is not walked through: a man off the
-                // sidewalk graph (a crew crossing to a fight, a man running from one)
-                // stops at the building line and goes round the block, not into it
-                WalkObstacles.Block(xMin, xMax, zMin, zMax);
+                // What is blocked off inside a block is the BUILDINGS, and it is done
+                // once the interior stands (BlockLotSolids, at the end of this). The
+                // whole lot used to go down as one rectangle, kerb to kerb, so a man
+                // off the pavement went round the block rather than into it - which is
+                // not how a crew crosses a quarter. It cuts through the yard, down the
+                // gap between two buildings, over the forecourt.
 
                 string contents;
 
@@ -2004,6 +2013,52 @@ namespace RoadDemo
                     Rect.MinMaxRect(xMin, zMin, xMax, zMax), lot.slab,
                     LotCode(width, depth), contents));
             }
+
+            BlockLotSolids();
+        }
+
+        /// <summary>What a man on foot cannot walk through, inside the blocks: every
+        /// thing in an interior that STANDS UP, one footprint each.
+        ///
+        /// Only what stands up. An interior's floor, its plates, its painted lines and
+        /// its flat dressing all have bounds too, and blocking those would wall off the
+        /// very ground this is opening up - so anything under a man's knee is ground.
+        ///
+        /// And each footprint is clipped to its own lot. A building's box is its widest
+        /// point at any height: eaves, balconies and signs hang out over the pavement,
+        /// and a wall drawn round those would put the sidewalk itself out of bounds and
+        /// stop the crowd dead along every frontage in the city.</summary>
+        void BlockLotSolids()
+        {
+            if (_blocks == null) return;
+            var solids = _blocks.GetComponentsInChildren<Renderer>(false);
+            foreach (var r in solids)
+            {
+                if (r == null) continue;
+                var b = r.bounds;
+                if (b.size.y < 0.8f) continue;                       // flat: ground, not a wall
+                if (b.size.x < 0.05f || b.size.z < 0.05f) continue;  // a plane on edge
+                float x0 = b.min.x, x1 = b.max.x, z0 = b.min.z, z1 = b.max.z;
+                if (!ClipToLot(ref x0, ref x1, ref z0, ref z1)) continue;
+                WalkObstacles.Block(x0, x1, z0, z1);
+            }
+        }
+
+        /// <summary>Cuts a footprint down to the lot its middle stands in. False when it
+        /// stands in no lot at all (a seam piece, a wayside prop) - those are the street's
+        /// own furniture and the pavement plans already speak for them.</summary>
+        bool ClipToLot(ref float x0, ref float x1, ref float z0, ref float z1)
+        {
+            float cx = (x0 + x1) * 0.5f, cz = (z0 + z1) * 0.5f;
+            for (int i = 0; i < _lotPlans.Count; i++)
+            {
+                var lot = _lotPlans[i].Interior;
+                if (cx < lot.xMin || cx > lot.xMax || cz < lot.yMin || cz > lot.yMax) continue;
+                x0 = Mathf.Max(x0, lot.xMin); x1 = Mathf.Min(x1, lot.xMax);
+                z0 = Mathf.Max(z0, lot.yMin); z1 = Mathf.Min(z1, lot.yMax);
+                return x1 > x0 && z1 > z0;
+            }
+            return false;
         }
 
         // What an interior ended up carrying, worded for the O overlay: the bakes the
@@ -3076,6 +3131,49 @@ namespace RoadDemo
                 }
                 if (!any) break;
             }
+        }
+
+        // ----------------------------------------------------------------- bikes
+
+        StreetBikes _bikes;
+
+        // The city's two-wheelers. They are not in the car scan and must not be: every
+        // folder scan here denies "bike", "moped" and "scooter" by name, and did so for
+        // a good reason - a two-wheeler dropped into the traffic was a thing that slid
+        // along the road with nobody on it and no way to sit anybody on it. What has
+        // changed is that there is now somewhere to put the man (BikePose), so they are
+        // asked for by name out of the catalogue instead, exactly as a marked cruiser is.
+        //
+        // Two kinds go down: the ones riding, which StreetBikes owns and ticks, and the
+        // ones left on their stands along a kerb, which are furniture with a body - the
+        // traffic plans round them like any parked car.
+        void SpawnBikes()
+        {
+            if (bikeCount <= 0 || Net == null) return;
+            var bodies = StreetBikes.Bodies();
+            if (bodies.Count == 0)
+            {
+                Debug.LogWarning("[RoadDemo] No two-wheeler out of VehicleCatalog.Motorcycles; no bikes on the street");
+                return;
+            }
+
+            _bikes = gameObject.AddComponent<StreetBikes>();
+            // the city's asphalt is the origin's own level - the cars here leave
+            // RoadCar.RoadY at nought and sit on it
+            const float roadY = 0f;
+            _bikes.Init(Net, bikeCount, roadY, _pedPrefabs, CrewKit.Ride,
+                pillionChance: 0.3f, layer: CrowdLayer, roads: null, bodies: bodies);
+
+            // and a few stood at kerbs, off the roads the cars were laid along
+            int stood = Mathf.Max(1, bikeCount / 2);
+            var spots = new List<Vector3>(stood);
+            for (int i = 0; i < stood && _edges.Count > 0; i++)
+            {
+                var e = _edges[Random.Range(0, _edges.Count)];
+                if (e.Length < 30f) continue;
+                spots.Add(e.Start + e.Dir * Random.Range(12f, e.Length - 12f));
+            }
+            StreetBikes.ParkSeveral(Net, _cars, spots, roadY, bodies);
         }
 
         // ---------------------------------------------------------------- police
