@@ -26,6 +26,16 @@ if ([string]::IsNullOrEmpty($Out)) {
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $ledger = Join-Path $Out "soak.txt"
 
+# The ledger is appended between runs; anything else holding the file open for that
+# instant used to end the soak. Waited for, not died on.
+function Append-Ledger([string] $path, [string] $text) {
+    for ($try = 0; $try -lt 40; $try++) {
+        try { Add-Content -Path $path -Value $text -Encoding utf8 -ErrorAction Stop; return }
+        catch { Start-Sleep -Milliseconds 250 }
+    }
+    Write-Host "[soak] could not write the ledger; the run's own verdict.txt still has it"
+}
+
 $passed = 0
 $failed = @()
 for ($i = 1; $i -le $Runs; $i++) {
@@ -44,14 +54,16 @@ for ($i = 1; $i -le $Runs; $i++) {
     $head = ($verdict | Select-Object -First 6) -join "`n"
     Write-Host $line
     Write-Host $head
-    Add-Content -Path $ledger -Value $line -Encoding utf8
-    Add-Content -Path $ledger -Value $head -Encoding utf8
-    Add-Content -Path $ledger -Value "" -Encoding utf8
+    # the run's own verdict, beside its trace: read THIS while the soak is going, never
+    # the ledger - a reader holding the ledger open for a moment is enough to make the
+    # append below throw, and with it the whole soak (three runs in, the once it happened)
+    Set-Content -Path (Join-Path $dir "verdict.txt") -Value ($line + "`n" + $head) -Encoding utf8
+    Append-Ledger $ledger ($line + "`n" + $head + "`n")
 }
 
 $tally = "== $passed of $Runs passed"
 if ($failed.Count -gt 0) { $tally += "; the ones that did not: " + ($failed -join ", ") }
 Write-Host $tally
-Add-Content -Path $ledger -Value $tally -Encoding utf8
+Append-Ledger $ledger $tally
 Write-Host "[soak] $ledger"
 if ($failed.Count -gt 0) { exit 1 } else { exit 0 }

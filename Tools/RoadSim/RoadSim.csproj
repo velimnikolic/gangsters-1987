@@ -19,5 +19,6 @@
     <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\DriverNerve.cs" />
     <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\RoadSpace.cs" />
     <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\DemoVehicle.cs" />
+    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\DriveTrace.cs" />
   </ItemGroup>
 </Project>

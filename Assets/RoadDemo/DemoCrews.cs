@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.Gameplay;
 using LivingCity.Personnel;
 using UnityEngine;
@@ -785,6 +785,39 @@ namespace RoadDemo
             unit.Boarding = null;
         }
 
+        /// <summary>Send a man to the door of his seat.
+        ///
+        /// Which order that is depends on the ground. On the free floor a straight walk
+        /// is all there is. In a city the sidewalks ARE the way, and a door a hundred
+        /// metres off round two corners is not something a man walks to in a straight
+        /// line: he sets off, the first building stops him dead, the leg gives up after
+        /// eight seconds of getting no nearer, and he stands there for the rest of the
+        /// run while the crew waits for a car nobody ever reaches. (Two of three men,
+        /// stood 115 m from their doors for 148 seconds, in the run that found this.)
+        /// Close in - across the pavement to the handle - the straight leg is right, and
+        /// the graph would only walk him past it.</summary>
+        void SendToDoor(CrewWalker man, Vector3 door, float delay = 0f, bool graph = false)
+        {
+            var gap = door - man.Tf.position;
+            gap.y = 0f;
+            if ((graph || gap.sqrMagnitude > 8f * 8f) && !FreeRoam && man.OnGraph &&
+                gap.sqrMagnitude > 3f * 3f && NearestSidewalk(door, out var link, out float t))
+            {
+                Reseat(man);
+                man.OrderTo(link, t, delay);
+                return;
+            }
+            man.OrderToPoint(door, delay);
+        }
+
+        /// <summary>How many times a man has been sent to his door and not got there.
+        /// Neither kind of order can be the only one tried: a straight leg wedges against
+        /// whatever is between him and the handle (a man stood seven metres from his own
+        /// car for 47 seconds, on the same paving stone, being sent again every second),
+        /// and the graph puts him on the nearest pavement, which need not be the one the
+        /// car is at. So they alternate, and one of the two always gets him there.</summary>
+        readonly Dictionary<CrewWalker, int> _doorTries = new Dictionary<CrewWalker, int>();
+
         void Board(Unit unit, CrewCar car)
         {
             if (DriveTrace.On)
@@ -812,7 +845,8 @@ namespace RoadDemo
                 if (seat < 0) break;
                 car.SeatOf[man] = seat;
                 man.Disengage();
-                man.OrderToPoint(car.DoorPoint(seat));
+                _doorTries.Remove(man);
+                SendToDoor(man, car.DoorPoint(seat));
                 given++;
             }
             if (given == 0 && car.SeatOf.Count == 0) Unboard(unit, "nobody could be given a seat");
@@ -930,14 +964,36 @@ namespace RoadDemo
                         foreach (var man in unit.All())
                         {
                             if (man.Dead || car.Aboard.Contains(man)) continue;
-                            if (!car.SeatOf.TryGetValue(man, out int seat)) continue; // no seat: he stays
+                            if (!car.SeatOf.TryGetValue(man, out int seat))
+                            {
+                                // No seat of his own. He may never have been given one -
+                                // the car was full when the order went out - or he may
+                                // have LOST one: the ledger recasts a man when his rank
+                                // changes (a lieutenant sits for his photograph in a
+                                // suit) and the body is swapped on the spot, so the man
+                                // walking to the door is a stranger to the car when he
+                                // stands up again, with no seat and no order. The last
+                                // man of a crew was promoted on his way back and stood
+                                // on that pavement for the rest of the run while the job
+                                // waited for him. A seat going spare is his.
+                                seat = car.FreeSeat();
+                                if (seat < 0) { anyOut = true; continue; }
+                                car.SeatOf[man] = seat;
+                                _doorTries.Remove(man);
+                                SendToDoor(man, car.DoorPoint(seat));
+                                anyOut = true;
+                                continue;
+                            }
                             var door = car.DoorPoint(seat);
                             var d = man.Tf.position - door;
                             d.y = 0f;
                             float dist = d.magnitude;
-                            if (dist <= 1.8f) car.OpenDoorFor(seat); // hand on the handle, not from across the road
                             // at the door, or stopped short of it by the crowd right beside it
                             bool atDoor = dist <= 1.4f || (!man.HasOrder && dist <= 2.8f);
+                            // hand on the handle, not from across the road - but a door
+                            // that will not open for a man who has ARRIVED leaves him
+                            // stood beside his own car for the rest of the run
+                            if (dist <= 1.8f || atDoor) car.OpenDoorFor(seat);
                             if (DriveTrace.On)
                             {
                                 var sb = DriveTrace.Take();
@@ -955,13 +1011,29 @@ namespace RoadDemo
                             if (atDoor && car.DoorOpenFor(seat))
                             {
                                 car.Aboard.Add(man);
+                                _doorTries.Remove(man);
                                 man.Disengage();
                                 man.SetRiding(true);
                                 car.CloseDoorFor(seat);
                                 car.Occupant = unit;
                                 unit.Car = car;
                             }
-                            else anyOut = true;
+                            else
+                            {
+                                anyOut = true;
+                                // stopped short of it and given no further order - the
+                                // graph walk ended at the kerb, the leg gave up against
+                                // a wall, the car moved off while he walked: he is sent
+                                // again rather than left standing. The order itself is
+                                // what times out (the mission gives up on the crew), not
+                                // a man quietly deciding he has arrived.
+                                if (!man.HasOrder)
+                                {
+                                    _doorTries.TryGetValue(man, out int tries);
+                                    _doorTries[man] = tries + 1;
+                                    SendToDoor(man, door, Random.Range(0.2f, 0.6f), graph: (tries & 1) == 1);
+                                }
+                            }
                         }
                         if (!anyOut)
                         {

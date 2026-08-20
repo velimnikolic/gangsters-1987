@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 namespace RoadDemo
@@ -266,6 +266,25 @@ namespace RoadDemo
             _boxLeft = false;
         }
 
+        /// <summary>The hold on the lane BEYOND a junction, given up.
+        ///
+        /// It is taken when the car commits to a crossing, so that the traffic on the
+        /// far side keeps off the mouth we are coming out of, and it was only ever let
+        /// go coming out the far side. Every other way of dropping the crossing - the
+        /// car parks instead, the route is thought again, it turns round, it picks a
+        /// different exit - left a car-shaped hole standing in that lane for the rest
+        /// of the run: it belongs to a car that is no longer coming, so it never moves,
+        /// and being nobody's parked car it does not read as one either, so a car in
+        /// the junction waits behind it for ever and the whole quarter queues behind
+        /// HIM. (168 seconds of that, in the run that found it: the crew parked its car
+        /// at a kerb and left its hold on a lane two streets away.)</summary>
+        void DropNext()
+        {
+            if (_occNext == null) return;
+            _occNext.Road.Occupants.Remove(_occNext);
+            _occNext = null;
+        }
+
         float Cruise() => Profile.ObeysLimit && Road != null ? Mathf.Min(Profile.Cruise, Road.SpeedLimit) : Profile.Cruise;
 
         protected static float Allowed(float endSpeed, float dist, float brake)
@@ -496,6 +515,7 @@ namespace RoadDemo
             if (Derelict) return;
             Derelict = true;
             LeaveBox();
+            DropNext();
             if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "gave up the box it had stopped in", ManFields());
         }
 
@@ -504,6 +524,17 @@ namespace RoadDemo
             var road = Road;
             UpdateOccupant();
             TickBoxExit();
+            // and the same rule wherever else a car ends up off its line: doing nothing
+            // in particular, it belongs on its lane, and it steers back onto it. A car
+            // out in the middle of the street is invisible to the lane the traffic reads
+            // and to the lines the junction is planned by.
+            if (_man == Manoeuvre.None && !Sliding && !Parked && !_halted && Lane != null &&
+                Mathf.Abs(D - _laneD) > 0.5f)
+                Slide(_laneD, SlideLength(Mathf.Abs(D - _laneD), Mathf.Abs(Speed)));
+            // Not crossing anything (the plan dropped, or stood at a kerb): whatever was
+            // held on the far side of a junction goes back. Here, where every way of
+            // giving up a crossing ends, rather than at each of them.
+            if (!_committed || Parked) DropNext();
             if (Parked)
             {
                 Speed = 0f;
@@ -524,10 +555,6 @@ namespace RoadDemo
                 _parkTrying += dt;
                 if (_parkTrying > 25f)
                 {
-                    _parkTrying = 0f;   // and if this kerb cannot be had either, try again
-                    _goalRoad = road;
-                    _goalHeading = Heading;
-                    _goalLane = Lane;
                     // far enough on to actually PULL IN: a spot three metres ahead
                     // leaves no room to come off the lane, so the car stops where it
                     // stands - in the running lane - and everything behind it queues
@@ -539,18 +566,57 @@ namespace RoadDemo
                     const float offJunction = 22f;
                     float lo = Mathf.Min(offJunction, road.Length * 0.4f);
                     float hi = Mathf.Max(road.Length - offJunction, road.Length * 0.6f);
-                    _goalS = Mathf.Clamp(S + Heading * room, lo, hi);
-                    _goalD = road.KerbDOnSide(D, HalfWide);
-                    _goalStop = true;
-                    Route = null;
-                    _next = null;
-                    _committed = false;
+                    float want = S + Heading * room;
+                    // AHEAD, or not at all. Clamping the spot into this street's usable
+                    // stretch can put it BEHIND a car that is already near the end of the
+                    // street - and a spot behind is a lap of the block to reach, at which
+                    // point the driver gives up again, picks another spot behind him, and
+                    // drives the quarter with his crew sat in the back for the rest of the
+                    // run (a crew ordered out on to the pavement rode round for a minute
+                    // and the job timed out with them still in their seats). No room on
+                    // this street: keep going and take the next one, a few seconds on.
+                    if (Heading > 0 ? want > hi : want < lo)
+                    {
+                        _parkTrying = 20f;
+                        if (DriveTrace.On)
+                            DriveTrace.Event("man", "car " + Id, "no kerb ahead on this street - trying the next", ManFields());
+                    }
+                    else
+                    {
+                        if (DriveTrace.On)
+                            DriveTrace.Event("man", "car " + Id, $"gave up looking - taking the kerb at s={Mathf.Clamp(want, lo, hi):F0}", ManFields());
+                        _parkTrying = 0f;   // and if this kerb cannot be had either, try again
+                        _goalRoad = road;
+                        _goalHeading = Heading;
+                        _goalLane = Lane;
+                        _goalS = Mathf.Clamp(want, lo, hi);
+                        _goalD = road.KerbDOnSide(D, HalfWide);
+                        _goalStop = true;
+                        Route = null;
+                        _next = null;
+                        _committed = false;
+                    }
                 }
             }
 
             // out of the lane ahead - the junction (or the end of the road)
             var node = road.NodeAhead(Heading);
             if (_next == null && node != null && _man != Manoeuvre.UTurn) PlanNext(node);
+
+            // THE CLAIM MUST SAY WHERE WE ARE ACTUALLY GOING. It names the way through
+            // the box, and every other driver plans against that name: a car whose line
+            // crosses ours waits, one whose line does not comes on. Think the turn again
+            // after taking the claim - the route redrawn, an exit that would not clear,
+            // the kerb given up on - and the claim still names the OLD way through, so
+            // the cars whose path crosses the NEW one are told there is nothing in their
+            // way. Two left turns were let into the same boulevard box that way, sharing
+            // nine metres of the same line, and the belt was the only thing between them.
+            // And a claim on a box we are no longer going through is nobody's to hold.
+            if (_inNode != null && Via == null && !_boxLeft)
+            {
+                if (Parked || _man == Manoeuvre.UTurn || _nodeOf != node) LeaveBox();
+                else if (_via != null) _inNode.Via = _via;
+            }
 
             float noseS = S + Heading * HalfLen;
             float tailS = S - Heading * HalfLen;
@@ -622,7 +688,7 @@ namespace RoadDemo
                         Speed = 0f;
                         _hasGoal = false;
                         Route = null;
-                        if (_goalPark) { Parked = true; _man = Manoeuvre.None; _sLen = 0f; D = _goalD; ClearClaim(); LeaveBox(); }
+                        if (_goalPark) { Parked = true; _man = Manoeuvre.None; _sLen = 0f; D = _goalD; ClearClaim(); LeaveBox(); DropNext(); }
                         OnArrived();
                         UpdateOccupant();
                         Place(dt);
@@ -725,7 +791,7 @@ namespace RoadDemo
 
             // people in the road
             v = Mathf.Min(v, WalkersAhead(StreetTraffic.Walkers));
-            v = Mathf.Min(v, WalkersAhead(StreetTraffic.Bodies));
+            v = Mathf.Min(v, BodiesAhead(dt));
 
             // gunfire
             if (!Fearless)
@@ -1007,8 +1073,16 @@ namespace RoadDemo
             if (_man == Manoeuvre.PullIn || _man == Manoeuvre.PullOut) return;
             _man = Manoeuvre.None;
             ClearClaim();
+            // GIVING UP A PASS MEANS COMING BACK IN. Only a car still crossing over was
+            // brought back before, and one that had already ARRIVED on its passing line
+            // was simply left there: manoeuvre over, three metres off its lane, driving
+            // down a part of the street where no lane is, for the rest of the run. It
+            // reaches the junction alongside a car that is properly in the lane, both
+            // are let into the box on lines that do not cross, and the one in the lane
+            // turns straight into it - two cars locked together for 154 seconds, and six
+            // thousand refused steps, in the run that found this.
             if (Sliding && Mathf.Abs(D - _dFrom) < 0.4f) { _sLen = 0f; D = _dFrom; }
-            else if (Sliding) Slide(_laneD, SlideLength(Mathf.Abs(D - _laneD), Mathf.Abs(Speed)));
+            else if (Mathf.Abs(D - _laneD) > 0.3f) Slide(_laneD, SlideLength(Mathf.Abs(D - _laneD), Mathf.Abs(Speed)));
             _yieldUntil = Time.time + 2.5f;
         }
 
@@ -1855,7 +1929,29 @@ namespace RoadDemo
             _inNode = new NodeOccupant { Car = this, Via = _via, S = -1f };
             _nodeOf = node;
             _boxLeft = false;
+            // Going in while somebody else is crossing it, and the table says their line
+            // and ours never meet: either it is right and they pass each other, or this
+            // is the pair the belt is about to have to separate. Said out loud, with both
+            // lines named, because it cannot be read back from anything else.
+            if (DriveTrace.On)
+                for (int i = 0; i < node.Inside.Count; i++)
+                {
+                    var o = node.Inside[i];
+                    if (o.Car == this || o.Car == null || o.Via == _via || o.Via.From == _via.From) continue;
+                    if (o.Via.Index < _via.Conflicts.Length && _via.Conflicts[o.Via.Index]) continue;
+                    DriveTrace.Event("man", "car " + Id,
+                        $"in with car {o.Car.Id} ({Line(o.Via)}) - the table says {Line(_via)} does not meet it",
+                        ManFields());
+                }
             node.Inside.Add(_inNode);
+            // The hold must be on the road we are ACTUALLY leaving by. A plan thought
+            // again between taking one and arriving here - the route redrawn, another
+            // exit picked, in the same frame - leaves a hold on a road we are no longer
+            // bound for, and coming out of the box the car takes THAT as its place on
+            // the street: it then stands in a lane it is not in anybody's list for, and
+            // the first car down that lane drives into it at full speed. (The belt
+            // caught one at 9 m/s, bumper to bumper, in the run that found this.)
+            if (_occNext != null && (_next == null || _occNext.Road != _next.Road)) DropNext();
             // the lane beyond, claimed from its start so its traffic keeps off our exit
             if (_occNext == null && _next != null)
             {
@@ -1878,7 +1974,7 @@ namespace RoadDemo
             o.S0 = o.BodyS0; o.S1 = o.BodyS1; o.D0 = o.BodyD0; o.D1 = o.BodyD1;
             o.Vel = Mathf.Abs(Speed) * h;
             o.Heading = h;
-            o.Parked = false;
+            o.Parked = Parked || Derelict;
         }
 
         void EnterNode(RoadNode node, float overshoot)
@@ -1954,7 +2050,7 @@ namespace RoadDemo
                 if (v < 0.5f) Why = "box: far lane " + (lead.Car != null ? "car " + lead.Car.Id : "static") + $" gap {fgap:F1} his s[{lead.S0:F1},{lead.S1:F1}] d[{lead.D0:F1},{lead.D1:F1}] farNose {farNose:F1}";
             }
             v = Mathf.Min(v, WalkersAhead(StreetTraffic.Walkers));
-            v = Mathf.Min(v, WalkersAhead(StreetTraffic.Bodies));
+            v = Mathf.Min(v, BodiesAhead(dt));
             bool hard = false;
             if (!Fearless) v = Mathf.Min(v, _nerve.Limit(_pos, _fwd, Profile.Brake, out hard));
             v = LimitTarget(v);
@@ -1975,6 +2071,9 @@ namespace RoadDemo
                 _tailVia = via;
                 _tailViaEndS = lane.RoadS(0f);
                 SetLane(lane);
+                // and the same rule where it matters most: the car's place on the street
+                // it comes out onto is a place in THAT street's list, never another's
+                if (_occNext != null && _occNext.Road != Road) DropNext();
                 _occ = _occNext ?? NewOccupant(Road);
                 _occNext = null;
                 _boxEntryS = S;
@@ -2004,6 +2103,21 @@ namespace RoadDemo
 
         // The speed that stops short of the nearest person stood in the car's way
         // (within a car's width of its line, up to fourteen metres on).
+        float _bodyHeld;   // seconds stood still for a man lying in the road
+
+        /// <summary>The cap a body in the road puts on us. A BODY DOES NOT GET UP.
+        /// Stopping for a man in the road is right; standing behind him until the scene
+        /// is closed is not - a car stood 248 seconds behind one in the run that found
+        /// this, with the whole street queued behind the car and the lights going green
+        /// and red over an empty junction. A few seconds of it and the driver edges
+        /// past at walking pace, which is what a driver does.</summary>
+        float BodiesAhead(float dt)
+        {
+            float cap = WalkersAhead(StreetTraffic.Bodies);
+            _bodyHeld = cap < 0.5f ? _bodyHeld + dt : 0f;
+            return _bodyHeld > 6f ? Mathf.Max(cap, 1.5f) : cap;
+        }
+
         float WalkersAhead(List<Vector3> people)
         {
             if (people.Count == 0) return float.MaxValue;
@@ -2194,11 +2308,20 @@ namespace RoadDemo
             DriveTrace.Num(sb, "s", S);
             DriveTrace.Num(sb, "d", D);
             DriveTrace.Str(sb, "man", _man.ToString());
+            // which box he holds, and which way he means to go through it - the two
+            // have to be the same thing, and a run where they were not is how a pair
+            // of cars is let into one junction (they plan against the claim's name)
+            if (_inNode != null) DriveTrace.Str(sb, "claim", Line(_inNode.Via));
+            if (_via != null) DriveTrace.Str(sb, "plan", Line(_via));
             DriveTrace.Str(sb, "why", Why);
             DriveTrace.Str(sb, "passwhy", PassWhy);
             DriveTrace.Vec(sb, "p", _pos);
             return sb.ToString();
         }
+
+        static string Line(Connector via) =>
+            via == null ? "" :
+            $"{via.From.Road.Index}/{via.From.Heading}->{via.To.Road.Index}/{via.To.Heading}#{via.Index}";
 
         public string Describe()
         {

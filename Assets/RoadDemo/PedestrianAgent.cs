@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Animations;
 using UnityEngine.Playables;
@@ -341,7 +341,7 @@ namespace RoadDemo
                 }
             }
 
-            ReadCrowd();
+            ReadCrowd(dt);
             // a man walking into the back of the man ahead of him stops instead
             BlendLocomotion(dt, !_waiting && _hold > 0.25f);
 
@@ -449,7 +449,7 @@ namespace RoadDemo
 
         /// <summary>This frame's steer and brake: who is in front of him, and which
         /// way round them. Sets _push (metres of lateral) and _hold (0..1 of pace).</summary>
-        void ReadCrowd()
+        void ReadCrowd(float dt)
         {
             _push = 0f;
             _hold = 1f;
@@ -489,7 +489,25 @@ namespace RoadDemo
                 }
 
             _push = Mathf.Clamp(_push, -0.9f, 0.9f);
+
+            // COURTESY HAS A TIME LIMIT. Two men who meet head on, each standing aside
+            // for the other, stand there until the scene is closed: each is dead ahead
+            // of the other, both brakes go to nothing, and stepping aside cannot break
+            // it because neither is moving to step past. (Three of the outfit stood nose
+            // to nose with their own man for 107 seconds, on a pavement with nobody else
+            // on it, while the car they were walking back to waited two streets away and
+            // the job timed out.) A few seconds of getting nowhere and he goes by: at
+            // half pace, and to a side that is his own - so two men who are in each
+            // other's way do not spend the afternoon stepping the same way together.
+            _crowdStuck = _hold < 0.15f ? _crowdStuck + dt : 0f;
+            if (_crowdStuck > 3f)
+            {
+                _hold = Mathf.Max(_hold, 0.5f);
+                _push = (Id & 1) == 0 ? 0.9f : -0.9f;
+            }
         }
+
+        float _crowdStuck;   // seconds stood still by the people in front of him
 
         /// A knot of people held at a red light shuffles apart instead of standing
         /// inside one another - a little way along the kerb, never off it.

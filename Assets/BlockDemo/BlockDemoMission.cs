@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using RoadDemo;
 using UnityEngine;
 
@@ -244,6 +244,7 @@ namespace BlockDemo
                     _crews.Select(_ours);
                     _crews.BoardCar(_ours, _car);
                     _walkBack = Vector3.Distance(_ours.Position, _car.Position);
+                    _backMark = _ours.Position; _backStall = 0f;
                     Go(Phase.Reboarding, $"{_killed} crews down - back to the car, {_walkBack:F0} m off");
                     return;
                 }
@@ -263,6 +264,7 @@ namespace BlockDemo
                 _crews.BoardCar(_ours, _car);
                 _quarry = null;
                 _walkBack = Vector3.Distance(_ours.Position, _car.Position);
+                _backMark = _ours.Position; _backStall = 0f;
                 Go(Phase.Reboarding, $"{next.GangName} is {Vector3.Distance(_ours.Position, next.Position):F0} m off - " +
                                      $"back to the car, {_walkBack:F0} m off");
                 return;
@@ -309,17 +311,32 @@ namespace BlockDemo
 
         void TickReboarding()
         {
-            // The walk back is as long as the fight took them from the car - a quarter
-            // of the city on foot, at a walking pace - so the allowance is the distance,
-            // not a flat count of seconds.
-            float allowed = boardingPatience + _walkBack / 1.2f;
-            if (Aboard() >= Mathf.Min(_ours.Standing(), _car.Seats) || InPhase > allowed)
+            if (Aboard() >= Mathf.Min(_ours.Standing(), _car.Seats)) { Hunt("back in the car"); return; }
+
+            // STILL WALKING is the test, not a stopwatch and not the crow's line. A walk
+            // back across a quarter is pavements, corners and two sets of lights: a
+            // straight-line allowance failed crews who were walking perfectly well (55
+            // metres of city measured 96 seconds), and closing distance failed them the
+            // other way - round the first corner they are FARTHER from the car than when
+            // they set off, which is what going round a building is. What was actually
+            // broken was men who stopped dead, so that is what is watched: the clock runs
+            // only while the crew has not moved at all.
+            var here = _ours.Position;
+            if (Vector3.Distance(here, _backMark) > 2f) { _backMark = here; _backStall = 0f; }
+            else _backStall += Time.deltaTime;
+            // and a ceiling all the same: walking in circles for ever is not walking back
+            float ceiling = 3f * boardingPatience + _walkBack / 0.8f;
+            if (_backStall > boardingPatience)
             {
-                if (Aboard() == 0) { Give($"nobody got back into the car in {allowed:F0}s"); return; }
-                Hunt("back in the car");
+                Give($"the crew stopped walking back ({Vector3.Distance(here, _car.Position):F0} m " +
+                     $"off the car, {_backStall:F0}s without moving)");
                 return;
             }
+            if (InPhase > ceiling) { Give($"nobody got back into the car in {ceiling:F0}s"); return; }
         }
+
+        Vector3 _backMark;
+        float _backStall;
 
         float _walkBack;
         bool _orderedOut;
