@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.Entities;
 using LivingCity.Personnel;
 
@@ -156,7 +156,8 @@ namespace LivingCity.Gangs
         // ------------------------------------------------------------ the outfit's own
 
         /// <summary>Suits for the men who run things, street muscle for the men who do
-        /// them - which table a man of this rank sits for.</summary>
+        /// them - which table a man of this rank sits for WHEN HE IS FIRST CAST. After
+        /// that the coat is his and rank does not touch it (<see cref="Cast"/>).</summary>
         public static string[] TableFor(Character member) =>
             member != null &&
             (member.Rank == Rank.Lieutenant || member.Specialty != Specialty.None)
@@ -183,7 +184,7 @@ namespace LivingCity.Gangs
 
             var crew = roster?.CrewOf(member.Id);
             if (crew == null)
-                return Draw(TableFor(member), member.Id, null, IsFemale(member));
+                return Cast(member, null);
 
             var taken = new List<string>(Crew.MaxHoods + 1);
             foreach (var id in CastOrder(crew))
@@ -191,13 +192,33 @@ namespace LivingCity.Gangs
                 var man = id == member.Id ? member : roster.Find(id);
                 if (man == null) continue;
 
-                var look = Draw(TableFor(man), man.Id, taken, IsFemale(man));
+                var look = Cast(man, taken);
                 if (id == member.Id) return look;
                 taken.Add(look);
             }
 
             // his crew does not list him (mid-edit): he is nobody's neighbour this frame
-            return Draw(TableFor(member), member.Id, null, IsFemale(member));
+            return Cast(member, null);
+        }
+
+        /// <summary>The coat this man is already in, or the one he is given now.
+        ///
+        /// A MAN'S FACE IS HIS OWN. It is settled the first time he is cast and kept on
+        /// him from then on (<see cref="Character.Look"/>): the tables below say what a
+        /// man of that rank is dealt when he is NEW, not what he must be wearing later.
+        /// Made a lieutenant, a hood used to be dealt out of the suits instead and the
+        /// street swapped his body under him where he stood - a different man walking
+        /// back to the car, who was a stranger to it when he stood up again.
+        ///
+        /// The one thing that still moves a man's coat: a crewmate cast before him in
+        /// this crew already wears it. No two men in one crew are the same man, so the
+        /// later of the two is dealt again - and that becomes his.</summary>
+        static string Cast(Character member, ICollection<string> taken)
+        {
+            if (!string.IsNullOrEmpty(member.Look) && !IsTaken(taken, Bare(member.Look)))
+                return member.Look;
+            member.Look = Draw(TableFor(member), member.Id, taken, IsFemale(member));
+            return member.Look;
         }
 
         /// <summary>Whether the books call this member a woman. The roster carries no sex

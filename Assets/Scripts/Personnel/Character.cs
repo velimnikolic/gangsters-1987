@@ -1,4 +1,4 @@
-namespace LivingCity.Personnel
+﻿namespace LivingCity.Personnel
 {
     /// <summary>Hood is the trade; Lieutenant leads a crew and answers to the boss.</summary>
     public enum Rank
@@ -50,6 +50,15 @@ namespace LivingCity.Personnel
         public Rank Rank = Rank.Hood;
         public Specialty Specialty = Specialty.None;
         public CharacterStatus Status = CharacterStatus.Active;
+
+        /// <summary>The body he wears - in his ledger photograph and on the street both.
+        /// Kept HERE, with the man, rather than worked out from his rank each time it is
+        /// asked for: a promotion is a change of rank, not of face. Made a lieutenant, a
+        /// hood used to walk out of the room a different man in a different coat, with
+        /// the street swapping his body under him mid-stride. Empty until he is first
+        /// cast (GangLooks.LookFor), and only changed when a crewmate already wears it -
+        /// no two men in one crew are the same man.</summary>
+        public string Look = "";
 
         /// <summary>Off the books for good - dead or deserted: struck through, unpaid,
         /// beyond promotion or a gun.</summary>
