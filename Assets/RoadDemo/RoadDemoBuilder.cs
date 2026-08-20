@@ -152,6 +152,11 @@ namespace RoadDemo
         [Tooltip("Rival crews dealt onto the sidewalks by hand (the ledger has none) - so there is somebody to shoot it out with. 0 for a quiet town.")]
         [Range(0, 3)] public int rivalCrewsInCity = 1;
         [Range(0, 4)] public int rivalHoodsInCity = 3;
+        [Tooltip("Every man of a mob his own piece, drawn off the armory's ladder, " +
+                 "instead of a crew all carrying the same gun. A shotgun man walks in " +
+                 "close and a rifleman opens up from across the street, so a mixed mob " +
+                 "strings itself out by what it is holding.")]
+        public bool mixedArms = false;
 
         [Header("City life")]
         [Tooltip("Share of the crowd that starts indoors and streams out of the doors over the first minute.")]
@@ -3073,9 +3078,33 @@ namespace RoadDemo
                 var hoodNames = new List<string>();
                 for (int k = 0; k < rivalHoodsInCity; k++) hoodNames.Add(DrawName(rng));
                 var (weaponName, kind) = arms[i % arms.Length];
+                // mixed arms: the crew is not five copies of one gun - each man is asked
+                // for separately as he is stood up, and draws his own off the counter
+                System.Func<int, (GameObject, LivingCity.Personnel.EquipmentKind)> armsFor = null;
+                if (mixedArms)
+                    armsFor = _ =>
+                    {
+                        var (model, k) = MobArm(rng);
+                        return (CrewKit.Weapon(model), k);
+                    };
                 _crews.AddRival(gang, gangNames[gang], DrawName(rng), bossPrefab, hoodNames,
-                    hoodPrefabs, anchor, facing, CrewKit.Weapon(weaponName), kind, lineUp: true);
+                    hoodPrefabs, anchor, facing, CrewKit.Weapon(weaponName), kind, lineUp: true,
+                    armsFor: armsFor);
             }
+        }
+
+        /// <summary>What one man of a mob is holding when the arms are mixed: a piece off
+        /// the armory's own counter, or the .38 that is in every coat under it. One
+        /// table for the street and the ledger both - the counter is where guns come
+        /// from, here as on the armory page.</summary>
+        static (string model, LivingCity.Personnel.EquipmentKind kind) MobArm(System.Random rng)
+        {
+            var counter = LivingCity.Outfit.ArmoryCatalog.Weapons;
+            int pick = rng.Next(counter.Length + 1);
+            if (pick >= counter.Length)
+                return (CrewArms.DefaultSidearm, LivingCity.Personnel.EquipmentKind.Pistol);
+            var item = counter[pick];
+            return (item.ModelName ?? CrewArms.DefaultSidearm, item.Kind);
         }
 
         /// <summary>The plain pack body of this name - the ledger's baked cast first,

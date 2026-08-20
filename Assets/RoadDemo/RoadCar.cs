@@ -127,6 +127,16 @@ namespace RoadDemo
         Turn _turn;
         Connector _via;
         bool _committed;
+        // Where we mean to come to rest this frame (road-s of the centre), or NaN.
+        // Published on the band so whoever is behind brakes for the same place
+        // rather than for our bumper - a queue at a red stops together that way.
+        float _stopAt = float.NaN;
+        // who the road says is in front of us this frame, and how far off - the one
+        // thing a following fault cannot be read back from anything else
+        int _leadId = -1; float _leadGap = -1f;
+        // inside a box: the car on a crossing line we are standing for, and how
+        // long we have stood - a standoff nothing else can end
+        RoadCar _gaveWay; float _boxStuck;
         float _heldAtLine;
         /// <summary>The next lane after each lane toward wherever the car is
         /// going (LaneNet.RouteToward); null: the driver wanders.</summary>
@@ -298,15 +308,33 @@ namespace RoadDemo
         /// ahead going <paramref name="vLead"/> our way: brake to its pace with the
         /// standing gap kept, and under the standing gap slower than it, to open the
         /// gap again - never merely its speed with no room.</summary>
-        protected float Follow(float vLead, float gap)
+        protected float Follow(float vLead, float gap, float leadSlowing = 0f)
         {
             vLead = Mathf.Max(0f, vLead);
             float room = gap - Profile.FollowGap;
             if (room <= 0f) return Mathf.Max(0f, vLead - (0.5f - room) * 2.5f);
-            // the time gap on the move: room for the seconds the profile keeps
-            float v = Allowed(vLead, room);
+            // What must be stopped short of is not where he IS but where he can COME TO
+            // REST - while he is rolling, his own braking distance further on, which is
+            // the ordinary give and take of a queue and the same arithmetic as before.
+            // The moment he STANDS ON THE BRAKES that room collapses, and a follower who
+            // is still only keeping his pace is inside him before he can do anything
+            // about it: the barrier must move back the same instant his does, so we brake
+            // WITH him instead of half a second after him. (A motorcycle five metres
+            // behind a car that stopped dead at a junction line needed ninety metres a
+            // second squared to stay off it; the belt refused the step.)
+            float b = Mathf.Max(1f, leadSlowing > 0.1f ? leadSlowing : Profile.Brake);
+            float his = vLead * vLead * 0.5f / b;
+            float v = Allowed(0f, room + his);
             float byTime = vLead + room / Mathf.Max(0.2f, Profile.TimeGap);
             return Mathf.Min(v, Mathf.Max(vLead * 0.8f, byTime));
+        }
+
+        /// <summary>We mean to come to rest here (road-s of the centre) - the nearest
+        /// such place this frame wins, and it is what everybody behind us brakes for.</summary>
+        void MeanToStop(float s)
+        {
+            if (float.IsNaN(_stopAt)) _stopAt = s;
+            else _stopAt = Heading > 0 ? Mathf.Min(_stopAt, s) : Mathf.Max(_stopAt, s);
         }
 
         // ------------------------------------------------------------------ orders
@@ -522,6 +550,7 @@ namespace RoadDemo
         void TickRoad(float dt)
         {
             var road = Road;
+            _stopAt = float.NaN;
             UpdateOccupant();
             TickBoxExit();
             // and the same rule wherever else a car ends up off its line: doing nothing
@@ -631,6 +660,14 @@ namespace RoadDemo
 
             // ---- the throttle
             float v = Cruise();
+            // BOLTING FROM GUNFIRE lifts the CEILING, and nothing else. A frightened
+            // driver drives faster than he otherwise would - past the limit, over the
+            // cruise - but he does not drive into the back of the car in front, and this
+            // used to: the lift was put on at the END of the throttle, on top of the room
+            // he was keeping to the man ahead, so a bolting car closed thirteen metres a
+            // second onto a queue standing at a red and the belt was the only thing
+            // between them. Put on here, everything ahead still clamps it.
+            if (!Fearless && _nerve.Bolting && !_nerve.Approaching) v *= 1.3f;
             if (Sliding) v = Mathf.Min(v, LateralCap(_sLen, Mathf.Abs(_dTo - _dFrom)));
             bool hard = false;
 
@@ -708,12 +745,13 @@ namespace RoadDemo
             if (node == null)
             {
                 v = Mathf.Min(v, Allowed(0f, toEnd - 0.5f));
+                MeanToStop(S + Heading * (toEnd - 0.5f));
                 if (toEnd < 1f && Mathf.Abs(Speed) < 0.1f && Profile.UTurnsInRoad && road.TwoWay && _man == Manoeuvre.None) TryUTurn();
             }
             else if (_man != Manoeuvre.UTurn)
             {
                 float stopDist = toEnd - node.StopSetback;
-                if (_next == null) v = Mathf.Min(v, Allowed(0f, stopDist));
+                if (_next == null) { v = Mathf.Min(v, Allowed(0f, stopDist)); MeanToStop(S + Heading * stopDist); }
                 else
                 {
                     float turnV = _via != null && _via.UTurn ? Profile.UTurnSpeed
@@ -728,6 +766,7 @@ namespace RoadDemo
                         if (!may)
                         {
                             v = Mathf.Min(v, Allowed(0f, stopDist));
+                            MeanToStop(S + Heading * stopDist);
                             _heldAtLine += dt;
                             heldByNode = true;
                             // held on a full exit long enough: pick another way out of
@@ -766,6 +805,8 @@ namespace RoadDemo
             // whoever is ahead in the band we stand in or are moving into
             float d0 = BandLo(), d1 = BandHi();
             var leader = road.Ahead(_occ, Heading, noseS, tailS, d0, d1, out float gap);
+            _leadId = leader == null ? -1 : leader.Car != null ? leader.Car.Id : -2;
+            _leadGap = leader == null ? -1f : gap;
             float vLead = 0f;
             if (leader != null)
             {
@@ -783,7 +824,22 @@ namespace RoadDemo
                     // the slide finished before we reach it (the slide was laid so)
                     v = Mathf.Min(v, Allowed(0f, gap - 0.4f));
                 }
-                else v = Mathf.Min(v, Follow(vLead, gap));
+                else v = Mathf.Min(v, Follow(vLead, gap, leader.Slowing));
+                // AND WHERE HE MEANS TO STOP, if he means to. Braking for his bumper is
+                // braking for a thing that is still moving away: at a red light he begins
+                // his stop before we begin ours - he is nearer the line - and those three
+                // tenths of a second are the whole gap between us (two cars nose to tail
+                // at eleven metres a second, and the belt had to separate them). Braking
+                // for the PLACE he is going to stand puts the whole queue on the brakes
+                // at once, and it says nothing at all on an open road.
+                if (!float.IsNaN(leader.StopAt))
+                {
+                    float behind = leader.StopAt -
+                                   Heading * (leader.Length * 0.5f + Profile.FollowGap + HalfLen);
+                    float vq = Allowed(0f, (behind - S) * Heading);
+                    if (vq < v) { v = vq; if (v < 0.5f) Why = "queue: behind car " + (leader.Car != null ? leader.Car.Id.ToString() : "?"); }
+                    MeanToStop(behind);
+                }
                 // something stood at the kerb or dead in the road that we mean to go round:
                 // held back far enough that the swing out is still possible from here
                 bool queue = leader.Car != null && leader.Car.InQueue && !Profile.RunsRed;
@@ -803,7 +859,6 @@ namespace RoadDemo
             if (!Fearless)
             {
                 float cap = _nerve.Limit(_pos, _fwd, Profile.Brake, out hard);
-                if (_nerve.Bolting && !_nerve.Approaching) v = Mathf.Min(v * 1.3f, Cruise() * 1.3f);
                 v = Mathf.Min(v, cap);
             }
 
@@ -1126,6 +1181,8 @@ namespace RoadDemo
                 o.S1 = Mathf.Max(o.S1, Mathf.Max(S, slideEnd) + HalfLen);
             }
             o.Vel = Speed * Heading;
+            o.Slowing = _want < Speed - 0.05f ? (_wantHard ? Profile.HardBrake : Profile.Brake) : 0f;
+            o.StopAt = Parked || Derelict ? S : _stopAt;
             o.Heading = _man == Manoeuvre.UTurn ? 0 : Heading;
             // A car nobody is coming back for reads to the street as a PARKED one, which
             // is what it is: everybody plans round it instead of queueing behind it for
@@ -1837,12 +1894,38 @@ namespace RoadDemo
             if (_via == null) return v;
             var f = _fwd;
             var r = Vector3.Cross(Vector3.up, f);
+            float mine = Via != null && _via.Length > 0.5f ? ViaS / _via.Length : 0f;
             for (int i = 0; i < node.Inside.Count; i++)
             {
                 var o = node.Inside[i];
-                if (o.Car == this) continue;
-                if (o.Via != _via && o.Via.From != _via.From) continue;
-                v = Mathf.Min(v, FollowBody(o.Car, f, r));
+                if (o.Car == this || o.Car == null) continue;
+                if (o.Via == _via || o.Via.From == _via.From)
+                {
+                    v = Mathf.Min(v, FollowBody(o.Car, f, r));   // following him across
+                    continue;
+                }
+                // NOBODY ON A CROSSING LINE SHOULD BE IN HERE WITH US - the claim taken at
+                // the line sees to that. One door is left open on purpose: a car that
+                // cannot pull up at a late red goes in rather than stopping across the
+                // line, and it goes in without asking anybody. When two of those meet,
+                // neither is watching the other: each drives at the other until the belt
+                // refuses its step, and then again the next frame, for as long as the
+                // scene runs (a motorcycle and a car stood nose to nose for forty-eight
+                // seconds and a thousand refused steps between them).
+                // So they watch each other after all. Whoever is FURTHER ACROSS the box
+                // has the right of way and the other brakes for his body like any other
+                // thing in the road. The order is strict - how far across, then priority,
+                // then the lower id - so of any two exactly one gives way, and a circle
+                // of three all waiting for each other cannot form.
+                if (o.Via.Index >= _via.Conflicts.Length || !_via.Conflicts[o.Via.Index]) continue;
+                float his = o.S > 0f && o.Via.Length > 0.5f ? o.S / o.Via.Length : 0f;
+                bool yield = his > mine + 0.02f ||
+                             (his > mine - 0.02f &&
+                              (o.Car.Profile.Priority > Profile.Priority ||
+                               (o.Car.Profile.Priority == Profile.Priority && o.Car.Id < Id)));
+                if (!yield) continue;
+                float vy = FollowBody(o.Car, f, r);
+                if (vy < v) { v = vy; _gaveWay = o.Car; if (v < 0.5f) Why = "box: giving way to " + o.Car.Id; }
             }
             if (_next != null)
                 for (int i = 0; i < _next.Cars.Count; i++)
@@ -1979,6 +2062,7 @@ namespace RoadDemo
             o.BodyD1 = _next.Offset + HalfWide;
             o.S0 = o.BodyS0; o.S1 = o.BodyS1; o.D0 = o.BodyD0; o.D1 = o.BodyD1;
             o.Vel = Mathf.Abs(Speed) * h;
+            o.Slowing = _want < Speed - 0.05f ? (_wantHard ? Profile.HardBrake : Profile.Brake) : 0f;
             o.Heading = h;
             o.Parked = Parked || Derelict;
         }
@@ -2012,6 +2096,35 @@ namespace RoadDemo
         void TickNode(float dt)
         {
             var via = Via;
+
+            // A STANDOFF IN THE MIDDLE OF A JUNCTION. We gave way to a car on a crossing
+            // line (neither of us should be in here with the other - one of us came in
+            // unable to stop) and we have stood for him ever since. Giving way is not
+            // enough: he cannot get past our body either, and the belt refuses HIS step
+            // now instead of ours, every frame, for as long as the scene runs. So we get
+            // out of his way the only way there is - backwards, off the line we came in
+            // on - and take our turn again from the line.
+            _boxStuck = _gaveWay != null && !_gaveWay.Parked && Mathf.Abs(Speed) < 0.15f
+                ? _boxStuck + dt : 0f;
+            _gaveWay = null;
+            if (_boxStuck > 3f && _man != Manoeuvre.UTurn)
+            {
+                float back = Mathf.Min(2.5f * dt, ViaS);
+                Speed = 0f;
+                _want = 0f;
+                if (back > 0.001f)
+                {
+                    ViaS -= back;
+                    if (_inNode != null) _inNode.S = ViaS;
+                    RefreshNextOccupant(ViaS - via.Length);
+                    Why = "box: backing out";
+                    Place(dt);
+                    return;
+                }
+                BackOutOfBox(dt);
+                return;
+            }
+
             float remaining = via.Length - ViaS;
             RefreshNextOccupant(ViaS - via.Length);
             if (_inNode != null) _inNode.S = ViaS;
@@ -2052,7 +2165,7 @@ namespace RoadDemo
             {
                 float vl = Mathf.Max(0f, lead.Vel * _next.Heading);
                 if (lead.Vel * _next.Heading < -0.5f) vl = 0f;
-                v = Mathf.Min(v, Follow(vl, fgap));
+                v = Mathf.Min(v, Follow(vl, fgap, lead.Slowing));
                 if (v < 0.5f) Why = "box: far lane " + (lead.Car != null ? "car " + lead.Car.Id : "static") + $" gap {fgap:F1} his s[{lead.S0:F1},{lead.S1:F1}] d[{lead.D0:F1},{lead.D1:F1}] farNose {farNose:F1}";
             }
             v = Mathf.Min(v, WalkersAhead(StreetTraffic.Walkers));
@@ -2092,6 +2205,41 @@ namespace RoadDemo
                 Place(dt);
                 return;
             }
+            Place(dt);
+        }
+
+        /// <summary>Off the box altogether, back onto the lane we came in on, and the
+        /// junction is somebody else's again. The car stands where it stood when it
+        /// crossed the line, its claim given back, its way through thought again from
+        /// scratch - which is what a driver who has backed out of a junction does.</summary>
+        void BackOutOfBox(float dt)
+        {
+            var lane = _via != null ? _via.From : null;
+            if (lane == null) { _boxStuck = 0f; return; }
+            LeaveBox();
+            DropNext();
+            Road = lane.Road;
+            Heading = lane.Heading;
+            D = lane.Offset;
+            _laneD = D;
+            S = lane.RoadS(Mathf.Max(0f, lane.Length - 0.4f));
+            SetLane(lane);
+            _occ ??= NewOccupant(Road);
+            Via = null;
+            ViaS = 0f;
+            _via = null;
+            _next = null;
+            _committed = false;
+            _boxLeft = false;
+            _sLen = 0f;
+            Speed = 0f;
+            _want = 0f;
+            _boxStuck = 0f;
+            _boxEntryS = S;
+            Why = "backed out of the box";
+            if (DriveTrace.On)
+                DriveTrace.Event("man", "car " + Id, "backed out of a box it could not cross", ManFields());
+            UpdateOccupant();
             Place(dt);
         }
 
@@ -2293,6 +2441,8 @@ namespace RoadDemo
             DriveTrace.Bool(sb, "goal", _hasGoal);
             DriveTrace.Num(sb, "quiet", _quietFor, "F1");
             DriveTrace.Num(sb, "held", _heldAtLine, "F1");
+            DriveTrace.Int(sb, "lead", _leadId);
+            DriveTrace.Num(sb, "lgap", _leadGap, "F1");
             DriveTrace.Str(sb, "why", Why);
             DriveTrace.Vec(sb, "p", _pos);
             return sb;

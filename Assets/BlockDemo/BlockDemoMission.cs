@@ -76,18 +76,22 @@ namespace BlockDemo
             // whatever else is going on: a crew that is dead is not on a job. Out of the
             // car and still alive is NOT the end of one - the driver being shot puts the
             // crew on the pavement, and the fight goes on from there.
-            if (_ours != null && _ours.Wiped) { Give($"the outfit was wiped out ({_killed} crews down first)"); return; }
+            // (On foot there may be several crews out, and one of them going down is not
+            // the outfit going down: TickWar counts the field itself.)
+            if (!onFoot && _ours != null && _ours.Wiped)
+            { Give($"the outfit was wiped out ({_killed} crews down first)"); return; }
 
-            switch (State)
-            {
-                case Phase.Waiting: TickWaiting(); break;
-                case Phase.Boarding: TickBoarding(); break;
-                case Phase.Marching: TickMarching(); break;
-                case Phase.Hunting: TickHunting(); break;
-                case Phase.Storming: TickStorming(); break;
-                case Phase.Reboarding: TickReboarding(); break;
-                case Phase.Parking: TickParking(); break;
-            }
+            if (onFoot && State != Phase.Waiting) TickWar();
+            else
+                switch (State)
+                {
+                    case Phase.Waiting: TickWaiting(); break;
+                    case Phase.Boarding: TickBoarding(); break;
+                    case Phase.Hunting: TickHunting(); break;
+                    case Phase.Storming: TickStorming(); break;
+                    case Phase.Reboarding: TickReboarding(); break;
+                    case Phase.Parking: TickParking(); break;
+                }
 
             WatchTheCar();
             Row();
@@ -104,15 +108,32 @@ namespace BlockDemo
                 if (unit.Faction == 0 && !unit.Wiped) { _ours = unit; break; }
             if (_ours == null) { Give("there is no crew of the outfit in the quarter"); return; }
 
-            // ON FOOT: no car is stood, none is looked for. The mob at the far end of
-            // the quarter is the mark, and the crew walks to it.
+            // ON FOOT: no car is stood, none is looked for. EVERY crew of the outfit
+            // takes the field, each one sent at a mob of its own at the far end of the
+            // quarter - three lieutenants at three crews is three walks and three
+            // fights, not one crew doing the rounds.
             if (onFoot)
             {
-                _quarry = Farthest();
-                if (_quarry == null) { Give("there is no rival crew in the quarter"); return; }
-                _marchMark = _ours.Position;
-                _marchStall = 0f;
-                March(true);
+                _squads.Clear();
+                foreach (var unit in _crews.Units)
+                    if (unit.Faction == 0 && !unit.Wiped)
+                        _squads.Add(new Squad { Ours = unit, Mark = unit.Position });
+                if (_squads.Count == 0) { Give("there is no crew of the outfit in the quarter"); return; }
+                _ours = _squads[0].Ours;
+
+                _mobs = 0;
+                foreach (var unit in _crews.Units)
+                    if (unit.Faction != 0 && !unit.IsPolice && !unit.Wiped) _mobs++;
+                if (_mobs == 0) { Give("there is no rival crew in the quarter"); return; }
+
+                // farthest first, and no two crews sent at the same mob while there
+                // are mobs to go round: the walk is the point
+                State = Phase.Marching;
+                _phaseAt = Now;
+                foreach (var squad in _squads) Assign(squad);
+                string guns = Guns();
+                Note($"Marching: {_squads.Count} crews on foot at {_mobs} mobs" +
+                     (guns.Length > 0 ? " - carrying " + guns : ""));
                 return;
             }
 
@@ -187,82 +208,197 @@ namespace BlockDemo
 
         // ------------------------------------------------------------------ on foot
 
-        Vector3 _marchMark;
-        float _marchStall;
-
-        /// <summary>The mob FURTHEST from us - the far end of the map, which is the
-        /// point of a walk.</summary>
-        DemoCrews.Unit Farthest()
+        /// <summary>One crew of the outfit and the mob it is walking at. The run on
+        /// foot is several of these at once - each crew has its own mark, its own way
+        /// across the quarter and its own fight at the end of it.</summary>
+        sealed class Squad
         {
-            DemoCrews.Unit far = null;
-            float best = -1f;
+            public DemoCrews.Unit Ours;
+            public DemoCrews.Unit Quarry;
+            public Vector3 Mark;      // where its front man was when it last moved
+            public float Stall;       // seconds it has not moved at all
+            public float LastOrder;
+            public bool Engaged;      // told to open up rather than to walk
+            public bool Buried;       // it is down, and has been said so once
+        }
+
+        readonly List<Squad> _squads = new List<Squad>();
+        int _mobs;   // mobs standing when the run began - what _killed is counted off
+
+        /// <summary>The mob this crew walks at: the one FURTHEST from it that no other
+        /// crew of ours is already on - the far end of the quarter, which is the point
+        /// of a walk. With fewer mobs left than crews they double up on the nearest.</summary>
+        void Assign(Squad squad)
+        {
+            DemoCrews.Unit best = null;
+            float far = -1f, near = float.MaxValue;
+            DemoCrews.Unit spare = null;
             foreach (var unit in _crews.Units)
             {
                 if (unit.Faction == 0 || unit.IsPolice || unit.Wiped) continue;
-                float d = Vector3.SqrMagnitude(unit.Position - _ours.Position);
-                if (d > best) { best = d; far = unit; }
+                float d = Vector3.SqrMagnitude(unit.Position - squad.Ours.Position);
+                if (d < near) { near = d; spare = unit; }
+                if (Spoken(unit, squad)) continue;
+                if (d > far) { far = d; best = unit; }
             }
-            return far;
+            squad.Quarry = best ?? spare;
+            if (squad.Quarry == null) return;
+            squad.Mark = Front(squad);
+            squad.Stall = 0f;
+            March(squad, true);
         }
 
-        /// <summary>The man of ours nearest the mark - the crew's own front.</summary>
-        Vector3 FurthestOn()
+        /// <summary>Is another crew of ours, still standing, already on that mob?</summary>
+        bool Spoken(DemoCrews.Unit mob, Squad mine)
         {
-            var best = _ours.Position;
+            foreach (var squad in _squads)
+                if (squad != mine && !squad.Ours.Wiped && squad.Quarry == mob) return true;
+            return false;
+        }
+
+        /// <summary>The man of this crew nearest its mark - the crew's own front.</summary>
+        Vector3 Front(Squad squad)
+        {
+            var best = squad.Ours.Position;
+            if (squad.Quarry == null) return best;
             float near = float.MaxValue;
-            foreach (var man in _ours.All())
+            foreach (var man in squad.Ours.All())
             {
                 if (man.Dead || man.Tf == null) continue;
-                float d = Vector3.SqrMagnitude(man.Tf.position - _quarry.Position);
+                float d = Vector3.SqrMagnitude(man.Tf.position - squad.Quarry.Position);
                 if (d < near) { near = d; best = man.Tf.position; }
             }
             return best;
         }
 
-        void March(bool first)
+        string Who(Squad squad) =>
+            string.IsNullOrEmpty(squad.Ours.Name) ? squad.Ours.GangName : squad.Ours.Name;
+
+        /// <summary>What the outfit is carrying, as the book dealt it - the line that
+        /// says a run of mixed arms really was one.</summary>
+        string Guns()
         {
-            if (_quarry == null) return;
-            float gap = Vector3.Distance(_ours.Position, _quarry.Position);
-            _crews.Select(_ours);
-            if (!_crews.MarchTo(_ours, _quarry.Position)) { Give("the crew could not be sent on foot"); return; }
-            _lastOrder = Now;
-            if (first) Go(Phase.Marching, $"on foot at {_quarry.GangName}, {gap:F0} m off");
-            else if (State != Phase.Marching) Go(Phase.Marching, $"on foot at {_quarry.GangName}, {gap:F0} m off");
-            else Note($"still walking at {_quarry.GangName} ({gap:F0} m)");
+            var said = new List<string>();
+            foreach (var squad in _squads)
+                foreach (var man in squad.Ours.All())
+                    if (!man.Dead) said.Add(man.WeaponKind.ToString());
+            return string.Join(", ", said);
         }
 
-        void TickMarching()
+        void March(Squad squad, bool first)
         {
-            if (_quarry == null || _quarry.Wiped) { _quarry = null; Hunt("they went down before we got there"); return; }
-
-            float gap = Vector3.Distance(_ours.Position, _quarry.Position);
-            if (gap <= engageWithin)
+            if (squad.Quarry == null) return;
+            float gap = Vector3.Distance(squad.Ours.Position, squad.Quarry.Position);
+            _crews.Select(squad.Ours);
+            if (!_crews.MarchTo(squad.Ours, squad.Quarry.Position))
             {
-                _crews.Select(_ours);
-                if (!_crews.OrderAttack(_quarry)) { Give("the attack order was refused"); return; }
-                _lastOrder = Now;
-                Go(Phase.Hunting, $"at {_quarry.GangName}, {gap:F0} m off - on foot");
+                // nobody left of that crew to send: it is down, and TickWar buries it on
+                // the next pass. Only a crew that HAS men and still cannot be sent is a
+                // fault worth failing the run over.
+                if (squad.Ours.Standing() == 0) { squad.Quarry = null; return; }
+                Give($"{Who(squad)} could not be sent on foot");
+                return;
+            }
+            squad.LastOrder = Now;
+            squad.Engaged = false;
+            if (first) Note($"{Who(squad)} on foot at {squad.Quarry.GangName}, {gap:F0} m off");
+        }
+
+        /// <summary>The whole run on foot, every crew of ours at once: walk, arrive,
+        /// open up, and on to whatever is left standing.</summary>
+        void TickWar()
+        {
+            int standing = 0;
+            foreach (var squad in _squads) if (!squad.Ours.Wiped) standing++;
+            if (standing == 0) { Give($"the outfit was wiped out ({_killed} crews down first)"); return; }
+
+            int mobs = 0;
+            foreach (var unit in _crews.Units)
+                if (unit.Faction != 0 && !unit.IsPolice && !unit.Wiped) mobs++;
+            _killed = Mathf.Max(_killed, _mobs - mobs);
+            if (mobs == 0)
+            {
+                Go(Phase.Done, $"done on foot after {Now:F0}s, {_killed} mobs down, " +
+                               $"{standing} of {_squads.Count} crews still standing");
                 return;
             }
 
-            // STILL WALKING is the test. How long a walk takes is the city's business -
-            // the way round a block, a lot that turns out to be walled - but a crew that
-            // has not moved at all has stopped, and that is a fault.
-            // ANY of them walking is the crew walking. Judging it by the lieutenant alone
-            // failed a crew whose other two were half way across the quarter and closing:
-            // one man in an awkward corner is a man to wait for, not a stopped crew.
-            var here = FurthestOn();
-            if (Vector3.Distance(here, _marchMark) > 2f) { _marchMark = here; _marchStall = 0f; }
-            else _marchStall += Time.deltaTime;
-            if (_marchStall > marchPatience)
+            bool walking = false;
+            foreach (var squad in _squads)
             {
-                Give($"the crew stopped walking {gap:F0} m short of {_quarry.GangName} " +
-                     $"({_marchStall:F0}s without moving)");
-                return;
+                if (squad.Ours.Wiped)
+                {
+                    if (!squad.Buried) { squad.Buried = true; Note($"{Who(squad)}'s crew is down"); }
+                    continue;
+                }
+                if (squad.Quarry == null || squad.Quarry.Wiped)
+                {
+                    if (squad.Quarry != null) Note($"{squad.Quarry.GangName} is down");
+                    squad.Quarry = null;
+                    Assign(squad);
+                    if (squad.Quarry == null) continue;
+                }
+
+                float gap = Vector3.Distance(squad.Ours.Position, squad.Quarry.Position);
+                if (gap <= engageWithin)
+                {
+                    if (!squad.Engaged || Now - squad.LastOrder > reorderEvery)
+                    {
+                        _crews.Select(squad.Ours);
+                        if (!_crews.OrderAttack(squad.Quarry)) { squad.Quarry = null; continue; }
+                        squad.LastOrder = Now;
+                        if (!squad.Engaged)
+                            Note($"{Who(squad)} at {squad.Quarry.GangName}, {gap:F0} m off - on foot");
+                        squad.Engaged = true;
+                    }
+                    squad.Stall = 0f;   // a man shooting is not a man stopped
+                    continue;
+                }
+
+                walking = true;
+                squad.Engaged = false;
+
+                // STILL WALKING is the test. How long a walk takes is the city's business -
+                // the way round a block, a lot that turns out to be walled - but a crew that
+                // has not moved at all has stopped, and that is a fault.
+                // ANY of them walking is the crew walking. Judging it by the lieutenant alone
+                // failed a crew whose other two were half way across the quarter and closing:
+                // one man in an awkward corner is a man to wait for, not a stopped crew.
+                // And a crew that has stopped because it is IN A FIGHT - jumped on the way
+                // by a mob that was not its own, or scattered by it - has not stopped
+                // walking; it is busy. Only the clock of a crew with nothing in its way runs.
+                var here = Front(squad);
+                bool busy = Fighting(squad);
+                if (Vector3.Distance(here, squad.Mark) > 2f || busy)
+                { squad.Mark = here; squad.Stall = 0f; }
+                else squad.Stall += Time.deltaTime;
+                if (squad.Stall > marchPatience)
+                {
+                    Give($"{Who(squad)} stopped walking {gap:F0} m short of " +
+                         $"{squad.Quarry.GangName} ({squad.Stall:F0}s without moving)");
+                    return;
+                }
+
+                // the way is drawn again now and then: the mob shifts, and so does the
+                // street. NOT while the crew is in a fight, though - a march order puts
+                // every man's gun down and turns him back to walking, and a crew jumped
+                // on the way that is re-ordered every twelve seconds never gets to fire
+                // a shot. It finishes what it is in first.
+                if (!busy && Now - squad.LastOrder > reorderEvery) March(squad, false);
             }
 
-            // the way is drawn again now and then: the mob shifts, and so does the street
-            if (Now - _lastOrder > reorderEvery) March(false);
+            var want = walking ? Phase.Marching : Phase.Hunting;
+            if (State != want)
+                Go(want, walking ? "walking again" : "everybody is in it");
+        }
+
+        /// <summary>Is anybody of this crew shooting, being shot at, or running from
+        /// it - anything that stops a man walking for a reason of its own?</summary>
+        static bool Fighting(Squad squad)
+        {
+            foreach (var man in squad.Ours.All())
+                if (!man.Dead && (man.State == CrewWalker.Mode.Engaging || man.Panicked)) return true;
+            return false;
         }
 
         void TickHunting()
@@ -321,26 +457,18 @@ namespace BlockDemo
                 if (d < best) { best = d; next = unit; }
             }
 
-            if (next == null && _car == null)
+            // no car in the run at all (the whole thing on foot) is TickWar's business,
+            // not this one's - it never comes through here. A car that has been shot to
+            // bits under a crew mid-run still can: there is nothing left to put away.
+            if (_car == null)
             {
-                Go(Phase.Done, $"done on foot after {Now:F0}s, {_killed} crews down");
-                return;
-            }
-
-            // on foot, and the next mob is across the quarter: walk there first. A crew
-            // told to attack something four streets away closes on it a stride at a time
-            // with nothing drawn round the buildings in between.
-            if (next != null && _car == null)
-            {
+                if (next == null) { Go(Phase.Done, $"done after {Now:F0}s, {_killed} crews down"); return; }
                 _quarry = next;
-                float far = Vector3.Distance(_ours.Position, next.Position);
-                if (far > engageWithin)
-                {
-                    _marchMark = _ours.Position;
-                    _marchStall = 0f;
-                    March(true);
-                    return;
-                }
+                _crews.Select(_ours);
+                if (!_crews.OrderAttack(_quarry)) { Give("the attack order was refused"); return; }
+                _lastOrder = Now;
+                Go(Phase.Hunting, $"{why}: at {_quarry.GangName}, {Mathf.Sqrt(best):F0} m off - on foot");
+                return;
             }
 
             if (next == null)
@@ -530,6 +658,9 @@ namespace BlockDemo
             _phaseAt = Now;
             _stillFor = 0f;
             Note(next + ": " + what);
+            // the last word on how the field stood: no row is written after the run
+            // is over, so the one that ends it is written here
+            if (next == Phase.Done) LastRow();
         }
 
         void Give(string why)
@@ -537,6 +668,13 @@ namespace BlockDemo
             State = Phase.Failed;
             Fault("mission", why);
             Note("failed: " + why);
+            LastRow();
+        }
+
+        void LastRow()
+        {
+            _nextRow = float.MinValue;
+            Row();
         }
 
         void Note(string what)
@@ -565,18 +703,41 @@ namespace BlockDemo
         {
             if (!DriveTrace.On || DriveTrace.Now < _nextRow) return;
             _nextRow = DriveTrace.Now + 1f;
+            // on foot there are several crews out; the row names the one still walking
+            // (the run's own front), and counts the men left on both sides
+            var quarry = _quarry;
+            var from = Car();
+            int mine = 0, theirs = 0;
+            bool war = onFoot && _squads.Count > 0;   // before the crews are dealt, nobody is counted
+            if (war)
+            {
+                foreach (var squad in _squads)
+                {
+                    mine += squad.Ours.Standing();
+                    if (quarry == null && !squad.Ours.Wiped && squad.Quarry != null)
+                    { quarry = squad.Quarry; from = squad.Ours.Position; }
+                }
+                foreach (var unit in _crews.Units)
+                    if (unit.Faction != 0 && !unit.IsPolice) theirs += unit.Standing();
+            }
+
             var sb = DriveTrace.Take();
             DriveTrace.Str(sb, "state", State.ToString());
-            DriveTrace.Str(sb, "at", _quarry != null ? _quarry.GangName : "");
+            DriveTrace.Str(sb, "at", quarry != null ? quarry.GangName : "");
             DriveTrace.Int(sb, "killed", _killed);
+            if (war)
+            {
+                DriveTrace.Int(sb, "ours", mine);
+                DriveTrace.Int(sb, "theirs", theirs);
+            }
             DriveTrace.Num(sb, "v", _car != null ? _car.Speed : 0f);
             DriveTrace.Num(sb, "still", _stillFor, "F1");
             DriveTrace.Int(sb, "aboard", _car != null ? _car.Aboard.Count : 0);
             DriveTrace.Str(sb, "mode", _car != null ? _car.State.ToString() : "");
             DriveTrace.Str(sb, "why", _car != null ? _car.Why : "");
-            DriveTrace.Num(sb, "toGo", _quarry != null ? Vector3.Distance(Car(), _quarry.Position)
-                                                       : State == Phase.Parking ? Vector3.Distance(Car(), _parkAt) : 0f);
-            DriveTrace.Vec(sb, "p", Car());
+            DriveTrace.Num(sb, "toGo", quarry != null ? Vector3.Distance(from, quarry.Position)
+                                                      : State == Phase.Parking ? Vector3.Distance(Car(), _parkAt) : 0f);
+            DriveTrace.Vec(sb, "p", from);
             DriveTrace.Row("mission", sb.ToString());
         }
 

@@ -59,6 +59,10 @@ namespace RoadDemo
             /// after, being shot at does not turn it round (a crew can be pulled back).</summary>
             public float OrderedAt = -100f;
 
+            /// <summary>When a man of this crew was last shot at. A crew of the outfit
+            /// with no fight of its own answers one it is given (TickCombat).</summary>
+            public float ProvokedAt = -100f;
+
             /// <summary>A rival crew that has had enough - its boss down and one man
             /// left - and is getting off the street.</summary>
             public bool Retreated;
@@ -111,6 +115,9 @@ namespace RoadDemo
         const float Spacing = 1.7f;   // metres between men along the sidewalk
         const float MinSpawnLink = 12f;
         const float AlertRange = 24f; // a rival crew opens up on the outfit this close
+        // a crew of ours answers fire this far off (a rifle's own reach and a little
+        // more), and keeps its guns up this long after the last round came at it
+        const float DefendRange = 30f, FightBack = 6f;
         const int BossHealth = 4, HoodHealth = 3;
         const float HoldFireAfterOrder = 4f;
         const float PanicChance = 0.4f;   // of the men shot down to their last hit, this many run
@@ -468,10 +475,14 @@ namespace RoadDemo
         }
 
         /// <summary>A rival crew, dealt by hand: its lieutenant and hoods stood at the
-        /// anchor facing <paramref name="facing"/>, all carrying <paramref name="weapon"/>.</summary>
+        /// anchor facing <paramref name="facing"/>, all carrying <paramref name="weapon"/> -
+        /// unless <paramref name="armsFor"/> is given, which is asked man by man (0 the
+        /// lieutenant, 1.. his hoods) and lets a mob carry a piece each rather than five
+        /// copies of one gun.</summary>
         public Unit AddRival(int faction, string gangName, string bossName, GameObject bossPrefab,
             IList<string> hoodNames, IList<GameObject> hoodPrefabs, Vector3 anchor, Vector3 facing,
-            GameObject weapon, EquipmentKind weaponKind, bool lineUp = false)
+            GameObject weapon, EquipmentKind weaponKind, bool lineUp = false,
+            System.Func<int, (GameObject weapon, EquipmentKind kind)> armsFor = null)
         {
             var unit = new Unit
             {
@@ -490,7 +501,8 @@ namespace RoadDemo
                 boss.IsLieutenant = true;
                 boss.Faction = faction;
                 boss.MaxHealth = boss.Health = BossHealth;
-                boss.Arm(weapon, weaponKind);
+                var (bossGun, bossKind) = armsFor != null ? armsFor(0) : (weapon, weaponKind);
+                boss.Arm(bossGun, bossKind);
                 boss.Tf.SetParent(unit.Root, true);
                 unit.Boss = boss;
             }
@@ -504,7 +516,8 @@ namespace RoadDemo
                 if (hood == null) continue;
                 hood.Faction = faction;
                 hood.MaxHealth = hood.Health = HoodHealth;
-                hood.Arm(weapon, weaponKind);
+                var (hoodGun, hoodKind) = armsFor != null ? armsFor(k + 1) : (weapon, weaponKind);
+                hood.Arm(hoodGun, hoodKind);
                 hood.Tf.SetParent(unit.Root, true);
                 unit.Hoods.Add(hood);
             }
@@ -648,14 +661,18 @@ namespace RoadDemo
         /// steering past whatever has moved into the way since, is CrewWalker's.</summary>
         public bool MarchTo(Unit unit, Vector3 world)
         {
-            if (unit == null || unit.Boss == null || unit.Boss.Dead) return false;
+            if (unit == null) return false;
+            // A CREW WHOSE LIEUTENANT IS DOWN IS STILL A CREW. His hoods are on their
+            // feet and they can still be sent - somebody at the front picks up the walk.
+            // Refusing the order because the man who used to give it is dead left three
+            // hoods standing in the street for the rest of the run.
+            var boss = unit.Boss != null && !unit.Boss.Dead ? unit.Boss : Standing(unit);
+            if (boss == null || boss.Tf == null) return false;
             unit.TargetUnit = null;
             unit.OrderedAt = Time.time;
             Unboard(unit, "a march order");
             unit.PendingDrive = null;
             world.y = GroundY;
-
-            var boss = unit.Boss;
             var dir = world - boss.Tf.position;
             dir.y = 0f;
             var rot = Quaternion.LookRotation(dir.sqrMagnitude > 0.25f ? dir.normalized : boss.Tf.forward);
@@ -664,12 +681,21 @@ namespace RoadDemo
             for (int k = 0; k < unit.Hoods.Count; k++)
             {
                 var man = unit.Hoods[k];
-                if (man == null || man.Dead) continue;
+                if (man == null || man.Dead || man == boss) continue;
                 Reseat(man);
                 // spread behind him, so three men arrive as a crew and not as a column
                 man.OrderAcross(world + rot * FormationOffset(k), HoodBeat());
             }
             return true;
+        }
+
+        /// <summary>The first man of this crew still on his feet - who leads it when the
+        /// lieutenant is down.</summary>
+        static CrewWalker Standing(Unit unit)
+        {
+            foreach (var man in unit.All())
+                if (man != null && !man.Dead && man.Tf != null) return man;
+            return null;
         }
 
         /// <summary>A new man for this crew, off the ledger's recruiting door: paid for
@@ -1558,6 +1584,22 @@ namespace RoadDemo
                     if (seen != null) SetTarget(unit, seen);
                 }
 
+                // THE OUTFIT STARTS NOTHING - and walks through nothing either. A crew of
+                // ours with no fight of its own that is BEING SHOT AT turns and returns
+                // fire on whoever is nearest. Without this a crew sent across the quarter
+                // is target practice: the mobs open up on it at twenty-four metres and it
+                // walks on into the fire, because nothing had told it to shoot back (a
+                // whole outfit, fifteen men, was lost that way for three of theirs).
+                // The law is not answered here - a warning shout is PoliceWarning's
+                // business, and a crew is not put at war with the police by a stray round.
+                if (unit.TargetUnit == null && unit.Faction == 0 &&
+                    Time.time - unit.ProvokedAt < FightBack &&
+                    Time.time - unit.OrderedAt > HoldFireAfterOrder)
+                {
+                    var seen = EnemyWithin(unit, DefendRange, outfitOnly: false, noPolice: true);
+                    if (seen != null) SetTarget(unit, seen);
+                }
+
                 if (unit.TargetUnit == null) continue;
                 if (unit.Car != null) continue; // riders fire from the windows, not on foot
                 foreach (var man in unit.All())
@@ -1693,13 +1735,14 @@ namespace RoadDemo
             }
         }
 
-        Unit EnemyWithin(Unit unit, float range, bool outfitOnly)
+        Unit EnemyWithin(Unit unit, float range, bool outfitOnly, bool noPolice = false)
         {
             float r2 = range * range;
             foreach (var other in Units)
             {
                 if (other == unit || other.Faction == unit.Faction || other.Wiped) continue;
                 if (outfitOnly && other.Faction != 0) continue;
+                if (noPolice && other.IsPolice) continue;
                 foreach (var a in unit.All())
                 {
                     if (a.Dead) continue;
@@ -1796,6 +1839,11 @@ namespace RoadDemo
             // wherever the car is going: the order stands, the guns come out anyway
             var victimUnit = UnitOf(target);
             var shooterUnit = UnitOf(shooter);
+            // rounds are coming at this crew, hit or miss: it has a fight now whether it
+            // went looking for one or not, and TickCombat turns it round when the order
+            // it is under has stopped holding its fire
+            if (victimUnit != null && shooterUnit != null && !shooterUnit.IsPolice)
+                victimUnit.ProvokedAt = Time.time;
             if (victimUnit != null && shooterUnit != null && victimUnit.TargetUnit == null &&
                 (IsAboard(target) || Time.time - victimUnit.OrderedAt > HoldFireAfterOrder))
                 SetTarget(victimUnit, shooterUnit);

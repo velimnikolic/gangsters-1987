@@ -47,6 +47,22 @@ namespace RoadDemo
         public float BodyS0, BodyS1;   // the body alone
         public float BodyD0, BodyD1;
         public float Vel;              // signed speed along the axis (+ toward B)
+        /// <summary>How hard he is braking this instant, in metres a second squared
+        /// (0 while he is not slowing). What is behind him stops short of where he
+        /// will COME TO REST, and that point runs back to meet him when he stands on
+        /// the brakes - which is the difference between braking with him and braking
+        /// half a second after him.</summary>
+        public float Slowing;
+        /// <summary>The road-s his CENTRE means to come to rest at, if he means to
+        /// come to rest at all (NaN while he is going somewhere). A queue at a red
+        /// light is a line of cars all stopping in the same few metres, and each of
+        /// them starts braking a little later than the one in front - the one behind
+        /// is further from the line, so its own curve says it may still go. Three
+        /// tenths of a second of that eats a two-metre gap. Reading the man in front's
+        /// stopping place instead of his speed, the whole queue brakes together and
+        /// the gap is kept; it says nothing at all in open road, so it costs nothing
+        /// there.</summary>
+        public float StopAt = float.NaN;
         public int Heading;            // the way the nose points: +1 / -1 along the axis, 0 crosswise
         public bool Parked;            // stood at the kerb, out of the running lanes
         public int Priority;           // who gives way in a standoff (higher wins)

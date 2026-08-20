@@ -261,7 +261,18 @@ def verdict(dirpath):
     print(f"   the run ended {state}, {kills} crews down")
     print(f"   the crew car : stood still {worst_crew:.0f}s at worst, {len(stuck)} spells counted stuck")
     print(f"   the traffic  : worst car stood {worst_traffic:.0f}s, {belts} belt refusals")
-    print(f"   on foot      : {walkstalls} men flagged stuck")
+    # a run fought on foot counts heads instead of wheels: who was left standing
+    war = [r for r in mission if "ours" in r]
+    tail = ""
+    if war:
+        # the field as it stood at its fullest, and as it ended: the rows before the
+        # crews are dealt count nobody, and the row after the last man falls is never
+        # written - so it is the most and the least either side ever had
+        tail = (f"; {min(r['ours'] for r in war)} of ours left of "
+                f"{max(r['ours'] for r in war)}, "
+                f"{min(r['theirs'] for r in war)} of theirs left of "
+                f"{max(r['theirs'] for r in war)}")
+    print(f"   on foot      : {walkstalls} men flagged stuck{tail}")
     if told:
         for r in told[-6:]:
             print(f"   {secs(r['t'])} {r.get('who','')}: {r.get('what','')}")

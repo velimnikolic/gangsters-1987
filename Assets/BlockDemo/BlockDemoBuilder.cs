@@ -78,6 +78,18 @@ namespace BlockDemo
                  "never mind the lights - and has it out with them there.")]
         public bool missionOnFoot;
 
+        [Header("The outfit")]
+        [Tooltip("Crews of the outfit sent out, one lieutenant each - the ledger is " +
+                 "rewritten to match before anybody stands up. 0 leaves the seeded " +
+                 "roster alone (one lieutenant and his two hoods).")]
+        [Min(0)] public int outfitLieutenants = 0;
+        [Tooltip("Hoods behind each of those lieutenants. 0 sends them out alone.")]
+        [Min(0)] public int outfitHoods = 0;
+        [Tooltip("Every man on the street - ours off the armory counter, theirs off the " +
+                 "same ladder - carrying his own piece instead of a crew holding five " +
+                 "copies of one gun.")]
+        public bool mixedArms = false;
+
         [Header("Day")]
         [Range(0f, 24f)] public float startHour = 11f;
         [Tooltip("Real seconds per game hour; 15 runs a day in six minutes.")]
@@ -139,6 +151,7 @@ namespace BlockDemo
             city.policeOfficerCount = police ? 1 : 0;
             city.rivalCrewsInCity = rivalCrews;
             city.rivalHoodsInCity = rivalHoods;
+            city.mixedArms = mixedArms;
             // the counts above are what this quarter wants; the city's scaling is for a city
             city.scaleLifeToCity = false;
             city.updateProfile = false;
@@ -155,6 +168,17 @@ namespace BlockDemo
             city.treesPerHectare = 14f;
 
             go.SetActive(true);   // and the quarter is built
+
+            // the books first: the men who will be stood up are the men the ledger
+            // says the outfit has, so the run's outfit is written before it deals
+            if (outfitLieutenants > 0)
+            {
+                var books = gameObject.AddComponent<BlockDemoOutfit>();
+                books.lieutenants = outfitLieutenants;
+                books.hoodsEach = outfitHoods;
+                books.mixedArms = mixedArms;
+                books.armsSeed = spacingSeed;
+            }
 
             if (missionAfter > 0f)
             {
