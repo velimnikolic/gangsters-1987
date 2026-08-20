@@ -444,6 +444,7 @@ namespace RoadDemo
         // The route to the goal from wherever the car is now.
         float _retry;
         float _parkTrying;   // seconds spent looking for somewhere to pull in
+        float _heldInBox;    // seconds held inside a junction by something stood beyond it
 
         float _turnBackFor;     // seconds spent looking for the turn-round on this road
 
@@ -532,7 +533,13 @@ namespace RoadDemo
                     // stands - in the running lane - and everything behind it queues
                     // (156 seconds of it, in the run that found this).
                     float room = PullInLength() + 4f;
-                    _goalS = Mathf.Clamp(S + Heading * room, 4f, road.Length - 4f);
+                    // and NOT at the mouth of the street: a car left standing where the
+                    // traffic comes out of a junction stops everything crossing it (the
+                    // run that found this queued four cars for nearly three minutes)
+                    const float offJunction = 22f;
+                    float lo = Mathf.Min(offJunction, road.Length * 0.4f);
+                    float hi = Mathf.Max(road.Length - offJunction, road.Length * 0.6f);
+                    _goalS = Mathf.Clamp(S + Heading * room, lo, hi);
                     _goalD = road.KerbDOnSide(D, HalfWide);
                     _goalStop = true;
                     Route = null;
@@ -1924,8 +1931,15 @@ namespace RoadDemo
             // one car parked at the mouth of a street). Out first, round it after: the
             // road's own following and passing take it from there. Only if it is right on
             // the exit is holding better than coming out on top of it.
+            // Held in the box by something STOOD on the far side: out anyway, in the end.
+            // Waiting in a junction for a parked car to move is waiting for ever, and
+            // every crossing car waits behind us while we do it; better a tight stop on
+            // the road, where the belt is the last word and the thing can be driven round.
+            _heldInBox = lead != null && (lead.Parked || (lead.Car != null && lead.Car.Derelict))
+                ? _heldInBox + Time.deltaTime : 0f;
+            float wantsGap = _heldInBox > 12f ? HalfLen + 1f : 2f * HalfLen + 2f;
             bool standing = lead != null && (lead.Parked || (lead.Car != null && lead.Car.Derelict)) &&
-                            fgap > 2f * HalfLen + 2f;
+                            fgap > wantsGap;
             if (lead != null && standing)
             {
                 // out of the box and stopped short of it ON THE ROAD, where it can be
