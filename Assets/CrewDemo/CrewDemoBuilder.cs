@@ -78,6 +78,30 @@ namespace CrewDemo
         [Tooltip("Send the bike at the first rival this many seconds into Play, with no key pressed. 0: only on B. What the headless harness sets to watch a drive-by go by.")]
         [Min(0)] public float bikeAttackAfter = 0f;
 
+        [Header("Mission (headless)")]
+        [Tooltip("Send the outfit at the rivals this many seconds into Play, with no click. " +
+                 "0: only by hand. The lab's own driver is BlockDemoMission, which wants " +
+                 "nothing of the block - it reads DemoCrews and nothing else - so it drives " +
+                 "this scene just as well, and every crew it is given goes at whatever mob " +
+                 "is still standing until none are.")]
+        [Min(0)] public float missionAfter = 0f;
+
+        [Tooltip("Straight out on foot, no car at all.")]
+        public bool missionOnFoot = true;
+
+        [Tooltip("Open with a drive-by on the machine, then finish on foot.")]
+        public bool missionMoto = false;
+
+        [Tooltip("Passes ridden when the drive-by opens it.")]
+        [Range(1, 6)] public int missionPassesRidden = 1;
+
+        [Tooltip("Seconds of car passes before the crew is put down and sent in on foot. " +
+                 "Only read when missionOnFoot is off.")]
+        [Min(0)] public float missionPasses = 45f;
+
+        [Tooltip("How near the mark a crew has to be before it is told to open up.")]
+        [Min(5)] public float missionEngageWithin = 30f;
+
         [Header("Arms")]
         [Tooltip("Arm the outfit out of the armory when the scene opens - one gun per man into each crew's deck. Off: every man carries the .38 in his coat.")]
         public bool armTheOutfit = true;
@@ -147,6 +171,11 @@ namespace CrewDemo
 
             BuildFloor();
             BuildStreets();
+            // the town's fence: this set is the block, its four streets and their
+            // pavements - the bare floor beyond is the wilderness, and nobody who
+            // picks his own walk (CrewWalker.TryRoam) picks a spot out on it
+            WalkObstacles.City.Add(Rect.MinMaxRect(StreetXMin - Walk, StreetZMin - Walk,
+                                                   StreetXMax + Walk, StreetZMax + Walk));
             BuildBlock();
             BuildLight();
             BuildCamera();
@@ -189,17 +218,54 @@ namespace CrewDemo
             BuildBikes(clips);
             BuildPavementLife(clips);
             BuildPolice(clips);
+
+            // The mission, for a run nobody is sat at. Everything it needs is the crews
+            // themselves, so the block's driver serves here unchanged - and what it does
+            // is exactly what a player does with the mouse: pick a crew, send it at a
+            // mob, and when that mob is down send it at the next one, until the street
+            // is ours or the outfit is not.
+            if (missionAfter > 0f)
+            {
+                var mission = gameObject.AddComponent<BlockDemo.BlockDemoMission>();
+                mission.startAfter = missionAfter;
+                mission.onFoot = missionOnFoot;
+                mission.motoDriveBy = missionMoto;
+                mission.passes = missionPassesRidden;
+                mission.passesBefore = missionPasses;
+                mission.engageWithin = missionEngageWithin;
+            }
 #else
             Debug.LogError("[CrewDemo] This demo loads Synty prefabs through the AssetDatabase and only runs in the editor.");
 #endif
         }
 
-        bool _carGiven, _armsGiven;
+        bool _carGiven, _armsGiven, _bikeOwned;
+
+        /// <summary>WHOSE MACHINE IT IS matters to anything but the B key. The key holds
+        /// the bike in a field and sends it itself, so a scene bike never needed an
+        /// owner; a mission asks the crews instead (DemoCrews.BikeOf answers by Owner),
+        /// and a headless drive-by here died at once on "the outfit has no motorcycle on
+        /// the street" while one stood at the kerb the whole run. It cannot be done as
+        /// the bike is built, either: the outfit's crew is dealt off the roster a frame
+        /// or two later, so at that moment the only units in the scene are the rivals'.
+        /// The same shape as the car and the guns, which wait for the roster too.</summary>
+        void OwnTheOutfitBike()
+        {
+            if (_bikeOwned || _outfitBike == null || _crews == null) return;
+            foreach (var unit in _crews.Units)
+                if (unit.Faction == 0 && !unit.IsPolice && !unit.Wiped)
+                {
+                    _outfitBike.Owner = unit;
+                    _bikeOwned = true;
+                    return;
+                }
+        }
 
         void Update()
         {
             GiveCarToFirstLieutenant();
             ArmTheOutfit();
+            OwnTheOutfitBike();
             TickOutfitBike();
             TickPavementLife(Time.deltaTime);
 
@@ -405,8 +471,8 @@ namespace CrewDemo
                     kit.LayCrossroads(cx, cz);
 
             // what the dressing laid is what the men walk round - the crews on their
-            // strides (WalkObstacles) and the crowd on its stretches (clearance below)
-            WalkObstacles.Props.Add(kit.Plan);
+            // strides (WalkObstacles, which the kit enters itself) and the crowd on its
+            // stretches (clearance below)
             _pavementPlan = kit.Plan;
 #endif
         }
@@ -802,7 +868,9 @@ namespace CrewDemo
                 weapon: CrewKit.Weapon("SM_Wep_Machine_Pistol_01"), kind: EquipmentKind.MachinePistol,
                 riderName: "The rider", pillionName: "The pillion");
             if (_outfitBike != null)
+            {
                 Debug.Log("[CrewDemo] The outfit keeps a " + prefab.name + " as well - press B to send it at a rival.");
+            }
 #endif
         }
 

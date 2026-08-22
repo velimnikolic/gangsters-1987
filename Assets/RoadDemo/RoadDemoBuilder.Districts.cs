@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 namespace RoadDemo
@@ -621,6 +621,24 @@ namespace RoadDemo
                 : (from.Pos - a.Pos).sqrMagnitude <= (from.Pos - b.Pos).sqrMagnitude ? a : b;
             if (to == null) return;
             AddPedLink(from, to, false, false, null);
+        }
+
+        /// <summary>The fence the outfit walks inside: the grid rectangle, and every
+        /// quarter that hangs off it. Past those the ground is the island's - wilderness,
+        /// beach, sea - and a man of the outfit has no business out there, so whoever
+        /// chooses somewhere for him to be asks WalkObstacles.InCity first. Laid as soon
+        /// as the quarters are planned, which is before anything walks.</summary>
+        void FenceCity()
+        {
+            WalkObstacles.City.Clear();
+            float x0 = verticalRoadX[0] - VHalf(0) - Sidewalk;
+            float x1 = verticalRoadX[verticalRoadX.Length - 1] + VHalf(verticalRoadX.Length - 1) + Sidewalk;
+            float z0 = horizontalRoadZ[0] - HHalf(0) - Sidewalk;
+            float z1 = horizontalRoadZ[horizontalRoadZ.Length - 1] + HHalf(horizontalRoadZ.Length - 1) + Sidewalk;
+            WalkObstacles.City.Add(Rect.MinMaxRect(x0, z0, x1, z1));
+            foreach (var r in _landRects) WalkObstacles.City.Add(r);
+            Debug.Log($"[RoadDemo] the outfit's fence: the grid ({x1 - x0:F0} x {z1 - z0:F0} m) " +
+                      $"and {_landRects.Count} quarters");
         }
 
         // ------------------------------------------------------ IDistrictHost

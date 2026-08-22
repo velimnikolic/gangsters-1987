@@ -79,6 +79,45 @@ namespace RoadDemo
             RunsRed = true, Fearless = true, Priority = 2, StandoffPatience = 0.5f,
         };
 
+        /// <summary>Two wheels leaving a drive-by: quick and steady, and nothing else.
+        ///
+        /// Both of the things that would make it braver were tried and both put the
+        /// machine into the back of a car, which the belt then had to refuse for it -
+        /// and a belt refusal is a vehicle that would have driven through another one.
+        ///
+        /// THE CROWN AND THE FAR LANE, because a motorcycle in this model does not
+        /// filter between the lanes (RoadBike says so where it is built): it takes a
+        /// whole lane like anything else, so swinging it across the middle of the street
+        /// at speed lands it on top of whatever is queued at the next light. Gap already
+        /// negative the first frame anybody noticed.
+        ///
+        /// THE RED, which looks like the obvious thing a getaway does and is worse: a
+        /// red is usually a red with a QUEUE under it, and a machine that has decided to
+        /// go through one drives into the car in front of it and grinds there until the
+        /// light changes - six hundred and nineteen refusals in thirty-one seconds, in
+        /// the soak that tried it. Running a red is only safe for something that can go
+        /// round what is waiting at it, and this cannot.
+        ///
+        /// What is left is the useful half: getting away at nearly twice what the traffic
+        /// does, no patience to speak of, a turn in the road when home is behind it - and
+        /// MORE air off the car in front than the errand profile carries, not less,
+        /// because it is the one going fastest. It also STOPS harder than a car does,
+        /// which is the one honest advantage a motorcycle has and the reason it can be
+        /// given the pace at all: sixteen metres a second on a car's seven-metre brake
+        /// needs eighteen metres to stop in and is given fourteen; on eleven it needs
+        /// twelve.
+        ///
+        /// Used for EVERY leg the machine drives, not only the way home. The pass ran on
+        /// Hot until the lane work put the machine inside a car three times in nine
+        /// runs, one of them five metres in before anybody noticed.</summary>
+        public static readonly DriverProfile Getaway = new DriverProfile
+        {
+            Name = "Getaway", Cruise = 16f, ObeysLimit = false, Accel = 9f, Brake = 11f,
+            LateralG = 4f, TurnSpeed = 8f, UTurnSpeed = 4f, FollowGap = 3.5f, TimeGap = 0.9f,
+            Patience = 0.4f, UsesCrown = false, UsesOpposite = false, UTurnsInRoad = true,
+            RunsRed = false, Fearless = true, Priority = 2, StandoffPatience = 0.5f,
+        };
+
         /// <summary>The law: brisk, fearless, the crown and the far lane with its
         /// lights on, a red when the box is clear; everybody else gives way to it.</summary>
         public static readonly DriverProfile Police = new DriverProfile

@@ -11,7 +11,15 @@ namespace LivingCity.Gangs
     ///   1. the player front's pick roll,
     ///   2. per gang in id order, a child seed (the extension point: future per-gang
     ///      detail draws from the child stream, never from this one),
-    ///   3. per AI gang in id order, crew size then names, lieutenant first.
+    ///   3. per AI gang in id order: how many CREWS the family runs, then for each of
+    ///      them the capo's name, his crew size, and his soldiers' names.
+    ///
+    /// A FAMILY IS NOT ONE CREW. A mob that fields two or three capos is a mob with two
+    /// or three corners, and the street lays it out that way - one knot of men per
+    /// lieutenant, in different quarters (RoadDemoBuilder.SpawnRivals). Members are
+    /// stored flat, in crew order: every Lieutenant entry OPENS a crew and the soldiers
+    /// behind him are his, until the next one. Members[0] is therefore still a
+    /// lieutenant, which is the contract the door slot at every front is written to.
     ///
     /// The player's gang draws NOTHING for its members - it mirrors the personnel
     /// roster, so the men outside the front are the same men the P-key ledger lists,
@@ -21,9 +29,16 @@ namespace LivingCity.Gangs
     /// </summary>
     public static class GangSeeder
     {
-        /// <summary>AI soldiers besides the lieutenant: 2 or 3.</summary>
+        /// <summary>AI soldiers behind each lieutenant: 2 or 3.</summary>
         public const int MinSoldiers = 2;
         public const int MaxSoldiers = 3;
+
+        /// <summary>Crews an AI family runs - one capo apiece. One is a corner, three is
+        /// a family with a quarter of its own; raising the top of this range puts men on
+        /// the street everywhere the city has pavement for them, so it is the weight
+        /// dial for the whole underworld.</summary>
+        public const int MinLieutenants = 1;
+        public const int MaxLieutenants = 3;
 
         public static Gang[] Generate(int seed, Personnel.Roster playerRoster)
         {
@@ -44,15 +59,20 @@ namespace LivingCity.Gangs
             foreach (var gang in gangs)
                 gang.MemberSeed = rng.Next();
 
-            // Draw 3: the AI crews.
+            // Draw 3: the AI crews - a family, then each of its crews in turn.
             for (var i = 0; i < gangs.Length; i++)
             {
                 if (gangs[i].IsPlayer)
                     continue;
 
-                var soldiers = rng.Next(MinSoldiers, MaxSoldiers + 1);
-                for (var member = 0; member <= soldiers; member++)
-                    gangs[i].Members.Add(DrawMember(rng, gangs[i], lieutenant: member == 0));
+                var crews = rng.Next(MinLieutenants, MaxLieutenants + 1);
+                for (var crew = 0; crew < crews; crew++)
+                {
+                    gangs[i].Members.Add(DrawMember(rng, gangs[i], lieutenant: true));
+                    var soldiers = rng.Next(MinSoldiers, MaxSoldiers + 1);
+                    for (var member = 0; member < soldiers; member++)
+                        gangs[i].Members.Add(DrawMember(rng, gangs[i], lieutenant: false));
+                }
             }
 
             MirrorRoster(gangs[GangCatalog.PlayerGangId], playerRoster);

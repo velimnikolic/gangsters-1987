@@ -151,7 +151,7 @@ namespace RoadDemo
             if (cached)
                 return cached;
 #if UNITY_EDITOR
-            cached = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(path);
+            cached = RoadDemo.DemoAssetLoad.Load<Sprite>(path);
 #endif
             if (!cached)
                 Warn();
@@ -163,7 +163,7 @@ namespace RoadDemo
             if (cached)
                 return cached;
 #if UNITY_EDITOR
-            cached = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            cached = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
 #endif
             if (!cached)
                 Warn();
@@ -175,7 +175,7 @@ namespace RoadDemo
             if (cached)
                 return cached;
 #if UNITY_EDITOR
-            cached = UnityEditor.AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path);
+            cached = RoadDemo.DemoAssetLoad.Load<TMP_FontAsset>(path);
 #endif
             if (!cached)
                 Warn();

@@ -136,7 +136,26 @@ namespace RoadDemo
         }
 
         bool ChatReady => State == Mode.Walking && !_waiting && !_link.Gated
-            && _chatCooldown <= 0f && _fear < 0.15f && HasPose(PoseTalk);
+            && _chatCooldown <= 0f && _fear < 0.15f && HasPose(PoseTalk) && !NearGate();
+
+        /// <summary>Metres of pavement kept clear of a crossing's mouth: a pair
+        /// stopped for a word right at the kerb line stands, to anyone watching,
+        /// in the middle of the zebra.</summary>
+        const float GateBerth = 4f;
+
+        bool NearGate()
+        {
+            if (_t < GateBerth && HasGate(_link.From)) return true;
+            if (_link.Length - _t < GateBerth && HasGate(_link.To)) return true;
+            return false;
+        }
+
+        static bool HasGate(PedNode n)
+        {
+            for (int i = 0; i < n.Links.Count; i++)
+                if (n.Links[i].Gated) return true;
+            return false;
+        }
 
         /// <summary>Out on the pavement (or the road), alive - somebody a round can hit.</summary>
         public bool Exposed => !Dead && Tf != null && Tf.gameObject.activeSelf &&
@@ -235,6 +254,10 @@ namespace RoadDemo
 
                 case Mode.Chat:
                     TickBlend(dt);
+                    // the sidestep out of the walking line, position and lateral in
+                    // step, so a chat cut short resumes from where he really stands
+                    Tf.position = Vector3.MoveTowards(Tf.position, _chatSlide, 0.7f * dt);
+                    Lateral = Mathf.MoveTowards(Lateral, _chatLatTo, 0.7f * dt);
                     if (_partner != null)
                     {
                         var look = _partner.Tf.position - Tf.position;
@@ -526,6 +549,7 @@ namespace RoadDemo
                     float seconds = Random.Range(chatSeconds.x, chatSeconds.y);
                     a.BeginChat(b, shout, seconds);
                     b.BeginChat(a, shout, seconds);
+                    StepAside(a, b);
                     break;
                 }
             }
@@ -545,9 +569,46 @@ namespace RoadDemo
             _partner = partner;
             State = Mode.Chat;
             _timer = seconds;
+            _chatSlide = Tf.position;
+            _chatLatTo = Lateral;
             int pose = shout && HasPose(PoseShout) ? PoseShout : PoseTalk;
             RestartPose(pose, Random.value * 0.8f); // desync the two gesticulations
             SetPose(pose);
+        }
+
+        // where the pair edges to for its word, and the lateral that spot is on -
+        // kept in step with the slide so a chat broken off mid-step resumes the
+        // walk from the line the man actually stands on, no snap
+        Vector3 _chatSlide;
+        float _chatLatTo;
+
+        /// <summary>Two stopped for a word do not stand in the middle of the walk:
+        /// the pair edges aside together - the same world direction, so they stay
+        /// face to face - onto whichever flank of the pavement has the room, and
+        /// their laterals go with them so the walk resumes from where they stand.
+        /// No room either side (furniture both ways), and they stay put.</summary>
+        static void StepAside(CivilianAgent a, CivilianAgent b)
+        {
+            var dir = a.LinkDirection;
+            var right = new Vector3(dir.z, 0f, -dir.x);
+            // headroom inside the lateral band, either way; b walks the reverse
+            // link, so the same world shift runs against his lateral
+            float plus = Mathf.Min(1.2f, 1.9f - a.Lateral, 1.9f + b.Lateral);
+            float minus = Mathf.Min(1.2f, 1.9f + a.Lateral, 1.9f - b.Lateral);
+            for (int i = 0; i < 2; i++)
+            {
+                // the roomier flank first
+                float s = (plus >= minus) == (i == 0) ? plus : -minus;
+                if (Mathf.Abs(s) < 0.5f) continue;
+                var off = right * s;
+                if (WalkObstacles.Standing(a.Tf.position + off, WalkObstacles.Radius)) continue;
+                if (WalkObstacles.Standing(b.Tf.position + off, WalkObstacles.Radius)) continue;
+                a._chatSlide = a.Tf.position + off;
+                b._chatSlide = b.Tf.position + off;
+                a._chatLatTo = a.Lateral + s;
+                b._chatLatTo = b.Lateral - s;
+                return;
+            }
         }
 
         // ---------------------------------------------------------- the nerve

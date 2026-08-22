@@ -28,6 +28,7 @@ namespace LivingCity.Tests
             CashFormatsExactly(failures);
             PurchaseGateDebitsAndBooks(failures);
             CataloguePricesMatchTheSheet(failures);
+            MotorcyclesAreOnTheCounter(failures);
             NewStockEntersThePoolUnheld(failures);
             StancesTurnOverAtCommit(failures);
             TurfIsHeldPerBuilding(failures);
@@ -272,6 +273,54 @@ namespace LivingCity.Tests
                 failures.Add("CataloguePricesMatchTheSheet: weapon count drifted.");
             if (ArmoryCatalog.Vehicles.Length == 0)
                 failures.Add("CataloguePricesMatchTheSheet: no vehicles for sale.");
+        }
+
+        /// <summary>The counter's third shelf. Three machines, every one of them wheels
+        /// rather than a gun, every one priced under the working car - what is bought
+        /// here is a pass down a street, not a crew's transport - and every one of them
+        /// named so that the body the catalogue photographs is the body that turns up at
+        /// the kerb (PortraitStudio.VehicleModelFor is the single table, and CrewCars
+        /// reads it too).</summary>
+        static void MotorcyclesAreOnTheCounter(List<string> failures)
+        {
+            // Two, since the scooter was measured off the pack and taken off the shelf
+            // (ArmoryCatalog.Motorcycles says why). A count, so a listing cannot be
+            // added or lost by accident without this saying so.
+            if (ArmoryCatalog.Motorcycles.Length != 2)
+                failures.Add("MotorcyclesAreOnTheCounter: the shelf is not two deep.");
+
+            var sedan = 0;
+            foreach (var car in ArmoryCatalog.Vehicles)
+                if (car.DisplayName == "Sedan")
+                    sedan = car.Price;
+
+            var seen = new List<string>();
+            foreach (var item in ArmoryCatalog.Motorcycles)
+            {
+                if (item.Kind != EquipmentKind.Motorcycle)
+                    failures.Add($"MotorcyclesAreOnTheCounter: {item.DisplayName} is not " +
+                                 "a motorcycle.");
+                if (item.Price <= 0 || item.Price >= sedan)
+                    failures.Add($"MotorcyclesAreOnTheCounter: {item.DisplayName} at " +
+                                 $"{item.Price} against the working car's {sedan}.");
+                if (item.Note.Length == 0)
+                    failures.Add($"MotorcyclesAreOnTheCounter: {item.DisplayName} has no note.");
+                if (seen.Contains(item.DisplayName))
+                    failures.Add($"MotorcyclesAreOnTheCounter: {item.DisplayName} twice - " +
+                                 "the display name is the key every lookup uses.");
+                seen.Add(item.DisplayName);
+
+                // The body table answers by DISPLAY NAME, and its fallback is a sedan:
+                // a listing the table has never heard of turns up at the kerb as a car,
+                // which is the one failure that looks like nothing at all.
+                var body = LivingCity.UI.PortraitStudio.VehicleModelFor(item.DisplayName);
+                if (string.IsNullOrEmpty(body) || body == "SM_Veh_Sedan_01")
+                    failures.Add($"MotorcyclesAreOnTheCounter: {item.DisplayName} falls " +
+                                 "back to the sedan body.");
+                if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(body))
+                    failures.Add($"MotorcyclesAreOnTheCounter: {item.DisplayName} " +
+                                 $"photographs the law's own {body}.");
+            }
         }
 
         static void NewStockEntersThePoolUnheld(List<string> failures)

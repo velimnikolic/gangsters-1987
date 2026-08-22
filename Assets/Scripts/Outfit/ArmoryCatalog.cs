@@ -79,6 +79,58 @@ namespace LivingCity.Outfit
                 "Slow and anonymous; swallows anything."),
         };
 
+        /// <summary>
+        /// The counter's second shelf of wheels, and a different thing from the first.
+        /// A car is how a crew gets to work; a motorcycle is how two men get past a
+        /// man's front door with a gun and are round the corner before the street has
+        /// turned its head. It carries no crew and it counts as no crew's vehicle
+        /// (CrewKit.HasVehicle) - what it buys is the drive-by, and the counter prices
+        /// it that way: the machine that will do the job properly costs more than the
+        /// jalopy that would carry four men, and the two that would not cost a good
+        /// deal less.
+        ///
+        /// Two bodies, Palm City's: the motorbike a man would choose and the moped that
+        /// delivers everybody's dinner. The police pack's tourer is liveried and is the
+        /// law's (VehicleCatalog.PoliceMotorcycles), and the two electric machines that
+        /// pack also ships are barred by the calendar.
+        ///
+        /// THE SCOOTER WAS THE THIRD AND IS NOT ANY MORE, and the reason is measured
+        /// rather than felt. Read off the pack by BikeBody at runtime: the motorbike has
+        /// a 2.45 m wheelbase on 0.57 m wheels, the moped 1.49 on 0.35 - and
+        /// SM_Veh_Scooter_01 has 0.80 m on 0.20 m wheels, four of them (Wheel_FL/FR/
+        /// RL/RR), and no handlebar part the pose can find, so a rider's fists are put
+        /// on a guess. It is a mobility scooter, not a motorcycle. Two armed men cannot
+        /// be seated on eighty centimetres of it at any spacing, and the counter does
+        /// not sell a machine that cannot do the job it is sold for.
+        ///
+        /// What plays each listing is PortraitStudio.VehicleModelFor, so the body in the
+        /// catalogue cut is the body that turns up at the kerb (CrewCars.BodyFor reads
+        /// the same table).
+        /// </summary>
+        public static readonly ArmoryItem[] Motorcycles =
+        {
+            new ArmoryItem(EquipmentKind.Motorcycle, "Motorbike", 1_200,
+                "Two men, a gun off the back, and gone before the street looks up."),
+            new ArmoryItem(EquipmentKind.Motorcycle, "Moped", 500,
+                "Nobody looks twice at a delivery boy. Nobody hears one coming either."),
+        };
+
+        /// <summary>
+        /// The counter's back shelf: what a crew throws. A grenade is not dealt into a
+        /// man's hand the way a gun is (RosterOps.IsGrenade) - it is a countable charge
+        /// the crew carries and spends one at a time, thrown at a rival or a shopfront or
+        /// laid under a car (DemoCrews.Bomb). Bought and given to a lieutenant one at a
+        /// time exactly as a gun is (each BUY one charge on the books, each GIVE hands the
+        /// crew one more to carry), and struck off the moment it is thrown - so a crew's
+        /// grenade count is just how many the lieutenant has been given and not yet spent.
+        /// Priced so a handful is a real call against a better gun.
+        /// </summary>
+        public static readonly ArmoryItem[] Explosives =
+        {
+            new ArmoryItem(EquipmentKind.Grenade, "Grenade", 175,
+                "One pineapple - thrown at a man or a shopfront, or laid under a car."),
+        };
+
         /// <summary>3.0 Firearms stars. Below this, handing a man the tommy gun earns
         /// the amber warning - and is allowed, because the mistake is the player's to
         /// make (the promotion rule's discipline).</summary>

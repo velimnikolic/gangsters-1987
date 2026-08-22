@@ -1,3 +1,4 @@
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -173,17 +174,50 @@ namespace RoadDemo
         /// Everything lands under <paramref name="mergedRoot"/>.</summary>
         public static void Merge(IList<MergeRoot> roots, Transform mergedRoot, string tag)
         {
+            var steps = MergeSteps(roots, mergedRoot, tag);
+            while (steps.MoveNext()) { }
+        }
+
+        /// <summary>The merge, one step at a time. While it is still GATHERING it yields
+        /// every few thousand renderers and after every root, and nothing is switched off
+        /// yet - the whole city keeps drawing as its own pieces. While it is BUILDING it
+        /// yields after every merged mesh, and a source is switched off only in the step
+        /// its LAST group is built, so no piece is ever both un-merged and un-drawn: the
+        /// frames in between look exactly like the finished merge, only with more draw
+        /// calls. Drain it in one frame (<see cref="Merge"/>) for the old behaviour, or
+        /// pump it against a millisecond budget to fold the city in over a second of play
+        /// instead of one locked frame.</summary>
+        public static IEnumerator MergeSteps(IList<MergeRoot> roots, Transform mergedRoot, string tag)
+        {
             var groups = new Dictionary<MergeKey, List<CombineInstance>>();
+            // which renderers fed each group, and how many groups each renderer still has
+            // left to be built: a source is only safe to hide once that count hits zero,
+            // which is what keeps the frame-by-frame build free of gaps
+            var owners = new Dictionary<MergeKey, List<MeshRenderer>>();
+            var pending = new Dictionary<MeshRenderer, int>();
+            var mrKeys = new HashSet<MergeKey>();
+            var sources = new HashSet<Mesh>();
             var chunkOf = new Dictionary<Transform, int>();
             var unreadable = new HashSet<string>();
             int nextChunk = 1;
-            int pieces = 0, verts = 0;
+            int walked = 0;
+            const int GatherYieldEvery = 2500;
+            int pieces = 0;
+            // long, not int: the city's merge is already a hundred and eighty million
+            // vertices and an int runs out at two billion
+            long verts = 0;
 
             for (int r = 0; roots != null && r < roots.Count; r++)
             {
                 var entry = roots[r];
                 var root = entry.Root;
                 if (root == null) continue;
+                // what this one root costs, so the tally below says WHERE the geometry
+                // is - the streets, the block bakes, or the wilderness on the island -
+                // instead of only how much of it there is. Which of them is worth
+                // thinning is not a thing to guess at.
+                int rootPieces = 0;
+                long rootVerts = 0;
                 foreach (var mr in root.GetComponentsInChildren<MeshRenderer>())
                 {
                     if (!mr.enabled) continue;
@@ -214,26 +248,109 @@ namespace RoadDemo
                     var mats = mr.sharedMaterials;
                     var matrix = mr.transform.localToWorldMatrix;
                     int subs = Mathf.Min(mats.Length, mesh.subMeshCount);
+                    mrKeys.Clear();
                     for (int i = 0; i < subs; i++)
                     {
                         if (mats[i] == null) continue;
                         var key = new MergeKey { Chunk = chunk, Material = mats[i], Layer = mr.gameObject.layer, Shadows = mr.shadowCastingMode };
                         if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<CombineInstance>();
                         list.Add(new CombineInstance { mesh = mesh, subMeshIndex = i, transform = matrix });
+                        mrKeys.Add(key);
                     }
-                    mr.enabled = false;
+                    // NOT switched off here: the source keeps drawing until the LAST of its
+                    // groups is built (below), which is what lets the build run across frames
+                    // without a piece ever being un-merged and un-drawn at the same time.
+                    if (mrKeys.Count > 0)
+                    {
+                        pending[mr] = mrKeys.Count;
+                        foreach (var k in mrKeys)
+                        {
+                            if (!owners.TryGetValue(k, out var owned)) owners[k] = owned = new List<MeshRenderer>();
+                            owned.Add(mr);
+                        }
+                    }
+                    else mr.enabled = false;    // fed no group (all-null materials): drew nothing anyway
+                    sources.Add(mesh);
                     pieces++;
                     verts += mesh.vertexCount;
+                    rootPieces++;
+                    rootVerts += mesh.vertexCount;
+                    // gather switches nothing off, so a yield here is free of any gap - it
+                    // only bounds how long one frame spends walking a big root
+                    if (++walked >= GatherYieldEvery) { walked = 0; yield return null; }
                 }
+                if (rootPieces > 0)
+                    Debug.Log($"[{tag}] merge: {root.name} is {rootPieces} renderers, {rootVerts / 1000}k verts");
+                yield return null;
             }
 
             int made = 0;
+            long mergedBytes = 0, mergedBytesLean = 0;
+            int strippedGroups = 0;
+            var channelBytes = new Dictionary<VertexAttribute, long>();
             foreach (var kv in groups)
             {
                 var key = kv.Key;
-                var merged = new Mesh { name = "Merged " + key.Material.name, indexFormat = IndexFormat.UInt32 };
-                merged.CombineMeshes(kv.Value.ToArray(), true, true, false);
+                // 32-bit indices only where they are actually needed. A merged group of
+                // ten thousand vertices - which is what the average one is - indexes fine
+                // in 16 bits, and the wider format simply doubles its index buffer for
+                // nothing. The count below is an upper bound (a CombineInstance that takes
+                // one submesh still counts its mesh whole), so a group that comes out at
+                // 16 bits was never going to overflow.
+                long bound = 0;
+                var parts = kv.Value;
+                for (int i = 0; i < parts.Count; i++) bound += parts[i].mesh.vertexCount;
+                var merged = new Mesh
+                {
+                    name = "Merged " + key.Material.name,
+                    indexFormat = bound < 65536 ? IndexFormat.UInt16 : IndexFormat.UInt32,
+                };
+                merged.CombineMeshes(parts.ToArray(), true, true, false);
                 merged.RecalculateBounds();
+
+                // The merge's real price is the vertex buffer it CREATES: the sources stay
+                // loaded (this only disables their renderers), so every merged vertex is a
+                // second copy of geometry the process already holds. Measure it, in the
+                // bytes the card is actually asked for, and then stop paying for channels
+                // nothing reads.
+                //
+                // TANGENTS are the big one: a Vector4, 16 bytes of every vertex, and they
+                // exist for normal mapping. 30 of the 768 pack materials carry a normal map
+                // and they are lasers, fire and tyres - no facade has one - while
+                // FacadeTint compiles its tangent-space path behind
+                // `shader_feature_local _NORMALMAP`, which no city material enables. A mesh
+                // without tangents hands the shader a default; nothing samples it.
+                // Guarded per material anyway, so the day a facade DOES take a normal map
+                // its group keeps them.
+                mergedBytes += VertexBytes(merged);
+                if (!NeedsTangents(key.Material))
+                {
+                    merged.tangents = null;
+                    strippedGroups++;
+                }
+
+                // TexCoord1 is the lightmap channel, and it cannot have a reader here:
+                // the merge builds its renderers with `new GameObject` at runtime, and a
+                // runtime object is never in a lightmap - there is no bake to be in, the
+                // project holds no lightmap assets, and `generateSecondaryUV: 0` means
+                // Unity never authored the channel either (it rides in from the FBX).
+                // FacadeTint's LIGHTMAP_ON/DYNAMICLIGHTMAP_ON variants stay unselected
+                // for these renderers. Measured at 457 MB of the merge. Structural, not
+                // a judgement call - unlike the tangents, this one needs no per-material
+                // guard.
+                merged.uv2 = null;
+
+                mergedBytesLean += VertexBytes(merged);
+                Tally(channelBytes, merged);
+                // and then hand it to the GPU and let go of it. A mesh built at runtime is
+                // readable by default, which means Unity keeps the whole vertex buffer in
+                // system memory as well as on the card - and the city's merge is a hundred
+                // and eighty million vertices, so that second copy is gigabytes of a thing
+                // nothing ever reads back. Nothing does: the merged root carries no
+                // MeshCollider, the map samples LandHeight rather than the ground mesh, and
+                // the occlusion hider's stub cutter already asks isReadable first and skips
+                // what says no.
+                merged.UploadMeshData(true);
                 var go = new GameObject(merged.name) { layer = key.Layer };
                 go.transform.SetParent(mergedRoot, false);
                 go.AddComponent<MeshFilter>().sharedMesh = merged;
@@ -242,7 +359,42 @@ namespace RoadDemo
                 mr.shadowCastingMode = key.Shadows;
                 mr.receiveShadows = true;
                 made++;
+
+                // this group now draws as one mesh, so the sources that fed it and have no
+                // other group still to come are switched off here - a renderer feeding two
+                // groups waits for its second, so nothing blinks out early
+                if (owners.TryGetValue(key, out var owned))
+                    for (int i = 0; i < owned.Count; i++)
+                    {
+                        var src = owned[i];
+                        if (!pending.TryGetValue(src, out var n)) continue;
+                        if (n <= 1) { src.enabled = false; pending.Remove(src); }
+                        else pending[src] = n - 1;
+                    }
+                yield return null;
             }
+            // The sources are read ONCE, by the combine just above, and never again: their
+            // renderers are disabled from here on, so nothing draws them and nothing reads
+            // them back. But they are readable - MeshReadAccess opened Read/Write on the
+            // pack models precisely so this merge could combine them - and a readable mesh
+            // keeps a full copy in SYSTEM memory beside the one on the card. Measured:
+            // Mesh Memory 7,834 MB against merged buffers of 2,931 MB, so ~4.9 GB is the
+            // sources, carrying that second copy for a pass that is already over.
+            //
+            // UploadMeshData(true) frees it - the same call the merged meshes get, applied
+            // to the input instead of the output. The one consumer that would notice is
+            // PlayerOcclusionHider's stub cutter, and it asks isReadable first and caches
+            // the refusal, so it degrades to "no stub" rather than breaking. (In this scene
+            // it never even runs: it needs a CityBuilder and Game.unity has none.)
+            int freed = 0;
+            foreach (var mesh in sources)
+            {
+                if (!mesh || !mesh.isReadable) continue;
+                mesh.UploadMeshData(true);
+                freed++;
+            }
+            Debug.Log($"[{tag}] released the CPU copy of {freed} source meshes ({sources.Count} consumed)");
+
             if (unreadable.Count > 0)
             {
                 var dir = System.IO.Path.Combine(Application.dataPath, "..", "Logs");
@@ -259,7 +411,63 @@ namespace RoadDemo
                                  "the editor opens them up on its next reload (MeshReadAccess), after which they merge too.");
             }
             Debug.Log($"[{tag}] merged {pieces} pieces ({verts / 1000}k verts) into {made} meshes");
+            Debug.Log($"[{tag}] merge vertex buffers: {mergedBytes / 1048576} MB -> {mergedBytesLean / 1048576} MB " +
+                      $"({(mergedBytes - mergedBytesLean) / 1048576} MB of dead channels dropped: " +
+                      $"tangents from {strippedGroups}/{made} groups, lightmap UVs from all)");
+
+            // What is left, channel by channel, dearest first. Position, normal and uv0
+            // are the job; anything else on this list is a candidate for the same
+            // treatment the tangents got - but only after it is measured, never before.
+            var channels = new System.Text.StringBuilder($"[{tag}] merge vertex channels:");
+            var order = new List<KeyValuePair<VertexAttribute, long>>(channelBytes);
+            order.Sort((a, b) => b.Value.CompareTo(a.Value));
+            foreach (var kv in order)
+                channels.Append($" {kv.Key} {kv.Value / 1048576} MB;");
+            Debug.Log(channels.ToString());
         }
+
+        /// <summary>Per-channel bytes across the merged set, straight off the vertex
+        /// layout the mesh actually ended up with - dimension times format width, not
+        /// an assumption about what CombineMeshes produced.</summary>
+        static void Tally(Dictionary<VertexAttribute, long> into, Mesh m)
+        {
+            foreach (var a in m.GetVertexAttributes())
+            {
+                long bytes = (long)a.dimension * FormatBytes(a.format) * m.vertexCount;
+                into.TryGetValue(a.attribute, out var had);
+                into[a.attribute] = had + bytes;
+            }
+        }
+
+        static int FormatBytes(VertexAttributeFormat f) => f switch
+        {
+            VertexAttributeFormat.Float32 or VertexAttributeFormat.UInt32 or VertexAttributeFormat.SInt32 => 4,
+            VertexAttributeFormat.Float16 or VertexAttributeFormat.UNorm16 or VertexAttributeFormat.SNorm16
+                or VertexAttributeFormat.UInt16 or VertexAttributeFormat.SInt16 => 2,
+            _ => 1,
+        };
+
+        /// <summary>What the card is actually asked for, summed over every vertex
+        /// stream - the stride is the honest per-vertex cost, not a guess at which
+        /// channels the combine happened to produce.</summary>
+        static long VertexBytes(Mesh m)
+        {
+            long bytes = 0;
+            for (int s = 0; s < m.vertexBufferCount; s++)
+                bytes += (long)m.GetVertexBufferStride(s) * m.vertexCount;
+            return bytes;
+        }
+
+        /// <summary>A material that samples a normal map needs the tangent frame; one
+        /// that does not is carrying 16 bytes a vertex for nothing.</summary>
+        static bool NeedsTangents(Material m)
+        {
+            if (!m) return true;                       // unknown: keep them
+            if (m.IsKeywordEnabled("_NORMALMAP")) return true;
+            return m.HasProperty(BumpMap) && m.GetTexture(BumpMap);
+        }
+
+        static readonly int BumpMap = Shader.PropertyToID("_BumpMap");
 
         // -------------------------------------------------------------- shared
 

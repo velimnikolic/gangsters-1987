@@ -148,6 +148,18 @@ namespace RoadDemo
         static readonly Color OutfitGold = new Color(0.94f, 0.72f, 0.13f, 1f);
         static readonly Color RivalRed = new Color(0.86f, 0.17f, 0.13f, 1f);
 
+        /// <summary>A family's front premises - square, and a shade bigger than a man.</summary>
+        const float FrontDot = 9f;
+
+        /// <summary>A mob's men on the map in that family's colour (GangPalette), which
+        /// is the colour its ground is washed in - twenty crews all in one red told the
+        /// player only "not yours". The incident dot keeps the plain red: an incident
+        /// belongs to nobody.</summary>
+        static Color RivalInk(int faction) =>
+            faction > 0 && faction < LivingCity.UI.GangPalette.Count
+                ? LivingCity.UI.GangPalette.Of(faction)
+                : RivalRed;
+
         // ----------------------------------------------------------------- wiring
 
         RoadDemoBuilder _builder;
@@ -1105,6 +1117,45 @@ namespace RoadDemo
             }
 
             PlotCrews();
+            PlotFronts();
+        }
+
+        // ------------------------------------------------------------- the fronts
+
+        readonly List<Image> _frontDots = new List<Image>();
+
+        /// <summary>Where each family keeps a door: a small SQUARE in its own colour, so
+        /// premises never read as a man (the crews are round dots). Without these the
+        /// twenty fronts are twenty buildings among a thousand and the player has no way
+        /// to find the one he was told about - the card that opens on them is only worth
+        /// having if the door can be found first.
+        ///
+        /// Positions never change, but the map re-lays itself on every zoom and pan, so
+        /// the dots are placed each frame like every other marker here.</summary>
+        void PlotFronts()
+        {
+            if (_moverRoot == null) return;
+
+            var fronts = GangFront.All;
+            while (_frontDots.Count < fronts.Count)
+            {
+                var dot = DemoUi.Block(_moverRoot, "front", OutfitGold);
+                dot.raycastTarget = false;
+                dot.rectTransform.sizeDelta = new Vector2(FrontDot, FrontDot);
+                _frontDots.Add(dot);
+            }
+
+            for (int i = 0; i < _frontDots.Count; i++)
+            {
+                var live = i < fronts.Count && fronts[i] != null;
+                if (_frontDots[i].enabled != live) _frontDots[i].enabled = live;
+                if (!live) continue;
+
+                var front = fronts[i];
+                _frontDots[i].color = LivingCity.UI.GangPalette.Of(front.GangId);
+                _frontDots[i].rectTransform.anchoredPosition =
+                    ToView(new Vector2(front.Door.x, front.Door.z));
+            }
         }
 
         // The outfit's men are dealt after the map is built and re-dealt whenever the
@@ -1168,7 +1219,7 @@ namespace RoadDemo
                     var position = man.Tf.position;
                     dot.rectTransform.anchoredPosition = ToView(new Vector2(position.x, position.z));
                     dot.color = lit ? Color.white : unit.IsPolice ? PoliceBlue
-                        : unit.Faction != 0 ? RivalRed : OutfitGold;
+                        : unit.Faction != 0 ? RivalInk(unit.Faction) : OutfitGold;
                     if (!dot.enabled)
                         dot.enabled = true;
                 }

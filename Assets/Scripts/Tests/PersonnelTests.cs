@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using LivingCity.Entities;
+using LivingCity.Outfit;
 using LivingCity.Personnel;
 using LivingCity.UI;
 
@@ -36,6 +37,7 @@ namespace LivingCity.Tests
             EquipmentIsExclusive(failures);
             GearFlowsThroughTheLieutenant(failures);
             LieutenantDealsArmsByOrganization(failures);
+            MotorcycleIsWheelsAndNotAGun(failures);
             FrontArmsTheGuards(failures);
             DeadReceiveNothing(failures);
             ViewGroupsInLedgerOrder(failures);
@@ -583,6 +585,64 @@ namespace LivingCity.Tests
         /// manager and the pooled hoods - ideally (the boss deals this one himself),
         /// with the surplus staying in the locker, never raiding a crew's deck; a
         /// guard who joins a crew takes his iron into that crew's deal.</summary>
+        /// <summary>The counter sells motorcycles (ArmoryCatalog.Motorcycles), and a
+        /// motorcycle is WHEELS: dealt by Driving with the cars, never by Firearms with
+        /// the guns. The whole split is one predicate (RosterOps.IsWeapon) and it used
+        /// to read "anything that is not a Vehicle", so the day the kind was added the
+        /// quartermaster would have handed the outfit's best shot a moped to fire.</summary>
+        static void MotorcycleIsWheelsAndNotAGun(List<string> failures)
+        {
+            if (RosterOps.IsWeapon(EquipmentKind.Motorcycle))
+                failures.Add("MotorcycleIsWheelsAndNotAGun: a motorcycle counts as a gun.");
+
+            var roster = new Roster();
+            var lieutenant = Make(roster, "Sal", "Moretti", Rank.Lieutenant);
+            var rider = Make(roster, "Bernie", "Carter");
+            var shot = Make(roster, "Angelo", "Katz");
+            var crew = new Crew { Id = roster.NextCrewId(), LieutenantId = lieutenant.Id };
+            crew.HoodIds.Add(rider.Id);
+            crew.HoodIds.Add(shot.Id);
+            roster.Crews.Add(crew);
+
+            // One who can ride and cannot shoot, one the other way round - so a deal by
+            // the wrong stat lands on the wrong man and is visible.
+            lieutenant.SetHalfSteps(CharacterAttribute.Organization, 10);
+            lieutenant.SetHalfSteps(CharacterAttribute.Driving, 2);
+            lieutenant.SetHalfSteps(CharacterAttribute.Firearms, 2);
+            rider.SetHalfSteps(CharacterAttribute.Driving, 10);
+            rider.SetHalfSteps(CharacterAttribute.Firearms, 2);
+            shot.SetHalfSteps(CharacterAttribute.Driving, 2);
+            shot.SetHalfSteps(CharacterAttribute.Firearms, 10);
+
+            var bike = MakeItem(roster, EquipmentKind.Motorcycle);
+            bike.Value = 1200;
+            var tommy = MakeItem(roster, EquipmentKind.TommyGun);
+            tommy.Value = 2000;
+
+            if (!RosterOps.GiveEquipment(roster, bike.Id, lieutenant.Id).Ok)
+                failures.Add("MotorcycleIsWheelsAndNotAGun: the machine would not issue " +
+                             "to the lieutenant.");
+            RosterOps.GiveEquipment(roster, tommy.Id, lieutenant.Id);
+            RosterOps.NormalizeArms(roster);
+
+            if (bike.HolderId != rider.Id)
+                failures.Add("MotorcycleIsWheelsAndNotAGun: the machine missed the best " +
+                             "driver.");
+            if (tommy.HolderId != shot.Id)
+                failures.Add("MotorcycleIsWheelsAndNotAGun: the gun deal was disturbed " +
+                             "by the machine.");
+
+            // And it is not the crew's transport: two men is not a crew, and the week's
+            // travel arithmetic must not start pretending the outfit is mobile because
+            // somebody bought a scooter.
+            if (CrewKit.HasVehicle(roster, crew))
+                failures.Add("MotorcycleIsWheelsAndNotAGun: a motorcycle counts as the " +
+                             "crew's vehicle.");
+
+            if (LedgerText.EquipmentLabel(EquipmentKind.Motorcycle).Length == 0)
+                failures.Add("MotorcycleIsWheelsAndNotAGun: the kind has no ledger label.");
+        }
+
         static void FrontArmsTheGuards(List<string> failures)
         {
             var roster = new Roster();

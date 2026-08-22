@@ -21,8 +21,10 @@ namespace BlockDemo
     /// </summary>
     public class BlockDemoOutfit : MonoBehaviour
     {
-        [Tooltip("Crews of the outfit on the street - one lieutenant each.")]
-        [Min(1)] public int lieutenants = 3;
+        [Tooltip("Crews of the outfit on the street - one lieutenant each. 0 leaves the " +
+                 "book exactly as the seeder wrote it, which is what a run that only " +
+                 "wants a machine bought asks for.")]
+        [Min(0)] public int lieutenants = 3;
         [Tooltip("Hoods behind each lieutenant. 4 is a full crew (the ledger's cap); 0 " +
                  "sends the lieutenants out alone. The books hold six men, so anything " +
                  "past the second crew is recruited in - paid for while the safe holds " +
@@ -34,6 +36,12 @@ namespace BlockDemo
         public bool mixedArms = true;
         [Tooltip("Same seed, same guns.")]
         public int armsSeed = 1987;
+
+        [Tooltip("A motorcycle off the armory counter for the first lieutenant, by " +
+                 "listing name (Motorbike, Moped, Scooter). Empty buys none. Bought and " +
+                 "given exactly as the armory page would - so what stands at the kerb " +
+                 "is a machine the book says the crew owns, not one the scene put down.")]
+        public string motorcycle = "";
 
         /// <summary>What the book ended up saying, for the run's log.</summary>
         public string Wrote { get; private set; } = "";
@@ -53,6 +61,19 @@ namespace BlockDemo
         {
             var roster = director.Roster;
             var rng = new System.Random(armsSeed);
+
+            // Nothing asked of the crews: the book stands as the seeder wrote it and
+            // the only thing bought is the machine. A run that wants a drive-by out of
+            // the six men the seeder deals has no business rewriting the roster first.
+            if (lieutenants <= 0)
+            {
+                Wrote = BuyMachine(director) ? motorcycle + " off the counter"
+                                             : "the book left alone";
+                Debug.Log("[BlockDemo] the outfit as written: " + Wrote);
+                if (RoadDemo.DriveTrace.On)
+                    RoadDemo.DriveTrace.Event("outfit", "book", Wrote);
+                return;
+            }
 
             // the seeded crew first: everyone back to the pool, so the lab deals from
             // a clean book rather than around whatever the seeder happened to draw
@@ -88,13 +109,62 @@ namespace BlockDemo
                 guns += Arm(director, boss, 1 + each, rng);
             }
 
+            bool wheels = BuyMachine(director);
             Wrote = $"{made} lieutenant{(made == 1 ? "" : "s")}, {hoods} hood" +
-                    $"{(hoods == 1 ? "" : "s")}, {guns} gun{(guns == 1 ? "" : "s")} off the counter";
+                    $"{(hoods == 1 ? "" : "s")}, {guns} gun{(guns == 1 ? "" : "s")} off the counter" +
+                    (wheels ? ", and a " + motorcycle.ToLowerInvariant() : "");
             if (made < want)
                 Wrote += $" (asked for {want})";
             Debug.Log("[BlockDemo] the outfit as written: " + Wrote);
             if (RoadDemo.DriveTrace.On)
                 RoadDemo.DriveTrace.Event("outfit", "book", Wrote);
+        }
+
+        /// <summary>The machine, bought and issued the way a player would: paid for out
+        /// of the safe on the armory page, added to the stock, and GIVEN to a
+        /// lieutenant - all gear issues through a crew's head, and the quartermaster
+        /// deals it to whichever of his men can ride (RosterOps.NormalizeArms, wheels by
+        /// Driving). Nothing here reaches past those ops, so a machine that turns up at
+        /// the kerb is one the book really sold.
+        ///
+        /// The safe is not asked twice: a run whose money has gone on guns gets the
+        /// machine signed for anyway (director.AddEquipment on its own), because the lab
+        /// wants the drive-by it asked for rather than the drive-by it can afford - the
+        /// same fallback the recruiting door already has here.</summary>
+        bool BuyMachine(PersonnelDirector director)
+        {
+            if (string.IsNullOrEmpty(motorcycle)) return false;
+
+            var listing = default(LivingCity.Outfit.ArmoryItem);
+            bool found = false;
+            foreach (var item in LivingCity.Outfit.ArmoryCatalog.Motorcycles)
+                if (item.DisplayName == motorcycle) { listing = item; found = true; break; }
+            if (!found)
+            {
+                Debug.LogWarning($"[BlockDemo] '{motorcycle}' is not on the armory " +
+                                 "counter - no machine bought.");
+                return false;
+            }
+
+            var outfit = OutfitDirector.Instance;
+            if (outfit != null) outfit.Purchase(listing.Price, listing.DisplayName);
+
+            var stock = director.AddEquipment(listing.Kind, listing.DisplayName, listing.Price);
+            if (stock == null) return false;
+
+            foreach (var member in director.Roster.Members)
+            {
+                if (member.Gone || member.Rank != Rank.Lieutenant) continue;
+                if (director.GiveEquipment(stock.Id, member.Id).Ok)
+                {
+                    Debug.Log($"[BlockDemo] {member.FullName} signed for the " +
+                              listing.DisplayName.ToLowerInvariant() + ".");
+                    return true;
+                }
+            }
+            Debug.LogWarning("[BlockDemo] no lieutenant to sign for the machine - it " +
+                             "stays in the lock-up.");
+            return false;
         }
 
         /// <summary>A man signed straight onto the books, no money asked - what the lab

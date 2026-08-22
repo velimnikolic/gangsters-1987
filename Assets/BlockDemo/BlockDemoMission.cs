@@ -22,7 +22,7 @@ namespace BlockDemo
     /// </summary>
     public class BlockDemoMission : MonoBehaviour
     {
-        public enum Phase { Waiting, Boarding, Marching, Hunting, Storming, Reboarding, Parking, Done, Failed }
+        public enum Phase { Waiting, Boarding, Marching, Hunting, Storming, Reboarding, Parking, Passing, Done, Failed }
 
         [Tooltip("Sim seconds after the quarter is up before the crew is sent for its car.")]
         public float startAfter = 10f;
@@ -39,10 +39,75 @@ namespace BlockDemo
         [Tooltip("Seconds the car may stand still with somewhere to be before it counts as stuck.")]
         public float stuckAfter = 8f;
 
+        [Tooltip("THE ROADBLOCK. Every few seconds the mob being hunted is marched into " +
+                 "the carriageway directly in front of the outfit's car - the scene the " +
+                 "run-down exists for, and the one the quarter never produces on its own " +
+                 "because rival crews stand at frontages and the car passes them on the " +
+                 "road. With this on, the car meets a man in its lane every pass.")]
+        public bool roadblock;
+        [Tooltip("Roadblock: how far up the road ahead of the car they are put.")]
+        public float roadblockAhead = 20f;
+        [Tooltip("Roadblock: seconds between orders to stand in the road.")]
+        public float roadblockEvery = 9f;
+
+        float _lastBlock = -100f;
+
         [Tooltip("The whole run on foot: no car at all. The crew is sent at the mob " +
                  "FARTHEST from it - the length of the quarter on foot, over the lots " +
                  "and across the roads - and has it out with them when it gets there.")]
         public bool onFoot;
+
+        [Tooltip("The bomb run: no car mission, no march. The crew is stocked with " +
+                 "grenades and made to use both of the things a grenade is for - it " +
+                 "throws a few at a rival crew (which must thin it out), then lays a " +
+                 "charge under a car and drives the car off (which must tear it to " +
+                 "scrap). What is on trial is the bomb layer end to end: the throw " +
+                 "kills, and the planted charge springs when the car moves.")]
+        public bool bombRun;
+        [Tooltip("Bomb run: grenades to throw at the rival before the plant test.")]
+        [Min(1)] public int bombThrows = 3;
+        [Tooltip("Bomb run: seconds the planted car may take to blow before the run " +
+                 "gives up on it.")]
+        public float bombPatience = 60f;
+
+        [Tooltip("The run on two wheels: no car, no march. The crew stands where it " +
+                 "was dealt and sends two men on the motorcycle the ledger bought it, " +
+                 "one pass at a rival, again and again - which is the one order the " +
+                 "machine exists for, played over and over so a fault in it cannot hide " +
+                 "behind a lucky run.")]
+        public bool motoDriveBy;
+        [Tooltip("Two wheels: how many passes to ride before the run is done.")]
+        [Min(1)] public int passes = 3;
+        [Tooltip("Two wheels: seconds one pass may take, door to door - the walk to the " +
+                 "machine, the pass, and the ride home - before it is written off. The " +
+                 "outer bound of the crews' own three (DemoCrews.Budget measures each " +
+                 "leg off its own distance), plus room, so this one only ever fires for " +
+                 "something they did not catch.")]
+        public float passPatience = 900f;
+        [Tooltip("The walkabout: no fight, no car. The crew is sent on foot from corner " +
+                 "to corner of the quarter - down the pavements, through the lights, the " +
+                 "player's own click (OrderSelected) - a new far corner each time it " +
+                 "arrives. What is on trial is the WALK: the pack, the lanes, the lights, " +
+                 "the tether; the crew audit's fault rows are the verdict.")]
+        public bool walkabout;
+        [Tooltip("Walkabout: corners to walk before the run is done. A corner-to-corner " +
+                 "leg is six-to-seven sim-minutes at the crew's pace with its lights " +
+                 "and its waits, so three of them fill a soak run.")]
+        [Min(1)] public int walkLegs = 3;
+        [Tooltip("Walkabout: the leg is judged on PROGRESS, not on the clock - a crew " +
+                 "that waits its own men over a light is slow and right. This is the " +
+                 "seconds the crew may gain NO ground at all before the leg is a fault.")]
+        public float legStallAfter = 90f;
+        [Tooltip("Walkabout: the hard ceiling on one leg, however it crawls.")]
+        public float legPatience = 600f;
+        [Tooltip("Walkabout: seconds stood at a corner before the next order.")]
+        public float dwell = 6f;
+
+        [Tooltip("The nerve lever: chance a man shot down to his last hit breaks and " +
+                 "runs. Below 0 leaves the game's own figure alone (0.4); the brawl " +
+                 "soak turns it up so the runners it wants to watch appear every run.")]
+        public float panic = -1f;
+
         [Tooltip("On foot: metres off the mob at which the crew stops marching and opens up.")]
         public float engageWithin = 30f;
         [Tooltip("On foot: seconds the crew may fail to move at all before the march is a failure.")]
@@ -71,6 +136,7 @@ namespace BlockDemo
             {
                 _crews = FindAnyObjectByType<DemoCrews>();
                 if (_crews == null) return;
+                if (panic >= 0f) _crews.PanicChance = Mathf.Clamp01(panic);
             }
 
             // whatever else is going on: a crew that is dead is not on a job. Out of the
@@ -79,9 +145,27 @@ namespace BlockDemo
             // (On foot there may be several crews out, and one of them going down is not
             // the outfit going down: TickWar counts the field itself.)
             if (!onFoot && _ours != null && _ours.Wiped)
-            { Give($"the outfit was wiped out ({_killed} crews down first)"); return; }
+            {
+                // TWO WHEELS: the crew standing at its own kerb being shot to pieces by
+                // the mobs it has been riding past is the game being a game, and it ends
+                // the run rather than failing it. What is on trial here is the machine's
+                // loop, and a run that rode two clean passes before the answer came is a
+                // run that proved what it was for.
+                if (motoDriveBy && State != Phase.Done && State != Phase.Failed)
+                {
+                    Note($"the outfit was wiped out after {_passesRidden} pass" +
+                         $"{(_passesRidden == 1 ? "" : "es")}");
+                    Finish();
+                    return;
+                }
+                Give($"the outfit was wiped out ({_killed} crews down first)");
+                return;
+            }
 
-            if (onFoot && State != Phase.Waiting) TickWar();
+            if (bombRun && State != Phase.Waiting) TickBomb();
+            else if (motoDriveBy && State != Phase.Waiting) TickMoto();
+            else if (walkabout && State != Phase.Waiting) TickWalk();
+            else if (onFoot && State != Phase.Waiting) TickWar();
             else
                 switch (State)
                 {
@@ -107,6 +191,18 @@ namespace BlockDemo
             foreach (var unit in _crews.Units)
                 if (unit.Faction == 0 && !unit.Wiped) { _ours = unit; break; }
             if (_ours == null) { Give("there is no crew of the outfit in the quarter"); return; }
+
+            // THE BOMB RUN: no car mission, no march. The crew is handed grenades and
+            // made to throw them and lay one.
+            if (bombRun) { StartBomb(); return; }
+
+            // TWO WHEELS: nothing is boarded and nowhere is marched to. The crew stands
+            // where the deal left it and sends two of its men out on the machine.
+            if (motoDriveBy) { StartMoto(); return; }
+
+            // THE WALKABOUT: nobody to fight, nothing to board - just the quarter,
+            // corner to corner, judged on how the crew walks it.
+            if (walkabout) { StartWalk(); return; }
 
             // ON FOOT: no car is stood, none is looked for. EVERY crew of the outfit
             // takes the field, each one sent at a mob of its own at the far end of the
@@ -427,6 +523,18 @@ namespace BlockDemo
                     return;
                 }
 
+                // the mob put where the car is going: in its lane, facing it. What a
+                // driver does about that is DemoCrews.RunDown's business.
+                if (roadblock && _car != null && _car.Tf != null &&
+                    Now - _lastBlock > roadblockEvery)
+                {
+                    _lastBlock = Now;
+                    var inFront = _car.Position + _car.Tf.forward * roadblockAhead;
+                    if (_crews.MarchTo(_quarry, inFront))
+                        Note($"{_quarry.GangName} put in the road {roadblockAhead:F0} m " +
+                             "ahead of the car");
+                }
+
                 // the order given again now and then: a drive-by that has been driven
                 // past leaves the car idling otherwise
                 if (Now - _lastOrder > reorderEvery)
@@ -646,6 +754,527 @@ namespace BlockDemo
                 _stuckSpells++;
                 Fault("carstuck", $"stood {_stillFor:F0}s in {State}: {_car.Describe()}");
             }
+        }
+
+        // ------------------------------------------------------------------ two wheels
+
+        // The drive-by played by the lab, pass after pass, with nobody at the mouse.
+        //
+        // Deliberately nothing but the order: no car, no march, no storming on foot.
+        // What is being watched is the one loop the machine has - two men walk to it,
+        // get on, ride one pass at a rival and bring it home - and the only way to see
+        // the ways that loop can stop for good is to ride it thirty times over thirty
+        // quarters. Every fault it can raise is a thing that never came back rather
+        // than a threshold that was loosened, and every one of them is named, because a
+        // pass that quietly does not happen looks exactly like a pass that did.
+
+        int _passesRidden, _passesFired;
+        float _passAt;
+        bool _passWaiting;
+
+        void StartMoto()
+        {
+            _crews.Select(_ours);
+            var bike = _crews.BikeOf(_ours);
+            if (bike == null)
+            {
+                // The book bought one (BlockDemoOutfit) and it never reached the kerb.
+                // That is the whole ledger-to-street seam failing quietly, and it is a
+                // failure of the run rather than of the driving.
+                Give("the outfit has no motorcycle on the street");
+                return;
+            }
+            Go(Phase.Passing, $"{_ours.GangName} on the {bike.DisplayName.ToLowerInvariant()}, " +
+                              $"{passes} pass{(passes == 1 ? "" : "es")} to ride");
+            Send();
+        }
+
+        /// <summary>The next pass: the nearest rival still standing, and the order.</summary>
+        void Send()
+        {
+            if (_passesRidden >= passes) { Finish(); return; }
+
+            DemoCrews.Unit next = null;
+            float best = float.MaxValue;
+            foreach (var unit in _crews.Units)
+            {
+                if (unit.Faction == 0 || unit.IsPolice || unit.Wiped) continue;
+                float d = Vector3.SqrMagnitude(unit.Position - _ours.Position);
+                if (d < best) { best = d; next = unit; }
+            }
+            if (next == null)
+            {
+                Note($"no rival left standing after {_passesRidden} pass" +
+                     $"{(_passesRidden == 1 ? "" : "es")}");
+                Finish();
+                return;
+            }
+
+            // The book took the machine back. That happens when the crew loses its
+            // HEAD - the gear of a crew with no lieutenant reverts to the safe
+            // (RosterOps.NormalizeArms) and the street follows the book, so the machine
+            // leaves the kerb. It is the ledger working, not a seam coming apart, and it
+            // ends the run the way running out of hoods does.
+            if (_passesRidden > 0 && _crews.BikeOf(_ours) == null)
+            {
+                Note($"the book took the machine back after {_passesRidden} pass" +
+                     $"{(_passesRidden == 1 ? "" : "es")}");
+                Finish();
+                return;
+            }
+
+            _quarry = next;
+            _crews.Select(_ours);
+            if (!_crews.OrderDriveBy(next))
+            {
+                // Out of men to send is the game being a game - the passes cost the crew
+                // two hoods and it has none left - and it ends the run rather than
+                // failing it. Anything else is the order being impossible with a machine
+                // at the kerb and men on their feet, which is a seam that has come apart.
+                if (_crews.DriveByShortHanded)
+                {
+                    Note($"nobody left to send after {_passesRidden} pass" +
+                         $"{(_passesRidden == 1 ? "" : "es")}");
+                    Finish();
+                    return;
+                }
+                Give("drive-by refused: " + (_crews.DriveByRefusal ?? "no reason given"));
+                return;
+            }
+            _passAt = Now;
+            _passWaiting = true;
+            Note($"pass {_passesRidden + 1} of {passes} at {next.GangName} " +
+                 $"({Vector3.Distance(_ours.Position, next.Position):F0} m)");
+        }
+
+        void TickMoto()
+        {
+            if (State != Phase.Passing) return;
+            if (!_passWaiting) { Send(); return; }
+
+            // the raid ends itself, every way it can end (DemoCrews.Finish)
+            if (!_crews.RaidActive(_ours))
+            {
+                _passWaiting = false;
+                _passesRidden++;
+                if (_crews.LastRaidShots > 0) _passesFired++;
+                if (!_crews.LastRaidBothUp)
+                    Note($"pass {_passesRidden}: one of the two did not come back");
+                Note($"pass {_passesRidden} over - {_crews.LastRaidShots} round" +
+                     $"{(_crews.LastRaidShots == 1 ? "" : "s")} fired");
+                if (_quarry != null && _quarry.Wiped) { _killed++; Note($"{_quarry.GangName} is down"); }
+                Send();
+                return;
+            }
+
+            if (Now - _passAt > passPatience)
+            {
+                Fault("raidstall", $"pass {_passesRidden + 1} has been out {passPatience:F0}s");
+                Give($"the machine never came back from pass {_passesRidden + 1}");
+            }
+        }
+
+        void Finish()
+        {
+            // Every pass ridden and not one round fired off the machine: the men rode
+            // past and the guns never bore. Nothing else in the run would have said so.
+            // Asked only of runs that rode a pass at all - a run cut short before the
+            // first one came home has not failed to fire, it has not fired yet.
+            if (_passesRidden > 0 && _passesFired == 0)
+                Fault("noshot", $"{_passesRidden} passes ridden and nothing was fired");
+
+            // And the two of them back on their own feet - a man left parented to a
+            // motorcycle is a man who has left the game, and he leaves quietly.
+            foreach (var man in _ours.All())
+                if (!man.Dead && man.Riding)
+                {
+                    Fault("notback", man.DisplayName + " is still on the machine");
+                    break;
+                }
+
+            Go(Phase.Done, $"{_passesRidden} pass{(_passesRidden == 1 ? "" : "es")} ridden, " +
+                           $"{_passesFired} with shots fired, {_killed} crews down");
+        }
+
+        // ------------------------------------------------------------------ the bomb run
+
+        enum BombStep { Throwing, Shop, Planting, Driving, Boarding }
+        BombStep _bstep;
+        int _bombThrown;
+        float _bombNext, _bombStepAt;
+        int _rivalMenAtStart;
+        CrewCar _bombCar;
+        GangFront _bombShop;
+        bool _throwThinned, _shopLit;
+
+        /// <summary>Stock the crew with grenades, point it at a rival, and start the
+        /// throwing. The lab widens the reach so the throw and the plant fire on the
+        /// mechanic rather than on how near the deal happened to drop the crew - what is
+        /// on trial is whether a thrown charge kills and a laid one springs, not range.</summary>
+        void StartBomb()
+        {
+            _crews.Select(_ours);
+            // buy the grenades the way a player would - onto the ledger, given to this
+            // crew's lieutenant - so the run exercises the real path (armory -> crew ->
+            // thrown -> struck off). Where a scene has no roster, the unit's own tally is
+            // all there is, so stock that instead.
+            int need = bombThrows + 2;   // the throws, plus the shop and the plant
+            var roster = LivingCity.Gameplay.PersonnelDirector.Instance != null
+                ? LivingCity.Gameplay.PersonnelDirector.Instance.Roster : null;
+            var crew = roster != null ? roster.FindCrew(_ours.CrewId) : null;
+            if (crew != null)
+            {
+                for (int k = 0; k < need; k++)
+                {
+                    var item = LivingCity.Personnel.RosterOps.AddEquipment(
+                        roster, LivingCity.Personnel.EquipmentKind.Grenade, "Grenade", 175);
+                    item.OwnerId = crew.LieutenantId;
+                    item.HolderId = crew.LieutenantId;
+                }
+            }
+            _ours.Bombs = Mathf.Max(_ours.Bombs, need);   // cache; BindBombs re-derives it
+            _crews.BombThrowRange = 100000f;
+            _crews.BombPlantRange = 100000f;
+            _rivalMenAtStart = RivalMenStanding();
+            if (_rivalMenAtStart == 0) { Give("there is no rival crew in the quarter to bomb"); return; }
+
+            _quarry = NearestRival(_ours.Position);
+            _bstep = BombStep.Throwing;
+            _bombThrown = 0;
+            _bombNext = Now;
+            State = Phase.Hunting;
+            _phaseAt = Now;
+            Note($"bomb run: {_ours.GangName} with {_ours.Bombs} grenade" +
+                 $"{(_ours.Bombs == 1 ? "" : "s")}, {_rivalMenAtStart} rival men standing");
+        }
+
+        void TickBomb()
+        {
+            switch (_bstep)
+            {
+                case BombStep.Throwing: TickBombThrow(); break;
+                case BombStep.Shop: TickBombShop(); break;
+                case BombStep.Planting: TickBombPlant(); break;
+                case BombStep.Driving: TickBombDrive(); break;
+                case BombStep.Boarding: TickBombBoard(); break;
+            }
+            AimShotCam();
+        }
+
+        [Tooltip("Bomb run only: swing the demo camera onto whatever the run is doing " +
+                 "(the burning shop, the car being blown) so a headless --shot frames the " +
+                 "action instead of the whole quarter. Off leaves the camera alone.")]
+        public bool bombShotCam;
+
+        Camera _shotCam;
+
+        /// <summary>Point the camera at what the bomb run is doing this moment - the shop
+        /// while it burns and boards, the car while it is driven off and blown, the crew
+        /// otherwise - so a screenshot catches it. Test scaffolding, and only when asked.</summary>
+        void AimShotCam()
+        {
+            if (!bombShotCam) return;
+            if (_shotCam == null)
+            {
+                foreach (var c in FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                    if (c.targetTexture == null) { _shotCam = c; break; }
+                if (_shotCam == null) return;
+            }
+            Vector3 focus =
+                (_bombShop != null && _bombShop.Damaged) ? _bombShop.Door :
+                (_bombCar != null && _bombCar.Tf != null) ? _bombCar.Position :
+                _ours != null ? _ours.Position : _shotCam.transform.position;
+            var eye = focus + new Vector3(10f, 14f, 10f);
+            _shotCam.transform.position = eye;
+            _shotCam.transform.rotation = Quaternion.LookRotation((focus + Vector3.up * 1.5f) - eye, Vector3.up);
+        }
+
+        /// <summary>Throw the grenades, one every couple of seconds, and see the rival
+        /// thin out. A quarry wiped before the count is done is replaced; none left is a
+        /// fine reason to move on to the plant.</summary>
+        void TickBombThrow()
+        {
+            if (Now < _bombNext) return;
+
+            if (_bombThrown >= bombThrows)
+            {
+                _throwThinned = RivalMenStanding() < _rivalMenAtStart;
+                if (!_throwThinned)
+                    Fault("nobombkill", $"{bombThrows} grenades thrown and no rival went down");
+                Note($"{bombThrows} grenades thrown - rivals {_rivalMenAtStart} -> {RivalMenStanding()} standing");
+                BeginShop();
+                return;
+            }
+
+            if (_quarry == null || _quarry.Wiped) _quarry = NearestRival(_ours.Position);
+            if (_quarry == null)
+            {
+                _throwThinned = RivalMenStanding() < _rivalMenAtStart;
+                Note("no rival left standing - on to the shop");
+                BeginShop();
+                return;
+            }
+
+            if (!_crews.OrderBombThrow(_quarry))
+            {
+                Give("the throw was refused: " + (_crews.BombRefusal ?? "?"));
+                return;
+            }
+            _bombThrown++;
+            _bombNext = Now + 2.5f;   // let the blast land and the count settle
+            Note($"grenade {_bombThrown} of {bombThrows} thrown at {_quarry.GangName}");
+        }
+
+        /// <summary>Throw a grenade at a rival family's SHOPFRONT - it must catch fire.
+        /// The boarding-up is checked later, once the fire has burnt out.</summary>
+        void BeginShop()
+        {
+            // a rival's shop first; failing that (a lab quarter may seat only ours) ANY
+            // shop, so the fire-and-boards is exercised either way
+            _bombShop = NearestFront(rivalOnly: true) ?? NearestFront(rivalOnly: false);
+            if (_bombShop == null) { Note("no shopfront to bomb - on to the plant"); BeginPlant(); return; }
+
+            if (!_crews.OrderBombFront(_bombShop))
+            {
+                Give("the throw at the shop was refused: " + (_crews.BombRefusal ?? "?"));
+                return;
+            }
+            Note($"grenade thrown at {_bombShop.GangName}'s shopfront");
+            _bstep = BombStep.Shop;
+            _bombStepAt = Now;
+        }
+
+        GangFront NearestFront(bool rivalOnly)
+        {
+            GangFront best = null;
+            float bestD = float.MaxValue;
+            var all = GangFront.All;
+            for (int i = 0; i < all.Count; i++)
+            {
+                if (all[i] == null || all[i].Damaged) continue;
+                if (rivalOnly && all[i].GangName == _ours.GangName) continue;
+                float d = (all[i].Door - _ours.Position).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = all[i]; }
+            }
+            return best;
+        }
+
+        void TickBombShop()
+        {
+            // give the charge its flight, then the shop must be alight
+            if (Now - _bombStepAt < 2f) return;
+            _shopLit = _bombShop != null && _bombShop.Damaged;
+            if (!_shopLit)
+                Fault("noshopfire", "the shopfront was thrown at and did not catch fire");
+            else
+                Note($"{_bombShop.GangName}'s shop is burning");
+            BeginPlant();
+        }
+
+        void BeginPlant()
+        {
+            _bombCar = StandACar();
+            if (_bombCar == null) { Give("no car to lay a charge under"); return; }
+            _bstep = BombStep.Planting;
+            _bombStepAt = Now;
+        }
+
+        /// <summary>Lay the charge, then send the car off so the charge springs under a
+        /// car that is being driven - exactly what it is for.</summary>
+        void TickBombPlant()
+        {
+            if (!_crews.OrderPlantBomb(_bombCar))
+            {
+                Give("the plant was refused: " + (_crews.BombRefusal ?? "?"));
+                return;
+            }
+            // drive the car off down its own road; the charge is sprung by its wheels turning
+            var ahead = _bombCar.Position +
+                        (_bombCar.Tf != null ? _bombCar.Tf.forward : Vector3.forward) * 45f;
+            if (!_bombCar.GoTo(ahead, park: false))
+                _bombCar.GoTo(_ours.Position + Vector3.forward * 45f, park: false);
+            _bstep = BombStep.Driving;
+            _bombStepAt = Now;
+            Note("charge laid; the car is driven off");
+        }
+
+        void TickBombDrive()
+        {
+            if (_bombCar == null || _bombCar.Wrecked)
+            {
+                Note("the car was blown to scrap");
+                // if a shop was set alight, wait for it to burn out and board itself up
+                if (_bombShop != null && _bombShop.Damaged)
+                {
+                    _bstep = BombStep.Boarding;
+                    _bombStepAt = Now;
+                    return;
+                }
+                FinishBomb();
+                return;
+            }
+            if (Now - _bombStepAt > bombPatience)
+            {
+                Fault("nobombcar", $"the car never blew in {bombPatience:F0}s " +
+                    $"(v {_bombCar.RoadSpeed:F1}, {_bombCar.Why})");
+                Give("the planted charge never sprang");
+            }
+        }
+
+        /// <summary>Wait for the burning shop to board itself up - the fire out, planks
+        /// over the ground-floor windows (ShopDamage). The hard ceiling is the burn time
+        /// plus room.</summary>
+        void TickBombBoard()
+        {
+            if (_bombShop != null && _bombShop.Boarded)
+            {
+                Note($"{_bombShop.GangName}'s shop has boarded up its windows");
+                FinishBomb();
+                return;
+            }
+            if (Now - _bombStepAt > ShopDamage.BurnFor + 12f)
+            {
+                Fault("noboards", "the burnt shop never boarded its windows");
+                Give("the shop burned but was never boarded up");
+            }
+        }
+
+        void FinishBomb()
+        {
+            bool shopOk = _bombShop == null || (_shopLit && _bombShop.Boarded);
+            Go(Phase.Done, _throwThinned && shopOk
+                ? "bomb run clean: the throw thinned the rival, the shop burned and boarded, the car was scrapped"
+                : $"bomb run done (rival thinned {_throwThinned}, shop lit {_shopLit}, boarded {(_bombShop != null && _bombShop.Boarded)})");
+        }
+
+        int RivalMenStanding()
+        {
+            int n = 0;
+            foreach (var unit in _crews.Units)
+                if (unit.Faction != 0 && !unit.IsPolice) n += unit.Standing();
+            return n;
+        }
+
+        DemoCrews.Unit NearestRival(Vector3 from)
+        {
+            DemoCrews.Unit best = null;
+            float bestD = float.MaxValue;
+            foreach (var unit in _crews.Units)
+            {
+                if (unit.Faction == 0 || unit.IsPolice || unit.Wiped) continue;
+                float d = (unit.Position - from).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = unit; }
+            }
+            return best;
+        }
+
+        // ------------------------------------------------------------------ the walkabout
+
+        int _legsWalked, _walkRetries;
+        Vector3 _walkDest;
+        float _dwellUntil, _legBestToGo, _legBestAt;
+        bool _walking;
+
+        /// <summary>The far corners of the quarter's own floor (the fence the builder
+        /// laid). Each leg goes to the corner FARTHEST from where the crew stands, so
+        /// every walk is the length of the quarter and crosses its lights.</summary>
+        Vector3 FarCorner(Vector3 from)
+        {
+            var r = WalkObstacles.City[0];
+            const float inset = 15f;
+            var best = from;
+            float far = -1f;
+            for (int k = 0; k < 4; k++)
+            {
+                var c = new Vector3(
+                    k % 2 == 0 ? r.xMin + inset : r.xMax - inset, 0f,
+                    k / 2 == 0 ? r.yMin + inset : r.yMax - inset);
+                float d = (c - from).sqrMagnitude;
+                if (d > far) { far = d; best = c; }
+            }
+            return best;
+        }
+
+        void StartWalk()
+        {
+            if (WalkObstacles.City.Count == 0) { Give("no city fence laid - nothing to walk"); return; }
+            State = Phase.Marching;
+            _phaseAt = Now;
+            _legsWalked = 0;
+            _walkRetries = 0;
+            Note($"Walkabout: {_ours.GangName}, {_ours.Standing()} men, {walkLegs} corners");
+            OrderLeg();
+        }
+
+        void OrderLeg()
+        {
+            var corner = FarCorner(_ours.Position);
+            _crews.Select(_ours);
+            if (!_crews.OrderSelected(corner, out _walkDest))
+            {
+                Give("the crew would not take a walk order");
+                return;
+            }
+            _walking = true;
+            _phaseAt = Now;
+            _legBestToGo = float.MaxValue;
+            _legBestAt = Now;
+            Note($"leg {_legsWalked + 1}/{walkLegs}: sent " +
+                 $"{Vector3.Distance(_ours.Position, _walkDest):F0} m");
+        }
+
+        void TickWalk()
+        {
+            if (_ours == null || _ours.Wiped) { Give("the crew is gone"); return; }
+            var boss = _ours.Boss != null && !_ours.Boss.Dead && _ours.Boss.Tf != null ? _ours.Boss : null;
+            if (boss == null) { Give("the lieutenant is gone"); return; }
+
+            if (_walking)
+            {
+                if (boss.HasOrder)
+                {
+                    // judged on ground gained: a crew that stands over a light while
+                    // its own man crosses is slow and RIGHT - only a crew gaining no
+                    // ground at all (or one past any sane ceiling) has stalled
+                    float toGo = Vector3.Distance(boss.Tf.position, _walkDest);
+                    if (toGo < _legBestToGo - 1f) { _legBestToGo = toGo; _legBestAt = Now; }
+                    if (Now - _legBestAt > legStallAfter || InPhase > legPatience)
+                    {
+                        Fault("mission", $"leg {_legsWalked + 1} stalled - {toGo:F0} m still to go, " +
+                                         $"no ground gained for {Now - _legBestAt:F0}s of {InPhase:F0}s");
+                        _walking = false;
+                        _legsWalked++;
+                        _dwellUntil = Now + dwell;
+                    }
+                    return;
+                }
+                float off = Vector3.Distance(boss.Tf.position, _walkDest);
+                // stopped short (the crowd, a car): sent again at the same corner - a
+                // player clicks twice too; only a leg that will not finish is a fault
+                if (off > 15f && _walkRetries < 2 && InPhase <= legPatience)
+                {
+                    _walkRetries++;
+                    _crews.Select(_ours);
+                    _crews.OrderSelected(_walkDest, out _walkDest);
+                    return;
+                }
+                if (off > 15f)
+                    Fault("mission", $"leg {_legsWalked + 1} ended {off:F0} m short of the corner");
+                Note($"leg {_legsWalked + 1} done in {InPhase:F0}s, {off:F0} m off the mark");
+                _walkRetries = 0;
+                _walking = false;
+                _legsWalked++;
+                _dwellUntil = Now + dwell;
+                return;
+            }
+
+            if (Now < _dwellUntil) return;
+            if (_legsWalked >= walkLegs)
+            {
+                Go(Phase.Done, $"walkabout done: {walkLegs} corners in {Now:F0}s");
+                return;
+            }
+            OrderLeg();
         }
 
         Vector3 Car() => _car != null ? _car.Position : _ours != null ? _ours.Position : transform.position;

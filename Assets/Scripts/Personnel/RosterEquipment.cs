@@ -11,6 +11,20 @@ namespace LivingCity.Personnel
         TommyGun,
         TwinPistols,
         MachinePistol,
+
+        /// <summary>A two-wheeler. Wheels rather than a gun (RosterOps.IsWeapon), so
+        /// the quartermaster deals it by Driving with the cars - but NOT a crew's
+        /// vehicle either (CrewKit.HasVehicle): a machine that carries two men does
+        /// not put a crew of five on the road, and the week's travel arithmetic must
+        /// not pretend it does. What it is for is the pillion (CrewBike).</summary>
+        Motorcycle,
+
+        /// <summary>A grenade - a crew's throwing charge (DemoCrews.Bomb). Neither a
+        /// gun nor a wheel (RosterOps.IsGrenade), so the quartermaster deals it into no
+        /// man's hand: it is a COUNTABLE stock the lieutenant's crew carries, spent one
+        /// at a time when thrown or laid. Owned by the lieutenant like any gear (the
+        /// via-lieutenant rule), counted by DemoCrews.BindBombs.</summary>
+        Grenade,
     }
 
     /// <summary>

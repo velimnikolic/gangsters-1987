@@ -149,9 +149,48 @@ namespace RoadDemo
         public Vector2Int policePatrolWaypoints = new Vector2Int(2, 4);
 
         [Header("Rivals")]
-        [Tooltip("Rival crews dealt onto the sidewalks by hand (the ledger has none) - so there is somebody to shoot it out with. 0 for a quiet town.")]
-        [Range(0, 3)] public int rivalCrewsInCity = 1;
+        [Tooltip("Rival FAMILIES on the street (the ledger deals none), in GangCatalog " +
+                 "order and spread across the whole map: twenty of them is a city with a " +
+                 "mob on it rather than one rival somewhere. 0 for a quiet town.")]
+        [Range(0, 20)] public int rivalCrewsInCity = 20;
+
+        [Tooltip("The most rival crews the street will hold, over all families together. " +
+                 "A family runs one to three capos (GangSeeder) and each of them holds a " +
+                 "corner of his own, so this is the ceiling on rival MEN: about four to " +
+                 "the crew. Rounds: every family is standing somewhere before any family " +
+                 "gets a second corner.")]
+        [Range(1, 60)] public int rivalCrewCap = 26;
+
+        [Tooltip("The most soldiers behind one capo. The seeder deals two or three; this " +
+                 "cuts a crew shorter, it never pads one out.")]
         [Range(0, 4)] public int rivalHoodsInCity = 3;
+
+        [Tooltip("Grenades each outfit crew starts with ONLY in a scene with no ledger " +
+                 "behind it. In the city the ledger is the truth - grenades are bought " +
+                 "on the armory's EXPLOSIVES shelf and given to a lieutenant, and " +
+                 "DemoCrews.BindBombs counts them onto the crews - so this stays 0.")]
+        [Min(0)] public int bombsPerCrew = 0;
+
+        /// <summary>The stream the mobs are dealt from - the whole underworld, names and
+        /// all, off one number. Not the demo's own 1987 seed by accident: it IS that
+        /// seed, so the city and the men standing on it move together.</summary>
+        const int RivalSeed = 1987;
+
+        [Header("The monkey")]
+        [Tooltip("Nobody at the mouse and the whole underworld at each other's throats: " +
+                 "the mobs are set at one another every few seconds and the outfit is " +
+                 "sent out by car, on foot and on the machine, while everything " +
+                 "impossible that happens is written down (MonkeyRunner). For headless " +
+                 "runs - leave it off for a Play session.")]
+        public bool monkey = false;
+        [Tooltip("Same seed, same run of orders.")]
+        public int monkeySeed = 1;
+        [Tooltip("Sim seconds between the monkey's orders.")]
+        public float monkeyOrderEvery = 5f;
+        [Tooltip("Sim seconds before the monkey's first order - the city has to finish " +
+                 "standing up first.")]
+        public float monkeyStartAfter = 20f;
+
         [Tooltip("Every man of a mob his own piece, drawn off the armory's ladder, " +
                  "instead of a crew all carrying the same gun. A shotgun man walks in " +
                  "close and a rifleman opens up from across the street, so a mixed mob " +
@@ -345,8 +384,11 @@ namespace RoadDemo
 
         // street-life bookkeeping: facade doors and bench spots noted while the
         // geometry goes down, wired to the sidewalk graph once it exists
-        readonly List<(Vector3 pos, Vector3 outward)> _pendingDoors =
-            new List<(Vector3, Vector3)>();
+        // The owner rides along because a door is the one thing in this city that knows
+        // WHICH BUILDING it belongs to - the sidewalk graph, the crowd and the front
+        // card all reach a building through its door, and nothing else here does.
+        readonly List<(Vector3 pos, Vector3 outward, GameObject owner)> _pendingDoors =
+            new List<(Vector3, Vector3, GameObject)>();
         readonly List<(Vector3 pos, float yaw)> _pendingBenches =
             new List<(Vector3, float)>();
         CityLife _life;
@@ -354,10 +396,47 @@ namespace RoadDemo
 
         Transform _geometry, _flora, _traffic, _cars, _blocks;
 
+        // Where the load goes, pass by pass. The city is thirty-odd passes deep and it
+        // takes the better part of a minute to stand up; which of them is the minute is
+        // not a thing to guess at, so each one is timed and the lot is printed once,
+        // dearest first. Costs nothing to leave in - one Stopwatch read per pass.
+        readonly System.Collections.Generic.List<(string Name, long Ms)> _passMs =
+            new System.Collections.Generic.List<(string, long)>();
+        readonly System.Diagnostics.Stopwatch _buildClock = new System.Diagnostics.Stopwatch();
+
+        void Pass(string name, System.Action run)
+        {
+            long at = _buildClock.ElapsedMilliseconds;
+            run();
+            _passMs.Add((name, _buildClock.ElapsedMilliseconds - at));
+        }
+
+        /// <summary>The pass table, dearest first, with everything under a twentieth of
+        /// the load rolled into one line: the short passes are two dozen and none of them
+        /// is the answer.</summary>
+        void ReportBuildTime()
+        {
+            long total = _buildClock.ElapsedMilliseconds;
+            _passMs.Sort((a, b) => b.Ms.CompareTo(a.Ms));
+            var line = new System.Text.StringBuilder();
+            line.Append($"[RoadDemo] the city stood up in {total} ms:");
+            long rest = 0;
+            foreach (var (name, ms) in _passMs)
+            {
+                if (total > 0 && ms * 20 < total) { rest += ms; continue; }
+                line.Append($" {name} {ms}");
+            }
+            line.Append($" | everything else {rest} (ms)");
+            Debug.Log(line.ToString());
+        }
+
         void Awake()
         {
 #if UNITY_EDITOR
+            _buildClock.Start();
+            long prefabsAt = _buildClock.ElapsedMilliseconds;
             if (!LoadPrefabs()) return;
+            _passMs.Add(("LoadPrefabs", _buildClock.ElapsedMilliseconds - prefabsAt));
             _geometry = new GameObject("Geometry").transform;
             // palms live outside the static-batched root: their wind shader displaces
             // vertices in object space, and a combined mesh would swing them around
@@ -371,50 +450,52 @@ namespace RoadDemo
 
             // no freeways in this town, whatever the inspector or an old scene says:
             // the Highway seams come out of the list before the grid is spaced on them
-            NoFreeways();
-            Respace();
+            Pass("NoFreeways", NoFreeways);
+            Pass("Respace", Respace);
             // the belt freeway's line round the grid, which the freeway lands on and the
             // quarters stand outside of
-            PlanBelt();
+            Pass("PlanBelt", PlanBelt);
             // the quarters that are not the grid - the port, the suburbs, the airport -
             // decide where they stand before anything is laid: the island has to ring
             // them, and the junctions they hang off have to know their streets run on out
-            PlanDistricts();
+            Pass("PlanDistricts", PlanDistricts);
             // and the city's own parts get their names: nothing is built for them, but
             // the map prints them and the ledger will want to say which one a block is in
-            PlanQuarters();
-            ScaleLifeToCity();
-            BuildNodes();
-            BuildRoadsAndSidewalks();
-            BuildBlocks();
-            BuildSeams();
-            DressStreets();
-            BuildGraph();
-            BuildSignals();
-            BuildPedGraph();
-            BuildWalkClearance();
+            Pass("PlanQuarters", PlanQuarters);
+            Pass("FenceCity", FenceCity);
+            Pass("ScaleLifeToCity", ScaleLifeToCity);
+            Pass("BuildNodes", BuildNodes);
+            Pass("BuildRoadsAndSidewalks", BuildRoadsAndSidewalks);
+            Pass("BuildBlocks", BuildBlocks);
+            Pass("BuildSeams", BuildSeams);
+            Pass("DressStreets", DressStreets);
+            Pass("BuildGraph", BuildGraph);
+            Pass("BuildSignals", BuildSignals);
+            Pass("BuildPedGraph", BuildPedGraph);
+            Pass("BuildWalkClearance", BuildWalkClearance);
             // the belt freeway round the city: into the lane graph before the quarters'
             // streets are welded on, because those cross it at its junctions
-            BuildBelt();
+            Pass("BuildBelt", BuildBelt);
             // the quarters themselves, and the streets that weld them to the grid
-            BuildDistricts();
+            Pass("BuildDistricts", BuildDistricts);
             // the freeway's terminal link roads (a city with no belt), once the
             // connectors they cross are in
-            BuildHighwayLinks();
-            BuildCityLife();
-            SpawnCars();
-            SpawnBikes();
-            SpawnPolice();
-            SpawnPedestrians();
-            SpawnCrews();
-            BuildEnvironment();
-            BuildDayNight();
-            BuildAudio();
-            BuildMap();
-            BuildLotOverlay();
+            Pass("BuildHighwayLinks", BuildHighwayLinks);
+            Pass("BuildCityLife", BuildCityLife);
+            Pass("SpawnCars", SpawnCars);
+            Pass("SpawnBikes", SpawnBikes);
+            Pass("SpawnPolice", SpawnPolice);
+            Pass("SpawnPedestrians", SpawnPedestrians);
+            Pass("SpawnCrews", SpawnCrews);
+            Pass("BuildEnvironment", BuildEnvironment);
+            Pass("BuildDayNight", BuildDayNight);
+            Pass("BuildAudio", BuildAudio);
+            Pass("BuildMap", BuildMap);
+            Pass("BuildLotOverlay", BuildLotOverlay);
 
-            OptimiseScene();
-            AssignCullLayers();
+            Pass("OptimiseScene", OptimiseScene);
+            Pass("AssignCullLayers", AssignCullLayers);
+            ReportBuildTime();
             // the merge itself waits for the first Update: every Start (the night
             // windows, the map, the lamps) must see the pieces first
 #else
@@ -542,7 +623,7 @@ namespace RoadDemo
         static Material LoadMaterial(string path)
         {
 #if UNITY_EDITOR
-            var src = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(path);
+            var src = RoadDemo.DemoAssetLoad.Load<Material>(path);
             return src != null ? new Material(src) : null;
 #else
             return null;
@@ -552,7 +633,7 @@ namespace RoadDemo
 #if UNITY_EDITOR
         static GameObject Load(string path)
         {
-            var go = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            var go = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
             if (go == null) Debug.LogError("[RoadDemo] missing prefab: " + path);
             return go;
         }
@@ -560,7 +641,7 @@ namespace RoadDemo
         static List<string> ScanPrefabPaths(string[] folders, string[] denySubstrings)
         {
             var paths = new List<string>();
-            foreach (var guid in UnityEditor.AssetDatabase.FindAssets("t:Prefab", folders))
+            foreach (var guid in RoadDemo.DemoAssetLoad.Find("t:Prefab", folders))
             {
                 string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
                 string low = path.ToLowerInvariant();
@@ -591,7 +672,7 @@ namespace RoadDemo
 
             for (int i = 1; i <= 6; i++)
             {
-                var palm = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                var palm = RoadDemo.DemoAssetLoad.Load<GameObject>(
                     PalmEnv + "SM_Env_Tree_Palm_0" + i + ".prefab");
                 if (palm != null) _palms.Add(palm);
             }
@@ -622,14 +703,14 @@ namespace RoadDemo
                 // liveried cruisers, and the old name filter ("police" in the name)
                 // drove all four of them as ordinary traffic
                 if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(path)) continue;
-                var v = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                var v = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                 if (v != null) _carPrefabs.Add(v);
             }
 
             foreach (var name in LivingCity.Gameplay.VehicleCatalog.PoliceCars)
                 foreach (var folder in vehicleFolders)
                 {
-                    var car = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                    var car = RoadDemo.DemoAssetLoad.Load<GameObject>(
                         folder + "/" + name + ".prefab");
                     if (car == null) continue;
                     _policeCarPrefabs.Add(car);
@@ -654,7 +735,7 @@ namespace RoadDemo
             string[] characterDeny = { "attach", "charred", "skeleton", "robot", "space", "underwear" };
             foreach (var path in ScanPrefabPaths(characterFolders, characterDeny))
             {
-                var chr = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                var chr = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                 if (chr == null) continue;
                 var animator = chr.GetComponentInChildren<Animator>();
                 if (animator == null || animator.avatar == null || !animator.avatar.isHuman) continue;
@@ -678,9 +759,9 @@ namespace RoadDemo
             {
                 foreach (var n in names)
                 {
-                    var g = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + n + ".prefab");
+                    var g = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + n + ".prefab");
                     if (g == null)
-                        g = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmEnv + n + ".prefab");
+                        g = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmEnv + n + ".prefab");
                     if (g != null) into.Add(g);
                 }
             }
@@ -705,26 +786,26 @@ namespace RoadDemo
             Bag(_chairs, "SM_Prop_Chair_01", "SM_Prop_Chair_03", "SM_Prop_Chair_04");
             Bag(_tables, "SM_Prop_Table_01", "SM_Prop_Table_Outdoor_01");
             Bag(_umbrellas, "SM_Prop_Umbrella_01", "SM_Prop_Umbrella_02", "SM_Prop_Umbrella_03");
-            _bag = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Trash_Bag_01.prefab");
-            _bagOpen = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Trash_Bag_Open_01.prefab");
-            _bollard = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Bollard_02.prefab");
-            _hydrant = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Fire_Hydrant_01.prefab");
-            _mailbox = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Mailbox_01.prefab");
-            _newsstand = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Newspaper_Stand_01.prefab");
-            _powerpole = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Powerpole_01.prefab");
-            _bikeStand = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Bike_Stand_02.prefab");
-            _signPole = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Sign_Pole_02.prefab");
-            _manhole = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Manhole_01.prefab");
+            _bag = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Trash_Bag_01.prefab");
+            _bagOpen = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Trash_Bag_Open_01.prefab");
+            _bollard = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Bollard_02.prefab");
+            _hydrant = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Fire_Hydrant_01.prefab");
+            _mailbox = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Mailbox_01.prefab");
+            _newsstand = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Newspaper_Stand_01.prefab");
+            _powerpole = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Powerpole_01.prefab");
+            _bikeStand = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Bike_Stand_02.prefab");
+            _signPole = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Sign_Pole_02.prefab");
+            _manhole = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Manhole_01.prefab");
             // the rest of what a 1987 kerb carries, all of it in the palm city's props
-            _treeCage = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Tree_Cage_01.prefab");
-            _banner = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Street_Flag_Sign_02.prefab");
-            _meter = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Parking_Meter_01.prefab");
-            _payPhone = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Pay_Phone_01.prefab");
-            _menuStand = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmProps + "SM_Prop_Menu_Stand_01.prefab");
-            _pave = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PalmEnv + "SM_Env_Sidewalk_01.prefab");
+            _treeCage = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Tree_Cage_01.prefab");
+            _banner = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Street_Flag_Sign_02.prefab");
+            _meter = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Parking_Meter_01.prefab");
+            _payPhone = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Pay_Phone_01.prefab");
+            _menuStand = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmProps + "SM_Prop_Menu_Stand_01.prefab");
+            _pave = RoadDemo.DemoAssetLoad.Load<GameObject>(PalmEnv + "SM_Env_Sidewalk_01.prefab");
             if (_pave == null) Debug.LogWarning("[RoadDemo] SM_Env_Sidewalk_01 missing; courts fall back to asphalt");
 
-            _blockPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(BlockPrefabPath);
+            _blockPrefab = RoadDemo.DemoAssetLoad.Load<GameObject>(BlockPrefabPath);
             if (_blockPrefab == null)
                 Debug.LogWarning("[RoadDemo] block bake missing (" + BlockPrefabPath + "); interiors stay empty");
 
@@ -732,12 +813,12 @@ namespace RoadDemo
             // police station from the building catalog
             for (int i = 2; i <= 8; i++)
             {
-                var block = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                var block = RoadDemo.DemoAssetLoad.Load<GameObject>(
                     BlocksDir + PalmBlockPrefix + "0" + i + ".prefab");
                 if (block != null) _featureBlocks.Add(block);
                 else Debug.LogWarning("[RoadDemo] missing block bake: " + PalmBlockPrefix + "0" + i);
             }
-            var police = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PoliceStationPath);
+            var police = RoadDemo.DemoAssetLoad.Load<GameObject>(PoliceStationPath);
             if (police != null) _featureBlocks.Add(police);
             else Debug.LogWarning("[RoadDemo] missing prefab: " + PoliceStationPath);
 
@@ -745,7 +826,7 @@ namespace RoadDemo
             LoadBlockBakes();
 
             AnimationClip PeopleClip(string name) =>
-                UnityEditor.AssetDatabase.LoadAssetAtPath<AnimationClip>(
+                RoadDemo.DemoAssetLoad.Load<AnimationClip>(
                     "Assets/Animations/People/" + name + ".anim");
             _walkClip = PeopleClip("Standard Walk");
             _idleClip = PeopleClip("Breathing Idle");
@@ -795,7 +876,7 @@ namespace RoadDemo
             _autoBakeCursor.Clear();
             _bakeNames.Clear();
 
-            var guids = UnityEditor.AssetDatabase.FindAssets(
+            var guids = RoadDemo.DemoAssetLoad.Find(
                 "t:Prefab", new[] { BlocksDir.TrimEnd('/') });
             System.Array.Sort(guids, (a, b) => string.CompareOrdinal(
                 UnityEditor.AssetDatabase.GUIDToAssetPath(a),
@@ -804,7 +885,7 @@ namespace RoadDemo
             var loose = new List<string>();
             foreach (var guid in guids)
             {
-                var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                var prefab = RoadDemo.DemoAssetLoad.Load<GameObject>(
                     UnityEditor.AssetDatabase.GUIDToAssetPath(guid));
                 if (prefab == null) continue;
                 _bakeNames.Add(prefab.name);
@@ -1981,8 +2062,8 @@ namespace RoadDemo
                     foreach (float fx in new[] { 0.3f, 0.7f })
                     {
                         float dx = Mathf.Lerp(bb.min.x, bb.max.x, fx);
-                        _pendingDoors.Add((new Vector3(dx, centre.y, bb.min.z), Vector3.back));
-                        _pendingDoors.Add((new Vector3(dx, centre.y, bb.max.z), Vector3.forward));
+                        _pendingDoors.Add((new Vector3(dx, centre.y, bb.min.z), Vector3.back, block));
+                        _pendingDoors.Add((new Vector3(dx, centre.y, bb.max.z), Vector3.forward, block));
                     }
                 }
                 else
@@ -2184,7 +2265,7 @@ namespace RoadDemo
                         doorPos = new Vector3(xStart, doorY, zStart + b.size.z * 0.5f);
                     else
                         doorPos = new Vector3(xStart + b.size.x, doorY, zStart + b.size.z * 0.5f);
-                    _pendingDoors.Add((doorPos, doorOut));
+                    _pendingDoors.Add((doorPos, doorOut, go));
                 }
                 cursor = eastEnd ? xMax : cursor + b.size.x + BlockAlley;
                 feature++;
@@ -2911,14 +2992,15 @@ namespace RoadDemo
                 return null;
             }
 
-            foreach (var (pos, outward) in _pendingDoors)
+            foreach (var (pos, outward, owner) in _pendingDoors)
             {
                 if (!NearestLink(pos, 14f, out var fwd, out var t)) continue;
                 var back = Reverse(fwd);
                 if (back == null) continue;
                 var door = new DemoDoor
                 {
-                    Pos = pos, Outward = outward, LinkFwd = fwd, LinkBack = back, EntryT = t,
+                    Pos = pos, Outward = outward, Building = owner,
+                    LinkFwd = fwd, LinkBack = back, EntryT = t,
                     EntryPos = Vector3.Lerp(fwd.From.Pos, fwd.To.Pos, t / fwd.Length),
                 };
                 _life.Doors.Add(door);
@@ -3010,6 +3092,7 @@ namespace RoadDemo
             _crews.GunshotSets = CrewKit.GunshotSets();
             _crews.CrackClip = CrewKit.Crack;
             _crews.BarTopInset = 52f; // under the top bar (42) with a little air
+            _crews.BombsPerCrew = bombsPerCrew;
             _crews.Init(_pedLinks, clips, _pedPrefabs);
 
             // the law: the patrol cars and beat officers already out answer the
@@ -3020,49 +3103,275 @@ namespace RoadDemo
             foreach (var officer in _policeOfficers) dispatch.Register(officer);
 
             SpawnRivals();
+
+            // and, for a headless run, the thing that plays all of them at once
+            if (monkey)
+            {
+                var outfit = gameObject.AddComponent<MonkeyOutfit>();
+                outfit.seed = monkeySeed * 31 + 7;
+
+                var runner = gameObject.AddComponent<MonkeyRunner>();
+                runner.seed = monkeySeed;
+                runner.orderEvery = monkeyOrderEvery;
+                runner.startAfter = monkeyStartAfter;
+
+                // and the city itself looked over once, while the men are still
+                // walking out of their doors
+                var audit = gameObject.AddComponent<CityAudit>();
+                audit.blocks = _blocks;
+                audit.geometry = _geometry;
+                Debug.Log($"[monkey] armed: seed {monkeySeed}, an order every " +
+                          $"{monkeyOrderEvery:F0}s from {monkeyStartAfter:F0}s");
+            }
         }
 
-        // Rival crews dealt by hand onto sidewalks of their own, so the city has
-        // somebody for the outfit to shoot it out with (the ledger deals none).
+        // The city's rival mobs, out on sidewalks of their own, so there is somebody
+        // for the outfit to shoot it out with (the ledger deals none).
+        //
+        // Who they are is NOT invented here: GangSeeder deals the families - how many
+        // crews each one runs and every man's name - and this pass stands them up and
+        // registers what it dealt (GangRegistry), so the ledger's FAMILIES page names
+        // the capo the player is actually looking at across the street. One knot of men
+        // per LIEUTENANT: a family with three capos holds three corners, in three
+        // different quarters, under one name and one colour.
+        //
+        // The crews are placed in rounds - every family gets its first corner before any
+        // family gets its second - so a budget that runs out takes second crews off the
+        // biggest mobs and never leaves a family out of the city altogether.
         void SpawnRivals()
         {
+            // The books first, and unconditionally: the families exist whether or not
+            // this pass finds pavement to stand them on, and the ledger's FAMILIES page
+            // reads the registry, not the street.
+            var gangs = LivingCity.Gangs.GangSeeder.Generate(RivalSeed, null);
+            LivingCity.Gangs.GangRegistry.Install(gangs);
+
             if (rivalCrewsInCity <= 0) return;
             var sidewalks = _pedLinks.FindAll(l => !l.Gated && l.Length >= 24f);
             if (sidewalks.Count == 0) return;
-            var rng = new System.Random(1987);
-            var gangNames = LivingCity.Gangs.GangCatalog.Names;
-            var bossModels = LivingCity.Gangs.GangCatalog.LieutenantModels;
-            var soldierModels = LivingCity.Gangs.GangCatalog.SoldierModels;
+            var rng = new System.Random(RivalSeed);
+
             var arms = new[]
             {
                 ("SM_Wep_Pistol_Revolver_01", LivingCity.Personnel.EquipmentKind.Pistol),
                 ("SM_Wep_Machine_Pistol_01", LivingCity.Personnel.EquipmentKind.MachinePistol),
                 ("SM_Wep_Shotgun_01", LivingCity.Personnel.EquipmentKind.Shotgun),
             };
-            var taken = new List<Vector3>();
-            int count = Mathf.Min(rivalCrewsInCity, gangNames.Length - 1);
-            for (int i = 0; i < count; i++)
-            {
-                int gang = 1 + i;
-                var bossModel = bossModels[gang % bossModels.Length];
-                var staple = soldierModels[gang % soldierModels.Length];
-                var bossPrefab = Cast(bossModel);
-                if (bossPrefab == null) continue;
 
-                // a body per man, all different and none of them the lieutenant's - a
-                // rival crew is five men, not one man standing five times
-                var hoodPrefabs = new List<GameObject>();
-                foreach (var look in LivingCity.Gangs.GangLooks.HoodsFor(
-                             bossModel, staple, rivalHoodsInCity))
+            // The books, cut into crews: one entry per capo, with the soldiers standing
+            // behind him in the seeder's flat member list (a Lieutenant opens a crew).
+            int families = Mathf.Min(rivalCrewsInCity, gangs.Length - 1);
+            var byFamily = new List<List<(string boss, List<string> hoods)>>();
+            for (int i = 0; i < families; i++)
+            {
+                var crews = new List<(string, List<string>)>();
+                foreach (var man in gangs[1 + i].Members)
                 {
-                    var body = Cast(look);
-                    if (body) hoodPrefabs.Add(body);
+                    if (man.Lieutenant) crews.Add((man.FullName, new List<string>()));
+                    else if (crews.Count > 0 &&
+                             crews[crews.Count - 1].Item2.Count < rivalHoodsInCity)
+                        crews[crews.Count - 1].Item2.Add(man.FullName);
+                }
+                byFamily.Add(crews);
+            }
+
+            // Every family gets PREMISES first - the player's outfit included - and the
+            // capo's own crew stands outside its door. The rest of a family's crews hold
+            // corners, which is what the sidewalk pass below is for.
+            var taken = new List<Vector3>();
+            var fronts = SeatFronts(gangs, families, byFamily, taken);
+
+            int placed = 0;
+            for (int round = 0; placed < rivalCrewCap; round++)
+            {
+                bool any = false;
+                for (int i = 0; i < families && placed < rivalCrewCap; i++)
+                {
+                    if (round >= byFamily[i].Count) continue;
+                    any = true;
+                    if (StandUpCrew(1 + i, round, byFamily[i][round], sidewalks, taken,
+                                    arms, rng, round == 0 ? fronts[1 + i] : null))
+                        placed++;
+                }
+                if (!any) break;
+            }
+        }
+
+        /// <summary>One door per family, spread across the city, with the family's books
+        /// stuck on the building behind it (<see cref="GangFront"/>) - that component is
+        /// what makes the door clickable as a front.
+        ///
+        /// The player's outfit is seated FIRST and by the same rule as everybody else: a
+        /// don without a place of his own is the one man in the city with nowhere to be
+        /// found. His premises carries his own name over the door, and no crew - the men
+        /// outside his door are the ledger's, and they come and go with it.
+        ///
+        /// A building is claimed once. A composed block cuts four doors into one bake,
+        /// and two families behind the same wall would open the same card.</summary>
+        DemoDoor[] SeatFronts(LivingCity.Gangs.Gang[] gangs, int families,
+            List<List<(string boss, List<string> hoods)>> byFamily, List<Vector3> taken)
+        {
+            var fronts = new DemoDoor[gangs.Length];
+            var doors = new List<DemoDoor>();
+            if (_life != null)
+                foreach (var door in _life.Doors)
+                    if (door.Building != null)
+                        doors.Add(door);
+
+            if (doors.Count == 0)
+            {
+                Debug.LogWarning("[RoadDemo] No street door has a building behind it - " +
+                                 "the families operate out of nowhere.");
+                return fronts;
+            }
+
+            var claimed = new HashSet<GameObject>();
+            for (int id = 0; id <= families; id++)
+            {
+                var door = FarthestDoor(doors, claimed, taken);
+                if (door == null) break;
+
+                claimed.Add(door.Building);
+                taken.Add(door.EntryPos);
+                fronts[id] = door;
+
+                var crew = id > 0 && byFamily[id - 1].Count > 0 ? byFamily[id - 1][0] : default;
+                var capo = id == 0 ? LivingCity.Gangs.GangCatalog.BossName : crew.boss;
+                int men = id == 0 ? 0 : (crew.hoods?.Count ?? 0) + 1;
+
+                var books = LivingCity.Gangs.FrontBooks.Open(
+                    gangs[id].Name, capo, men, gangs[id].MemberSeed);
+                books.Address = AddressOf(door);
+
+                door.Building.AddComponent<GangFront>()
+                    .Bind(id, gangs[id].Name, books, door.Pos, door.Outward);
+                // and into the registry, so the ledger's FAMILIES page names the same
+                // door the street card does
+                LivingCity.Gangs.GangRegistry.SetFrontBooks(id, books);
+            }
+
+            return fronts;
+        }
+
+        /// <summary>The free door furthest from everything already seated - the same
+        /// min-squared-distance argmax the city path picks fronts with (GangFronts), so
+        /// the families end up in different quarters rather than on one street.</summary>
+        static DemoDoor FarthestDoor(
+            List<DemoDoor> doors, HashSet<GameObject> claimed, List<Vector3> taken)
+        {
+            DemoDoor best = null;
+            float bestScore = -1f;
+            foreach (var door in doors)
+            {
+                if (claimed.Contains(door.Building)) continue;
+
+                float score = float.MaxValue;
+                foreach (var seat in taken)
+                {
+                    float dx = door.EntryPos.x - seat.x, dz = door.EntryPos.z - seat.z;
+                    float sqr = dx * dx + dz * dz;
+                    if (sqr < score) score = sqr;
                 }
 
-                // a sidewalk far from the other rivals (the outfit is dealt later, spread by its own rule)
+                if (score > bestScore) { bestScore = score; best = door; }
+            }
+
+            return best;
+        }
+
+        /// <summary>Number and street for a door - the line the licence is issued to.
+        /// The street it fronts is the one its facade faces (a door on an east wall is
+        /// on the north-south street), and the number counts off the far end of that
+        /// street in the city's own metres, evens on one side as they are everywhere.</summary>
+        string AddressOf(DemoDoor door)
+        {
+            bool onVertical = Mathf.Abs(door.Outward.x) > Mathf.Abs(door.Outward.z);
+            string name = null;
+            float along = 0f;
+
+            if (onVertical && verticalRoadX != null && verticalRoadX.Length > 0)
+            {
+                int line = 0;
+                for (int i = 1; i < verticalRoadX.Length; i++)
+                    if (Mathf.Abs(verticalRoadX[i] - door.Pos.x) <
+                        Mathf.Abs(verticalRoadX[line] - door.Pos.x))
+                        line = i;
+                name = Streets.Vertical(line);
+                along = door.Pos.z;
+            }
+            else if (!onVertical && horizontalRoadZ != null && horizontalRoadZ.Length > 0)
+            {
+                int line = 0;
+                for (int j = 1; j < horizontalRoadZ.Length; j++)
+                    if (Mathf.Abs(horizontalRoadZ[j] - door.Pos.z) <
+                        Mathf.Abs(horizontalRoadZ[line] - door.Pos.z))
+                        line = j;
+                name = Streets.Horizontal(line);
+                along = door.Pos.x;
+            }
+
+            if (string.IsNullOrEmpty(name)) return "";
+            int number = Mathf.Max(2, Mathf.RoundToInt(Mathf.Abs(along) / 3f));
+            // the side of the street decides odds or evens, the way a real block does
+            bool evens = door.Outward.x + door.Outward.z > 0f;
+            if (evens != (number % 2 == 0)) number++;
+            return number + " " + name;
+        }
+
+        /// <summary>One capo and his men on a corner of their own - or, when
+        /// <paramref name="front"/> is his family's premises, on the pavement outside its
+        /// door, facing the street. Returns whether they reached the pavement - a family
+        /// whose coat is missing from the baked cast is skipped, never
+        /// half-stood-up.</summary>
+        bool StandUpCrew(int gang, int crewIndex,
+            (string boss, List<string> hoods) crew, List<PedLink> sidewalks,
+            List<Vector3> taken,
+            (string, LivingCity.Personnel.EquipmentKind)[] arms, System.Random rng,
+            DemoDoor front = null)
+        {
+            // the family's own bodies: the catalog is as long as the city has mobs, so
+            // id 12 is Greco's coat and nobody else's
+            var bossModel = LivingCity.Gangs.GangCatalog.LieutenantModels[gang];
+            var staple = LivingCity.Gangs.GangCatalog.SoldierModels[gang];
+            var bossPrefab = Cast(bossModel);
+            if (bossPrefab == null) return false;
+
+            // A body per man, all different and none of them the lieutenant's - a rival
+            // crew is four men, not one man standing four times. A family's SECOND crew
+            // starts its walk further along the stock, so the two corners are not the
+            // same three coats twice over.
+            var hoods = LivingCity.Gangs.GangLooks.Hoods;
+            var from = hoods[(LivingCity.Gangs.GangLooks.IndexOf(staple) +
+                              3 * crewIndex) % hoods.Length];
+            var hoodPrefabs = new List<GameObject>();
+            foreach (var look in LivingCity.Gangs.GangLooks.HoodsFor(
+                         bossModel, from, crew.hoods.Count))
+            {
+                var body = Cast(look);
+                if (body) hoodPrefabs.Add(body);
+            }
+
+            Vector3 anchor, facing;
+            if (front != null)
+            {
+                // Outside his own door, backs to the shop: the entry point is the
+                // pavement spot the crowd uses for that door, so the men stand where a
+                // man waiting for somebody inside would stand, not in the wall or the
+                // road. The line runs along the facade (LineOffset spreads across the
+                // facing), which is the shopfront loafing the sidewalk pass already does.
+                anchor = front.EntryPos;
+                facing = front.Outward;
+            }
+            else
+            {
+                // A sidewalk far from every crew already standing (the outfit is dealt
+                // later, spread by its own rule). Farthest-of-N random pavements: with a
+                // mob on every third corner, twelve looks is not enough of the map to
+                // keep the last of them off each other, so the sample grows with the crowd.
                 PedLink link = null;
                 float bestD = -1f;
-                for (int tries = 0; tries < 12; tries++)
+                int looks = Mathf.Clamp(6 * rivalCrewCap, 12, 96);
+                for (int tries = 0; tries < looks; tries++)
                 {
                     var l = sidewalks[rng.Next(sidewalks.Count)];
                     var mid = (l.From.Pos + l.To.Pos) * 0.5f;
@@ -3070,27 +3379,28 @@ namespace RoadDemo
                     foreach (var t in taken) near = Mathf.Min(near, (t - mid).sqrMagnitude);
                     if (near > bestD) { bestD = near; link = l; }
                 }
-                var anchor = (link.From.Pos + link.To.Pos) * 0.5f;
-                taken.Add(anchor);
+                anchor = (link.From.Pos + link.To.Pos) * 0.5f;
                 var along = (link.To.Pos - link.From.Pos).normalized;
-                var facing = Vector3.Cross(Vector3.up, along); // across the pavement: the line runs along it
-
-                var hoodNames = new List<string>();
-                for (int k = 0; k < rivalHoodsInCity; k++) hoodNames.Add(DrawName(rng));
-                var (weaponName, kind) = arms[i % arms.Length];
-                // mixed arms: the crew is not five copies of one gun - each man is asked
-                // for separately as he is stood up, and draws his own off the counter
-                System.Func<int, (GameObject, LivingCity.Personnel.EquipmentKind)> armsFor = null;
-                if (mixedArms)
-                    armsFor = _ =>
-                    {
-                        var (model, k) = MobArm(rng);
-                        return (CrewKit.Weapon(model), k);
-                    };
-                _crews.AddRival(gang, gangNames[gang], DrawName(rng), bossPrefab, hoodNames,
-                    hoodPrefabs, anchor, facing, CrewKit.Weapon(weaponName), kind, lineUp: true,
-                    armsFor: armsFor);
+                facing = Vector3.Cross(Vector3.up, along); // across the pavement: the line runs along it
             }
+
+            taken.Add(anchor);
+
+            var (weaponName, kind) = arms[(gang + crewIndex) % arms.Length];
+            // mixed arms: the crew is not four copies of one gun - each man is asked for
+            // separately as he is stood up, and draws his own off the counter
+            System.Func<int, (GameObject, LivingCity.Personnel.EquipmentKind)> armsFor = null;
+            if (mixedArms)
+                armsFor = _ =>
+                {
+                    var (model, k) = MobArm(rng);
+                    return (CrewKit.Weapon(model), k);
+                };
+
+            _crews.AddRival(gang, LivingCity.Gangs.GangCatalog.Names[gang], crew.boss,
+                bossPrefab, crew.hoods, hoodPrefabs, anchor, facing,
+                CrewKit.Weapon(weaponName), kind, lineUp: true, armsFor: armsFor);
+            return true;
         }
 
         /// <summary>What one man of a mob is holding when the arms are mixed: a piece off
@@ -3516,7 +3826,7 @@ namespace RoadDemo
             // dome wearing a painted gradient, which is what makes their sky read
             // as the same art as the buildings under it. DemoSky sizes it, walks it
             // with the camera and tints it through the day.
-            var domePrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+            var domePrefab = RoadDemo.DemoAssetLoad.Load<GameObject>(
                 "Assets/Synty/PolygonGeneric/Prefabs/Environment/SM_Gen_Env_Skydome_01.prefab");
             if (domePrefab != null)
             {

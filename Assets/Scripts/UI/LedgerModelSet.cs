@@ -36,6 +36,11 @@ namespace LivingCity.UI
                  "scenes that have no CityBuilder (the standalone Ledger menu).")]
         public LivingCity.Data.PrefabDatabase database;
 
+        [Tooltip("The two-wheelers the counter sells, baked by name. Cars are NOT here: " +
+                 "those live in the database above. A motorcycle is in no bucket of it " +
+                 "at all, because every traffic scan denies one by name.")]
+        public GameObject[] motorcycles = System.Array.Empty<GameObject>();
+
         [Tooltip("The Synty cast the book photographs - the men's mugshots, the capos, the " +
                  "paper's faces. Plain pack character prefabs (Humanoid, no scripts), " +
                  "baked by name from the Synty folders so a portrait never depends on the " +
@@ -66,6 +71,20 @@ namespace LivingCity.UI
                 loaded = Resources.Load<LedgerModelSet>("LedgerModelSet");
                 return loaded;
             }
+        }
+
+        /// <summary>The two-wheeler of this name, or null - PortraitStudio's first
+        /// question about a vehicle body, asked before the database, because the
+        /// database can never answer it.</summary>
+        public static GameObject MotorcycleNamed(string name)
+        {
+            var set = Instance;
+            if (!set || set.motorcycles == null || string.IsNullOrEmpty(name))
+                return null;
+            foreach (var prefab in set.motorcycles)
+                if (prefab && prefab.name == name)
+                    return prefab;
+            return null;
         }
 
         /// <summary>The pack prefab of this name, or null. Accepts the "_AI" suffix the

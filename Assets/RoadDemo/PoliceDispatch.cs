@@ -564,9 +564,9 @@ namespace RoadDemo
         void TapeOff(Squad squad)
         {
 #if UNITY_EDITOR
-            var cone = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+            var cone = RoadDemo.DemoAssetLoad.Load<GameObject>(
                 "Assets/Synty/PolygonPoliceStation/Prefabs/Props/SM_Prop_Cone_01.prefab");
-            var tape = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+            var tape = RoadDemo.DemoAssetLoad.Load<GameObject>(
                 "Assets/Synty/PolygonPoliceStation/Prefabs/Props/SM_Prop_Scene_Tape_01.prefab");
             var from = squad.Ride.Position;
             var dir = squad.Scene - from;

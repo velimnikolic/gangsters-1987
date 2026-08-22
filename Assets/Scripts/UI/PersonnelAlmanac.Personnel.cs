@@ -415,7 +415,10 @@ namespace LivingCity.UI
             roster.HeldBy(member.Id, carried);
             foreach (var item in carried)
             {
-                if (item.Kind == EquipmentKind.Vehicle)
+                // Wheels of any sort are not the gun in his coat - the motorcycle
+                // joined the stock book after this line was written, and a man was
+                // very nearly drawn holding one (RosterOps.IsWeapon is the one test).
+                if (!RosterOps.IsWeapon(item.Kind))
                     continue;
                 string modelName = null;
                 foreach (var listing in Outfit.ArmoryCatalog.Weapons)

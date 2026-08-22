@@ -113,6 +113,88 @@ namespace RoadDemo
         public void SetWindow(int seat, bool down) => Body?.SetWindow(seat, down);
         public void CloseAllWindows() => Body?.CloseAllWindows();
 
+        // ------------------------------------------------------------------ the tin
+
+        /// <summary>Rounds that went into the engine bay. A car is not a health bar and
+        /// this is not one either: it counts the rounds that went into the FRONT of it,
+        /// and everything else a round does to a car it does to the paint.</summary>
+        public int EngineHits { get; private set; }
+
+        /// <summary>What the engine takes before it stops, and how much of a round that
+        /// went through the bonnet ever reaches anything that matters.
+        ///
+        /// A bonnet is mostly air, a radiator and a lot of tin. Most of what goes through
+        /// one goes through it. So killing a car is DELIBERATE - about thirty rounds into
+        /// the front of it - rather than a thing that happens to a crew because a fight
+        /// went on a while: at fourteen straight bonnet hits the first test run lost its
+        /// car to a rival crew's stray fire inside a minute, which is not "we shot the
+        /// engine out", it is "cars stop working".</summary>
+        public static int EngineHitsToKill = 3;
+
+        /// <summary>Of the rounds that go into the bonnet, this many find something that
+        /// turns.
+        ///
+        /// The pair of them were first set for a car that stands under fire all day, and
+        /// that car does not exist: over thirty runs of the soak the whole quarter put
+        /// 178 rounds into the outfit's tin and 22 of those into something that turns -
+        /// four in the busiest single run, against a threshold of ten. A consequence
+        /// nothing can reach is not a consequence. Three, at four rounds in ten, is about
+        /// SEVEN into the front of one car: sustained fire into a bonnet, which is what
+        /// the player asked for, and still not something a stray gets you.</summary>
+        public static float EngineChance = 0.4f;
+
+        /// <summary>Nothing under the bonnet is turning. The car rolls to a stop and
+        /// stays where it stops - DemoCrews puts the crew out of it.</summary>
+        public bool EngineDead => EngineHits >= EngineHitsToKill;
+
+        /// <summary>True on the frame the engine died, for whoever wants to say so.</summary>
+        public bool EngineJustDied { get; private set; }
+
+        /// <summary>A round into the tin. Where it went decides what it cost: the front
+        /// third is the engine bay, everything behind that is a hole in a door.</summary>
+        public void TakeRound(Vector3 at, Vector3 from)
+        {
+            if (Tf == null) return;
+            var local = Tf.InverseTransformPoint(at);
+            bool bonnet = local.z > HalfLength * 0.34f;
+            if (bonnet && !EngineDead && Random.value < EngineChance)
+            {
+                EngineHits++;
+                if (EngineDead) EngineJustDied = true;
+            }
+            var facing = from - at;
+            facing.y = 0f;
+            if (facing.sqrMagnitude < 1e-4f) facing = Tf.right;
+            CrewGore.Hole(Tf, at, facing);
+        }
+
+        /// <summary>Read once - the caller that says "the engine's gone" clears it.</summary>
+        public bool TakeEngineDeath()
+        {
+            if (!EngineJustDied) return false;
+            EngineJustDied = false;
+            return true;
+        }
+
+        /// <summary>A crew's car brakes for everybody EXCEPT the men it is fighting.
+        ///
+        /// A rival's man walks into the road, stops in front of the bonnet, and the car
+        /// stops for him - then the two of them stand there shooting at each other
+        /// through the windscreen at four metres, for as long as it takes. That is not a
+        /// gunfight, it is a queue, and the answer a driver would actually reach for is
+        /// under his right foot. The law is still given way to (a crew does not run a
+        /// policeman down by accident) and so is everybody the crew has no quarrel with.
+        /// The running down itself is DemoCrews.RunDown - this only takes the driver's
+        /// foot off the brake.</summary>
+        protected override bool GivesWayTo(int faction)
+        {
+            if (Civic) return true;
+            var unit = Occupant ?? Owner;
+            if (unit == null || faction == unit.Faction) return true;
+            if (faction == StreetAlarm.PoliceFaction) return true;
+            return unit.TargetUnit == null || unit.TargetUnit.Faction != faction;
+        }
+
         /// <summary>Kept for callers: the body reads itself on Attach.</summary>
         public void FindDoors() { }
         public void FindWheels() { }
@@ -273,6 +355,8 @@ namespace RoadDemo
         /// getaway.</summary>
         protected override float LimitTarget(float target)
         {
+            // nothing under the bonnet is turning: it rolls to a stop and stays there
+            if (EngineDead) return 0f;
             if (DriveByTarget == null || Tf == null) return target;
             var to = DriveByTarget.Position - Position;
             to.y = 0f;

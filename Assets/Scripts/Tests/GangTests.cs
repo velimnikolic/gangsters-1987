@@ -32,6 +32,7 @@ namespace LivingCity.Tests
             FrontFallbackWhenFewCandidates(failures);
             FrontSelectionIsDeterministic(failures);
             FrontTieBreaksToLowestIndex(failures);
+            FrontBooksAreCompleteAndStable(failures);
             CatalogTablesAligned(failures);
             CatalogWearsApprovedBodies(failures);
             NoTwinsInOneCrew(failures);
@@ -115,27 +116,60 @@ namespace LivingCity.Tests
                     if (gang.Members.Count == 0)
                         continue;
 
+                    // A family is one or more CREWS: a Lieutenant entry opens one and
+                    // the soldiers behind him are his, until the next opens the next.
                     var lieutenants = 0;
                     foreach (var member in gang.Members)
                         if (member.Lieutenant)
                             lieutenants++;
 
-                    if (lieutenants != 1)
-                        failures.Add($"Seeder: seed {seed} gang {gang.Id} has " +
-                                     $"{lieutenants} lieutenants.");
+                    if (lieutenants == 0)
+                        failures.Add($"Seeder: seed {seed} gang {gang.Id} has no " +
+                                     "lieutenant at all.");
                     if (!gang.Members[0].Lieutenant)
                         failures.Add($"Seeder: seed {seed} gang {gang.Id} does not lead " +
-                                     "with its lieutenant.");
+                                     "with its lieutenant - the door slot at the front is " +
+                                     "his.");
 
                     if (gang.IsPlayer)
                         continue;
 
-                    var soldiers = gang.Members.Count - 1;
-                    if (soldiers < GangSeeder.MinSoldiers || soldiers > GangSeeder.MaxSoldiers)
-                        failures.Add($"Seeder: seed {seed} gang {gang.Id} has {soldiers} " +
-                                     "soldiers, outside 2-3.");
+                    if (lieutenants < GangSeeder.MinLieutenants ||
+                        lieutenants > GangSeeder.MaxLieutenants)
+                        failures.Add($"Seeder: seed {seed} gang {gang.Id} runs " +
+                                     $"{lieutenants} crews, outside " +
+                                     $"{GangSeeder.MinLieutenants}-" +
+                                     $"{GangSeeder.MaxLieutenants}.");
+
+                    // every crew of it, counted on its own
+                    var soldiers = -1;
+                    foreach (var member in gang.Members)
+                    {
+                        if (member.Lieutenant)
+                        {
+                            ReportCrew(failures, seed, gang.Id, soldiers);
+                            soldiers = 0;
+                            continue;
+                        }
+
+                        soldiers++;
+                    }
+
+                    ReportCrew(failures, seed, gang.Id, soldiers);
                 }
             }
+        }
+
+        /// <summary>One crew's soldier count against the seeder's own range; -1 is
+        /// "no crew open yet" and is not a crew.</summary>
+        static void ReportCrew(List<string> failures, int seed, int gangId, int soldiers)
+        {
+            if (soldiers < 0)
+                return;
+            if (soldiers < GangSeeder.MinSoldiers || soldiers > GangSeeder.MaxSoldiers)
+                failures.Add($"Seeder: seed {seed} gang {gangId} has a crew of " +
+                             $"{soldiers} soldiers, outside {GangSeeder.MinSoldiers}-" +
+                             $"{GangSeeder.MaxSoldiers}.");
         }
 
         static void NoDuplicateNamesWithinGang(List<string> failures)
@@ -220,8 +254,13 @@ namespace LivingCity.Tests
 
         static void FrontsAreDistinct(List<string> failures)
         {
-            var candidates = Grid((0, 0, 0), (1, 50, 0), (2, 0, 50), (3, 50, 50), (4, 25, 25),
-                                  (5, 80, 10), (6, 10, 80));
+            // A door to spare for every family and two over - the check is that nobody
+            // is left standing and nobody shares, so the fixture has to keep pace with
+            // the catalog rather than being a hand-typed handful.
+            var spots = new List<(int, float, float)>();
+            for (var i = 0; i < GangCatalog.GangCount + 2; i++)
+                spots.Add((i, (i % 5) * 50f, (i / 5) * 50f));
+            var candidates = Grid(spots.ToArray());
 
             for (var roll = 0; roll < 20; roll++)
             {
@@ -268,8 +307,9 @@ namespace LivingCity.Tests
 
             if (seated != 3)
                 failures.Add($"Fronts: 3 candidates seated {seated} gangs.");
-            if (picks[3] != -1 || picks[4] != -1)
-                failures.Add("Fronts: the late gangs did not fall back to -1.");
+            for (var i = 3; i < picks.Length; i++)
+                if (picks[i] != -1)
+                    failures.Add("Fronts: the late gangs did not fall back to -1.");
 
             foreach (var pick in GangFronts.Select(
                          Grid(), 7, GangCatalog.GangCount))
@@ -299,6 +339,61 @@ namespace LivingCity.Tests
                              "lowest index.");
         }
 
+        // ------------------------------------------------------------------ the front
+
+        /// <summary>Every family's premises has both sets of books, they say the same
+        /// thing every time they are opened, and the back room earns more than the
+        /// counter - which is the only reason a mob holds the lease on a laundry.</summary>
+        static void FrontBooksAreCompleteAndStable(List<string> failures)
+        {
+            for (var seed = 0; seed < 20; seed++)
+                foreach (var gang in GangSeeder.Generate(seed, null))
+                {
+                    var capo = gang.Members.Count > 0 ? gang.Members[0].FullName : "";
+                    var books = FrontBooks.Open(gang.Name, capo, 4, gang.MemberSeed);
+                    var again = FrontBooks.Open(gang.Name, capo, 4, gang.MemberSeed);
+
+                    if (books.Sign != again.Sign || books.Licence != again.Licence ||
+                        books.Racket != again.Racket || books.Skim != again.Skim ||
+                        books.Proprietor != again.Proprietor)
+                        failures.Add($"Front: seed {seed} gang {gang.Id} reads " +
+                                     "differently the second time it is opened.");
+
+                    foreach (var (what, line) in new[]
+                             {
+                                 ("sign", books.Sign), ("trade", books.Trade),
+                                 ("proprietor", books.Proprietor), ("hours", books.Hours),
+                                 ("licence", books.Licence), ("clean", books.Clean),
+                                 ("racket", books.Racket), ("racket note", books.RacketNote),
+                                 ("heat", books.Heat), ("whisper", books.Whisper),
+                             })
+                        if (string.IsNullOrEmpty(line))
+                            failures.Add($"Front: seed {seed} gang {gang.Id} has no {what}.");
+
+                    if (books.Skim <= books.Takings)
+                        failures.Add($"Front: seed {seed} gang {gang.Id} skims " +
+                                     $"{books.Skim} on takings of {books.Takings} - the " +
+                                     "back room has to be worth the shop.");
+                    if (books.Since >= 1987 || books.Since < 1900)
+                        failures.Add($"Front: seed {seed} gang {gang.Id} has been trading " +
+                                     $"since {books.Since}.");
+                    if (books.Cut < 40 || books.Cut > 70)
+                        failures.Add($"Front: seed {seed} gang {gang.Id} sends " +
+                                     $"{books.Cut}% upstairs.");
+                    if (books.Staff < 2)
+                        failures.Add($"Front: seed {seed} gang {gang.Id} has {books.Staff} " +
+                                     "on the payroll - a shop with nobody in it is not a front.");
+                    if (capo.Length > 0 && books.RunBy != capo)
+                        failures.Add($"Front: seed {seed} gang {gang.Id} names " +
+                                     $"'{books.RunBy}' where its capo stands.");
+
+                    // the proprietor is a citizen, not the family and not the capo
+                    if (books.Proprietor == capo)
+                        failures.Add($"Front: seed {seed} gang {gang.Id} put its own capo " +
+                                     "on the licence.");
+                }
+        }
+
         // ------------------------------------------------------------------ words
 
         static void CatalogTablesAligned(List<string> failures)
@@ -308,10 +403,28 @@ namespace LivingCity.Tests
                 GangCatalog.LieutenantModels.Length != GangCatalog.GangCount)
                 failures.Add("Catalog: the name/model tables are not all GangCount long.");
 
+            if (UI.GangPalette.Count < GangCatalog.GangCount)
+                failures.Add($"Catalog: {UI.GangPalette.Count} colours for " +
+                             $"{GangCatalog.GangCount} families - the last of them would " +
+                             "show up on the map in the unknown-gang grey.");
+
+            var seen = new HashSet<string>();
             for (var i = 0; i < GangCatalog.GangCount; i++)
             {
                 if (string.IsNullOrEmpty(GangCatalog.Names[i]))
                     failures.Add($"Catalog: gang {i} has no name.");
+                else if (!seen.Add(GangCatalog.Names[i]))
+                    failures.Add($"Catalog: '{GangCatalog.Names[i]}' names two families - " +
+                                 "the popup line and the map legend would read as one.");
+
+                // two families may share a coat; no two may share the PAIR, or the
+                // street has no way left to tell them apart but the name over the head
+                for (var other = 0; other < i; other++)
+                    if (GangCatalog.SoldierModels[i] == GangCatalog.SoldierModels[other] &&
+                        GangCatalog.LieutenantModels[i] ==
+                            GangCatalog.LieutenantModels[other])
+                        failures.Add($"Catalog: gangs {other} and {i} are dealt the same " +
+                                     "two bodies.");
                 if (GangCatalog.SoldierModels[i] == GangCatalog.LieutenantModels[i])
                     failures.Add($"Catalog: gang {i}'s lieutenant wears the soldiers' " +
                                  "model - rank would not read.");

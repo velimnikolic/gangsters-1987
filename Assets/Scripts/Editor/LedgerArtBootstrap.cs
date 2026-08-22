@@ -50,6 +50,7 @@ namespace LivingCity.EditorTools
             changed |= Wire(ref set.rifle, PalmCity + "SM_Wep_Rifle_01.prefab");
             changed |= Wire(ref set.tommyGun, GangWarfare + "SM_Wep_SubMachineGun_01.prefab");
             changed |= WireWeapons(set);
+            changed |= WireMotorcycles(set);
             changed |= WirePeople(set);
 
             // The photographs' model source for city-less scenes.
@@ -106,6 +107,43 @@ namespace LivingCity.EditorTools
                 return false;
 
             set.weapons = weapons.ToArray();
+            return true;
+        }
+
+        /// <summary>The three two-wheelers the counter sells
+        /// (LivingCity.Outfit.ArmoryCatalog.Motorcycles), by pack path. Palm City's, and
+        /// never the police pack's machine of the same name - that one is liveried and
+        /// is the law's.</summary>
+        static readonly string[] MotorcyclePaths =
+        {
+            "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Motorbike_01.prefab",
+            "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Moped_01.prefab",
+            "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Scooter_01.prefab",
+        };
+
+        /// <summary>Fills set.motorcycles the additive way the other two tables are
+        /// filled, so an Inspector override survives a re-bake.</summary>
+        static bool WireMotorcycles(LedgerModelSet set)
+        {
+            var bikes = new System.Collections.Generic.List<GameObject>();
+            if (set.motorcycles != null)
+                foreach (var prefab in set.motorcycles)
+                    if (prefab)
+                        bikes.Add(prefab);
+
+            var before = bikes.Count;
+            foreach (var path in MotorcyclePaths)
+            {
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (prefab && !bikes.Contains(prefab))
+                    bikes.Add(prefab);
+            }
+
+            var pruned = set.motorcycles != null && set.motorcycles.Length != before;
+            if (bikes.Count == before && !pruned)
+                return false;
+
+            set.motorcycles = bikes.ToArray();
             return true;
         }
 

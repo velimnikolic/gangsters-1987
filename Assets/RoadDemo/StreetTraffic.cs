@@ -23,9 +23,26 @@ namespace RoadDemo
         /// law's, the props stood at the kerb.</summary>
         public static readonly List<IRoadUser> Users = new List<IRoadUser>();
 
+        /// <summary>One man on foot in the road, and WHOSE he is.
+        ///
+        /// It used to be a bare position, and that was enough while the only question a
+        /// driver asked was "is somebody in my way". It is not enough for the question a
+        /// driver in a gunfight asks, which is "is that one of THEIRS" - because the
+        /// answer decides whether he brakes or does not (RoadCar.GivesWayTo).</summary>
+        public readonly struct Body
+        {
+            public readonly Vector3 At;
+
+            /// <summary>0 the outfit, else a rival mob; StreetAlarm.PoliceFaction for
+            /// the law.</summary>
+            public readonly int Faction;
+
+            public Body(Vector3 at, int faction) { At = at; Faction = faction; }
+        }
+
         /// <summary>People on foot the traffic must not drive through - the crews' men,
-        /// refilled every frame by the arena. World positions.</summary>
-        public static readonly List<Vector3> Bodies = new List<Vector3>();
+        /// refilled every frame by the arena.</summary>
+        public static readonly List<Body> Bodies = new List<Body>();
 
         /// <summary>Civilians stood or running in the road this frame - refilled every
         /// frame by the crowd (CivilianAgent.TickCrowd). World positions.</summary>

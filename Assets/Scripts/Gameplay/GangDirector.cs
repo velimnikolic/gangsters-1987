@@ -34,9 +34,30 @@ namespace LivingCity.Gameplay
         /// no mafia front) and the gun shop was never a business at all.</summary>
         static readonly string[] FrontPrefabs = { "building-cafe", "building-restaurant" };
 
+        /// <summary>Doors a family will take when the tables run out. Twenty-one mobs
+        /// want twenty-one fronts and a city does not always hold that many cafes, so
+        /// the rest of the small commerce is opened up - a diner, a corner store, a
+        /// coffee kiosk are all somewhere a man can sit all day with nobody asking. Only
+        /// reached when the first list is SHORT, so a city with cafes enough seats every
+        /// family exactly where it used to; the post office stays out of it either
+        /// way.</summary>
+        static readonly string[] FallbackFrontPrefabs =
+        {
+            "building-burger-joint", "building-coffeeshop",
+            "building-shop-china", "building-store-01",
+        };
+
         /// <summary>Metres along the facade per stand slot, door outward; slot 0 (the
-        /// lieutenant's) is the door itself. Staggered depth breaks the parade line.</summary>
-        static readonly float[] SlotAlong = { 0f, 0.9f, -0.9f, 1.8f, -1.8f, 2.7f, -2.7f, 3.6f };
+        /// lieutenant's) is the door itself. Staggered depth breaks the parade line.
+        ///
+        /// Long enough for a family of three crews - a mob that runs three capos stands
+        /// a dozen men at its front, and eight slots put the last four inside the first
+        /// four (the clearance nudge would then walk them all out into the road).</summary>
+        static readonly float[] SlotAlong =
+        {
+            0f, 0.9f, -0.9f, 1.8f, -1.8f, 2.7f, -2.7f, 3.6f,
+            -3.6f, 4.5f, -4.5f, 5.4f, -5.4f, 6.3f, -6.3f, 7.2f,
+        };
 
         IEnumerator Start()
         {
@@ -68,7 +89,7 @@ namespace LivingCity.Gameplay
                 Debug.LogWarning("[Gangs] No personnel roster - the player's front will " +
                                  "stand empty.", this);
 
-            var markers = CollectFrontCandidates(out var candidates);
+            var markers = CollectFrontCandidates(gangs.Length, out var candidates);
             var picks = GangFronts.Select(
                 candidates, gangs[GangCatalog.PlayerGangId].FrontRoll, gangs.Length);
 
@@ -102,23 +123,21 @@ namespace LivingCity.Gameplay
                       $"street (seed {builder.Config.seed}).");
         }
 
-        /// <summary>Cafes and restaurants only, in PropertyDirector's sorted order.</summary>
+        /// <summary>Cafes and restaurants, in PropertyDirector's sorted order - and the
+        /// rest of the small commerce behind them only when there are fewer of those
+        /// than there are families to seat.</summary>
         List<BusinessMarker> CollectFrontCandidates(
-            out List<GangFronts.FrontCandidate> candidates)
+            int needed, out List<GangFronts.FrontCandidate> candidates)
         {
-            var markers = new List<BusinessMarker>();
-            foreach (var business in PropertyRegistry.Businesses)
+            var markers = Storefronts(FrontPrefabs);
+            if (markers.Count < needed)
             {
-                if (!business || business.Category != BusinessCategory.Commercial)
-                    continue;
-
-                var prefabName = business.gameObject.name;
-                foreach (var prefix in FrontPrefabs)
-                    if (prefabName.StartsWith(prefix))
-                    {
-                        markers.Add(business);
-                        break;
-                    }
+                var spare = Storefronts(FallbackFrontPrefabs);
+                markers.AddRange(spare);
+                if (markers.Count < needed)
+                    Debug.LogWarning($"[Gangs] {markers.Count} commercial doors in the " +
+                                     $"whole city for {needed} families - the last of " +
+                                     "them will operate without a front.", this);
             }
 
             markers.Sort((a, b) =>
@@ -146,6 +165,28 @@ namespace LivingCity.Gameplay
             return markers;
         }
 
+        /// <summary>Every commercial premises whose prefab name opens with one of these,
+        /// unsorted - the caller does the ordering, once, over whatever it kept.</summary>
+        static List<BusinessMarker> Storefronts(string[] prefixes)
+        {
+            var markers = new List<BusinessMarker>();
+            foreach (var business in PropertyRegistry.Businesses)
+            {
+                if (!business || business.Category != BusinessCategory.Commercial)
+                    continue;
+
+                var prefabName = business.gameObject.name;
+                foreach (var prefix in prefixes)
+                    if (prefabName.StartsWith(prefix))
+                    {
+                        markers.Add(business);
+                        break;
+                    }
+            }
+
+            return markers;
+        }
+
         int SpawnCrew(Gang gang, BusinessMarker front, PrefabDatabase prefabs)
         {
             // Every shopfront prefab this pass admits carries a ShopEntrance from
@@ -155,9 +196,19 @@ namespace LivingCity.Gameplay
             var facing = entrance ? entrance.Facing : Flat(front.transform.forward);
             var tangent = Vector3.Cross(Vector3.up, facing);
 
-            var soldierPrefab = FindPeoplePrefab(prefabs, GangCatalog.SoldierModels[gang.Id]);
-            var lieutenantPrefab =
-                FindPeoplePrefab(prefabs, GangCatalog.LieutenantModels[gang.Id]);
+            var capoLook = GangCatalog.LieutenantModels[gang.Id];
+            var staple = GangCatalog.SoldierModels[gang.Id];
+            var soldierPrefab = FindPeoplePrefab(prefabs, staple);
+            var lieutenantPrefab = FindPeoplePrefab(prefabs, capoLook);
+
+            // A dozen men outside one door must not be one man twelve times. The soldiers
+            // of each CREW are dealt their own bodies off the approved stock (the second
+            // capo's men start further along it than the first's), and a name the
+            // database has never heard of falls back to the family's staple.
+            var soldierLooks = GangLooks.HoodsFor(capoLook, staple,
+                Mathf.Min(gang.Members.Count, GangLooks.Hoods.Length));
+            var crew = -1;
+            var seat = 0;
 
             var memberRng = new System.Random(gang.MemberSeed);
             var spawned = 0;
@@ -165,7 +216,15 @@ namespace LivingCity.Gameplay
             for (var i = 0; i < gang.Members.Count; i++)
             {
                 var identity = gang.Members[i];
-                var prefab = identity.Lieutenant ? lieutenantPrefab : soldierPrefab;
+                if (identity.Lieutenant)
+                {
+                    crew++;
+                    seat = 0;
+                }
+
+                var prefab = identity.Lieutenant
+                    ? lieutenantPrefab
+                    : SoldierBody(prefabs, soldierLooks, crew, seat++) ?? soldierPrefab;
                 var seed = memberRng.Next(); // Drawn even when the model is missing, so
                                              // a fixed database never reshuffles a crew.
                 if (!prefab)
@@ -204,6 +263,22 @@ namespace LivingCity.Gameplay
             }
 
             return spawned;
+        }
+
+        /// <summary>The body for one soldier: his seat in the family's deal, walked on
+        /// by the crew he stands with, so the second capo's men are not the first's again.
+        /// Null when the database has never heard of the coat - the caller falls back to
+        /// the family staple rather than leaving the man off the pavement.</summary>
+        static GameObject SoldierBody(
+            PrefabDatabase prefabs, List<string> looks, int crew, int seat)
+        {
+            if (looks == null || looks.Count == 0)
+                return null;
+
+            // crew is -1 until the first lieutenant is seen - a roster with none (the
+            // player's, before a promotion) still has men to dress
+            var index = (Mathf.Max(crew, 0) * 2 + seat) % looks.Count;
+            return ScanGroups(prefabs, looks[index]);
         }
 
         /// <summary>Read-only name scan of the shipped groups - never a draw from their

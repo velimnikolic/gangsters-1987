@@ -176,7 +176,7 @@ namespace RoadDemo
         static T Load<T>(string path) where T : Object
         {
 #if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<T>(path);
+            return RoadDemo.DemoAssetLoad.Load<T>(path);
 #else
             return null;
 #endif

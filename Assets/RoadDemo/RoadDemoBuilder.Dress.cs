@@ -44,7 +44,7 @@ namespace RoadDemo
 
             // and the ground in front of every door a civilian walks in at: a
             // hedge run laid across a threshold is a hedge people walk through
-            foreach (var (pos, outward) in _pendingDoors)
+            foreach (var (pos, outward, _) in _pendingDoors)
                 _plan.Reserve(pos + outward * 1.6f, SidewalkDressing.YawOf(outward),
                     new Vector2(1.2f, 1.8f));
         }

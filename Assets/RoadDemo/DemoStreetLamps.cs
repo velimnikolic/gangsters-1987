@@ -54,6 +54,7 @@ namespace RoadDemo
 
         void Start()
         {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
             foreach (var transform in FindObjectsByType<Transform>(FindObjectsSortMode.None))
             {
                 Vector3 bulb = default;
@@ -106,6 +107,12 @@ namespace RoadDemo
             }
 
             Debug.Log($"[RoadDemo] {_lamps.Count} street lamp bulbs wired.", this);
+            clock.Stop();
+            // whole-scene sweep at Start: this walks EVERY transform in the city
+            // (~376,000 of them) to find lamp roots. Timed because the first frames
+            // of Play cost tens of seconds and Start-phase work is invisible to the
+            // frame probe - it samples Update, not ScriptRunDelayedStartupFrame.
+            Debug.Log($"[DemoStreetLamps] Start took {clock.ElapsedMilliseconds} ms");
         }
 
         void LateUpdate()

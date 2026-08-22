@@ -56,3 +56,6 @@ Tools/RoadSim/obj/
 # Claude Code local state (project settings.json is tracked)
 .claude/settings.local.json
 .claude/worktrees/
+
+# Unity mono crash dumps
+mono_crash.*.json

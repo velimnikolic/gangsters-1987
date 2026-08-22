@@ -15,6 +15,14 @@ namespace LivingCity.Gangs
         static readonly Dictionary<int, Entities.BusinessMarker> frontBusinesses =
             new Dictionary<int, Entities.BusinessMarker>();
 
+        /// <summary>The premises' two sets of books, by gang. Kept apart from the
+        /// BusinessMarker above because the two cities disagree about what a building
+        /// IS: the generated city has markers, the street city (RoadDemo) has bakes and
+        /// no marker on them at all. The books are the part both can hold, so the ledger
+        /// reads these and never has to know which city it is standing in.</summary>
+        static readonly Dictionary<int, FrontDossier> frontBooks =
+            new Dictionary<int, FrontDossier>();
+
         public static IReadOnlyList<Gang> Gangs => gangs;
 
         public static int Version { get; private set; }
@@ -36,6 +44,17 @@ namespace LivingCity.Gangs
         public static Entities.BusinessMarker FrontBusinessOf(int gangId) =>
             frontBusinesses.TryGetValue(gangId, out var marker) ? marker : null;
 
+        public static void SetFrontBooks(int gangId, FrontDossier books)
+        {
+            frontBooks[gangId] = books;
+            Version++;
+        }
+
+        /// <summary>The books on this family's premises, or null - a caller that has
+        /// none prints what it always printed.</summary>
+        public static FrontDossier FrontBooksOf(int gangId) =>
+            frontBooks.TryGetValue(gangId, out var books) ? books : null;
+
         /// <summary>Empty for -1/unknown - callers feed it straight into the popup
         /// line, where empty means "no gang clause".</summary>
         public static string NameOf(int gangId)
@@ -54,6 +73,7 @@ namespace LivingCity.Gangs
         {
             gangs.Clear();
             frontBusinesses.Clear();
+            frontBooks.Clear();
             Version = 0;
         }
     }

@@ -201,6 +201,110 @@ def report(dirpath, only_car=None, show_why=False, top=12):
     return 0
 
 
+def street_extras(rows):
+    """The two things a car does to the street that are not driving: who it ran down,
+    and what the street did to it. Neither is a defect - a man under a bonnet is the
+    game working - so they are counted and printed, never failed on."""
+    downs = [r for r in rows if r["k"] == "rundown"]
+    killed = len([r for r in downs if r.get("dead")])
+    engines = [r for r in rows
+               if r["k"] == "crewcar" and "engine dead" in str(r.get("what", ""))]
+    return downs, killed, engines
+
+
+def moto(dirpath):
+    """The run on two wheels, against what was asked of it: two men walk to the machine,
+    ride one pass at a rival, bring it home, get off, and do it again - and every pass
+    is ridden without one of the ways that loop can stop for good.
+
+    Judged on DEFECTS, never on who won. A pass that kills nobody is a drive-by being a
+    drive-by; a pass nobody could get on, one that never ran out, a machine that never
+    came back, a man left on the saddle - those are faults, and none of them may happen.
+    """
+    import os
+
+    trace = os.path.join(dirpath, "trace.jsonl")
+    if not os.path.exists(trace):
+        print(f"== {dirpath}")
+        print("   NO TRACE - the run never got as far as playing")
+        return 3
+    rows = load(trace)
+    if not rows:
+        print("the trace is empty")
+        return 2
+
+    mission = [r for r in rows if r["k"] == "mission"]
+    rides = [r for r in rows if r["k"] == "driveby"]
+    faults = [r for r in rows if r["k"] == "fault"]
+    told = [r for r in mission if "what" in r]
+    end = told[-1] if told else {}
+    state = end.get("who", "?")
+
+    over = [r for r in rides if str(r.get("what", "")).startswith("drive-by over")]
+    ordered = [r for r in rides if "ordered on" in str(r.get("what", ""))]
+    shots = sum(r.get("shots", 0) for r in over)
+    fired = len([r for r in over if r.get("shots", 0) > 0])
+    lost = len([r for r in over if r.get("bothup") is False])
+
+    # The ways the loop stops for good, each named where it is raised: the crews'
+    # (DemoCrews.Fault) and the lab's (BlockDemoMission.Fault).
+    kinds = ("mountstall", "mountrefused", "passstall", "homestall", "raidstall",
+             "noshot", "notback")
+    broke = [f for f in faults if f.get("fault") in kinds]
+    missed = [f for f in faults if f.get("fault") == "mission"]
+
+    # Belt refusals, ATTRIBUTED. The belt is the last safety net under the whole
+    # traffic model and one refusal is one vehicle that would have driven through
+    # another - but whose refusal it is decides whose bug it is. The machine the crew
+    # rides is this verdict's business; a delivery van reversing into a moped at the
+    # far end of the quarter is the traffic model's, it happens in runs with no
+    # motorcycle of the outfit's in them at all, and counting it here would put a
+    # pre-existing fault on the drive-by's tab. Both are printed; only the machine's
+    # fails the run.
+    belts = [r for r in rows if r["k"] == "belt"]
+    ours = len([r for r in belts if r.get("tag") == "crewbike"])
+    theirs = len(belts) - ours
+
+    summary_path = os.path.join(dirpath, "summary.json")
+    thrown = 0
+    if os.path.exists(summary_path):
+        try:
+            thrown = json.load(open(summary_path, encoding="utf-8")).get("exceptions", 0)
+        except Exception:
+            pass
+
+    defects = []
+    if not ordered:
+        defects.append("no drive-by was ever ordered")
+    if ordered and not over:
+        defects.append(f"{len(ordered)} ordered, none came back")
+    if broke:
+        defects.append(f"{len(broke)} drive-by faults ({', '.join(sorted({f.get('fault') for f in broke}))})")
+    if missed:
+        defects.append("; ".join(str(f.get("what", "the run gave up")) for f in missed))
+    if ours:
+        defects.append(f"{ours} belt refusals by the machine")
+    if thrown:
+        defects.append(f"{thrown} exceptions")
+    ok = not defects
+
+    print(f"== {dirpath}")
+    print(f"   {'PASSED' if ok else 'FAULTS: ' + '; '.join(defects)}")
+    print(f"   the run ended {state}")
+    print(f"   the machine  : {len(over)} of {len(ordered)} passes ridden home, "
+          f"{fired} with shots fired, {shots} rounds")
+    if theirs:
+        print(f"   the quarter  : {theirs} belt refusals by ordinary traffic "
+              "(not the drive-by's - see --why)")
+    if lost:
+        print(f"   the two men  : {lost} pass(es) came back a man short")
+    downs, killed, engines = street_extras(rows)
+    if downs or engines:
+        print(f"   the bonnet   : {len(downs)} run down ({killed} killed), "
+              f"{len(engines)} engine(s) shot out")
+    return 0 if ok else 1
+
+
 def verdict(dirpath):
     """The run against what was asked of it: the outfit gets in the car, wipes the
     other mobs out, is never stuck with somewhere to be, and parks at the end."""
@@ -261,6 +365,10 @@ def verdict(dirpath):
     print(f"   the run ended {state}, {kills} crews down")
     print(f"   the crew car : stood still {worst_crew:.0f}s at worst, {len(stuck)} spells counted stuck")
     print(f"   the traffic  : worst car stood {worst_traffic:.0f}s, {belts} belt refusals")
+    downs, killed, engines = street_extras(rows)
+    if downs or engines:
+        print(f"   the bonnet   : {len(downs)} run down ({killed} killed), "
+              f"{len(engines)} engine(s) shot out")
     # a run fought on foot counts heads instead of wheels: who was left standing
     war = [r for r in mission if "ours" in r]
     tail = ""
@@ -279,6 +387,71 @@ def verdict(dirpath):
     for f in faults:
         if f.get("fault") in ("carstuck", "nopark", "nokill", "mission"):
             print(f"   FAULT {secs(f['t'])} {f.get('fault')}: {f.get('what')}")
+    return 0 if ok else 1
+
+
+CREW_FAULTS = ("teleport", "offcity", "strayman", "singlefile",
+               "aimlow", "zebrastuck", "runnerchase")
+
+
+def crew(dirpath):
+    """The walk and the fight against the crews' own rules (CrewAudit): nobody
+    snaps, nobody leaves the floor, nobody strays off his crew or queues down one
+    line, no round leaves a lowered gun, nobody is left on a zebra, and nobody
+    chases a runner past the man still shooting. The mission's own faults (a leg
+    not walked, a march that never arrived) fail the run the same way."""
+    import os
+
+    trace = os.path.join(dirpath, "trace.jsonl")
+    if not os.path.exists(trace):
+        print(f"== {dirpath}")
+        print("   NO TRACE - the run never got as far as playing")
+        return 3
+    rows = load(trace)
+    if not rows:
+        print("no trace")
+        return 2
+
+    faults = [r for r in rows if r["k"] == "fault"]
+    broke = [f for f in faults if f.get("fault") in CREW_FAULTS]
+    mission = [f for f in faults
+               if f.get("fault") == "mission" and "wiped out" not in str(f.get("what", ""))]
+    stalls = [f for f in faults if f.get("fault") == "walkstall" and f.get("tag") == "crew"]
+    told = [r for r in rows if r["k"] == "mission" and "what" in r]
+    end = told[-1] if told else {}
+
+    thrown = 0
+    summary_path = os.path.join(dirpath, "summary.json")
+    if os.path.exists(summary_path):
+        try:
+            thrown = json.load(open(summary_path, encoding="utf-8")).get("exceptions", 0)
+        except Exception:
+            pass
+
+    defects = []
+    if broke:
+        by = Counter(f.get("fault") for f in broke)
+        defects.append(", ".join(f"{n} {kind}" for kind, n in by.most_common()))
+    if mission:
+        defects.append(f"{len(mission)} mission faults")
+    # one man boxed in once is the street being a street; a pattern is a fault
+    if len(stalls) >= 3:
+        defects.append(f"{len(stalls)} crew walkstalls")
+    if thrown:
+        defects.append(f"{thrown} exceptions")
+    ok = not defects
+
+    print(f"== {dirpath}")
+    print(f"   {'PASSED' if ok else 'FAULTS: ' + '; '.join(defects)}")
+    print(f"   the run ended {end.get('who', '?')}: {end.get('what', '?')}")
+    shots = len([r for r in rows if r["k"] == "shot"])
+    hits = [r for r in rows if r["k"] == "hit"]
+    print(f"   the fight    : {shots} shots, {len(hits)} hits, "
+          f"{len([h for h in hits if h.get('dead')])} men down")
+    print(f"   the walk     : {len(stalls)} crew walkstalls")
+    for f in (broke + mission)[:10]:
+        print(f"   FAULT {secs(f['t'])} {f.get('who', f.get('id', ''))} "
+              f"{f.get('fault')}: {f.get('what')}")
     return 0 if ok else 1
 
 
@@ -320,8 +493,12 @@ if __name__ == "__main__":
     car = None
     if "--car" in args:
         car = int(args[args.index("--car") + 1])
+    if "--moto" in args:
+        sys.exit(moto(path))
     if "--verdict" in args:
         sys.exit(verdict(path))
+    if "--crew" in args:
+        sys.exit(crew(path))
     if "--story" in args:
         sys.exit(story(path))
     sys.exit(report(path, only_car=car, show_why="--why" in args))

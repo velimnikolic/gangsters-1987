@@ -189,6 +189,7 @@ namespace RoadDemo
 
         void Start()
         {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
             _lots = BuildLots();
             for (int i = 0; i < Lots; i++)
             {
@@ -266,6 +267,12 @@ namespace RoadDemo
 
             Debug.Log($"[RoadDemo] Night windows: {panes} pane materials and {signs} emissive " +
                       $"atlases across {Lots} lots, {dark} buildings left dark.", this);
+            clock.Stop();
+            // one pass over EVERY renderer in the city, cloning each emissive
+            // material. Timed for the same reason as DemoStreetLamps: the first
+            // frames of Play cost tens of seconds and the frame probe cannot see
+            // Start-phase work at all.
+            Debug.Log($"[DemoNightWindows] Start took {clock.ElapsedMilliseconds} ms");
         }
 
         /// <summary>

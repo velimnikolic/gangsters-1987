@@ -47,11 +47,18 @@ namespace LivingCity.Gangs
         };
 
         /// <summary>The men who run things. A capo is dressed a rank above his hoods -
-        /// that is how the street reads which of five men to shoot at.</summary>
+        /// that is how the street reads which of five men to shoot at.
+        ///
+        /// The Gang Warfare pack's own boss came onto this table with the twenty
+        /// families: seven suits is thin over twenty-one mobs, and he is the one body in
+        /// the baked cast that already reads as somebody's don. He walks out of the
+        /// crowd by joining it (IsGangBody), which costs the pavement nothing - the
+        /// crowd scan never looked in his pack's folder.</summary>
         public static readonly string[] Lieutenants =
         {
             "SM_Chr_Italian_Gangster_01",
             "SM_Chr_Kingpin_01",
+            "SM_Chr_GangBoss_01",
             "SM_Gen_Chr_Business_Male_01",
             "Character_BusinessMan_Suit",
             "SM_Chr_Goon_01",

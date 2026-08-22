@@ -59,6 +59,24 @@ namespace RoadDemo
         /// driver gone. It holds nothing against anybody: the street drives round it.</summary>
         public bool Derelict { get; private set; }
 
+        /// <summary>Blown apart where it stood (CarShatter): the body is being torn into
+        /// loose debris and the husk is off the network for good - it holds no lane, no
+        /// box, and Tick does nothing for it. Unlike a wreck's cousin Derelict (a car
+        /// that merely stopped and is driven round), a wreck is GONE from the model.</summary>
+        public bool Wrecked { get; private set; }
+
+        /// <summary>Take the car out of the traffic model, for good: off its lane, out
+        /// of any junction box, speed nil, never ticked again. Called the instant a
+        /// bomb goes off under it, before its shell is pulled to pieces - so nobody
+        /// queues behind a car that is no longer there.</summary>
+        public void Wreck()
+        {
+            if (Wrecked) return;
+            Wrecked = true;
+            Speed = 0f;
+            Leave();
+        }
+
         /// <summary>What held the car back this frame, for the overlay and the sim.</summary>
         public string Why = "";
         public string PassWhy = "";
@@ -515,6 +533,7 @@ namespace RoadDemo
         public void Tick(float dt)
         {
             if (dt <= 0f) return;
+            if (Wrecked) return;   // a blown car drives nowhere and holds nothing
             WatchDerelict(dt);
             if (!OnRoad) { TickFree(dt); return; }
             if (Via != null) TickNode(dt);
@@ -837,7 +856,7 @@ namespace RoadDemo
                     float behind = leader.StopAt -
                                    Heading * (leader.Length * 0.5f + Profile.FollowGap + HalfLen);
                     float vq = Allowed(0f, (behind - S) * Heading);
-                    if (vq < v) { v = vq; if (v < 0.5f) Why = "queue: behind car " + (leader.Car != null ? leader.Car.Id.ToString() : "?"); }
+                    if (vq < v) { v = vq; if (v < 0.5f) Why = DriveTrace.On ? "queue: behind car " + (leader.Car != null ? leader.Car.Id.ToString() : "?") : "queue"; }
                     MeanToStop(behind);
                 }
                 // something stood at the kerb or dead in the road that we mean to go round:
@@ -849,7 +868,15 @@ namespace RoadDemo
             }
             _blocker = leader;
             InQueue = heldByNode || (leader != null && leader.Car != null && leader.Car.InQueue && !leader.Moving);
-            if (leader != null && v < 0.5f) Why = "behind " + (leader.Car != null ? "car " + leader.Car.Id : "static") + $" gap {gap:F1} band[{d0:F1},{d1:F1}] his[{leader.D0:F1},{leader.D1:F1}] s[{leader.S0:F1},{leader.S1:F1}] me s={S:F1}";
+            // the full reason is a trace string and nothing but the trace reads it (the
+            // sim only ever tests Why for "red"/"yellow", which are set as constants
+            // elsewhere), so it is built only when the trace is open - untraced play was
+            // allocating one of these a frame for every car in a queue, the bulk of the
+            // crowd's garbage and the ten-second GC hitch it fed
+            if (leader != null && v < 0.5f)
+                Why = DriveTrace.On
+                    ? "behind " + (leader.Car != null ? "car " + leader.Car.Id : "static") + $" gap {gap:F1} band[{d0:F1},{d1:F1}] his[{leader.D0:F1},{leader.D1:F1}] s[{leader.S0:F1},{leader.S1:F1}] me s={S:F1}"
+                    : "behind";
 
             // people in the road
             v = Mathf.Min(v, WalkersAhead(StreetTraffic.Walkers));
@@ -937,7 +964,11 @@ namespace RoadDemo
                         DriveTrace.Vec(sb, "p", pos);
                         DriveTrace.Row("belt", sb.ToString());
                     }
-                    LastBeltHit = $"car {Id} {Describe()} v={Speed:F1} fwd={fwd} hit {(hit is RoadCar hc ? "car " + hc.Id + " " + hc.Describe() + " v=" + hc.Speed.ToString("F1") : "static at " + hit.RoadPosition + " fwd " + hit.RoadForward + " hl " + hit.HalfLength + " hw " + hit.HalfWidth)} at {pos} from {_pos} sliding={Sliding} slope={(Sliding ? LateralSlope(S) : 0f):F2}";
+                    // a write-only debug field (nothing reads it): built only when the
+                    // trace is open, or every one of the thousands of belt hits a run
+                    // sees was assembling this whole string for no reader
+                    if (DriveTrace.On)
+                        LastBeltHit = $"car {Id} {Describe()} v={Speed:F1} fwd={fwd} hit {(hit is RoadCar hc ? "car " + hc.Id + " " + hc.Describe() + " v=" + hc.Speed.ToString("F1") : "static at " + hit.RoadPosition + " fwd " + hit.RoadForward + " hl " + hit.HalfLength + " hw " + hit.HalfWidth)} at {pos} from {_pos} sliding={Sliding} slope={(Sliding ? LateralSlope(S) : 0f):F2}";
                     // stood where we were: the arithmetic let two bodies meet, the belt did not
                     if (!float.IsNaN(prevS)) { S = prevS; D = prevD; Pose(out pos, out fwd); }
                     else pos = moved;
@@ -1211,7 +1242,7 @@ namespace RoadDemo
         bool BandFree(float dLo, float dHi, float needAhead, float seconds, out float freeAhead, bool allowParkedBeyond = false)
         {
             float noseS = S + Heading * HalfLen, tailS = S - Heading * HalfLen;
-            freeAhead = Road.FreeAhead(_occ, Heading, noseS, tailS, dLo, dHi, needAhead + 40f);
+            freeAhead = Road.FreeAhead(_occ, Heading, noseS, tailS, dLo, dHi, needAhead + 40f, allowParkedBeyond);
             if (freeAhead < needAhead) return false;
             var behind = Road.Behind(_occ, Heading, tailS, dLo, dHi, out float gapBehind);
             if (behind != null && behind.Car != null && !behind.Parked)
@@ -1347,6 +1378,21 @@ namespace RoadDemo
                 case Manoeuvre.PullOut:
                     if (_pullOutWanted) TickPullOut();
                     else if (!Sliding) { _man = Manoeuvre.None; ClearClaim(); }
+                    // A SLIDE ONLY HAPPENS WHILE THE THING IS MOVING - it is measured in
+                    // metres of road travelled, not in seconds. So a vehicle that got its
+                    // gap, began to pull out, and then stopped for any reason is Sliding
+                    // for ever: the slide cannot finish, the manoeuvre is never dropped,
+                    // and because the manoeuvre stands it may not pass the junction line
+                    // either (CanEnter), which is what keeps it stopped. The crew's
+                    // motorcycle sat in that knot for eight minutes of one monkey run.
+                    // Nothing is going to break it from the inside; break it from here.
+                    else if (Mathf.Abs(Speed) < 0.2f && now - _pullOutAsked > PullOutGiveUp)
+                    {
+                        DriveTrace.Event("man", "car " + Id, "gave up a slide that was not moving", ManFields());
+                        _sLen = 0f;
+                        _man = Manoeuvre.None;
+                        ClearClaim();
+                    }
                     break;
 
                 case Manoeuvre.PullIn:
@@ -1656,9 +1702,9 @@ namespace RoadDemo
             free = Mathf.Min(free, Mathf.Max(0f, back - 0.5f));
             var backDir = -_fwd;
             for (int list = 0; list < 2; list++)
-                foreach (var b in list == 0 ? StreetTraffic.Bodies : StreetTraffic.Walkers)
+                foreach (var body in list == 0 ? Behind(StreetTraffic.Bodies) : StreetTraffic.Walkers)
                 {
-                    var d = b - _pos;
+                    var d = body - _pos;
                     d.y = 0f;
                     float behind = Vector3.Dot(d, backDir) - HalfLen;
                     if (behind < -0.5f || behind > free) continue;
@@ -1666,6 +1712,18 @@ namespace RoadDemo
                     free = Mathf.Min(free, Mathf.Max(0f, behind - 1f));
                 }
             return free;
+        }
+
+        // Backing up gives way to everybody, whatever the fight: a man behind a car is
+        // not in its way, he is under its boot, and nothing about a gunfight makes
+        // reversing over somebody a manoeuvre.
+        static readonly List<Vector3> _behind = new List<Vector3>();
+
+        static List<Vector3> Behind(List<StreetTraffic.Body> bodies)
+        {
+            _behind.Clear();
+            for (int i = 0; i < bodies.Count; i++) _behind.Add(bodies[i].At);
+            return _behind;
         }
 
         void TickReverse(float dt)
@@ -1718,9 +1776,19 @@ namespace RoadDemo
             if (Mathf.Abs(D - _laneD) < 0.3f) return;
             _man = Manoeuvre.PullOut;
             _pullOutWanted = true;
+            _pullOutAsked = Time.time;
         }
 
         bool _pullOutWanted;
+        float _pullOutAsked;
+
+        /// <summary>How long a car waits for a clear lane before it stops counting the
+        /// PARKED as a reason to sit there. Long enough that it takes a real gap when
+        /// one is coming, short enough that it is not a wait a player watches.</summary>
+        const float PullOutPatience = 6f;
+
+        /// <summary>And how long before he stops asking and simply goes.</summary>
+        const float PullOutGiveUp = 20f;
 
         // ------------------------------------------------------------------ junctions
 
@@ -2166,7 +2234,9 @@ namespace RoadDemo
                 float vl = Mathf.Max(0f, lead.Vel * _next.Heading);
                 if (lead.Vel * _next.Heading < -0.5f) vl = 0f;
                 v = Mathf.Min(v, Follow(vl, fgap, lead.Slowing));
-                if (v < 0.5f) Why = "box: far lane " + (lead.Car != null ? "car " + lead.Car.Id : "static") + $" gap {fgap:F1} his s[{lead.S0:F1},{lead.S1:F1}] d[{lead.D0:F1},{lead.D1:F1}] farNose {farNose:F1}";
+                if (v < 0.5f) Why = DriveTrace.On
+                    ? "box: far lane " + (lead.Car != null ? "car " + lead.Car.Id : "static") + $" gap {fgap:F1} his s[{lead.S0:F1},{lead.S1:F1}] d[{lead.D0:F1},{lead.D1:F1}] farNose {farNose:F1}"
+                    : "box: far lane";
             }
             v = Mathf.Min(v, WalkersAhead(StreetTraffic.Walkers));
             v = Mathf.Min(v, BodiesAhead(dt));
@@ -2273,10 +2343,37 @@ namespace RoadDemo
         /// past at walking pace, which is what a driver does.</summary>
         float BodiesAhead(float dt)
         {
-            float cap = WalkersAhead(StreetTraffic.Bodies);
+            float cap = BodiesAhead();
             _bodyHeld = cap < 0.5f ? _bodyHeld + dt : 0f;
             return _bodyHeld > 6f ? Mathf.Max(cap, 1.5f) : cap;
         }
+
+        /// <summary>The same reach as WalkersAhead, over the men whose OWNER matters:
+        /// one this vehicle will not give way to is not in its way (GivesWayTo).</summary>
+        float BodiesAhead()
+        {
+            var people = StreetTraffic.Bodies;
+            if (people.Count == 0) return float.MaxValue;
+            var f = _fwd;
+            var r = Vector3.Cross(Vector3.up, f);
+            float best = float.MaxValue;
+            for (int i = 0; i < people.Count; i++)
+            {
+                if (!GivesWayTo(people[i].Faction)) continue;
+                var d = people[i].At - _pos;
+                d.y = 0f;
+                float ahead = Vector3.Dot(d, f);
+                if (ahead < 0f || ahead > 14f) continue;
+                if (Mathf.Abs(Vector3.Dot(d, r)) > 1.6f) continue;
+                best = Mathf.Min(best, Allowed(0f, ahead - HalfLen - 1.5f));
+            }
+            return best;
+        }
+
+        /// <summary>Whether this vehicle brakes for a man of that faction stood in front
+        /// of it. Everything brakes for everybody, and the one thing that does not is a
+        /// crew's car with a fight on (CrewCar.GivesWayTo) - see the run-down.</summary>
+        protected virtual bool GivesWayTo(int faction) => true;
 
         float WalkersAhead(List<Vector3> people)
         {
@@ -2344,7 +2441,37 @@ namespace RoadDemo
         {
             if (!_pullOutWanted) return;
             float lo = _laneD - HalfWide - 0.3f, hi = _laneD + HalfWide + 0.3f;
-            if (BandFree(lo, hi, 8f, 2f, out _))
+            // A CAR WAITING FOR A PARKED CAR TO MOVE WAITS FOR EVER, and this one did:
+            // fifty monkey runs of the crew demo put a vehicle in a permanent deadlock in
+            // thirty-nine of them, one of them for the whole ten minutes. The knot is
+            // that a car stopped off its lane may not enter a junction (CanEnter's "off
+            // lane at the line"), and it cannot get back into the lane because the gap it
+            // asks for is fouled by something that is never going to move. So: for the
+            // first few seconds it waits for a proper gap, as it should - and after that
+            // the parked stop counting. Rolling, a parked car ahead is a thing to go
+            // round, which the tactics already do (Decide's behindParked).
+            bool ignoreParked = Time.time - _pullOutAsked > PullOutPatience;
+
+            // AND IF EVEN THAT DOES NOT COME, he takes the lane. There is a second way
+            // to wait for ever: parked on the far kerb of a wide street, the lane for
+            // his heading is six or seven metres across the road, so the gap he is
+            // asking about is in the oncoming stream and a busy street never gives him
+            // two clear seconds of it. One monkey run held a crew car at s=11, d=6.7
+            // for the whole ten minutes that way, with the mission waiting on it. A
+            // driver in that spot edges out; so does this one - the manoeuvre is
+            // dropped, which also lets him past the junction line again (CanEnter), and
+            // the ordinary lane-keeping takes him the rest of the way over.
+            if (!BandFree(lo, hi, 8f, 2f, out _, ignoreParked) &&
+                Time.time - _pullOutAsked > PullOutGiveUp)
+            {
+                DriveTrace.Event("man", "car " + Id, "took the lane after waiting", ManFields());
+                _pullOutWanted = false;
+                _man = Manoeuvre.None;
+                ClearClaim();
+                Slide(_laneD, SlideLength(Mathf.Abs(D - _laneD), Mathf.Max(Speed, 3f)));
+                return;
+            }
+            if (BandFree(lo, hi, 8f, 2f, out _, ignoreParked))
             {
                 _pullOutWanted = false;
                 _man = Manoeuvre.PullOut;
@@ -2381,6 +2508,12 @@ namespace RoadDemo
             // from a car that has simply died in the road.
             if (Mathf.Abs(Speed) < 0.3f && !Parked) _quietFor += dt; else { _quietFor = 0f; _saidStall = 0f; }
 
+            // every branch here ends in a Fault(), whose message is a trace string and
+            // whose only consumer is the trace - so the whole ladder is skipped when the
+            // trace is closed, and none of the $"..." args (one per car per frame under a
+            // stall or a hard brake) are built for a reader that is not listening
+            if (DriveTrace.On)
+            {
             if (first) { }
             // a car asked for nought is standing because it was told to (halted, parked,
             // waiting for its crew): only one that WANTS to move and is not moving is stuck
@@ -2408,6 +2541,7 @@ namespace RoadDemo
             // kink in it. Slowly, full lock is just a tight corner - every junction has one.
             else if (Mathf.Abs(steer) > 33f && Mathf.Abs(Speed) > 7f)
                 Fault("steer", $"{steer:F0} deg at {Speed:F1} m/s", acc, step, steer);
+            }
 
             _prevSpeed = Speed;
             _prevPos = pos;

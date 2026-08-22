@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -19,10 +19,20 @@ namespace RoadDemo
                  "Three times what it was: at four hundred metres the far shore stood in every shot down every " +
                  "street and the town read as a model on a table, and the port's basin - which reaches nine " +
                  "hundred metres out for its ships - ate most of the width it had.")]
-        public float islandWest = 1380f;
-        public float islandEast = 1140f;
-        public float islandNorth = 1080f;
-        public float islandSouth = 1260f;
+        // Cut back to a bit over half (2026-08-21). Tripling them fixed the model-on-a-
+        // table look and overshot: with coastWander and SeaMargin on top, each side ran
+        // some eighteen hundred metres of ground, and the city's own density curve gives
+        // up long before that - DressWilderness thins from NearWild to FarWild, 340 m to
+        // 1250 m, and past FarWild the wood is already down to its floor of a fifth. So
+        // everything beyond that was ground and trees laid at the thinnest the pass
+        // knows how to lay them, out past the fog, for a camera that culls props at
+        // 230 m. These widths put the water about twelve hundred metres out - still
+        // three times the four hundred that read as a table, and no longer forty-two
+        // square kilometres of island around a city that is under one.
+        public float islandWest = 760f;
+        public float islandEast = 630f;
+        public float islandNorth = 600f;
+        public float islandSouth = 700f;
         [Tooltip("How far the coastline strays in and out from those widths.")]
         public float coastWander = 240f;
         [Tooltip("Woods per hectare, roughly - the wilderness's tree density.")]
@@ -506,7 +516,7 @@ namespace RoadDemo
             const float CellSize = 12f;
             // where the thinning starts and where it bottoms out, metres from the city
             const float NearWild = 340f, FarWild = 1250f, FarWildDensity = 0.22f;
-            int placed = 0;
+            int placed = 0, dropped = 0;
             for (float z = z0; z < z1; z += CellSize)
                 for (float x = x0; x < x1; x += CellSize)
                 {
@@ -579,9 +589,16 @@ namespace RoadDemo
                     var go = Instantiate(prefab, new Vector3(px, h - sink, pz), Quaternion.Euler(0f, yaw, 0f), IslandRoot);
                     go.transform.localScale = Vector3.one * scale;
                     go.name = "Wild " + prefab.name;
+                    // and the pack's collider goes with it. Nothing in the wilderness is
+                    // physical: the cars ride LaneNet, the walkers read WalkObstacles (a
+                    // plan of boxes, not a physics scene), and a click is looking for a
+                    // building. All a tree's collider ever does is turn up in the
+                    // RaycastAll that BuildingCardPicker fires three kilometres down the
+                    // ray, to be sorted and thrown away. Twenty-odd thousand of them.
+                    foreach (var col in go.GetComponentsInChildren<Collider>()) { Destroy(col); dropped++; }
                     placed++;
                 }
-            Debug.Log($"[RoadDemo] island: {placed} wild things on the ground");
+            Debug.Log($"[RoadDemo] island: {placed} wild things on the ground, {dropped} colliders dropped with them");
         }
 
         /// <summary>How much of the island's relief survives at (x, z) against the

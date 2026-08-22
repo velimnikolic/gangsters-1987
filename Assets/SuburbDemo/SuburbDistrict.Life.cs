@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using RoadDemo;
 using UnityEngine;
 
@@ -62,13 +62,26 @@ namespace SuburbDemo
                 StubLanes(s);
             }
 
-            // every node must let every arrival out again without a U-turn
+            // The plan means every node to let every arrival out again without a U-turn,
+            // and where it fails it is worth saying so - but it is not an error, which is
+            // what this used to be raised as. A street that ends in a flat cap on the map's
+            // edge lays no lanes down the cap at all (the Open test above), so the junction
+            // behind it offers nothing but the way the car came in; and RoadCar knows that
+            // shape and drives it - PlanNext falls through to "the turn-round at a dead end,
+            // or anything at all" and takes the return connector. Nothing is stranded. So
+            // this is a note about the PLAN, said once with all the places in it, rather
+            // than a red line per dead end for a thing the driver already handles.
+            var turnRounds = new List<string>();
             foreach (var e in _edges)
             {
                 bool ok = false;
                 foreach (var o in e.To.Outgoing) if (Vector3.Dot(o.Dir, e.Dir) >= -0.5f) ok = true;
-                if (!ok) Debug.LogError($"[SuburbDemo] lane graph: an edge ending at ({e.End.x:F0},{e.End.z:F0}) has no way on");
+                if (!ok) turnRounds.Add($"({e.End.x:F0},{e.End.z:F0})");
             }
+            if (turnRounds.Count > 0)
+                Debug.LogWarning($"[SuburbDemo] lane graph: {turnRounds.Count} dead end(s) a car can only leave by " +
+                                 $"turning round, at {string.Join(", ", turnRounds)} - the flat caps on the map's edge " +
+                                 "carry no lanes, so the junction behind one is the end of the road");
             Debug.Log($"[SuburbDemo] lane graph: {_edges.Count} edges, {_signals.Count} junctions with stop logic");
         }
 

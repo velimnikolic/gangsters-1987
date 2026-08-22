@@ -70,7 +70,7 @@ namespace RoadDemo
                 var path = folder + name + ".prefab";
                 if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(path)) continue;
                 if (LivingCity.Gameplay.VehicleCatalog.IsBarred(path)) continue;
-                var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                var prefab = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                 if (prefab != null) return prefab;
             }
 #endif
@@ -102,6 +102,11 @@ namespace RoadDemo
         /// road count as "his": the pavement's width and a stride.</summary>
         const float OffRoad = 14f;
 
+        /// <summary>How far off a road the holder may be standing, tried in turn. The
+        /// first is the old rule (a man on the pavement); the rest are the yard, the
+        /// forecourt and the far side of a lot.</summary>
+        static readonly float[] Widening = { OffRoad, 30f, 60f, 120f };
+
         /// <summary>A free length of kerb beside this man to leave a car of this size
         /// on: nose along the traffic on that side, its flank a hand over the stone,
         /// clear of both junctions and of everything already standing there.
@@ -115,7 +120,20 @@ namespace RoadDemo
             rot = Quaternion.identity;
             if (net == null) return false;
 
-            var road = net.Locate(near, out float s0, out float d, OffRoad);
+            // WHICH ROAD IS HIS - and the search widens rather than giving up. Fourteen
+            // metres is a man standing on a pavement; a lieutenant dealt onto a lot, a
+            // yard, a forecourt or a district street stands further off than that, and
+            // the machine the ledger sold him was then never put on the street at all -
+            // one warning line, and a player who owns a motorcycle that does not exist
+            // (nineteen runs in twenty-two of the monkey soak). The kerb it ends up at
+            // is still a real kerb: everything below this line is unchanged.
+            Carriageway road = null;
+            float s0 = 0f, d = 0f;
+            foreach (var within in Widening)
+            {
+                road = net.Locate(near, out s0, out d, within);
+                if (road != null) break;
+            }
             if (road == null) return false;
 
             float kerb = road.KerbDOnSide(d, halfWidth);

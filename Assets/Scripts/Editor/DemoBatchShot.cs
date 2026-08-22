@@ -49,11 +49,61 @@ namespace LivingCity.EditorTools
                                                           Arg("-shotDistance") ?? "", Arg("-shotPivot") ?? ""));
             Debug.Log($"[DemoBatchShot] {scene} -> {outPath}");
             EditorSceneManager.OpenScene(scene, OpenSceneMode.Single);
+            // The scene as the BUILDER would make it, not as its inspector happens to be
+            // saved: without this the tool photographs whatever the last person left in
+            // the fields, which for BlockDemo is a quarter with no crew, no motorcycle
+            // and no mission - a picture of nothing, taken to check something.
+            // Same shape as the play harness's -hSet (PlayHarness.ApplySet).
+            foreach (var set in Args("-shotSet")) ApplySet(set);
             // give the bakes that hang off play-mode changes their moment first
             EditorApplication.playModeStateChanged += OnPlayMode;
             EditorApplication.EnterPlaymode();
         }
 
+
+        /// <summary>"Type.field=value" against every MonoBehaviour of that type in the
+        /// open scene. Handles the kinds a builder's inspector actually has.</summary>
+        static void ApplySet(string set)
+        {
+            int eq = set.IndexOf('=');
+            int dot = set.IndexOf('.');
+            if (eq < 0 || dot < 0 || dot > eq) { Debug.LogWarning($"[DemoBatchShot] cannot read {set}"); return; }
+            string type = set.Substring(0, dot);
+            string field = set.Substring(dot + 1, eq - dot - 1);
+            string value = set.Substring(eq + 1);
+
+            int hits = 0;
+            foreach (var mb in Object.FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (mb == null || mb.GetType().Name != type) continue;
+                var f = mb.GetType().GetField(field,
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (f == null) { Debug.LogWarning($"[DemoBatchShot] {type} has no field {field}"); return; }
+                object parsed =
+                    f.FieldType == typeof(int) ? (object)int.Parse(value)
+                    : f.FieldType == typeof(float) ? (object)float.Parse(value, System.Globalization.CultureInfo.InvariantCulture)
+                    : f.FieldType == typeof(bool) ? (object)(value == "1" || value.ToLowerInvariant() == "true")
+                    : f.FieldType == typeof(string) ? (object)value
+                    : null;
+                if (parsed == null) { Debug.LogWarning($"[DemoBatchShot] cannot read {value} as {f.FieldType.Name}"); return; }
+                f.SetValue(mb, parsed);
+                EditorUtility.SetDirty(mb);
+                hits++;
+            }
+            Debug.Log(hits > 0 ? $"[DemoBatchShot] set {set} on {hits}"
+                               : $"[DemoBatchShot] nothing of type {type} in the scene");
+        }
+
+        static System.Collections.Generic.List<string> Args(string name)
+        {
+            var found = new System.Collections.Generic.List<string>();
+            var argv = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < argv.Length - 1; i++)
+                if (argv[i] == name)
+                    foreach (var one in argv[i + 1].Split(';'))
+                        if (one.Trim().Length > 0) found.Add(one.Trim());
+            return found;
+        }
 
         static void OnPlayMode(PlayModeStateChange state)
         {

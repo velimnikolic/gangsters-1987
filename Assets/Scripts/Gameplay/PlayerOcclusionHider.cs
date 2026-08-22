@@ -20,10 +20,16 @@ namespace LivingCity.Gameplay
     /// A bare disappearance reads as a hole in the city, so a hidden building
     /// leaves its bottom fifth standing: the source mesh is clipped once at 20%
     /// of its local height (cut triangles split on the CPU, cached per shared
-    /// mesh - terrace pieces reuse one mesh, so the whole city needs only a
-    /// handful of stubs) and shown by a pooled stand-in renderer wearing the
-    /// building's own materials, so tint and night windows carry over. The stub
-    /// casts no shadow - the hidden original still casts the full one.
+    /// mesh) and shown by a pooled stand-in renderer wearing the building's own
+    /// materials, so tint and night windows carry over. The stub casts no shadow -
+    /// the hidden original still casts the full one.
+    ///
+    /// "Only a handful of stubs" was true of one street and false of the city:
+    /// there are dozens of distinct block bakes plus the suburbs, so travelling
+    /// keeps meeting first-time meshes, and the clip walks a whole vertex buffer
+    /// (~20 MB of garbage for a large one). It is therefore budgeted to
+    /// MaxClipsPerFrame; a building waiting its turn hides with no stub and gets
+    /// one within a few frames.
     ///
     /// Below ZoomRevealEnter a second sweep (ZoomSweep) extends the same hiding
     /// to every building occluding visible street space, so a close-up camera
@@ -55,6 +61,26 @@ namespace LivingCity.Gameplay
         const int MaxGridColumns = 32;
         const float FootprintProbeRadius = 0.4f;
 
+        // The row budget scales with Time.deltaTime to hold the revisit period, but
+        // deltaTime is a CONSEQUENCE of being slow, so unclamped it hands the slowest
+        // frame the largest sweep - and Unity caps deltaTime at Maximum Allowed
+        // Timestep (0.333 s), which is 2.2 full grids' worth: any frame over 150 ms
+        // made the next one sweep the whole grid, meet a whole row of unseen
+        // buildings, and clip every one of them. Measured: a 21.5 s frame, then a
+        // 32.2 s frame with almost no CPU in it (the driver taking the new meshes).
+        // Clamping the step to a nominal frame keeps the adaptation and removes the
+        // runaway; at genuinely low framerates the revisit period stretches past
+        // KeepHiddenSeconds and a hidden building may flicker, which is the right
+        // trade against a multi-second freeze.
+        const float SweepStepCeiling = 1f / 30f;
+
+        // A clip walks the source mesh's whole vertex buffer on the CPU. One per
+        // frame: a building whose turn has not come is hidden without a stub and
+        // asks again next frame, so a camera arriving somewhere new spreads the
+        // cost over frames instead of paying for a row of them at once.
+        const int MaxClipsPerFrame = 1;
+        const long ClipReportMs = 50;           // below this a clip is not worth a log line
+
         // Everything except pedestrians (the player himself) and the park-nav
         // proxy roots on layer 10 - the same idiom as PlayerMafioso.WallMask.
         static readonly int Mask = ~((1 << PedestrianSpawner.PedestrianLayer) | (1 << 10));
@@ -81,6 +107,12 @@ namespace LivingCity.Gameplay
 
         bool zoomReveal; // zoom-gate hysteresis state
         int gridRow;     // round-robin row cursor - the grid is swept a few rows per frame
+        int clipsThisFrame;
+
+        // Left in: a clip runs once per shared mesh, so timing it costs nothing and
+        // this is the only place that can say WHICH mesh is expensive - the frame
+        // probe only sees one "scripts Update" bucket.
+        readonly System.Diagnostics.Stopwatch clipClock = new();
 
         /// <summary>
         /// True when this collider belongs to a building the sweeps are currently
@@ -115,6 +147,7 @@ namespace LivingCity.Gameplay
 
         void Update()
         {
+            clipsThisFrame = 0;
             Sweep();
             ZoomSweep();
             Restore();
@@ -186,10 +219,13 @@ namespace LivingCity.Gameplay
             var cols = Mathf.Min(MaxGridColumns, Mathf.FloorToInt(2f * halfWidth / SampleStrideWidth) + 1);
             var rows = Mathf.Min(MaxGridRows, Mathf.FloorToInt(2f * halfDepth / SampleStrideDepth) + 1);
 
-            // Enough rows this frame that a full pass takes GridRefreshSeconds:
-            // a slow frame sweeps more rows instead of stretching the revisit
-            // period past the restore hysteresis (which would read as flicker).
-            var rowsPerFrame = Mathf.Clamp(Mathf.CeilToInt(rows * Time.deltaTime / GridRefreshSeconds), 1, rows);
+            // Enough rows this frame that a full pass takes GridRefreshSeconds - but
+            // with the step clamped (see SweepStepCeiling), so a slow frame sweeps at
+            // most a nominal frame's worth of rows rather than the whole grid. The
+            // revisit period may then stretch past the restore hysteresis and flicker
+            // a hidden building; the unclamped alternative was a 21 s frame.
+            var step = Mathf.Min(Time.deltaTime, SweepStepCeiling);
+            var rowsPerFrame = Mathf.Clamp(Mathf.CeilToInt(rows * step / GridRefreshSeconds), 1, rows);
             for (var r = 0; r < rowsPerFrame; r++)
             {
                 var z = (gridRow - (rows - 1) * 0.5f) * SampleStrideDepth;
@@ -247,6 +283,12 @@ namespace LivingCity.Gameplay
                 if (hidden.TryGetValue(renderer, out var entry))
                 {
                     entry.LastSeen = Time.time;
+
+                    // No stub yet means either the clip budget deferred it or the mesh
+                    // cannot be clipped at all; asking again is a dictionary hit in the
+                    // second case and the building gets its footprint back in the first.
+                    if (!entry.Stub)
+                        entry.Stub = ShowStub(renderer);
                     hidden[renderer] = entry;
                 }
                 else
@@ -284,7 +326,8 @@ namespace LivingCity.Gameplay
 
         /// <summary>Pooled stand-in showing the clipped bottom of the building, in
         /// the building's exact pose and materials. Null when the mesh cannot be
-        /// clipped (unreadable) - the building then just hides.</summary>
+        /// clipped (unreadable) or when the frame's clip budget is spent - the
+        /// building then just hides, and HideOccluders asks again next frame.</summary>
         GameObject ShowStub(MeshRenderer building)
         {
             var filter = building.GetComponent<MeshFilter>();
@@ -344,9 +387,28 @@ namespace LivingCity.Gameplay
             if (stubMeshes.TryGetValue(source, out var cached))
                 return cached;
 
-            var result = source.isReadable
-                ? ClipBelow(source, source.bounds.min.y + StubFraction * source.bounds.size.y)
-                : null;
+            // Unreadable is settled here and cached, because deciding it is free and
+            // the answer never changes. Only a real clip draws on the frame budget.
+            if (!source.isReadable)
+            {
+                stubMeshes[source] = null;
+                return null;
+            }
+
+            // Over budget: return null WITHOUT caching. Absent from the dictionary
+            // means "not attempted", so the caller asks again next frame; a cached
+            // null means "impossible" and is never retried.
+            if (clipsThisFrame >= MaxClipsPerFrame)
+                return null;
+
+            clipsThisFrame++;
+            clipClock.Restart();
+            var result = ClipBelow(source, source.bounds.min.y + StubFraction * source.bounds.size.y);
+            clipClock.Stop();
+            if (clipClock.ElapsedMilliseconds > ClipReportMs)
+                Debug.Log($"[OcclusionHider] clipped '{source.name}' {source.vertexCount} verts, " +
+                          $"{source.subMeshCount} submeshes in {clipClock.ElapsedMilliseconds} ms");
+
             stubMeshes[source] = result;
             return result;
         }

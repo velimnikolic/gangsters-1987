@@ -22,10 +22,19 @@ namespace RoadDemo
     {
         public enum Mode { Parked, Riding, DriveBy }
 
-        /// <summary>The crew whose lieutenant owns it; the crew on it. The book's
-        /// side of a bike is nobody's yet - the ledger sells cars, not motorcycles -
-        /// so these are set by whoever puts a crew on one.</summary>
+        /// <summary>The crew whose lieutenant owns it; the crew on it. The book sells
+        /// motorcycles now (ArmoryCatalog.Motorcycles), so for a machine the ledger
+        /// stood these are the book's answer - the crew of the lieutenant the item is
+        /// dealt to. A bike a scene put down keeps whoever it was given to.</summary>
         public DemoCrews.Unit Owner, Occupant;
+
+        /// <summary>The stock item this machine IS, or -1 for one the scene stood.
+        /// The car's field, for the same reason: the book is the truth and the street
+        /// follows it, so a machine has to be able to say which line of the book it
+        /// is (DemoCrews.StandLedgerBikes).</summary>
+        public int ItemId = -1;
+
+        public string DisplayName = "Motorcycle";
 
         /// <summary>The arena, for the one thing a bike cannot do for itself: resolve a
         /// shot. Without it the guns come up and nothing is fired, which is a fair way
@@ -36,7 +45,37 @@ namespace RoadDemo
         public CrewWalker Pillion { get; private set; }
 
         /// <summary>The crew being shot up, or null.</summary>
-        public DemoCrews.Unit DriveByTarget { get; private set; }
+        DemoCrews.Unit _driveByTarget;
+
+        /// <summary>The crew this machine is riding at, or null. Setting it is what
+        /// opens and closes a pass, so the count of passes running is kept here rather
+        /// than by whoever remembers to tell somebody.</summary>
+        public DemoCrews.Unit DriveByTarget
+        {
+            get => _driveByTarget;
+            private set
+            {
+                if (ReferenceEquals(_driveByTarget, value)) return;
+                if (_driveByTarget == null) PassesRunning++;
+                else if (value == null) PassesRunning = Mathf.Max(0, PassesRunning - 1);
+                _driveByTarget = value;
+            }
+        }
+
+        /// <summary>How many machines are out on a pass right now. A drive-by is the one
+        /// time the street's own people are asked to behave differently for it (a chase
+        /// that keeps to the pavement rather than spilling onto the main road), and this
+        /// is how anybody asks whether one is on without holding a reference to the
+        /// bike.</summary>
+        public static int PassesRunning { get; private set; }
+
+        /// <summary>Is a drive-by being ridden anywhere in the city this instant?</summary>
+        public static bool AnyPassOn => PassesRunning > 0;
+
+        // a static outlives a play, and a machine destroyed mid-pass never gets to put
+        // its own count back - so the tally starts from nothing each time the game does
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ForgetPasses() => PassesRunning = 0;
 
         /// <summary>In a fight on the way somewhere: the rider puts it on and goes round
         /// whatever is in front of him at once. A drive-by is hot on its own.</summary>
@@ -45,14 +84,62 @@ namespace RoadDemo
         /// <summary>How far past the mark a pass runs before it turns round.</summary>
         public const float PassOvershoot = 44f;
 
-        /// <summary>Walking pace past the mark. A pistol reaches ten metres and a bike
-        /// at the hot pace crosses that in half a second, which is a pass with nothing
-        /// fired - the same arithmetic that slows the car (CrewCar.LimitTarget).</summary>
-        public const float PassSpeed = 8.5f;
+        /// <summary>One pass and away, rather than passes until the crew is down.
+        ///
+        /// The two are different jobs and not two settings of one. Passes-until-down is
+        /// a siege on wheels: it works, and it leaves two men riding up and down the
+        /// same fifty metres of street with everybody on it shooting back, which is how
+        /// a drive-by turns into the fight it existed to avoid. One pass is the thing
+        /// the player asked for - past the door, empty what you have at it, and be
+        /// round the corner before the answer comes. What "over" means is then not
+        /// "they are all down" but "we are past them", and that is
+        /// <see cref="PassSpent"/>.</summary>
+        public bool SinglePass;
+
+        /// <summary>True once a single pass has been ridden out - the arena's cue to
+        /// take the machine home (DemoCrews.TickDriveBy). Cleared by the next order.</summary>
+        public bool PassSpent { get; private set; }
+
+        /// <summary>Rounds fired off this machine since the current order was given.
+        /// A pass that fires nothing is the quiet failure of the whole business - the
+        /// men rode past and the guns never bore - and it is invisible from outside
+        /// unless somebody counts. The headless loop counts (BlockDemoMission).</summary>
+        public int ShotsFired { get; private set; }
+
+        /// <summary>Pace past the mark.
+        ///
+        /// It was eight and a half - the arithmetic of a pistol, which reaches ten metres
+        /// and wants half a second of them to fire in. That is thirty kilometres an hour
+        /// and it does not read as a drive-by; it reads as a machine having a look. A
+        /// drive-by is a thing that GOES PAST. Thirteen is fifty an hour: still slow
+        /// enough that the pillion gets his rounds off inside the reach of what he is
+        /// carrying, and fast enough that the street does not get a good look at him -
+        /// which is the whole reason two men take a motorcycle instead of a car.</summary>
+        public const float PassSpeed = 13f;
 
         /// <summary>How far round himself a pillion may shoot. Nearly everywhere: what
         /// is barred is the cone through the rider's back.</summary>
         public static float PillionBlindArc = 34f;
+
+        /// <summary>What a pillion adds to the reach of what he is carrying.
+        ///
+        /// A man leaning out of a CAR window gets 1.4 of his gun's range (DemoCrews.
+        /// RidingReach) because he takes it further out than a man on the pavement does.
+        /// A pillion had 1.3 - LESS than the man hemmed in by a door frame - which was
+        /// backwards: he is sitting in the open with nothing round him and can turn all
+        /// the way round (PillionBlindArc). It matters because the window is measured in
+        /// TIME: at the pass speed, a .38's ten metres is a second and a half of the
+        /// mark, which is one round. Eighteen is four seconds.</summary>
+        public static float PillionReach = 1.8f;
+
+        /// <summary>And how much faster he empties it than a man on his feet.
+        ///
+        /// A man standing in the street shoots to hit; a man going past at fifty
+        /// kilometres an hour with one chance shoots to EMPTY WHAT HE HAS. Accuracy is
+        /// not touched - it still falls off with range in Resolve, so most of these go
+        /// wide, which is what a drive-by looks like and why one is not the same thing
+        /// as a killing.</summary>
+        public static float PillionRate = 0.45f;
 
         int _passDir = 1;
         BikePose _riderPose, _pillionPose;
@@ -63,6 +150,18 @@ namespace RoadDemo
         {
             Profile = DriverProfile.Gangster;
             Tag = "crewbike";
+        }
+
+        /// <summary>CrewCar.GivesWayTo, for two wheels. A machine on a pass does not
+        /// stop for the crew it has come to shoot at.</summary>
+        protected override bool GivesWayTo(int faction)
+        {
+            if (faction == StreetAlarm.PoliceFaction) return true;
+            var unit = Occupant ?? Owner;
+            if (unit != null && faction == unit.Faction) return true;
+            if (DriveByTarget != null && faction == DriveByTarget.Faction) return false;
+            if (unit == null) return true;
+            return unit.TargetUnit == null || unit.TargetUnit.Faction != faction;
         }
 
         public Mode State =>
@@ -166,7 +265,8 @@ namespace RoadDemo
         public void RideTo(Vector3 point)
         {
             DriveByTarget = null;
-            Profile = Hot ? DriverProfile.Hot : DriverProfile.Gangster;
+            PassSpent = false;
+            Profile = Hot ? DriverProfile.Hot : DriverProfile.Gangster;   // Tick re-reads it
             if (!OnRoad || Net == null) { GoFree(new Vector3(point.x, RoadY, point.z)); return; }
             if (!GoTo(point, park: true)) GoFree(new Vector3(point.x, RoadY, point.z));
         }
@@ -177,7 +277,8 @@ namespace RoadDemo
         {
             if (target == null || Rider == null) return;
             DriveByTarget = target;
-            Profile = DriverProfile.Hot;
+            PassSpent = false;
+            ShotsFired = 0;
             var t = target.Position;
             if (Road != null)
             {
@@ -211,6 +312,17 @@ namespace RoadDemo
         protected override void OnArrived()
         {
             if (DriveByTarget == null) return;
+            // The end of a pass. On a single pass that is the whole job: the guns come
+            // down where they are, and the machine stands ready for wherever it is sent
+            // next - it does NOT pick its own way out of the street, because the men who
+            // sent it know where home is and it does not.
+            if (SinglePass)
+            {
+                DriveByTarget = null;
+                PassSpent = true;
+                Profile = DriverProfile.Gangster;
+                return;
+            }
             _passDir = -_passDir;
             PlanPass();
         }
@@ -230,16 +342,80 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ the frame
 
+        /// <summary>How near the mark the pass is measured from - what LimitTarget takes
+        /// the pace down over.
+        ///
+        /// The aggression belongs to the PASS, not to the two hundred metres of getting
+        /// there, and the two are different rides. Hot is an eighteen-metre-a-second
+        /// cruise with half a second of air off the car in front, on streets whose
+        /// traffic runs at nine - a machine crossing a quarter at that pace, changing
+        /// lanes at the junction lines, arrives behind a car stopped at a red with three
+        /// metres in hand and ten metres of braking to do. (The belt caught it, twice,
+        /// in the first headless runs of this: gap 0.0 at twelve metres a second.) Near
+        /// the mark the pace is the pass's own anyway - LimitTarget takes it down to
+        /// PassSpeed - so nothing about the drive-by itself is lost.</summary>
+        public const float HotWithin = 60f;
+
         public new void Tick(float dt)
         {
             if (Tf == null) return;
-            Profile = DriveByTarget != null || Hot ? DriverProfile.Hot : DriverProfile.Gangster;
+
+            // A MACHINE WITH NOBODY ON IT DOES NOT DRIVE. Every driver profile has
+            // Wanders on by default - "no route: random turns at junctions" - which is
+            // right for traffic and very wrong for a motorcycle standing at a kerb with
+            // its crew back on the pavement: the moment the last raid ended, the empty
+            // machine set off round the quarter on its own and spent the rest of the run
+            // grinding into a parked car with the belt refusing every step of it. Four
+            // hundred and seventy-six seconds, in the run that found it. Nobody at the
+            // bars, nowhere to be.
+            if (Rider == null && (HasGoal || FreeGoal.HasValue)) Halt(hard: true);
+            // ONE WAY OF DRIVING, and the legs differ only in pace (LimitTarget takes
+            // the pass down to PassSpeed near the mark).
+            //
+            // The pass used to be driven on Hot and the run-up on the errand profile,
+            // and both of those use the crown and the far lane. A car may swing across
+            // the middle of the street to get round a queue; a MOTORCYCLE in this model
+            // may not, because it does not filter between the lanes - it takes a whole
+            // lane like anything else, and the swing lands it on top of whatever is
+            // waiting at the next light. Every belt refusal the machine has ever earned
+            // was that, and the last three were all on Hot, one of them five metres
+            // inside a car before anybody noticed. Getaway is the profile with that lane
+            // work taken out; there is no leg of a drive-by that wants it back.
+            Profile = DriverProfile.Getaway;
             base.Tick(dt);
             TickGuns(dt);
         }
 
+        bool NearMark(float metres)
+        {
+            if (DriveByTarget == null) return false;
+            var to = DriveByTarget.Position - Position;
+            to.y = 0f;
+            return to.sqrMagnitude < metres * metres;
+        }
+
+        /// <summary>Forget what the last order fired - the arena's, when a new raid is
+        /// given out. Not folded into DriveBy: a raid whose men never reach the machine
+        /// never calls that, and it reported the PREVIOUS pass's rounds as its own.</summary>
+        public void ClearShots() => ShotsFired = 0;
+
+        /// <summary>Pace through a junction box.
+        ///
+        /// The straight is where the machine is fast; a box is not a straight. Every belt
+        /// refusal left after the lane work came out was this one shape - "box:
+        /// following", the machine entering a junction at the full sixteen behind a car
+        /// that then stopped inside it, at a range where nothing can be done about it.
+        /// Nobody crosses a junction at fifty-eight kilometres an hour behind somebody
+        /// else, and a machine that does is not reading as quick, it is reading as a bug.
+        /// Off the box it has its pace back inside a second (Accel 9).</summary>
+        public static float BoxSpeed = 9f;
+
         protected override float LimitTarget(float target)
         {
+            // through the junction at a pace a junction can be crossed at, whatever the
+            // machine is doing either side of it
+            if (Via != null) target = Mathf.Min(target, BoxSpeed);
+
             if (DriveByTarget == null || Tf == null) return target;
             var to = DriveByTarget.Position - Position;
             to.y = 0f;
@@ -262,7 +438,17 @@ namespace RoadDemo
             {
                 Aim(_pillionPose, Pillion, null);
                 Aim(_riderPose, Rider, null);
-                EndDriveBy();
+                // Nothing left to shoot at, part way down the pass. On a single pass
+                // that ends it here rather than thirty metres up the road on the bike's
+                // own initiative: the ride home is the arena's order, not the bike's.
+                if (SinglePass)
+                {
+                    DriveByTarget = null;
+                    PassSpent = true;
+                    Profile = DriverProfile.Gangster;
+                    Halt(hard: false);
+                }
+                else EndDriveBy();
                 return;
             }
 
@@ -290,7 +476,7 @@ namespace RoadDemo
             var to = mark.Tf.position - Position;
             to.y = 0f;
             float dist = to.magnitude;
-            if (dist > man.Ballistics.Range * 1.3f) return false;
+            if (dist > man.Ballistics.Range * PillionReach) return false;
             if (!blindAhead || dist < 0.1f) return true;
             // straight up the road is where the man in front of him is sitting
             float ahead = Vector3.Angle(Forward, to / dist);
@@ -309,7 +495,8 @@ namespace RoadDemo
         {
             timer -= dt;
             if (timer > 0f) return;
-            timer = man.Ballistics.Interval;
+            timer = man.Ballistics.Interval * PillionRate;
+            ShotsFired++;
             if (Arena != null) Arena.FireFrom(man, mark);
             else StreetAlarm.Report(Position, null, 0, man.Ballistics.Loudness);
         }

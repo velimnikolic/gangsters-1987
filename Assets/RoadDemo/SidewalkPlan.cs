@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 namespace RoadDemo
@@ -21,6 +21,7 @@ namespace RoadDemo
             public bool Known;
             public Vector2 Centre, Half;  // prefab-local XZ
             public bool Solid;            // stands high enough to stop a walker
+            public bool Tall;             // measured as a trunk/post, not as a whole shape
         }
 
         static readonly Dictionary<GameObject, Foot> Cache = new Dictionary<GameObject, Foot>();
@@ -43,6 +44,7 @@ namespace RoadDemo
             var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
             var max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
             bool any = false;
+            bool tall = false;
 
             var meshes = new List<(Mesh mesh, Matrix4x4 m)>();
             foreach (var mf in prefab.GetComponentsInChildren<MeshFilter>(true))
@@ -82,6 +84,7 @@ namespace RoadDemo
             // anything - while the trunk itself, on the origin, would be walked through.
             if (max.y > TallFrom)
             {
+                tall = true;
                 if (Slice(meshes, out var slo, out var shi)) { lo = slo; hi = shi; }
                 else
                 {
@@ -101,6 +104,7 @@ namespace RoadDemo
                 Centre = new Vector2((lo.x + hi.x) * 0.5f * scale.x, (lo.y + hi.y) * 0.5f * scale.z),
                 Half = new Vector2((hi.x - lo.x) * 0.5f * sx, (hi.y - lo.y) * 0.5f * sz),
                 Solid = max.y * Mathf.Abs(scale.y) > FlatTop,
+                Tall = tall,
             };
         }
 
@@ -145,6 +149,8 @@ namespace RoadDemo
             public Vector2 Ax, Az;   // the box's own axes, world XZ
             public bool Solid;       // stops a walker
             public bool KeepClear;   // a reservation, not a prop: refuses props, blocks nobody
+            public bool Tall;        // a trunk or a post: the box is the bit at knee height,
+                                     // and the thing itself carries on up over the walker
         }
 
         const float Cell = 4f;
@@ -180,6 +186,7 @@ namespace RoadDemo
                 foot.Centre.x * cos + foot.Centre.y * sin,
                 -foot.Centre.x * sin + foot.Centre.y * cos);
             box = Make(new Vector2(pos.x, pos.z) + off, yaw, foot.Half, foot.Solid);
+            box.Tall = foot.Tall;
             return true;
         }
 
@@ -241,24 +248,110 @@ namespace RoadDemo
         }
 
         /// <summary>Would a walker of this radius foul something standing here?</summary>
-        public bool Occupied(Vector2 p, float radius)
+        public bool Occupied(Vector2 p, float radius) => Occupied(p, radius, 0f);
+
+        /// <summary>The same question with a wider berth round the TALL props - the
+        /// palms and the lamp posts, whose box is the trunk at knee height and whose
+        /// canopy is a good two metres of fronds over it. A walker may stand under a
+        /// canopy quite legitimately and the trunk box says so; a man STOOD there by
+        /// somebody, and left there, reads as a man inside a tree. Whoever is choosing
+        /// a spot rather than walking through one asks with a berth.</summary>
+        public bool Occupied(Vector2 p, float radius, float tallBerth)
         {
+            float grow = Mathf.Max(0f, tallBerth);
+            int span = grow > 0f ? Mathf.CeilToInt((radius + grow) / Cell) : 1;
             int cx = Mathf.FloorToInt(p.x / Cell), cz = Mathf.FloorToInt(p.y / Cell);
-            for (int dx = -1; dx <= 1; dx++)
-                for (int dz = -1; dz <= 1; dz++)
+            for (int dx = -span; dx <= span; dx++)
+                for (int dz = -span; dz <= span; dz++)
                 {
                     if (!_grid.TryGetValue(Key(cx + dx, cz + dz), out var bucket)) continue;
                     for (int k = 0; k < bucket.Count; k++)
                     {
                         var b = _boxes[bucket[k]];
                         if (!b.Solid || b.KeepClear) continue;
+                        float r = b.Tall ? radius + grow : radius;
                         var d = p - b.C;
                         float ox = Mathf.Max(0f, Mathf.Abs(Vector2.Dot(d, b.Ax)) - b.H.x);
                         float oz = Mathf.Max(0f, Mathf.Abs(Vector2.Dot(d, b.Az)) - b.H.y);
-                        if (ox * ox + oz * oz <= radius * radius) return true;
+                        if (ox * ox + oz * oz <= r * r) return true;
                     }
                 }
             return false;
+        }
+
+        /// <summary>The same question Occupied answers for one point, asked for a whole
+        /// RANK of points at once - the seventeen lateral lines a walker may hold across
+        /// a stretch, which all lie within four metres of each other and therefore inside
+        /// very nearly the same buckets. Asked one at a time that is seventeen walks of a
+        /// three-by-three window; asked together it is one walk of their union, and the
+        /// clearance sample that used to be a third of the city's load stops being one.
+        ///
+        /// The window IS their union - floor(min)-1 to floor(max)+1 is exactly what the
+        /// seventeen separate windows cover between them - so the answer is the same
+        /// answer, not a near one. Takes the mask of lines still in play and returns what
+        /// is left of it; a box only ever clears bits, never sets them.</summary>
+        public int FreeSlots(Vector2[] pts, int count, float radius, int mask)
+        {
+            if (count <= 0 || mask == 0) return mask;
+            Vector2 lo = pts[0], hi = pts[0];
+            for (int i = 1; i < count; i++)
+            {
+                if (pts[i].x < lo.x) lo.x = pts[i].x; else if (pts[i].x > hi.x) hi.x = pts[i].x;
+                if (pts[i].y < lo.y) lo.y = pts[i].y; else if (pts[i].y > hi.y) hi.y = pts[i].y;
+            }
+            int x0 = Mathf.FloorToInt(lo.x / Cell) - 1, x1 = Mathf.FloorToInt(hi.x / Cell) + 1;
+            int z0 = Mathf.FloorToInt(lo.y / Cell) - 1, z1 = Mathf.FloorToInt(hi.y / Cell) + 1;
+            float r2 = radius * radius;
+            for (int cx = x0; cx <= x1; cx++)
+                for (int cz = z0; cz <= z1; cz++)
+                {
+                    if (!_grid.TryGetValue(Key(cx, cz), out var bucket)) continue;
+                    for (int k = 0; k < bucket.Count; k++)
+                    {
+                        var b = _boxes[bucket[k]];
+                        if (!b.Solid || b.KeepClear) continue;
+                        for (int i = 0; i < count; i++)
+                        {
+                            if ((mask & (1 << i)) == 0) continue;
+                            var d = pts[i] - b.C;
+                            float ox = Mathf.Max(0f, Mathf.Abs(Vector2.Dot(d, b.Ax)) - b.H.x);
+                            float oz = Mathf.Max(0f, Mathf.Abs(Vector2.Dot(d, b.Az)) - b.H.y);
+                            if (ox * ox + oz * oz <= r2) mask &= ~(1 << i);
+                        }
+                        if (mask == 0) return 0;
+                    }
+                }
+            return mask;
+        }
+
+        static readonly HashSet<int> SeenNear = new HashSet<int>();
+
+        /// <summary>Every solid prop standing within <paramref name="reach"/> of a
+        /// point - the furniture itself, not a yes or no. What a man under fire looks
+        /// over when he wants something to get behind (DemoCrews.CoverNear).
+        /// Reservations and paving are left out: a walker steps over those, and so
+        /// would a round.</summary>
+        public void SolidNear(Vector2 p, float reach, List<Box> into)
+        {
+            int x0 = Mathf.FloorToInt((p.x - reach) / Cell), x1 = Mathf.FloorToInt((p.x + reach) / Cell);
+            int z0 = Mathf.FloorToInt((p.y - reach) / Cell), z1 = Mathf.FloorToInt((p.y + reach) / Cell);
+            SeenNear.Clear();
+            for (int x = x0; x <= x1; x++)
+                for (int z = z0; z <= z1; z++)
+                {
+                    if (!_grid.TryGetValue(Key(x, z), out var bucket)) continue;
+                    for (int k = 0; k < bucket.Count; k++)
+                    {
+                        int id = bucket[k];
+                        if (!SeenNear.Add(id)) continue;   // one prop lies across cells
+                        var b = _boxes[id];
+                        if (!b.Solid || b.KeepClear) continue;
+                        var d = p - b.C;
+                        float ox = Mathf.Max(0f, Mathf.Abs(Vector2.Dot(d, b.Ax)) - b.H.x);
+                        float oz = Mathf.Max(0f, Mathf.Abs(Vector2.Dot(d, b.Az)) - b.H.y);
+                        if (ox * ox + oz * oz <= reach * reach) into.Add(b);
+                    }
+                }
         }
 
         // ------------------------------------------------------------- the grid

@@ -80,8 +80,12 @@ namespace RoadDemo
         SidewalkDressing _dressing;
         StreetProps _props;
 
-        /// <summary>What every prop laid has claimed - hand it to whatever walks
-        /// people down this street so they walk round the furniture.</summary>
+        /// <summary>What every prop laid has claimed. The kit puts it into
+        /// WalkObstacles itself (see the constructor), so people walk round this
+        /// street's furniture and men under fire can get behind it - it used to be
+        /// handed out by hand, and the four sites that make a kit never did, which
+        /// left every district and connector street furnished with props that nothing
+        /// in the game could see.</summary>
         public SidewalkPlan Plan => _plan;
 
         /// <summary>The benches laid, for anything that wants to seat people on them.</summary>
@@ -99,12 +103,13 @@ namespace RoadDemo
             _flora = new GameObject("Street Flora").transform;
             _flora.SetParent(root, false);
             _y = y;
+            if (!WalkObstacles.Props.Contains(_plan)) WalkObstacles.Props.Add(_plan);
         }
 
         public bool Load()
         {
 #if UNITY_EDITOR
-            GameObject L(string path) => UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            GameObject L(string path) => RoadDemo.DemoAssetLoad.Load<GameObject>(path);
             _roadHalf = L(CityEnv + "SM_Env_Road_YellowLines_02.prefab");
             _swStraight = L(CityEnv + "SM_Env_Sidewalk_Straight_01.prefab");
             _roadBare = L(CityEnv + "SM_Env_Road_Bare_01.prefab");

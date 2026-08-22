@@ -302,13 +302,22 @@ namespace RoadDemo
         /// <summary>Metres of the band [d0, d1] free ahead of noseS (heading this way)
         /// before the first claim in it, up to <paramref name="upTo"/>; negative when
         /// something in the band is already alongside (between tail and nose).</summary>
-        public float FreeAhead(RoadOccupant self, int heading, float noseS, float tailS, float d0, float d1, float upTo)
+        /// <param name="skipParked">Leave the parked out of it. For a car deciding
+        /// whether it may MOVE OFF, a parked car ahead is not a reason to wait: it is
+        /// never going anywhere, so waiting for it is waiting for ever. What it is
+        /// instead is a thing to go round once we are rolling, which the tactics handle
+        /// (Decide's behindParked). For every other question - a gap to change lane
+        /// into, room to overtake - a parked car is as solid as any other and this
+        /// stays false.</param>
+        public float FreeAhead(RoadOccupant self, int heading, float noseS, float tailS, float d0, float d1, float upTo,
+            bool skipParked = false)
         {
             float free = upTo;
             for (int i = 0; i < Occupants.Count; i++)
             {
                 var o = Occupants[i];
                 if (ReferenceEquals(o, self) || (self != null && ReferenceEquals(o.Who, self.Who))) continue;
+                if (skipParked && o.Parked) continue;
                 if (!o.Overlaps(d0, d1)) continue;
                 float near = heading > 0 ? o.S0 : o.S1;
                 float far = heading > 0 ? o.S1 : o.S0;

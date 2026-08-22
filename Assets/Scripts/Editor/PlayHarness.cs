@@ -220,6 +220,8 @@ namespace GangstersTools
                 if (t == typeof(float)) return float.Parse(v, NumberStyles.Float, CultureInfo.InvariantCulture);
                 if (t == typeof(bool)) return v == "1" || v.Equals("true", StringComparison.OrdinalIgnoreCase);
                 if (t == typeof(string)) return v;
+                // an enum by name, so a run can be told which gun the outfit carries
+                if (t.IsEnum) return Enum.Parse(t, v, true);
                 if (t == typeof(int[]))
                 {
                     if (v.Length == 0) return new int[0];

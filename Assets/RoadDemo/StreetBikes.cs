@@ -51,7 +51,7 @@ namespace RoadDemo
             foreach (var name in LivingCity.Gameplay.VehicleCatalog.PoliceMotorcycles)
             {
                 var path = LivingCity.Gameplay.VehicleCatalog.PoliceFleetFolder + name + ".prefab";
-                var body = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                var body = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                 if (body != null) return body;
             }
 #endif
@@ -67,7 +67,7 @@ namespace RoadDemo
                 var path = folder + name + ".prefab";
                 if (LivingCity.Gameplay.VehicleCatalog.IsBarred(path)) continue;
                 if (!marked && LivingCity.Gameplay.VehicleCatalog.IsMarkedService(path)) continue;
-                var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                var prefab = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                 if (prefab != null) return prefab;
             }
 #endif
@@ -179,6 +179,14 @@ namespace RoadDemo
             bike.Halt(hard: true);
             bike.SettleStand();
             StreetTraffic.Users.Add(bike);
+            // AND INTO THE LANE NET'S OCCUPANCY, which is the half that was missing.
+            // StreetTraffic.Users is what a driver BRAKES for; the occupancy is what
+            // CrewCars.KerbSlotNear reads when it hands out a length of kerb. Without
+            // this a stood bike was invisible to the parking, so a car was sent to park
+            // exactly where one stood, drove up to it, braked for it - and sat there for
+            // the rest of the run. A machine on its stand is furniture: it takes its
+            // ground the same way a parked car does.
+            net.AddStatic(bike);
             return bike;
         }
 

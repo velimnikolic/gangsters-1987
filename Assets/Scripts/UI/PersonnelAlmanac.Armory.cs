@@ -15,13 +15,25 @@ namespace LivingCity.UI
     /// </summary>
     public sealed partial class PersonnelAlmanac
     {
-        const float CatalogueTop = PageTop - 40f;
+        /// <summary>Below the heading AND below the shelf tapes.</summary>
+        const float CatalogueTop = PageTop - 40f - ShelfTabH - 8f;
         const float CatalogueRowH = 54f;
 
         /// <summary>The board is a window now, not a fixed list: the counter outgrew the
         /// half sheet the moment it stocked the street tier under the guns. Stops short
-        /// of StockHeadY so the two regions never touch.</summary>
-        const float CatalogueHeight = 512f;
+        /// of StockHeadY so the two regions never touch - and takes every pixel there is
+        /// between the two, because the counter has outgrown it AGAIN.
+        ///
+        /// Eleven listings at fifty-four pixels apiece with three headings over them is
+        /// seven hundred and eleven pixels of catalogue. At five hundred and twelve the
+        /// motorcycle shelf began at five hundred and eight - four pixels of its heading
+        /// showing and all three machines below the fold, on a board with nothing to say
+        /// it scrolled. The player's report was that the ledger would not sell him a
+        /// motorcycle, and he was right: it would not show him one. One shelf at a time
+        /// (see <see cref="shelf"/>), and the deepest of the three is three hundred and
+        /// five pixels, so nothing on the counter is below the fold any more - the
+        /// scroll under it stays for the day a shelf outgrows even this.</summary>
+        const float CatalogueHeight = 496f;
 
         const float StockHeadY = -660f;
         const float StockTop = -690f;
@@ -39,6 +51,20 @@ namespace LivingCity.UI
 
         /// <summary>The item a GIVE click is finding a holder for; -1 = browsing.</summary>
         int givePickerItemId = -1;
+
+        /// <summary>Which shelf of the counter is on the board: 0 guns, 1 cars,
+        /// 2 machines. The counter is eleven listings deep now and a listing is a
+        /// photograph, a name, a line of copy, a price and a tape - five hundred and
+        /// ninety-four pixels of merchandise on a page with five hundred and thirty-four
+        /// to give it. Printed as one list it ran past the foot of the board with the
+        /// motorcycles below the fold and nothing to say so, and the player's report was
+        /// that the ledger would not sell him one. A dealer's catalogue has a page per
+        /// shelf; so does this.</summary>
+        int shelf;
+
+        static readonly string[] ShelfNames = { "WEAPONS", "VEHICLES", "MOTORCYCLES", "EXPLOSIVES" };
+
+        const float ShelfTabH = 24f;
 
         string armoryNote = "";
 
@@ -106,7 +132,9 @@ namespace LivingCity.UI
                 Line(armoryContent, LedgerStyle.MonoItalic, 14f, LedgerStyle.RedPen, PageLeft,
                     PageTop - 26f, PageWidth, 18f, armoryNote);
 
+            BuildShelfTabs();
             BuildCatalogue(safe);
+            CatalogueEdges();
 
             if (givePickerItemId >= 0)
                 BuildGivePicker(roster);
@@ -114,21 +142,72 @@ namespace LivingCity.UI
                 BuildStock(roster);
         }
 
+        /// <summary>What a printed price list does when it runs past the foot of the
+        /// page: it says so. Drawn on the FIXED layer over the window's edges, never in
+        /// the scrolling content, so the words stay put while the board moves under
+        /// them - and only when there is something past that edge to reach.</summary>
+        void CatalogueEdges()
+        {
+            var height = catalogueContent.sizeDelta.y;
+            var hidden = height - CatalogueHeight;
+            if (hidden <= 1f)
+                return;
+
+            if (catalogueScroll > 1f)
+                Line(armoryContent, LedgerStyle.MonoItalic, 11.5f, LedgerStyle.InkDim,
+                    PageLeft, CatalogueTop + 15f, PageWidth, 14f,
+                    "\u25B4  more of the counter above",
+                    TextAlignmentOptions.MidlineRight);
+
+            if (catalogueScroll < hidden - 1f)
+                Line(armoryContent, LedgerStyle.MonoItalic, 11.5f, LedgerStyle.InkDim,
+                    PageLeft, CatalogueTop - CatalogueHeight - 1f, PageWidth, 14f,
+                    "\u25BE  more of the counter below - roll the wheel over it",
+                    TextAlignmentOptions.MidlineRight);
+        }
+
         /// <summary>The board's rows live in the scrolling window, so every x here is
         /// measured from the window's own left edge, not the page's.</summary>
         void BuildCatalogue(int safe)
         {
-            var y = 0f;
-            y = Heading(catalogueContent, 0f, y, PageWidth, "Catalogue  ·  weapons", 13f);
-            foreach (var item in Outfit.ArmoryCatalog.Weapons)
-                y = CatalogueRow(item, safe, y);
+            var stock = shelf == 1 ? Outfit.ArmoryCatalog.Vehicles
+                      : shelf == 2 ? Outfit.ArmoryCatalog.Motorcycles
+                      : shelf == 3 ? Outfit.ArmoryCatalog.Explosives
+                      : Outfit.ArmoryCatalog.Weapons;
 
-            y -= 6f;
-            y = Heading(catalogueContent, 0f, y, PageWidth, "Catalogue  ·  vehicles", 13f);
-            foreach (var item in Outfit.ArmoryCatalog.Vehicles)
+            var y = 0f;
+            y = Heading(catalogueContent, 0f, y, PageWidth,
+                "Catalogue  ·  " + ShelfNames[shelf].ToLowerInvariant(), 13f);
+            foreach (var item in stock)
                 y = CatalogueRow(item, safe, y);
 
             SizeCatalogueContent(-y);
+        }
+
+        /// <summary>The three tapes over the board that turn to a shelf. On the FIXED
+        /// layer, above the window, so they never scroll away from the thing they
+        /// select.</summary>
+        void BuildShelfTabs()
+        {
+            var width = 148f;
+            for (var i = 0; i < ShelfNames.Length; i++)
+            {
+                var pick = i;
+                var tape = Tape(armoryContent, ShelfNames[i],
+                    PageLeft + i * (width + 8f), CatalogueTop + ShelfTabH + 4f,
+                    width, ShelfTabH, () =>
+                    {
+                        if (shelf == pick)
+                            return;
+                        shelf = pick;
+                        catalogueScroll = 0f;   // a new shelf opens at its own top
+                        dirty = true;
+                    }, size: 12f);
+
+                // the shelf you are looking at is the one that is not faded
+                if (i != shelf)
+                    ButtonOf(tape).targetGraphic.color = new Color(1f, 1f, 1f, 0.45f);
+            }
         }
 
         float CatalogueRow(Outfit.ArmoryItem item, int safe, float y)
@@ -147,7 +226,8 @@ namespace LivingCity.UI
             raw.raycastTarget = false;
             raw.enabled = false;
             raw.uvRect = new Rect(0f, 0.25f, 1f, 0.5f);
-            var vehicle = item.Kind == EquipmentKind.Vehicle;
+            var vehicle = item.Kind == EquipmentKind.Vehicle ||
+                          item.Kind == EquipmentKind.Motorcycle;
             var model = vehicle
                 ? PortraitStudio.FindVehiclePrefab(
                     PortraitStudio.VehicleModelFor(item.DisplayName))

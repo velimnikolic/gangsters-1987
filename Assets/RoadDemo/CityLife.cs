@@ -11,6 +11,13 @@ namespace RoadDemo
     {
         public Vector3 Pos;               // the doorstep, on the facade plane
         public Vector3 Outward;           // facade normal, toward the street
+
+        /// <summary>The bake this door is cut into - the block or the single building.
+        /// A door is the only handle the street has on a BUILDING (the sidewalk graph
+        /// knows pavement, the crowd knows doors), so a family's front premises is
+        /// chosen as a door and the card opens over whatever this points at. Null for a
+        /// door nobody claimed an owner for.</summary>
+        public GameObject Building;
         public PedLink LinkFwd, LinkBack; // the sidewalk stretch fronting it
         public float EntryT;              // along LinkFwd
         public Vector3 EntryPos;

@@ -17,18 +17,50 @@ namespace LivingCity.UI
         const float FamilyCardH = 104f;
         const float FamilyPitch = 116f;
 
+        /// <summary>Where the card window starts: under the boss's own line, which is
+        /// the page's yardstick and never scrolls away from the rivals it is there to be
+        /// compared against.</summary>
+        const float FamiliesTop = -226f;
+
+        /// <summary>Four cards and a sliver of the fifth - the window keeps the legend
+        /// at the foot of the page in view, so what a stance DOES is readable while the
+        /// player is turning one. Twenty families is two thousand three hundred pixels
+        /// of card on a nine hundred pixel sheet; the dossier is a folder, and a folder
+        /// is leafed through.</summary>
+        const float FamiliesHeight = 484f;
+
+        const float LegendTop = FamiliesTop - FamiliesHeight - 12f;
+
         RectTransform diplomacyContent;
+        RectTransform familiesViewport;
+        RectTransform familiesContent;
+        float familiesScroll;
 
         void BuildDiplomacyPage(RectTransform sheet)
         {
             var root = NewPageRoot(sheet, LedgerPage.Diplomacy);
             diplomacyContent = NewRect("Families", root);
             Stretch(diplomacyContent);
+
+            // The rivals live in a window of their own - the armory counter's idiom -
+            // so a family added to the catalog never pushes the legend off the sheet.
+            familiesViewport = NewRect("Dossier", root);
+            PlaceTopLeft(familiesViewport, PageLeft, FamiliesTop, PageWidth, FamiliesHeight);
+            familiesViewport.gameObject.AddComponent<UnityEngine.UI.RectMask2D>();
+
+            familiesContent = NewRect("Cards", familiesViewport);
+            familiesContent.anchorMin = new Vector2(0f, 1f);
+            familiesContent.anchorMax = new Vector2(1f, 1f);
+            familiesContent.pivot = new Vector2(0f, 1f);
+            familiesContent.anchoredPosition = Vector2.zero;
+            familiesContent.sizeDelta = new Vector2(0f, FamiliesHeight);
         }
 
         void RebuildDiplomacy()
         {
             foreach (Transform old in diplomacyContent)
+                Destroy(old.gameObject);
+            foreach (Transform old in familiesContent)
                 Destroy(old.gameObject);
 
             var heading = Line(diplomacyContent, LedgerStyle.Type, 18f, LedgerStyle.Ink,
@@ -80,20 +112,52 @@ namespace LivingCity.UI
                 you.characterSpacing = 1f;
                 Line(diplomacyContent, LedgerStyle.Mono, 14.5f, LedgerStyle.InkDim,
                     PageLeft + 106f, y - 26f, 400f, 20f, "Boss: " + Gangs.GangCatalog.BossName);
+
+                // The don's own door, on the same line the rivals' cards carry it.
+                // A player who cannot read off his own address has to hunt the city for
+                // premises he supposedly owns - the map's gold square is a dot, not a
+                // street name.
+                var mine = Gangs.GangRegistry.FrontBusinessOf(gang.Id);
+                var myBooks = Gangs.GangRegistry.FrontBooksOf(gang.Id);
+                Line(diplomacyContent, LedgerStyle.Mono, 14.5f, LedgerStyle.InkDim,
+                    PageLeft + 106f, y - 48f, 520f, 20f,
+                    mine ? "Front: " + mine.BusinessName
+                    : myBooks != null
+                        ? "Front: " + myBooks.Sign +
+                          (string.IsNullOrEmpty(myBooks.Address) ? "" : ", " + myBooks.Address)
+                        : "Front: none of your own yet");
                 Rule(diplomacyContent, PageLeft, y - 90f, PageWidth, LedgerStyle.Ink);
                 y -= 104f;
             }
 
+            // The rivals, in the window: their y is measured from ITS top edge, not the
+            // page's, so scrolling is one anchoredPosition and never a re-layout.
+            var card = 0f;
+            var families = 0;
             foreach (var gang in gangs)
             {
                 if (gang.IsPlayer)
                     continue;
-                y = FamilyCard(gang, y);
+                card = FamilyCard(gang, card);
+                families++;
             }
 
+            SizeFamiliesContent(-card);
+
+            // The window has no edge of its own on the paper, so the count says what is
+            // in the folder and the wheel says how to reach it. Printed once, on the
+            // fixed layer: a rebuild per wheel notch would re-photograph twenty capos.
+            if (families > 0)
+                Line(diplomacyContent, LedgerStyle.MonoItalic, 12.5f, LedgerStyle.InkDim,
+                    PageLeft, FamiliesTop + 20f, PageWidth, 18f,
+                    families + " famil" + (families == 1 ? "y" : "ies") +
+                    " known" + (families * FamilyPitch > FamiliesHeight
+                        ? "  ·  roll the wheel over the cards"
+                        : ""),
+                    TextAlignmentOptions.MidlineRight);
+
             // The legend, under the families - the page must never be the opaque system.
-            var legendTop = Mathf.Min(y - 6f, PageBottom + 250f);
-            var legendY = Heading(diplomacyContent, PageLeft, legendTop, PageWidth,
+            var legendY = Heading(diplomacyContent, PageLeft, LegendTop, PageWidth,
                 "What a stance does", 12.5f);
             Paragraph(diplomacyContent, LedgerStyle.Mono, 12.5f, LedgerStyle.InkDim, PageLeft,
                 legendY, PageWidth, 216f,
@@ -110,12 +174,19 @@ namespace LivingCity.UI
         {
             // Square on the page: a tilted card turns every hairline on it into a
             // staircase. The Polaroid pinned to it carries the crookedness instead.
-            var card = Card("Family " + gang.Name, diplomacyContent, PageLeft, y, PageWidth,
+            var card = Card("Family " + gang.Name, familiesContent, 0f, y, PageWidth,
                 FamilyCardH, LedgerStyle.Card);
 
             // The face of the family: its capo, wearing the model his soldiers
             // answer to on the street, pinned top-left.
+            // A family is as many crews as it has capos, and the first of them is the
+            // name the dossier files it under. The count stands beside him because "run
+            // by one man" and "run by three" are different mobs to walk into.
             var leader = gang.Members.Count > 0 ? gang.Members[0].FullName : "";
+            var capos = 0;
+            foreach (var man in gang.Members)
+                if (man.Lieutenant)
+                    capos++;
             var raw = Polaroid(card, 8f, -8f, 60f,
                 InitialsOf(leader.Length > 0 ? leader : gang.Name),
                 gang.Id % 2 == 0 ? -4f : 3f, out _);
@@ -128,12 +199,21 @@ namespace LivingCity.UI
                 gang.Name.ToUpperInvariant());
             name.characterSpacing = 1f;
 
-            Line(card, LedgerStyle.Mono, 14.5f, LedgerStyle.Ink, 118f, -34f, 330f, 20f,
-                leader.Length > 0 ? "Run by " + leader : "Run by persons unknown");
+            Line(card, LedgerStyle.Mono, 14.5f, LedgerStyle.Ink, 118f, -34f, 350f, 20f,
+                (leader.Length > 0 ? "Run by " + leader : "Run by persons unknown") +
+                (capos > 1 ? "  \u00B7  " + capos + " capos" : ""));
 
+            // What the family operates behind. The generated city binds a business
+            // marker; the street city binds only the books - either one names the door,
+            // and "unknown" is kept for a family the boss has not placed at all.
             var front = Gangs.GangRegistry.FrontBusinessOf(gang.Id);
-            Line(card, LedgerStyle.Mono, 14f, LedgerStyle.InkDim, 118f, -54f, 330f, 20f,
-                front ? "Front: " + front.BusinessName : "Front: unknown");
+            var books = Gangs.GangRegistry.FrontBooksOf(gang.Id);
+            Line(card, LedgerStyle.Mono, 14f, LedgerStyle.InkDim, 118f, -54f, 350f, 20f,
+                front ? "Front: " + front.BusinessName
+                : books != null
+                    ? "Front: " + books.Sign +
+                      (string.IsNullOrEmpty(books.Address) ? "" : ", " + books.Address)
+                    : "Front: unknown");
 
             var held = Outfit.Turf.CountOf(holdings, gang.Id);
             Line(card, LedgerStyle.Mono, 14f, LedgerStyle.InkDim, 118f, -74f, 340f, 20f,
@@ -172,6 +252,18 @@ namespace LivingCity.UI
             }
 
             return y - FamilyPitch;
+        }
+
+        /// <summary>Height the cards actually came to, and the scroll held inside it -
+        /// the armory counter's SizeCatalogueContent, for the same reason: the position
+        /// must survive a rebuild, or every ownership change would throw the player back
+        /// to the top of the folder.</summary>
+        void SizeFamiliesContent(float height)
+        {
+            familiesContent.sizeDelta = new Vector2(0f, Mathf.Max(FamiliesHeight, height));
+            var maxScroll = Mathf.Max(0f, familiesContent.sizeDelta.y - FamiliesHeight);
+            familiesScroll = Mathf.Clamp(familiesScroll, 0f, maxScroll);
+            familiesContent.anchoredPosition = new Vector2(0f, familiesScroll);
         }
 
         /// <summary>The family's map colour, as the coloured dot sticker an office

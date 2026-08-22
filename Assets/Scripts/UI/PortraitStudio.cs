@@ -179,7 +179,7 @@ namespace LivingCity.UI
         /// only: a build has no AssetDatabase and keeps the initials, which is what an
         /// empty database deserves. Logged once per name so the gap stays visible.
         /// </summary>
-        static GameObject EditorFallback(string prefabName)
+        static GameObject EditorFallback(string prefabName, bool vehicle = false)
         {
 #if UNITY_EDITOR
             if (string.IsNullOrEmpty(prefabName))
@@ -192,12 +192,20 @@ namespace LivingCity.UI
             {
                 if (candidate == null)
                     continue;
-                foreach (var guid in UnityEditor.AssetDatabase.FindAssets(candidate + " t:Prefab"))
+                foreach (var guid in RoadDemo.DemoAssetLoad.Find(candidate + " t:Prefab"))
                 {
                     var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
                     if (System.IO.Path.GetFileNameWithoutExtension(path) != candidate)
                         continue;
-                    var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                    // A name alone is not enough to pick a body with. Two packs ship a
+                    // "SM_Veh_Motorbike_01" and one of them is the police pack's, where
+                    // EVERY body wears a livery and the names give nothing away
+                    // (VehicleCatalog.PoliceFleetFolder) - so the armory counter would
+                    // have photographed a patrol machine and sold it as the outfit's.
+                    // The folder is the rule, exactly as it is for the street scans.
+                    if (vehicle && Gameplay.VehicleCatalog.IsMarkedService(path))
+                        continue;
+                    var prefab = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                     if (!prefab)
                         continue;
                     WarnOnce("fallback:" + prefabName, "[PortraitStudio] '" + prefabName +
@@ -214,10 +222,19 @@ namespace LivingCity.UI
         /// scripts to strip), traffic bodies as the fallback.</summary>
         public static GameObject FindVehiclePrefab(string prefabName)
         {
+            // The two-wheelers first, and out of a table of their own: no scan in the
+            // project will put one in the PrefabDatabase (every one of them denies
+            // "bike", "moped" and "scooter" by name), so asking the database for a
+            // motorcycle can only ever fail into the editor fallback - which a build
+            // does not have.
+            var bike = LedgerModelSet.MotorcycleNamed(prefabName);
+            if (bike)
+                return bike;
+
             var prefabs = Database();
             if (!prefabs)
             {
-                var stray = EditorFallback(prefabName);
+                var stray = EditorFallback(prefabName, vehicle: true);
                 if (stray)
                     return stray;
                 WarnOnce("vehicle:" + prefabName, "[PortraitStudio] No CityBuilder in " +
@@ -234,7 +251,7 @@ namespace LivingCity.UI
                 found = prefabs.policeCarPrefab;
 
             if (!found)
-                found = EditorFallback(prefabName);
+                found = EditorFallback(prefabName, vehicle: true);
             if (!found)
                 WarnOnce("vehicle:" + prefabName, "[PortraitStudio] '" + prefabName +
                     "' is not in the PrefabDatabase car groups - no photo.");
@@ -256,6 +273,12 @@ namespace LivingCity.UI
             "Jalopy" => "SM_Veh_Pickup_01",
             "Sedan" => "SM_Veh_Sedan_01",
             "Panel Van" => "SM_Veh_Van_01",
+            // The three two-wheelers, Palm City's. Named exactly, and never by a
+            // substring: "Motorbike" also names the police pack's liveried tourer, and
+            // the outfit does not ride one of those.
+            "Motorbike" => "SM_Veh_Motorbike_01",
+            "Moped" => "SM_Veh_Moped_01",
+            "Scooter" => "SM_Veh_Scooter_01",
             _ => "SM_Veh_Sedan_01",
         };
 

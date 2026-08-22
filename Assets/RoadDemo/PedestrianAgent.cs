@@ -44,6 +44,10 @@ namespace RoadDemo
         /// it is free over the WHOLE interval - sampled every quarter metre, so a
         /// lamp post or a parking meter between two stations is seen and not
         /// walked through. Done once at build; the crowd pays nothing for it.</summary>
+        // one rank of lateral lines, reused: SampleClearance runs at build only,
+        // and on one thread
+        static readonly Vector2[] _rank = new Vector2[Slots];
+
         public void SampleClearance(SidewalkPlan plan, float radius)
         {
             var span = To.Pos - From.Pos;
@@ -64,12 +68,18 @@ namespace RoadDemo
                 for (float u = from; u <= to + 0.001f; u += Sub)
                 {
                     var at = From.Pos + dir * Mathf.Min(u, len);
+                    // the whole rank at once. Asked line by line this was seventeen
+                    // separate walks of the plan's grid over four metres of ground that
+                    // buckets the same either way - and at four samples to the metre over
+                    // every stretch in the city it was the single dearest thing in the
+                    // load. FreeSlots walks the union of those windows once, which is the
+                    // same boxes and so the same answer.
                     for (int k = 0; k < Slots; k++)
                     {
-                        if ((mask & (1 << k)) == 0) continue;
                         var p = at + right * SlotLateral(k);
-                        if (plan.Occupied(new Vector2(p.x, p.z), radius)) mask &= ~(1 << k);
+                        _rank[k] = new Vector2(p.x, p.z);
                     }
+                    mask = plan.FreeSlots(_rank, Slots, radius, mask);
                     if (mask == 0) break;
                 }
                 free[s] = mask;
@@ -379,7 +389,14 @@ namespace RoadDemo
             var at = Tf.position;
             float moved = _traceStarted ? Vector3.Distance(at, _tracePrev) : 0f;
             float pace = dt > 1e-4f ? moved / dt : 0f;
-            if (_traceStarted && moved < 0.02f && !_waiting) _traceStill += dt; else { _traceStill = 0f; _traceSaid = 0f; }
+            // STILL means still WHILE TRYING TO GET SOMEWHERE. A crew man stands on his
+            // corner for half a minute because that is what he was left doing, and the
+            // clock used to run the whole time - so the instant an order reached him he
+            // was reported "still for 22 seconds" and the soak counted four thousand
+            // stalls that were nothing but men being given orders. The clock now runs
+            // only while he is under one, which is what the fault was always about.
+            if (_traceStarted && moved < 0.02f && !_waiting && Moving) _traceStill += dt;
+            else { _traceStill = 0f; _traceSaid = 0f; }
             _tracePrev = at;
             _traceStarted = true;
 
@@ -488,8 +505,17 @@ namespace RoadDemo
                         float weight = 1f - dist / Notice;
 
                         // step off him - and dead ahead, step to the right, as
-                        // everybody else on this pavement is doing
-                        _push += (Mathf.Abs(side) < 0.12f ? 1f : -Mathf.Sign(side)) * weight * 0.8f;
+                        // everybody else on this pavement is doing. NOT between
+                        // CREWMATES: the herd's same-way bias marched a bunched crew
+                        // onto one line (the dawdle packs them close, every push
+                        // says "right", the dealt lanes collapse into single file) -
+                        // mates split both ways instead, and lean on each other only
+                        // half as hard, so the pack stays a pack.
+                        bool mate = Tag == "crew" && other.Tag == "crew";
+                        float steer = Mathf.Abs(side) < 0.12f
+                            ? (mate ? ((Id & 1) == 0 ? 1f : -1f) : 1f)
+                            : -Mathf.Sign(side);
+                        _push += steer * weight * (mate ? 0.4f : 0.8f);
 
                         if (front > 0.05f && Mathf.Abs(side) < 0.42f)
                             _hold = Mathf.Min(_hold, Mathf.InverseLerp(Touch, Notice, dist));
@@ -542,6 +568,12 @@ namespace RoadDemo
         /// a crew sets it by hand so its men do not all share one line.</summary>
         protected float Lateral { get => _lateral; set => _lateral = value; }
 
+        /// <summary>The line he WANTS across the pavement - everybody's is dealt at
+        /// random on the right (Setup), which is why a crew sent down a street used
+        /// to thread it in single file: five men, five nearly identical lanes, one
+        /// queue. A derived agent deals its men distinct lanes instead.</summary>
+        protected float Lane { get => _lane; set => _lane = value; }
+
         /// <summary>Stood at a crossing waiting on the light (t = 0 on a gated link).</summary>
         protected bool Waiting { get => _waiting; set => _waiting = value; }
 
@@ -551,6 +583,29 @@ namespace RoadDemo
         {
             _waiting = false;
             PickNext(node, keepAwayFrom: null);
+        }
+
+        /// <summary>Keep his feet where they are across a change of link. Move builds
+        /// the position from metre-plus-lateral in the LINK'S OWN frame, and that
+        /// frame turns with every corner and flips with every turn-round - so a
+        /// lateral carried as a bare number mirrors the walker across the walk's
+        /// centre line the frame the link changes: a two-lane man jumps almost four
+        /// metres, which the player reads as a respawn. Re-reading metre and lateral
+        /// off his true position makes the change of frame invisible; the lane he
+        /// WANTS is untouched and he eases back onto it as he walks.</summary>
+        protected void CarrySeat()
+        {
+            if (_link == null || Tf == null) return;
+            var ab = _link.To.Pos - _link.From.Pos;
+            ab.y = 0f;
+            float len = ab.magnitude;
+            if (len < 0.01f) return;
+            var dirN = ab / len;
+            var rel = Tf.position - _link.From.Pos;
+            rel.y = 0f;
+            _t = Mathf.Clamp(Vector3.Dot(rel, dirN), 0f, _link.Length);
+            _lateral = Mathf.Clamp(
+                Vector3.Dot(rel, new Vector3(dirN.z, 0f, -dirN.x)), -2.6f, 2.6f);
         }
 
         /// <summary>Select the pose the blend drifts toward; a pose with no clip is refused.</summary>
@@ -657,10 +712,10 @@ namespace RoadDemo
             for (int k = 0; k < links.Count; k++)
                 if (links[k].To == _link.From) { back = links[k]; break; }
             if (back == null) return false;
-            _t = Mathf.Clamp(_link.Length - _t, 0f, back.Length);
             _link = back;
             _cameFrom = back.From;
             _waiting = false;
+            CarrySeat();   // the reverse frame flips the lateral's axis; his feet stay
             return true;
         }
 
@@ -684,9 +739,15 @@ namespace RoadDemo
             TickBlend(dt);
         }
 
+        /// <summary>A gearing on the walker's pace, 1 by default. A crew man ahead of
+        /// his boss walks at a fraction of it (the dawdle) - SLOWED, never stopped:
+        /// a man stopped dead on the pavement is a bollard his own boss brakes
+        /// behind, and the whole crew then crawls at a quarter pace (measured).</summary>
+        protected float PaceScale = 1f;
+
         void Move(float dt)
         {
-            float speed = (_link.Gated ? Speed * CrossHustle : Speed) * _hold;
+            float speed = (_link.Gated ? Speed * CrossHustle : Speed) * _hold * PaceScale;
             _t += speed * dt;
             if (_t >= _link.Length)
             {
@@ -700,6 +761,7 @@ namespace RoadDemo
             float f = _t / _link.Length;
             Vector3 pos = Vector3.Lerp(_link.From.Pos, _link.To.Pos, f);
             if (_link.Gated) pos.y -= 0.08f * Mathf.Sin(Mathf.PI * f); // dip onto the asphalt
+
             Vector3 dir = _link.To.Pos - _link.From.Pos;
             dir.y = 0f;
             if (dir.sqrMagnitude > 1e-4f)
@@ -718,10 +780,33 @@ namespace RoadDemo
                 pos += new Vector3(dirN.z, 0f, -dirN.x) * _lateral;
                 var rot = Quaternion.Slerp(
                     Tf.rotation, Quaternion.LookRotation(dirN), dt <= 0f ? 1f : 8f * dt);
-                Tf.SetPositionAndRotation(pos, rot);
+                Tf.SetPositionAndRotation(HoldStep(pos, dt, speed), rot);
                 return;
             }
-            Tf.position = pos;
+            Tf.position = HoldStep(pos, dt, speed);
+        }
+
+        /// <summary>THE GRAPH NEVER TELEPORTS A MAN. His position is rebuilt from
+        /// metre-plus-lateral every frame, and whenever his true feet do not fit
+        /// that point - reseated off a stale link, a lateral past the clamp, slid
+        /// aside for a chat - writing it verbatim snapped him metres in one frame
+        /// (6.9 m, measured, read by the player as a respawn). The write is capped
+        /// at a stride instead: he WALKS onto his line, a touch quicker than his
+        /// pace so he always catches it. Capped on the FINISHED point, lateral and
+        /// all - capping the centre-line point and adding the lateral after it fed
+        /// the lateral back in every frame and launched men out of the city at
+        /// twenty-two metres a second. dt = 0 is the one placement that must snap
+        /// (Init seating a fresh walker on his stretch).</summary>
+        Vector3 HoldStep(Vector3 want, float dt, float speed)
+        {
+            if (dt <= 0f) return want;
+            var to = want - Tf.position;
+            to.y = 0f;
+            float cap = (speed + 2f) * dt;
+            float off = to.magnitude;
+            if (off <= cap) return want;
+            var held = Tf.position + to * (cap / off);
+            return new Vector3(held.x, want.y, held.z);
         }
 
         /// Called once per node reached; return false to keep the agent off the
@@ -735,6 +820,7 @@ namespace RoadDemo
 
             _link = pick;
             _t = 0f;
+            CarrySeat();   // the new stretch's frame, same feet - no snap at the corner
             if (!MayEnter(pick))
             {
                 _waiting = true;

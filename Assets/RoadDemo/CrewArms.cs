@@ -101,6 +101,21 @@ namespace RoadDemo
             _ => new Stats { Range = 10f, Interval = 1.05f, Damage = 1, Accuracy = 0.6f, Loudness = 45f },
         };
 
+        /// <summary>The reach of the longest gun the armory sells - the rifle's, a street
+        /// away. A grenade must never be lobbed further than a man can shoot, so the bomb
+        /// throw range is pinned to this rather than carrying a number of its own.</summary>
+        public static float LongestReach()
+        {
+            float best = 0f;
+            foreach (var kind in new[]
+            {
+                EquipmentKind.Pistol, EquipmentKind.TwinPistols, EquipmentKind.Shotgun,
+                EquipmentKind.MachinePistol, EquipmentKind.Rifle, EquipmentKind.TommyGun,
+            })
+                best = Mathf.Max(best, StatsFor(kind).Range);
+            return best;
+        }
+
         // ------------------------------------------------------------- the fist
 
         /// <summary>Puts the gun in this rig's right hand. Returns the gun, or null when
@@ -159,6 +174,30 @@ namespace RoadDemo
         /// same problem as a gun in a hand - a part of the body turned to a thing in
         /// the world, in a pose nobody authored. Falls back to the bone's rest rotation when the avatar
         /// keeps no skeleton (a hand-made avatar), which is the honest best guess.</summary>
+        /// <summary>THE PELVIS, and not whatever the avatar calls the pelvis.
+        ///
+        /// `GetBoneTransform(HumanBodyBones.Hips)` is only as good as the rig's own
+        /// mapping, and one of the packs gets it wrong: PalmCityCharacters.fbx maps
+        /// `boneName: Root` - the bone down between the feet - onto `humanName: Hips`.
+        /// (PolygonGangWarfare leaves `human: []` and lets Unity auto-map, which picks
+        /// the bone actually called Hips.) Anything that SEATS a man by his pelvis
+        /// therefore seats a PalmCity body by his feet, and he floats a pelvis-height
+        /// above wherever he was meant to sit - 0.835 m on the motorcycle, measured off
+        /// the baked sitting scene.
+        ///
+        /// The spine settles it. A pelvis is the spine's parent in every humanoid rig
+        /// ever exported, and the Spine mapping is right in both packs, so where the two
+        /// answers disagree the spine's is the true one. Rig-agnostic, no table of pack
+        /// names, and a no-op on every rig that was mapped properly.</summary>
+        public static Transform Pelvis(Animator animator)
+        {
+            if (animator == null || animator.avatar == null || !animator.avatar.isHuman) return null;
+            var hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+            var spine = animator.GetBoneTransform(HumanBodyBones.Spine);
+            if (spine != null && spine.parent != null && spine.parent != hips) return spine.parent;
+            return hips;
+        }
+
         public static Quaternion TPoseRotation(Animator animator, Transform bone)
         {
             var avatar = animator.avatar;

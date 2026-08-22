@@ -32,6 +32,8 @@ namespace RoadDemo
             root = null;
             splats.Clear();
             blocks.Clear();
+            holeMaterial = null;
+            holes.Clear();
         }
 
         // ------------------------------------------------------------------ ground
@@ -213,6 +215,57 @@ namespace RoadDemo
         /// <summary>Draw the outline where this man lies - the figure's head end toward
         /// his head, its feet toward his feet - and hand back the object, so the body
         /// can go and the chalk stay.</summary>
+        // ------------------------------------------------------------------ tin
+
+        static Material holeMaterial;
+        static readonly Color HoleInk = new Color(0.06f, 0.06f, 0.07f, 1f);
+        const int MaxHoles = 160;
+        static readonly Queue<GameObject> holes = new Queue<GameObject>();
+
+        /// <summary>A round that went into a car's tin instead of the man behind it.
+        ///
+        /// PARENTED TO THE BODY, unlike everything else in here: blood and chalk belong
+        /// to the road and stay where the road is, and a hole belongs to the car and
+        /// goes where the car goes. A flat dark quad stood a centimetre off the panel,
+        /// facing out the way the round came in, and pooled like the splats so a long
+        /// fight cannot fill a scene with them.</summary>
+        public static void Hole(Transform body, Vector3 at, Vector3 facing)
+        {
+            if (body == null) return;
+            if (holeMaterial == null)
+            {
+                var shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
+                if (shader == null) return;
+                holeMaterial = new Material(shader) { name = "Bullet Hole" };
+                holeMaterial.SetColor(BaseColorId, HoleInk);
+                holeMaterial.SetColor(ColorId, HoleInk);
+            }
+
+            var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            quad.name = "Hole";
+            var collider = quad.GetComponent<Collider>();
+            if (collider != null) Object.Destroy(collider);
+            var renderer = quad.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = holeMaterial;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+
+            var tf = quad.transform;
+            tf.SetParent(body, worldPositionStays: true);
+            tf.position = at + facing.normalized * 0.012f;
+            tf.rotation = Quaternion.LookRotation(facing.normalized, Vector3.up);
+            float size = Random.Range(0.055f, 0.085f);
+            tf.localScale = new Vector3(size, size, size);
+            quad.layer = body.gameObject.layer;
+
+            holes.Enqueue(quad);
+            while (holes.Count > MaxHoles)
+            {
+                var old = holes.Dequeue();
+                if (old != null) Object.Destroy(old);
+            }
+        }
+
         public static GameObject Chalk(PedestrianAgent man, float groundY)
         {
             if (man == null || man.Tf == null) return null;
@@ -229,7 +282,7 @@ namespace RoadDemo
             // where he lies: head and hips off the rig if it has them, else his forward
             var animator = man.Tf.GetComponentInChildren<Animator>();
             var head = animator ? animator.GetBoneTransform(HumanBodyBones.Head) : null;
-            var hips = animator ? animator.GetBoneTransform(HumanBodyBones.Hips) : null;
+            var hips = CrewArms.Pelvis(animator);
             Vector3 centre, up;
             if (head != null && hips != null)
             {

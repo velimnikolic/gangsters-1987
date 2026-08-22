@@ -57,8 +57,8 @@ namespace LivingCity.CameraRig
         {
             cam = GetComponent<Camera>();
 #if UNITY_EDITOR
-            panelTex = AssetDatabase.LoadAssetAtPath<Texture2D>(PanelSprite);
-            tailTex = AssetDatabase.LoadAssetAtPath<Texture2D>(TailSprite);
+            panelTex = RoadDemo.DemoAssetLoad.Load<Texture2D>(PanelSprite);
+            tailTex = RoadDemo.DemoAssetLoad.Load<Texture2D>(TailSprite);
 #endif
         }
 

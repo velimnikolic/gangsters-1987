@@ -46,6 +46,50 @@ namespace RoadDemo
         /// </summary>
         public static int Version;
 
+        /// <summary>The ground that is the CITY, rectangle by rectangle: the street
+        /// grid and every quarter hung off it. This is a fence, not an obstacle - the
+        /// walls above stop a man walking THROUGH something, and this stops him walking
+        /// OUT of the town altogether, off into the wilderness and down to the sea,
+        /// which past the last road is all there is. Only whoever chooses where to go
+        /// asks it; the crowd never leaves the graph, so the graph already answers for
+        /// them. Empty means no fence was ever set - a lab scene with one block in it -
+        /// and then everywhere is in, which is the only sensible reading of "nobody said
+        /// where the town ends".</summary>
+        public static readonly List<Rect> City = new List<Rect>();
+
+        /// <summary>Is this ground the city's at all?</summary>
+        public static bool InCity(Vector3 p)
+        {
+            if (City.Count == 0) return true;
+            for (int i = 0; i < City.Count; i++)
+            {
+                var r = City[i];
+                if (p.x >= r.xMin && p.x <= r.xMax && p.z >= r.yMin && p.z <= r.yMax) return true;
+            }
+            return false;
+        }
+
+        /// <summary>The nearest ground that IS the city's - a point ordered out in the
+        /// wilderness (a click past the last street, a spot reckoned off the hem) is
+        /// pulled back to the fence, half a metre inside it so the man stood there is
+        /// stood ON the floor and not balanced on its edge.</summary>
+        public static Vector3 ClampToCity(Vector3 p)
+        {
+            if (City.Count == 0 || InCity(p)) return p;
+            var best = p;
+            float bestD = float.MaxValue;
+            for (int i = 0; i < City.Count; i++)
+            {
+                var r = City[i];
+                var q = new Vector3(
+                    Mathf.Clamp(p.x, r.xMin + 0.5f, r.xMax - 0.5f), p.y,
+                    Mathf.Clamp(p.z, r.yMin + 0.5f, r.yMax - 0.5f));
+                float d = (q.x - p.x) * (q.x - p.x) + (q.z - p.z) * (q.z - p.z);
+                if (d < bestD) { bestD = d; best = q; }
+            }
+            return best;
+        }
+
         static void Grew(float xMin, float xMax, float zMin, float zMax)
         {
             Min.x = Mathf.Min(Min.x, xMin); Min.y = Mathf.Min(Min.y, zMin);
@@ -59,6 +103,7 @@ namespace RoadDemo
             Props.Clear();
             _solids = new SidewalkPlan();
             Near.Clear();
+            City.Clear();
             Min = new Vector2(float.MaxValue, float.MaxValue);
             Max = new Vector2(float.MinValue, float.MinValue);
             Version++;
@@ -138,11 +183,13 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ asking
 
-        static bool OnGround(Vector2 q, float radius)
+        static bool OnGround(Vector2 q, float radius) => OnGround(q, radius, 0f);
+
+        static bool OnGround(Vector2 q, float radius, float tallBerth)
         {
-            if (_solids.Occupied(q, radius)) return true;
+            if (_solids.Occupied(q, radius, tallBerth)) return true;
             for (int i = 0; i < Props.Count; i++)
-                if (Props[i].Occupied(q, radius)) return true;
+                if (Props[i].Occupied(q, radius, tallBerth)) return true;
             return false;
         }
 
@@ -162,6 +209,106 @@ namespace RoadDemo
             var q = new Vector2(p.x, p.z);
             GatherRoad(q, radius);
             return OnGround(q, radius) || InRoad(q, radius);
+        }
+
+        /// <summary>How wide a berth a man being STOOD somewhere gives a tall prop,
+        /// over and above his own shoulders. A palm's footprint is its trunk, because
+        /// that is all there is of it where a walker's shoulders are - but the fronds
+        /// come down to head height a metre and a half out, and a man dealt under them
+        /// is a man standing in a tree as far as anybody watching is concerned. Walking
+        /// past one is still free: this is asked when a spot is CHOSEN, not stepped
+        /// through.</summary>
+        public const float CanopyBerth = 1.2f;
+
+        /// <summary>The nearest ground to <paramref name="wanted"/> that a man of this
+        /// radius can actually be left standing on: the point itself when it is clear,
+        /// else the closest clear one within <paramref name="reach"/>, else the point
+        /// given back unchanged because there is nothing better to offer.
+        ///
+        /// This exists because a spot is not a step. A walker who is dealt inside a
+        /// bin walks out of it (Steer lets a man inside something leave it), but a man
+        /// dealt inside one and told to STAND there stands there, shoulders in the
+        /// tin, for as long as the scene lasts - and the tall props are worse, because
+        /// their box is a trunk and their canopy is not, so he is not even blocked, he
+        /// merely looks planted. Every crew, mob and squad in every scene is stood up
+        /// through DemoCrews, so this is asked once, there.
+        ///
+        /// The rings are walked nearest first and the headings are staggered from ring
+        /// to ring so a man pushed off a kerb by one prop does not land on the next
+        /// one out along the same line. NOTHING HERE DRAWS A RANDOM NUMBER: the arena
+        /// shares one stream and a spawn-time draw would relay every seed in the lab.
+        /// A spot in the carriageway is taken only when the pavement offers none -
+        /// men stood in a live lane are their own kind of stupid scene.</summary>
+        public static Vector3 FreeSpot(Vector3 wanted, float radius, float reach = 4f)
+        {
+            int wantedGrade = Grade(wanted, radius);
+            if (wantedGrade == 0) return wanted;
+
+            // Nearest first, and of two spots at the same distance the better-graded
+            // one - but a grade is only settled for by finishing the search, so each
+            // grade keeps its first (nearest) find and grade 0 returns at once. The
+            // spot asked for is entered as its own grade's first find, so a man who is
+            // merely under a canopy is not walked across the pavement to another spot
+            // just as good: he is moved for a better one or not at all.
+            var found = new Vector3[3];
+            var have = new bool[3];
+            if (wantedGrade > 0) { found[wantedGrade] = wanted; have[wantedGrade] = true; }
+            const int Headings = 12;
+            for (float r = 0.5f; r <= reach + 1e-3f; r += 0.5f)
+                for (int i = 0; i < Headings; i++)
+                {
+                    float a = (i * (360f / Headings) + r * 23f) * Mathf.Deg2Rad;
+                    var p = wanted + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * r;
+                    int grade = Grade(p, radius);
+                    if (grade == 0) return p;
+                    if (grade < 0) continue;
+                    if (!have[grade]) { found[grade] = p; have[grade] = true; }
+                }
+            for (int grade = 1; grade < 3; grade++)
+                if (have[grade]) return found[grade];
+            return wanted;
+        }
+
+        // How good a spot is to be left standing on, best first:
+        //   0  clear pavement, and clear of the canopies
+        //   1  clear pavement, under a canopy - he is not blocked, he only looks it,
+        //      and looking planted beats standing in a live lane
+        //   2  clear ground, but in the carriageway
+        //  -1  no good at all: inside furniture, a wall, or a car
+        // The order matters and is not obvious. Pushing a man off a kerb because a
+        // palm's fronds reach over it would swap a cosmetic fault for the one the
+        // player already complained about - enemies out in the road, jamming the
+        // traffic. The berth is a preference; the pavement is not.
+        static int Grade(Vector3 p, float radius)
+        {
+            // off the floor altogether is no spot at all - nobody is ever CHOSEN a
+            // place to stand out in the wilderness, whatever asked
+            if (!InCity(p)) return -1;
+            var q = new Vector2(p.x, p.z);
+            GatherRoad(q, radius);
+            if (OnGround(q, radius, 0f) || InRoad(q, radius)) return -1;
+            if (InCarriageway(p)) return 2;
+            return OnGround(q, radius, CanopyBerth) ? 1 : 0;
+        }
+
+        static bool InCarriageway(Vector3 p)
+        {
+            var net = LaneNet.Active;
+            if (net == null) return false;
+            var road = net.Locate(p, out _, out float d, 6f);
+            return road != null && Mathf.Abs(d) < road.HalfRoad;
+        }
+
+        /// <summary>The solid furniture within reach of a point - the PROPS only. The
+        /// walls are left out on purpose (a building face is not something a man gets
+        /// behind and shoots over), and so is the traffic, which whoever wants a car's
+        /// flank asks StreetTraffic for itself. What DemoCrews.CoverNear offers a
+        /// pressed man beyond the parked cars.</summary>
+        public static void PropsNear(Vector3 p, float reach, List<SidewalkPlan.Box> into)
+        {
+            into.Clear();
+            var q = new Vector2(p.x, p.z);
+            for (int i = 0; i < Props.Count; i++) Props[i].SolidNear(q, reach, into);
         }
 
         /// <summary>The same run as <see cref="Clear"/>, but past the FIXED things only -

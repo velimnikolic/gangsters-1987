@@ -28,14 +28,52 @@ namespace RoadDemo
         // his boots a little ahead of his hips; his mate sits behind him with his boots
         // further back and higher. Static so a demo can push them about during Play.
 
-        /// <summary>Hips back from the line of the grips.</summary>
+        /// <summary>Hips ahead of the REAR AXLE - where a saddle actually is. See the
+        /// note in Place(); the packs' two machines put it at 0.76 and about 0.70, and
+        /// the same number serves a moped and a chopper because a rider sits in the same
+        /// place on both relative to the wheel he is sitting over.</summary>
+        public static float SaddleAheadOfRearAxle = 0.72f;
+
+        /// <summary>Hips back from the line of the grips - the OLD anchor, kept for a
+        /// body whose wheels cannot be found at all.</summary>
         public static float SaddleBehindBars = 0.56f;
         /// <summary>Saddle below the grips.</summary>
         public static float SaddleBelowBars = 0.30f;
+
+        /// <summary>THE FLOOR UNDER THE SADDLE: how far above the wheel's own radius the
+        /// seat may never sink. It stops a saddle being derived down into the tyre on a
+        /// machine whose bars are low - and it is the first thing to suspect when a rider
+        /// floats above his seat, because it is the one term that is driven by a MEASURED
+        /// number rather than an authored one. The packs draw big wheels (the city bike's
+        /// are 1.1 m across, so this floor alone puts the seat at 0.83 m); a body whose
+        /// wheel meshes read fat - a fender caught in with the tyre, a mudguard named like
+        /// a wheel - lifts the whole man with it. The bench (Assets/BikeDemo) prints the
+        /// radius it measured beside the saddle height for exactly that reason.</summary>
+        public static float SaddleAboveWheel = 0.28f;
         /// <summary>Hips above the saddle top - a man sinks into a seat.</summary>
         public static float HipsAboveSaddle = 0.09f;
-        /// <summary>The pillion's hips behind the rider's, and higher.</summary>
-        public static float PillionBehind = 0.36f, PillionAbove = 0.07f;
+        /// <summary>The pillion's hips behind the rider's, and higher.
+        ///
+        /// A FLOOR, not the answer. Thirty-six centimetres is less than a man is deep,
+        /// so on any machine it was the whole of the gap the two of them were given and
+        /// they sat inside one another. The gap that is right is the machine's, like
+        /// every other measurement in this class: a share of the wheelbase, so a long
+        /// bike seats them a proper arm's length apart and a short one does not fling
+        /// the pillion off the back. The packs draw a motorcycle a size up (the city
+        /// bike measures 2.45 m between the axles), which is exactly why a fixed number
+        /// authored by eye was never going to fit them all.</summary>
+        public static float PillionBehind = 0.48f, PillionAbove = 0.07f;
+
+        /// <summary>The pillion's share of the wheelbase - a quarter of it puts him
+        /// behind the rider rather than in him.
+        ///
+        /// The two numbers, against the packs as measured: the motorbike's wheelbase is
+        /// 2.45 m, so the share wins and the two of them sit 61 cm apart, which is an
+        /// arm's length and right. The moped's is 1.49 m and the share gives 37 cm,
+        /// which is thinner than a seated man, so the FLOOR wins at 48 - and that is why
+        /// the floor is a floor and not a guess: it is the gap two men need, and the
+        /// share is the gap a long machine offers.</summary>
+        public static float PillionBehindOfWheelbase = 0.25f;
         /// <summary>Pegs. The height is a share of the saddle's, NOT a clearance off
         /// the tyre: the packs draw a motorcycle a size up to match the men who ride it
         /// - the city bike measures a 2.45 m wheelbase on wheels 1.1 m across - and a
@@ -49,6 +87,15 @@ namespace RoadDemo
         /// <summary>The pillion's pegs, behind his own hips and higher than the
         /// rider's - his knees are folded up round the man in front.</summary>
         public static float PillionPegBack = 0.06f, PillionPegLift = 0.11f;
+
+        /// <summary>Last word on where each of the two of them sits, in the machine's
+        /// own frame (x out to his right, y up, z forward). Zero in the city: the
+        /// proportions above are meant to answer for every machine, and a nudge that
+        /// suits one suits no other. It exists because a man who is plainly sitting a
+        /// hand too high cannot be argued with, and the only honest way to find the
+        /// number that fixes him is to drag him down and read it off - which is what
+        /// the tuning bench does (Assets/BikeDemo). His pegs follow his hips.</summary>
+        public static Vector3 RiderNudge, PillionNudge;
 
         // ------------------------------------------------------------ what was measured
 
@@ -201,7 +248,12 @@ namespace RoadDemo
             _barsSpoke = Quaternion.Inverse(_barsTurn) * _barsHub;
         }
 
-        void Place()
+        /// <summary>Re-derive every point the pose reaches for from the proportions
+        /// above. Called once when the body is read, and again by the tuning bench
+        /// (Assets/BikeDemo) each time one of those static proportions is pushed about
+        /// during Play - they are the only authored numbers in this class, and the only
+        /// way to see what a change does is to see it.</summary>
+        public void Place()
         {
             // the grips: the ends of the bar, a hand's width in off the tips, so a fist
             // sits on the rubber rather than off the end of it
@@ -221,20 +273,45 @@ namespace RoadDemo
                 GripLeft = new Vector3(-0.30f, 1.02f, z);
             }
 
+            // THE SADDLE IS MEASURED OFF THE REAR AXLE, NOT OFF THE BARS.
+            //
+            // It used to be "so far back from the grips", which is true of a bike whose
+            // bars are over its forks and false of a chopper, whose bars are high and a
+            // long way out in front of everything. On the pack's chopper that rule put
+            // the rider's hips at z 0.14 - one metre behind a front axle at 1.20 and one
+            // metre and a HALF in front of a rear axle at -1.25, which is to say sitting
+            // on the tank, in the air, with the pillion behind him on the actual seat.
+            // (The player sent a photograph of exactly that.)
+            //
+            // A motorcycle is not built round its bars, it is built round its back wheel:
+            // the rider sits just ahead of it however long the front end is. Measured off
+            // the two machines the packs have, and they agree - the moped's seat is 0.76 m
+            // ahead of its rear axle and the chopper's is about 0.70. One number, and the
+            // moped does not move.
             float rear = float.IsNaN(_wheels.RearAxle) ? -HalfLength * 0.7f : _wheels.RearAxle;
-            float saddleZ = Mathf.Max(GripRight.z - SaddleBehindBars, rear + 0.10f);
-            float saddleY = Mathf.Max(GripRight.y - SaddleBelowBars, WheelRadius + 0.28f);
+            float saddleZ = float.IsNaN(_wheels.RearAxle)
+                ? Mathf.Max(GripRight.z - SaddleBehindBars, rear + 0.10f)
+                // and never in front of his own hands
+                : Mathf.Min(rear + SaddleAheadOfRearAxle, GripRight.z - 0.25f);
+            float saddleY = Mathf.Max(GripRight.y - SaddleBelowBars, WheelRadius + SaddleAboveWheel);
 
-            SaddleRider = new Vector3(0f, saddleY + HipsAboveSaddle, saddleZ);
-            SaddlePillion = new Vector3(0f, saddleY + HipsAboveSaddle + PillionAbove, saddleZ - PillionBehind);
+            SaddleRider = new Vector3(0f, saddleY + HipsAboveSaddle, saddleZ) + RiderNudge;
+            float behind = Mathf.Max(PillionBehind, Wheelbase * PillionBehindOfWheelbase);
+            SaddlePillion = new Vector3(0f, saddleY + HipsAboveSaddle + PillionAbove, saddleZ - behind)
+                            + PillionNudge;
             SeatsTwo = Wheelbase > 1.05f;
 
-            float pegY = Mathf.Max(0.20f, (saddleY + HipsAboveSaddle) * PegHeightOfSaddle);
+            // the pegs off each man's OWN hips, not off the bare proportion: move a man
+            // and his boots go with him, which is the only way a nudge can read as a
+            // man sitting somewhere else rather than a man doing the splits
+            float pegY = Mathf.Max(0.20f, SaddleRider.y * PegHeightOfSaddle);
             float pegX = Mathf.Clamp(HalfWidth * PegWidthOfFlank, 0.16f, 0.34f);
-            PegRight = new Vector3(pegX, pegY, saddleZ + PegAhead);
-            PegLeft = new Vector3(-pegX, pegY, saddleZ + PegAhead);
+            PegRight = new Vector3(pegX, pegY, SaddleRider.z + PegAhead);
+            PegLeft = new Vector3(-pegX, pegY, SaddleRider.z + PegAhead);
             PillionPegRight = new Vector3(pegX, pegY + PillionPegLift, SaddlePillion.z - PillionPegBack);
             PillionPegLeft = new Vector3(-pegX, pegY + PillionPegLift, SaddlePillion.z - PillionPegBack);
+            // his boots follow his hips: pegs authored off the RIDER's saddle put a
+            // pillion's knees through the man in front of him.
         }
 
         static readonly System.Collections.Generic.HashSet<string> Logged =
@@ -245,7 +322,8 @@ namespace RoadDemo
         void Log()
         {
             if (Tf == null || !Logged.Add(Tf.name)) return;
-            Debug.Log($"[Bike] {Tf.name}: wheelbase {Wheelbase:F2}, wheel r {WheelRadius:F2}, " +
+            Debug.Log($"[Bike] {Tf.name}: wheelbase {Wheelbase:F2}, axles {_wheels.RearAxle:F2}..{_wheels.FrontAxle:F2}, " +
+                      $"half {HalfLength:F2}, wheel r {WheelRadius:F2}, " +
                       $"bars {(_bars ? _bars.name : "none")}, grip ({GripRight.x:F2}, {GripRight.y:F2}, {GripRight.z:F2}), " +
                       $"saddle ({SaddleRider.y:F2}, {SaddleRider.z:F2}), peg ({PegRight.x:F2}, {PegRight.y:F2}, {PegRight.z:F2}), " +
                       $"two up {SeatsTwo}");

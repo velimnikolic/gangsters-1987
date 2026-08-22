@@ -57,6 +57,33 @@ namespace RoadDemo
             ("shadow culling", ProfilerCategory.Render, "CullShadowCasters"),
         };
 
+        // What a frame CREATED. The marker table can say a stall was in "scripts
+        // Update" but not WHICH component's Update - that bucket is one name for
+        // every MonoBehaviour in the scene. The footprint tells on it instead: a
+        // frame that also adds 600 GameObjects, or 400 materials, or a megabyte of
+        // meshes, names its own system without anyone guessing. Counts only, all
+        // cheap ProfilerRecorders; invalid names are dropped at Start like the rest.
+        static readonly string[] CountMarkers =
+        {
+            "Game Object Count", "Object Count", "Total Object Count",
+            "Material Count", "Texture Count", "Mesh Count", "Asset Count",
+        };
+
+        // WHERE the memory is. The stalls turned out to be paging, not compute - free RAM
+        // never rose above 1 GB while they happened - so the question stopped being "which
+        // Update is slow" and became "what is the process holding". These say it in Unity's
+        // own accounting, per window, so the next cut is chosen off a number.
+        static readonly string[] SizeMarkers =
+        {
+            "Total Used Memory", "System Used Memory", "GC Used Memory",
+            "Gfx Used Memory", "Texture Memory", "Mesh Memory",
+        };
+
+        readonly List<(string label, ProfilerRecorder rec)> _sizes = new List<(string, ProfilerRecorder)>();
+        readonly List<(string label, ProfilerRecorder rec)> _counts = new List<(string, ProfilerRecorder)>();
+        readonly Dictionary<string, long> _prevCount = new Dictionary<string, long>();
+        readonly List<(string label, long delta)> _countDeltas = new List<(string, long)>();
+
         // the slow frames, spelled out: which markers were big in that very frame
         readonly StringBuilder _slow = new StringBuilder();
         int _slowLogged;
@@ -76,6 +103,16 @@ namespace RoadDemo
             {
                 var rec = ProfilerRecorder.StartNew(m.cat, m.marker, 1);
                 if (rec.Valid) _recs.Add((m.label, rec)); else rec.Dispose();
+            }
+            foreach (var name in CountMarkers)
+            {
+                var rec = ProfilerRecorder.StartNew(ProfilerCategory.Memory, name);
+                if (rec.Valid) _counts.Add((name, rec)); else rec.Dispose();
+            }
+            foreach (var name in SizeMarkers)
+            {
+                var rec = ProfilerRecorder.StartNew(ProfilerCategory.Memory, name);
+                if (rec.Valid) _sizes.Add((name, rec)); else rec.Dispose();
             }
             _gcAlloc = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "GC Allocated In Frame");
             _gcMemory = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "GC Used Memory");
@@ -104,13 +141,26 @@ namespace RoadDemo
                 _acc[label] = (a.sum + v, Mathf.Max((float)a.max, (float)v));
                 _frameMarks.Add((label, v));
             }
+            // deltas first, then the slow-frame line can quote them
+            _countDeltas.Clear();
+            foreach (var (label, rec) in _counts)
+            {
+                long now = rec.LastValue;
+                if (_prevCount.TryGetValue(label, out var before) && now != before)
+                    _countDeltas.Add((label, now - before));
+                _prevCount[label] = now;
+            }
+
             if (ms > 40f && _slowLogged < 8)
             {
                 _slowLogged++;
                 _frameMarks.Sort((x, y) => y.Item2.CompareTo(x.Item2));
-                _slow.Append($"    slow frame {ms:F0} ms @ {Time.frameCount}: cameras {Camera.allCamerasCount}, gc {(int)(_gcAlloc.Valid ? _gcAlloc.LastValue / 1024 : 0)} KB;");
+                _slow.Append($"    slow frame {ms:F0} ms @ {Time.frameCount} (t+{Time.unscaledTime:F0}s): cameras {Camera.allCamerasCount}, gc {(int)(_gcAlloc.Valid ? _gcAlloc.LastValue / 1024 : 0)} KB;");
                 for (int k = 0; k < Mathf.Min(6, _frameMarks.Count); k++)
                     if (_frameMarks[k].Item2 > 0.5) _slow.Append($" {_frameMarks[k].Item1} {_frameMarks[k].Item2:F1}");
+                _countDeltas.Sort((x, y) => System.Math.Abs(y.delta).CompareTo(System.Math.Abs(x.delta)));
+                for (int k = 0; k < Mathf.Min(4, _countDeltas.Count); k++)
+                    _slow.Append($" [{_countDeltas[k].label} {_countDeltas[k].delta:+#;-#;0}]");
                 _slow.AppendLine();
             }
             if (_gcAlloc.Valid)
@@ -140,6 +190,13 @@ namespace RoadDemo
             sb.AppendLine($"--- window {++_windows} ({n} frames, {Time.unscaledTime:F0} s) hour {DemoClockHour():F1}");
             sb.AppendLine($"frame ms  avg {avg:F1}  p50 {p50:F1}  p90 {p90:F1}  p99 {p99:F1}  max {max:F1}   frames over 40 ms: {spikes}");
             sb.AppendLine($"gc alloc/frame avg {(_gcSum / n / 1024):F1} KB  max {(_gcMax / 1024):F0} KB   gc heap {(_gcMemory.Valid ? _gcMemory.LastValue / 1048576.0 : 0):F0} MB");
+            if (_sizes.Count > 0)
+            {
+                var mem = new StringBuilder("memory ");
+                foreach (var (label, rec) in _sizes)
+                    mem.Append($" {label} {rec.LastValue / 1048576} MB;");
+                sb.AppendLine(mem.ToString());
+            }
             sb.AppendLine($"draw calls {(_drawCalls.Valid ? _drawCalls.LastValue : 0)}  batches {(_batches.Valid ? _batches.LastValue : 0)}  " +
                           $"setpass {(_setPass.Valid ? _setPass.LastValue : 0)}  tris {(_tris.Valid ? _tris.LastValue / 1000 : 0)}k  verts {(_verts.Valid ? _verts.LastValue / 1000 : 0)}k");
             foreach (var (label, _) in _recs)

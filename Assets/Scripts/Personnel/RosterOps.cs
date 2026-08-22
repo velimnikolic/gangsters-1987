@@ -154,7 +154,38 @@ namespace LivingCity.Personnel
         /// <summary>Guns are dealt by Firearms, vehicles by Driving - the one split
         /// NormalizeArms cares about. The chain-of-command rule itself covers BOTH:
         /// everything in the drawer issues to a lieutenant.</summary>
-        public static bool IsWeapon(EquipmentKind kind) => kind != EquipmentKind.Vehicle;
+        public static bool IsWeapon(EquipmentKind kind) =>
+            kind != EquipmentKind.Vehicle && kind != EquipmentKind.Motorcycle &&
+            kind != EquipmentKind.Grenade;
+
+        /// <summary>A grenade: gear a crew owns but the quartermaster deals into no
+        /// man's hand - a COUNTABLE stock (DemoCrews.BindBombs), spent when thrown. It
+        /// is neither a gun (a hand slot) nor a wheel, so it stays out of both decks.</summary>
+        public static bool IsGrenade(EquipmentKind kind) => kind == EquipmentKind.Grenade;
+
+        /// <summary>How many grenades the given owner (a lieutenant, or the front) holds.</summary>
+        public static int GrenadesOwnedBy(Roster roster, int ownerId)
+        {
+            var n = 0;
+            for (var i = 0; i < roster.Equipment.Count; i++)
+                if (roster.Equipment[i].Kind == EquipmentKind.Grenade &&
+                    roster.Equipment[i].OwnerId == ownerId) n++;
+            return n;
+        }
+
+        /// <summary>Spend one of the owner's grenades - struck off the books the moment
+        /// it is thrown. True if there was one to spend.</summary>
+        public static bool SpendGrenade(Roster roster, int ownerId)
+        {
+            for (var i = roster.Equipment.Count - 1; i >= 0; i--)
+                if (roster.Equipment[i].Kind == EquipmentKind.Grenade &&
+                    roster.Equipment[i].OwnerId == ownerId)
+                {
+                    roster.Equipment.RemoveAt(i);
+                    return true;
+                }
+            return false;
+        }
 
         public static OpResult GiveEquipment(Roster roster, int itemId, int id)
         {
@@ -305,7 +336,7 @@ namespace LivingCity.Personnel
             for (var i = 0; i < roster.Equipment.Count; i++)
             {
                 var item = roster.Equipment[i];
-                if (item.OwnerId == RosterEquipment.FrontArmory)
+                if (item.OwnerId == RosterEquipment.FrontArmory && !IsGrenade(item.Kind))
                     (IsWeapon(item.Kind) ? guns : wheels).Add(item);
             }
             if (guns.Count == 0 && wheels.Count == 0)
@@ -346,7 +377,7 @@ namespace LivingCity.Personnel
             for (var i = 0; i < roster.Equipment.Count; i++)
             {
                 var item = roster.Equipment[i];
-                if (item.OwnerId == crew.LieutenantId)
+                if (item.OwnerId == crew.LieutenantId && !IsGrenade(item.Kind))
                     (IsWeapon(item.Kind) ? guns : wheels).Add(item);
             }
             if (guns.Count == 0 && wheels.Count == 0)

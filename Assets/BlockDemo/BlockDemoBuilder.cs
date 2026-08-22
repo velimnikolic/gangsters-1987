@@ -78,6 +78,50 @@ namespace BlockDemo
                  "never mind the lights - and has it out with them there.")]
         public bool missionOnFoot;
 
+        [Tooltip("The walkabout mission: no fight, no car - the crew walks corner to " +
+                 "corner of the quarter down the pavements and through the lights, and " +
+                 "the crew audit judges the walk itself.")]
+        public bool missionWalk;
+        [Tooltip("Walkabout: corners to walk (0 leaves the mission's default 3). A bigger " +
+                 "quarter has longer legs, so fewer of them still fills a run.")]
+        [Min(0)] public int missionWalkLegs = 0;
+        [Tooltip("Walkabout: the HARD ceiling on one leg in seconds (0 leaves the default " +
+                 "600). A leg on a 4x quarter is ~900 m and takes far longer than the " +
+                 "small quarter it was tuned on - raise this to judge the big scene fairly.")]
+        [Min(0)] public float missionLegPatience = 0f;
+        [Tooltip("The nerve lever: chance a man shot to his last hit breaks and runs. " +
+                 "Below 0 leaves the game's own figure (0.4). The brawl soak turns it " +
+                 "up so runners appear every run.")]
+        public float panicChance = -1f;
+
+        [Tooltip("The bomb mission: the outfit's crew is stocked with grenades and made " +
+                 "to throw a few at a rival crew and then lay a charge under a car and " +
+                 "drive it off. The throw must thin the rival; the planted charge must " +
+                 "spring when the car moves and tear it to scrap.")]
+        public bool missionBomb;
+        [Tooltip("Bomb mission: grenades thrown at the rival before the plant test.")]
+        [Min(1)] public int missionBombThrows = 3;
+        [Tooltip("Bomb mission: swing the camera onto the action (burning shop, blown " +
+                 "car) so a headless --shot frames it. For grabbing pictures, off otherwise.")]
+        public bool missionBombShot;
+
+        [Tooltip("The mission on two wheels: no car, no march. The outfit's crew sends " +
+                 "two men on the motorcycle the ledger bought it, one pass at a rival " +
+                 "and home again, over and over. Needs outfitMotorcycle set - a run " +
+                 "with no machine on the street fails on purpose.")]
+        public bool missionMoto;
+        [Tooltip("The car mission with a roadblock: the hunted mob is marched into the " +
+                 "carriageway in front of the outfit's car every few seconds, which is " +
+                 "the scene the run-down exists for and the one a quarter does not make " +
+                 "by itself.")]
+        public bool missionRoadblock;
+        [Tooltip("Two wheels: how many passes to ride before the run is done.")]
+        [Min(1)] public int missionPassesRidden = 3;
+        [Tooltip("A motorcycle bought off the armory counter and signed for by the " +
+                 "outfit's first lieutenant, by listing name: Motorbike, Moped, " +
+                 "Scooter. Empty buys none.")]
+        public string outfitMotorcycle = "";
+
         [Header("The outfit")]
         [Tooltip("Crews of the outfit sent out, one lieutenant each - the ledger is " +
                  "rewritten to match before anybody stands up. 0 leaves the seeded " +
@@ -171,13 +215,14 @@ namespace BlockDemo
 
             // the books first: the men who will be stood up are the men the ledger
             // says the outfit has, so the run's outfit is written before it deals
-            if (outfitLieutenants > 0)
+            if (outfitLieutenants > 0 || !string.IsNullOrEmpty(outfitMotorcycle))
             {
                 var books = gameObject.AddComponent<BlockDemoOutfit>();
                 books.lieutenants = outfitLieutenants;
                 books.hoodsEach = outfitHoods;
                 books.mixedArms = mixedArms;
                 books.armsSeed = spacingSeed;
+                books.motorcycle = outfitMotorcycle;
             }
 
             if (missionAfter > 0f)
@@ -186,6 +231,16 @@ namespace BlockDemo
                 mission.startAfter = missionAfter;
                 mission.passesBefore = missionPasses;
                 mission.onFoot = missionOnFoot;
+                mission.walkabout = missionWalk;
+                mission.panic = panicChance;
+                mission.motoDriveBy = missionMoto;
+                mission.roadblock = missionRoadblock;
+                mission.passes = missionPassesRidden;
+                mission.bombRun = missionBomb;
+                mission.bombThrows = missionBombThrows;
+                mission.bombShotCam = missionBombShot;
+                if (missionWalkLegs > 0) mission.walkLegs = missionWalkLegs;
+                if (missionLegPatience > 0f) mission.legPatience = missionLegPatience;
             }
 
             FrameTheQuarter(city);

@@ -104,8 +104,12 @@ namespace RoadDemo
                 for (int x = 0; x < _w; x++)
                 {
                     var q = new Vector3(_x0 + x * Cell, 0f, _z0 + z * Cell);
+                    // the scene's own fence too (WalkObstacles.City): near-a-street is
+                    // not enough where the ground past the pavement is bare void - a
+                    // way must never cut a corner over ground nobody may stand on
                     _free[z * _w + x] = !WalkObstacles.Standing(q, r) &&
-                                        (!bounded || InTheCity(net, q));
+                                        (!bounded || InTheCity(net, q)) &&
+                                        WalkObstacles.InCity(q);
                 }
 
             // TWO FREE SQUARES ARE NOT A WAY BETWEEN THEM. A square is free when a man

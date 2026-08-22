@@ -14,9 +14,14 @@ namespace RoadDemo
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureLedger()
         {
-            // the crew demo (Assets/CrewDemo) reads the same books for its own men
+            // Every bench that puts THE OUTFIT'S OWN men on the street has to be named
+            // here: the crews are dealt off the ledger's roster (DemoCrews.Sync reads
+            // PersonnelDirector), so a scene this gate does not know gets rivals and
+            // nobody to play. That is a scene with no gang the player can control, and
+            // it looks like a bug in the scene rather than a missing installer.
             if (!Object.FindAnyObjectByType<RoadDemoBuilder>() &&
-                !Object.FindAnyObjectByType<CrewDemo.CrewDemoBuilder>())
+                !Object.FindAnyObjectByType<CrewDemo.CrewDemoBuilder>() &&
+                !Object.FindAnyObjectByType<CoverDemo.CoverDemoBuilder>())
                 return;
 
             var host = GameObject.Find("Gameplay") ?? new GameObject("Gameplay");

@@ -24,6 +24,11 @@ namespace RoadDemo
     /// a MonoBehaviour, so a hundred bikes is a hundred callbacks; the traffic's bikes
     /// are meant to be a handful, and the crowd's culling takes the rest.
     /// </summary>
+        // NOT ExecuteAlways, and that is the point. LateUpdate re-seats a man every frame -
+    // right in Play, and unusable in the editor, where it puts him back before a drag of
+    // the move handle has finished and the axes read as broken. Off Play nobody poses
+    // anybody unless they ask: the bench calls Apply() itself when a number changes, and
+    // the baked sitting scene calls it once and then takes this component off altogether.
     public sealed class BikePose : MonoBehaviour
     {
         // ------------------------------------------------------------------ the seat
@@ -54,6 +59,29 @@ namespace RoadDemo
 
         /// <summary>Degrees over the tank at speed, and the speed that reaches it.</summary>
         public static float CrouchMax = 15f, CrouchAt = 16f;
+
+        // The handful of numbers below were set by eye and are the ones a rider who
+        // "sits wrong" is usually wrong by: where the elbow is thrown, which way the
+        // knee bends, how the toes lie on the peg, and how wide the pillion holds on.
+        // Static, like BikeBody's proportions and for the same reason - the tuning
+        // bench (Assets/BikeDemo) pushes them about during Play so a man can be sat
+        // properly by looking at him rather than by rebuilding.
+
+        /// <summary>The elbow's pole: out past the flank, down, and a little back.
+        /// A rider's arms are not tucked in at his sides.</summary>
+        public static float ElbowOut = 0.55f, ElbowDown = 0.42f, ElbowBack = 0.18f;
+
+        /// <summary>The knee's pole: forward and out. Never backwards - that is the one
+        /// thing a two-bone solve will happily do if nobody tells it which way the joint
+        /// bends. The wider figure is the boot that has gone down to the road.</summary>
+        public static float KneeAhead = 0.8f, KneeOut = 0.5f, KneeOutFootDown = 0.85f, KneeDown = 0.1f;
+
+        /// <summary>Which way the toes lie on a peg: ahead and tipped down.</summary>
+        public static float ToeAhead = 0.94f, ToeDown = 0.34f;
+
+        /// <summary>The pillion's hands on the man in front: one either side of his
+        /// waist, lifted a little and forward of it.</summary>
+        public static float HoldWide = 0.19f, HoldLift = 0.06f, HoldForward = 0.05f;
 
         /// <summary>Last word on the fists and the boots, for tuning by eye in Play:
         /// nothing is written over when they are off.</summary>
@@ -101,7 +129,9 @@ namespace RoadDemo
             _an = animator ? animator : GetComponentInChildren<Animator>();
             if (_an == null || _an.avatar == null || !_an.avatar.isHuman) return false;
 
-            _hips = _an.GetBoneTransform(HumanBodyBones.Hips);
+            // NOT GetBoneTransform(Hips) - see CrewArms.Pelvis: one pack maps the
+            // foot-level Root bone as the pelvis, and a man seated by it floats
+            _hips = CrewArms.Pelvis(_an);
             _spine = _an.GetBoneTransform(HumanBodyBones.Spine);
             _chest = _an.GetBoneTransform(HumanBodyBones.Chest);
             if (_chest == null) _chest = _spine;   // Unity's null is not C#'s: ?? would take a dead bone
@@ -222,11 +252,11 @@ namespace RoadDemo
                 // a hand on the man in front: at his waist, one either side. Nothing to
                 // hold and the hands fall to his own knees, which is what a man does.
                 var anchor = Rider != null ? Rider.HipsPoint : Bike.Point(Bike.SaddleRider);
-                var lift = up * 0.06f - fwd * 0.05f;
-                if (_handL) Reach(_armUpL, _armLowL, _handL, anchor - right * 0.19f + lift,
+                var lift = up * HoldLift - fwd * HoldForward;
+                if (_handL) Reach(_armUpL, _armLowL, _handL, anchor - right * HoldWide + lift,
                     Elbow(_armUpL, -1f, up, fwd, right), -bar, up, _fingersL, _backL);
                 if (AimAt.HasValue) Gun(up, fwd);
-                else Reach(_armUpR, _armLowR, _handR, anchor + right * 0.19f + lift,
+                else Reach(_armUpR, _armLowR, _handR, anchor + right * HoldWide + lift,
                     Elbow(_armUpR, 1f, up, fwd, right), bar, up, _fingersR, _backR);
                 return;
             }
@@ -258,7 +288,7 @@ namespace RoadDemo
         Vector3 Elbow(Transform shoulder, float side, Vector3 up, Vector3 fwd, Vector3 right)
         {
             var at = shoulder ? shoulder.position : transform.position;
-            return at + right * (side * 0.55f) - up * 0.42f - fwd * 0.18f;
+            return at + right * (side * ElbowOut) - up * ElbowDown - fwd * ElbowBack;
         }
 
         // ------------------------------------------------------------------ the boots
@@ -268,7 +298,7 @@ namespace RoadDemo
             // at a standstill the left boot goes to the road; the right stays on the peg
             // (a rider holds the back brake with it), which is what a man does at a light
             bool down = FootDown && !Pillion;
-            var toes = fwd * 0.94f - up * 0.34f;
+            var toes = fwd * ToeAhead - up * ToeDown;
 
             if (_footL)
             {
@@ -289,8 +319,8 @@ namespace RoadDemo
         Vector3 KneePole(Transform hip, float side, Vector3 up, Vector3 fwd, Vector3 right, bool down)
         {
             var at = hip ? hip.position : transform.position;
-            float out_ = down ? 0.85f : 0.5f;
-            return at + fwd * 0.8f + right * (side * out_) - up * 0.1f;
+            float out_ = down ? KneeOutFootDown : KneeOut;
+            return at + fwd * KneeAhead + right * (side * out_) - up * KneeDown;
         }
 
         // ------------------------------------------------------------------ the head

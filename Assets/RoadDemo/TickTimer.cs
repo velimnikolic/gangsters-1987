@@ -16,8 +16,10 @@ namespace RoadDemo
     {
         const int Slots = 8;
         static readonly long[] Ticks = new long[Slots];
+        static readonly long[] Bytes = new long[Slots];
         static readonly string[] Names = new string[Slots];
         static long _mark;
+        static long _byteMark;
         static int _frames;
         static float _since;
 
@@ -25,6 +27,12 @@ namespace RoadDemo
         public static void Frame()
         {
             _mark = System.Diagnostics.Stopwatch.GetTimestamp();
+            // mono heap used so far: the delta across a section is what that section put
+            // on the heap (GC.GetAllocatedBytesForCurrentThread is a stub in this Mono
+            // and reads a constant, so it cannot be used). A collection inside a section
+            // shows as a fall, so only the rises are counted below - the garbage a
+            // section makes, which is what the collector will later have to walk.
+            _byteMark = UnityEngine.Profiling.Profiler.GetMonoUsedSizeLong();
             _frames++;
         }
 
@@ -34,8 +42,12 @@ namespace RoadDemo
             if (slot < 0 || slot >= Slots) return;
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             Ticks[slot] += now - _mark;
-            Names[slot] = name;
             _mark = now;
+            long nowB = UnityEngine.Profiling.Profiler.GetMonoUsedSizeLong();
+            long grew = nowB - _byteMark;
+            if (grew > 0) Bytes[slot] += grew;   // a fall is a collection, not this section's work
+            _byteMark = nowB;
+            Names[slot] = name;
         }
 
         /// <summary>Every few seconds, what the sections have cost per frame.</summary>
@@ -47,17 +59,21 @@ namespace RoadDemo
 
             double perTick = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
             double total = 0;
+            long totalBytes = 0;
             var sb = new System.Text.StringBuilder();
             for (int i = 0; i < Slots; i++)
             {
                 if (Names[i] == null || Ticks[i] == 0) continue;
                 double ms = Ticks[i] * perTick / _frames;
                 total += ms;
-                sb.Append($"  {Names[i]} {ms:F1}");
+                totalBytes += Bytes[i];
+                double kb = Bytes[i] / 1024.0 / _frames;
+                sb.Append($"  {Names[i]} {ms:F1}ms/{kb:F1}KB");
             }
-            Debug.Log($"[Tick] {total:F1} ms/frame over {_frames} frames ({counts}):{sb}");
+            Debug.Log($"[Tick] {total:F1} ms/frame, {totalBytes / 1024.0 / _frames:F1} KB/frame " +
+                      $"over {_frames} frames ({counts}):{sb}");
 
-            for (int i = 0; i < Slots; i++) Ticks[i] = 0;
+            for (int i = 0; i < Slots; i++) { Ticks[i] = 0; Bytes[i] = 0; }
             _frames = 0;
             _since = 0f;
         }
