@@ -139,7 +139,8 @@ namespace RoadDemo
         void OnDestroy()
         {
             if (Active == this) Active = null;
-            AudioListener.volume = 1f;
+            // never lift the mute back off a headless run (BatchAudioMute keeps it down)
+            AudioListener.volume = Application.isBatchMode ? 0f : 1f;
         }
 
         AudioSource Bed(AudioClip clip, string name)

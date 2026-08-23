@@ -797,12 +797,22 @@ namespace RoadDemo
         /// the lateral back in every frame and launched men out of the city at
         /// twenty-two metres a second. dt = 0 is the one placement that must snap
         /// (Init seating a fresh walker on his stretch).</summary>
+        /// <summary>A hard ceiling on how far any one frame may move a person, whatever
+        /// the frame time. The per-frame caps are all dt-scaled, so a frame that hitches
+        /// - the scene stalls, dt jumps to a third of a second - would let a man cross a
+        /// lane in a single write and read as a teleport (the fault the player reported
+        /// when the city stutters: a man sidestepping an obstacle "jumps" that way). A
+        /// stalled scene may drop him behind his mark for a frame; it may never fling him
+        /// across the street. Set above any true per-frame stride so normal play never
+        /// meets it.</summary>
+        public const float MaxStepPerFrame = 0.75f;
+
         Vector3 HoldStep(Vector3 want, float dt, float speed)
         {
             if (dt <= 0f) return want;
             var to = want - Tf.position;
             to.y = 0f;
-            float cap = (speed + 2f) * dt;
+            float cap = Mathf.Min((speed + 2f) * dt, MaxStepPerFrame);
             float off = to.magnitude;
             if (off <= cap) return want;
             var held = Tf.position + to * (cap / off);

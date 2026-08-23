@@ -695,7 +695,9 @@ namespace RoadDemo
                 dir = KeepToPavement(Tf.position, dir, Mathf.Max(pace * dt, 1.2f));
             _detouring = Vector3.Dot(dir, want) < 0.995f;
 
-            float step = Mathf.Min(pace * dt, Mathf.Min(dist, clear));
+            // capped at the hitch ceiling too: a stalled frame (large dt) must not fling
+            // him a lane sideways as he steers round something - it reads as a teleport
+            float step = Mathf.Min(Mathf.Min(pace * dt, MaxStepPerFrame), Mathf.Min(dist, clear));
 
             // THE FLOOR IS THE WORLD. A stride, wherever it was ordered from - a walk,
             // a march, a man running for his life - never carries a foot off the
@@ -1465,6 +1467,16 @@ namespace RoadDemo
                 return toward;
             return base.ChooseLink(node, keepAwayFrom);
         }
+
+        /// <summary>The outfit does not queue at a light. The crowd waits at a red for a
+        /// gap it can cross in (PedestrianAgent.MayEnter); a crew told to be somewhere
+        /// steps onto the zebra whatever the signal says - the same as the march does off
+        /// the graph, and the traffic brakes for a body in the road either way. This is
+        /// what makes an ORDERED crossing go on red while the men stay in their formation
+        /// on the sidewalk graph, rather than the whole crew leaving it to cut across the
+        /// ground (which strung them out over the block). The crowd's own MayEnter is
+        /// untouched - only the outfit ignores the light.</summary>
+        protected override bool MayEnter(PedLink link) => true;
 
         bool StepOntoIfOn(PedLink link, float t)
         {

@@ -556,9 +556,20 @@ namespace RoadDemo
         void WatchDerelict(float dt)
         {
             bool derelict = Mathf.Abs(Speed) < 0.15f && _halted && !Parked;
-            if (!derelict) { _derelictFor = 0f; Derelict = false; return; }
+            // AND a car wedged INSIDE a junction box at a standstill, whoever it is: being
+            // in the box means it already committed to cross, so it is not "waiting its
+            // turn" - it is stuck across everyone's path. Held there far longer than any
+            // crossing takes, it gives the box up like a wreck so the junction clears.
+            // This is the one deadlock the halted-only rule missed: a U-turn is spared the
+            // back-out (its came-in line is ambiguous) and never halts, so wedged mid-box
+            // it held the whole junction for the rest of the run and a quarter queued
+            // behind it (car soak: 8000+ belt refusals off one such lock).
+            bool wedged = Mathf.Abs(Speed) < 0.15f && !Parked && _inNode != null;
+            if (!derelict && !wedged) { _derelictFor = 0f; Derelict = false; return; }
             _derelictFor += dt;
-            if (_derelictFor < 6f) return;
+            // a stopped-for-good car gives up quickly; a wedged one is given longer, so a
+            // car merely easing through a busy box is never mistaken for a deadlock
+            if (_derelictFor < (derelict ? 6f : 10f)) return;
             if (Derelict) return;
             Derelict = true;
             LeaveBox();

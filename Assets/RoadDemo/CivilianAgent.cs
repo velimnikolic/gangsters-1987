@@ -168,6 +168,13 @@ namespace RoadDemo
 
         public void TickCivilian(float dt)
         {
+            // the body is gone - chalk laid, rig suspended - so there is nothing left to
+            // tick. Without this every one of the dead ran the whole state switch again
+            // each frame for the rest of the session: the crowd's per-frame cost never
+            // fell as it was killed, which is the freeze that built up over a violent
+            // night. He is also struck from All the moment the body goes (Mode.Dead).
+            if (_bodyGone) return;
+
             if (_fear > 0f && State != Mode.Flee && State != Mode.Startle)
                 _fear = Mathf.Max(0f, _fear - FearFade * dt * (StreetAlarm.QuietFor > 6f ? 1f : 0.2f));
 
@@ -345,6 +352,11 @@ namespace RoadDemo
                     if (!_bodyGone && Time.time - _deadAt > BodyStays)
                     {
                         _bodyGone = true;
+                        // struck off the crowd roll: All is scanned every frame (the
+                        // road-walker list, the gawk pick, the blast) and a corpse has no
+                        // business in any of those scans. Terminal - a dead civilian is
+                        // never revived (the SetActive(true) path is the go-indoors one).
+                        All.Remove(this);
                         CrewGore.Chalk(this, Tf.position.y);
                         Tf.gameObject.SetActive(false);
                         Suspend(true);

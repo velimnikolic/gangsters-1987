@@ -45,6 +45,12 @@ namespace RoadDemo
         const float NobodyRang = 45f;        // seconds until somebody has rung regardless
         const float StandOff = 20f;          // metres short of the scene a car pulls up
         const float WarnRange = 26f;         // metres from the scene an officer shouts from
+        // Only the law that HAPPENS to be near a fight turns out for it - a patrol a
+        // couple of blocks off. There is no city-wide dispatch pulling a car across the
+        // whole map to a scene it could never see: if nobody is near, nobody comes until
+        // a patrol's own beat carries it close. (The reach of the response, not of the
+        // patrols - the cars are already spread over the city; this is who answers.)
+        const float ResponseRange = 150f;    // metres a unit must be within to answer a scene
         const float SceneSeconds = 90f;      // how long the law stays once it is quiet
 
         public float Heat { get; private set; }
@@ -217,7 +223,7 @@ namespace RoadDemo
         IPoliceUnit Nearest(Vector3 to, bool carries)
         {
             IPoliceUnit best = null;
-            float bestD = float.MaxValue;
+            float bestD = ResponseRange * ResponseRange;   // out of this reach, nobody answers
             foreach (var u in _units)
             {
                 if (u.Carries != carries || !u.Available || u.Tf == null) continue;

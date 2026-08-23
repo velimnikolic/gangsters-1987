@@ -3587,14 +3587,16 @@ namespace RoadDemo
                 return;
             }
 
-            var routeHome = PolicePatrolCar.RouteToward(_edges, home);
             var stallRot = Quaternion.LookRotation(_stallOut);
+            // where each car sits at rest: the first in the forecourt, the rest pushed
+            // out across the city so the force is spread, not poured out of one gate
+            var homes = SpreadPatrolHomes(policeCarCount, home, homeS, stallRot);
 
             for (int i = 0; i < policeCarCount; i++)
             {
-                var stall = _stallCentre + _stallAlong * ((i - (policeCarCount - 1) * 0.5f) * StallSpacing);
+                var hi = homes[i];
                 var go = Instantiate(_policeCarPrefabs[i % _policeCarPrefabs.Count],
-                                     stall, Quaternion.identity, parent);
+                                     hi.stall, Quaternion.identity, parent);
                 go.name = "Patrol Car " + (i + 1);
                 foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
                 foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
@@ -3603,7 +3605,7 @@ namespace RoadDemo
                 var bounds = new Bounds(go.transform.position, Vector3.zero);
                 foreach (var r in go.GetComponentsInChildren<Renderer>())
                     bounds.Encapsulate(r.bounds);
-                go.transform.rotation = stallRot;
+                go.transform.rotation = hi.rot;
 
                 var car = new PolicePatrolCar
                 {
@@ -3612,7 +3614,9 @@ namespace RoadDemo
                     HalfWide = Mathf.Clamp(bounds.extents.x, 0.7f, 1.3f),
                     UnitNumber = i + 1,
                 };
-                car.InitParked(stall, stallRot, home, homeS, _edges, routeHome,
+                // each car returns to its own kerb and patrols its own quarter
+                var carRouteHome = PolicePatrolCar.RouteToward(_edges, hi.home);
+                car.InitParked(hi.stall, hi.rot, hi.home, hi.homeS, _edges, carRouteHome,
                     policeRestSeconds, policePatrolWaypoints, Random.Range(3f, 8f) + i * 5f);
                 // an officer at the wheel - the force's own uniform; he is indoors
                 // while the car stands in its stall (PolicePatrolCar shows him)
@@ -3622,6 +3626,98 @@ namespace RoadDemo
                 StreetTraffic.Users.Add(car);
                 markers.Add(car);
             }
+        }
+
+        /// <summary>Where each patrol car stands at rest. The first keeps the station
+        /// forecourt, so the house is never empty; the rest are pushed OUT across the map
+        /// by farthest-point sampling over the long lanes - each rests at a kerb of its
+        /// own and patrols its own quarter, so at any moment the force is scattered over
+        /// the city instead of clustered against one station face. (Their patrol beats
+        /// already reached the whole map; only the standing start was in one place.)</summary>
+        List<(RoadEdge home, float homeS, Vector3 stall, Quaternion rot)> SpreadPatrolHomes(
+            int count, RoadEdge forecourtHome, float forecourtHomeS, Quaternion forecourtRot)
+        {
+            var homes = new List<(RoadEdge, float, Vector3, Quaternion)>(count);
+            homes.Add((forecourtHome, forecourtHomeS, _stallCentre, forecourtRot));
+            if (count <= 1) return homes;
+
+            // Scattering the RESTING cars over the city jams the traffic: a patrol left at
+            // a kerb is a registered obstacle, and even set off the running lane (KerbClear)
+            // it gridlocked the ambient cars in ~a quarter of seeds (car soak: worst 14k+
+            // belt refusals with the spread; 0 in every one of 12 with the cars docked).
+            // So the spread is OFF until the resting spots are provably traffic-safe (a
+            // known parking bay, not a computed kerb point). The city still gets its police
+            // presence from the patrols, whose beats already cover the whole map, and the
+            // reaction to fights stays LOCAL (PoliceDispatch.ResponseRange), which is what
+            // the user actually asked for. Flip to true again once placement is safe.
+            const bool SPREAD = false;
+            if (!SPREAD)
+            {
+                for (int i = 1; i < count; i++) homes.Add(homes[0]);
+                return homes;
+            }
+
+            var longs = new List<RoadEdge>();
+            foreach (var e in _edges) if (e.Length >= 30f) longs.Add(e);
+            if (longs.Count == 0)
+            {
+                for (int i = 1; i < count; i++) homes.Add(homes[0]);
+                return homes;
+            }
+
+            // farthest-point sampling: each new home is the long lane whose middle is
+            // farthest from the station and from every home already placed
+            var anchors = new List<Vector3> { _stallCentre };
+            for (int n = 1; n < count; n++)
+            {
+                RoadEdge best = null;
+                float bestNear = -1f;
+                foreach (var e in longs)
+                {
+                    var mid = e.Start + e.Dir * (e.Length * 0.5f);
+                    float near = float.MaxValue;
+                    for (int a = 0; a < anchors.Count; a++)
+                        near = Mathf.Min(near, (mid - anchors[a]).sqrMagnitude);
+                    if (near > bestNear) { bestNear = near; best = e; }
+                }
+                if (best == null) best = longs[Random.Range(0, longs.Count)];
+                float s = best.Length * 0.5f;
+                var on = best.Start + best.Dir * s;
+                // rest CLEAR of the running lane, not stood in it: a patrol car left in a
+                // live lane is a registered obstacle every car has to thread past, and in
+                // a jammed street (the roadblock) that tips the traffic into gridlock.
+                // Walk out to the far side of the kerb (past the outermost lane band, so
+                // LaneNet marks it parked-and-passed, not a wreck-in-lane); the undock
+                // curve pulls it back onto the lane when its rest is up.
+                var right = new Vector3(best.Dir.z, 0f, -best.Dir.x);
+                var stall = KerbClear(on, right);
+                stall.y = _stallLift;
+                anchors.Add(on);
+                homes.Add((best, s, stall, Quaternion.LookRotation(best.Dir, Vector3.up)));
+            }
+            return homes;
+        }
+
+        /// <summary>The nearest point off the carriageway to rest a car - out past a kerb
+        /// far enough that its body clears the outermost lane band (so LaneNet counts it
+        /// parked-and-passed, not a wreck-in-lane the traffic must plan a way round).
+        /// Both kerbs are tried; the nearer clear point wins. Falls back to a plain 4 m
+        /// step if there is no net to measure against.</summary>
+        Vector3 KerbClear(Vector3 on, Vector3 right)
+        {
+            var net = LaneNet.Active;
+            if (net == null) return on + right * 4f;
+            float bestOff = float.MaxValue;
+            var best = on + right * 4f;
+            for (int sign = -1; sign <= 1; sign += 2)
+                for (float off = 3f; off <= 8f; off += 0.5f)
+                {
+                    var cand = on + right * (sign * off);
+                    var road = net.Locate(cand, out _, out float dd, 1.0f);
+                    bool clear = road == null || Mathf.Abs(dd) > road.HalfRoad + 1.3f;
+                    if (clear) { if (off < bestOff) { bestOff = off; best = cand; } break; }
+                }
+            return best;
         }
 
         void SpawnFootPatrols(Transform parent, List<IPatrolMarker> markers)

@@ -331,7 +331,7 @@ namespace CoverDemo
             {
                 // the kerb strip: between the marked lane and the kerb, where the parked
                 // cars are, at the asphalt's own level
-                laid += Scatter(root, _kerbBag, kerbProps, side, Lane + 0.5f, Half - 0.4f, RoadY);
+                laid += Scatter(root, _kerbBag, kerbProps, side, Lane + 0.5f, Half - 0.4f, RoadY, park: true);
                 // the pavement, in two strips with a lane left clear between them: props
                 // wall to wall would be a street nobody can walk down, and a crew that
                 // cannot reach the fight never gets behind anything either
@@ -389,7 +389,8 @@ namespace CoverDemo
         /// (props, the dressing's own furniture, the reserved car bays), and taking the
         /// box is what puts the prop into the walkers' way and into the cover query at
         /// once - the kit entered its plan in WalkObstacles when it was made.</summary>
-        int Scatter(Transform root, List<GameObject> bag, int count, int side, float zNear, float zFar, float y)
+        int Scatter(Transform root, List<GameObject> bag, int count, int side, float zNear, float zFar, float y,
+            bool park = false)
         {
 #if UNITY_EDITOR
             if (bag.Count == 0 || count <= 0) return 0;
@@ -414,6 +415,11 @@ namespace CoverDemo
                     var go = Instantiate(prefab, at, Quaternion.Euler(0f, yaw, 0f), root);
                     go.name = go.name.Replace("(Clone)", "");
                     plan.Take(box);
+                    // a prop on the carriageway edge is not just cover for men on foot -
+                    // it is a body in a driven car's lane, so it goes among the road's
+                    // users too and the traffic plans round it (StoodCar), the same as a
+                    // parked car. Off on the far pavement it is left out: no car goes there.
+                    if (park) StoodCar.Park(go);
                     laid++;
                     break;
                 }
@@ -451,6 +457,10 @@ namespace CoverDemo
                         var go = Instantiate(prefab, at, Quaternion.Euler(0f, yaw, 0f), root);
                         go.name = go.name.Replace("(Clone)", "");
                         plan.Take(box);
+                        // a heap left in the carriageway is squarely in a driven car's
+                        // path: put it among the road's users so the traffic goes round
+                        // it instead of through it (StoodCar).
+                        StoodCar.Park(go);
                         laid++;
                         break;
                     }

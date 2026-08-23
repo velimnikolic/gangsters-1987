@@ -25,12 +25,21 @@ namespace RoadDemo
         static readonly Queue<GameObject> splats = new Queue<GameObject>();
         static readonly Dictionary<PedestrianAgent, MaterialPropertyBlock> blocks = new Dictionary<PedestrianAgent, MaterialPropertyBlock>();
 
+        // The chalk outlines, capped like the splats. Each is a GameObject with a mesh
+        // all its own (never batched), one laid on every death and, before this cap, kept
+        // for the rest of the session: a violent night piled thousands of un-batchable
+        // draw calls and leaked meshes under the Blood node until the frame rate fell
+        // over. The oldest is retired - object AND mesh - once the yard is this full.
+        const int MaxChalk = 120;
+        static readonly Queue<GameObject> chalks = new Queue<GameObject>();
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
         {
             splatMaterial = null;
             root = null;
             splats.Clear();
+            chalks.Clear();
             blocks.Clear();
             holeMaterial = null;
             holes.Clear();
@@ -359,6 +368,20 @@ namespace RoadDemo
             mr.sharedMaterial = chalkMaterial;
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             mr.receiveShadows = false;
+
+            // hold the yard to MaxChalk: the oldest outline is taken up, its own mesh
+            // freed with it (a bare Destroy of the object would leak the Mesh asset)
+            chalks.Enqueue(go);
+            if (chalks.Count > MaxChalk)
+            {
+                var old = chalks.Dequeue();
+                if (old != null)
+                {
+                    var mf = old.GetComponent<MeshFilter>();
+                    if (mf != null && mf.sharedMesh != null) Object.Destroy(mf.sharedMesh);
+                    Object.Destroy(old);
+                }
+            }
             return go;
         }
     }

@@ -798,6 +798,25 @@ namespace RoadDemo
                 bike.RideTo(bike.Position);
                 return;
             }
+            else if (raid.GaveUpTheSpot && Time.time - raid.HomeNearAt > StuckSeconds)
+            {
+                // Given up the spot and STILL going nowhere: the machine is wedged in a
+                // jam it cannot ride out of. Left in the lane it holds the whole quarter
+                // for the rest of the run - a soak found one stood at a red for 786s with
+                // a street queued behind it. So it is hauled home onto its own off-street
+                // stand and the raid ended there; the men finish on foot. A machine off
+                // the carriageway blocks nobody, and the deadlock is broken at its root.
+                if (bike != null)
+                {
+                    var fwd = bike.Tf != null ? bike.Tf.forward : Vector3.forward;
+                    if (!bike.PlaceAt(raid.Home, fwd)) bike.GoFree(raid.Home);
+                    bike.Halt(hard: true);
+                    bike.SettleStand();
+                }
+                Finish(raid, "hauled off a jam it could not ride out of");
+                _raids.Remove(raid);
+                return;
+            }
 
             bool settled = Time.time - raid.StepAt > 3f &&
                            bike.State == CrewBike.Mode.Parked;
