@@ -50,6 +50,10 @@ namespace LivingCity.EditorTools
         static readonly string[] SkipNames =
         {
             "SM_Env_Skyline", "SM_Gen_Env_Skydome", "SM_Env_Water", "Ocean", "Water",
+            // and the clouds: they are scenery hanging a hundred metres up, and a
+            // block rectangle is a rectangle on the GROUND - one cloud drifting over
+            // a lot was ripped into it and stood over that block wherever it went
+            "SM_Env_Cloud",
         };
 
         /// <summary>Anything wider than this is not a building. Backdrops, ground
@@ -141,11 +145,20 @@ namespace LivingCity.EditorTools
             "SM_Env_Road_Crossing_", "SM_Env_Road_Median_", "SM_Env_Bridge_",
         };
 
-        /// <summary>The pavement. Kept apart from the carriageway because the two
-        /// answer different questions: a pavement rings EVERY block, so a column of
-        /// cells full of pavement says nothing about where a street runs, while a
-        /// column full of carriageway is a street and nothing else.</summary>
-        static readonly string[] Pavement = { "SM_Env_Sidewalk_" };
+        /// <summary>The KERB - the pieces that ring a block and separate it from the
+        /// road. Only these, and not the flat pavement fill (SM_Env_Sidewalk_01) that
+        /// lies between the kerb and the building line: that fill is the block's own
+        /// FLOOR, and cutting it away with the street left every ripped block a row of
+        /// buildings standing over nothing.
+        ///
+        /// So the line is drawn at the kerb: everything from the kerb outward is the
+        /// street and is laid by the generator, everything from the kerb inward is the
+        /// block and travels with it.</summary>
+        static readonly string[] Pavement =
+        {
+            "SM_Env_Sidewalk_Straight", "SM_Env_Sidewalk_Corner",
+            "SM_Env_Sidewalk_Dip", "SM_Env_Sidewalk_Merger",
+        };
 
         [MenuItem("Tools/City/Catalog/Synty Demo: Measure Blocks", priority = 41)]
         public static void MeasureBlocks() => Blocks(write: false);

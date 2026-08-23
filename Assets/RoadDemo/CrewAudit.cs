@@ -138,7 +138,29 @@ namespace RoadDemo
                 var man = FiredThisFrame[i];
                 if (man == null || man.Tf == null || man.Riding) continue;
                 var mark = man.Target;
-                if (mark == null || mark.Dead || !mark.Tf) continue;   // dropped by this very round: the aim was good enough
+
+                // A ROUND AT NOBODY IS ITS OWN FAULT, and this rule used to be blind to
+                // it: "no mark" was folded in with "the mark went down to this very
+                // round" and both were waved through. They are not the same thing. A
+                // man who drops his target with the round he is firing aimed fine; a man
+                // firing with no target at all is firing at the scenery, and the whole
+                // class of bug the player keeps reporting - a man who walks away from a
+                // finished fight still letting rounds off into the pavement - lives in
+                // exactly the gap this let through.
+                if (mark == null)
+                {
+                    Fault(man, "noaim", "fired with no target (" + man.State + ")");
+                    continue;
+                }
+                if (mark.Dead || !mark.Tf) continue;   // dropped by this very round: the aim was good enough
+
+                // AND A ROUND FROM MOVING LEGS. The player's standing rule is that a man
+                // who is running does not fire; a man WALKING out of a fight and firing
+                // as he goes is the same fault one notch quieter, and it is invisible
+                // unless it is named.
+                if (man.LegsMoving)
+                    Fault(man, "firewalk", "fired with his legs in a gait (" + man.State + ")");
+
                 var to = mark.ChestPosition - man.MuzzlePosition;
                 if (to.magnitude < 2f) continue;                       // muzzle at his chest: the angle means nothing
                 float off = Vector3.Angle(man.MuzzleForward, to);

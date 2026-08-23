@@ -3247,7 +3247,34 @@ namespace RoadDemo
             if (MuzzleFlashPrefab)
             {
                 var flash = Instantiate(MuzzleFlashPrefab, muzzle, Quaternion.LookRotation(forward), follow);
-                Destroy(flash, 2f);
+
+                // ONE TRIGGER PULL IS ONE FLASH. The pack's FX_Gunshot_01 is authored as
+                // a LOOPING system - the flash emitter runs on a tenth of a second and
+                // re-bursts every cycle - and it is instantiated as a CHILD of the gun's
+                // muzzle in local simulation space. Left as it comes, one round strobed
+                // about twenty flashes and a point light over two full seconds, out of
+                // whatever direction the barrel happened to be pointing by then.
+                //
+                // That is the whole of the bug the player kept reporting as "puca u
+                // zemlju" and "ubiju ih i onda nastave da pucaju u prazno": the fight
+                // ends, AimGun stops writing the arm and blends out in a sixth of a
+                // second, the arm falls back onto the raw pistol clip - which aims at
+                // the horizon of the rig it was authored on and so puts the barrel in
+                // the pavement - the tether then walks him off, and the flash from the
+                // LAST round is still firing out of his lowered gun for another second
+                // and a half. No round is leaving the barrel at all.
+                //
+                // It is also why every gate added inside TickEngage did nothing for it:
+                // those gates govern the ROUND. What the player watches is this object,
+                // which is bound by none of them and outlives the fight that made it.
+                float live = 0.25f;
+                foreach (var ps in flash.GetComponentsInChildren<ParticleSystem>(true))
+                {
+                    var main = ps.main;
+                    main.loop = false;
+                    live = Mathf.Max(live, main.duration + main.startLifetime.constantMax);
+                }
+                Destroy(flash, Mathf.Min(live, 1.5f));
             }
             var shots = ShotsFor(kind);
             if (shots.Length > 0)
