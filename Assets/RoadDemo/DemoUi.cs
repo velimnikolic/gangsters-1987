@@ -111,6 +111,11 @@ namespace RoadDemo
         /// <summary>The car hint's glyphs: the back arrow for "get out", the plain one for "get in".</summary>
         public static Sprite IconBack => Slot(ref iconBack, Flat + "ICON_ModernMenus_Arrow_Back_01_Clean.png");
 
+        /// <summary>The shop over the outfit's own door - the crew bar's key to the
+        /// front. A storefront and not a house, because that is what a front IS: the
+        /// premises the street sees, with the family behind it.</summary>
+        public static Sprite IconShop => Slot(ref iconShop, Flat + "ICON_ModernMenus_Shop_01_Clean.png");
+
         /// <summary>The soft glow dot the world markers ride on.</summary>
         public static Sprite Dot => Slot(ref dot, Pack + "Sprites/FX/SPR_ModernMenus_FX_Glow_Dot_01.png");
 
@@ -129,7 +134,7 @@ namespace RoadDemo
             Fonts + "BarlowCondensed/BarlowCondensed-Medium SDF.asset");
 
         static Sprite gradient, chip, box, iconTimer, iconPlay, iconFaster, dot;
-        static Sprite iconArrow, iconCombat, iconChat, iconDeath, iconPlus, iconBack;
+        static Sprite iconArrow, iconCombat, iconChat, iconDeath, iconPlus, iconBack, iconShop;
         static GameObject carGlyph;
         static TMP_FontAsset headline, body;
         static bool warned;
@@ -141,6 +146,7 @@ namespace RoadDemo
         {
             gradient = chip = box = iconTimer = iconPlay = iconFaster = dot = null;
             iconArrow = iconCombat = iconChat = iconDeath = iconPlus = iconBack = null;
+            iconShop = null;
             carGlyph = null;
             headline = body = null;
             warned = false;

@@ -87,7 +87,7 @@ namespace SuburbDemo
                         else b.Encapsulate(r.bounds);
                     }
                     if (!started) continue;
-                    host.Blocked(b);
+                    host.Blocked(b, t.name);
                     n++;
                 }
             }

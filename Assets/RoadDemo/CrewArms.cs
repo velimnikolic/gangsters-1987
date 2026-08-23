@@ -116,6 +116,45 @@ namespace RoadDemo
             return best;
         }
 
+        // ------------------------------------------------------------- the size
+
+        /// <summary>The longest a piece of this kind may be in a man's hand, in metres.
+        /// The packs author their guns oversized for readability - the PalmCity "rifle"
+        /// the counter sells for a kalashnikov measures 1.15m end to end, against a real
+        /// AK's 0.88 - and on a 1.86m Synty body that reads as a man carrying somebody
+        /// else's gun. Attach trims anything longer down to the cap here.
+        ///
+        /// The trim only ever SHRINKS: a piece already inside its cap is left exactly as
+        /// the pack authored it, so the sidearms and the shotgun (0.39 and 0.72, both
+        /// under their caps) are untouched and only the long guns come down.</summary>
+        public static float LengthCap(EquipmentKind kind) => kind switch
+        {
+            // the sidearms: the pack's own size, capped above what it authors
+            EquipmentKind.Pistol => 0.40f,
+            EquipmentKind.TwinPistols => 0.40f,
+            // the machine pistol is a stockless piece and reads wrong at 0.62
+            EquipmentKind.MachinePistol => 0.50f,
+            // a pump gun: the pack's is short already and stays as authored
+            EquipmentKind.Shotgun => 0.72f,
+            // a Thompson, a shade under the real 0.81 to sit with the rest
+            EquipmentKind.TommyGun => 0.75f,
+            // the kalashnikov - the loudest offender, and the biggest cut
+            EquipmentKind.Rifle => 0.80f,
+            _ => 0.40f,
+        };
+
+        /// <summary>The kind a pack body stands for, read off the same catalogue that
+        /// chose the body (ArmoryCatalog.ModelName). Attach is handed a prefab and
+        /// nothing else - the two bike benches have no ledger item at all - so the model
+        /// name is the key, and a body the counter does not sell is held to be a
+        /// sidearm.</summary>
+        static EquipmentKind KindOfModel(string modelName)
+        {
+            foreach (var listing in LivingCity.Outfit.ArmoryCatalog.Weapons)
+                if (listing.ModelName == modelName) return listing.Kind;
+            return EquipmentKind.Pistol;
+        }
+
         // ------------------------------------------------------------- the fist
 
         /// <summary>Puts the gun in this rig's right hand. Returns the gun, or null when
@@ -134,7 +173,7 @@ namespace RoadDemo
             // the gun's own frame: barrel along the longest axis of its mesh, toward
             // the end that reaches furthest from the grip pivot; the pack authors its
             // pieces barrel +Z, top +Y, and the measure only confirms which way is which
-            MeasureBarrel(gun, out var barrelLocal, out var muzzleLocal);
+            MeasureBarrel(gun, out var barrelLocal, out var muzzleLocal, out var length);
             var upLocal = Mathf.Abs(barrelLocal.y) > 0.5f ? Vector3.forward : Vector3.up;
             var gunFrame = Quaternion.LookRotation(barrelLocal, upLocal); // gun-local -> "gun frame"
 
@@ -150,7 +189,11 @@ namespace RoadDemo
             gun.SetParent(hand, false);
             gun.localRotation = handLocal;
             gun.localPosition = Quaternion.Inverse(tPose) * GripNudge;
-            gun.localScale = Vector3.one;
+            // the trim: the piece cut down to its cap (LengthCap), never up - and about
+            // the pack's own pivot, which sits at the grip, so the fist keeps its hold
+            gun.localScale = Vector3.one * (length > 1e-4f
+                ? Mathf.Min(1f, LengthCap(KindOfModel(prefab.name)) / length)
+                : 1f);
 
             var muzzle = new GameObject("Muzzle").transform;
             muzzle.SetParent(gun, false);
@@ -235,11 +278,13 @@ namespace RoadDemo
 
         /// <summary>WeaponSocket's measure, kept: the barrel is the longest axis of the
         /// gun's mesh, pointing to whichever end lies further from the pivot; the
-        /// muzzle is that end at the bore.</summary>
-        static void MeasureBarrel(Transform gun, out Vector3 barrelLocal, out Vector3 muzzleLocal)
+        /// muzzle is that end at the bore, and the length is the gun end to end.</summary>
+        static void MeasureBarrel(Transform gun, out Vector3 barrelLocal, out Vector3 muzzleLocal,
+            out float length)
         {
             barrelLocal = Vector3.forward;
             muzzleLocal = new Vector3(0f, 0.09f, 0.22f);
+            length = 0f;
 
             var filters = gun.GetComponentsInChildren<MeshFilter>();
             var started = false;
@@ -263,6 +308,7 @@ namespace RoadDemo
                 ? bounds.max[axis] : bounds.min[axis];
             barrelLocal = Vector3.zero;
             barrelLocal[axis] = Mathf.Sign(far);
+            length = size[axis];   // butt to muzzle, in the gun's own metres
 
             // the bore: the barrel's own centre line, which on a pistol sits above
             // the whole-gun centre; take the top third of the gun's height as the bore

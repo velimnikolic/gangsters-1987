@@ -14,6 +14,10 @@ namespace RoadDemo
         public float X, Z;
         public float XMin, XMax, ZMin, ZMax;
         public TrafficSignal Signal;
+        /// <summary>The toll gate standing in this box, if it is a toll plaza's: a
+        /// driver pays here before the arm goes up (RoadCar.CanEnter asks it in the
+        /// same breath as the light).</summary>
+        public TollGate Toll;
         public readonly List<RoadEdge> Incoming = new List<RoadEdge>();
         public readonly List<RoadEdge> Outgoing = new List<RoadEdge>();
 

@@ -102,6 +102,7 @@ namespace LivingCity.UI
             EquipmentKind.TwinPistols => "Twin Pistols",
             EquipmentKind.MachinePistol => "Machine Pistol",
             EquipmentKind.Motorcycle => "Motorcycle",
+            EquipmentKind.Grenade => "Grenade",
             _ => "",
         };
 

@@ -12,6 +12,8 @@
   <ItemGroup>
     <Compile Include="Stubs.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="TurnRound.cs" />
+    <Compile Include="RedLight.cs" />
     <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\LaneNet.cs" />
     <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\RoadCar.cs" />
     <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\DriverProfile.cs" />

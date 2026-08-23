@@ -36,6 +36,7 @@ namespace LivingCity.Tests
             LieutenantCannotBeClickAssigned(failures);
             EquipmentIsExclusive(failures);
             GearFlowsThroughTheLieutenant(failures);
+            KeysMoveBetweenLieutenants(failures);
             LieutenantDealsArmsByOrganization(failures);
             MotorcycleIsWheelsAndNotAGun(failures);
             FrontArmsTheGuards(failures);
@@ -481,6 +482,43 @@ namespace LivingCity.Tests
                 !RosterOps.GiveEquipment(roster, car.Id, lieutenant.Id).Ok)
                 failures.Add("GearFlowsThroughTheLieutenant: the lieutenant was " +
                              "refused.");
+        }
+
+        /// <summary>The street's hand-over: a car already dealt to one lieutenant goes
+        /// to another on one order, no return to the safe in between - and the chain of
+        /// command still holds, so a hood cannot be pointed at.</summary>
+        static void KeysMoveBetweenLieutenants(List<string> failures)
+        {
+            var roster = new Roster();
+            var first = Make(roster, "First", "Boss", Rank.Lieutenant);
+            var second = Make(roster, "Second", "Boss", Rank.Lieutenant);
+            var hood = Make(roster, "Corner", "Hood");
+            MakeCrew(roster, first);
+            MakeCrew(roster, second, hood);
+            var car = MakeItem(roster, EquipmentKind.Vehicle);
+
+            if (!RosterOps.GiveEquipment(roster, car.Id, first.Id).Ok)
+                failures.Add("KeysMoveBetweenLieutenants: the first grant was refused.");
+            if (!RosterOps.MoveEquipment(roster, car.Id, second.Id).Ok)
+                failures.Add("KeysMoveBetweenLieutenants: a held car would not move.");
+            if (car.OwnerId != second.Id)
+                failures.Add("KeysMoveBetweenLieutenants: the deed did not change hands.");
+
+            var again = RosterOps.MoveEquipment(roster, car.Id, second.Id);
+            if (again.Ok || again.Reason != LedgerText.ReasonAlreadyHolds)
+                failures.Add("KeysMoveBetweenLieutenants: his own car was handed to " +
+                             "him twice.");
+
+            var refused = RosterOps.MoveEquipment(roster, car.Id, hood.Id);
+            if (refused.Ok || refused.Reason != LedgerText.ReasonGearViaLieutenant)
+                failures.Add("KeysMoveBetweenLieutenants: a hood was given the keys.");
+
+            // and the deal that runs right after leaves the car inside the new crew
+            RosterOps.NormalizeArms(roster);
+            if (car.OwnerId != second.Id ||
+                (car.HolderId != second.Id && car.HolderId != hood.Id))
+                failures.Add("KeysMoveBetweenLieutenants: the deal took the car out of " +
+                             "the crew it was just given to.");
         }
 
         /// <summary>The deal itself: at five-star Organization the best iron lands in

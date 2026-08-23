@@ -19,6 +19,11 @@ namespace RoadDemo
     {
         readonly List<(Rect area, Color32 tint)> _patches = new List<(Rect, Color32)>();
 
+        /// <summary>Lines with a width: a quarter's streets, which are laid in the
+        /// district's own frame and so need not run along the map's axes.</summary>
+        readonly List<(Vector2 a, Vector2 b, float half, Color32 tint)> _strips =
+            new List<(Vector2, Vector2, float, Color32)>();
+
         protected override void Awake()
         {
             base.Awake();
@@ -28,6 +33,7 @@ namespace RoadDemo
         public void Clear()
         {
             _patches.Clear();
+            _strips.Clear();
             SetVerticesDirty();
         }
 
@@ -38,7 +44,19 @@ namespace RoadDemo
             SetVerticesDirty();
         }
 
-        public int Count => _patches.Count;
+        /// <summary>Adds one line of a given width, in the same coordinates - a street
+        /// that runs at whatever angle its quarter was laid at. Ends are square: the
+        /// streets of a quarter meet at junctions and a rounded cap would print a
+        /// notch at every corner.</summary>
+        public void Add(Vector2 from, Vector2 to, float half, Color tint)
+        {
+            var along = to - from;
+            if (along.sqrMagnitude < 1e-6f) return;
+            _strips.Add((from, to, Mathf.Max(0.2f, half), tint));
+            SetVerticesDirty();
+        }
+
+        public int Count => _patches.Count + _strips.Count;
 
         protected override void OnPopulateMesh(VertexHelper vh)
         {
@@ -52,6 +70,20 @@ namespace RoadDemo
                 vh.AddVert(new Vector3(area.xMin, area.yMax), tint, uv);
                 vh.AddVert(new Vector3(area.xMax, area.yMax), tint, uv);
                 vh.AddVert(new Vector3(area.xMax, area.yMin), tint, uv);
+                vh.AddTriangle(at, at + 1, at + 2);
+                vh.AddTriangle(at + 2, at + 3, at);
+            }
+
+            for (int i = 0; i < _strips.Count; i++)
+            {
+                var (a, b, half, tint) = _strips[i];
+                var along = (b - a).normalized;
+                var side = new Vector2(-along.y, along.x) * half;
+                int at = vh.currentVertCount;
+                vh.AddVert(new Vector3(a.x - side.x, a.y - side.y), tint, uv);
+                vh.AddVert(new Vector3(a.x + side.x, a.y + side.y), tint, uv);
+                vh.AddVert(new Vector3(b.x + side.x, b.y + side.y), tint, uv);
+                vh.AddVert(new Vector3(b.x - side.x, b.y - side.y), tint, uv);
                 vh.AddTriangle(at, at + 1, at + 2);
                 vh.AddTriangle(at + 2, at + 3, at);
             }

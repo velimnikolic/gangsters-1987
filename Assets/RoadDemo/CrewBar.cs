@@ -65,6 +65,15 @@ namespace RoadDemo
         const float CarKeyWidth = 19f;
         const float CarKeyGap = 3f;
         const float NameWidth = ColumnWidth - CarKeyWidth - CarKeyGap;
+        // The house key: the outfit's own premises, kept at the HEAD of the bar as a
+        // square of its own - the shop over the door and the trade under it. A click
+        // on it, either button, sends the camera to stand over that door and leaves it
+        // there, which is what a right click on a lieutenant's block already does for
+        // the man. The door never moves, so the ride is a fixed point and not a man to
+        // follow; the player pans and it lets go, like any other ride.
+        const float FrontWidth = BlockHeight;   // square, the bar's own height
+        const float FrontIconSize = 30f;
+        const float FrontLabelHeight = 13f;
         // A bust print (PortraitStudio) is square and puts the head about this far
         // up it; a chip that is not square shows a window of the print, not a
         // squashed print, and the window is centred on the head.
@@ -127,6 +136,9 @@ namespace RoadDemo
         DemoCrews _crews;
         Canvas _canvas;
         RectTransform _row;
+        RectTransform _frontKey;      // the outfit's own door, at the head of the row
+        TMP_Text _frontTrade;
+        GangFront _front;
         Transform _cameraRoot;
         readonly List<Block> _blocks = new List<Block>();
         readonly List<DemoCrews.Unit> _shown = new List<DemoCrews.Unit>();
@@ -173,6 +185,9 @@ namespace RoadDemo
         public bool Contains(Vector2 screen)
         {
             if (_row == null || !_row.gameObject.activeInHierarchy) return false;
+            if (_frontKey != null && _frontKey.gameObject.activeSelf &&
+                RectTransformUtility.RectangleContainsScreenPoint(_frontKey, screen))
+                return true;
             foreach (var block in _blocks)
                 if (block.Rect.gameObject.activeSelf &&
                     RectTransformUtility.RectangleContainsScreenPoint(block.Rect, screen))
@@ -335,6 +350,48 @@ namespace RoadDemo
             key.gameObject.SetActive(false);
         }
 
+        /// <summary>The key to the house: the shop glyph in the outfit's gold with the
+        /// trade under it - "CAFE", "LAUNDRY", whatever the licence over that door
+        /// says (FrontBooks). Built the first frame the premises are standing, because
+        /// the families are seated a frame or two after the bar is, and the demo scenes
+        /// that stand no fronts never seat one at all.</summary>
+        void BuildFrontKey()
+        {
+            var rect = DemoUi.NewRect("Front", _row);
+            rect.anchorMin = rect.anchorMax = new Vector2(0f, 0.5f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = new Vector2(FrontWidth, BlockHeight);
+            _frontKey = rect;
+
+            var frame = rect.gameObject.AddComponent<Image>();
+            frame.raycastTarget = false;
+            DemoUi.Dress(frame, DemoUi.Box, 12f, DemoUi.Panel);
+
+            // the gold rim stays lit: the house is always the player's, and there is
+            // nothing here to select
+            var rim = DemoUi.Block(rect, "Rim", DemoUi.Gold);
+            DemoUi.Fill(rim.rectTransform, 2f);
+            var face = DemoUi.Block(rect, "Face", DemoUi.Well);
+            DemoUi.Fill(face.rectTransform, 4f);
+
+            var shop = DemoUi.Icon(rect, "Shop", DemoUi.IconShop, FrontIconSize, DemoUi.Gold);
+            shop.rectTransform.anchoredPosition = new Vector2(0f, FrontLabelHeight * 0.5f);
+
+            if (_fonts)
+            {
+                _frontTrade = DemoUi.Text(rect, "Trade", 9f, DemoUi.InkDim,
+                    TextAlignmentOptions.Center);
+                _frontTrade.characterSpacing = 0.5f;
+                _frontTrade.overflowMode = TextOverflowModes.Ellipsis;
+                var label = _frontTrade.rectTransform;
+                label.anchorMin = label.anchorMax = new Vector2(0.5f, 0f);
+                label.pivot = new Vector2(0.5f, 0f);
+                label.anchoredPosition = new Vector2(0f, Pad);
+                label.sizeDelta = new Vector2(FrontWidth - 2f * Pad, FrontLabelHeight);
+            }
+        }
+
         Chip BuildChip(RectTransform parent, Vector2 at)
         {
             var chip = new Chip();
@@ -395,12 +452,34 @@ namespace RoadDemo
             foreach (var unit in _crews.Units)
                 if (unit.Faction == 0) _shown.Add(unit);
             while (_blocks.Count < _shown.Count) _blocks.Add(BuildBlock());
-            _row.sizeDelta = new Vector2(_shown.Count * BlockWidth + Mathf.Max(0, _shown.Count - 1) * Gap, BlockHeight);
+
+            // the house at the head of the row, when the outfit has premises standing
+            if (_front == null) _front = DemoCrews.PlayerFront();
+            bool house = _front != null;
+            if (house && _frontKey == null) BuildFrontKey();
+            if (_frontKey != null && _frontKey.gameObject.activeSelf != house)
+                _frontKey.gameObject.SetActive(house);
+
+            float crewsWide = _shown.Count * BlockWidth + Mathf.Max(0, _shown.Count - 1) * Gap;
+            float head = house ? FrontWidth + (crewsWide > 0f ? Gap : 0f) : 0f;
+            _row.sizeDelta = new Vector2(head + crewsWide, BlockHeight);
+
+            if (house && _frontTrade != null)
+            {
+                var trade = _front.Books != null && !string.IsNullOrEmpty(_front.Books.Trade)
+                    ? _front.Books.Trade.ToUpperInvariant() : "FRONT";
+                if (_frontTrade.text != trade) _frontTrade.SetText(trade);
+            }
 
             var mouse = Mouse.current;
             bool click = show && mouse != null && mouse.leftButton.wasPressedThisFrame;
             bool look = show && mouse != null && mouse.rightButton.wasPressedThisFrame;
             var at = click || look ? mouse.position.ReadValue() : Vector2.zero;
+
+            // either button on the house: the camera goes and stands over the door
+            if (house && (click || look) &&
+                RectTransformUtility.RectangleContainsScreenPoint(_frontKey, at))
+                RideFront(_front);
 
             // the feeds take turns: one camera a frame, round-robin
             _turn = _shown.Count > 0 ? (_turn + 1) % _shown.Count : 0;
@@ -413,7 +492,7 @@ namespace RoadDemo
                 bool film = live && show && i == _turn;
                 if (block.Cam.enabled != film) block.Cam.enabled = film;
                 if (!live) continue;
-                block.Rect.anchoredPosition = new Vector2(i * (BlockWidth + Gap), 0f);
+                block.Rect.anchoredPosition = new Vector2(head + i * (BlockWidth + Gap), 0f);
                 var car = _crews.CarOf(_shown[i]);
                 Bind(block, _shown[i], car);
                 // a right click on a block puts the camera on that crew and leaves it
@@ -667,6 +746,18 @@ namespace RoadDemo
         // The demo camera takes up with the crew and stays with it - the lieutenant,
         // or the car he rides in - down every street it walks, until the player moves
         // the camera himself and takes it back.
+        /// <summary>The camera to the outfit's own door, and left there. A front is a
+        /// building: it does not walk, so the ride is given the doorstep once rather
+        /// than a man to keep asking after - and it ends the way every ride does, the
+        /// moment the player pans the camera himself.</summary>
+        static void RideFront(GangFront front)
+        {
+            var cam = Object.FindAnyObjectByType<DemoCamera>();
+            if (cam == null || front == null) return;
+            var door = front.Door;
+            cam.Ride(() => door);
+        }
+
         static void Ride(DemoCrews.Unit unit)
         {
             var cam = Object.FindAnyObjectByType<DemoCamera>();

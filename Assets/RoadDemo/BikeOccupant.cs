@@ -19,9 +19,33 @@ namespace RoadDemo
     {
         PlayableGraph _graph;
 
+        // The clip player: a two-input mixer, never a bare clip playable.
+        //
+        // A rider used to have exactly one thing to do - sit - and one clip playing for
+        // ever was the whole of it. He now also comes off the machine (RiderSpill): he
+        // falls, he hits the road, and then he either dies there or picks himself up,
+        // which is four clips one after another with a blend between each. So the seat
+        // is simply the first clip played on a mixer that can hold two, and the second
+        // input is whatever is fading out.
+        AnimationMixerPlayable _mix;
+        AnimationClipPlayable _now, _was;
+        AnimationClip _clip;
+        bool _loop, _held;
+        float _blend, _blendRate;
+
         /// <summary>The pose this body is riding in - the caller sets its speed, its
         /// foot down and its gun (RoadBike does it every frame).</summary>
         public BikePose Pose { get; private set; }
+
+        /// <summary>What is playing on him this instant, and how far into it.</summary>
+        public AnimationClip Playing => _clip;
+
+        public float ClipTime => _now.IsValid() ? (float)_now.GetTime() : 0f;
+
+        /// <summary>A one-shot clip that has run out and is being held on its last
+        /// frame - what "he has finished dying" means. Always false while a loop is
+        /// playing.</summary>
+        public bool Finished => _held;
 
         /// <summary>Put a rider on this bike and, with this chance, a mate behind him.
         /// Returns them, the rider first, so a caller may hide them - a bike stood on
@@ -95,12 +119,73 @@ namespace RoadDemo
             _graph = PlayableGraph.Create("BikeOccupant");
             _graph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
             var output = AnimationPlayableOutput.Create(_graph, "anim", animator);
-            var sit = AnimationClipPlayable.Create(_graph, sitLoop);
+            _mix = AnimationMixerPlayable.Create(_graph, 2);
+            output.SetSourcePlayable(_mix);
             // every man somewhere along the loop, so a row of bikes at a light is not
             // one man copied four times
-            sit.SetTime(Random.value * Mathf.Max(0.01f, sitLoop.length));
-            output.SetSourcePlayable(sit);
+            Play(sitLoop, loop: true, fade: 0f, at: Random.value * Mathf.Max(0.01f, sitLoop.length));
             _graph.Play();
+        }
+
+        /// <summary>Play this clip on him, fading off whatever was playing. A clip that
+        /// does not loop is HELD on its last frame when it runs out rather than snapping
+        /// back to the start - a man who has finished dying stays dead.</summary>
+        public void Play(AnimationClip clip, bool loop = true, float fade = 0.15f,
+            float speed = 1f, float at = 0f)
+        {
+            if (clip == null || !_graph.IsValid() || !_mix.IsValid()) return;
+
+            // the one that was already fading out has had its turn
+            if (_was.IsValid()) { _mix.DisconnectInput(1); _graph.DestroyPlayable(_was); _was = default; }
+            if (_now.IsValid()) { _mix.DisconnectInput(0); _was = _now; _mix.ConnectInput(1, _was, 0); }
+
+            _now = AnimationClipPlayable.Create(_graph, clip);
+            _now.SetApplyFootIK(false);
+            _now.SetTime(at);
+            _now.SetSpeed(speed);
+            _mix.ConnectInput(0, _now, 0);
+
+            _clip = clip;
+            _loop = loop;
+            _held = false;
+            _blend = fade > 0.001f && _was.IsValid() ? 0f : 1f;
+            _blendRate = fade > 0.001f ? 1f / fade : 1000f;
+            _mix.SetInputWeight(0, _blend);
+            _mix.SetInputWeight(1, 1f - _blend);
+        }
+
+        void Update()
+        {
+            if (!_graph.IsValid() || !_now.IsValid()) return;
+
+            if (_blend < 1f)
+            {
+                _blend = Mathf.Min(1f, _blend + _blendRate * Time.deltaTime);
+                _mix.SetInputWeight(0, _blend);
+                _mix.SetInputWeight(1, 1f - _blend);
+                if (_blend >= 1f && _was.IsValid())
+                {
+                    _mix.DisconnectInput(1);
+                    _graph.DestroyPlayable(_was);
+                    _was = default;
+                }
+            }
+
+            // The wrap is done here rather than left to the clip's own loop flag: half
+            // the wardrobe is FBX takes whose import settings nobody has set to loop,
+            // and a "loop" that quietly plays once is the sort of fault that reads as a
+            // man freezing mid-stride.
+            float len = _clip != null ? _clip.length : 0f;
+            if (len <= 0.01f || _held) return;
+            double t = _now.GetTime();
+            if (t < len) return;
+            if (_loop) _now.SetTime(t - len);
+            else
+            {
+                _now.SetTime(len - 0.0001f);
+                _now.SetSpeed(0f);
+                _held = true;
+            }
         }
 
         void OnDestroy()

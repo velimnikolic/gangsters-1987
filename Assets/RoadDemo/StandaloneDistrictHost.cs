@@ -291,6 +291,8 @@ namespace RoadDemo
 
         void IDistrictHost.Blocked(Bounds box) => WalkObstacles.Block(box);
 
+        void IDistrictHost.Blocked(Bounds box, string what) => WalkObstacles.Block(box);
+
         void IDistrictHost.ReportMissing(string what)
             => Debug.LogError($"[{(_district != null ? _district.Name : "District")}] missing prefab: {what}");
     }

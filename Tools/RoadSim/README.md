@@ -8,6 +8,7 @@ against stub UnityEngine types, no editor needed:
     dotnet run -c Release -- grid       # 100/60/120 cars on a 4x4 grid (signals / none / boulevard)
     dotnet run -c Release -- crew       # the crew demo ring: traffic + parked props + a gangster parking
     dotnet run -c Release -- block|crown|headon|wedged|uturn|standoff
+    dotnet run -c Release -- turnround  # the turn in the road: on this street, and for a mark one street back
     dotnet run -c Release -- crab       # heading vs the rear axle's motion: boxes, slides, pull-ins (must stay ~1 deg)
     SEED=5 TRACE=1 TRACEID=12 dotnet run -c Release -- crew   # other seed, per-car trace
 

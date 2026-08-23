@@ -7,7 +7,10 @@ namespace RoadDemo
     public enum DistrictKind { Pad, Suburb, Harbor, Airport }
 
     /// <summary>Which side of the city grid a district hangs off.</summary>
-    public enum CityEdge { South, West, North, East }
+    // None is LAST on purpose: South must stay 0, so a CityEdge that was never written
+    // - a scene serialised before this member existed, a default(CityEdge) in a struct -
+    // still reads as the south shore and not as "no shore".
+    public enum CityEdge { South, West, North, East, None }
 
     // ------------------------------------------------------------------ frame
 
@@ -266,6 +269,11 @@ namespace RoadDemo
 
         /// <summary>Ground a walker off the graph may not cross (a house, a shed).</summary>
         void Blocked(Bounds box);
+
+        /// <summary>The same, for a thing that has a NAME: a shed, a house, a hangar.
+        /// The host keeps the name so the map can put a card on it - a port whose sheds
+        /// cannot be clicked is scenery, and the city's own buildings all answer.</summary>
+        void Blocked(Bounds box, string what);
 
         /// <summary>A prefab the district wanted and did not get.</summary>
         void ReportMissing(string what);

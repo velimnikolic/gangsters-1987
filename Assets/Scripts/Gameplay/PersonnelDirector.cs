@@ -164,6 +164,17 @@ namespace LivingCity.Gameplay
             return Commit(RosterOps.GiveEquipment(Roster, itemId, id), "armed", id);
         }
 
+        /// <summary>The street's GIVE: this item to this lieutenant, whoever had it
+        /// before (RosterOps.MoveEquipment). The crew that lost it closes ranks in the
+        /// same normalize pass, and the version bump is what puts the car outside the
+        /// front under its new colours.</summary>
+        public OpResult MoveEquipment(int itemId, int id)
+        {
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchItem);
+            return Commit(RosterOps.MoveEquipment(Roster, itemId, id), "handed the keys", id);
+        }
+
         /// <summary>The purchase path's roster half - the OutfitDirector's Purchase
         /// gate has already moved the money by the time this runs.</summary>
         public RosterEquipment AddEquipment(Personnel.EquipmentKind kind,

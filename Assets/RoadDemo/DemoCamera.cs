@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace RoadDemo
@@ -19,9 +19,32 @@ namespace RoadDemo
         /// disagree about where the player is looking.</summary>
         public float mapAt = 180f;
 
+        /// <summary>Open the boom on something of a given SPAN - the widest side of
+        /// what has to be in frame - and stay on the street side of the map line.
+        ///
+        /// A scene that lays out its own grid knows its span and nothing else, and the
+        /// obvious "hold all of it" arithmetic quietly opens the map instead: past
+        /// mapAt this camera is a PLAN, drawn with the culling mask at zero, so a
+        /// large quarter came up as a flat blue rectangle with the whole city built and
+        /// standing behind it. Every scene that frames itself goes through here.</summary>
+        public void FrameSpan(float span, float fill = 0.8f, float floor = 110f)
+        {
+            float want = Mathf.Max(floor, fill * Mathf.Max(1f, span));
+            distance = Mathf.Clamp(want, Mathf.Max(0.5f, minDistance), mapAt - 15f);
+        }
+
+        /// <summary>How close the wheel may bring it. Eighteen metres is a man's
+        /// shoulder in the street and the right floor for the city, and it is far too
+        /// far away for a bench that exists to have an animation looked at - so the
+        /// benches lower it. It was a hard 18 in the clamp below, which is why the bike
+        /// bench asking for 4.2 m quietly sat at 18.</summary>
+        public float minDistance = 18f;
+
         /// <summary>How far back the wheel may go once the map is up. Set by
-        /// <see cref="DemoMap"/> from the island's own size, so the last click of the
-        /// wheel is the whole island in the frame and not a hand's width of sea.</summary>
+        /// <see cref="DemoMap"/> from the CITY's own size and a margin of country, so
+        /// the last click of the wheel is the town filling the frame - the way the
+        /// original's plan opens - and not the whole island with the streets a smudge
+        /// in the middle of it.</summary>
         public float mapCeiling = 900f;
 
         /// <summary>Whether the map should be up: the boom is past the threshold.</summary>
@@ -115,9 +138,14 @@ namespace RoadDemo
                 else _ride = null; // nothing left of him to watch; the camera stays where it stopped
             }
 
-            // 18 m is a man's shoulder; the ceiling is the map's, which is the whole
-            // island once DemoMap has measured it (900 m until it has).
-            distance = Mathf.Clamp(distance, 18f, Mathf.Max(900f, mapCeiling));
+            // 18 m is a man's shoulder; the ceiling is the map's, which is the TOWN
+            // and a margin of country round it once DemoMap has measured it (900 m
+            // until it has). The floor under that ceiling is the line the map comes up
+            // at and not a fixed 900 m: a small city's last click of the wheel must be
+            // allowed to stop at the city, or the plan opens on a stamp of streets in a
+            // screenful of sea.
+            distance = Mathf.Clamp(distance, Mathf.Max(0.5f, minDistance),
+                Mathf.Max(mapAt + 40f, mapCeiling));
             pitch = Mathf.Clamp(pitch, 22f, 82f);
 
             var rot = Quaternion.Euler(pitch, yaw, 0f);

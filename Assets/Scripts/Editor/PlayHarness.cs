@@ -55,13 +55,22 @@ namespace GangstersTools
             public int width = 1600;
             public int height = 900;
             public List<string> sets = new List<string>();
+            /// <summary>Batch runs leave through EditorApplication.Exit, which is the only
+            /// way out of -batchmode. A run driven from a live editor (the CLI's
+            /// gangsters_play) must not take the editor down with it, so it clears this
+            /// and leaves play mode instead.</summary>
+            public bool quit = true;
         }
 
         // ------------------------------------------------------------------ entry
 
-        public static void Run()
+        public static void Run() => RunWith(Parse(Environment.GetCommandLineArgs()));
+
+        /// <summary>The run itself, given a config rather than a command line: the batch
+        /// entry above and the editor command both come through here, and the only
+        /// difference between them is <see cref="Cfg.quit"/>.</summary>
+        public static void RunWith(Cfg cfg)
         {
-            var cfg = Parse(Environment.GetCommandLineArgs());
             if (string.IsNullOrEmpty(cfg.outDir))
                 cfg.outDir = Path.Combine(Path.GetTempPath(), "playharness");
             Directory.CreateDirectory(cfg.outDir);
@@ -100,6 +109,16 @@ namespace GangstersTools
 
         public static void LetGo() => _letGo = true;
 
+        /// <summary>How a run ends. In batch that is the editor's exit code; in a live
+        /// editor it is only the end of play mode - killing the user's editor because a
+        /// soak finished would be a poor trade.</summary>
+        internal static void Leave(int code)
+        {
+            var cfg = JsonUtility.FromJson<Cfg>(SessionState.GetString(CfgKey, "{}")) ?? new Cfg();
+            if (cfg.quit) EditorApplication.Exit(code);
+            else { Debug.Log($"[harness] the run is over (code {code}); the editor stays up"); EditorApplication.isPlaying = false; }
+        }
+
         static void Hold()
         {
             EditorApplication.wantsToQuit -= Stay;
@@ -123,7 +142,7 @@ namespace GangstersTools
             Debug.LogError("[harness] the play driver never came up - giving in");
             _letGo = true;
             SessionState.SetBool(ArmedKey, false);
-            EditorApplication.Exit(5);
+            Leave(5);
         }
 
         [InitializeOnLoadMethod]
@@ -253,7 +272,7 @@ namespace GangstersTools
         {
             Say(cfg, "[harness] FAILED: " + why);
             SessionState.SetBool(ArmedKey, false);
-            EditorApplication.Exit(4);
+            if (cfg.quit) EditorApplication.Exit(4);
         }
     }
 
@@ -410,7 +429,7 @@ namespace GangstersTools
             SessionState.SetBool("PlayHarness.Armed", false);
             PlayHarness.LetGo();
             Debug.Log($"[harness] {why} - {_sim:F0}s played, {_errors} errors, {_exceptions} exceptions");
-            EditorApplication.Exit(code);
+            PlayHarness.Leave(code);
         }
     }
 }

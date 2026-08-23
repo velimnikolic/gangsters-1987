@@ -101,7 +101,7 @@ namespace HarborDemo
                         else b.Encapsulate(r.bounds);
                     }
                     if (!started || b.size.y < 1.5f) continue;
-                    host.Blocked(b);
+                    host.Blocked(b, t.name);
                     n++;
                 }
             }

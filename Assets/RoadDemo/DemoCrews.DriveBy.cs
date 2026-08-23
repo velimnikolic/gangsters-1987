@@ -76,39 +76,52 @@ namespace RoadDemo
             StandLedgerBikes(roster);
         }
 
+        /// <summary>The two-wheelers the outfit OWNS, on their stands outside its own
+        /// door - the cars' rule exactly (StandLedgerCars): every machine on the books,
+        /// whoever holds the keys, parked at home. They queue along the same kerb the
+        /// cars do, because it is the same search that finds the length of it.</summary>
         void StandLedgerBikes(Roster roster)
         {
             if (!LedgerCarsStand) return;
 
-            // sold, or the keys handed back into the safe: off the street. A machine
-            // with men ON it is not taken out from under them - the raid is called off
-            // first, which puts them on their feet, and it goes on the next deal.
+            // struck off the books - sold, or lost: off the street. A machine with men
+            // ON it is not taken out from under them - the raid is called off first,
+            // which puts them on their feet, and it goes on the next deal.
             for (int i = Bikes.Count - 1; i >= 0; i--)
             {
                 var bike = Bikes[i];
                 if (bike == null || !_ledgerBikes.Contains(bike)) continue;
-                RosterEquipment item = null;
+                bool onBooks = false;
                 foreach (var e in roster.Equipment)
-                    if (e.Id == bike.ItemId && e.Kind == EquipmentKind.Motorcycle) { item = e; break; }
-                if (item != null && CrewCars.KeeperOf(item) >= 0) continue;
+                    if (e.Id == bike.ItemId && e.Kind == EquipmentKind.Motorcycle) { onBooks = true; break; }
+                if (onBooks) continue;
                 if (bike.Rider != null || bike.Pillion != null) { CallOffRaid(bike, "sold"); continue; }
                 DropBike(bike);
             }
 
+            var front = PlayerFront();
             foreach (var item in roster.Equipment)
             {
                 if (item.Kind != EquipmentKind.Motorcycle) continue;
-                int keeper = CrewCars.KeeperOf(item);
-                if (keeper < 0) continue;                                  // in the lock-up
                 if (Bikes.Exists(b => b != null && b.ItemId == item.Id)) continue;
 
-                // beside the man the book dealt it to, or his lieutenant if that man is
-                // not out on the street
-                if (!_byCharacter.TryGetValue(keeper, out var man) || man == null || man.Dead || !man.Tf)
+                // outside the outfit's door. Only where there is no door at all - a demo
+                // street with no fronts on it - does the old rule stand in: beside the
+                // man the book dealt it to, or his lieutenant if that man is not out.
+                CrewWalker man = null;
+                Vector3 anchor;
+                if (front != null) anchor = front.Door;
+                else
                 {
-                    var unit = OwnerFor(roster, item);
-                    man = unit?.Boss;
-                    if (man == null || man.Dead || !man.Tf) continue;
+                    int keeper = CrewCars.KeeperOf(item);
+                    if (keeper < 0) continue;                              // in the lock-up
+                    if (!_byCharacter.TryGetValue(keeper, out man) || man == null || man.Dead || !man.Tf)
+                    {
+                        var unit = OwnerFor(roster, item);
+                        man = unit?.Boss;
+                        if (man == null || man.Dead || !man.Tf) continue;
+                    }
+                    anchor = man.Tf.position;
                 }
 
                 var prefab = CrewCars.BodyFor(item);
@@ -123,12 +136,15 @@ namespace RoadDemo
                 if (!CrewCars.MeasurePrefab(prefab, out float halfLength, out float halfWidth))
                     halfLength = halfWidth = 0.5f;
                 halfWidth = Mathf.Max(0.42f, halfWidth);
-                if (!CrewCars.KerbSlotNear(Net ?? LaneNet.Active, man.Tf.position,
+                if (!CrewCars.KerbSlotNear(Net ?? LaneNet.Active, anchor,
                         halfLength, halfWidth, out var at, out var facing))
                 {
                     WarnOnce("bikekerb:" + item.Id,
-                        $"[Crews] nowhere to leave {man.DisplayName}'s {item.DisplayName} - " +
-                        "no free kerb near him.");
+                        front != null
+                            ? $"[Crews] nowhere to leave the outfit's {item.DisplayName} - " +
+                              "no free kerb outside the front."
+                            : $"[Crews] nowhere to leave {man.DisplayName}'s {item.DisplayName} - " +
+                              "no free kerb near him.");
                     continue;
                 }
 
@@ -139,8 +155,9 @@ namespace RoadDemo
                     ? "Motorcycle" : item.DisplayName;
                 bike.Owner = OwnerFor(roster, item);
                 _ledgerBikes.Add(bike);
-                Debug.Log($"[Crews] {man.DisplayName}'s {bike.DisplayName} is on its stand " +
-                          "beside him.");
+                Debug.Log(front != null
+                    ? $"[Crews] the outfit's {bike.DisplayName} is on its stand outside the front."
+                    : $"[Crews] {man.DisplayName}'s {bike.DisplayName} is on its stand beside him.");
             }
         }
 
@@ -539,6 +556,9 @@ namespace RoadDemo
         {
             if (man == null || bike == null) return;
             man.Disengage();
+            // a man out running after somebody is called off it: he has a machine to get
+            // to, and two orders on one man is one order nobody can see
+            EndChase(man);
             _doorTries.Remove(man);
             SendToDoor(man, MountPoint(bike));
         }

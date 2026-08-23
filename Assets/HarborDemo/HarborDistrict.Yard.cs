@@ -653,9 +653,18 @@ namespace HarborDemo
                 Debug.LogWarning("[HarborDemo] the street kit did not load - no approach road.");
                 return;
             }
-            foreach (float gx in new[] { gW, gE })
+            // A gate the CITY drives into is not capped: the cap is a pavement laid
+            // across the mouth of the junction, and with a street arriving from the
+            // north it puts a kerb through the road - the port read as unreachable, the
+            // approach broken off by a footpath. A gate with no street of its own to
+            // meet (the port in its own demo scene, or a second gate the city did not
+            // link) keeps the cap, or the junction opens onto grass.
+            var gates = new[] { gW, gE };
+            int linked = _links != null ? _links.Length : 0;
+            for (int k = 0; k < gates.Length; k++)
             {
-                _street.LayJunction(gx, _streetZ, capNorth: true, splaySouth: 1);
+                float gx = gates[k];
+                _street.LayJunction(gx, _streetZ, capNorth: k >= linked, splaySouth: 1);
                 // the gate road outside the wire, at the street's own level, up to the T
                 _street.LayRoadAlongZ(gx, _fenceZ, _streetZ - StreetKit.StreetHalf);
             }

@@ -159,8 +159,8 @@ namespace BlockDemo
             // in full because the quarter must hit the pads with the randomiser OFF
             // too; with it on, RoadDemoBuilder.Respace deals the palette again and
             // shuffles it, exactly as it does for the city.
-            var vx = Centrelines(nv, vBlvd, blockWidths);
-            var hz = Centrelines(nh, hBlvd, blockDepths);
+            var vx = RoadDemoBuilder.Centrelines(nv, vBlvd, blockWidths);
+            var hz = RoadDemoBuilder.Centrelines(nh, hBlvd, blockDepths);
 
             // built on a GameObject that is switched off, so every field below is set
             // before RoadDemoBuilder.Awake reads them
@@ -179,6 +179,18 @@ namespace BlockDemo
             city.blockCycle = Mathf.Max(0, blockCycle);
             // a quarter is what lies BETWEEN the seams: no river, no park, no wild strip
             city.seams = new Seam[0];
+            // and no closed streets and no zoning either, for the same reason the seams
+            // are gone: this is a lab, and the thing under test is the crew, the car or
+            // the mission - not the plan. Every junction here is a crossroads and every
+            // interior a block, so a run's route is the same route every time and a
+            // fault in the tally is the crew's rather than the surveyor's. The city
+            // itself carries both (RoadDemoBuilder.Closes.cs, .Zones.cs).
+            city.closeStreets = false;
+            city.zoneCity = false;
+            // and the lab lays its OWN grid, so nothing may roll one over it: the streets
+            // and the seeds set here are the experiment's settings, not a starting point
+            city.rollCityPlan = false;
+            city.rollCityEachPlay = false;
             // and no port and no suburbs either - those are quarters of their own, and
             // they have scenes of their own
             city.rollDistricts = false;
@@ -260,23 +272,6 @@ namespace BlockDemo
             return blvd;
         }
 
-        /// <summary>Road centrelines for one axis: the palette dealt across the gaps in
-        /// order, each line a pavement, an interior and a pavement on from the last.
-        /// The same formula as RoadDemoBuilder.PlanLine, which may re-deal them.</summary>
-        static float[] Centrelines(int count, bool[] boulevard, float[] palette)
-        {
-            var at = new float[count];
-            float pave = RoadDemoBuilder.PavementWidth;
-            for (int k = 0; k + 1 < count; k++)
-            {
-                float interior = palette != null && palette.Length > 0
-                    ? palette[k % palette.Length] : 85f;
-                at[k + 1] = at[k] + RoadDemoBuilder.RoadHalf(boulevard[k]) + pave +
-                            interior + pave + RoadDemoBuilder.RoadHalf(boulevard[k + 1]);
-            }
-            return at;
-        }
-
         // High enough to hold the whole quarter, low enough that the frontages read.
         void FrameTheQuarter(RoadDemoBuilder city)
         {
@@ -285,7 +280,7 @@ namespace BlockDemo
             // the grid as it ended up: Respace may have re-dealt every size
             float across = city.verticalRoadX[city.verticalRoadX.Length - 1];
             float deep = city.horizontalRoadZ[city.horizontalRoadZ.Length - 1];
-            rig.distance = Mathf.Max(110f, 0.95f * Mathf.Max(across, deep));
+            rig.FrameSpan(Mathf.Max(across, deep), fill: 0.95f);
             rig.pitch = 45f;
             rig.yaw = 30f;
             rig.showHint = true;

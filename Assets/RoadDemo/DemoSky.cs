@@ -271,6 +271,17 @@ namespace RoadDemo
             _moon.enabled = night > 0.01f;
         }
 
+        /// <summary>PolygonCity's own demo haze: LINEAR fog from x to y metres instead
+        /// of this sky's exponential falloff. Zero leaves the city's own.
+        ///
+        /// Their Demo.unity runs linear 50 -> 400 over a scene 350 m across, and that
+        /// band of haze behind the towers is a large part of why its screenshots read
+        /// as depth. It is a lever rather than a change because 400 m over a city
+        /// kilometres wide erases everything but the block under the camera.</summary>
+        [Header("The PolygonCity haze")]
+        public Vector2 linearHaze = Vector2.zero;
+        public Color linearHazeColour = new Color(0.8057f, 0.9514f, 1f);
+
         void ApplyAtmosphere(float night)
         {
             RenderSettings.ambientMode = AmbientMode.Trilight;
@@ -280,9 +291,21 @@ namespace RoadDemo
             RenderSettings.ambientIntensity = 1f;
 
             RenderSettings.fog = true;
-            RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = Color.Lerp(DayFog, NightFog, night);
-            RenderSettings.fogDensity = Mathf.Lerp(DayFogDensity, NightFogDensity, night);
+            if (linearHaze.y > linearHaze.x && linearHaze.y > 0f)
+            {
+                RenderSettings.fogMode = FogMode.Linear;
+                RenderSettings.fogStartDistance = linearHaze.x;
+                RenderSettings.fogEndDistance = linearHaze.y;
+                // still darkened by the clock: a haze that stays daylight-blue at
+                // midnight is a lit sheet hung between the camera and the city
+                RenderSettings.fogColor = Color.Lerp(linearHazeColour, NightFog, night);
+            }
+            else
+            {
+                RenderSettings.fogMode = FogMode.ExponentialSquared;
+                RenderSettings.fogColor = Color.Lerp(DayFog, NightFog, night);
+                RenderSettings.fogDensity = Mathf.Lerp(DayFogDensity, NightFogDensity, night);
+            }
 
             if (_skybox)
                 _skybox.SetFloat("_Exposure", Mathf.Lerp(1.25f, 0.7f, night));

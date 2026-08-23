@@ -52,6 +52,15 @@ namespace BikeDemo
         const float DefToeAhead = 0.94f, DefToeDown = 0.34f;
         const float DefHoldWide = 0.19f, DefHoldLift = 0.06f, DefHoldForward = 0.05f;
 
+        [Header("Which bench")]
+        [Tooltip("PLAY RUNS THE SPILL SHOW: four machines riding four lanes, one coming " +
+                 "off each way, looped for ever (BikeShow). Off, and Play is this bench - " +
+                 "one machine stood still with every proportion on the Inspector.\n\n" +
+                 "The editor is always this bench either way: a pose is a still thing and " +
+                 "is looked at standing still, and a spill is four seconds of motion and " +
+                 "cannot be looked at at all without Play.")]
+        public bool spillShow = true;
+
         [Header("The machine")]
         [Tooltip("Which two-wheeler is stood here, by name. Change it in Play and the bench " +
                  "rebuilds around the new one. The packs' machines: SM_Veh_Motorbike_01 " +
@@ -197,9 +206,21 @@ namespace BikeDemo
         LineRenderer _aimLine;
         readonly Transform[] _marks = new Transform[10];
 
+        BikeShow _show;
+
         void Awake()
         {
 #if UNITY_EDITOR
+            if (Application.isPlaying && spillShow)
+            {
+                // The user never re-runs a menu step and never saves this scene, so the
+                // show has to install itself at Play off the one component the scene
+                // does hold. Same rule as every other layer in the project.
+                _show = GetComponent<BikeShow>();
+                if (_show == null) _show = gameObject.AddComponent<BikeShow>();
+                _show.machine = machine;
+                return;
+            }
             Stand();
 #else
             Debug.LogError("[BikeDemo] This bench loads Synty prefabs through the AssetDatabase " +
@@ -243,6 +264,7 @@ namespace BikeDemo
         void Update()
         {
 #if UNITY_EDITOR
+            if (_show != null) return;   // the show owns Play
             if (Application.isPlaying) Keys();
             if (resetDefaults) { resetDefaults = false; Reset(); }
             // the preview switched on or off, or the scripts reloaded out from under it
@@ -338,7 +360,7 @@ namespace BikeDemo
         /// bug than an empty scene ever was.</summary>
         static void Unsaved(GameObject go)
         {
-            if (go) go.hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild;
+            DemoScratch.Unsaved(go);
         }
 
         Transform _stage;
@@ -495,7 +517,7 @@ namespace BikeDemo
         /// <summary>The machine by name, out of the catalogue rather than a folder scan:
         /// every scan in the project denies "bike" and "moped", so a two-wheeler is only
         /// ever had by asking for it (VehicleCatalog.Motorcycles, and the law's tourer).</summary>
-        static GameObject Machine(string name)
+        internal static GameObject Machine(string name)
         {
 #if UNITY_EDITOR
             foreach (var body in StreetBikes.Bodies())
@@ -530,7 +552,7 @@ namespace BikeDemo
             return (driver, shooter);
         }
 
-        static GameObject Cast(string name) =>
+        internal static GameObject Cast(string name) =>
             LivingCity.UI.LedgerModelSet.PersonNamed(name) ??
             LivingCity.UI.PortraitStudio.FindPeoplePrefab(name);
 
@@ -805,6 +827,7 @@ namespace BikeDemo
 
         void OnGUI()
         {
+            if (_show != null) return;   // its own labels and its own readout
             var cam = Camera.main;
             if (cam == null) return;
 

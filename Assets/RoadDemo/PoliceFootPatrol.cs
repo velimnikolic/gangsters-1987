@@ -37,6 +37,7 @@ namespace RoadDemo
         Vector2 _restRange;
         Vector2Int _waypointRange;
         float _restTimer;
+        float _sceneWave;   // until his next wave-along at a scene he is holding
         float _targetT;
 
         PedNode _waypoint;
@@ -126,12 +127,18 @@ namespace RoadDemo
 
                 case Mode.OnScene:
                 {
-                    // stood at the corner, looking at it
+                    // stood at the corner, looking at it - and turning to it properly,
+                    // in steps, because an officer holding a scene is a body the player
+                    // walks right up to and stands beside
                     BlendLocomotion(dt, false);
-                    var to = _scenePos - Tf.position;
-                    to.y = 0f;
-                    if (to.sqrMagnitude > 1e-3f)
-                        Tf.rotation = Quaternion.Slerp(Tf.rotation, Quaternion.LookRotation(to.normalized), 3f * dt);
+                    TurnToward(_scenePos - Tf.position, 90f, dt);
+                    // and working the crowd back off it: an arm out, a wave along,
+                    // a shake of the head at whoever will not move
+                    if (!Acting && !Joining && (_sceneWave -= dt) <= 0f)
+                    {
+                        _sceneWave = Random.Range(3.5f, 8f);
+                        PlayAction(Random.value < 0.55f ? CrewKit.SpeakGestures : CrewKit.Waves);
+                    }
                     break;
                 }
             }
@@ -180,7 +187,7 @@ namespace RoadDemo
             _sceneWanted = false;
             State = Mode.Responding;
             Speed = _beatSpeed * 1.4f;
-            SetPoseSpeed(PoseWalk, Speed / ClipPace(PoseWalk, WalkClipPace));
+            HoldWalkRate(Speed);
         }
 
         /// <summary>Done at the scene: back on the beat, home first.</summary>
@@ -191,7 +198,7 @@ namespace RoadDemo
             State = Mode.Returning;
             _waypoint = null;
             _routeToWaypoint = null;
-            if (_beatSpeed > 0f) { Speed = _beatSpeed; SetPoseSpeed(PoseWalk, Speed / ClipPace(PoseWalk, WalkClipPace)); }
+            if (_beatSpeed > 0f) { Speed = _beatSpeed; HoldWalkRate(Speed); }
         }
 
         void BeginLeg(Vector3 from, Vector3 to, Mode mode)
@@ -205,15 +212,33 @@ namespace RoadDemo
 
         bool TickLeg(float dt)
         {
-            _legT += Speed * dt;
+            // GaitGain is the join's: he eases up to his pace over the start clip
+            // rather than gliding off at full speed with his feet still planted
+            _legT += Speed * GaitGain * dt;
             float f = _legLen < 0.01f ? 1f : Mathf.Clamp01(_legT / _legLen);
             var dir = _legTo - _legFrom;
             dir.y = 0f;
-            if (dir.sqrMagnitude > 1e-4f)
+            if (dir.sqrMagnitude > 1e-4f && !Joining)
                 Tf.rotation = Quaternion.Slerp(
                     Tf.rotation, Quaternion.LookRotation(dir.normalized), 8f * dt);
             Tf.position = Vector3.Lerp(_legFrom, _legTo, f);
             return f >= 1f;
+        }
+
+        /// <summary>The line the start clip is chosen against: the leg he is about to
+        /// walk, not the stretch he happens to be stood on.</summary>
+        protected override Vector3 JoinHeading
+        {
+            get
+            {
+                if (State == Mode.WalkOut || State == Mode.WalkIn)
+                {
+                    var to = _legTo - Tf.position;
+                    to.y = 0f;
+                    if (to.sqrMagnitude > 1e-4f) return to;
+                }
+                return base.JoinHeading;
+            }
         }
 
         // Reaching the waypoint corner draws the next one - or, with the budget

@@ -5,6 +5,7 @@
 #
 #   Tools/play/soak.sh --runs 30                    the car mission (soak.ps1's own)
 #   Tools/play/soak.sh --runs 30 --moto             the motorcycle: two men, one pass
+#   Tools/play/soak.sh --runs 30 --freeway          the motorway: two quarters, one road
 #
 # soak.ps1's opposite number for a Mac editor. Same shape, same ledger, same tally.
 # The editor must be CLOSED throughout. Around a minute a run.
@@ -32,11 +33,21 @@ while [ $# -gt 0 ]; do
         --roadblock) MODE="roadblock"; shift ;;
         --walk)    MODE="walk"; shift ;;
         --brawl)   MODE="brawl"; shift ;;
+        --freeway) MODE="freeway"; shift ;;
         *) echo "[soak] unknown argument: $1" >&2; exit 2 ;;
     esac
 done
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# THE MOTORWAY is a scene of its own: two quarters six hundred metres apart with an
+# elevated road between them, and what is judged is the road - that cars get on it,
+# pay at the plaza, cross, and get off at the other end (analyze.py --freeway).
+SEED_FIELD="BlockDemoBuilder.spacingSeed"
+if [ "$MODE" = "freeway" ]; then
+    [ "$SCENE" = "Assets/Scenes/BlockDemo.unity" ] && SCENE="Assets/Scenes/FreewayDemo.unity"
+    SEED_FIELD="FreewayDemoBuilder.spacingSeed"
+fi
 
 # The quarter each mode wants. The car soak's line is soak.ps1's, unchanged, so the two
 # scripts really do run the same lab. The motorcycle's is its own: a machine bought off
@@ -79,6 +90,9 @@ if [ -z "$SETS" ]; then
     # marched the quarter at three mobs of five, mixed arms, and 80% of the men
     # shot to their last hit break and run - so every run has the runners the
     # runnerchase and aimlow rules exist to watch.
+    if [ "$MODE" = "freeway" ]; then
+        SETS="FreewayDemoBuilder.carCount=34"
+    fi
     if [ "$MODE" = "brawl" ]; then
         SETS="BlockDemoBuilder.missionAfter=15;BlockDemoBuilder.missionOnFoot=1;BlockDemoBuilder.rivalCrews=3;BlockDemoBuilder.rivalHoods=4;BlockDemoBuilder.carCount=20;BlockDemoBuilder.outfitLieutenants=2;BlockDemoBuilder.outfitHoods=4;BlockDemoBuilder.mixedArms=1;BlockDemoBuilder.panicChance=0.8"
     fi
@@ -99,6 +113,9 @@ if [ "$MODE" = "moto" ]; then
     # not enough sim for that, and a run cut off mid-pass reads as a fault.
     [ "$SECONDS_" = "480" ] && SECONDS_=$MOTO_SECONDS
 fi
+if [ "$MODE" = "freeway" ]; then
+    VERDICT_FLAG="--freeway"
+fi
 # the crews' own verdict (CrewAudit rows) judges the walking and the fighting
 if [ "$MODE" = "walk" ] || [ "$MODE" = "brawl" ]; then
     VERDICT_FLAG="--crew"
@@ -114,7 +131,7 @@ for i in $(seq 1 "$RUNS"); do
     SEED=$(( FIRST_SEED + i ))
     DIR=$(printf "%s/run-%02d" "$OUT" "$i")
     "$HERE/run.sh" --scene "$SCENE" --seconds "$SECONDS_" --step 0.05 --out "$DIR" \
-        --set "$SETS;BlockDemoBuilder.spacingSeed=$SEED" --timeout 20 >/dev/null 2>&1
+        --set "$SETS;$SEED_FIELD=$SEED" --timeout 20 >/dev/null 2>&1
 
     VERDICT=$(python3 "$HERE/analyze.py" "$DIR" $VERDICT_FLAG 2>&1)
     CODE=$?

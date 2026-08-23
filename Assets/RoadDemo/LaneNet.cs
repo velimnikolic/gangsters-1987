@@ -156,6 +156,11 @@ namespace RoadDemo
         /// freeway's own run down off its pillars. Null on a road that lies flat, which
         /// is nearly all of them - then SurfaceY alone answers.</summary>
         public System.Func<float, float> SurfaceAt;
+        /// <summary>A road off the ground: the deck of an elevated freeway or a slip
+        /// road climbing to one. Nothing in the driving reads it - it is what the black
+        /// box calls a freeway, so a run can be asked whether the freeway was used at
+        /// all (DriveTrace's "deck" rows).</summary>
+        public bool Elevated;
 
         /// <summary>The surface's height at a point along the road, and at its ends.</summary>
         public float SurfaceOn(float s) => SurfaceAt != null ? SurfaceAt(Mathf.Clamp(s, 0f, Length)) : SurfaceY;
@@ -795,9 +800,27 @@ namespace RoadDemo
         /// "the next lane after this one": follow it hop by hop. Turns at dead ends
         /// are allowed (those connectors exist); U-turns through live junctions are
         /// not. The target maps to its shortest loop back to itself.</summary>
-        public static Dictionary<RoadEdge, RoadEdge> RouteToward(List<RoadEdge> edges, RoadEdge target)
+        public static Dictionary<RoadEdge, RoadEdge> RouteToward(List<RoadEdge> edges, RoadEdge target) =>
+            RouteToward(edges, target, out _);
+
+        /// <summary>The same routes, and the METRES each lane is from the target - the
+        /// search's own working, which it used to throw away.
+        ///
+        /// A driver wants it to answer one question the table cannot: whether the way
+        /// he is pointing is the short way. The table is a graph of ONE-WAY lanes and a
+        /// U-turn in the middle of a street is not an edge of it (only the dead-end
+        /// turn-round is a connector), so a car sent to a mark behind it is routed the
+        /// only way the graph knows - forward, round the block. Given the distance from
+        /// his own lane AND from the one facing the other way, the driver can see that
+        /// for himself and turn round instead (RoadCar.Replan).
+        ///
+        /// <paramref name="dist"/> is measured from the START of each lane, which is
+        /// what the search is built on; a car part way down one subtracts its own
+        /// progress.</summary>
+        public static Dictionary<RoadEdge, RoadEdge> RouteToward(
+            List<RoadEdge> edges, RoadEdge target, out Dictionary<RoadEdge, float> dist)
         {
-            var dist = new Dictionary<RoadEdge, float> { [target] = 0f };
+            dist = new Dictionary<RoadEdge, float> { [target] = 0f };
             var open = new List<RoadEdge> { target };
             // Dijkstra backwards over the turn graph; small graphs, a list will do
             while (open.Count > 0)
@@ -833,6 +856,9 @@ namespace RoadDemo
         }
 
         public Dictionary<RoadEdge, RoadEdge> RouteToward(RoadEdge target) => RouteToward(Edges, target);
+
+        public Dictionary<RoadEdge, RoadEdge> RouteToward(RoadEdge target, out Dictionary<RoadEdge, float> dist) =>
+            RouteToward(Edges, target, out dist);
 
         // ------------------------------------------------------------ statics
 

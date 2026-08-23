@@ -3,6 +3,7 @@
     python Tools/play/analyze.py Temp/play/003
     python Tools/play/analyze.py Temp/play/003 --car 42     one car, second by second
     python Tools/play/analyze.py Temp/play/003 --why        every reason given, counted
+    python Tools/play/analyze.py Temp/play/003 --freeway    the motorway: journeys, tolls, faults
 
 The trace is one JSON object a line (DriveTrace): "car"/"ped" samples, "fault" rows
 the driving code flagged against itself, "man" manoeuvre changes, "shot"/"hit", and
@@ -390,6 +391,108 @@ def verdict(dirpath):
     return 0 if ok else 1
 
 
+
+def freeway(dirpath):
+    """The motorway against what it is for: cars get on it, pay at the plaza, cross
+    to the other quarter and get off. Nothing here judges the look of it - it counts
+    journeys, payments and the faults the gate and the driving code flag."""
+    import os
+
+    trace = os.path.join(dirpath, "trace.jsonl")
+    if not os.path.exists(trace):
+        print(f"== {dirpath}")
+        print("   NO TRACE - the run never got as far as playing")
+        return 3
+    rows = load(trace)
+    if not rows:
+        print("no trace")
+        return 2
+
+    cars = [r for r in rows if r["k"] == "car"]
+    faults = [r for r in rows if r["k"] == "fault"]
+    deck = [r for r in rows if r["k"] == "deck"]
+    tolls = [r for r in rows if r["k"] == "toll"]
+    belts = len([r for r in rows if r["k"] == "belt"])
+
+    # a JOURNEY: on at one end of the line, off at the other. The two interchanges
+    # are hundreds of metres apart, so a crossing is not a matter of opinion - it is
+    # the distance between where a car joined the road and where it left it.
+    joined = {}
+    crossings = []
+    rode = []
+    for r in deck:
+        who = r.get("id")
+        p = r.get("p") or [0, 0]
+        if r.get("what") == "on":
+            joined[who] = (r["t"], p)
+            continue
+        was = joined.pop(who, None)
+        if was is None:
+            continue
+        t0, p0 = was
+        far = max(abs(p[0] - p0[0]), abs(p[1] - p0[1]))
+        rode.append(far)
+        if far >= 300:
+            crossings.append((who, r["t"] - t0, far))
+
+    paid = len(tolls)
+    waits = [r.get("wait", 0) for r in tolls]
+    # which ways on were used: the ramps stand hundreds of metres apart down the
+    # line, so the places cars joined, bucketed at 200 m, ARE the interchanges. The
+    # line's own axis is whichever the joins are spread widest along.
+    ons = [(r.get("p") or [0, 0]) for r in deck if r.get("what") == "on"]
+    ends = Counter()
+    if ons:
+        spread_x = max(p[0] for p in ons) - min(p[0] for p in ons)
+        spread_z = max(p[1] for p in ons) - min(p[1] for p in ons)
+        axis = 0 if spread_x >= spread_z else 1
+        for p in ons:
+            ends[round(p[axis] / 200.0)] += 1
+
+    traffic = [r for r in cars if r.get("tag") != "crew"]
+    worst_traffic = max((r.get("quiet", 0) for r in traffic), default=0)
+    summary_path = os.path.join(dirpath, "summary.json")
+    thrown = 0
+    if os.path.exists(summary_path):
+        try:
+            thrown = json.load(open(summary_path, encoding="utf-8")).get("exceptions", 0)
+        except Exception:
+            pass
+
+    broke = [f for f in faults if f.get("fault") in ("tollrun", "tollstuck", "carstuck", "nopark")]
+    defects = []
+    if broke:
+        defects.append(f"{len(broke)} faults ({', '.join(sorted({f.get('fault') for f in broke}))})")
+    if belts:
+        defects.append(f"{belts} belt refusals")
+    if worst_traffic >= 90:
+        defects.append(f"a car stood {worst_traffic:.0f}s")
+    if thrown:
+        defects.append(f"{thrown} exceptions")
+    if not crossings:
+        defects.append("nobody crossed: the freeway carried no journey end to end")
+    if paid == 0:
+        defects.append("nobody paid: the toll plaza took nothing")
+    if len(ends) < 2:
+        defects.append(f"only {len(ends)} way(s) on were used - one end of the road is dead")
+    ok = not defects
+
+    print(f"== {dirpath}")
+    print(f"   {'PASSED' if ok else 'FAULTS: ' + '; '.join(defects)}")
+    print(f"   the deck   : {len(deck)} on/off, {len(crossings)} crossings, "
+          f"longest ride {max(rode) if rode else 0:.0f} m")
+    print(f"   the plaza  : {paid} paid, longest wait {max(waits) if waits else 0:.1f}s, "
+          f"average {sum(waits)/len(waits) if waits else 0:.1f}s")
+    print(f"   the traffic: worst car stood {worst_traffic:.0f}s, {belts} belt refusals")
+    by_kind = Counter(f.get("fault", "?") for f in faults)
+    if by_kind:
+        print("   faults     : " + ", ".join(f"{k} x{n}" for k, n in by_kind.most_common(8)))
+    for f in faults:
+        if f.get("fault") in ("tollrun", "tollstuck", "carstuck"):
+            print(f"   FAULT {secs(f['t'])} {f.get('fault')}: {f.get('what')}")
+    return 0 if ok else 1
+
+
 CREW_FAULTS = ("teleport", "offcity", "strayman", "singlefile",
                "aimlow", "zebrastuck", "runnerchase")
 
@@ -499,6 +602,8 @@ if __name__ == "__main__":
         sys.exit(verdict(path))
     if "--crew" in args:
         sys.exit(crew(path))
+    if "--freeway" in args:
+        sys.exit(freeway(path))
     if "--story" in args:
         sys.exit(story(path))
     sys.exit(report(path, only_car=car, show_why="--why" in args))

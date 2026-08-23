@@ -100,6 +100,17 @@ namespace RoadDemo
         float _rightDownAt;
         bool _rightPending;
 
+        /// <summary>The last right click that became a walk order: when, and where on
+        /// the screen. A second one on the same spot inside <see cref="DoubleClick"/>
+        /// seconds is the crew being told to GET THERE, and that is the only thing in
+        /// the town that makes a man run. Everything else - a man catching his crew up,
+        /// a man closing on a fight - is a walk, quick or otherwise.</summary>
+        float _lastOrderAt = -10f;
+        Vector2 _lastOrderAtPx;
+
+        const float DoubleClick = 0.4f;
+        const float DoubleSlackPx = 40f;
+
         public void Init(DemoCrews crews)
         {
             _crews = crews;
@@ -503,6 +514,16 @@ namespace RoadDemo
                     else if (_crews.CarRefusal != null)
                         _refusal = (_crews.CarRefusal, Time.unscaledTime + 2.5f);
                 }
+                // any OTHER car of the outfit's: the keys change hands. The boss is
+                // pointing at a lieutenant and at a car, which is the whole order -
+                // it need not matter whose it was, and it does not.
+                else if (_crews.OnTheBooks(car))
+                {
+                    if (_crews.AssignCar(car))
+                        ShowMark(car.Position + Vector3.up * 1.0f, MarkTint);
+                    else if (_crews.CarRefusal != null)
+                        _refusal = (_crews.CarRefusal, Time.unscaledTime + 2.5f);
+                }
                 else OpenCarOrders(car, up);
                 return;
             }
@@ -534,7 +555,19 @@ namespace RoadDemo
             var ray = _cam.ScreenPointToRay(up);
             if (!plane.Raycast(ray, out float enter)) return;
             var world = ray.GetPoint(enter);
-            if (_crews.OrderSelected(world, out var destination))
+
+            // ONE CLICK IS A WALK; TWO IS A RUN. The same click twice on the same spot,
+            // quickly - the way anybody hurries anything along - and the crew runs the
+            // bulk of the way instead of walking it. Nothing else runs: a man is not
+            // put into a jog by his own tether or by a fight, because the player did
+            // not ask for it and a town full of men trotting about reads as panic.
+            float slackTwice = DoubleSlackPx * (_canvas != null ? _canvas.scaleFactor : 1f);
+            bool run = Time.unscaledTime - _lastOrderAt <= DoubleClick &&
+                       (up - _lastOrderAtPx).sqrMagnitude <= slackTwice * slackTwice;
+            _lastOrderAt = Time.unscaledTime;
+            _lastOrderAtPx = up;
+
+            if (_crews.OrderSelected(world, out var destination, run))
                 ShowMark(destination, MarkTint);
         }
 

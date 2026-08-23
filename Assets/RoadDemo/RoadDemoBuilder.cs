@@ -84,7 +84,22 @@ namespace RoadDemo
                  "between two vertical roads.")]
         public Seam[] seams =
         {
-            new Seam { vertical = false, gap = 3, kind = SeamKind.River, width = 90f },
+            // Two rivers, not one, and they meet. A single channel across the middle
+            // cuts a town in half; two crossing ones cut it into four quarters that
+            // have to be driven between, which is what a river actually does to a
+            // city's shape. They meet in column gap 7 / row gap 3, and at the
+            // confluence neither lays a quay across the other's mouth (BuildRiver).
+            // The main one is the wide one - 130 m of water is a river you look at
+            // rather than a canal you step over.
+            new Seam { vertical = false, gap = 3, kind = SeamKind.River, width = 130f },
+            // a TRIBUTARY, not a second river across the whole map: it comes down from
+            // the north shore and stops in the main channel (fromRoad 4 is the river's
+            // own north quay road). Run it the full length and it leaves the south shore
+            // cut in half as well - and the airport, whose field is a mile of runway,
+            // then fits on no shore in the city and simply does not get built. 85 m so
+            // the column south of the confluence, which is dry ground, comes out a lot
+            // size the catalog has blocks for.
+            new Seam { vertical = true, gap = 7, kind = SeamKind.River, width = 85f, fromRoad = 4 },
             new Seam { vertical = true, gap = 4, kind = SeamKind.Park, width = 60f },
             new Seam { vertical = true, gap = 10, kind = SeamKind.Wild, width = 80f },
             new Seam { vertical = false, gap = 6, kind = SeamKind.Park, width = 60f },
@@ -228,6 +243,23 @@ namespace RoadDemo
         // has no room to dress it and it reads as a gap between two streets.
         const float MinInterior = 20f;
 
+        [Header("The light")]
+        [Tooltip("Where the sun stands: pitch, then compass yaw. The city's own is " +
+                 "(52, 38); PolygonCity's demo scene is (50, 212), which is the same " +
+                 "height of sun coming from the OTHER side - which side of a facade " +
+                 "is lit is most of the difference between the two scenes' pictures.")]
+        public Vector3 sunAngles = new Vector3(52f, 38f, 0f);
+        [Tooltip("The city's own is 1.25; PolygonCity's demo runs 1.5.")]
+        public float sunIntensity = 1.25f;
+        [Tooltip("How hard the sun's shadows read. PolygonCity's demo runs 0.8.")]
+        [Range(0f, 1f)] public float sunShadowStrength = 1f;
+        [Tooltip("Whose demo scene the colour grade copies (DemoGrade.Look).")]
+        public DemoGrade.Look look = DemoGrade.Look.PalmCity;
+        [Tooltip("PolygonCity's linear haze in metres, start then end. Zero leaves " +
+                 "this sky's own exponential falloff, which is what a city this wide " +
+                 "needs; a small scene can afford their 50 -> 400.")]
+        public Vector2 linearHaze = Vector2.zero;
+
         /// <summary>Half a carriageway, crown to kerb - a boulevard's or an ordinary
         /// street's. Public because a scene that lays out its own grid (the block lab)
         /// has to place its road lines by the same measurements the city uses.</summary>
@@ -235,6 +267,39 @@ namespace RoadDemo
 
         /// <summary>The pavement, kerb to building line.</summary>
         public static float PavementWidth => Sidewalk;
+
+        /// <summary>Road centrelines for one axis: the palette dealt across the gaps in
+        /// order, each line a pavement, an interior and a pavement on from the last.
+        ///
+        /// The same formula as PlanLine, which may re-deal them later - and the reason
+        /// this is here rather than in a scene is that two scenes now lay out their own
+        /// grid (the quarter and the block lab), and a grid arithmetic that lives in one
+        /// of them drifts from the other the first time the pavement changes width.</summary>
+        /// <summary>Which of the road lines on one axis are boulevards, out of the line
+        /// numbers a scene names. Shared with Centrelines because the two are always
+        /// used together: the boulevard flags decide half the spacing.</summary>
+        public static bool[] Avenues(int count, int[] named)
+        {
+            var blvd = new bool[count];
+            if (named != null)
+                foreach (int at in named)
+                    if (at >= 0 && at < count) blvd[at] = true;
+            return blvd;
+        }
+
+        public static float[] Centrelines(int count, bool[] boulevard, float[] palette)
+        {
+            var at = new float[count];
+            float pave = PavementWidth;
+            for (int k = 0; k + 1 < count; k++)
+            {
+                float interior = palette != null && palette.Length > 0
+                    ? palette[k % palette.Length] : 85f;
+                at[k + 1] = at[k] + RoadHalf(boulevard[k]) + pave +
+                            interior + pave + RoadHalf(boulevard[k + 1]);
+            }
+            return at;
+        }
 
         // The generic terrace: the last-resort filler for a lot no other bake wanted.
         // It is the one block named here; everything else in the folder is found by
@@ -448,10 +513,23 @@ namespace RoadDemo
             _traffic = new GameObject("Traffic").transform;
             _cars = new GameObject("Cars").transform;
 
+            // the number of the city, and the street plan and the seams it draws:
+            // first of everything, because every pass below reads what it writes
+            Pass("PlanCity", PlanCity);
             // no freeways in this town, whatever the inspector or an old scene says:
             // the Highway seams come out of the list before the grid is spaced on them
             Pass("NoFreeways", NoFreeways);
             Pass("Respace", Respace);
+            // which blocks are downtown and which are the rim: nothing is built off the
+            // zoning, but the closures, the bakes and the pocket parks all ask it
+            Pass("PlanZones", PlanZones);
+            // and which streets simply stop. Before ANY geometry: the junctions cap
+            // themselves off it, the lane graph skips the segments it shuts, and the
+            // quarters and the map read the same predicate the rest of the city does.
+            Pass("PlanCloses", PlanCloses);
+            // island or peninsula, and which way the country lies - before the quarters
+            // are rolled, because the port refuses a landlocked shore
+            Pass("PlanShoreline", PlanShoreline);
             // the belt freeway's line round the grid, which the freeway lands on and the
             // quarters stand outside of
             Pass("PlanBelt", PlanBelt);
@@ -468,7 +546,14 @@ namespace RoadDemo
             Pass("BuildRoadsAndSidewalks", BuildRoadsAndSidewalks);
             Pass("BuildBlocks", BuildBlocks);
             Pass("BuildSeams", BuildSeams);
+            // the closed streets, grassed over into walks - after the seams, since a
+            // close is a pocket park and is made of the parks' own kit
+            Pass("BuildCloses", BuildCloses);
             Pass("DressStreets", DressStreets);
+            // the elevated freeway between two quarters: its ground works and its own
+            // junctions, before the graph, which welds them to the grid
+            // (RoadDemoBuilder.Freeway.cs)
+            Pass("BuildFreeway", BuildFreeway);
             Pass("BuildGraph", BuildGraph);
             Pass("BuildSignals", BuildSignals);
             Pass("BuildPedGraph", BuildPedGraph);
@@ -828,8 +913,8 @@ namespace RoadDemo
             AnimationClip PeopleClip(string name) =>
                 RoadDemo.DemoAssetLoad.Load<AnimationClip>(
                     "Assets/Animations/People/" + name + ".anim");
-            _walkClip = PeopleClip("Standard Walk");
-            _idleClip = PeopleClip("Breathing Idle");
+            _walkClip = CrewKit.StockWalk;
+            _idleClip = CrewKit.StockIdle;
             if (_walkClip == null || _idleClip == null || _pedPrefabs.Count == 0)
                 Debug.LogWarning("[RoadDemo] pedestrian assets missing; spawning without people");
 
@@ -1108,8 +1193,13 @@ namespace RoadDemo
             /// <summary>What was built here, in the words the overlay prints.</summary>
             public readonly string Contents;
 
+            /// <summary>The lot was left as a pocket park rather than built on: lawn,
+            /// paths and trees where a bake would have stood (RoadDemoBuilder.Zones.cs).
+            /// The plan draws it green, and it carries no frontage and no business.</summary>
+            public readonly bool Green;
+
             public LotInfo(int column, int row, Rect interior, Rect slab, string code,
-                string contents)
+                string contents, bool green = false)
             {
                 Column = column;
                 Row = row;
@@ -1117,6 +1207,7 @@ namespace RoadDemo
                 Slab = slab;
                 Code = code;
                 Contents = contents;
+                Green = green;
             }
 
             public float Width => Interior.width;
@@ -1981,14 +2072,38 @@ namespace RoadDemo
                             horizontalRoadZ[j + 1] - HHalf(j + 1))));
                 }
 
-            // biggest first, ties broken by position so the order never wobbles
+            // Downtown first, then biggest, ties broken by position so the order never
+            // wobbles. The zone leads because being served first is what a lot gets out
+            // of it: LotBakeFor prefers a composed block nothing has stood yet, so
+            // whoever asks early carries what somebody arranged by hand and whoever
+            // asks late carries the rolled stock or the generic terrace. Ordering
+            // across two different sizes changes nothing either way - the bakes are
+            // filed by lot code and a lot can only ever be offered its own code's pool.
             lots.Sort((a, b) =>
             {
+                int zoneA = ZoneServingOrder(ZoneAt(a.i, a.j));
+                int zoneB = ZoneServingOrder(ZoneAt(b.i, b.j));
+                if (zoneA != zoneB) return zoneA.CompareTo(zoneB);
                 float areaA = (a.xMax - a.xMin) * (a.zMax - a.zMin);
                 float areaB = (b.xMax - b.xMin) * (b.zMax - b.zMin);
                 if (!Mathf.Approximately(areaA, areaB)) return areaB.CompareTo(areaA);
                 return a.i != b.i ? a.i.CompareTo(b.i) : a.j.CompareTo(b.j);
             });
+
+            // The pocket parks leave the list before anything is served. A lot left as
+            // grass must not reserve a hand-composed block it will never stand (
+            // PlanOwnPads counts interiors by lot code and holds one bake per count),
+            // and it must not draw a feature bake off the loose pool either.
+            for (int k = lots.Count - 1; k >= 0; k--)
+            {
+                var green = lots[k];
+                if (!IsPocketPark(green.i, green.j)) continue;
+                string what = BuildPocketPark(green.xMin, green.xMax, green.zMin, green.zMax);
+                _lotPlans.Add(new LotInfo(green.i, green.j,
+                    Rect.MinMaxRect(green.xMin, green.zMin, green.xMax, green.zMax), green.slab,
+                    LotCode(green.xMax - green.xMin, green.zMax - green.zMin), what, true));
+                lots.RemoveAt(k);
+            }
 
             PlanOwnPads(lots);
 
@@ -2752,6 +2867,9 @@ namespace RoadDemo
             // the freeway's own: its frontage roads, its decks as one-way carriageways
             // that climb their profile, and the slip roads between them
             BuildFreewayLanes(net);
+            // and the elevated freeway between two quarters, whose decks, ramps and link
+            // roads are the same graph as the streets they come down to
+            WireFreeway(net);
             net.Finish();
             _edges.Clear();
             _edges.AddRange(net.Edges);
@@ -2780,6 +2898,12 @@ namespace RoadDemo
             var housing = new Material(lit) { color = new Color(0.16f, 0.16f, 0.17f) };
             housing.SetFloat("_Smoothness", 0.35f);
 
+            // Every junction is signalled, the Ts and the dead ends included - and the
+            // red phase there is NOT wasted, whatever it looks like from a car. At a
+            // junction only one axis reaches, the crossings over that axis are the ones
+            // the walk graph gates (BuildPedGraph): the phase that stops the cars is the
+            // phase the crowd crosses in. Take the signal off a T and the pavement on
+            // the far side becomes unreachable.
             foreach (var n in _nodes)
             {
                 var sig = new TrafficSignal(((n.I * 31 + n.J * 17) % 13) / 13f * TrafficSignal.Cycle);
@@ -2909,25 +3033,31 @@ namespace RoadDemo
                 }
 
             // the pavement down both sides of every segment, linking one
-            // intersection's corners to the next - a closed segment has no pavement
-            // (its junctions were capped), a bridge's walkways are pavement like any
+            // intersection's corners to the next - a segment closed by a SEAM has no
+            // pavement (its junctions were capped and the water or the lawn is beyond
+            // them), a bridge's walkways are pavement like any. A CLOSE keeps both its
+            // pavements: the cars are stopped, the crowd is not, and the walk down it
+            // is the whole point of grassing the carriageway over (BuildCloses).
             for (int i = 0; i < nv; i++)
                 for (int j = 0; j + 1 < nh; j++)
                 {
-                    if (!SegmentOpen(true, i, j)) continue;
+                    if (!WalkThrough(true, i, j)) continue;
                     AddPedLink(_corners[i, j, NE], _corners[i, j + 1, SE], false, false, null);
                     AddPedLink(_corners[i, j, NW], _corners[i, j + 1, SW], false, false, null);
                 }
             for (int j = 0; j < nh; j++)
                 for (int i = 0; i + 1 < nv; i++)
                 {
-                    if (!SegmentOpen(false, j, i)) continue;
+                    if (!WalkThrough(false, j, i)) continue;
                     AddPedLink(_corners[i, j, NE], _corners[i + 1, j, NW], false, false, null);
                     AddPedLink(_corners[i, j, SE], _corners[i + 1, j, SW], false, false, null);
                 }
 
             // the quays and the park paths: pavement of the seams' own
             BuildSeamPaths();
+            // and the same for the squares inside the blocks, so the crowd walks
+            // through them instead of round them
+            BuildPocketParkPaths();
         }
 
         // ------------------------------------------------------------- city life
@@ -3837,10 +3967,11 @@ namespace RoadDemo
             var sunGo = new GameObject("Sun");
             _sun = sunGo.AddComponent<Light>();
             _sun.type = LightType.Directional;
-            _sun.intensity = 1.25f;
+            _sun.intensity = sunIntensity;
             _sun.color = new Color(1f, 0.96f, 0.87f);
             _sun.shadows = LightShadows.Soft;
-            sunGo.transform.rotation = Quaternion.Euler(52f, 38f, 0f);
+            _sun.shadowStrength = Mathf.Clamp01(sunShadowStrength);
+            sunGo.transform.rotation = Quaternion.Euler(sunAngles.x, sunAngles.y, sunAngles.z);
 
             var camGo = new GameObject("Demo Camera") { tag = "MainCamera" };
             var cam = camGo.AddComponent<Camera>();
@@ -3913,6 +4044,7 @@ namespace RoadDemo
             var sky = go.AddComponent<DemoSky>();
             sky.clock = clock;
             sky.sun = _sun;
+            sky.linearHaze = linearHaze;
 
 #if UNITY_EDITOR
             // (no cloud ring: the PalmCity ring was a slab of geometry turning over
@@ -3935,7 +4067,9 @@ namespace RoadDemo
 
             // PalmCity's own colour grade over the top of all of it (the component
             // brings its own global Volume in)
-            go.AddComponent<DemoGrade>().clock = clock;
+            var grade = go.AddComponent<DemoGrade>();
+            grade.clock = clock;
+            grade.look = look;
 
             var lamps = go.AddComponent<DemoStreetLamps>();
             lamps.clock = clock;

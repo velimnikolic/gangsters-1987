@@ -221,6 +221,38 @@ namespace LivingCity.Personnel
             return OpResult.Success;
         }
 
+        /// <summary>The keys handed straight from whoever has them to another
+        /// lieutenant - the STREET's order: a lieutenant is picked, one of the outfit's
+        /// cars is clicked, and it is his.
+        ///
+        /// GiveEquipment refuses an item somebody already holds, and rightly: on the
+        /// armory page the boss is reading a list, and taking a gun off a named man
+        /// without saying so would be a book that lies. On the street the man doing the
+        /// taking is being pointed at, so the two halves are one act - and this does
+        /// both. The via-lieutenant rule still stands: the receiver must run a crew.</summary>
+        public static OpResult MoveEquipment(Roster roster, int itemId, int id)
+        {
+            var item = FindItem(roster, itemId);
+            if (item == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchItem);
+
+            var member = roster.Find(id);
+            if (member == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            if (member.Gone)
+                return OpResult.Fail(GoneReason(member));
+            if (member.Rank != Rank.Lieutenant)
+                return OpResult.Fail(LedgerText.ReasonGearViaLieutenant);
+            if (item.OwnerId == id)
+                return OpResult.Fail(LedgerText.ReasonAlreadyHolds);
+
+            // his crew's deed. Who in it actually drives the thing is the deal's call
+            // (NormalizeArms, wheels by Driving) and runs immediately after.
+            item.OwnerId = id;
+            item.HolderId = id;
+            return OpResult.Success;
+        }
+
         /// <summary>The boss dumps gear at headquarters: the FRONT becomes its owner,
         /// and NormalizeArms deals the locker out to the men guarding the desk - the
         /// front manager and the pooled hoods.</summary>

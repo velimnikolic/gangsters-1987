@@ -47,6 +47,11 @@ namespace RoadDemo
         public int Health = 2;
         public bool Dead => State == Mode.Dead;
 
+        /// <summary>Somebody to step round: not once he is down. The body lies where it
+        /// fell for a while before it is struck off, and for that while the pavement
+        /// used to steer the whole crowd round a corpse as though it were a bin.</summary>
+        protected override bool InCrowd => !Dead;
+
         /// <summary>How frightened, 0..1 - above a little and he takes no benches,
         /// no doors of his own choosing and no chats.</summary>
         public float Fear => _fear;
@@ -192,6 +197,7 @@ namespace RoadDemo
                     // stops only fire on an uninterrupted stretch of the same link
                     if (!_waiting && _link == linkBefore && _t > tBefore)
                         CheckStops(linkBefore, tBefore, _t);
+                    else if (_waiting) TickWaitLife(dt);
                     if (_gawkAt.HasValue) TickGawkApproach();
                     break;
                 }
@@ -266,12 +272,14 @@ namespace RoadDemo
                     Tf.position = Vector3.MoveTowards(Tf.position, _chatSlide, 0.7f * dt);
                     Lateral = Mathf.MoveTowards(Lateral, _chatLatTo, 0.7f * dt);
                     if (_partner != null)
+                        TurnToward(_partner.Tf.position - Tf.position, 150f, dt);
+                    // the hands go with the word: a point up the street, a shrug, a
+                    // nod at what the other one just said
+                    if (!Acting && !Joining && (_gestureIn -= dt) <= 0f)
                     {
-                        var look = _partner.Tf.position - Tf.position;
-                        look.y = 0f;
-                        if (look.sqrMagnitude > 1e-4f)
-                            Tf.rotation = Quaternion.Slerp(Tf.rotation,
-                                Quaternion.LookRotation(look.normalized), 5f * dt);
+                        _gestureIn = Random.Range(2.5f, 6f);
+                        PlayAction(Random.value < 0.5f
+                            ? CrewKit.SpeakGestures : CrewKit.ListenGestures);
                     }
                     _timer -= dt;
                     if (_timer <= 0f)
@@ -314,7 +322,11 @@ namespace RoadDemo
 
                 case Mode.Cower:
                 {
-                    SetPose(HasPose(PoseCrouch) ? PoseCrouch : PoseIdle);
+                    // some get down behind the nearest thing; some go down on their
+                    // knees where they stand, which is 1987 and is also the only way
+                    // a crowd under fire reads as people rather than as one reflex
+                    if (!_kneeling || !HoldAction(CrewKit.PrayKneel, 0.5f))
+                        SetPose(HasPose(PoseCrouch) ? PoseCrouch : PoseIdle);
                     TickBlend(dt);
                     var away = Tf.position - _threat;
                     away.y = 0f;
@@ -334,7 +346,15 @@ namespace RoadDemo
                 case Mode.Gawk:
                 {
                     TickBlend(dt);
-                    if (_gawkAt.HasValue) FaceToward(_gawkAt.Value, 3f * dt);
+                    // stood staring: a calm man with time to turn properly, so he
+                    // steps round to the scene rather than swivelling to it
+                    if (_gawkAt.HasValue)
+                        TurnToward(_gawkAt.Value - Tf.position, 90f, dt);
+                    if (!Acting && (_gawkChat -= dt) <= 0f)
+                    {
+                        _gawkChat = Random.Range(4f, 11f);
+                        PlayAction(CrewKit.ListenGestures);
+                    }
                     _timer -= dt;
                     if (_timer <= 0f)
                     {
@@ -490,15 +510,34 @@ namespace RoadDemo
 
         bool TickLeg(float dt)
         {
-            _legT += Speed * dt;
+            // GaitGain is the join's: he eases up to his pace over the start clip
+            // rather than sliding off the pavement with his feet still planted
+            _legT += Speed * GaitGain * dt;
             float f = _legLen < 0.01f ? 1f : Mathf.Clamp01(_legT / _legLen);
             var dir = _legTo - _legFrom;
             dir.y = 0f;
-            if (dir.sqrMagnitude > 1e-4f)
+            if (dir.sqrMagnitude > 1e-4f && !Joining)
                 Tf.rotation = Quaternion.Slerp(
                     Tf.rotation, Quaternion.LookRotation(dir.normalized), 8f * dt);
             Tf.position = Vector3.Lerp(_legFrom, _legTo, f);
             return f >= 1f;
+        }
+
+        /// <summary>The line a start clip is chosen against: the leg he is about to
+        /// walk - in to a bench, out of a door - not the stretch he stands on.</summary>
+        protected override Vector3 JoinHeading
+        {
+            get
+            {
+                if (State == Mode.ToBench || State == Mode.FromBench ||
+                    State == Mode.ToDoor || State == Mode.WalkOut)
+                {
+                    var to = _legTo - Tf.position;
+                    to.y = 0f;
+                    if (to.sqrMagnitude > 1e-4f) return to;
+                }
+                return base.JoinHeading;
+            }
         }
 
         static Vector3 LinkPoint(PedLink link, float t)
@@ -586,6 +625,41 @@ namespace RoadDemo
             int pose = shout && HasPose(PoseShout) ? PoseShout : PoseTalk;
             RestartPose(pose, Random.value * 0.8f); // desync the two gesticulations
             SetPose(pose);
+            _gestureIn = Random.Range(1.5f, 4f);
+            // it opens the way one opens - a nod at the other man
+            if (!shout) PlayAction(CrewKit.Greet);
+        }
+
+        // The little life: how long until his next gesture, fidget or glance. One
+        // clock each, so nobody's beat is anybody else's.
+        float _gestureIn, _fidgetIn = -1f, _gawkChat;
+        bool _kneeling;
+
+        /// <summary>How much of the crowd goes down on its KNEES under fire rather
+        /// than into the crouch, and how many of the men stood at a red light have
+        /// had a few. Both small: what they are for is the one man in a queue who is
+        /// not doing what the other nine are.</summary>
+        const float PrayChance = 0.3f, DrunkChance = 0.06f, SnackChance = 0.25f;
+
+        /// <summary>One in five with a gun going off beside him puts his hands up at
+        /// whoever is holding it, and stands there a beat longer for having done it.</summary>
+        const float PleadChance = 0.2f;
+
+        /// <summary>What a man does with a red light. He has thirty seconds and
+        /// nothing to do with them: he checks his watch, shifts his weight, has a
+        /// look up the street, finishes what he bought at the counter - and one in
+        /// twenty is holding the lamp post up. Nothing at all while he is frightened
+        /// (a scared man at a kerb is watching the street, not his watch), and
+        /// nothing for a man too far off to be read (PlayAction's own gate).</summary>
+        void TickWaitLife(float dt)
+        {
+            if (Acting || Joining || _fear > 0.2f) return;
+            if (_fidgetIn < 0f) _fidgetIn = Random.Range(1.5f, 5f);
+            if ((_fidgetIn -= dt) > 0f) return;
+            _fidgetIn = Random.Range(4f, 10f);
+            if (Random.value < DrunkChance &&
+                HoldAction(CrewKit.DrunkSway, Random.Range(5f, 12f))) return;
+            PlayAction(Random.value < SnackChance ? CrewKit.Snacks : CrewKit.Fidgets);
         }
 
         // where the pair edges to for its word, and the lateral that spot is on -
@@ -692,7 +766,7 @@ namespace RoadDemo
 
                 case Mode.ToDoor:
                     // nearly in: run for it
-                    if (zone < 2) { Speed = _runSpeed; LocomotionPose = HasPose(PoseJog) ? PoseJog : PoseWalk; TieRun(); }
+                    if (zone < 2) { Speed = _runSpeed; PickRun(zone == 0); TieRun(); }
                     _hideWanted = true;
                     return;
 
@@ -703,7 +777,7 @@ namespace RoadDemo
                     _pendingPanic = true;
                     _zone = zone;
                     BeginLeg(Tf.position, LinkPoint(_resumeLink, _resumeT), Mode.FromBench);
-                    if (zone < 2) { Speed = _runSpeed; LocomotionPose = HasPose(PoseJog) ? PoseJog : PoseWalk; TieRun(); }
+                    if (zone < 2) { Speed = _runSpeed; PickRun(zone == 0); TieRun(); }
                     return;
 
                 case Mode.Sitting:
@@ -727,7 +801,15 @@ namespace RoadDemo
             State = Mode.Startle;
             _timer = Random.Range(atLeast, atMost);
             _pendingPanic = false;
+            _fidgetIn = -1f;
             if (_zone < 2 && Random.value < 0.5f) Scream();
+            // The beat of taking it in has a face on it: a look thrown toward the
+            // bang, and now and then - only for one that went off beside him - the
+            // hands up at whoever is holding the gun, which he stands there long
+            // enough to have actually done.
+            if (_zone == 0 && Random.value < PleadChance && PlayAction(CrewKit.Plead))
+                _timer = Mathf.Max(_timer, 1.2f);
+            else if (_zone < 2) PlayAction(CrewKit.ScaredLooks);
         }
 
         // The beat is over: run, hide, get down, or just make off - by how close it was.
@@ -775,9 +857,9 @@ namespace RoadDemo
                 if (_waiting) Reroute(_link.From);
             }
             Speed = _runSpeed;
-            LocomotionPose = HasPose(PoseJog) ? PoseJog : PoseWalk;
+            PickRun(_zone == 0);
             TieRun();
-            ScatterPhase(PoseJog);
+            ScatterPhase(_runPose);
         }
 
         void EndFlee()
@@ -788,27 +870,75 @@ namespace RoadDemo
             SetPose(PoseWalk);
         }
 
-        // The pace at the run: the jog clip keeps step; a runner on the walk clip
+        /// <summary>Which run this scare is worth. A shot a street away is jogged
+        /// from; one that went off beside him is SPRINTED from, flat out - which is
+        /// the whole reason the sprint clip is in the wardrobe. Picked once when the
+        /// bolt starts, because a man does not change his mind about how hard he is
+        /// running halfway down a pavement.</summary>
+        int _runPose = PoseJog;
+
+        void PickRun(bool desperate)
+        {
+            _runPose = desperate && HasPose(PoseSprint) ? PoseSprint
+                     : HasPose(PoseJog) ? PoseJog : PoseWalk;
+            LocomotionPose = _runPose;
+        }
+
+        /// <summary>Metres a second the chosen run clip covers at playback 1.</summary>
+        float RunNatural => ClipPace(_runPose, _runPose == PoseSprint ? 5.2f : 3f);
+
+        // The pace at the run: the run clip keeps step; a runner on the walk clip
         // has it played quicker.
         void TieRun()
         {
-            if (HasPose(PoseJog))
+            if (_runPose != PoseWalk && HasPose(_runPose))
             {
                 // the clip's own pace, within the band the feet read right in - a sprint
                 // clip is not played at half speed, the man just runs quicker on it
-                float natural = ClipPace(PoseJog, 3f);
+                float natural = RunNatural;
                 float rate = Mathf.Clamp(Speed / natural, 0.85f, 1.25f);
                 Speed = rate * natural;
-                SetPoseSpeed(PoseJog, rate);
+                SetPoseSpeed(_runPose, rate);
             }
-            SetPoseSpeed(PoseWalk, Speed / ClipPace(PoseWalk, WalkClipPace));
+            HoldWalkRate(Speed);
         }
+
+        /// <summary>TieRun set the jog's rate once, at the bolt - but the ground the
+        /// graph then carries her over is braked by whoever is in the way, so a
+        /// runner stuck behind slower backs strode at full rate over a quarter of
+        /// the pace: the overstriding skate. Re-tied every frame instead, and under
+        /// the band the run clip reads in she drops to the walk for those strides
+        /// (its rate follows any pace) and bolts again when the way opens. A touch
+        /// more asked to re-enter the run than to stay in it, so the gait does not
+        /// flicker at the band's edge.</summary>
+        protected override void GearLocomotion(float speed)
+        {
+            if (State == Mode.Flee && _runPose != PoseWalk && HasPose(_runPose))
+            {
+                float natural = RunNatural;
+                bool jog = speed >= (LocomotionPose == _runPose ? 0.85f : 0.95f) * natural;
+                LocomotionPose = jog ? _runPose : PoseWalk;
+                if (jog) SetPoseSpeed(_runPose, Mathf.Clamp(speed / natural, 0.85f, 1.25f));
+                else HoldWalkRate(speed);
+                return;
+            }
+            base.GearLocomotion(speed);
+        }
+
+        /// <summary>A bolting civilian gets the runner's read of the pavement too -
+        /// the line past the furniture read further out, the crowd's shove at half
+        /// strength - for the same reason the crews do: the walk's figures at a
+        /// run's pace are a woman weaving lamp to lamp.</summary>
+        protected override float FreeLineAhead =>
+            State == Mode.Flee ? 4f : base.FreeLineAhead;
+        protected override float PushGain =>
+            State == Mode.Flee ? 0.5f : base.PushGain;
 
         void SetWalkPace(float speed)
         {
             Speed = speed;
             LocomotionPose = PoseWalk;
-            SetPoseSpeed(PoseWalk, Speed / ClipPace(PoseWalk, WalkClipPace));
+            HoldWalkRate(Speed);
         }
 
         /// <summary>Walking quick for a while - the pace of somebody who wants to be
@@ -851,7 +981,7 @@ namespace RoadDemo
             _door = best;
             _hideWanted = true;
             Speed = _runSpeed;
-            LocomotionPose = HasPose(PoseJog) ? PoseJog : PoseWalk;
+            PickRun(_zone == 0);
             TieRun();
             BeginLeg(Tf.position, best.Pos, Mode.ToDoor);
             return true;
@@ -861,6 +991,7 @@ namespace RoadDemo
         {
             State = Mode.Cower;
             _timer = Random.Range(3f, 8f);
+            _kneeling = CrewKit.PrayKneel != null && Random.value < PrayChance;
             ScatterPhase(PoseCrouch);
         }
 
@@ -980,6 +1111,7 @@ namespace RoadDemo
             if (Dead) return;
             Health = 0;
             LeaveFurniture();
+            CancelJoin();   // nobody finishes a turn on the way down
             State = Mode.Dead;
             _deadAt = Time.time;
             _gawkAt = null;

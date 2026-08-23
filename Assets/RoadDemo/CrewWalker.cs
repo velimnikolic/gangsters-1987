@@ -49,6 +49,13 @@ namespace RoadDemo
         public int MaxHealth = 3;
         public bool Dead => State == Mode.Dead;
 
+        /// <summary>Somebody to step round. A man DOWN is not - the living walk over
+        /// the spot he fell on, which is what a body in the street looks like - and
+        /// neither is a man in a seat: he rides at the car's position, so leaving him
+        /// in would have every pedestrian in town giving way to a moving car twice,
+        /// once for the car and once for each man inside it.</summary>
+        protected override bool InCrowd => !Dead && !Riding;
+
         /// <summary>Whom he is shooting at, or null.</summary>
         public CrewWalker Target { get; private set; }
 
@@ -77,10 +84,53 @@ namespace RoadDemo
         public bool HasOrder => State == Mode.Walking || State == Mode.Homing || State == Mode.Striding || State == Mode.Fleeing;
         public bool OnGraph => _link != null;
 
+        /// <summary>Is the SIDEWALK GRAPH placing his feet this frame? A man walking a
+        /// stretch has his position rebuilt every frame out of metre-plus-lateral, so
+        /// anything that writes his transform from outside - the elbow pass - is undone
+        /// by the next Move and merely makes him shudder. Off the graph he steps by
+        /// hand, and a shove stays put.</summary>
+        public bool GraphDriven => State == Mode.Walking || State == Mode.Homing;
+
         /// <summary>Stood at a crossing waiting on the light. The arena's tether reads
         /// it: a crew does not split over a red - a man his crew has already crossed
         /// away from cuts over after them instead of standing on the zebra alone.</summary>
         public bool AtLight => _link != null && Waiting;
+
+        /// <summary>Get out of somebody's way. What the arena's elbow pass
+        /// (DemoCrews.Separate) hands its metres to instead of writing the transform.
+        ///
+        /// THE OVERLAP IS ALWAYS RESOLVED, one way or the other - which is the half
+        /// that was missing first time and cost more than it bought. Near the camera
+        /// he TAKES A STEP, because a man eased off his neighbour while he plays a
+        /// stand is a man gliding sideways. Too far off to read, he is simply moved:
+        /// nobody can see a slide they cannot see. Only a man who is near AND already
+        /// busy is left for a frame, because he is about to be able to step.
+        ///
+        /// Leaving every refusal unresolved, as this did at first, means two crews
+        /// that meet stand inside each other for as long as they are both busy - and
+        /// then everybody else brakes into the knot, which is the jam the player got
+        /// instead of the slide.</summary>
+        public void EaseAside(Vector3 worldDir, float metres)
+        {
+            // A MAN WHOSE LEGS ARE ALREADY GOING IS NEVER HANDED A SHUFFLE. The
+            // shuffle clips are authored from a standstill - both feet planted, the
+            // weight shifting off one of them - so laid over a stride they read as a
+            // man dipping in the middle of his walk and then carrying on, which is
+            // exactly what the player saw ("covek hoda i samo cucne u toku hoda i
+            // nastavi"). He is already moving: the metres hide inside his own stride,
+            // so they are simply written.
+            if (LegsMoving) { Nudge(worldDir, metres); return; }
+            if (BeginSidestep(worldDir)) return;
+            if (Detailed) return;                 // near, busy: he steps next frame
+            Nudge(worldDir, metres);
+        }
+
+        void Nudge(Vector3 worldDir, float metres)
+        {
+            var to = Tf.position + worldDir * metres;
+            if (!WalkObstacles.Occupied(to, WalkObstacles.Radius) && WalkObstacles.InCity(to))
+                Tf.position = to;
+        }
 
         /// <summary>Deal this man his own line across the pavement. Every walker keeps
         /// right on much the same lane, so a crew walking one stretch walked it in
@@ -98,10 +148,153 @@ namespace RoadDemo
         /// between them while the boss threads his own lights.</summary>
         public bool ReinedIn => _hold > 0f || PaceScale < 0.99f;
 
-        /// <summary>Quicker feet on the current stride - a hood strung out behind his
-        /// crew catches it up rather than trailing it at his own pace. Cleared by the
-        /// next order; the tether sets it again if he is still behind.</summary>
+        /// <summary>Quicker FEET on the current stride - a hood strung out behind his
+        /// crew catching it up. A walk, never a run: the man wants to be level with his
+        /// boss, not to arrive out of breath. Cleared by the next order, and by the
+        /// tether the moment he is back with his crew.</summary>
         public bool Hustle;
+
+        /// <summary>The player asked for this order TWICE (a double right click), which
+        /// is the only thing in the town that puts a crew into a run over open ground.
+        /// Kept apart from <see cref="Hustle"/> because the two are cleared by different
+        /// things - the hurry dies the moment a laggard is back with his crew, and the
+        /// order does not: a hood at his boss's shoulder is level with him and still has
+        /// four hundred metres to cover. Cleared by the next order, like everything else
+        /// about the last one.
+        ///
+        /// A stroll is never urgent: a man who has had enough of his corner and walks
+        /// somewhere else (TryRoam) sets off without this, and walks the whole way.</summary>
+        public bool Urgent;
+
+        /// <summary>How much ground still to cover before a walk stops being worth it.
+        /// Below it a man walks the errand; above it he breaks into a run and walks the
+        /// last <see cref="RunSettle"/> metres in, so he arrives at his crew's pace
+        /// instead of skidding to a halt on the spot.</summary>
+        const float RunBeyond = 25f, RunSettle = 8f;
+
+        /// <summary>The crowd's brake as the GAIT reads it - the raw figure smoothed,
+        /// so a man decides to break stride rather than dithering at every shoulder.</summary>
+        float _gaitBrake = 1f;
+
+        /// <summary>How fast the smoothed brake follows the raw one, per second.</summary>
+        const float GaitEase = 2f;
+
+        /// <summary>The hysteresis on the drop: a running man holds the jog until he is
+        /// braked to GaitDrop of the band's floor, and a walking man does not pick the
+        /// run back up until the way is nearly clear (GaitBack) - two thresholds, so
+        /// the gait cannot flap between them at the edge of a queue.</summary>
+        const float GaitDrop = 0.7f, GaitBack = 0.95f;
+
+        bool _runningLeg;
+
+        /// <summary>Are his legs playing a RUN this frame - the jog or the sprint,
+        /// the blend's target and not the order. What the audit holds against the
+        /// ground he actually covers. The sprint counts because it is the same fault
+        /// one storey worse: a man whose legs are flat out and who is crossing the
+        /// ground at a walk is skating harder, not less.</summary>
+        public bool JoggingPose => CurrentPose == PoseJog || CurrentPose == PoseSprint;
+
+        /// <summary>Is he running this frame? Only under a hurried order, only with a
+        /// real distance left of it, and only if his body has a run to play - a man
+        /// without the clip walks quickly, which is what he always did.
+        ///
+        /// The distance is to the FAR END of the errand and not to the next corner, or
+        /// he would drop to a walk at every turn of a way round a block.</summary>
+        bool Running()
+        {
+            // ONLY the order the player asked for twice. NOT Hustle: a hood catching
+            // his crew up gets quicker feet, and that is all he ever wanted - putting
+            // him into a jog for it means somebody is trotting somewhere at all times,
+            // which is a town in a panic rather than a town with an outfit in it.
+            if (!Urgent || !HasPose(PoseJog) || State != Mode.Striding)
+                return RunWhile(false);
+            var to = _legEnd - Tf.position;
+            to.y = 0f;
+            return RunWhile(to.magnitude > (_runningLeg ? RunSettle : RunBeyond));
+        }
+
+        /// <summary>Hold the run's own state: it is picked up the frame it starts (and
+        /// only then - re-dealing his stride at every corner would put a hitch in his
+        /// cadence each time the way turned) and dropped when the reason for it goes.
+        /// Every reason a man runs passes through here, so there is one place that
+        /// knows whether he is running.</summary>
+        bool RunWhile(bool running)
+        {
+            if (running && !_runningLeg) BreakIntoRun();
+            _runningLeg = running;
+            return running;
+        }
+
+        /// <summary>THE PAVEMENTS RUN TOO. A crew sent somewhere in the city walks the
+        /// sidewalk graph - that is what a player's order does, and it is deliberate:
+        /// the men keep their formation and their lanes and cross where a man crosses.
+        /// But the graph carried everybody at one number and that number was his walk,
+        /// so four hundred metres of pavement could only ever be walked, and the run
+        /// added to the free stride never showed where the player actually looks.
+        ///
+        /// The same rule decides it as off the graph (<see cref="Running"/>): under a
+        /// hurried order, with real ground still to cover, and not while the tether is
+        /// holding him back for the others. What changes is only how it is spent - the
+        /// pace the graph carries him at (<see cref="GraphPace"/>) and the clip the
+        /// crossfade drifts to. Everything else about walking a stretch is untouched:
+        /// his lane, the furniture he leans round, the lights he ignores.</summary>
+        void GearGraphWalk(float dt)
+        {
+            var to = Destination - Tf.position;
+            to.y = 0f;
+            bool run = Urgent && HasPose(PoseJog) && PaceScale > 0.95f &&
+                       to.magnitude > (_runningLeg ? RunSettle : RunBeyond);
+            // THE CROWD'S BRAKE OUTRANKS THE ORDER. A man braked well under the jog
+            // band cannot be kept honest by clip rate alone - held at quarter pace his
+            // legs stride ground he is not covering, the overstriding skate the player
+            // was watching. Under GaitDrop of the band's floor he drops to the walk,
+            // whose rate follows any pace (HoldWalkRate), and picks the run back up
+            // when the way opens. The brake the GAIT listens to is smoothed first:
+            // the crowd's raw figure collapses over less than a metre (Notice), so
+            // read straight it flapped the gait once a second and the blend never
+            // settled - a man decides to break stride, he does not dither. A mild
+            // mismatch (the band floor holding the feet a shade quick) is kept in
+            // preference to a gait change; only a real queue drops him.
+            float brake = PaceScale * Mathf.Max(CrowdHold, 0.25f);
+            _gaitBrake = dt > 0f ? Mathf.MoveTowards(_gaitBrake, brake, GaitEase * dt) : brake;
+            if (run && JogSpeed * _gaitBrake < RunRateMin * ClipPace(PoseJog, JogClipPace) *
+                (_runningLeg ? GaitDrop : GaitBack))
+                run = false;
+            LocomotionPose = RunWhile(run) ? PoseJog : PoseWalk;
+            // What he actually covers, which is not what he was dealt: the dawdle and
+            // the man in front of him both gear the graph's pace. The crowd's brake is
+            // last frame's - Tick reads it after this - and one frame of lag on a clip
+            // rate is nothing to see.
+            float pace = GraphPace(false) * brake;
+            // the walk's own rate is Move's business, for every walker in the city at
+            // once (HoldWalkRate); only the run is this class's to keep in step
+            if (run)
+                SetPoseSpeed(PoseJog, Mathf.Clamp(
+                    pace / ClipPace(PoseJog, JogClipPace), RunRateMin, RunRateMax) * _runJitter);
+        }
+
+        /// <summary>Metres a second the sidewalk carries him at. A crossing's hustle is
+        /// for a man walking one; a man already running needs nothing added.</summary>
+        protected override float GraphPace(bool gated) =>
+            _runningLeg ? JogSpeed : base.GraphPace(gated);
+
+        /// <summary>A runner reads the stretch further out and takes the crowd's shove
+        /// at half strength - the walk's figures at a run's pace made corrections land
+        /// late and at full width, which is a man weaving down the pavement.</summary>
+        protected override float FreeLineAhead => _runningLeg ? 4f : base.FreeLineAhead;
+        protected override float PushGain => _runningLeg ? 0.5f : base.PushGain;
+
+        /// <summary>Start the run somewhere along its own clip and at a rate of his own -
+        /// so a crew that sets off together is a crew of runners, not one runner
+        /// copied five times.</summary>
+        void BreakIntoRun()
+        {
+            _runJitter = Random.Range(0.94f, 1.06f);
+            // only when the run is not already on him: re-seeding a clip a man is
+            // visibly mid-stride of pops his legs, and the tether can re-order a
+            // running man at any moment
+            if (CurrentPose != PoseJog) ScatterPhase(PoseJog);
+        }
 
         /// <summary>Stand a beat where he is, mid-walk - the boss keeping step with
         /// men strung out behind him. Nothing to a man who is not walking.</summary>
@@ -140,6 +333,10 @@ namespace RoadDemo
             InCover = false;
             _returnTo = null;
             Hustle = false;
+            Urgent = false;
+            _runningLeg = false;
+            _sprinting = false;
+            _keepingLow = false;
             EndChat();
             _hold = delay;
             SeatWhereHeStands();
@@ -184,12 +381,18 @@ namespace RoadDemo
             _coverSpot = null;
             InCover = false;
             Hustle = false;
+            Urgent = false;
+            _runningLeg = false;
+            _sprinting = false;
+            _keepingLow = false;
             EndChat();
             Waiting = false;   // a stride order is not queued at any light
             _hold = delay;
             point.y = Tf.position.y;
             _legs.Clear();
             _legTo = point;
+            // one leg, so its corner IS its far end - and the run reads the far end
+            _legEnd = point;
             BeginLeg();
             State = Mode.Striding;
         }
@@ -217,6 +420,10 @@ namespace RoadDemo
             _coverSpot = null;
             InCover = false;
             Hustle = false;
+            Urgent = false;
+            _runningLeg = false;
+            _sprinting = false;
+            _keepingLow = false;
             EndChat();
             Waiting = false;   // a stride order is not queued at any light
             _hold = delay;
@@ -278,6 +485,14 @@ namespace RoadDemo
             _blockedFor = 0f;
             _steerSide = 0;
             _strideDir = Vector3.zero;
+            _runningLeg = false;
+            _sprinting = false;
+            _keepingLow = false;
+            // a man with a fight on is nobody's laggard: the tether steps back from
+            // him (it skips anyone with a target), so the dawdle it left on him would
+            // otherwise hold for the whole fight - and a dawdled man walks where he
+            // should be closing at a run
+            SetPace(1f);
             State = Mode.Engaging;
             if (_fireTimer <= 0f)
                 _fireTimer = Ballistics.Interval * Random.Range(0.4f, 1f); // squares up first
@@ -404,6 +619,7 @@ namespace RoadDemo
             Health = 0;
             Target = null;
             EndChat();
+            CancelJoin();   // nobody finishes a turn on the way down
             State = Mode.Dead;
             if (HasPose(PoseDeath))
             {
@@ -426,6 +642,16 @@ namespace RoadDemo
         public void TickCrew(float dt)
         {
             if (DriveTrace.On) TracePed(dt);
+            // KEEPING LOW IS THIS FRAME'S DECISION, NOT A STATE. It is set by the one
+            // branch that wants it - the last few metres to a flank with rounds in the
+            // air - and that branch re-decides it every frame, so it is cleared here
+            // and never anywhere else. Held as a state it went stale the instant the
+            // fight moved on: the man reached his bin, the mark walked out of reach,
+            // the cover was dropped, and he then WALKED THE REST OF THE RUN BENT
+            // DOUBLE, because the gait Loco chooses reads this flag. Which is exactly
+            // what the player watched - men who crouch as they set off and men who
+            // never stand back up.
+            _keepingLow = false;
             switch (State)
             {
                 case Mode.Dead:
@@ -458,7 +684,7 @@ namespace RoadDemo
                 case Mode.Striding:
                 {
                     if (HoldingBeat(dt)) return;
-                    TickStride(dt, _legTo, 0.15f, hurry: Hustle);
+                    TickStride(dt, _legTo, 0.15f, hurry: Hustle, run: Running());
                     var gap = _legTo - Tf.position;
                     gap.y = 0f;
                     float left = gap.magnitude;
@@ -550,13 +776,18 @@ namespace RoadDemo
                     if (left <= 0.4f || LegStalled(left, dt))
                     {
                         State = Mode.Standing;
+                        _sprinting = false;
                         _shaken = Random.Range(8f, 14f); // out of it a while, then game again
+                        // pulled up, and the first thing he does is look back at what
+                        // he ran from - the beat that says he has not forgotten it
+                        PlayAction(CrewKit.BackLooks);
                     }
                     return;
                 }
 
                 default: // Walking, Homing - the graph
                     if (HoldingBeat(dt)) return;
+                    GearGraphWalk(dt);
                     Tick(dt);
                     if (State == Mode.Homing && _t >= _targetT)
                         State = Mode.Standing;
@@ -589,24 +820,51 @@ namespace RoadDemo
         /// - the figure used only when the clip itself does not say.</summary>
         const float JogClipPace = 3.0f;
 
-        /// <summary>How far off its natural rate a run clip may be played before the
-        /// feet read wrong - a sprint at half speed is a moon-walk, so a man asked to
-        /// jog on a sprint clip runs a real sprint instead.</summary>
-        const float RunRateMin = 0.85f, RunRateMax = 1.25f;
+        /// <summary>How far off its natural rate the run clip may be played before the
+        /// feet read wrong. Narrow on purpose: the pace follows the CLIP here, not the
+        /// other way round, so a wide band buys a man who covers the ground at a speed
+        /// his legs are visibly not keeping.</summary>
+        const float RunRateMin = 0.9f, RunRateMax = 1.12f;
 
         float _runRate = 1f;
+
+        /// <summary>The band a man on foot in this town may run in, whatever any clip
+        /// claims about itself. THE PACE IS READ OFF THE CLIP - a run clip that covers
+        /// twice the ground moves the man twice as fast - so one bad draw out of the
+        /// wardrobe used to send a hood down the pavement at five metres a second while
+        /// his crew jogged at three. The clip is allowed to set the LOOK; it is not
+        /// allowed to decide how fast a man in this city can be.</summary>
+        const float JogSlowest = 2.5f, JogQuickest = 3.8f;
 
         public void SetJog(float speed)
         {
             float natural = ClipPace(PoseJog, JogClipPace);
             _runRate = Mathf.Clamp(speed / natural, RunRateMin, RunRateMax);
-            JogSpeed = _runRate * natural;
+            JogSpeed = Mathf.Clamp(_runRate * natural, JogSlowest, JogQuickest);
+            // and if the band had to pull him back, his feet come with him rather than
+            // keeping a stride he is no longer covering
+            _runRate = JogSpeed / natural;
             SetPoseSpeed(PoseJog, _runRate);
         }
 
-        /// <summary>How much quicker a man walks when he is closing on a fight - a
-        /// hurried walk, not a run; running is for getting away.</summary>
+        /// <summary>How much quicker a man walks when he is closing on a fight - the
+        /// hurried walk he finishes an approach at, once the run has brought him near.</summary>
         const float HurryFactor = 1.3f;
+
+        /// <summary>How far out of his gun's reach a man runs the approach in, and how
+        /// far in he keeps running once he has started - as multiples of that reach, so
+        /// a rifleman and a man with a shotgun each break at their own distance. Apart
+        /// on purpose: a mark that backs off a step must not switch him between a walk
+        /// and a run once a second.</summary>
+        const float RunToFight = 1.8f, RunOffFight = 1.25f;
+
+        /// <summary>Metres to a flank worth running for, with rounds in the air.</summary>
+        const float RunToCover = 5f;
+
+        /// <summary>Metres out from a flank a man under fire finishes the walk to it
+        /// bent double. Inside RunToCover on purpose - the crouch and the run are
+        /// exclusive, so the two figures must not overlap.</summary>
+        const float CrouchWithin = 4f;
 
         // ------------------------------------------------------------------ the stride
 
@@ -618,6 +876,7 @@ namespace RoadDemo
         Vector3 _strideDir;  // the line he stepped along last frame; zero at the start of a leg
         float _blockedFor;   // seconds stood on this leg with nowhere to step
         bool _detouring;     // this frame's step was off the line to the spot, round something
+        bool _strideJog;     // was he jogging the stride last frame (the gait's own hysteresis)
 
         // The stride: at the point, turning as it goes - at a walk, at the hurried
         // walk when there is a fight to get to, or flat out when he is running from
@@ -662,6 +921,18 @@ namespace RoadDemo
             return Vector3.Dot(axis, dir) >= 0f ? axis : -axis;
         }
 
+        /// <summary>How hard the people in his way bend his line, in metres across it
+        /// per unit of shove. The crowd's own reader hands out at most 0.9 of shove, so
+        /// this is a lean of about a quarter turn at the very worst and a couple of
+        /// degrees for somebody merely passing.</summary>
+        const float CrowdLean = 0.6f;
+
+        /// <summary>The least of his pace the crowd may leave him. NEVER ZERO: a man
+        /// stopped dead behind another is a bollard his own boss then brakes behind,
+        /// and the leg's stall clocks would read the wait as a man wedged in a bin. He
+        /// crawls and leans off instead, and gets by.</summary>
+        const float CrowdFloor = 0.25f;
+
         void TickStride(float dt, Vector3 to, float stopWithin, bool hurry = false, bool run = false,
             bool keepOffRoad = false)
         {
@@ -675,29 +946,85 @@ namespace RoadDemo
                 _detouring = false;
                 return;
             }
-            bool jog = run && HasPose(PoseJog);
-            // the dawdle gears the walk, never the run - a man running for his life
-            // does not slow down for the crew he is running from
-            float pace = jog ? JogSpeed : (hurry ? Speed * HurryFactor : Speed) * PaceScale;
+            // A MAN BEING HELD BACK DOES NOT RUN. The dawdle (PaceScale) is how the
+            // tether keeps a quick hood level with his boss, and it gears the walk
+            // only - so a crew that broke into a run had no brake on it at all and
+            // strung out down the street exactly as it used to. Gearing the RUN
+            // instead would be worse: the clip's rate is dealt per man and a jog
+            // played over a walking step is a man skating. He drops out of the run
+            // and walks until the dawdle is lifted, which is what a man does when
+            // he is told to wait for the others.
+            bool jog = run && HasPose(PoseJog) && PaceScale > 0.95f;
+            // and a man running for his life is never dawdled anyway - the tether
+            // leaves a panicked man alone
+            float pace = jog ? RunPace
+                : (hurry ? Speed * HurryFactor : Speed) * PaceScale *
+                  (_keepingLow ? CrouchFactor : 1f);
             var want = delta / dist;
+
+            // THE PEOPLE ARE PART OF THE GROUND. WalkObstacles knows the walls, the
+            // furniture and the traffic, and nothing whatever about anybody on foot -
+            // so a man striding over open ground walked clean through his own crew,
+            // which is what the player was watching. The crowd's own reader answers
+            // who is in the way (one bucket, every walker in the scene: citizens, the
+            // outfit, the mobs, the law), and it answers it for the pavements too, so
+            // the two halves of the town cannot disagree about who is standing where.
+            //
+            // He leans off them and comes off his pace behind them, and the obstacle
+            // steer below then runs on the line he has actually chosen - so the
+            // clearance it reports belongs to the step he takes, and not to a line
+            // he has already turned off.
+            ReadCrowd(dt, want);
+            var line = want;
+            if (Mathf.Abs(CrowdPush) > 0.001f)
+            {
+                var across = new Vector3(want.z, 0f, -want.x);
+                // a runner threads the same people at twice the closing speed, so a
+                // full shove each pass is a man weaving down the street - half of it
+                // buys the same clearance over the extra metres his pace covers
+                line = (want + across * (CrowdPush * CrowdLean * (jog ? 0.5f : 1f))).normalized;
+            }
+            float held = Mathf.Max(CrowdHold, CrowdFloor);
+            pace *= held;
+            // THE CROWD'S BRAKE OUTRANKS THE RUN here too: braked under the band the
+            // run clip reads at (RunRateMin), his feet cannot follow the ground - he
+            // walks those strides instead (the walk's rate follows any pace), and the
+            // run comes back when the way opens. A touch more asked to re-enter than
+            // to stay, so the gait does not flicker at the band's edge.
+            if (jog && pace < RunRateMin * (_strideJog ? 1f : 1.1f) * RunClipPace)
+            {
+                jog = false;
+                pace = (hurry ? Speed * HurryFactor : Speed) * PaceScale * held *
+                       (_keepingLow ? CrouchFactor : 1f);
+            }
+            _strideJog = jog;
 
             Vector3 dir;
             float clear;
             if (WalkObstacles.Occupied(to, WalkObstacles.Radius))
             {
-                dir = want;
-                clear = WalkObstacles.Clear(Tf.position, want, WalkObstacles.Radius, dist);
+                dir = line;
+                clear = WalkObstacles.Clear(Tf.position, line, WalkObstacles.Radius, dist);
             }
             else
-                dir = WalkObstacles.Steer(Tf.position, want, _strideDir, WalkObstacles.Radius,
-                    Mathf.Min(Lookahead, dist), ref _steerSide, out clear);
+                // a runner reads the ground further out - at the walk's three metres
+                // his corrections come late and hard and he zig-zags thing to thing
+                dir = WalkObstacles.Steer(Tf.position, line, _strideDir, WalkObstacles.Radius,
+                    Mathf.Min(jog ? Lookahead * 2f : Lookahead, dist), ref _steerSide, out clear);
             if (keepOffRoad && CrewBike.AnyPassOn && dist > CrossWithin)
                 dir = KeepToPavement(Tf.position, dir, Mathf.Max(pace * dt, 1.2f));
-            _detouring = Vector3.Dot(dir, want) < 0.995f;
+            // stepping round somebody counts as going round something: the leg's stall
+            // clock must not read a man giving way on a busy pavement as a man wedged
+            _detouring = Vector3.Dot(dir, want) < 0.995f || held < 0.9f;
 
             // capped at the hitch ceiling too: a stalled frame (large dt) must not fling
-            // him a lane sideways as he steers round something - it reads as a teleport
-            float step = Mathf.Min(Mathf.Min(pace * dt, MaxStepPerFrame), Mathf.Min(dist, clear));
+            // him a lane sideways as he steers round something - it reads as a teleport.
+            // GaitGain is the join's: a man setting off eases up to this over the start
+            // clip, and one pulling up eases off over the stop clip. Applied HERE and
+            // not to `pace` above, so the gait's own thresholds (is he running, at what
+            // clip rate) are judged on the pace he is actually settling to.
+            float step = Mathf.Min(Mathf.Min(pace * GaitGain * dt, MaxStepPerFrame),
+                Mathf.Min(dist, clear));
 
             // THE FLOOR IS THE WORLD. A stride, wherever it was ordered from - a walk,
             // a march, a man running for his life - never carries a foot off the
@@ -727,19 +1054,80 @@ namespace RoadDemo
             }
             else _blockedFor += dt;
 
-            // he turns to the line he is walking; boxed in, he at least faces the spot
-            Tf.rotation = Quaternion.Slerp(Tf.rotation,
-                Quaternion.LookRotation(step > 1e-4f ? dir : want), 8f * dt);
+            // he turns to the line he is walking; boxed in, he at least faces the spot.
+            // A join owns his heading while it runs - the 90 and 180 starts ARE the
+            // turn, and a man swung round to the new line before the clip has played
+            // its first step is a man who stumbles on the spot.
+            if (!Joining)
+                Tf.rotation = Quaternion.Slerp(Tf.rotation,
+                    Quaternion.LookRotation(step > 1e-4f ? dir : want), 8f * dt);
 
             bool moving = step > 1e-4f;
-            if (jog && moving) { SetPose(PoseJog); TickBlend(dt); }
+            if (jog && moving)
+            {
+                LocomotionPose = RunPose;
+                BlendLocomotion(dt, true);
+                // the run keeps step with the ground he actually covers: the crowd
+                // takes pace off him, and a jog played at its own rate over a
+                // shortened step is a man skating. Held inside the rates a run clip
+                // reads at (RunRateMin/Max) - past those it is a moon-walk - and his
+                // own hair off the beat kept, so a crew never runs in lockstep.
+                SetPoseSpeed(RunPose, Mathf.Clamp(
+                    pace / RunClipPace, RunRateMin, RunRateMax) * _runJitter);
+            }
             else if (!moving) Loco(dt, false);
             else
             {
                 Loco(dt, true);
-                // the walk clip keeps step with the pace: quicker feet for the hurried walk
-                SetPoseSpeed(PoseWalk, pace / ClipPace(PoseWalk, WalkClipPace));
+                // the gait clip keeps step with the pace: quicker feet for the hurried
+                // walk, and the crouched shuffle keyed to its own much shorter stride
+                if (LocomotionPose == PoseCrouchWalk)
+                    SetPoseSpeed(PoseCrouchWalk,
+                        Mathf.Clamp(pace / ClipPace(PoseCrouchWalk, 1.3f), 0.7f, 1.4f));
+                else HoldWalkRate(pace);
             }
+        }
+
+        /// <summary>How much of his walk a man keeps while he is crossing ground bent
+        /// double. A crouched shuffle is not a walk with the head down; it is slow,
+        /// and looking slow is most of what says he is under fire.</summary>
+        const float CrouchFactor = 0.6f;
+
+        /// <summary>Which run he is in: the sprint when he is running for his life
+        /// and his body has one, else the jog every other errand uses. ONE place
+        /// decides it, so the pose, the clip rate and the metres a second can never
+        /// come from different clips - which is the fault CrewKit.Runs is a whole
+        /// essay about.</summary>
+        int RunPose => _sprinting && HasPose(PoseSprint) ? PoseSprint : PoseJog;
+        float RunClipPace => _sprinting && HasPose(PoseSprint)
+            ? ClipPace(PoseSprint, SprintClipPace) : ClipPace(PoseJog, JogClipPace);
+        float RunPace => _sprinting && HasPose(PoseSprint) ? _sprintSpeed : JogSpeed;
+
+        /// <summary>Running for his life rather than to somewhere - the one thing in
+        /// the town that reaches for the sprint. Cleared by every order, like every
+        /// other thing about the last one.</summary>
+        bool _sprinting;
+        float _sprintSpeed = 5.2f;
+
+        /// <summary>The pack's sprint covers about this much ground a second at
+        /// playback 1 - the figure used only when the clip does not say.</summary>
+        const float SprintClipPace = 5.2f;
+
+        /// <summary>The band a man may sprint in, the run band's rule one storey up:
+        /// the clip sets the look, the town sets how fast a man can be.</summary>
+        const float SprintSlowest = 4.2f, SprintQuickest = 6.2f;
+
+        /// <summary>Break into the flat-out run, if he has one. The pace comes off the
+        /// clip and is then held to the town's band, the same trade as SetJog.</summary>
+        void BreakIntoSprint()
+        {
+            _sprinting = HasPose(PoseSprint);
+            if (!_sprinting) return;
+            float natural = ClipPace(PoseSprint, SprintClipPace);
+            _sprintSpeed = Mathf.Clamp(natural * Random.Range(0.94f, 1.06f),
+                SprintSlowest, SprintQuickest);
+            SetPoseSpeed(PoseSprint, _sprintSpeed / natural);
+            if (CurrentPose != PoseSprint) ScatterPhase(PoseSprint);
         }
 
         // ------------------------------------------------------------------ the leg
@@ -751,6 +1139,11 @@ namespace RoadDemo
         // long that he has plainly lost it. While he is going round a thing and still
         // moving he is given his time: a car's flank takes a while to pass.
         float _bestLegDist = float.MaxValue, _stall, _wander;
+
+        /// <summary>A hair off his own run rate, re-dealt whenever he sets off. Two men
+        /// who break into a run in the same second are otherwise in step to the frame,
+        /// which is the thing that reads as a machine rather than as men.</summary>
+        float _runJitter = 1f;
 
         void BeginLeg()
         {
@@ -803,6 +1196,10 @@ namespace RoadDemo
             Astride = on && astride;
             // the legs go with the seat either way - a dead man is lifted out whole
             HideLegs(on && !astride);
+            // whatever he was in the middle of on the pavement, he is in a seat now:
+            // the car writes his transform every frame and a turn still owing degrees
+            // would fight it for the same rotation
+            if (on) CancelJoin();
             if (Dead) return;
             if (on)
             {
@@ -929,14 +1326,24 @@ namespace RoadDemo
                     ? Quaternion.LookRotation(to.normalized).eulerAngles.y + Random.Range(-25f, 25f)
                     : Tf.eulerAngles.y + Random.Range(-70f, 70f);
             }
-            if (!float.IsNaN(_lookYaw))
-            {
-                var want = Quaternion.Euler(0f, _lookYaw, 0f);
-                Tf.rotation = Quaternion.RotateTowards(Tf.rotation, want, 150f * dt);
-                if (Quaternion.Angle(Tf.rotation, want) < 0.5f) _lookYaw = float.NaN;
-            }
+            SpendLook(150f, dt);
             SetPose(Armed && HasPose(PosePistolIdle) ? PosePistolIdle : PoseIdle);
             TickBlend(dt);
+        }
+
+        /// <summary>Turn him onto the heading he last decided to look at, and forget
+        /// it once he is there. Big turns are TAKEN, in steps (the base's TurnToward
+        /// picks); a glance is a glance and is simply swivelled, as it always was.
+        /// The one place the standing men's heading is written, so the join layer and
+        /// the plain ease can never both be turning the same man.</summary>
+        void SpendLook(float degreesPerSecond, float dt)
+        {
+            if (float.IsNaN(_lookYaw)) return;
+            TurnToward(Quaternion.Euler(0f, _lookYaw, 0f) * Vector3.forward,
+                degreesPerSecond, dt);
+            if (!TurningOnSpot &&
+                Mathf.Abs(Mathf.DeltaAngle(Tf.eulerAngles.y, _lookYaw)) < 0.5f)
+                _lookYaw = float.NaN;
         }
 
         /// <summary>Stand and shout for this long (the officer's warning).</summary>
@@ -952,8 +1359,7 @@ namespace RoadDemo
             _shoutLeft -= dt;
             var to = _alertAt - Tf.position;
             to.y = 0f;
-            if (to.sqrMagnitude > 1e-3f)
-                Tf.rotation = Quaternion.RotateTowards(Tf.rotation, Quaternion.LookRotation(to.normalized), 200f * dt);
+            TurnToward(to, 200f, dt);
             SetPose(HasPose(PoseShout) ? PoseShout : Armed && HasPose(PosePistolIdle) ? PosePistolIdle : PoseIdle);
             TickBlend(dt);
         }
@@ -1018,10 +1424,19 @@ namespace RoadDemo
             _fleeTo = WalkObstacles.ClampToCity(_fleeTo);
             BeginLeg();
             // a beat of nerve failing before the legs go, and the run picked up at a
-            // random stride, at a rate of his own - not the crew's one run, in step
+            // random stride, at a rate of his own - not the crew's one run, in step.
+            // A MAN RUNNING FOR HIS LIFE SPRINTS. It is the one place in the town that
+            // reaches for the flat-out clip: everywhere else a man is running TO
+            // something and has to stay with his crew, which is exactly why the
+            // sprint is kept out of the gait pool (CrewKit.Runs).
             _hold = Random.Range(0.1f, 0.6f);
-            ScatterPhase(PoseJog);
-            SetPoseSpeed(PoseJog, _runRate * Random.Range(0.94f, 1.06f));
+            _keepingLow = false;
+            BreakIntoRun();
+            BreakIntoSprint();
+            // whatever the tether was holding him back for, it is not that now. The
+            // dawdle drops a man out of a run (TickStride), and a man walking away
+            // from a gunfight because his boss wanted him level is not a scene.
+            SetPace(1f);
             State = Mode.Fleeing;
         }
 
@@ -1104,7 +1519,18 @@ namespace RoadDemo
                 else if (gap.magnitude > 0.5f)
                 {
                     InCover = false;
-                    TickStride(dt, spot, 0.4f, hurry: true);
+                    // THE LAST FEW METRES ARE MADE LOW. A man who has had rounds round
+                    // his ears and is a stride or two off a bin does not stroll up to
+                    // it at full height - he goes down and crosses the rest bent
+                    // double, which is both what a man does and, from the near camera,
+                    // the only part of getting behind something the player can read.
+                    // Kept inside RunToCover so the crouch and the run never argue.
+                    _keepingLow = _underFire > 0 && HasPose(PoseCrouchWalk) &&
+                                  gap.magnitude <= CrouchWithin;
+                    // a bin two streets' width off with rounds in the air is got to at
+                    // a run; one at his elbow is stepped behind
+                    TickStride(dt, spot, 0.4f, hurry: true,
+                        run: RunWhile(!_keepingLow && gap.magnitude > RunToCover));
                     // no way through to it (the car has rolled on, something else
                     // stands in the way): he fights from where he is instead
                     if (_blockedFor > 0.8f) { _coverSpot = null; _blockedFor = 0f; }
@@ -1161,9 +1587,17 @@ namespace RoadDemo
                 // and only once the arm has actually come up (AimGun's blend): a round
                 // that leaves the barrel while the gun still hangs at the hip is the
                 // shot into the pavement the player kept seeing - and a flinch mid-walk
-                // is a gun pointing anywhere at all
-                if (dist <= range && _fireTimer <= 0f && _flinch <= 0f && _aimBlend >= 0.5f &&
-                    Vector3.Angle(Tf.forward, toTarget) < 40f)
+                // is a gun pointing anywhere at all.
+                //
+                // NEVER AT A RUN. A running man's gun arm is in the stride, muzzle
+                // down more of the time than not, and a round out of it reads wrong
+                // however it is gated - the player's rule is that a man who is running
+                // does not fire at all. He fires from the hurried WALK the approach
+                // drops him into (RunOffFight hysteresis), which is the answering-fire
+                // the closing shot exists for.
+                if (dist <= range && !_runningLeg && _fireTimer <= 0f && _flinch <= 0f &&
+                    _aimBlend >= 0.5f &&
+                    Vector3.Angle(Tf.forward, toTarget) < 40f && BarrelOn(Target))
                 {
                     _fireTimer = Ballistics.Interval * OnTheMove;
                     if (HasPose(PoseShoot))
@@ -1174,9 +1608,16 @@ namespace RoadDemo
                     Fired?.Invoke(this);
                 }
                 // the chase keeps to the pavement unless the man he is after is out on
-                // the road himself, in which case that is where the fight is
+                // the road himself, in which case that is where the fight is.
+                //
+                // WELL out of his reach he runs it in; inside a stride or two of it he
+                // walks the rest, because a man who sprints to the line and stops dead
+                // reads as a puppet being placed. The two figures are apart on purpose,
+                // so a mark backing off a metre does not switch him between the two
+                // every second.
                 TickStride(dt, Target.Tf.position, range * RangeFactor, hurry: true,
-                    keepOffRoad: !OnCarriageway(Target.Tf.position)); // a quick walk, no running
+                    run: RunWhile(dist > range * (_runningLeg ? RunOffFight : RunToFight)),
+                    keepOffRoad: !OnCarriageway(Target.Tf.position));
                 return;
             }
 
@@ -1207,7 +1648,7 @@ namespace RoadDemo
             // duck, or fresh out of a flinch, the barrel spends a beat coming up, and a
             // round let off during it goes into the ground the clip was authored at
             float off = Vector3.Angle(Tf.forward, toTarget);
-            if (_fireTimer <= 0f && off < 25f && _aimBlend >= 0.5f)
+            if (_fireTimer <= 0f && off < 25f && _aimBlend >= 0.5f && BarrelOn(Target))
             {
                 _fireTimer = Ballistics.Interval;
                 if (HasPose(PoseShoot))
@@ -1227,6 +1668,26 @@ namespace RoadDemo
             if (net == null) return false;
             var road = net.Locate(p, out _, out float d, 10f);
             return road != null && Mathf.Abs(d) < road.HalfRoad;
+        }
+
+        /// <summary>Inside what angle of the line to the mark's chest the barrel must
+        /// actually lie for a round to leave it. The audit already judges every shot
+        /// by this line (CrewAudit "aimlow", 35 deg); this is the same rule enforced
+        /// at the trigger, a shade tighter. What it is for is the man firing on the
+        /// move: the run clip swings the gun arm through the stride, AimGun's clamp
+        /// cannot always bring the muzzle up from the bottom of the swing, and a round
+        /// let off there is the shot into the pavement the player keeps seeing - a
+        /// running man now holds the round for the beat of the stride the barrel is
+        /// actually on him, which is also when it reads.</summary>
+        const float BarrelOnLimit = 30f;
+
+        /// <summary>Is last frame's posed barrel near enough the line to this man's
+        /// chest? Point blank the angle means nothing - the round goes in regardless -
+        /// which is the audit's own let-off.</summary>
+        bool BarrelOn(CrewWalker mark)
+        {
+            var to = mark.ChestPosition - MuzzlePosition;
+            return to.magnitude < 2f || Vector3.Angle(MuzzleForward, to) < BarrelOnLimit;
         }
 
         /// <summary>How much slower a man shoots while he is still closing.</summary>
@@ -1268,10 +1729,45 @@ namespace RoadDemo
 
         // The walk/stand crossfade. A man at ease stands at ease - the gun hangs at
         // his side in the plain idle; the ready stance is for a fight, not a corner.
+        //
+        // Routed through the base's BlendLocomotion rather than posing by hand, so
+        // the foot-planted joins (setting off, pulling up) run for a man striding
+        // over open ground exactly as they do for one walking a stretch. Keeping
+        // low, the gait he walks in is the crouched one.
         void Loco(float dt, bool walking)
         {
-            SetPose(walking ? PoseWalk : PoseIdle);
-            TickBlend(dt);
+            LocomotionPose = _keepingLow && HasPose(PoseCrouchWalk) ? PoseCrouchWalk : PoseWalk;
+            BlendLocomotion(dt, walking);
+        }
+
+        /// <summary>Crossing the last of the ground to a bin with rounds already in
+        /// the air: he goes the rest of the way down, which is both what a man does
+        /// and the only part of getting behind something that the player can read.</summary>
+        bool _keepingLow;
+
+        /// <summary>The line the start clip is chosen against - where he is about to
+        /// go, which off the sidewalk graph is his own leg's end and not any stretch.
+        /// Without this a man who sets off across a lot picks a start out of the
+        /// stretch he happens to be stood near, and turns the wrong way to it.</summary>
+        protected override Vector3 JoinHeading
+        {
+            get
+            {
+                Vector3 mark;
+                switch (State)
+                {
+                    case Mode.Fleeing: mark = _fleeTo; break;
+                    case Mode.Striding: mark = _legTo; break;
+                    case Mode.Engaging:
+                        mark = _coverSpot ?? (Target != null && Target.Tf
+                            ? Target.Tf.position : Tf.position);
+                        break;
+                    default: return base.JoinHeading;
+                }
+                var to = mark - Tf.position;
+                to.y = 0f;
+                return to.sqrMagnitude > 1e-4f ? to : base.JoinHeading;
+            }
         }
 
         // ------------------------------------------------------------------ at ease
@@ -1279,7 +1775,7 @@ namespace RoadDemo
         float _idleTimer = 2f;
         float _lookYaw = float.NaN;
         CrewWalker _chatPartner;
-        float _chatLeft, _turnLeft;
+        float _chatLeft, _floorLeft;   // the word, and whose turn it is to have it
         bool _speaking;
         public float ChatCooldown = 6f;
 
@@ -1296,9 +1792,22 @@ namespace RoadDemo
             _chatPartner = partner;
             _chatLeft = seconds;
             _speaking = speaksFirst;
-            _turnLeft = Random.Range(2.5f, 4.5f);
+            _floorLeft = Random.Range(2.5f, 4.5f);
             _lookYaw = float.NaN;
+            // now and then it is not a word, it is an argument: the man with the
+            // floor squares right up instead of talking with his hands
+            _arguing = Random.value < ArgueChance;
+            _gestureIn = Random.Range(0.6f, 2f);
+            // and it opens the way one opens - a nod at the other man
+            if (speaksFirst) PlayAction(CrewKit.Greet);
         }
+
+        /// <summary>How many of the outfit's corner conversations are rows. Low: an
+        /// outfit where every second exchange is a squaring-up is a comedy.</summary>
+        const float ArgueChance = 0.18f;
+
+        bool _arguing;
+        float _gestureIn, _fidgetIn = -1f, _leanUntil;
 
         public void EndChat()
         {
@@ -1306,6 +1815,11 @@ namespace RoadDemo
             _chatPartner = null;
             ChatCooldown = Random.Range(8f, 20f);
             _idleTimer = Random.Range(2f, 5f);
+            _fidgetIn = Random.Range(2f, 6f);
+            // a word ends the way one ends. Not after a row: nobody waves off a man
+            // he has just squared up to.
+            if (!_arguing && !Dead && State == Mode.Standing) PlayAction(CrewKit.Waves);
+            _arguing = false;
         }
 
         // Standing around like a person: a look this way and that now and then, or a
@@ -1400,12 +1914,34 @@ namespace RoadDemo
                 else
                 {
                     _chatLeft -= dt;
-                    _turnLeft -= dt;
-                    if (_turnLeft <= 0f) { _speaking = !_speaking; _turnLeft = Random.Range(2.5f, 4.5f); }
+                    _floorLeft -= dt;
+                    if (_floorLeft <= 0f)
+                    {
+                        _speaking = !_speaking;
+                        _floorLeft = Random.Range(2.5f, 4.5f);
+                        _gestureIn = Random.Range(0.4f, 1.6f);
+                    }
                     var to = _chatPartner.Tf.position - Tf.position;
                     to.y = 0f;
-                    if (to.sqrMagnitude > 1e-3f)
-                        Tf.rotation = Quaternion.RotateTowards(Tf.rotation, Quaternion.LookRotation(to.normalized), 120f * dt);
+                    // face him, and TURN to face him if he is behind - two men who
+                    // stop for a word on a corner are the most looked-at pair of
+                    // bodies in the town, and a swivel gives the whole thing away
+                    TurnToward(to, 120f, dt);
+                    // the hands: the man with the floor points up the street or
+                    // shakes his head at all of it, the other nods along. A row is
+                    // the same conversation with one of them squared right up.
+                    if (!Acting && !Joining)
+                    {
+                        _gestureIn -= dt;
+                        if (_gestureIn <= 0f)
+                        {
+                            _gestureIn = Random.Range(2.2f, 5f);
+                            if (_arguing && _speaking)
+                                HoldAction(CrewKit.AggressiveLoop, Random.Range(1.6f, 3.2f));
+                            else
+                                PlayAction(_speaking ? CrewKit.SpeakGestures : CrewKit.ListenGestures);
+                        }
+                    }
                     SetPose(_speaking && HasPose(PoseTalk) ? PoseTalk : PoseIdle);
                     TickBlend(dt);
                     if (_chatLeft <= 0f) EndChat();
@@ -1423,7 +1959,11 @@ namespace RoadDemo
                 if (State != Mode.Standing) return;
             }
 
-            // a glance around: a new heading now and then, turned to at a stroll
+            // a glance around: a new heading now and then, turned to at a stroll -
+            // and a real turn is TAKEN, with steps under it (SpendLook). This is the
+            // single most-watched thing a crew does, because holding a corner is what
+            // they spend the run doing, and a man rotating on the spot like a lamp on
+            // a turntable is the whole town's illusion gone in one shot.
             _idleTimer -= dt;
             if (_idleTimer <= 0f)
             {
@@ -1433,14 +1973,52 @@ namespace RoadDemo
                 if (Random.value < 0.7f)
                     _lookYaw = Tf.eulerAngles.y + Random.Range(-110f, 110f);
             }
-            if (!float.IsNaN(_lookYaw))
-            {
-                var want = Quaternion.Euler(0f, _lookYaw, 0f);
-                Tf.rotation = Quaternion.RotateTowards(Tf.rotation, want, 45f * dt);
-                if (Quaternion.Angle(Tf.rotation, want) < 0.5f) _lookYaw = float.NaN;
-            }
+            SpendLook(45f, dt);
+            TickIdleLife(dt);
             Loco(dt, false);
         }
+
+        /// <summary>What a man does with the minutes he spends holding a corner: puts
+        /// his back against the wall when there is one behind him, and otherwise fills
+        /// the wait - checks the watch, kicks at the pavement, takes a swig, has a
+        /// look up the street. NEVER while anything is actually happening: the whole
+        /// layer stands down for a join, an order, an alert and a fight, and for a man
+        /// too far off the camera to be read at all (PlayAction's own gate).</summary>
+        void TickIdleLife(float dt)
+        {
+            if (Joining || !float.IsNaN(_lookYaw)) return;
+
+            // the wall: if he is leant, stay leant until the lease runs out
+            if (_leanUntil > Time.time) return;
+            if (Acting) return;
+
+            if (_fidgetIn < 0f) _fidgetIn = Random.Range(3f, 9f);
+            _fidgetIn -= dt;
+            if (_fidgetIn > 0f) return;
+            _fidgetIn = Random.Range(5f, 14f);
+
+            // THE LEAN IS PARKED (LeanChance 0). A lean is authored against a flat
+            // vertical face at one particular distance, and there is no way to know
+            // offline whether the wall a man happens to have behind him is at that
+            // distance - so when it is wrong he does not read as leaning, he reads as
+            // sagging backwards into a squat, and the player kept seeing men crouch
+            // for no reason. The wardrobe and the wall test stay; turn LeanChance back
+            // up only with eyes on the scene.
+            if (LeanChance > 0f && Random.value < LeanChance && CrewKit.LeanLoops.Count > 0 &&
+                WalkObstacles.WallAt(Tf.position - Tf.forward * LeanReach, 0.25f) &&
+                HoldAction(CrewKit.LeanLoops[Random.Range(0, CrewKit.LeanLoops.Count)],
+                    Random.Range(6f, 16f)))
+            {
+                _leanUntil = Time.time + 6f;
+                return;
+            }
+            PlayAction(CrewKit.CrewFidgets);
+        }
+
+        /// <summary>How often a bored man on a corner with a wall behind him uses it,
+        /// and how far behind him "behind him" is - a pace, so he leans on the thing
+        /// he is stood against and not on one across the pavement.</summary>
+        const float LeanChance = 0f, LeanReach = 0.55f;
 
         // ------------------------------------------------------------------ the graph
 

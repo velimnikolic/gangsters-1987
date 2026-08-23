@@ -1,0 +1,221 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using RoadDemo;
+using Unity.Pipeline.Commands;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+
+namespace GangstersTools
+{
+    /// <summary>
+    /// The city, answered from the terminal.
+    ///
+    /// Unity's Pipeline package holds a small server inside a running editor, and the
+    /// `unity` CLI talks to it: `unity command &lt;name&gt; --json`. Its own commands cover the
+    /// editor (recompile, console, menu, screenshot, play mode, prefabs, scenes). The ones
+    /// here cover this project, and they exist for the questions that used to cost a whole
+    /// batch run or a hand-built offline harness:
+    ///
+    ///   unity command gangsters_layout --seed 12          what quarters seed 12 rolls
+    ///   unity command gangsters_measure --name SM_Veh_Car_01   how big that prefab really is
+    ///   unity command gangsters_play --scene ... --seconds 60  a harness run in THIS editor
+    ///
+    /// All three read or drive the open editor, so none of them takes Temp/UnityLockfile and
+    /// none of them fights a soak that is already running. See Docs/unity-cli.md.
+    /// </summary>
+    public static class PipelineCommands
+    {
+        // ---------------------------------------------------------------- the plan
+
+        /// <summary>The district roll for a seed, without building anything. This is the
+        /// paper plan - the same call RoadDemoBuilder makes at Play - so it answers "what
+        /// does seed N give me" in a second instead of a ninety-second run.</summary>
+        [CliCommand("gangsters_layout",
+                    "Roll the city district layout for a seed and return it, without building or playing. " +
+                    "Reads the RoadDemoBuilder in the open scene for the road axes.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters" })]
+        public static object Layout(
+            [CliArg("seed", "City layout seed. Omit to use the one the open scene carries.")] int seed = int.MinValue,
+            [CliArg("count", "Roll this many consecutive seeds starting at 'seed' and return a summary of each.")] int count = 1,
+            [CliArg("scene", "Scene to open first, e.g. Assets/Scenes/Game.unity. Omit to use the scene already open.")] string scene = "")
+        {
+            if (!string.IsNullOrEmpty(scene))
+            {
+                if (EditorApplication.isPlaying)
+                    throw new InvalidOperationException("The editor is in play mode; stop it (editor_stop) before opening a scene.");
+                var opened = EditorSceneManager.OpenScene(scene, OpenSceneMode.Single);
+                if (!opened.IsValid()) throw new ArgumentException($"Scene '{scene}' would not open.");
+            }
+
+            var city = UnityEngine.Object.FindAnyObjectByType<RoadDemoBuilder>();
+            if (city == null)
+                throw new InvalidOperationException(
+                    "No RoadDemoBuilder in the open scene. Pass --scene Assets/Scenes/Game.unity (every demo scene carries one).");
+
+            int first = seed == int.MinValue ? city.cityLayoutSeed : seed;
+            int rolls = Mathf.Clamp(count, 1, 500);
+            var grid = city.LayoutGrid();
+            var results = new List<object>(rolls);
+
+            for (int i = 0; i < rolls; i++)
+            {
+                int s = first + i;
+                var slots = CityLayout.Roll(grid, s, city.suburbsMin, city.suburbsMax,
+                                            city.harborDistrict, city.airportDistrict);
+                results.Add(new
+                {
+                    seed = s,
+                    districts = slots.Count,
+                    harbor = slots.Any(d => d != null && d.kind == DistrictKind.Harbor),
+                    airport = slots.Any(d => d != null && d.kind == DistrictKind.Airport),
+                    suburbs = slots.Count(d => d != null && d.kind == DistrictKind.Suburb),
+                    slots = slots.Where(d => d != null).Select(d => new
+                    {
+                        kind = d.kind.ToString(),
+                        name = d.name,
+                        edge = d.edge.ToString(),
+                        lines = d.pinLines,
+                        strip = Mathf.Round(d.strip),
+                        seed = d.seed,
+                        size = $"{d.sizeAcross}x{d.sizeDeep}",
+                    }).ToArray(),
+                });
+            }
+
+            return new
+            {
+                scene = UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().path,
+                rollDistricts = city.rollDistricts,
+                suburbs = $"{city.suburbsMin}-{city.suburbsMax}",
+                rolls = results,
+            };
+        }
+
+        // ---------------------------------------------------------------- the stock
+
+        /// <summary>What a prefab actually measures, from the imported asset rather than
+        /// from the FBX on disk. The pack prefabs carry their own scale and their own pivot,
+        /// and reading either out of a binary FBX by hand is a day's work that this answers
+        /// in a call.</summary>
+        [CliCommand("gangsters_measure",
+                    "Measure a prefab: world-space bounding box, size in metres, and where the pivot sits inside it. " +
+                    "Give a path or a name.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters" })]
+        public static object Measure(
+            [CliArg("path", "Asset path, e.g. Assets/Prefabs/Buildings/building-bank.prefab.")] string path = "",
+            [CliArg("name", "Prefab name (or part of it) to search for when no path is given.")] string name = "",
+            [CliArg("limit", "When searching by name, measure at most this many matches.")] int limit = 5)
+        {
+            var paths = new List<string>();
+            if (!string.IsNullOrEmpty(path)) paths.Add(path);
+            else if (!string.IsNullOrEmpty(name))
+                paths.AddRange(AssetDatabase.FindAssets($"{name} t:Prefab")
+                                            .Select(AssetDatabase.GUIDToAssetPath)
+                                            .Where(p => p.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
+                                            .OrderBy(p => p.Length)
+                                            .Take(Mathf.Clamp(limit, 1, 50)));
+            else throw new ArgumentException("Give either --path or --name.");
+
+            var measured = new List<object>();
+            foreach (var p in paths)
+            {
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(p);
+                if (prefab == null) { measured.Add(new { path = p, error = "not a prefab" }); continue; }
+
+                // The asset is measured through an instance: a prefab asset's renderers report
+                // bounds in their own local space, and the parent scaling the pack authors rely
+                // on is only applied once the thing stands in a scene.
+                var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+                try
+                {
+                    go.transform.position = Vector3.zero;
+                    go.transform.rotation = Quaternion.identity;
+                    var renderers = go.GetComponentsInChildren<Renderer>(true);
+                    if (renderers.Length == 0) { measured.Add(new { path = p, error = "no renderers" }); continue; }
+
+                    var box = renderers[0].bounds;
+                    foreach (var r in renderers) box.Encapsulate(r.bounds);
+
+                    measured.Add(new
+                    {
+                        path = p,
+                        name = prefab.name,
+                        renderers = renderers.Length,
+                        scale = V(go.transform.localScale),
+                        size = V(box.size),
+                        center = V(box.center),
+                        // the pivot is the root at the origin, so the box centre IS the offset
+                        pivotFromCentre = V(-box.center),
+                        groundOffset = Mathf.Round((box.center.y - box.extents.y) * 1000f) / 1000f,
+                    });
+                }
+                finally { UnityEngine.Object.DestroyImmediate(go); }
+            }
+
+            return new { count = measured.Count, prefabs = measured };
+        }
+
+        static object V(Vector3 v) => new
+        {
+            x = Mathf.Round(v.x * 1000f) / 1000f,
+            y = Mathf.Round(v.y * 1000f) / 1000f,
+            z = Mathf.Round(v.z * 1000f) / 1000f,
+        };
+
+        // ---------------------------------------------------------------- the run
+
+        /// <summary>A harness run in the editor that is already open. Tools/play/run.sh
+        /// starts a second Unity in batch mode, which needs Temp/UnityLockfile and so cannot
+        /// run while an editor is up; this drives the live one instead. It leaves play mode
+        /// when it finishes rather than exiting the editor.</summary>
+        [CliCommand("gangsters_play",
+                    "Run the play harness inside THIS editor (no batch Unity, no lockfile) and leave the trace behind. " +
+                    "Returns immediately; the run is over when summary.json appears in the out folder.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "editor/playmode" })]
+        public static object Play(
+            [CliArg("scene", "Scene to play, e.g. Assets/Scenes/BlockDemo.unity.")] string scene = "Assets/Scenes/BlockDemo.unity",
+            [CliArg("seconds", "Simulated seconds to play.")] float seconds = 90f,
+            [CliArg("out", "Folder for trace.jsonl, unity.log and summary.json. Defaults to Temp/play/cli.")] string outDir = "",
+            [CliArg("step", "Fixed simulation step. Soak verdicts are only comparable at the same step (0.05).")] float step = 0.05f,
+            [CliArg("sample", "Trace sampling period in seconds.")] float sample = 0.1f,
+            [CliArg("warm", "Seconds to let the city settle before the trace starts.")] float warm = 3f,
+            [CliArg("shot", "Take a screenshot every N seconds. 0 for none.")] float shot = 0f,
+            [CliArg("sets", "Field overrides, 'Type.field=value', several joined by ';'.")] string sets = "")
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("The editor is already in play mode. Call editor_stop first.");
+            if (!File.Exists(scene))
+                throw new ArgumentException($"No scene at '{scene}'.");
+
+            var cfg = new PlayHarness.Cfg
+            {
+                scene = scene,
+                outDir = string.IsNullOrEmpty(outDir) ? Path.Combine("Temp", "play", "cli") : outDir,
+                seconds = seconds,
+                step = step,
+                sample = sample,
+                warm = warm,
+                shot = shot,
+                quit = false,   // the editor stays up; this is the whole point of the command
+            };
+            if (!string.IsNullOrEmpty(sets))
+                cfg.sets.AddRange(sets.Split(';').Where(s => !string.IsNullOrWhiteSpace(s)));
+
+            PlayHarness.RunWith(cfg);
+
+            return new
+            {
+                scene = cfg.scene,
+                outDir = cfg.outDir,
+                seconds = cfg.seconds,
+                step = cfg.step,
+                sets = cfg.sets.ToArray(),
+                note = "started; poll " + Path.Combine(cfg.outDir, "summary.json") +
+                       ", then read it with Tools/play/analyze.py " + cfg.outDir + " --verdict",
+            };
+        }
+    }
+}

@@ -527,6 +527,8 @@ static class Program
         if (only == "all" || only == "headon") HeadOnScenario();
         if (only == "all" || only == "wedged") WedgedScenario();
         if (only == "all" || only == "uturn") UTurnScenario();
+        if (only == "all" || only == "turnround") TurnRound.Run();
+        if (only == "all" || only == "redlight") RedLight.Run();
         if (only == "all" || only == "standoff") StandoffScenario();
         if (only == "all" || only == "crab") CrabScenario();
         if (only == "all" || only == "bikes") BikeScenario(60, 20, 300f);

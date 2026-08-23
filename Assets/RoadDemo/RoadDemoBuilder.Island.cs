@@ -35,6 +35,61 @@ namespace RoadDemo
         public float islandSouth = 700f;
         [Tooltip("How far the coastline strays in and out from those widths.")]
         public float coastWander = 240f;
+
+        [Tooltip("Which shore is MAINLAND: the town is a peninsula joined to the country " +
+                 "on that side, and the ground runs out that way instead of ending in a " +
+                 "beach. None is the island the city was. Nothing else changes - the " +
+                 "other three shores keep their coast, and the widths above still say how " +
+                 "much wild ground each of them carries. A quarter that needs open water " +
+                 "will not be laid on the mainland shore (CityLayout.Landlocked): a port " +
+                 "there would be a quay onto a field.")]
+        public CityEdge mainlandEdge = CityEdge.None;
+
+        [Tooltip("Let the city's own seed decide whether the town is an island or a " +
+                 "peninsula, and which way the country lies. Off leaves mainlandEdge " +
+                 "exactly as it is set above.")]
+        public bool rollShoreline = true;
+
+        [Tooltip("How often the roll comes out a peninsula rather than an island.")]
+        [Range(0f, 1f)] public float peninsulaChance = 0.5f;
+
+        /// <summary>Island or peninsula, and which shore the country is on. Its own draw
+        /// off the layout seed and taken BEFORE the quarters are rolled: the port asks
+        /// whether a shore is landlocked before it picks one, and the heightfield asks
+        /// how far the coast is on every side.</summary>
+        void PlanShoreline()
+        {
+            if (!rollShoreline) return;
+            var rng = new System.Random(cityLayoutSeed * 131 + 61);
+            if (rng.NextDouble() >= peninsulaChance) { mainlandEdge = CityEdge.None; return; }
+            mainlandEdge = (CityEdge)rng.Next(4);
+            Debug.Log($"[RoadDemo] the town is a peninsula: the country lies to the " +
+                      $"{mainlandEdge.ToString().ToLowerInvariant()}, and nothing that wants " +
+                      "open water is laid on that shore");
+        }
+
+        /// <summary>Whether the town is joined to the country across this shore, so
+        /// nothing that wants the sea may stand on it. Read by the district roll.</summary>
+        public bool Landlocked(CityEdge edge) => mainlandEdge != CityEdge.None && edge == mainlandEdge;
+
+        /// <summary>How far the mainland shore's waterline is pushed BEYOND the outer
+        /// bound of the ground mesh. The mesh reaches width + coastWander + SeaMargin
+        /// past the town, so the coast has to be at least that much further out again or
+        /// the outer ground turns to beach and sea after all; and the margin on top of
+        /// that has to clear the coast's own wander (240 m, which swings the waterline
+        /// either way) and the hills' coast fade (they flatten under 150 m of dry land),
+        /// or the country beyond the town comes out as a plain with a lagoon in it.
+        /// Seven hundred clears both with room to spare and costs not one vertex - it
+        /// moves the waterline, not the mesh.</summary>
+        const float MainlandReach = 700f;
+
+        /// <summary>The metres of dry land a direction is worth: the shore's own width,
+        /// or that plus the whole mesh reach and more where the peninsula joins the
+        /// country. Read by CoastDistance and by nothing else - deliberately NOT by the
+        /// mesh's own extent, since widening the mesh pushes its bound out by exactly as
+        /// much as it pushes the coast and gains nothing.</summary>
+        float ShoreReach(CityEdge edge, float width)
+            => Landlocked(edge) ? width + coastWander + SeaMargin + MainlandReach : width;
         [Tooltip("Woods per hectare, roughly - the wilderness's tree density.")]
         public float treesPerHectare = 30f;
         [Tooltip("How high the island's proper hills stand over the plain, out where the " +
@@ -125,6 +180,17 @@ namespace RoadDemo
         /// what must lie flat, what must be open water, where nothing grows.</summary>
         readonly DistrictReservations _reservations = new DistrictReservations();
 
+        /// <summary>Below this the island's own ground wears sand and above it grass.
+        /// The map paints its country by the same two lines, or the plan says beach
+        /// where the city says field.</summary>
+        public const float BeachLine = -0.35f;
+
+        /// <summary>What the quarters asked of the ground. The MAP reads it: a port's
+        /// basin is the one piece of the plan nobody else can report - it is not a seam,
+        /// not a block and not a footprint, it is water the island was told to leave
+        /// open - and the yards the quarters pave are the ground their roads run on.</summary>
+        public DistrictReservations Reservations => _reservations;
+
         /// <summary>How far the point lies outside the city - the grid rectangle or any
         /// district's own ground, whichever it is nearest: what the hills are kept off
         /// and the wild is grown past. <paramref name="toSea"/> comes back with the
@@ -171,8 +237,16 @@ namespace RoadDemo
         /// corners, and wandering with a slow noise so no shore runs straight.</summary>
         float CoastDistance(Vector2 dir, Vector2 at)
         {
-            float wx = dir.x > 0f ? islandEast : islandWest;
-            float wz = dir.y > 0f ? islandNorth : islandSouth;
+            // A peninsula is this one substitution and nothing else: in the direction the
+            // country lies, the coast is simply further away than any ground the island
+            // builds - so toSea never falls to the beach band, the shore lerp never
+            // fires, and what would have been sand and seabed comes out as more of the
+            // same wild ground. The corner blend below carries it round the two corners
+            // of the neck by itself.
+            float wx = dir.x > 0f ? ShoreReach(CityEdge.East, islandEast)
+                                  : ShoreReach(CityEdge.West, islandWest);
+            float wz = dir.y > 0f ? ShoreReach(CityEdge.North, islandNorth)
+                                  : ShoreReach(CityEdge.South, islandSouth);
             float w = dir.x * dir.x * wx + dir.y * dir.y * wz; // dir is unit: weights sum to 1
             float n = Mathf.PerlinNoise((at.x + _coastSeed) * 0.0032f, (at.y - _coastSeed) * 0.0032f) - 0.5f;
             float n2 = Mathf.PerlinNoise((at.x - _coastSeed) * 0.011f, (at.y + _coastSeed) * 0.011f) - 0.5f;
@@ -264,6 +338,13 @@ namespace RoadDemo
                     float across = s.vertical ? x : z;
                     float outOf = Mathf.Max(0f, span.lo - across, across - span.hi);
                     if (outOf > RiverBank) continue;
+                    // and only where the river actually runs: a tributary stops at the
+                    // river it joins, and carving its channel the whole length of the map
+                    // would leave a dry canyon across the half of the town it never
+                    // reaches - and take that shore away from the airport with it
+                    var reach = SeamRun(s);
+                    float along = s.vertical ? z : x;
+                    if (along < reach.lo - RiverBank || along > reach.hi + RiverBank) continue;
                     // in the channel: bed; on its lip: the bank sloping down to it
                     float bank = 1f - Mathf.SmoothStep(0f, 1f, outOf / RiverBank);
                     h = Mathf.Lerp(h, Mathf.Min(h, SeabedY + 1f), bank);
@@ -294,6 +375,15 @@ namespace RoadDemo
             LoadWildKit();
             OpenBasinsToSea();
 
+            // The ground mesh reaches the same distance on a peninsula as on an island,
+            // mainland shore included, and that is deliberate. The coast on the mainland
+            // side is pushed MainlandReach beyond this bound (ShoreReach), so every
+            // vertex out to the bound comes back dry - the beach and the seabed simply
+            // never happen on that side, and the country ends where the world does
+            // instead of in a strand. Widening the mesh there as well would only have
+            // put the waterline back INSIDE it: the extra margin counts against toSea
+            // exactly as the reach does, and the first version of this drowned the outer
+            // five hundred metres of its own peninsula.
             float reachW = islandWest + coastWander + SeaMargin, reachE = islandEast + coastWander + SeaMargin;
             float reachS = islandSouth + coastWander + SeaMargin, reachN = islandNorth + coastWander + SeaMargin;
             // the island rings the CITY: the grid and every district hanging off it
@@ -423,7 +513,6 @@ namespace RoadDemo
                 }
             var grass = new List<int>();
             var sand = new List<int>();
-            const float BeachLine = -0.35f; // below this a triangle wears sand
             for (int j = 0; j < nz; j++)
                 for (int i = 0; i < nx; i++)
                 {
@@ -637,7 +726,10 @@ namespace RoadDemo
                 if (s == null || s.kind != SeamKind.River) continue;
                 var span = SeamSpan(s);
                 float across = s.vertical ? x : z;
-                if (across > span.lo - 16f && across < span.hi + 16f) return true;
+                if (across <= span.lo - 16f || across >= span.hi + 16f) continue;
+                var reach = SeamRun(s);
+                float along = s.vertical ? z : x;
+                if (along > reach.lo - 16f && along < reach.hi + 16f) return true;
             }
             return false;
         }

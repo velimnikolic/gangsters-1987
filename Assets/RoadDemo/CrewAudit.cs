@@ -72,13 +72,20 @@ namespace RoadDemo
         /// every frame, so anything past a beat of it is the rule not holding.</summary>
         const float ChaseAfter = 2.5f;
 
+        /// <summary>Ground pace below which a playing jog is a skate, and seconds of
+        /// it before the fault is called. The gait gates drop a braked runner to the
+        /// walk at RunRateMin x the clip's own pace (~2.7 m/s), so anything held a
+        /// while under this is a gate not holding - the crossfade out of the jog and
+        /// one man squeezing a car's flank both pass well inside the grace.</summary>
+        const float SkatePace = 1.8f, SkateAfter = 1.5f;
+
         // -------------------------------------------------------------- the ledger
 
         class Watch
         {
             public Vector3 Last;
             public bool Seen, WasCarried;
-            public float OffFor, StrayFor, LightFor, ZebraFor, ChaseFor;
+            public float OffFor, StrayFor, LightFor, ZebraFor, ChaseFor, SkateFor;
             public float PrevGap = float.MaxValue;
             public bool SaidOff;
         }
@@ -166,6 +173,22 @@ namespace RoadDemo
                     float bound = Mathf.Max(TeleportBound, 6f * dt + 0.6f);
                     if (moved.magnitude > bound)
                         Fault(man, "teleport", $"{moved.magnitude:F2} m in one frame ({man.State})");
+
+                    // THE SKATE. A man whose legs play the jog covers jog ground -
+                    // the gait gates themselves (GearGraphWalk, TickStride) drop him
+                    // to the walk under the band, so a jog held over walking pace
+                    // for a sustained spell means a gate is not holding.
+                    if (man.JoggingPose && dt > 1e-4f && moved.magnitude / dt < SkatePace)
+                    {
+                        w.SkateFor += dt;
+                        if (w.SkateFor > SkateAfter)
+                        {
+                            Fault(man, "skate", $"jogging at {moved.magnitude / dt:F1} m/s " +
+                                                $"for {w.SkateFor:F1}s ({man.State})");
+                            w.SkateFor = -30f;   // still watched; said again if it goes on
+                        }
+                    }
+                    else w.SkateFor = 0f;
                 }
                 w.Last = pos;
                 w.Seen = true;

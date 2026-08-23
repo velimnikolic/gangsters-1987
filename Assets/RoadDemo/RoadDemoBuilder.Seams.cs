@@ -24,6 +24,16 @@ namespace RoadDemo
         public SeamKind kind = SeamKind.River;
         [Tooltip("Metres from one kerb to the other, snapped to the 5 m cell.")]
         public float width = 90f;
+
+        [Tooltip("How far the seam runs along its own length, as road lines of the OTHER " +
+                 "axis: it exists from line 'fromRoad' to line 'toRoad' and nowhere else. " +
+                 "-1 on either is the grid's own end, which is what a seam that cuts the " +
+                 "whole map has. A TRIBUTARY is the reason this exists: a river that runs " +
+                 "from one shore down to another river and stops there, so the city is cut " +
+                 "into three quarters instead of four and the far shore is left whole. A " +
+                 "whole shore matters - the airport's field is a mile of runway and cannot " +
+                 "stand astride a river's mouth (CityLayout.Fits).")]
+        public int fromRoad = -1, toRoad = -1;
     }
 
     // The seams: what the city puts between its districts. A river with quays on
@@ -54,18 +64,58 @@ namespace RoadDemo
             return false;
         }
 
+        /// <summary>The road lines of the OTHER axis this seam actually reaches, as a
+        /// pair of indices into that axis. A seam with no run set takes the whole grid,
+        /// which is what every seam did before tributaries existed.</summary>
+        (int lo, int hi) SeamRoads(Seam s)
+        {
+            int last = (s.vertical ? horizontalRoadZ.Length : verticalRoadX.Length) - 1;
+            int lo = s.fromRoad < 0 ? 0 : Mathf.Clamp(s.fromRoad, 0, last);
+            int hi = s.toRoad < 0 ? last : Mathf.Clamp(s.toRoad, 0, last);
+            return lo <= hi ? (lo, hi) : (hi, lo);
+        }
+
+        /// <summary>Whether the seam is present where road <paramref name="road"/> of the
+        /// other axis crosses it. False beyond a tributary's end, where the gap is dry
+        /// ground and the road runs over it like any other.</summary>
+        bool SeamReaches(Seam s, int road)
+        {
+            var (lo, hi) = SeamRoads(s);
+            return road >= lo && road <= hi;
+        }
+
+        /// <summary>The seam at that gap, but only if it is really there at the road
+        /// line asked about. Everything that speaks about ONE crossing of a seam goes
+        /// through this rather than SeamAt.</summary>
+        Seam SeamOn(bool verticalLines, int gap, int road)
+            => SeamAt(verticalLines, gap) is Seam s && SeamReaches(s, road) ? s : null;
+
         /// <summary>Whether grid cell (i, j) - between vertical roads i, i+1 and
-        /// horizontal roads j, j+1 - lies in a seam rather than being a block.</summary>
-        bool InSeam(int i, int j) => SeamAt(true, i) != null || SeamAt(false, j) != null;
+        /// horizontal roads j, j+1 - lies in a seam rather than being a block. A cell
+        /// takes TWO road lines, so a tributary's last cell is the last one both of
+        /// whose edges the water reaches; beyond that the gap is ordinary ground and the
+        /// city builds blocks on it.</summary>
+        bool InSeam(int i, int j)
+            => (SeamAt(true, i) is Seam v && SeamReaches(v, j) && SeamReaches(v, j + 1)) ||
+               (SeamAt(false, j) is Seam h && SeamReaches(h, i) && SeamReaches(h, i + 1));
 
         /// <summary>Whether road <paramref name="road"/> (a vertical one, or a horizontal
         /// one) actually runs across gap <paramref name="gap"/> of the OTHER axis: it does
         /// unless a seam lies there and the road is an ordinary street - a street ends
         /// on the quay and at the park's edge; a boulevard bridges the river and drives
-        /// through the park.</summary>
+        /// through the park.
+        ///
+        /// The other way a segment is shut is the closure roll (RoadDemoBuilder.Closes.cs):
+        /// a street that simply stops, on a gap with no seam in it at all. It is asked
+        /// first because it answers for gaps the seams know nothing about, and because
+        /// every pass downstream reads this one predicate - which is the whole reason a
+        /// city of dead ends costs no pass but this line.</summary>
         bool SegmentOpen(bool verticalRoad, int road, int gap)
         {
-            var seam = SeamAt(!verticalRoad, gap);
+            if (Closed(verticalRoad, road, gap)) return false;
+            // SeamOn, not SeamAt: past a tributary's end the gap is dry ground and the
+            // street crosses it like any block
+            var seam = SeamOn(!verticalRoad, gap, road);
             if (seam == null || seam.kind == SeamKind.Highway) return true; // under the deck, all roads
             return verticalRoad ? verticalIsBoulevard[road] : horizontalIsBoulevard[road];
         }
@@ -77,13 +127,19 @@ namespace RoadDemo
         {
             int gap = side > 0 ? road : road - 1;
             if (gap < 0) return false;
-            // a vertical road's east side looks onto a vertical seam (a column gap)
+            // a vertical road's east side looks onto a vertical seam (a column gap).
+            // A road running ALONGSIDE a seam is an embankment road only over the stretch
+            // the water actually reaches, so the run is asked about in that road's own
+            // coordinate - which for a seam of the same axis is measured in the road
+            // lines that CROSS it, and the caller has no one crossing to name. The whole
+            // road is taken as the bank when any of it is: a promenade that stopped
+            // halfway down a block would read as an unfinished pavement.
             return SeamAt(verticalRoad, gap) is Seam s && s.kind == SeamKind.River;
         }
 
         /// <summary>An open segment over the river: a bridge.</summary>
         bool IsBridge(bool verticalRoad, int road, int gap)
-            => SeamAt(!verticalRoad, gap) is Seam s && s.kind == SeamKind.River &&
+            => SeamOn(!verticalRoad, gap, road) is Seam s && s.kind == SeamKind.River &&
                SegmentOpen(verticalRoad, road, gap);
 
         string SeamStory()
@@ -132,6 +188,23 @@ namespace RoadDemo
                     horizontalRoadZ[horizontalRoadZ.Length - 1] + HHalf(horizontalRoadZ.Length - 1) + Sidewalk);
         }
 
+        /// <summary>How far a seam runs ALONG its own length, in world metres: from the
+        /// outer kerb of the first road line it reaches to the outer kerb of the last.
+        /// With no run set the two lines are the grid's own ends and this is exactly
+        /// GridExtent - which is why a seam that cuts the whole map needs no special
+        /// case. A tributary's mouth lands on the outer kerb of the road it stops at,
+        /// so the water runs through that road's corridor and joins whatever is beyond
+        /// it; the road itself ends on the new quay.</summary>
+        (float lo, float hi) SeamRun(Seam s)
+        {
+            var (a, b) = SeamRoads(s);
+            if (s.vertical)
+                return (horizontalRoadZ[a] - HHalf(a) - Sidewalk,
+                        horizontalRoadZ[b] + HHalf(b) + Sidewalk);
+            return (verticalRoadX[a] - VHalf(a) - Sidewalk,
+                    verticalRoadX[b] + VHalf(b) + Sidewalk);
+        }
+
         /// <summary>How far a river's bank reaches outside its own channel: the island
         /// carves the bed down over this much either side of the seam (IslandHeight), so
         /// this is the ground that belongs to the river and to nothing else.</summary>
@@ -162,18 +235,34 @@ namespace RoadDemo
             return cuts;
         }
 
-        /// <summary>The rivers that leave the grid across a shore, as spans of that
-        /// shore's OWN axis (X for the south and north shores, Z for west and east):
-        /// the ground a quarter may not be laid astride. Same sense as
-        /// <see cref="LineCarriesSeam"/>: true asks about the vertical road lines.</summary>
-        internal List<Vector2> RiverBands(bool verticalLines)
+        /// <summary>The rivers that leave the grid across ONE named shore, as spans of
+        /// that shore's own axis (X for the south and north shores, Z for west and
+        /// east): the ground a quarter may not be laid astride.
+        ///
+        /// By shore and not merely by axis, because a tributary reaches one end of its
+        /// gap and not the other. Asked by axis, a river joining the main one halfway up
+        /// the map reported itself against the south shore as loudly as against the
+        /// north - and the airport, whose field is a mile of runway and therefore spans
+        /// the whole width of a town this size, then fitted on no shore at all and
+        /// vanished from the city. Measured: one airport before the second river, none
+        /// after.</summary>
+        internal List<Vector2> RiverBands(CityEdge edge)
         {
             var list = new List<Vector2>();
             if (seams == null) return list;
+            // the south and north shores are crossed by the VERTICAL rivers, and a
+            // vertical river runs along the horizontal road lines
+            bool verticalLines = edge == CityEdge.South || edge == CityEdge.North;
+            var axis = verticalLines ? horizontalRoadZ : verticalRoadX;
+            bool wantLowEnd = edge == CityEdge.South || edge == CityEdge.West;
             foreach (var s in seams)
             {
                 if (s == null || s.kind != SeamKind.River) continue;
                 if (s.vertical != verticalLines) continue;
+                // does it get out THIS way? Its run has to take the first road line of
+                // the axis for the low shore, the last one for the high shore.
+                var (lo, hi) = SeamRoads(s);
+                if (wantLowEnd ? lo > 0 : hi < axis.Length - 1) continue;
                 var span = SeamSpan(s);
                 list.Add(new Vector2(span.lo - RiverBank, span.hi + RiverBank));
             }
@@ -332,7 +421,10 @@ namespace RoadDemo
         /// <summary>The water's surface, below the quay's coping - the PalmCity demo
         /// scene's own level under its streets, so the pack's shore foam is tuned to
         /// exactly this depth of wall showing above the water.</summary>
-        const float WaterY = -2.65f;
+        /// <summary>The sea plane's own height. Public because the MAP has to know
+        /// where the water line is: ground under this is sea on the plan, ground over it
+        /// and under <see cref="BeachLine"/> is the sand of the shore.</summary>
+        public const float WaterY = -2.65f;
 
         /// <summary>How far past the grid a river's quays run before the natural bank
         /// takes over; the river itself is a channel through the island's ground out
@@ -361,7 +453,7 @@ namespace RoadDemo
                     continue;
                 }
                 var span = SeamSpan(s);
-                var ext = GridExtent(!s.vertical);
+                var ext = SeamRun(s);
                 var area = s.vertical
                     ? Rect.MinMaxRect(span.lo, ext.lo, span.hi, ext.hi)
                     : Rect.MinMaxRect(ext.lo, span.lo, ext.hi, span.hi);
@@ -381,7 +473,7 @@ namespace RoadDemo
         {
             bool alongX = !s.vertical;
             var (bankLo, bankHi) = SeamSpan(s);
-            var ext = GridExtent(alongX);
+            var ext = SeamRun(s);
             // the quays run a step past the grid, then the island's own banks take over;
             // the water is the sea's, which fills the channel the island leaves for it
             float uMin = ext.lo - QuayReach, uMax = ext.hi + QuayReach;
@@ -405,6 +497,19 @@ namespace RoadDemo
                 return false;
             }
 
+            // Where ANOTHER river crosses this one the two are one water, and the thing
+            // that must not happen is this river walling its bank straight across the
+            // other one's mouth. So the confluence is left open: no quay piece, no
+            // promenade, no mooring. Only a river of the other axis can be in this
+            // list - a parallel one never meets it (RiverCrossings).
+            var confluences = RiverCrossings(!alongX);
+            bool Confluence(float u, float margin)
+            {
+                foreach (var c in confluences)
+                    if (u > c.lo - margin && u < c.hi + margin) return true;
+                return false;
+            }
+
             // the quays: one wall piece per 5 m along both banks, the coping at street
             // level and the wall dropping into the water; under a bridge the kit's
             // abutment wall stands in for it, below the deck
@@ -418,6 +523,7 @@ namespace RoadDemo
                 else yaw = low ? -90f : 90f;
                 for (float u = uMin; u < uMax - 0.1f; u += Cell)
                 {
+                    if (Confluence(u + Cell * 0.5f, 0f)) continue;
                     bool bridged = UnderBridge(u + Cell * 0.5f, 0f);
                     var piece = bridged ? _bridgeWall
                         : (Random.value < 0.18f && _quayStraightWorn != null ? _quayStraightWorn : _quayStraight);
@@ -448,7 +554,7 @@ namespace RoadDemo
                 int slot = 0;
                 for (float u = gridLo + 7f; u < gridHi - 5f; u += 9f, slot++)
                 {
-                    if (UnderBridge(u, 4f)) continue;
+                    if (UnderBridge(u, 4f) || Confluence(u, 6f)) continue;
                     // the sidewalk cell behind the quay is 5 m deep: lamps a metre in
                     // from the coping, benches (the demo's own, so the sitters fit them)
                     // turned to the water, a bin here and there
@@ -471,7 +577,7 @@ namespace RoadDemo
                     float off = low ? 1f : -1f; // into the water
                     for (float u = gridLo + 20f; u < gridHi - 20f; u += Random.Range(34f, 62f))
                     {
-                        if (UnderBridge(u, 22f)) continue;
+                        if (UnderBridge(u, 22f) || Confluence(u, 24f)) continue;
                         var boat = Pick(_boats);
                         float yaw = (alongX ? 90f : 0f) + (Random.value < 0.5f ? 0f : 180f) + Random.Range(-4f, 4f);
                         var pos = W(u, bank + off * Random.Range(3.2f, 4.6f), WaterY);
@@ -593,7 +699,7 @@ namespace RoadDemo
             if (wild) LoadWildKit();
             bool alongZ = s.vertical; // the park runs along Z between two vertical roads
             var (edgeLo, edgeHi) = SeamSpan(s);          // across the park
-            var ext = GridExtent(!alongZ);               // along the park (grid ends)
+            var ext = SeamRun(s);                        // along the park, end to end
             Vector3 W(float u, float v, float y) => alongZ ? new Vector3(v, y, u) : new Vector3(u, y, v);
             float mid = (edgeLo + edgeHi) * 0.5f;
             float breadth = edgeHi - edgeLo;
@@ -777,7 +883,7 @@ namespace RoadDemo
         {
             bool alongZ = s.vertical;
             var (edgeLo, edgeHi) = SeamSpan(s);
-            var ext = GridExtent(!alongZ);
+            var ext = SeamRun(s);
             float mid = (edgeLo + edgeHi) * 0.5f;
             Vector3 W(float u, float v, float y) => alongZ ? new Vector3(v, y, u) : new Vector3(u, y, v);
 

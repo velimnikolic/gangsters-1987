@@ -49,6 +49,25 @@ namespace RoadDemo
         public float StandoffPatience = 0.8f; // seconds nose to nose before the lower yields
         public float GiveWayFor = 4f;       // seconds he holds aside
 
+        /// <summary>Does he treat a QUEUE as something to get past, rather than something
+        /// to join? A separate question from <see cref="RunsRed"/>, and it used to be the
+        /// same one.
+        ///
+        /// Running a red and pushing past a queue were both read off RunsRed, on the
+        /// reasoning that anybody who does one does the other. That is true of a police
+        /// car and false of a motorcycle: the machine does not filter between lanes in
+        /// this model (it takes a whole lane like anything else), and with the crown and
+        /// the far lane taken away from it - which is what stopped it driving INTO cars -
+        /// it has nowhere to go round a queue TO. Told to push past one anyway it sat
+        /// against the car in front trying to swing out and never being able to, which
+        /// is the "six hundred and nineteen refusals in thirty-one seconds" the Getaway
+        /// profile's own comment records.
+        ///
+        /// So the question is asked of the ability, not of the attitude: a driver pushes
+        /// past a queue only if he has a lane to do it in. A red with nothing under it
+        /// he still runs.</summary>
+        public bool PushesPastQueues => RunsRed && (UsesCrown || UsesOpposite);
+
         /// <summary>Plain traffic: keeps its lane, obeys everything, swings a little
         /// over the crown round a parked car, and only after a long wait behind a jam
         /// uses the far lane or turns round.</summary>
@@ -91,12 +110,25 @@ namespace RoadDemo
         /// at speed lands it on top of whatever is queued at the next light. Gap already
         /// negative the first frame anybody noticed.
         ///
-        /// THE RED, which looks like the obvious thing a getaway does and is worse: a
-        /// red is usually a red with a QUEUE under it, and a machine that has decided to
-        /// go through one drives into the car in front of it and grinds there until the
-        /// light changes - six hundred and nineteen refusals in thirty-one seconds, in
-        /// the soak that tried it. Running a red is only safe for something that can go
-        /// round what is waiting at it, and this cannot.
+        /// THE RED, which the player asked for twice ("why do they stop at a light in the
+        /// middle of a drive-by?") and which was refused once for a good reason that
+        /// turns out to have been about the wrong thing.
+        ///
+        /// What went wrong the first time was not the red. RunsRed was ALSO the flag that
+        /// said "get past a queue rather than join it" (RoadCar, two places), and a
+        /// machine with no crown and no far lane has nowhere to get past one TO: it sat
+        /// against the car in front trying to swing out and failing, every frame - six
+        /// hundred and nineteen refusals in thirty-one seconds, in the soak that tried
+        /// it. That flag is now its own question, asked of the ABILITY
+        /// (DriverProfile.PushesPastQueues), so the machine can be given the red without
+        /// being given the shunt.
+        ///
+        /// What it runs is an EMPTY red. CanEnter still refuses the box to anybody with
+        /// cross traffic coming, anybody whose line crosses a car already inside it, and
+        /// - the one that matters here - anybody with no room to LEAVE it ("box: no room
+        /// beyond"). So a red with a queue under it still stops the machine, because
+        /// that is not a rule, it is a wall of cars; a red over an empty junction no
+        /// longer does. Which is the whole of what a man in a hurry actually gains.
         ///
         /// What is left is the useful half: getting away at nearly twice what the traffic
         /// does, no patience to speak of, a turn in the road when home is behind it - and
@@ -115,7 +147,7 @@ namespace RoadDemo
             Name = "Getaway", Cruise = 16f, ObeysLimit = false, Accel = 9f, Brake = 11f,
             LateralG = 4f, TurnSpeed = 8f, UTurnSpeed = 4f, FollowGap = 3.5f, TimeGap = 0.9f,
             Patience = 0.4f, UsesCrown = false, UsesOpposite = false, UTurnsInRoad = true,
-            RunsRed = false, Fearless = true, Priority = 2, StandoffPatience = 0.5f,
+            RunsRed = true, Fearless = true, Priority = 2, StandoffPatience = 0.5f,
         };
 
         /// <summary>The law: brisk, fearless, the crown and the far lane with its

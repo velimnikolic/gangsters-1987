@@ -1210,7 +1210,10 @@ namespace BlockDemo
         {
             var corner = FarCorner(_ours.Position);
             _crews.Select(_ours);
-            if (!_crews.OrderSelected(corner, out _walkDest))
+            // every other leg is the player's double click: the run is the same order
+            // at the same corners, and a walkabout that never runs judges half the
+            // gaits the town has (the skate and the weave both live in the run)
+            if (!_crews.OrderSelected(corner, out _walkDest, run: (_legsWalked & 1) == 1))
             {
                 Give("the crew would not take a walk order");
                 return;
@@ -1220,7 +1223,8 @@ namespace BlockDemo
             _legBestToGo = float.MaxValue;
             _legBestAt = Now;
             Note($"leg {_legsWalked + 1}/{walkLegs}: sent " +
-                 $"{Vector3.Distance(_ours.Position, _walkDest):F0} m");
+                 $"{Vector3.Distance(_ours.Position, _walkDest):F0} m" +
+                 ((_legsWalked & 1) == 1 ? " at the run" : ""));
         }
 
         void TickWalk()
@@ -1255,7 +1259,8 @@ namespace BlockDemo
                 {
                     _walkRetries++;
                     _crews.Select(_ours);
-                    _crews.OrderSelected(_walkDest, out _walkDest);
+                    // the retry keeps the leg's gait - a run leg is clicked twice again
+                    _crews.OrderSelected(_walkDest, out _walkDest, run: (_legsWalked & 1) == 1);
                     return;
                 }
                 if (off > 15f)

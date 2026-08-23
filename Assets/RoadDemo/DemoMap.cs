@@ -15,7 +15,15 @@ namespace RoadDemo
     /// the river and the park in flat colour, fields around the town, and everybody
     /// who moves a dot over the top of it.
     ///
-    /// It comes up two ways, and it is the same map both times:
+    /// It comes up three ways, and it is the same map every time:
+    ///
+    ///   CORNER - down in the street, a postcard in the bottom right corner holding
+    ///            three hundred metres of ground under the camera's own pivot: the
+    ///            blocks around the player, the station and the family doors on it, his
+    ///            crews and the police. Clicking it takes the camera there, dragging it
+    ///            pans, and the crowd is left off it - ten thousand civilians placed
+    ///            every frame for a panel the size of a hand is the one thing on this
+    ///            map that would cost real time.
     ///
     ///   FULL   - the player pulls the wheel back past <see cref="DemoCamera.mapAt"/>
     ///            (180 m) and the plan takes the screen. It is not a separate view:
@@ -52,6 +60,23 @@ namespace RoadDemo
         /// the plan is up.</summary>
         const int FullOrder = 15;
 
+        /// <summary>The corner map, while the player is down in the street: over the
+        /// world's own overlays, under the top bar and the crew blocks.</summary>
+        const int CornerOrder = 18;
+
+        // The corner panel: bottom right, clear of the zoom readout the camera prints
+        // bottom LEFT, and of the crew bar along the top.
+        const float CornerWidth = 340f, CornerHeight = 250f, CornerInset = 16f;
+
+        /// <summary>Metres of ground down the corner panel - about four blocks, which is
+        /// as much as a man on foot needs to see around him and little enough that a dot
+        /// on it means a street and not a district.</summary>
+        const float CornerMetres = 300f;
+
+        /// <summary>The plaques are a little smaller in the corner: the same marks, a
+        /// quarter of the room to print them in.</summary>
+        const float CornerMarks = 0.72f;
+
         // The docked panel's inset inside the right half. The top clears the demo's
         // top bar and the crew blocks under it.
         const float PanelLeft = 14f, PanelRight = 22f, PanelTop = 66f, PanelBottom = 22f;
@@ -66,6 +91,20 @@ namespace RoadDemo
         /// plan comes up showing about what the camera had in the frame.</summary>
         const float BoomToMetres = 1.15f;
 
+        /// <summary>How much more than the town the last click of the wheel shows: a
+        /// quarter again, so the coast and the fields frame the city instead of
+        /// swallowing it.</summary>
+        const float CityFrame = 1.25f;
+
+        /// <summary>How far past the grid's own edge, in metres, an outlying quarter may
+        /// drag the frame. It has to admit a port - which hangs a basin several hundred
+        /// metres off the shore - and refuse the island, which is kilometres of sea. It
+        /// was a FRACTION of the grid's size, which is how the plan came to leave the
+        /// port off the last click of the wheel: a grid twice as wide as it is deep
+        /// allowed less than half as much room north and south as east and west, and the
+        /// port hangs off a shore.</summary>
+        const float ReachOut = 900f;
+
         // ----------------------------------------------------------------- glyphs
 
         const float PedDot = 5f;
@@ -77,6 +116,44 @@ namespace RoadDemo
         /// <summary>No footprint is drawn thinner than this, or a shed is nothing at
         /// all. Metres, because the plan is laid out in metres.</summary>
         const float MinBuilding = 3f;
+
+        // ------------------------------------------------------------- the houses
+
+        /// <summary>What counts as a house when the plan is drawn off the city itself:
+        /// a thing under the block roots that STANDS UP and has a footprint worth a
+        /// roof of its own. The catalog's footprint boxes are one to a BAKE, and a bake
+        /// is a whole block interior seventy metres across - a plan drawn off those
+        /// alone is a city of grey slabs. The renderers inside them are the houses, and
+        /// a block drawn as a row of small roofs is most of what makes the original's
+        /// map read as a town.</summary>
+        const float RoofRise = 2.4f, RoofSide = 2.2f, RoofArea = 9f;
+
+        /// <summary>The dark line round every roof, in metres of ground - so a terrace
+        /// still reads as separate houses at any zoom.</summary>
+        const float RoofEdge = 0.5f;
+
+        /// <summary>A footprint this far inside one already drawn is a PART of it - a
+        /// window, a door, a balcony, an air unit on the roof - and gets no roof of its
+        /// own.</summary>
+        const float RoofSwallow = 0.7f;
+
+        /// <summary>The bucket the swallow test walks, metres.</summary>
+        const float RoofCell = 24f;
+
+        /// <summary>Quads to one mesh (a UI mesh may not pass 65k verts, and each quad
+        /// is four), and the most roofs the plan will draw at all.</summary>
+        const int RoofsPerMesh = 6000;
+        const int RoofBudget = 26000;
+
+        /// <summary>How much ground goes into one mesh. The plan is drawn once and then
+        /// only scaled, but a mesh is still SUBMITTED every frame it is on, and the
+        /// corner panel is up the whole time the player is in the street - so the town
+        /// is cut into cells and a cell nobody is looking at is switched off.</summary>
+        const float SheetCell = 340f, SheetPad = 40f;
+
+        /// <summary>The countryside, cut the same way: bands up the map.</summary>
+        const float LandBand = 500f;
+        const int LandPerMesh = 3500;
 
         const float PopupWidth = 250f, PopupHeight = 88f, PopupLift = 10f;
 
@@ -99,6 +176,20 @@ namespace RoadDemo
         /// screen, and no larger - the city's own name goes off again once the map is
         /// close enough that the streets carry their names.</summary>
         const float MinTypePx = 8f, MaxTypePx = 210f;
+
+        /// <summary>The size a street's name is printed at ON SCREEN, and how far its
+        /// letters may be pushed from the size they were drawn at to hold it. The
+        /// ceiling is generous on purpose: pulled right back the plan letters its
+        /// streets rather than going silent, which is the whole difference between a
+        /// map and a grey diagram.</summary>
+        const float StreetTypePx = 16f, AvenueTypePx = 21f;
+        const float TypeGrowLow = 0.6f, TypeGrowHigh = 4.5f;
+
+        /// <summary>Pixels of screen between two printings of the same street name, and
+        /// the width of ground a street must have to itself before it is named at all.
+        /// Without the second, a city pulled back to the frame prints fourteen names
+        /// across a hundred pixels and reads as a smear of ink.</summary>
+        const float NameGapPx = 330f, NameLinePx = 74f;
 
         // ------------------------------------------------------------------ paper
 
@@ -137,6 +228,19 @@ namespace RoadDemo
         static readonly Color SuburbWash = new Color(0.373f, 0.694f, 0.325f, 0.30f);
         static readonly Color PadWash = new Color(0.827f, 0.784f, 0.376f, 0.30f);
 
+        /// <summary>The line drawn under every roof, and the green a tree wears - the
+        /// plan's two smallest colours, and between them what turns a block from a slab
+        /// into a row of houses with yards between them.</summary>
+        static readonly Color RoofLine = new Color(0.352f, 0.325f, 0.290f, 1f);
+        static readonly Color Canopy = new Color(0.271f, 0.494f, 0.243f, 1f);
+
+        /// <summary>A footprint whose houses are drawn is not painted over them: it
+        /// stays as a clear pane that takes the click, and only lights up under the
+        /// pointer or under the card.</summary>
+        static readonly Color Ghost = new Color(1f, 1f, 1f, 0f);
+        static readonly Color HoverWash = new Color(1f, 1f, 1f, 0.45f);
+        static readonly Color PickWash = new Color(0.95f, 0.30f, 0.15f, 0.55f);
+
         static readonly Color Ink = new Color(0.086f, 0.078f, 0.071f, 1f);
         static readonly Color Halo = new Color(1f, 0.98f, 0.92f, 0.55f);
         static readonly Color Picked = new Color(0.95f, 0.30f, 0.15f, 1f);
@@ -148,8 +252,11 @@ namespace RoadDemo
         static readonly Color OutfitGold = new Color(0.94f, 0.72f, 0.13f, 1f);
         static readonly Color RivalRed = new Color(0.86f, 0.17f, 0.13f, 1f);
 
-        /// <summary>A family's front premises - square, and a shade bigger than a man.</summary>
-        const float FrontDot = 9f;
+        /// <summary>A family's front premises: a plaque the size of a trade's, in that
+        /// family's own colour with its initial on it - premises never read as a man
+        /// (the crews are round dots), and one family's door is never mistaken for
+        /// another's. Held at its size on screen, like every other mark on the plan.</summary>
+        const float FrontPx = 20f;
 
         /// <summary>A mob's men on the map in that family's colour (GangPalette), which
         /// is the colour its ground is washed in - twenty crews all in one red told the
@@ -186,6 +293,10 @@ namespace RoadDemo
             public Color Roof;
             public string Title;
             public string Body;
+
+            /// <summary>Its own houses are drawn inside it, so the footprint itself is
+            /// not painted - it is the clear pane that takes the click.</summary>
+            public bool Covered;
         }
 
         /// <summary>Anything that moves: one Image, positioned from a transform.</summary>
@@ -196,6 +307,11 @@ namespace RoadDemo
             public IPatrolMarker Patrol;  // null for civilians - only police rest
             public bool Vehicle;
             public Color Tint;
+
+            /// <summary>One of the crowd: plotted on the big plan, left off the corner
+            /// panel, where ten thousand of them would cost more than the map is
+            /// worth.</summary>
+            public bool Civilian;
         }
 
         /// <summary>A name printed on the plan: how tall it is in metres of ground,
@@ -206,6 +322,21 @@ namespace RoadDemo
             public float Metres;
             public float MinPx, MaxPx;
             public bool On = true;
+
+            /// <summary>A street name is printed at a size ON SCREEN and not on the
+            /// ground: the wheel changes what the map shows, never how big its
+            /// lettering is, so a street is named at every zoom the way the original's
+            /// is. Zero means the old rule - letters that grow with the ground and go
+            /// off when they are too small or too large to read.</summary>
+            public float ScreenPx;
+
+            /// <summary>Which repeat down its own street this is, and how far it is to
+            /// the next street either side. Between them they thin the lettering out as
+            /// the plan is pulled back: every second name, then every third, and the
+            /// small streets stop being named at all once they are a few pixels
+            /// apart.</summary>
+            public int Ordinal;
+            public float GapMetres;
         }
 
         readonly List<Building> _buildings = new List<Building>();
@@ -218,13 +349,16 @@ namespace RoadDemo
         GameObject _header;
         RectTransform _view;
         RectTransform _content;    // the plan itself, laid out in metres
+        RectTransform _names;      // the lettering, which the corner panel has no room for
         Canvas _canvas;
         GameObject _popup;
         RectTransform _popupRect;
         TMP_Text _popupTitle, _popupBody;
         TMP_Text _caption;
 
-        Rect _world;          // the city's own extent, metres
+        Rect _world;          // the grid's own extent, metres - the town's ground
+        Rect _reach;          // that and the villages hanging off it: what a fit frames
+        Rect _paper;          // the sheet every mesh is drawn on, about the map's origin
         Vector2 _origin;      // the metre the content rect is measured from
         Vector2 _centre;      // the ground under the middle of the view
         float _scale;         // reference pixels per metre
@@ -232,8 +366,15 @@ namespace RoadDemo
         float _laidDistance;  // the boom that fit was drawn for - what the wheel is measured against
         int _selected = -1;
 
-        enum Mode { Off, Docked, Full }
+        /// <summary>Off is only ever the state the map is built in: down in the street
+        /// it is the corner panel, pulled back it is the screen, and beside the open
+        /// book it is the book's other half.</summary>
+        enum Mode { Off, Corner, Docked, Full }
         Mode _mode = Mode.Off;
+
+        /// <summary>The corner map at all. A scene that wants the street bare turns it
+        /// off; the demo keeps it.</summary>
+        public bool minimap = true;
 
         // what the camera was doing before the plan covered it up
         int _camMask;
@@ -269,16 +410,37 @@ namespace RoadDemo
 
             MeasureWorld();
             CollectBuildings();
+            CollectRoofs();
             Build();
 
-            // How far back the wheel may go: the last click is the whole island in the
-            // frame. The camera does not know how big its island is; the map does.
+            // How far back the wheel may go: the last click is the TOWN in the frame,
+            // with a hand's width of country round it - not the whole island. An island
+            // is three kilometres of coast and sea around a city a mile across, and a
+            // plan drawn to the island puts the streets in a stamp in the middle of a
+            // green field: no name is readable on it and no house is a pixel wide. The
+            // camera does not know how big its city is; the map does.
             if (_rig != null)
             {
-                var island = _builder.IslandArea;
-                float span = island.height > 1f ? island.height : _world.height * 2.4f;
-                _rig.mapCeiling = Mathf.Clamp(span / BoomToMetres, 400f, 6000f);
+                float aspect = Screen.height > 0 ? (float)Screen.width / Screen.height : 16f / 9f;
+                float wants = Mathf.Max(_reach.height, _reach.width / Mathf.Max(0.6f, aspect));
+                _rig.mapCeiling = Mathf.Clamp(wants * CityFrame / BoomToMetres, 260f, 6000f);
             }
+
+            // A click on the corner panel is a click on the MAP and never also a click
+            // on the building it happens to be drawn over: the world's picker raycasts
+            // the scene itself and knows nothing about the canvas in front of it.
+            _previousVeto = BuildingCardPicker.ClickVeto;
+            BuildingCardPicker.ClickVeto = ClaimsClick;
+        }
+
+        System.Func<Vector2, bool> _previousVeto;
+
+        bool ClaimsClick(Vector2 screen)
+        {
+            if (_mode != Mode.Off && _panelRect != null &&
+                RectTransformUtility.RectangleContainsScreenPoint(_panelRect, screen))
+                return true;
+            return _previousVeto != null && _previousVeto(screen);
         }
 
         // -------------------------------------------------------------- the plan
@@ -293,6 +455,31 @@ namespace RoadDemo
                 vx[vx.Length - 1] + _builder.VerticalHalfWidth(vx.Length - 1) + WorldMargin,
                 hz[hz.Length - 1] + _builder.HorizontalHalfWidth(hz.Length - 1) + WorldMargin);
             _origin = _world.center;
+
+            // What the plan has to FRAME is not only the grid: the villages hang off it
+            // and are as much the town as the blocks are. Capped, though - one district
+            // sited half a mile out must not shrink the city itself to a thumbnail.
+            _reach = _world;
+            foreach (var district in _builder.DistrictPlans)
+            {
+                _reach.xMin = Mathf.Min(_reach.xMin, district.World.xMin);
+                _reach.xMax = Mathf.Max(_reach.xMax, district.World.xMax);
+                _reach.yMin = Mathf.Min(_reach.yMin, district.World.yMin);
+                _reach.yMax = Mathf.Max(_reach.yMax, district.World.yMax);
+            }
+            _reach = Rect.MinMaxRect(
+                Mathf.Max(_reach.xMin, _world.xMin - ReachOut),
+                Mathf.Max(_reach.yMin, _world.yMin - ReachOut),
+                Mathf.Min(_reach.xMax, _world.xMax + ReachOut),
+                Mathf.Min(_reach.yMax, _world.yMax + ReachOut));
+
+            // The sheet of paper everything is drawn on, measured from the map's origin:
+            // the island if there is one, and the town and its quarters either way, with
+            // room to spare. Only the meshes' own rectangles are cut from it.
+            var island = _builder.IslandArea;
+            float wide = Mathf.Max(island.width, _reach.width) + 2000f;
+            float deep = Mathf.Max(island.height, _reach.height) + 2000f;
+            _paper = new Rect(_origin.x - wide * 0.5f, _origin.y - deep * 0.5f, wide, deep);
             _centre = _origin;
         }
 
@@ -329,6 +516,25 @@ namespace RoadDemo
                 });
             }
 
+            // And the quarters' own buildings: the port's sheds, the villages' houses,
+            // the field's hangars. They are not under the Blocks root and carry no
+            // footprint collider, so the world's picker cannot see them - but the
+            // quarter reported every one of them by name as it built it, and on the plan
+            // a port whose sheds cannot be clicked is scenery.
+            foreach (var (area, rise, name) in _builder.QuarterRoofs)
+            {
+                _buildings.Add(new Building
+                {
+                    World = area,
+                    Height = rise,
+                    Roof = RoofFor(area, rise),
+                    Title = string.IsNullOrEmpty(name) ? Quarter(area) : name,
+                    Body = $"in the {Quarter(area)}\n" +
+                           $"footprint  {area.width:F0} x {area.height:F0} m\n" +
+                           $"height  {rise:F0} m",
+                });
+            }
+
             // Biggest first, so hierarchy order leaves the small footprints on top and
             // a shed against a tower block still takes its own click.
             _buildings.Sort((a, b) =>
@@ -346,6 +552,164 @@ namespace RoadDemo
 
         static int RoofHash(Vector2 at) =>
             Mathf.Abs(Mathf.RoundToInt(at.x * 7.3f) * 31 + Mathf.RoundToInt(at.y * 5.1f));
+
+        /// <summary>A roof rolled off a footprint rather than a bounding box - the same
+        /// arithmetic, for the houses taken off the city's own renderers.</summary>
+        static Color RoofFor(Rect area, float rise)
+        {
+            int hash = RoofHash(area.center);
+            return rise > 26f ? Roofs[4 + hash % 2] : Roofs[hash % 4];
+        }
+
+        // ------------------------------------------------------------- the houses
+
+        /// <summary>Every roof the plan draws, in metres, biggest first.</summary>
+        readonly List<(Rect area, Color tint)> _roofs = new List<(Rect, Color)>();
+
+        /// <summary>One mesh of the plan and the ground it covers: drawn while the view
+        /// is over that ground and switched off while it is not.</summary>
+        sealed class Sheet
+        {
+            public Rect Ground;
+            public GameObject Go;
+            public bool On = true;
+        }
+
+        readonly List<Sheet> _sheets = new List<Sheet>();
+
+        /// <summary>Roofs bucketed by ground, for the two questions asked of them: is
+        /// this candidate already inside one, and does this footprint have any.</summary>
+        readonly Dictionary<Vector2Int, List<Rect>> _roofGrid =
+            new Dictionary<Vector2Int, List<Rect>>();
+
+        /// <summary>
+        /// The houses. Every renderer under the block roots that stands up and covers
+        /// ground becomes a roof, biggest first, and anything that turns out to be
+        /// mostly inside a roof already taken is dropped as a part of it - a window, a
+        /// door, a sign, a tank on the roof. What is left is one small rectangle per
+        /// building, which is what a block has to look like for the plan to read as a
+        /// town rather than a car park.
+        ///
+        /// The same pass answers the other question the plan needs: which of the
+        /// clickable footprints have houses of their own drawn inside them, and so
+        /// should not be painted over the top of them.
+        /// </summary>
+        void CollectRoofs()
+        {
+            var found = new List<(Rect area, float rise, bool green)>();
+            foreach (var renderer in _blockRoot.GetComponentsInChildren<MeshRenderer>(false))
+            {
+                if (renderer == null) continue;
+                var b = renderer.bounds;
+                if (b.size.y < RoofRise) continue;                    // flat: ground, not a wall
+                if (b.size.x < RoofSide || b.size.z < RoofSide) continue;   // a fence, a pole
+                if (b.size.x * b.size.z < RoofArea) continue;
+                found.Add((Rect.MinMaxRect(b.min.x, b.min.z, b.max.x, b.max.z),
+                    b.size.y, Greenery(renderer.name)));
+            }
+
+            // Biggest first: a house is drawn before the balcony that hangs off it, so
+            // it is the balcony that is swallowed and never the other way round.
+            found.Sort((a, c) => (c.area.width * c.area.height)
+                .CompareTo(a.area.width * a.area.height));
+
+            foreach (var (area, rise, green) in found)
+            {
+                if (_roofs.Count >= RoofBudget) break;
+                if (Swallowed(area)) continue;
+                Keep(area);
+                _roofs.Add((area, green ? Canopy : RoofFor(area, rise)));
+            }
+
+            for (int i = 0; i < _buildings.Count; i++)
+                _buildings[i].Covered = AnyRoofIn(_buildings[i].World);
+
+            // The buckets were scaffolding for those two questions and are tens of
+            // thousands of rectangles; nothing asks them anything again.
+            _roofGrid.Clear();
+
+            int covered = 0;
+            for (int i = 0; i < _buildings.Count; i++)
+                if (_buildings[i].Covered) covered++;
+            Debug.Log($"[RoadDemo] map: {_roofs.Count} roofs off {found.Count} standing " +
+                      $"renderers, {covered} of {_buildings.Count} footprints drawn as houses");
+        }
+
+        /// <summary>What the map paints green instead of roofing: the city's own trees
+        /// stand as tall as a house and would otherwise print as one.</summary>
+        static bool Greenery(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            name = name.ToLowerInvariant();
+            return name.Contains("tree") || name.Contains("palm") || name.Contains("bush") ||
+                   name.Contains("hedge") || name.Contains("shrub") || name.Contains("plant") ||
+                   name.Contains("foliage");
+        }
+
+        static Vector2Int Bucket(float x, float z) =>
+            new Vector2Int(Mathf.FloorToInt(x / RoofCell), Mathf.FloorToInt(z / RoofCell));
+
+        void Keep(Rect area)
+        {
+            var lo = Bucket(area.xMin, area.yMin);
+            var hi = Bucket(area.xMax, area.yMax);
+            for (int x = lo.x; x <= hi.x; x++)
+                for (int y = lo.y; y <= hi.y; y++)
+                {
+                    var key = new Vector2Int(x, y);
+                    if (!_roofGrid.TryGetValue(key, out var here))
+                        _roofGrid[key] = here = new List<Rect>();
+                    here.Add(area);
+                }
+        }
+
+        /// <summary>Is this footprint mostly inside a roof already drawn? Measured
+        /// against the single largest overlap and not their sum - two roofs that share
+        /// an edge must not add up to a verdict neither of them earns.</summary>
+        bool Swallowed(Rect area)
+        {
+            float mine = area.width * area.height;
+            if (mine <= 0f) return true;
+            var lo = Bucket(area.xMin, area.yMin);
+            var hi = Bucket(area.xMax, area.yMax);
+            for (int x = lo.x; x <= hi.x; x++)
+                for (int y = lo.y; y <= hi.y; y++)
+                {
+                    if (!_roofGrid.TryGetValue(new Vector2Int(x, y), out var here)) continue;
+                    for (int i = 0; i < here.Count; i++)
+                        if (Overlap(area, here[i]) >= RoofSwallow * mine)
+                            return true;
+                }
+            return false;
+        }
+
+        /// <summary>Does any house stand inside this footprint - by its middle, which is
+        /// the only part of a roof that certainly belongs to the building under it.</summary>
+        bool AnyRoofIn(Rect footprint)
+        {
+            var lo = Bucket(footprint.xMin, footprint.yMin);
+            var hi = Bucket(footprint.xMax, footprint.yMax);
+            for (int x = lo.x; x <= hi.x; x++)
+                for (int y = lo.y; y <= hi.y; y++)
+                {
+                    if (!_roofGrid.TryGetValue(new Vector2Int(x, y), out var here)) continue;
+                    for (int i = 0; i < here.Count; i++)
+                    {
+                        var at = here[i].center;
+                        if (at.x >= footprint.xMin && at.x <= footprint.xMax &&
+                            at.y >= footprint.yMin && at.y <= footprint.yMax)
+                            return true;
+                    }
+                }
+            return false;
+        }
+
+        static float Overlap(Rect a, Rect b)
+        {
+            float w = Mathf.Min(a.xMax, b.xMax) - Mathf.Max(a.xMin, b.xMin);
+            float h = Mathf.Min(a.yMax, b.yMax) - Mathf.Max(a.yMin, b.yMin);
+            return w <= 0f || h <= 0f ? 0f : w * h;
+        }
 
         // ----------------------------------------------------------- construction
 
@@ -404,9 +768,16 @@ namespace RoadDemo
             _content = DemoUi.NewRect("Plan", view);
             _content.sizeDelta = Vector2.zero;
 
+            // Bottom up: the country, the town's ground and its blocks, the houses
+            // standing on them, the families' ground washed over the lot, the clickable
+            // panes over the houses, and the lettering over everything.
             BuildLand(_content);
             BuildPlan(_content);
+            BuildRoofs(_content);
+            BuildTurf(_content);
+            BuildFaces(_content);
             BuildLabels(_content);
+            BuildIcons(view);
             BuildMovers(view);
             // Last children of the view, so they print over the plan and the crowd and
             // share the view's own coordinates - the card is placed off a footprint.
@@ -513,23 +884,45 @@ namespace RoadDemo
             if (area.width < 1f || area.height < 1f)
                 return;
 
-            var host = DemoUi.NewRect("Country", content);
-            host.anchoredPosition = area.center - _origin;
-            host.sizeDelta = area.size;
-            // The renderer BEFORE the graphic: RequireComponent is not inherited
-            // through a Graphic subclass on every path, and a MaskableGraphic without
-            // one throws inside RectMask2D's clipping - which aborts the whole
-            // canvas update, and takes the entire map down with it.
-            host.gameObject.AddComponent<CanvasRenderer>();
-            var patches = host.gameObject.AddComponent<MapPatches>();
-            patches.color = Color.white;
+            // Cut into bands up the map, each its own mesh: standing in a street at the
+            // south end of the island, the corner panel draws the band it is in and
+            // leaves the other nine switched off.
+            var country = DemoUi.NewRect("Country", content);
+            MapPatches patches = null;
+            float bandFrom = 0f;
+
+            MapPatches Band(float from)
+            {
+                var host = DemoUi.NewRect("Band", country);
+                host.anchoredPosition = area.center - _origin;
+                host.sizeDelta = area.size;
+                // The renderer BEFORE the graphic: RequireComponent is not inherited
+                // through a Graphic subclass on every path, and a MaskableGraphic without
+                // one throws inside RectMask2D's clipping - which aborts the whole
+                // canvas update, and takes the entire map down with it.
+                host.gameObject.AddComponent<CanvasRenderer>();
+                var made = host.gameObject.AddComponent<MapPatches>();
+                made.color = Color.white;
+                _sheets.Add(new Sheet
+                {
+                    Ground = new Rect(area.xMin, from, area.width, LandBand),
+                    Go = host.gameObject,
+                });
+                bandFrom = from;
+                return made;
+            }
 
             // the cell grows with the island: at twenty metres a six-kilometre island is
             // ninety thousand samples and far more merged runs than one UI mesh can
             // hold, and the far half of the country simply stopped being drawn
             float Cell = Mathf.Max(20f, Mathf.Sqrt(area.width * area.height) / 200f);
-            const float BeachLine = -0.35f;   // the line BuildGround itself wears sand at
-            const float GrassLine = 0.55f;
+            // The city's own two lines and not the map's guess at them. They were a
+            // guess, and it was wrong both ways: everything under -0.35 was painted SEA
+            // (the water plane is nearly two and a half metres lower than that) and
+            // everything under +0.55 was painted SAND - which is grass in the world, and
+            // is most of the island. The plan read as a desert with a town in it.
+            float sea = RoadDemoBuilder.WaterY;
+            float shore = RoadDemoBuilder.BeachLine;
             const int Budget = 12000;         // quads: one UI mesh may not pass 65k verts
 
             int nx = Mathf.CeilToInt(area.width / Cell);
@@ -539,6 +932,8 @@ namespace RoadDemo
             for (int j = 0; j < nz && runs < Budget; j++)
             {
                 float z = area.yMin + j * Cell;
+                if (patches == null || z - bandFrom >= LandBand || patches.Count >= LandPerMesh)
+                    patches = Band(z);
                 int open = -1;             // which cell the current run started at
                 int kind = 0;              // 0 sea, 1 sand, 2 field, 3 the other field
                 for (int i = 0; i <= nx; i++)
@@ -552,7 +947,7 @@ namespace RoadDemo
                         if (!_world.Contains(new Vector2(x, cz)))
                         {
                             float h = _builder.LandHeight(x, cz);
-                            here = h < BeachLine ? 0 : h < GrassLine ? 1 : Field2(x, cz);
+                            here = h < sea ? 0 : h < shore ? 1 : Field2(x, cz);
                         }
                     }
 
@@ -619,10 +1014,18 @@ namespace RoadDemo
             }
 
             var blocks = DemoUi.NewRect("Blocks", content);
+            // the yards first, under the lots: a built-over close is the ground between
+            // two blocks that grew together, and drawn as anything but a block it would
+            // put a road-coloured stripe down the middle of what the eye reads as one
+            foreach (var yard in _builder.MergedYards)
+                Slot(blocks, "Yard", yard, Slab);
             foreach (var lot in _builder.LotPlans)
             {
-                Slot(blocks, "Block", lot.Slab, Slab);
-                Slot(blocks, "Yard", lot.Interior, LotFace);
+                // a pocket park is a lot with no building on it: the plan draws it the
+                // colour of the parks, kerb ring and all, or a square of lawn would
+                // come out as another block of houses
+                Slot(blocks, "Block", lot.Slab, lot.Green ? Lawn : Slab);
+                Slot(blocks, "Yard", lot.Interior, lot.Green ? Lawn : LotFace);
             }
 
             // the quarters, washed in their own colour over the ground they stand on,
@@ -630,18 +1033,283 @@ namespace RoadDemo
             // the Blocks root, so they come off the footprints it reported instead
             // and are drawn but not clickable
             var washes = DemoUi.NewRect("Quarters", content);
+
+            // The ground a quarter made for itself, before anything of its own is drawn
+            // on it: the yard the port paves and the water it had the island leave open.
+            // Nobody else can report a basin - it is not a seam, not a block and not a
+            // footprint - and a port drawn without its water is a car park.
+            var ground = _builder.Reservations;
+            if (ground != null)
+            {
+                var made = new List<(Rect area, Color tint)>();
+                foreach (var paved in ground.Paved)
+                    if (!Inside(_world, paved))
+                        made.Add((paved, PavedAs(paved)));
+                foreach (var water in ground.Water)
+                    made.Add((water, Sea));
+                SpillFill(DemoUi.NewRect("Quarter Ground", washes), made);
+            }
+
             foreach (var district in _builder.DistrictPlans)
                 Slot(washes, district.Name, district.World,
                     district.Kind == DistrictKind.Harbor ? HarborWash :
                     district.Kind == DistrictKind.Suburb ? SuburbWash : PadWash);
-            foreach (var roof in _builder.QuarterRoofs)
-                Slot(washes, "Roof", roof, Roofs[RoofHash(roof.center) % 4], MinBuilding);
 
+            // EVERY road, off the network the cars actually drive - the grid's streets,
+            // the roads out to the quarters, the belt and its slip roads, a filling
+            // station's apron - and not only the ones the plan could infer from the road
+            // lines. A map with a road missing is a map that cannot be trusted.
+            var tarmac = new List<(Vector2 a, Vector2 b, float half)>();
+            var net = _builder.Net;
+            if (net != null)
+                foreach (var road in net.Roads)
+                {
+                    if (road == null) continue;
+                    tarmac.Add((new Vector2(road.A.x, road.A.z), new Vector2(road.B.x, road.B.z),
+                        Mathf.Max(3f, road.HalfRoad)));
+                }
+            foreach (var one in _builder.QuarterRoads)
+                tarmac.Add(one);
+            if (tarmac.Count > 0)
+                SpillStrips(DemoUi.NewRect("Carriageways", washes), tarmac, Asphalt);
+            Debug.Log($"[RoadDemo] map roads: {(net != null ? net.Roads.Count : 0)} on the " +
+                      $"network, {_builder.QuarterRoads.Count} laid by or out to the quarters, " +
+                      $"{_builder.QuarterRoofs.Count} quarter buildings");
+
+            // Only the dark line under them: the roof itself is the clickable pane, drawn
+            // with the city's own footprints in BuildFaces.
+            var quarterLines = DemoUi.NewRect("Quarter Roof Lines", washes);
+            var houses = new List<(Rect area, Color tint)>();
+            foreach (var (area, rise, _) in _builder.QuarterRoofs)
+                houses.Add((Grown(AtLeast(area, MinBuilding), RoofEdge), RoofLine));
+            SpillFill(quarterLines, houses);
+        }
+
+        /// <summary>A footprint no thinner than the plan can print, kept on its own
+        /// middle.</summary>
+        static Rect AtLeast(Rect area, float least)
+        {
+            float w = Mathf.Max(area.width, least), h = Mathf.Max(area.height, least);
+            return new Rect(area.center.x - w * 0.5f, area.center.y - h * 0.5f, w, h);
+        }
+
+        /// <summary>What a quarter's own ground is drawn in. A suburb PAVES its whole
+        /// rectangle - lawns, drives and all - so painting that the grey of a dock apron
+        /// turns every village into a car park; a port's yard and a works' pad really are
+        /// asphalt. The kind is taken from the quarter the ground stands in.</summary>
+        Color PavedAs(Rect area)
+        {
+            var at = area.center;
+            foreach (var district in _builder.DistrictPlans)
+                if (district.World.Contains(at))
+                    return district.Kind == DistrictKind.Suburb ? LotFace : Deck;
+            return LotFace;
+        }
+
+        /// <summary>Which quarter a piece of ground stands in, for the card on a shed
+        /// that has no street to name.</summary>
+        string Quarter(Rect area)
+        {
+            var at = area.center;
+            foreach (var district in _builder.DistrictPlans)
+                if (district.World.Contains(at))
+                    return district.Name;
+            return "town";
+        }
+
+        /// <summary>Is this rectangle wholly inside that one - the test that keeps the
+        /// map from painting a quarter's ground over the town's own.</summary>
+        static bool Inside(Rect outer, Rect inner) =>
+            inner.xMin >= outer.xMin && inner.xMax <= outer.xMax &&
+            inner.yMin >= outer.yMin && inner.yMax <= outer.yMax;
+
+        Vector2 Plan(Vector2 world) => world - _origin;
+
+        /// <summary>
+        /// The houses, in as few meshes as the count allows: every roof's dark line
+        /// first and every roof over the top of them, so a house that touches its
+        /// neighbour is not roofed over by the neighbour's own outline. One Image per
+        /// house would be twenty thousand objects for a city nobody clicks a window of;
+        /// this is a handful of meshes that only ever get scaled.
+        /// </summary>
+        void BuildRoofs(RectTransform content)
+        {
+            if (_roofs.Count == 0)
+                return;
+
+            var lines = DemoUi.NewRect("Roof Lines", content);
+            var faces = DemoUi.NewRect("Roofs", content);
+            SpillRects(lines, faces, _roofs, RoofEdge);
+
+            // They are in the meshes now, and the meshes are what the plan is.
+            _roofs.Clear();
+            _roofs.TrimExcess();
+        }
+
+        /// <summary>
+        /// Roofs into meshes: every roof's dark line first and every roof over the top of
+        /// them, so a house that touches its neighbour is not roofed over by the
+        /// neighbour's own outline.
+        ///
+        /// Bucketed by GROUND and not by the order they were found in: a mesh that covers
+        /// one quarter of town can be switched off while the map is looking at another,
+        /// which is what makes the corner panel cost a corner panel and not the whole
+        /// city every frame.
+        /// </summary>
+        void SpillRects(Transform lines, Transform faces,
+            List<(Rect area, Color tint)> items, float edge)
+        {
+            var cells = new Dictionary<Vector2Int, List<int>>();
+            for (int i = 0; i < items.Count; i++)
+            {
+                var at = items[i].area.center;
+                var key = new Vector2Int(Mathf.FloorToInt(at.x / SheetCell),
+                    Mathf.FloorToInt(at.y / SheetCell));
+                if (!cells.TryGetValue(key, out var here))
+                    cells[key] = here = new List<int>();
+                here.Add(i);
+            }
+
+            foreach (var cell in cells)
+                Spill(lines, cell.Key, cell.Value, items, edge, true);
+            foreach (var cell in cells)
+                Spill(faces, cell.Key, cell.Value, items, 0f, false);
+        }
+
+        /// <summary>Flat rectangles with no line under them - a quarter's own paving and
+        /// its water - bucketed by ground the same way.</summary>
+        void SpillFill(Transform parent, List<(Rect area, Color tint)> items)
+        {
+            var cells = new Dictionary<Vector2Int, List<int>>();
+            for (int i = 0; i < items.Count; i++)
+            {
+                var at = items[i].area.center;
+                var key = new Vector2Int(Mathf.FloorToInt(at.x / SheetCell),
+                    Mathf.FloorToInt(at.y / SheetCell));
+                if (!cells.TryGetValue(key, out var here))
+                    cells[key] = here = new List<int>();
+                here.Add(i);
+            }
+            foreach (var cell in cells)
+                Spill(parent, cell.Key, cell.Value, items, 0f, false);
+        }
+
+        /// <summary>The quarters' streets: lines with a width, bucketed by the ground
+        /// their middle stands on. A rectangle round a cell is not quite the ground a
+        /// long street covers, which is what SheetPad in the cull is for.</summary>
+        void SpillStrips(Transform parent,
+            IReadOnlyList<(Vector2 a, Vector2 b, float half)> roads, Color tint)
+        {
+            var cells = new Dictionary<Vector2Int, List<int>>();
+            for (int i = 0; i < roads.Count; i++)
+            {
+                var at = (roads[i].a + roads[i].b) * 0.5f;
+                var key = new Vector2Int(Mathf.FloorToInt(at.x / SheetCell),
+                    Mathf.FloorToInt(at.y / SheetCell));
+                if (!cells.TryGetValue(key, out var here))
+                    cells[key] = here = new List<int>();
+                here.Add(i);
+            }
+
+            foreach (var cell in cells)
+            {
+                // A street may run the length of its quarter, so the cell it is filed
+                // under is grown to what its own line actually covers.
+                var ground = new Rect(cell.Key.x * SheetCell, cell.Key.y * SheetCell,
+                    SheetCell, SheetCell);
+                MapPatches sheet = null;
+                Sheet filed = null;
+                foreach (int i in cell.Value)
+                {
+                    if (sheet == null || sheet.Count >= RoofsPerMesh)
+                    {
+                        sheet = NewSheet(parent);
+                        filed = new Sheet { Ground = ground, Go = sheet.gameObject };
+                        _sheets.Add(filed);
+                    }
+                    var (a, b, half) = roads[i];
+                    sheet.Add(Plan(a), Plan(b), half, tint);
+                    ground.xMin = Mathf.Min(ground.xMin, Mathf.Min(a.x, b.x) - half);
+                    ground.xMax = Mathf.Max(ground.xMax, Mathf.Max(a.x, b.x) + half);
+                    ground.yMin = Mathf.Min(ground.yMin, Mathf.Min(a.y, b.y) - half);
+                    ground.yMax = Mathf.Max(ground.yMax, Mathf.Max(a.y, b.y) + half);
+                    filed.Ground = ground;
+                }
+            }
+        }
+
+        /// <summary>One cell's roofs, in as many meshes as the vertex ceiling wants.</summary>
+        void Spill(Transform parent, Vector2Int cell, List<int> mine,
+            List<(Rect area, Color tint)> items, float grow, bool line)
+        {
+            var ground = new Rect(cell.x * SheetCell, cell.y * SheetCell, SheetCell, SheetCell);
+            MapPatches sheet = null;
+            Sheet filed = null;
+            for (int i = 0; i < mine.Count; i++)
+            {
+                if (sheet == null || sheet.Count >= RoofsPerMesh)
+                {
+                    sheet = NewSheet(parent);
+                    filed = new Sheet { Ground = ground, Go = sheet.gameObject };
+                    _sheets.Add(filed);
+                }
+                var (area, tint) = items[mine[i]];
+                sheet.Add(grow > 0f ? Grown(Plan(area), grow) : Plan(area),
+                    line ? RoofLine : tint);
+                // A rectangle is filed by its MIDDLE, and a port's basin filed by its
+                // middle is a kilometre of water in a cell three hundred metres across:
+                // the cull has to know the ground the mesh actually covers.
+                ground.xMin = Mathf.Min(ground.xMin, area.xMin);
+                ground.xMax = Mathf.Max(ground.xMax, area.xMax);
+                ground.yMin = Mathf.Min(ground.yMin, area.yMin);
+                ground.yMax = Mathf.Max(ground.yMax, area.yMax);
+                filed.Ground = ground;
+            }
+        }
+
+        /// <summary>One more mesh of flat rectangles, laid over the whole town.</summary>
+        MapPatches NewSheet(Transform parent, string name = "Sheet")
+        {
+            var host = DemoUi.NewRect(name, parent);
+            host.anchoredPosition = Vector2.zero;
+            // The WHOLE plan and not the grid: a mask culls a graphic by its own
+            // rectangle, not by the mesh inside it, so a sheet sized to the town went out
+            // the moment the view was over a suburb - the quarters' streets and houses
+            // simply were not there. What is drawn where is this map's own business
+            // (the sheet cull in Relayout), not the mask's.
+            host.sizeDelta = _paper.size;
+            // The renderer BEFORE the graphic - see BuildLand: a MaskableGraphic without
+            // one throws inside RectMask2D and takes the whole canvas update with it.
+            host.gameObject.AddComponent<CanvasRenderer>();
+            var patches = host.gameObject.AddComponent<MapPatches>();
+            patches.color = Color.white;
+            return patches;
+        }
+
+        /// <summary>A world rectangle in the plan's own coordinates - metres from the
+        /// map's origin, which is where a sheet's middle sits.</summary>
+        Rect Plan(Rect world) => new Rect(world.x - _origin.x, world.y - _origin.y,
+            world.width, world.height);
+
+        static Rect Grown(Rect area, float by) => Rect.MinMaxRect(
+            area.xMin - by, area.yMin - by, area.xMax + by, area.yMax + by);
+
+
+        /// <summary>
+        /// The clickable footprints: one pane per catalog bake, over the houses drawn
+        /// inside it. A bake whose own houses are on the plan is left CLEAR - painting
+        /// it would put a seventy-metre slab back over the row of roofs that is the
+        /// whole point - and only lights up under the pointer or under the card. A bake
+        /// with nothing standing in it (a yard, a lot the kit left empty) keeps its own
+        /// roof colour, or it would be a hole in the plan.
+        /// </summary>
+        void BuildFaces(RectTransform content)
+        {
             var buildings = DemoUi.NewRect("Buildings", content);
             for (int i = 0; i < _buildings.Count; i++)
             {
                 var building = _buildings[i];
-                var face = Slot(buildings, building.Title, building.World, building.Roof,
+                var face = Slot(buildings, building.Title, building.World, Idle(building),
                     MinBuilding);
                 face.raycastTarget = true;
                 building.Face = face;
@@ -649,6 +1317,155 @@ namespace RoadDemo
                 var zone = face.gameObject.AddComponent<MapZone>();
                 zone.map = this;
                 zone.index = i;
+            }
+        }
+
+        static Color Idle(Building building) => building.Covered ? Ghost : building.Roof;
+
+        /// <summary>How big a mark is drawn for the mode the map is in.</summary>
+        Vector3 MarkScale => _mode == Mode.Corner
+            ? new Vector3(CornerMarks, CornerMarks, 1f) : Vector3.one;
+
+        // ---------------------------------------------------------- the families
+
+        /// <summary>How far a family's ground reaches from its own door. A block whose
+        /// middle is further than this from every front is nobody's.</summary>
+        const float TurfReach = 240f;
+
+        /// <summary>The wash a family's ground wears - light enough that the streets
+        /// and the houses under it still read, strong enough to see whose quarter it is
+        /// at a glance, which is what the original's colour is for.</summary>
+        const float TurfAlpha = 0.28f;
+
+        MapPatches _turf;
+        int _turfStamp = -1;
+        float _turfDue;
+
+        void BuildTurf(RectTransform content) => _turf = NewSheet(content, "Turf");
+
+        /// <summary>
+        /// Whose city this is, block by block: every lot takes the colour of the family
+        /// whose nearest door it stands by. The fronts are seated after the map is
+        /// built (and can burn down later), so the wash is re-laid whenever the roll of
+        /// families changes and never otherwise - it is one mesh either way.
+        /// </summary>
+        void RefreshTurf()
+        {
+            if (_turf == null || _builder == null)
+                return;
+
+            var fronts = GangFront.All;
+            int stamp = fronts.Count;
+            for (int i = 0; i < fronts.Count; i++)
+                if (fronts[i] != null)
+                    stamp = stamp * 31 + fronts[i].GangId;
+            if (stamp == _turfStamp)
+                return;
+            _turfStamp = stamp;
+
+            _turf.Clear();
+            if (fronts.Count == 0)
+                return;
+
+            foreach (var lot in _builder.LotPlans)
+            {
+                var at = lot.Slab.center;
+                int gang = -1;
+                float best = TurfReach * TurfReach;
+                for (int i = 0; i < fronts.Count; i++)
+                {
+                    var front = fronts[i];
+                    if (front == null) continue;
+                    float dx = front.Door.x - at.x, dz = front.Door.z - at.y;
+                    float d2 = dx * dx + dz * dz;
+                    if (d2 >= best) continue;
+                    best = d2;
+                    gang = front.GangId;
+                }
+                if (gang < 0)
+                    continue;
+                var tint = LivingCity.UI.GangPalette.Of(gang);
+                tint.a = TurfAlpha;
+                _turf.Add(Plan(lot.Slab), tint);
+            }
+        }
+
+        // ------------------------------------------------------------- the trades
+
+        /// <summary>What a building is, printed on it: the plaque and its letter. Only
+        /// the places a player looks for - the civic buildings and the trades - are
+        /// marked, because a mark on every shop is a mark on nothing.</summary>
+        static readonly (string needle, string mark, Color tint)[] Trades =
+        {
+            ("hospital", "+", new Color(0.80f, 0.15f, 0.15f)),
+            ("policestation", "P", new Color(0.11f, 0.31f, 0.78f)),
+            ("firestation", "F", new Color(0.85f, 0.33f, 0.09f)),
+            ("bank", "$", new Color(0.48f, 0.38f, 0.06f)),
+            ("school", "S", new Color(0.24f, 0.44f, 0.24f)),
+            ("post", "M", new Color(0.20f, 0.34f, 0.55f)),
+            ("casino", "7", new Color(0.62f, 0.16f, 0.45f)),
+            ("hotel", "H", new Color(0.36f, 0.28f, 0.55f)),
+            ("restaurant", "R", new Color(0.55f, 0.24f, 0.12f)),
+            ("coffeeshop", "C", new Color(0.42f, 0.28f, 0.14f)),
+            ("cafe", "C", new Color(0.42f, 0.28f, 0.14f)),
+            ("burger", "B", new Color(0.65f, 0.35f, 0.10f)),
+            ("carwash", "A", new Color(0.16f, 0.40f, 0.44f)),
+        };
+
+        /// <summary>The plaque's size ON SCREEN. It does not grow with the ground: a
+        /// hospital is a hospital at every zoom, which is how the original's map is
+        /// read at a glance from the far end of the wheel.</summary>
+        const float IconPx = 21f;
+
+        static readonly Color Plaque = new Color(0.965f, 0.949f, 0.898f, 0.96f);
+
+        sealed class Trade
+        {
+            public Vector2 At;
+            public RectTransform Rect;
+        }
+
+        readonly List<Trade> _trades = new List<Trade>();
+
+        void BuildIcons(RectTransform view)
+        {
+            var root = DemoUi.NewRect("Trades", view);
+            DemoUi.Fill(root);
+
+            foreach (var building in _buildings)
+            {
+                string name = building.Title == null ? "" : building.Title.ToLowerInvariant();
+                string mark = null;
+                var tint = Ink;
+                for (int i = 0; i < Trades.Length; i++)
+                {
+                    if (!name.Contains(Trades[i].needle)) continue;
+                    mark = Trades[i].mark;
+                    tint = Trades[i].tint;
+                    break;
+                }
+                if (mark == null)
+                    continue;
+
+                var plaque = DemoUi.Block(root, building.Title, Plaque);
+                DemoUi.Dress(plaque, DemoUi.Box, 8f, Plaque);
+                plaque.raycastTarget = false;
+                plaque.rectTransform.sizeDelta = new Vector2(IconPx, IconPx);
+
+                if (TMP_Settings.instance != null && TMP_Settings.defaultFontAsset != null)
+                {
+                    var letter = DemoUi.Text(plaque.rectTransform, "Mark", IconPx * 0.72f,
+                        tint, TextAlignmentOptions.Center, display: true);
+                    letter.text = mark;
+                    letter.raycastTarget = false;
+                    DemoUi.Fill(letter.rectTransform);
+                }
+
+                _trades.Add(new Trade
+                {
+                    At = building.World.center,
+                    Rect = plaque.rectTransform,
+                });
             }
         }
 
@@ -678,7 +1495,7 @@ namespace RoadDemo
                 return;
 
             var names = _builder.Streets;
-            var root = DemoUi.NewRect("Names", content);
+            var root = _names = DemoUi.NewRect("Names", content);
 
             var vx = _builder.verticalRoadX;
             var hz = _builder.horizontalRoadZ;
@@ -688,9 +1505,18 @@ namespace RoadDemo
                 if (string.IsNullOrEmpty(name)) continue;
                 bool grand = _builder.verticalIsBoulevard[i];
                 float type = grand ? AvenueType : StreetType;
+                float gap = Gap(vx, i);
+                int ordinal = 0;
+                // not where the street is not: a name lettered along the whole line
+                // prints itself across the river, through the parks and down the middle
+                // of every close, and half the city's streets stop somewhere now
                 for (float z = _world.yMin + LabelStep * 0.5f; z < _world.yMax; z += LabelStep)
+                {
+                    if (!_builder.StreetOpenAt(true, i, z)) continue;
                     Letter(root, name, new Vector2(vx[i], z), 90f, type,
-                        grand ? MinTypePx * 0.75f : MinTypePx);
+                        grand ? MinTypePx * 0.75f : MinTypePx, MaxTypePx,
+                        grand ? AvenueTypePx : StreetTypePx, ordinal++, gap);
+                }
             }
             for (int j = 0; j < hz.Length; j++)
             {
@@ -698,9 +1524,15 @@ namespace RoadDemo
                 if (string.IsNullOrEmpty(name)) continue;
                 bool grand = _builder.horizontalIsBoulevard[j];
                 float type = grand ? AvenueType : StreetType;
+                float gap = Gap(hz, j);
+                int ordinal = 0;
                 for (float x = _world.xMin + LabelStep * 0.5f; x < _world.xMax; x += LabelStep)
+                {
+                    if (!_builder.StreetOpenAt(false, j, x)) continue;
                     Letter(root, name, new Vector2(x, hz[j]), 0f, type,
-                        grand ? MinTypePx * 0.75f : MinTypePx);
+                        grand ? MinTypePx * 0.75f : MinTypePx, MaxTypePx,
+                        grand ? AvenueTypePx : StreetTypePx, ordinal++, gap);
+                }
             }
 
             // the city's own quarters - the named parts of the grid - under the places
@@ -724,6 +1556,15 @@ namespace RoadDemo
                 float wide = Mathf.Max(60f, district.World.width * 0.92f);
                 float type = Mathf.Clamp(wide / Mathf.Max(4, name.Length) / 0.62f, 16f, DistrictType);
                 Letter(root, name, district.World.center, 0f, type, 9f);
+
+                // What the place IS, under its name: a village names itself and needs no
+                // explaining, but a port and an airfield are the two places on the plan a
+                // player looks for by trade rather than by name.
+                string trade = KindName(district.Kind);
+                if (trade != null)
+                    Letter(root, trade,
+                        new Vector2(district.World.center.x, district.World.center.y - type * 1.15f),
+                        0f, type * 0.46f, 8f);
             }
 
             // The town's own name across the middle of the grid, the way the original
@@ -734,8 +1575,29 @@ namespace RoadDemo
 
         /// <summary>One name on the plan: the ink, and a pale copy behind it so black
         /// letters still read over a dark green field or over the river.</summary>
+        /// <summary>What a quarter is called on the plan when its name does not say -
+        /// null for a village, which is only ever itself.</summary>
+        static string KindName(DistrictKind kind) => kind switch
+        {
+            DistrictKind.Harbor => "PORT",
+            DistrictKind.Airport => "AIRFIELD",
+            DistrictKind.Pad => "WORKS",
+            _ => null,
+        };
+
+        /// <summary>How much ground a line of the grid has to itself: the nearer of its
+        /// two neighbours, and its own distance to the edge when it has only one.</summary>
+        static float Gap(float[] lines, int at)
+        {
+            float gap = float.MaxValue;
+            if (at > 0) gap = Mathf.Min(gap, Mathf.Abs(lines[at] - lines[at - 1]));
+            if (at < lines.Length - 1) gap = Mathf.Min(gap, Mathf.Abs(lines[at + 1] - lines[at]));
+            return gap == float.MaxValue ? 120f : gap;
+        }
+
         void Letter(Transform parent, string text, Vector2 at, float turn, float metres,
-            float minPx, float maxPx = MaxTypePx)
+            float minPx, float maxPx = MaxTypePx, float screenPx = 0f, int ordinal = 0,
+            float gapMetres = 0f)
         {
             var host = DemoUi.NewRect(text, parent);
             host.anchoredPosition = at - _origin;
@@ -757,7 +1619,11 @@ namespace RoadDemo
             ink.overflowMode = TextOverflowModes.Overflow;
             DemoUi.Fill(ink.rectTransform);
 
-            _labels.Add(new Label { Rect = host, Metres = metres, MinPx = minPx, MaxPx = maxPx });
+            _labels.Add(new Label
+            {
+                Rect = host, Metres = metres, MinPx = minPx, MaxPx = maxPx,
+                ScreenPx = screenPx, Ordinal = ordinal, GapMetres = gapMetres,
+            });
         }
 
         // ------------------------------------------------------------- the crowd
@@ -770,7 +1636,7 @@ namespace RoadDemo
             if (_civilians != null)
                 foreach (var civilian in _civilians)
                     AddMover(root, civilian.Tf, null, false, CivilianInk, PedDot, PedDot,
-                        DemoUi.Dot);
+                        DemoUi.Dot, civilian: true);
             if (_cars != null)
                 foreach (var car in _cars)
                     AddMover(root, car.Tf, null, true, TrafficInk, CarWidth, CarLength, null);
@@ -784,7 +1650,7 @@ namespace RoadDemo
         }
 
         void AddMover(RectTransform root, Transform tf, IPatrolMarker patrol, bool vehicle,
-            Color tint, float width, float height, Sprite sprite)
+            Color tint, float width, float height, Sprite sprite, bool civilian = false)
         {
             if (tf == null)
                 return;
@@ -796,6 +1662,7 @@ namespace RoadDemo
             _movers.Add(new Mover
             {
                 Tf = tf, Img = image, Patrol = patrol, Vehicle = vehicle, Tint = tint,
+                Civilian = civilian,
             });
         }
 
@@ -869,14 +1736,16 @@ namespace RoadDemo
             // line the camera draws at 180 m.
             var want = LivingCity.UI.PersonnelAlmanac.IsOpen ? Mode.Docked
                 : _rig != null && _rig.MapOut ? Mode.Full
+                // and never a corner map over a map that has the whole screen
+                : minimap && !LivingCity.UI.StrategicMapHud.IsOpen ? Mode.Corner
                 : Mode.Off;
             if (want == _mode)
                 return;
 
             // Going down into the street: the player lands on the place he had the
             // pointer over, not on whatever happened to be in the middle of the plan.
-            if (want == Mode.Off && _mode == Mode.Full && _scale > 0f && _rig != null &&
-                CursorOnMap(out var leaving))
+            if (want != Mode.Full && want != Mode.Docked && _mode == Mode.Full &&
+                _scale > 0f && _rig != null && CursorOnMap(out var leaving))
             {
                 var under = Under(leaving);
                 _rig.pivot = new Vector3(under.x, _rig.pivot.y, under.y);
@@ -887,9 +1756,12 @@ namespace RoadDemo
 
         void ApplyMode(Mode mode)
         {
-            bool was = _mode != Mode.Off;
+            // "The map is up" means the map has the SCREEN - the corner panel is a
+            // thing on the HUD, not a thing instead of the city, so it neither sounds a
+            // page turn nor takes the world's own building card away.
+            bool was = _mode == Mode.Docked || _mode == Mode.Full;
             _mode = mode;
-            bool on = mode != Mode.Off;
+            bool on = mode == Mode.Docked || mode == Mode.Full;
 
             if (on != was)
             {
@@ -899,8 +1771,7 @@ namespace RoadDemo
                 // there. It stands down for as long as the map is up.
                 if (_picker)
                     _picker.enabled = !on;
-                if (!on)
-                    Select(-1);
+                Select(-1);
             }
 
             // Coming up out of the street: the plan opens around the ground the
@@ -917,10 +1788,26 @@ namespace RoadDemo
                 }
             }
 
-            _panel.SetActive(on);
-            if (mode == Mode.Docked)
+            _panel.SetActive(mode != Mode.Off);
+            if (mode == Mode.Corner)
+            {
+                // A panel in the bottom right corner, the size of a postcard: the plan
+                // held under the camera's own pivot so the player can see what is round
+                // the corner from him without leaving the street.
+                _canvas.sortingOrder = CornerOrder;
+                _panelRect.anchorMin = new Vector2(1f, 0f);
+                _panelRect.anchorMax = new Vector2(1f, 0f);
+                _panelRect.pivot = new Vector2(1f, 0f);
+                _panelRect.anchoredPosition = new Vector2(-CornerInset, CornerInset);
+                _panelRect.sizeDelta = new Vector2(CornerWidth, CornerHeight);
+                _panelFace.enabled = true;
+                _view.offsetMin = new Vector2(6f, 6f);
+                _view.offsetMax = new Vector2(-6f, -6f);
+            }
+            else if (mode == Mode.Docked)
             {
                 _canvas.sortingOrder = DockedOrder;
+                _panelRect.pivot = new Vector2(0.5f, 0.5f);
                 _panelRect.anchorMin = new Vector2(0.5f, 0f);
                 _panelRect.anchorMax = Vector2.one;
                 _panelRect.offsetMin = new Vector2(PanelLeft, PanelBottom);
@@ -933,6 +1820,7 @@ namespace RoadDemo
             {
                 // The whole screen, edge to edge, under the HUD.
                 _canvas.sortingOrder = FullOrder;
+                _panelRect.pivot = new Vector2(0.5f, 0.5f);
                 _panelRect.anchorMin = Vector2.zero;
                 _panelRect.anchorMax = Vector2.one;
                 _panelRect.offsetMin = Vector2.zero;
@@ -944,6 +1832,29 @@ namespace RoadDemo
 
             if (_header) _header.SetActive(mode == Mode.Docked);
             if (_caption) _caption.gameObject.SetActive(mode == Mode.Full);
+
+            // What the corner has no room for: the lettering (a street name across a
+            // postcard covers the street it names) and the card, which is a thing read
+            // on the big plan. The marks stay - the whole point of a corner map is
+            // seeing the station and the family doors around you - only smaller.
+            // Each mark is scaled about its own middle and never the root it hangs on -
+            // the root is a full-screen rect whose children are PLACED in it, and
+            // scaling that would move every mark off the ground it stands on.
+            if (_names) _names.gameObject.SetActive(mode != Mode.Corner);
+            var marks = MarkScale;
+            for (int i = 0; i < _trades.Count; i++)
+                _trades[i].Rect.localScale = marks;
+            for (int i = 0; i < _frontDots.Count; i++)
+                _frontDots[i].rectTransform.localScale = marks;
+
+            // The crowd is not plotted onto a postcard: ten thousand civilians placed
+            // every frame for a panel the size of a hand is the one thing here that
+            // would cost real time, and a minimap wants the crews, the police and the
+            // doors on it, not the crowd.
+            if (mode == Mode.Corner)
+                for (int i = 0; i < _movers.Count; i++)
+                    if (_movers[i].Civilian && _movers[i].Img != null && _movers[i].Img.enabled)
+                        _movers[i].Img.enabled = false;
 
             HoldCamera(mode == Mode.Full);
             _viewSize = Vector2.zero;   // the view changed shape: refit next frame
@@ -999,10 +1910,18 @@ namespace RoadDemo
                 scale = size.y / Mathf.Max(40f, _rig.distance * BoomToMetres);
                 centre = new Vector2(_rig.pivot.x, _rig.pivot.z);
             }
+            else if (_mode == Mode.Corner && _rig != null)
+            {
+                // A fixed bite of ground under the camera's own pivot: the corner map
+                // does not zoom with the wheel, or the one panel that is meant to be the
+                // same every time you glance at it would never look the same twice.
+                scale = size.y / CornerMetres;
+                centre = new Vector2(_rig.pivot.x, _rig.pivot.z);
+            }
             else
             {
-                scale = Mathf.Min(size.x / _world.width, size.y / _world.height);
-                centre = _world.center;
+                scale = Mathf.Min(size.x / _reach.width, size.y / _reach.height);
+                centre = _reach.center;
             }
         }
 
@@ -1051,16 +1970,62 @@ namespace RoadDemo
             _content.localScale = new Vector3(_scale, _scale, 1f);
             _content.anchoredPosition = (_origin - _centre) * _scale;
 
+            // What ground the view is over, and which meshes therefore have to be drawn
+            // at all. The corner panel looks at three hundred metres of a city a mile
+            // and a half across; without this it would submit every roof in town, forty
+            // times a second, to draw four blocks.
+            if (_sheets.Count > 0)
+            {
+                float halfW = size.x * 0.5f / _scale + SheetPad;
+                float halfH = size.y * 0.5f / _scale + SheetPad;
+                float x0 = _centre.x - halfW, x1 = _centre.x + halfW;
+                float z0 = _centre.y - halfH, z1 = _centre.y + halfH;
+                for (int i = 0; i < _sheets.Count; i++)
+                {
+                    var sheet = _sheets[i];
+                    bool on = sheet.Ground.xMax >= x0 && sheet.Ground.xMin <= x1 &&
+                              sheet.Ground.yMax >= z0 && sheet.Ground.yMin <= z1;
+                    if (on == sheet.On) continue;
+                    sheet.On = on;
+                    sheet.Go.SetActive(on);
+                }
+            }
+
+            // How many printings of a street name are skipped between the ones kept:
+            // the plan is pulled back, the repeats crowd, and every second or third one
+            // is enough to name the street.
+            int stride = Mathf.Max(1,
+                Mathf.CeilToInt(NameGapPx / Mathf.Max(1f, LabelStep * _scale)));
+
             for (int i = 0; i < _labels.Count; i++)
             {
                 var label = _labels[i];
-                float px = label.Metres * _scale;
-                bool on = px >= label.MinPx && px <= label.MaxPx;
+                bool on;
+                if (label.ScreenPx > 0f)
+                {
+                    // A street's name: held at its own size on screen, and printed only
+                    // while its street has room on the plan to be named.
+                    float grew = Mathf.Clamp(
+                        label.ScreenPx / Mathf.Max(0.001f, label.Metres * _scale),
+                        TypeGrowLow, TypeGrowHigh);
+                    label.Rect.localScale = new Vector3(grew, grew, 1f);
+                    on = label.Ordinal % stride == 0 && label.GapMetres * _scale >= NameLinePx;
+                }
+                else
+                {
+                    float px = label.Metres * _scale;
+                    on = px >= label.MinPx && px <= label.MaxPx;
+                }
                 if (on == label.On)
                     continue;
                 label.On = on;
                 label.Rect.gameObject.SetActive(on);
             }
+
+            // The plaques are drawn in the VIEW and not on the plan, so they keep their
+            // size while the ground under them changes scale; they move when it does.
+            for (int i = 0; i < _trades.Count; i++)
+                _trades[i].Rect.anchoredPosition = ToView(_trades[i].At);
 
             if (_selected >= 0)
                 PlaceCard(_buildings[_selected]);
@@ -1092,9 +2057,12 @@ namespace RoadDemo
             if (_scale <= 0f)
                 return;
 
+            bool corner = _mode == Mode.Corner;
             for (int i = 0; i < _movers.Count; i++)
             {
                 var mover = _movers[i];
+                if (corner && mover.Civilian)
+                    continue;   // switched off when the corner panel came up
                 var tf = mover.Tf;
                 // Civilians step inside buildings and switch their object off; a
                 // dot must not stand in the street while its owner is indoors.
@@ -1116,6 +2084,15 @@ namespace RoadDemo
                     mover.Img.enabled = true;
             }
 
+            // Whose ground is whose: the families are seated after the map is built and
+            // a front can burn down later, so the wash is asked about now and then and
+            // re-laid only when the answer has changed.
+            if (Time.unscaledTime >= _turfDue)
+            {
+                _turfDue = Time.unscaledTime + 0.75f;
+                RefreshTurf();
+            }
+
             PlotCrews();
             PlotFronts();
         }
@@ -1123,6 +2100,7 @@ namespace RoadDemo
         // ------------------------------------------------------------- the fronts
 
         readonly List<Image> _frontDots = new List<Image>();
+        readonly List<TMP_Text> _frontMarks = new List<TMP_Text>();
 
         /// <summary>Where each family keeps a door: a small SQUARE in its own colour, so
         /// premises never read as a man (the crews are round dots). Without these the
@@ -1139,24 +2117,72 @@ namespace RoadDemo
             var fronts = GangFront.All;
             while (_frontDots.Count < fronts.Count)
             {
-                var dot = DemoUi.Block(_moverRoot, "front", OutfitGold);
-                dot.raycastTarget = false;
-                dot.rectTransform.sizeDelta = new Vector2(FrontDot, FrontDot);
-                _frontDots.Add(dot);
+                var plaque = DemoUi.Block(_moverRoot, "front", OutfitGold);
+                DemoUi.Dress(plaque, DemoUi.Box, 8f, OutfitGold);
+                plaque.raycastTarget = false;
+                plaque.rectTransform.sizeDelta = new Vector2(FrontPx, FrontPx);
+                plaque.rectTransform.localScale = MarkScale;
+                _frontDots.Add(plaque);
+
+                TMP_Text mark = null;
+                if (TMP_Settings.instance != null && TMP_Settings.defaultFontAsset != null)
+                {
+                    mark = DemoUi.Text(plaque.rectTransform, "Mark", FrontPx * 0.66f,
+                        Ink, TextAlignmentOptions.Center, display: true);
+                    mark.raycastTarget = false;
+                    DemoUi.Fill(mark.rectTransform);
+                }
+                _frontMarks.Add(mark);
             }
 
             for (int i = 0; i < _frontDots.Count; i++)
             {
                 var live = i < fronts.Count && fronts[i] != null;
                 if (_frontDots[i].enabled != live) _frontDots[i].enabled = live;
+                if (_frontMarks[i] != null && _frontMarks[i].enabled != live)
+                    _frontMarks[i].enabled = live;
                 if (!live) continue;
 
                 var front = fronts[i];
-                _frontDots[i].color = LivingCity.UI.GangPalette.Of(front.GangId);
+                var tint = LivingCity.UI.GangPalette.Of(front.GangId);
+                // A burnt-out front is not a going concern: its plaque goes grey, which
+                // is the one thing the player wants to see from the far end of the wheel
+                // after a bomb has gone off.
+                _frontDots[i].color = front.Boarded || front.Damaged ? Ashes : tint;
                 _frontDots[i].rectTransform.anchoredPosition =
                     ToView(new Vector2(front.Door.x, front.Door.z));
+
+                if (_frontMarks[i] == null) continue;
+                _frontMarks[i].text = Initial(front.GangName);
+                // Dark ink on a light colour, pale ink on a dark one - twenty families
+                // and no reading the letter off half of them otherwise.
+                _frontMarks[i].color = Bright(_frontDots[i].color) ? Ink : Paper;
             }
         }
+
+        static readonly Color Ashes = new Color(0.43f, 0.42f, 0.40f, 1f);
+        static readonly Color Paper = new Color(0.965f, 0.949f, 0.898f, 1f);
+
+        /// <summary>The letter a family's door wears: the first letter of its name, past
+        /// the articles a family name is apt to open with.</summary>
+        static string Initial(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "?";
+            var words = name.Split(' ');
+            for (int i = 0; i < words.Length; i++)
+            {
+                var word = words[i];
+                if (word.Length == 0) continue;
+                if (words.Length > 1 && (word.Equals("the", System.StringComparison.OrdinalIgnoreCase) ||
+                                         word.Equals("la", System.StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                return word.Substring(0, 1).ToUpperInvariant();
+            }
+            return name.Substring(0, 1).ToUpperInvariant();
+        }
+
+        /// <summary>Perceived lightness, the cheap way - enough to choose an ink.</summary>
+        static bool Bright(Color c) => c.r * 0.30f + c.g * 0.59f + c.b * 0.11f > 0.55f;
 
         // The outfit's men are dealt after the map is built and re-dealt whenever the
         // ledger changes, so their dots are matched to the live roll call every frame
@@ -1271,7 +2297,7 @@ namespace RoadDemo
         /// the wheel in puts the player down where he dragged to.</summary>
         void Pan(Vector2 screenDelta)
         {
-            if (_mode != Mode.Full || _rig == null || _scale <= 0f)
+            if ((_mode != Mode.Full && _mode != Mode.Corner) || _rig == null || _scale <= 0f)
                 return;
             if (screenDelta.sqrMagnitude > 4f)
                 _panned = true;
@@ -1286,17 +2312,35 @@ namespace RoadDemo
                 _panned = false;
                 return;
             }
+
+            // On the corner panel bare ground means "take me there", which is what a
+            // minimap is for - but a building means the same as it does on the big plan:
+            // the card, which is small enough to stand inside the panel. A building is
+            // clickable wherever it is drawn.
+            if (_mode == Mode.Corner && index < 0)
+            {
+                if (_rig != null && _scale > 0f && CursorOnMap(out var point))
+                {
+                    var ground = Under(point);
+                    _rig.pivot = new Vector3(ground.x, _rig.pivot.y, ground.y);
+                }
+                Select(-1);
+                return;
+            }
+
             Select(index);
         }
 
         void Hover(int index, bool over)
         {
-            if (index < 0 || index == _selected)
+            if (index < 0 || index == _selected || _mode == Mode.Corner)
                 return;
 
-            var face = _buildings[index].Face;
-            if (face)
-                face.color = over ? Color.white : _buildings[index].Roof;
+            var building = _buildings[index];
+            if (building.Face)
+                building.Face.color = over
+                    ? (building.Covered ? HoverWash : Color.white)
+                    : Idle(building);
         }
 
         void Select(int index)
@@ -1305,7 +2349,7 @@ namespace RoadDemo
             {
                 var previous = _buildings[_selected];
                 if (previous.Face)
-                    previous.Face.color = previous.Roof;
+                    previous.Face.color = Idle(previous);
             }
 
             _selected = index;
@@ -1320,7 +2364,7 @@ namespace RoadDemo
 
             var building = _buildings[index];
             if (building.Face)
-                building.Face.color = Picked;
+                building.Face.color = building.Covered ? PickWash : Picked;
             _popupTitle.text = building.Title;
             _popupBody.text = building.Body;
             _popup.SetActive(true);
@@ -1346,6 +2390,8 @@ namespace RoadDemo
             // back - both live on objects that outlive this one in the editor.
             if (_mode != Mode.Off && _picker)
                 _picker.enabled = true;
+            if (BuildingCardPicker.ClickVeto == (System.Func<Vector2, bool>)ClaimsClick)
+                BuildingCardPicker.ClickVeto = _previousVeto;
             HoldCamera(false);
         }
     }

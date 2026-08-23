@@ -114,6 +114,22 @@ namespace RoadDemo
             {
                 var rolled = CityLayout.Roll(LayoutGrid(), cityLayoutSeed, suburbsMin, suburbsMax,
                                              harborDistrict, airportDistrict);
+                // The country yields to the port. A town of four shores has to fit a mile
+                // of runway on one, a harbour on another, and keep clear of the rivers'
+                // mouths on the rest; make one of them mainland as well and a city now
+                // and then has nowhere left to put a port at all - measured, four in
+                // thirty. A port is a district with ships, cranes and a whole trade in
+                // it, and losing it costs more than the neck is worth, so when it comes
+                // to that the peninsula goes back to being an island and the roll is
+                // taken again. Roll is pure, so asking it twice costs nothing but this.
+                if (harborDistrict && mainlandEdge != CityEdge.None && !HasHarbor(rolled))
+                {
+                    Debug.Log($"[RoadDemo] no shore left for a port with the country to the " +
+                              $"{mainlandEdge.ToString().ToLowerInvariant()} - the town is an island again");
+                    mainlandEdge = CityEdge.None;
+                    rolled = CityLayout.Roll(LayoutGrid(), cityLayoutSeed, suburbsMin, suburbsMax,
+                                             harborDistrict, airportDistrict);
+                }
                 districts = rolled.ToArray();
             }
             if (districts == null || districts.Length == 0) return;
@@ -172,6 +188,13 @@ namespace RoadDemo
             else Debug.Log(tally);
         }
 
+        static bool HasHarbor(System.Collections.Generic.List<DistrictSlot> slots)
+        {
+            if (slots == null) return false;
+            foreach (var s in slots) if (s != null && s.kind == DistrictKind.Harbor) return true;
+            return false;
+        }
+
         /// <summary>The city as the roll sees it: its road lines, what may carry a quarter,
         /// where the rivers leave, how much island each shore has and what the town is
         /// called. One method so the editor's dump reads the same plan the builder builds
@@ -184,6 +207,7 @@ namespace RoadDemo
             HBoulevard = horizontalIsBoulevard,
             Blocked = LineCarriesSeam,
             Rivers = RiverBands,
+            Landlocked = Landlocked,
             Shore = ShoreWidth,
             CityName = Streets != null ? Streets.City : null,
         };
@@ -436,6 +460,16 @@ namespace RoadDemo
         void LayConnector(CityEdge edge, bool vertical, float centre, float lo, float hi)
         {
             const float Gap = StreetKit.StreetHalf + StreetKit.Cell;
+
+            // The road onto the plan, whole, before it is cut about for the belt and the
+            // freeway's link. The connecting streets are the BUILDER's and not the
+            // quarter's, so they are in neither the grid's plan nor the district's own
+            // road list - which is why the map showed villages standing in a field with
+            // no way to reach them.
+            _quarterRoads.Add(vertical
+                ? (new Vector2(centre, lo), new Vector2(centre, hi), StreetKit.StreetHalf)
+                : (new Vector2(lo, centre), new Vector2(hi, centre), StreetKit.StreetHalf));
+
             if (BeltOn && _beltU.TryGetValue(edge, out float beltU) && beltU > lo + 1f && beltU < hi - 1f)
             {
                 // across the belt freeway: the street stops at the pad's edge either side
@@ -707,8 +741,40 @@ namespace RoadDemo
         void IDistrictHost.RegisterRoads(IReadOnlyList<RoadEdge> edges)
         {
             if (edges == null) return;
-            for (int i = 0; i < edges.Count; i++) if (edges[i] != null) _edges.Add(edges[i]);
+            for (int i = 0; i < edges.Count; i++)
+            {
+                var edge = edges[i];
+                if (edge == null) continue;
+                _edges.Add(edge);
+
+                // The quarters' streets, one entry per ROAD and not per lane: the map
+                // draws them, and a suburb whose streets are not drawn is a green field
+                // with houses scattered over it. The city's own grid is not in here -
+                // this hook is the districts' - and the map draws that from its plan.
+                var road = edge.Road;
+                if (road != null)
+                {
+                    if (!_quarterRoadSeen.Add(road)) continue;
+                    _quarterRoads.Add((new Vector2(road.A.x, road.A.z),
+                        new Vector2(road.B.x, road.B.z), Mathf.Max(3f, road.HalfRoad)));
+                }
+                else
+                {
+                    // a lane laid without a carriageway behind it: the lane itself is
+                    // the only line there is to draw
+                    _quarterRoads.Add((new Vector2(edge.Start.x, edge.Start.z),
+                        new Vector2(edge.End.x, edge.End.z), 3.5f));
+                }
+            }
         }
+
+        readonly HashSet<Carriageway> _quarterRoadSeen = new HashSet<Carriageway>();
+        readonly List<(Vector2 a, Vector2 b, float half)> _quarterRoads =
+            new List<(Vector2, Vector2, float)>();
+
+        /// <summary>Every street the quarters laid, as a line and a half width in world
+        /// metres. The map prints them.</summary>
+        public IReadOnlyList<(Vector2 a, Vector2 b, float half)> QuarterRoads => _quarterRoads;
 
         void IDistrictHost.RegisterPavement(IReadOnlyList<PedLink> links)
         {
@@ -716,21 +782,29 @@ namespace RoadDemo
             for (int i = 0; i < links.Count; i++) if (links[i] != null) _pedLinks.Add(links[i]);
         }
 
-        void IDistrictHost.Blocked(Bounds box)
+        void IDistrictHost.Blocked(Bounds box) => Blocked(box, null);
+
+        void IDistrictHost.Blocked(Bounds box, string what) => Blocked(box, what);
+
+        void Blocked(Bounds box, string what)
         {
             WalkObstacles.Block(box);
             // A quarter's houses are not under the Blocks root and so are not in the
             // map's pick set, but their footprints all come through here on their way
-            // to the walkers' obstacle field - which makes this the one list of what
-            // stands in the port and the suburbs. The map draws them as roofs.
-            _quarterRoofs.Add(Rect.MinMaxRect(box.min.x, box.min.z, box.max.x, box.max.z));
+            // to the walkers' obstacle field - one call per BUILDING, with its own name
+            // - which makes this the one list of what stands in the port and the
+            // suburbs. The map draws them, and opens a card on them.
+            _quarterRoofs.Add((Rect.MinMaxRect(box.min.x, box.min.z, box.max.x, box.max.z),
+                box.size.y, what));
         }
 
-        readonly List<Rect> _quarterRoofs = new List<Rect>();
+        readonly List<(Rect area, float rise, string name)> _quarterRoofs =
+            new List<(Rect, float, string)>();
 
-        /// <summary>Every footprint the quarters put on the ground, world XZ. Filled
-        /// as they are built; the map prints them.</summary>
-        public IReadOnlyList<Rect> QuarterRoofs => _quarterRoofs;
+        /// <summary>Every building the quarters put on the ground: its footprint in world
+        /// XZ, how tall it stands, and what it is called. Filled as they are built; the
+        /// map prints them and puts a card on them.</summary>
+        public IReadOnlyList<(Rect area, float rise, string name)> QuarterRoofs => _quarterRoofs;
 
         void IDistrictHost.ReportMissing(string what)
             => Debug.LogWarning($"[RoadDemo] a district wanted a prefab it did not get: {what}");

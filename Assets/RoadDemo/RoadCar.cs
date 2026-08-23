@@ -198,7 +198,7 @@ namespace RoadDemo
         float _prevSpeed, _nextSample, _quietFor, _saidStall;
         Vector3 _prevPos;
         Manoeuvre _prevMan;
-        bool _prevVia, _prevParked, _traced;
+        bool _prevVia, _prevParked, _traced, _onDeck;
         int _traceEvents;
 
         // ------------------------------------------------------------------ setup
@@ -464,6 +464,7 @@ namespace RoadDemo
         {
             _hasGoal = false;
             Route = null;
+            _turnFirst = false;
             if (_man != Manoeuvre.UTurn) { _man = Manoeuvre.None; ClearClaim(); }
         }
 
@@ -485,12 +486,14 @@ namespace RoadDemo
                 _haltHard = hard;
                 _hasGoal = false;
                 Route = null;
+                _turnFirst = false;
                 _freeGoal = null;
                 return;
             }
             _haltWhenClear = false;
             _hasGoal = false;
             Route = null;
+            _turnFirst = false;
             _freeGoal = null;
             _halted = true;
             _haltHard = hard;
@@ -513,17 +516,107 @@ namespace RoadDemo
 
         float _turnBackFor;     // seconds spent looking for the turn-round on this road
 
+        /// <summary>Seconds a driver crawls looking for the turn-round before he gives
+        /// it up and takes the long way instead.
+        ///
+        /// It was twelve, and twelve was free: the throttle and the turn's own gate
+        /// disagreed (see UTurnApproachSpeed), so the turn was never granted at all and
+        /// the twelve seconds were only ever spent driving on at very nearly full pace
+        /// toward the junction, where the other half of the rule ended the wait. Now
+        /// that the turn IS granted, the wait is real - the driver holds the street up
+        /// at walking pace for the whole of it - and twelve seconds of that on a busy
+        /// road cost more than the detour it was saving (a crew car took 63s to a kerb
+        /// it had reached in 27s before). Five is long enough for one gap in oncoming
+        /// traffic to come along and short enough that failing costs less than the trip
+        /// round the block.</summary>
+        public static float TurnBackPatience = 5f;
+
+        /// <summary>The driver means to turn round HERE before he goes anywhere - the
+        /// mark is behind him and the way round the block is the long way. TickRoad does
+        /// the turning (the same block that turns a car round on its goal's own road);
+        /// this only says that it should.</summary>
+        bool _turnFirst;
+
+        /// <summary>What turning round in the road is reckoned to cost, in metres of
+        /// driving - the slowing, the wait for a gap, the arc itself.
+        ///
+        /// It is also the hysteresis: the way behind has to be this much shorter before
+        /// the driver would rather turn than carry on. Without it a car half a metre
+        /// past the balance point would swing round for nothing, and one whose goal is
+        /// almost exactly abeam would dither about which way to go every time the table
+        /// was drawn again.</summary>
+        public static float UTurnCost = 25f;
+
         void Replan()
         {
             if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "replan", ManFields());
             Route = null;
+            _turnFirst = false;
             if (!_hasGoal || Road == null) return;
             if (Road == _goalRoad && Heading == _goalHeading && (_goalS - S) * Heading > -3f) return; // straight down this road
             // on the right road the wrong way round, or past the spot: the turn in the
             // road is the way back when the driver may make one - the route round the
             // block is only for failing that (TickRoad gives up on the turn near the junction)
-            if (Road == _goalRoad && Road.TwoWay && Profile.UTurnsInRoad && Road.MedianHalf <= 0f && _turnBackFor < 12f) return;
-            Route = Net.RouteToward(_goalLane);
+            if (Road == _goalRoad && Road.TwoWay && Profile.UTurnsInRoad && Road.MedianHalf <= 0f && _turnBackFor < TurnBackPatience) return;
+            Route = Net.RouteToward(_goalLane, out var dist);
+
+            // THE MARK BEHIND HIM ON A STREET HE IS NOT GOING TO END ON. The table is a
+            // graph of one-way lanes and knows no turn in the middle of a street, so the
+            // only route it can draw from the lane he is in goes FORWARD - down to the
+            // end and round the block, or worse. That is what the player watched: an
+            // order given to a machine standing thirty metres past its mark sent it the
+            // whole way round the quarter to come back at it.
+            //
+            // The search has just measured every lane's distance to the goal, the one
+            // facing the other way included, so the question costs nothing to ask: is
+            // the way behind me shorter than the way in front, by more than a turn is
+            // worth? Then turn, and let TickRoad find the gap for it.
+            if (dist != null && Road.TwoWay && Profile.UTurnsInRoad && Road.MedianHalf <= 0f &&
+                _turnBackFor < TurnBackPatience && _man != Manoeuvre.UTurn)
+            {
+                // his own lane and the one he would come out in - mirrored across the
+                // crown, which is where the arc puts him (TickArc)
+                var cur = Lane ?? Road.LaneFor(Heading, D);
+                var opp = Road.LaneFor(-Heading, -D);
+                if (cur != null && opp != null && cur != opp)
+                {
+                    // measured from where he actually IS, not from the lane's start:
+                    // the table's metres are from the start of each lane, and he is
+                    // part way down one of them. Turning round leaves him at the same
+                    // road-s in the other, facing back the way he came.
+                    bool ahead = dist.TryGetValue(cur, out float dAhead);
+                    bool back = dist.TryGetValue(opp, out float dBack);
+                    if (ahead) dAhead -= cur.Progress(S);
+                    if (back) dBack -= opp.Progress(S);
+                    if (back && (!ahead || dBack + UTurnCost < dAhead))
+                    {
+                        // A DRIVER WAITING TO TURN IS STILL DRIVING SOMEWHERE. The route
+                        // is KEPT. It was dropped here at first, on the reasoning that a
+                        // man about to turn round is not going that way - and a car with
+                        // no route wanders (PlanNext picks its turns at random), so a
+                        // machine that wanted a turn the street would not give it spent
+                        // the whole wait taking junctions at random instead of driving
+                        // to the mark. In a signalled quarter with sixty cars in it that
+                        // cost four times the belt refusals of the same trip without any
+                        // of this (24.1 a second against 6.2), a trip half again as long,
+                        // and one crossing in eight that never arrived at all.
+                        //
+                        // With the route kept, failing to turn costs nothing: he is
+                        // simply driving the long way, which is what he would have done
+                        // anyway, and the turn is taken the moment the road offers it.
+                        _turnFirst = true;
+                        if (DriveTrace.On)
+                        {
+                            var sb = DriveTrace.Take();
+                            DriveTrace.Str(sb, "who", "car " + Id);
+                            DriveTrace.Num(sb, "ahead", ahead ? dAhead : -1f, "F0");
+                            DriveTrace.Num(sb, "back", dBack, "F0");
+                            DriveTrace.Row("turnfirst", sb.ToString());
+                        }
+                    }
+                }
+            }
+
             _next = null; // think the next turn over again
             _committed = false;
         }
@@ -701,19 +794,33 @@ namespace RoadDemo
             if (Sliding) v = Mathf.Min(v, LateralCap(_sLen, Mathf.Abs(_dTo - _dFrom)));
             bool hard = false;
 
-            // the right road, the wrong way: turn round here as soon as the sweep is clear
-            // (slowed right down for it); only near the junction, or after long enough,
-            // is the long way round taken instead
-            if (_hasGoal && road == _goalRoad && Heading != _goalHeading && _man != Manoeuvre.UTurn && Route == null &&
+            // the wrong way round for where he is going: turn HERE as soon as the sweep
+            // is clear (slowed right down for it); only near the junction, or after long
+            // enough, is the long way round taken instead.
+            //
+            // Two cases, one piece of driving. The goal on THIS road behind him is the
+            // old one. The other is a goal on another street altogether that the table
+            // says is nearer the way he came (_turnFirst, set in Replan): a machine sent
+            // at a mark thirty metres behind it used to ride the whole way round the
+            // quarter, because the lane graph has no U-turn in it to route through and
+            // the only road it could draw went forward.
+            if (_hasGoal && _man != Manoeuvre.UTurn &&
+                (_turnFirst || (road == _goalRoad && Heading != _goalHeading && Route == null)) &&
                 road.TwoWay && Profile.UTurnsInRoad && road.MedianHalf <= 0f)
             {
                 _turnBackFor += dt;
-                v = Mathf.Min(v, Profile.UTurnSpeed + 2f);
+                // the throttle comes down only for a turn that is THERE (UTurnAvailable);
+                // slowing for one the road will not grant is a rolling roadblock
+                if (UTurnAvailable()) v = Mathf.Min(v, UTurnApproachSpeed());
                 _retry -= dt;
                 if (_retry <= 0f && _man == Manoeuvre.None)
                 {
                     _retry = 0.3f;
-                    if (!TryUTurn() && (toEnd < 22f || _turnBackFor > 12f)) { _turnBackFor = 99f; Replan(); }
+                    // Out of road, or out of patience: the turn is given up ON THIS
+                    // STREET and the long way round drawn instead. _turnBackFor is left
+                    // at the giving-up mark so that Replan - which asks the same
+                    // question - does not simply set the driver turning again.
+                    if (!TryUTurn() && (toEnd < 22f || _turnBackFor > TurnBackPatience)) { _turnBackFor = 99f; Replan(); }
                 }
             }
             else _turnBackFor = 0f;
@@ -728,14 +835,14 @@ namespace RoadDemo
                     // throttle comes down first - a turn is refused above the speed its
                     // arc can carry, so charging at it only means never being allowed one.
                     bool mayTurn = Profile.UTurnsInRoad && road.TwoWay && road.MedianHalf <= 0f;
-                    if (mayTurn && _man == Manoeuvre.None) v = Mathf.Min(v, Profile.UTurnSpeed + 2f);
+                    if (mayTurn && UTurnAvailable()) v = Mathf.Min(v, UTurnApproachSpeed());
                     _retry -= dt;
                     if (_man == Manoeuvre.None && _retry <= 0f)
                     {
                         _retry = 0.5f;
                         // still braking for it: ask again in a moment rather than give up
                         // on the turn and send the car round the block
-                        if (!mayTurn || Mathf.Abs(Speed) <= Profile.UTurnSpeed + 2.5f)
+                        if (!mayTurn || Mathf.Abs(Speed) <= UTurnApproachSpeed() + 1f)
                             if (!TryUTurn() && Route == null) Replan();
                     }
                 }
@@ -872,7 +979,7 @@ namespace RoadDemo
                 }
                 // something stood at the kerb or dead in the road that we mean to go round:
                 // held back far enough that the swing out is still possible from here
-                bool queue = leader.Car != null && leader.Car.InQueue && !Profile.RunsRed;
+                bool queue = leader.Car != null && leader.Car.InQueue && !Profile.PushesPastQueues;
                 bool roundIt = leader.Parked || leader.Car == null || (Profile.Patience <= 1f && !queue);
                 if (roundIt && !leader.Moving && !IsOurParkingSpot(leader) && !Sliding && _man == Manoeuvre.None)
                     v = Mathf.Min(v, Allowed(0f, gap - (leader.Parked ? KerbHoldBack : PassHoldBack)));
@@ -1348,7 +1455,7 @@ namespace RoadDemo
                     // something stopped in the lane: round it through whatever the profile
                     // allows, after the patience; wedged too close to swing - back off first
                     if (blocked && _blockedFor > Profile.Patience && now >= _yieldUntil && !IsOurParkingSpot(leader) &&
-                        (!InQueue || Profile.RunsRed))
+                        (!InQueue || Profile.PushesPastQueues))
                     {
                         if (TryPass(leader, kerbOnly: false, desperate: ReferenceEquals(_jamLeader, leader.Who))) return;
                         if (Profile.Reverses && stopped && gap < 5f && !ReferenceEquals(_backedFor, leader.Who) && TryReverse(leader, gap)) return;
@@ -1603,6 +1710,35 @@ namespace RoadDemo
 
         int _arcHeading0;
 
+        /// <summary>The radius the turn-round would be taken on from where the car
+        /// stands: its own distance off the crown, held between the tightest a body can
+        /// swing round and the widest the carriageway has room for.</summary>
+        float UTurnRadius() =>
+            Road == null ? 2.2f : Mathf.Clamp(Mathf.Abs(D), 2.2f, Road.HalfRoad - HalfWide - 0.45f);
+
+        /// <summary>How fast the arc itself may be taken - the profile's own figure, or
+        /// as much as the radius will bear at its lateral limit, whichever is less.</summary>
+        float UTurnArcSpeed() =>
+            Mathf.Min(Profile.UTurnSpeed, Mathf.Sqrt(Profile.LateralG * UTurnRadius()));
+
+        /// <summary>What the throttle is held to while the driver MEANS to turn round.
+        ///
+        /// It has to be a pace the turn will actually be granted at, and for a long time
+        /// it was not. The throttle was held to UTurnSpeed + 2 and the gate below admits
+        /// arcSpeed + 1.5, where arcSpeed is UTurnSpeed AT BEST and less than it on any
+        /// street narrow enough to make the arc tight - so a driver who had slowed all
+        /// the way to the cap he was given was still half a metre a second too fast to
+        /// be allowed the turn, on every road, for ever. The turn then only ever
+        /// happened where something ELSE had slowed the car: a queue, a red, or the end
+        /// of the street. Which is exactly what the player reported - the machine
+        /// "either rides to the end of the street to turn round or goes round the
+        /// block", and never simply turns where it stands.
+        ///
+        /// Both numbers now come off the same arithmetic, so they cannot drift apart
+        /// again: the approach sits a metre a second inside the gate, which is room for
+        /// the throttle to settle without ever closing it.</summary>
+        float UTurnApproachSpeed() => UTurnArcSpeed() + 1f;
+
         /// <summary>Turn round inside the carriageway, here or as soon as the sweep is
         /// clear: the arc from this side to the mirror lane, claimed whole, only when
         /// nothing stands on it and nothing is coming down either band in time.</summary>
@@ -1611,7 +1747,7 @@ namespace RoadDemo
             if (Road == null || !Road.TwoWay || Via != null || _man == Manoeuvre.UTurn) return false;
             if (!Profile.UTurnsInRoad && !escape) return false;
             if (Road.MedianHalf > 0f) return false;
-            float r = Mathf.Clamp(Mathf.Abs(D), 2.2f, Road.HalfRoad - HalfWide - 0.45f);
+            float r = UTurnRadius();
             int side = D >= 0f ? 1 : -1;
             if (Mathf.Abs(Mathf.Abs(D) - r) > 0.3f)
             {
@@ -1622,15 +1758,41 @@ namespace RoadDemo
             // The arc is a couple of metres across. Taken at cruising speed it is a
             // pirouette - half a turn in half a second, the body slewing round on the
             // spot - which is what a car doing it at fifteen metres a second looked
-            // like. The driver slows FOR the turn (TickRoad holds the throttle down
-            // while it means to make one); until he has, the answer is no.
-            float arcSpeed = Mathf.Min(Profile.UTurnSpeed, Mathf.Sqrt(Profile.LateralG * r));
+            // like. The driver slows FOR the turn (TickRoad holds the throttle down to
+            // UTurnApproachSpeed while it means to make one); until he has, the answer
+            // is no.
+            float arcSpeed = UTurnArcSpeed();
             if (Mathf.Abs(Speed) > arcSpeed + 1.5f) return false;
 
-            float sweepLo = -r - HalfWide - 0.3f, sweepHi = r + HalfWide + 0.3f;
+            if (!SweepClear(r, side, out float sweepS0, out float sweepS1, out float sweepLo, out float sweepHi))
+                return false;
+            _man = Manoeuvre.UTurn;
+            _tailVia = null;
+            _arcS0 = S + Heading * 1f;
+            _arcR = r;
+            _arcSide = side;
+            _arcAng = 0f;
+            _arcHeading0 = Heading;
+            _sLen = 0f;
+            Claim(sweepS0, sweepS1, sweepLo, sweepHi);
+            _next = null;
+            _via = null;
+            _committed = false;
+            return true;
+        }
+
+        /// <summary>Is the arc itself free: room to swing before the junction, nothing
+        /// standing on the sweep, nothing coming down either band in the time it takes,
+        /// nobody behind in the band we end up in. Everything the turn asks of the ROAD,
+        /// with nothing said about the driver.</summary>
+        bool SweepClear(float r, int side, out float sweepS0, out float sweepS1,
+                        out float sweepLo, out float sweepHi)
+        {
+            sweepLo = -r - HalfWide - 0.3f;
+            sweepHi = r + HalfWide + 0.3f;
             float s0 = S + Heading * 1f;
-            float sweepS0 = Mathf.Min(s0 - Heading * HalfLen, s0 + Heading * (r + HalfLen + 0.5f));
-            float sweepS1 = Mathf.Max(s0 - Heading * HalfLen, s0 + Heading * (r + HalfLen + 0.5f));
+            sweepS0 = Mathf.Min(s0 - Heading * HalfLen, s0 + Heading * (r + HalfLen + 0.5f));
+            sweepS1 = Mathf.Max(s0 - Heading * HalfLen, s0 + Heading * (r + HalfLen + 0.5f));
             var node = Road.NodeAhead(Heading);
             float endS = Road.EndS(Heading);
             if ((endS - (s0 + Heading * (r + HalfLen + 1f))) * Heading < (node != null ? node.StopSetback : 0f)) return false;
@@ -1642,19 +1804,29 @@ namespace RoadDemo
             // anyone behind us in the far band who would run into the sweep
             var behind = Road.Behind(_occ, -Heading, Heading > 0 ? sweepS1 : sweepS0, -side * r - HalfWide, -side * r + HalfWide, out float gb);
             if (behind != null && behind.Moving && gb < Mathf.Abs(behind.Vel) * seconds) return false;
-            _man = Manoeuvre.UTurn;
-            _tailVia = null;
-            _arcS0 = s0;
-            _arcR = r;
-            _arcSide = side;
-            _arcAng = 0f;
-            _arcHeading0 = Heading;
-            _sLen = 0f;
-            Claim(sweepS0, sweepS1, sweepLo, sweepHi);
-            _next = null;
-            _via = null;
-            _committed = false;
             return true;
+        }
+
+        /// <summary>Is there a turn-round HERE to be had, if only the driver slowed for
+        /// it? What the throttle asks before it comes down.
+        ///
+        /// SLOWING FOR A TURN YOU CANNOT HAVE IS A ROLLING ROADBLOCK. The throttle used
+        /// to come down the moment the driver merely WANTED to turn, and stay down for
+        /// the whole of his patience whether or not the road would ever grant it - a
+        /// car at walking pace in a running lane with a street queueing up behind it.
+        /// On a busy ring that cost more than the detour it was saving and jammed the
+        /// quarter outright (1536 belt refusals in one run of the lab, two cars frozen).
+        /// So the question is asked of the ROAD first: he keeps his pace until the arc
+        /// is actually free, and only then slows into it.</summary>
+        bool UTurnAvailable()
+        {
+            if (Road == null || !Road.TwoWay || Via != null || _man != Manoeuvre.None) return false;
+            if (!Profile.UTurnsInRoad || Road.MedianHalf > 0f) return false;
+            float r = UTurnRadius();
+            int side = D >= 0f ? 1 : -1;
+            // off the radius he must cross to it first, which is itself done slowly
+            if (Mathf.Abs(Mathf.Abs(D) - r) > 0.3f) return Road.Drivable(side * r, HalfWide);
+            return SweepClear(r, side, out _, out _, out _, out _);
         }
 
         void TickArc(float dt, float vCap)
@@ -1901,6 +2073,10 @@ namespace RoadDemo
             if (_via == null || _next == null) { Why = "no way on"; return false; }
             // the lane we are leaving from: the connector wants us in it
             if (!Sliding && Mathf.Abs(D - _laneD) > 1.2f && _man != Manoeuvre.None) { Why = "off lane at the line"; return false; }
+            // the toll: stop at the window, pay, and go when the arm is up. Asked here
+            // and nowhere else, because to a driver it is the same question the light
+            // asks - and asked FIRST, since no light on earth waves you past a barrier.
+            if (node.Toll != null && !node.Toll.MayPass(this)) { Why = "toll"; return false; }
             var sig = node.Signal;
             if (sig != null)
             {
@@ -1917,7 +2093,34 @@ namespace RoadDemo
                 else
                 {
                     if (!Profile.RunsRed) { Why = "red"; return false; }
-                    if (ConflictApproaching(node, 3f)) { Why = "red: traffic"; return false; }
+                    // A RED IS SOMEBODY ELSE'S GREEN, and a gap in one is not a thing to
+                    // be clever about.
+                    //
+                    // This used to be ConflictApproaching(node, 3f) - is anybody on a
+                    // crossing line due at the box inside three seconds - which is the
+                    // right question for slipping through a gap and the wrong one for
+                    // this. It fails two ways. The decision is taken at the commit
+                    // distance and then STICKS (the whole box-claim system rests on
+                    // that), so a gap that was there when the machine looked has closed
+                    // by the time it arrives; and the cars being cut across have the
+                    // light, so they are at their cruise and not looking for him.
+                    //
+                    // Measured over eight crossings of a signalled quarter with sixty
+                    // cars in it, against the same machine stopping for every red: the
+                    // red-runner crossed SLOWER (94s against 58s), was held at junctions
+                    // nearly twice as long, one crossing in eight never arrived, and the
+                    // belt went from 5.9 refusals a second to 24.1 - in a quarter where
+                    // the traffic on its own, with no machine in it at all, refuses
+                    // nothing whatever.
+                    //
+                    // So the rule is the blunt one, which is also the honest one: a red
+                    // is run across a DESERTED junction and no other. That is exactly
+                    // the case the player was complaining about - a machine sat alone at
+                    // a light in an empty street in the middle of a drive-by - and it
+                    // costs nothing, because where there is traffic the machine now does
+                    // what it always did and waits for the green.
+                    if (ConflictApproaching(node, 4f) || !BoxDeserted(node))
+                    { Why = "red: traffic"; return false; }
                 }
             }
             else
@@ -2056,6 +2259,36 @@ namespace RoadDemo
         }
 
         // Anyone on an approach whose movement would cross ours, arriving within seconds.
+        /// <summary>Metres of every other approach to a junction that must be empty
+        /// before a red is run across it. A whole street's worth: far enough that
+        /// nothing on any arm can reach the box while we are in it, whatever its
+        /// intended turn and whatever the belt would have made of the meeting.</summary>
+        public static float RedRunClear = 45f;
+
+        /// <summary>Is there NOBODY on any other arm of this junction, moving or not,
+        /// inside <see cref="RedRunClear"/>? Deliberately blunter than
+        /// <see cref="ConflictApproaching"/>: that one asks whether a particular car's
+        /// line crosses ours and when it is due, and both halves of that go stale
+        /// between committing and arriving. This asks whether the junction is DESERTED,
+        /// which does not go stale in the couple of seconds that matter and is the only
+        /// condition under which jumping a red costs the city nothing.</summary>
+        bool BoxDeserted(RoadNode node)
+        {
+            if (node.Inside.Count > 0) return false;
+            for (int i = 0; i < node.Incoming.Count; i++)
+            {
+                var e = node.Incoming[i];
+                if (e == Lane) continue;
+                for (int k = 0; k < e.Cars.Count; k++)
+                {
+                    var c = e.Cars[k];
+                    if (c == this || c.Parked) continue;
+                    if (e.Length - c.Progress - c.HalfLen < RedRunClear) return false;
+                }
+            }
+            return true;
+        }
+
         bool ConflictApproaching(RoadNode node, float seconds)
         {
             for (int i = 0; i < node.Incoming.Count; i++)
@@ -2410,7 +2643,7 @@ namespace RoadDemo
         Vector3? _freeGoal;
 
         /// <summary>Off any road: drive a straight line to this point and stop.</summary>
-        public void GoFree(Vector3 point) { _freeGoal = point; _halted = false; _hasGoal = false; Route = null; }
+        public void GoFree(Vector3 point) { _freeGoal = point; _halted = false; _hasGoal = false; Route = null; _turnFirst = false; }
 
         void TickFree(float dt)
         {
@@ -2504,6 +2737,25 @@ namespace RoadDemo
             if (_man != _prevMan) { DriveTrace.Event("man", "car " + Id, _prevMan + " -> " + _man, ManFields()); _prevMan = _man; }
             if ((Via != null) != _prevVia) { _prevVia = Via != null; DriveTrace.Event("man", "car " + Id, _prevVia ? "into the box" : "out of the box", ManFields()); }
             if (Parked != _prevParked) { _prevParked = Parked; DriveTrace.Event("man", "car " + Id, Parked ? "parked" : "away", ManFields()); }
+
+            // on and off the elevated road. Two rows a journey, and between them the
+            // whole question of whether the freeway is a road or an ornament: where a
+            // car joined it, where it left it, and how far it rode.
+            bool up = Road != null && Road.Elevated;
+            if (up != _onDeck)
+            {
+                _onDeck = up;
+                if (DriveTrace.On)
+                {
+                    var deck = DriveTrace.Take();
+                    DriveTrace.Int(deck, "id", Id);
+                    DriveTrace.Str(deck, "tag", Tag);
+                    DriveTrace.Str(deck, "what", up ? "on" : "off");
+                    DriveTrace.Num(deck, "v", Speed);
+                    DriveTrace.Vec(deck, "p", pos);
+                    DriveTrace.Row("deck", deck.ToString());
+                }
+            }
 
             // the first frame of the trace has no frame before it: the speed and the
             // place it would be compared against are nought, and every car would come

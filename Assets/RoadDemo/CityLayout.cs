@@ -86,11 +86,18 @@ namespace RoadDemo
             /// the channel the river runs down to the sea - houses in the water, its
             /// streets crossing the river with no bridge under them, and the ground
             /// under the quarter held flat, which dammed the river besides.</summary>
-            public System.Func<bool, List<Vector2>> Rivers;
+            public System.Func<CityEdge, List<Vector2>> Rivers;
 
             /// <summary>Metres of wild ground from the grid's outer kerb to the mean
             /// waterline on that shore: how much island there is to put things on.</summary>
             public System.Func<CityEdge, float> Shore;
+
+            /// <summary>Whether the town joins the country across this shore instead of
+            /// ending in a beach - the neck of a peninsula. Anything that wants OPEN
+            /// WATER is refused there: a quay onto a field is not a port. Everything
+            /// else (a suburb, the field) is welcome on it, and in fact has more ground
+            /// to stand on than any coast could offer. Null is the island the city was.</summary>
+            public System.Func<CityEdge, bool> Landlocked;
 
             /// <summary>The town's own name, for the quarters named after it - the field,
             /// the docks. Null falls back to the pool's own names.</summary>
@@ -213,6 +220,9 @@ namespace RoadDemo
             {
                 foreach (var edge in edges)
                 {
+                    // never on the neck: the port's quay wall, its basin and the lane its
+                    // freighters come in down all need the sea to be THERE
+                    if (grid.Landlocked != null && grid.Landlocked(edge)) continue;
                     var slot = TryHarbor(grid, edge, rng, taken);
                     if (slot == null) continue;
                     slot.name = names.Harbor();
@@ -389,6 +399,13 @@ namespace RoadDemo
         {
             bool vertical = edge == CityEdge.South || edge == CityEdge.North;
             var lines = Ordinary(grid, vertical);
+            // An approach road off an avenue rather than off no road at all. The strict
+            // list wants a two-lane street with no seam beside it, and a town whose plan
+            // was rolled can run out of those on a shore - the grid's own repair passes
+            // promote streets to avenues to keep the city joined, and every promotion
+            // takes one off this list. Measured: one city in three hundred had no
+            // airport for want of a line, which is a mile of runway lost to a technicality.
+            if (lines.Count == 0) lines = Ordinary(grid, vertical, forSuburb: true);
             if (lines.Count == 0) return null;
             // the approach road comes off a line near the middle of the shore - the field
             // is not to hang off a corner the way the port does - but never the middle
@@ -489,7 +506,7 @@ namespace RoadDemo
             // never astride the river's way out: the channel is carved down to the seabed
             // the whole way to the coast, and nothing crosses it but on a bridge
             if (grid.Rivers != null)
-                foreach (var r in grid.Rivers(vertical))
+                foreach (var r in grid.Rivers(slot.edge))
                     if (span.x < r.y + RiverGap && r.x < span.y + RiverGap) return false;
 
             var body = WorldRect(grid, slot);

@@ -166,8 +166,19 @@ namespace RoadDemo
     // the registries the cars read (the real StreetTraffic is a MonoBehaviour spawner)
     public static class StreetTraffic
     {
+        // A body in the road carries the faction it belongs to now, not just a point -
+        // the real one grew the field and this stub did not, so the harness would not
+        // build at all ("the type name 'Body' does not exist in the type
+        // 'StreetTraffic'", RoadCar.Behind).
+        public readonly struct Body
+        {
+            public readonly UnityEngine.Vector3 At;
+            public readonly int Faction;
+            public Body(UnityEngine.Vector3 at, int faction) { At = at; Faction = faction; }
+        }
+
         public static readonly List<IRoadUser> Users = new List<IRoadUser>();
-        public static readonly List<UnityEngine.Vector3> Bodies = new List<UnityEngine.Vector3>();
+        public static readonly List<Body> Bodies = new List<Body>();
         public static readonly List<UnityEngine.Vector3> Walkers = new List<UnityEngine.Vector3>();
     }
 

@@ -202,13 +202,36 @@ namespace RoadDemo
         public static bool Standing(Vector3 p, float radius) =>
             OnGround(new Vector2(p.x, p.z), radius);
 
+        /// <summary>Is there a WALL here - a building face, a lot's edge - as opposed
+        /// to a piece of furniture? The blocks laid by the builder, and nothing out of
+        /// any sidewalk plan.
+        ///
+        /// This exists for the one thing that cares about the difference: a man
+        /// putting his BACK against something. A lean is authored against a flat
+        /// vertical face at a fixed distance, and played with a bin or a car boot
+        /// behind him instead the pose has nothing to rest on - he reads as a man
+        /// sagging backwards into a squat. Walking round a bin and leaning on a bin
+        /// are not the same question, so they do not share an answer.</summary>
+        public static bool WallAt(Vector3 p, float radius) =>
+            _solids.Occupied(new Vector2(p.x, p.z), radius, 0f);
+
         /// <summary>Would a man of this radius stood here be inside something -
         /// furniture, a wall, a car?</summary>
-        public static bool Occupied(Vector3 p, float radius)
+        public static bool Occupied(Vector3 p, float radius) => Occupied(p, radius, 0f);
+
+        /// <summary>The same, giving the TALL props the berth their canopies want.
+        /// Anything that CHOOSES a spot for a man to stand at - where he is dealt in,
+        /// where he is sent to get behind something - asks with
+        /// <see cref="CanopyBerth"/>; anything asking whether he can walk THROUGH a
+        /// point asks without, because walking under a palm is free and always was.
+        /// A trunk's box is the trunk, so without the berth a man can be stood a
+        /// hand's width from the bark with two metres of fronds over his head, and
+        /// what the player sees is a man who has been posted inside a tree.</summary>
+        public static bool Occupied(Vector3 p, float radius, float tallBerth)
         {
             var q = new Vector2(p.x, p.z);
             GatherRoad(q, radius);
-            return OnGround(q, radius) || InRoad(q, radius);
+            return OnGround(q, radius, tallBerth) || InRoad(q, radius);
         }
 
         /// <summary>How wide a berth a man being STOOD somewhere gives a tall prop,
