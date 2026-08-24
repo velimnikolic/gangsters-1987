@@ -44,9 +44,26 @@ namespace RoadDemo
         public CrewBike BikeOf(Unit unit)
         {
             if (unit == null) return null;
+
+            // A CREW MAY OWN MORE THAN ONE MACHINE, so the question is not "which is the
+            // first" but "which one can be sent". CrewDemo keeps a scene bike with two
+            // men already on it and hands it to the outfit's crew (OwnTheOutfitBike), so
+            // the first-match answer was that permanently occupied machine - and the
+            // right-click card read "Somebody is on it" no matter how many the ledger
+            // sold him, with the bought machine stood at the kerb doing nothing.
+            //
+            // Free first, then whatever is owned: the fallback is what lets the card say
+            // WHY when every machine the crew has is out or occupied, instead of "no
+            // motorcycle" when there plainly is one.
+            CrewBike taken = null;
             for (int i = 0; i < Bikes.Count; i++)
-                if (Bikes[i] != null && Bikes[i].Owner == unit) return Bikes[i];
-            return null;
+            {
+                var bike = Bikes[i];
+                if (bike == null || bike.Owner != unit) continue;
+                if (bike.Rider == null && bike.Pillion == null && RaidOf(bike) == null) return bike;
+                if (taken == null) taken = bike;
+            }
+            return taken;
         }
 
         /// <summary>The ledger's motorcycles: bound to their crews, stood where the men

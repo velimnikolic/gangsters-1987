@@ -28,3 +28,4 @@ editor at all — but neither is the first thing to try any more.
 | the play harness, the trace, the reader | `Docs/play-harness.md` |
 | the city's districts | `Docs/city-districts-plan.md` |
 | the period | `Docs/1987-period-reference.md` |
+| what the game owes a credit for | `Docs/credits.md` |

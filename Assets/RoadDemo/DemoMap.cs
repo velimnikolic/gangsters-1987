@@ -201,14 +201,24 @@ namespace RoadDemo
         static readonly Color Shore = new Color(0.847f, 0.788f, 0.596f, 1f);
         static readonly Color Field = new Color(0.298f, 0.549f, 0.259f, 1f);
         static readonly Color FieldAlt = new Color(0.243f, 0.478f, 0.216f, 1f);
-        static readonly Color Asphalt = new Color(0.482f, 0.478f, 0.459f, 1f);
-        static readonly Color Avenue = new Color(0.545f, 0.541f, 0.518f, 1f);
+        static readonly Color Asphalt = new Color(0.322f, 0.318f, 0.310f, 1f);
+        static readonly Color Avenue = new Color(0.353f, 0.349f, 0.341f, 1f);
         static readonly Color Median = new Color(0.925f, 0.882f, 0.643f, 1f);
-        static readonly Color Slab = new Color(0.765f, 0.749f, 0.706f, 1f);    // the sidewalk ring
+        static readonly Color Slab = new Color(0.812f, 0.769f, 0.690f, 1f);    // the sidewalk ring
         static readonly Color LotFace = new Color(0.686f, 0.671f, 0.627f, 1f); // the yard inside it
         static readonly Color River = new Color(0.294f, 0.404f, 0.741f, 1f);
         static readonly Color Lawn = new Color(0.373f, 0.639f, 0.286f, 1f);
         static readonly Color Deck = new Color(0.388f, 0.384f, 0.376f, 1f);
+
+        // The fine print: the pavements the crowd walks, the kerb under them, the
+        // zebra it crosses at, the paint down the middle of an ordinary street and the
+        // furniture standing at the kerb. All of it drawn from the SAME data the world
+        // was laid from, so what is on the plan is what is in the street.
+        static readonly Color Walk = new Color(0.835f, 0.792f, 0.714f, 1f);   // the pavement
+        static readonly Color Kerb = new Color(0.639f, 0.600f, 0.541f, 1f);   // its edge
+        static readonly Color ZebraPaint = new Color(0.941f, 0.933f, 0.910f, 0.95f);
+        static readonly Color LanePaint = new Color(0.878f, 0.871f, 0.847f, 0.80f);
+        static readonly Color PropInk = new Color(0.400f, 0.384f, 0.353f, 1f);
 
         // The roofs. Rolled per building off where it stands, so a block reads as a
         // row of different houses and not one stamp repeated.
@@ -312,7 +322,19 @@ namespace RoadDemo
             /// panel, where ten thousand of them would cost more than the map is
             /// worth.</summary>
             public bool Civilian;
+
+            /// <summary>The mark's smallest size in screen pixels - what it is drawn at
+            /// while the plan is too far back for the thing itself to have a size worth
+            /// printing. Walked into, the mark grows to the ground the man or the car
+            /// really covers.</summary>
+            public Vector2 Floor;
         }
+
+        /// <summary>What the marks are ON THE GROUND, in metres: a man's shoulders, a
+        /// car's body. Held at these once the plan is close enough that they come out
+        /// bigger than their floor in pixels, so a street of parked cars reads as a
+        /// street of parked cars and not as a row of identical pips.</summary>
+        const float ManWide = 0.75f, CarBodyWide = 1.95f, CarBodyLong = 4.6f;
 
         /// <summary>A name printed on the plan: how tall it is in metres of ground,
         /// and the window of screen sizes it is worth reading at.</summary>
@@ -573,6 +595,13 @@ namespace RoadDemo
             public Rect Ground;
             public GameObject Go;
             public bool On = true;
+
+            /// <summary>Pixels to the metre below which this sheet is not drawn at all.
+            /// A city's worth of centre-line dashes and litter bins seen from a mile up
+            /// is a grey smear that hides the town it is drawn over and costs more than
+            /// the town does - so the fine print comes on as the plan is walked into and
+            /// goes off as it is pulled back.</summary>
+            public float MinScale;
         }
 
         readonly List<Sheet> _sheets = new List<Sheet>();
@@ -773,12 +802,21 @@ namespace RoadDemo
             // panes over the houses, and the lettering over everything.
             BuildLand(_content);
             BuildPlan(_content);
+            // the pavements, the crossings, the paint and the furniture: over the
+            // ground the blocks and the carriageways laid, under the houses standing
+            // on it - a lamp post is not drawn on top of the house behind it
+            BuildStreet(_content);
             BuildRoofs(_content);
             BuildTurf(_content);
             BuildFaces(_content);
             BuildLabels(_content);
             BuildIcons(view);
             BuildMovers(view);
+            // A little dark in the corners, over the plan and the crowd both: the plan
+            // is a lit table and the eye is meant to fall in the middle of it.
+            BuildVignette(view);
+            // and the outline of the ground the player is actually looking at
+            BuildFrame(view);
             // Last children of the view, so they print over the plan and the crowd and
             // share the view's own coordinates - the card is placed off a footprint.
             BuildPopup(view);
@@ -1124,6 +1162,277 @@ namespace RoadDemo
             inner.yMin >= outer.yMin && inner.yMax <= outer.yMax;
 
         Vector2 Plan(Vector2 world) => world - _origin;
+
+        // --------------------------------------------------------- the fine print
+        //
+        // A plan drawn to the blocks alone is a diagram: grey streets between grey
+        // lots, and nothing in it a man could walk down. What makes it a MAP is the
+        // detail the city already holds and the plan was throwing away - the pavement
+        // the crowd walks on, the zebra it waits at, the paint down the middle of the
+        // carriageway, the lamps and bins and trunks standing at the kerb, the trees.
+        //
+        // None of it is guessed: the pavements come off the pedestrian graph the crowd
+        // itself routes on, the crossings off the gated links in that graph, the paint
+        // off the lane network the cars drive, the furniture off the sidewalk plan every
+        // prop claimed its ground in. If a walk is not on this map, the crowd cannot
+        // walk it either.
+
+        /// <summary>How deep a crossing is laid (BuildPedGraph lays it 5 m), how wide
+        /// one bar of it is and how far apart the bars stand. Kept THIN and few: a
+        /// crossing drawn as a full ladder of fat white rungs is the loudest thing on
+        /// the plan, and it is not what the player is looking for.</summary>
+        const float ZebraDeep = 5f, ZebraBar = 0.35f, ZebraGap = 1.6f;
+
+        /// <summary>The broken lines on a carriageway: 4 m of paint, 5 m of nothing.
+        /// The city paints its streets the way the reference photograph does - a yellow
+        /// line down the middle and white lines between the lanes - so the plan paints
+        /// the same two, and a street on the map is read the way the street is.</summary>
+        const float DashOn = 4f, DashOff = 5f, DashHalf = 0.17f;
+
+        /// <summary>The dark edge drawn under a pavement, so a walk reads as a kerb and
+        /// not as a pale smear beside the road.</summary>
+        const float KerbEdge = 0.5f;
+
+        /// <summary>A carriageway wider than this has its median drawn already
+        /// (BuildPlan) and wants no centre line of its own.</summary>
+        const float BoulevardHalf = 10f;
+
+        /// <summary>Pixels to the metre at which each layer of the fine print comes on.
+        /// The pavements are the plan and are always drawn; paint and furniture are for
+        /// the walked-into view.</summary>
+        const float PaintScale = 0.45f, PropScale = 0.9f;
+
+        /// <summary>What a mesh of dashes or bins may hold before another is started -
+        /// they are small quads, so they may be packed far tighter than the roofs.</summary>
+        const int FineBudget = 40000;
+
+        void BuildStreet(RectTransform content)
+        {
+            var root = DemoUi.NewRect("Street", content);
+            BuildPavements(root);
+            BuildPaint(root);
+            BuildFurniture(root);
+        }
+
+        /// <summary>
+        /// The pavements and the crossings, off the crowd's own graph. Every stretch is
+        /// in that graph TWICE (there and back), so one of each pair is drawn; every
+        /// junction corner is a slab in its own right, or a plan of a crossroads would
+        /// have four walks arriving at a hole.
+        /// </summary>
+        void BuildPavements(RectTransform root)
+        {
+            var walks = _builder.Pavement;
+            if (walks == null || walks.Count == 0)
+                return;
+
+            float wide = RoadDemoBuilder.SidewalkWidth;
+            float half = wide * 0.5f;
+            var strips = new List<(Vector2 a, Vector2 b, float half)>();
+            var kerbs = new List<(Vector2 a, Vector2 b, float half)>();
+            var bars = new List<(Vector2 a, Vector2 b, float half)>();
+            var corners = new List<(Rect area, Color tint)>();
+            var slabs = new List<(Rect area, Color tint)>();
+            var seen = new HashSet<PedNode>();
+            int crossings = 0;
+            int filed = _sheets.Count;
+
+            for (int i = 0; i < walks.Count; i++)
+            {
+                var link = walks[i];
+                if (link == null || link.From == null || link.To == null)
+                    continue;
+
+                if (seen.Add(link.From)) Corner(link.From, wide, corners, slabs);
+                if (seen.Add(link.To)) Corner(link.To, wide, corners, slabs);
+
+                var a = new Vector2(link.From.Pos.x, link.From.Pos.z);
+                var b = new Vector2(link.To.Pos.x, link.To.Pos.z);
+                // one of the pair, taken by the same rule every time
+                if (a.x > b.x || (Mathf.Approximately(a.x, b.x) && a.y > b.y))
+                    continue;
+
+                if (link.Gated)
+                {
+                    Zebra(a, b, half, bars);
+                    crossings++;
+                    continue;
+                }
+                kerbs.Add((a, b, half + KerbEdge));
+                strips.Add((a, b, half));
+            }
+
+            // bottom up: the kerb, the pavement over it, the corners over that (a corner
+            // is where two walks meet and must not be cut by either one's edge), the
+            // crossings last, since a zebra is painted ON the road it crosses
+            SpillStrips(DemoUi.NewRect("Kerbs", root), kerbs, Kerb);
+            SpillStrips(DemoUi.NewRect("Pavements", root), strips, Walk);
+            SpillFill(DemoUi.NewRect("Corner Kerbs", root), corners);
+            SpillFill(DemoUi.NewRect("Corners", root), slabs);
+            // no zoom gate on the pavements - they ARE the plan - but they are still
+            // filed off, so only the sheets the view is over are ever built
+            Gate(filed, 0f);
+
+            // the zebras are PAINT, and go on with the rest of the paint: pulled back,
+            // every crossing in town at once is a white comb over the whole grid
+            filed = _sheets.Count;
+            SpillStrips(DemoUi.NewRect("Crossings", root), bars, ZebraPaint);
+            Gate(filed, PaintScale);
+
+            Debug.Log($"[RoadDemo] map street: {strips.Count} stretches of pavement, " +
+                      $"{crossings} crossings, {slabs.Count} corner slabs");
+        }
+
+        /// <summary>The slab a junction corner is: the walk down one street meets the
+        /// walk down the other over this square, and neither draws it.</summary>
+        static void Corner(PedNode node, float wide,
+            List<(Rect area, Color tint)> kerbs, List<(Rect area, Color tint)> slabs)
+        {
+            var at = new Vector2(node.Pos.x, node.Pos.z);
+            var slab = new Rect(at.x - wide * 0.5f, at.y - wide * 0.5f, wide, wide);
+            kerbs.Add((Grown(slab, KerbEdge), Kerb));
+            slabs.Add((slab, Walk));
+        }
+
+        /// <summary>One zebra, laid the way the city paints it: the bars run ACROSS the
+        /// walker's path - along the way the cars drive - and repeat down the length of
+        /// the crossing. Bars along the walk instead give two or three long rails over
+        /// the road, which is not a crossing and is not what the street looks like.
+        /// Stopped short of both kerbs, so the paint stays on the carriageway.</summary>
+        static void Zebra(Vector2 a, Vector2 b, float pavementHalf,
+            List<(Vector2 a, Vector2 b, float half)> bars)
+        {
+            var span = b - a;
+            float len = span.magnitude;
+            if (len <= pavementHalf * 2f + 0.5f)
+                return;
+            var dir = span / len;
+            var side = new Vector2(-dir.y, dir.x) * (ZebraDeep * 0.5f);
+            float across = len - pavementHalf * 2f;
+            // the run of bars centred on the crossing, so the gaps fall either side of
+            // the middle of the road and not on it
+            int count = Mathf.Max(2, Mathf.FloorToInt(across / ZebraGap));
+            float slack = (across - (count - 1) * ZebraGap) * 0.5f;
+            for (int i = 0; i < count; i++)
+            {
+                var at = a + dir * (pavementHalf + slack + i * ZebraGap);
+                bars.Add((at - side, at + side, ZebraBar));
+            }
+        }
+
+        /// <summary>The paint on the road, laid the way the city lays it: a yellow line
+        /// down the middle of the carriageway and a white line between every pair of
+        /// lanes, out to the kerb strip cars park on. A boulevard's middle is a MEDIAN
+        /// and is drawn already (BuildPlan); its lanes still get their white lines.
+        /// </summary>
+        void BuildPaint(RectTransform root)
+        {
+            var net = _builder.Net;
+            if (net == null)
+                return;
+
+            var middle = new List<(Vector2 a, Vector2 b, float half)>();
+            var lanes = new List<(Vector2 a, Vector2 b, float half)>();
+            foreach (var road in net.Roads)
+            {
+                if (road == null)
+                    continue;
+                var a = new Vector2(road.A.x, road.A.z);
+                var b = new Vector2(road.B.x, road.B.z);
+                var span = b - a;
+                float len = span.magnitude;
+                if (len < DashOn + DashOff * 2f)
+                    continue;
+                var dir = span / len;
+                var side = new Vector2(-dir.y, dir.x);
+
+                if (road.HalfRoad <= BoulevardHalf)
+                    Dashes(a, dir, len, Vector2.zero, middle);
+
+                // one white line per lane boundary, walked out from the middle: the
+                // outermost is the edge of the strip a car is left standing on, which
+                // is where the world paints its own outside line
+                for (float off = road.HalfRoad - StreetKit.ParkLane;
+                     off > StreetKit.RoadHalf * 0.5f; off -= StreetKit.RoadHalf)
+                {
+                    Dashes(a, dir, len, side * off, lanes);
+                    Dashes(a, dir, len, side * -off, lanes);
+                }
+            }
+
+            int filed = _sheets.Count;
+            SpillStrips(DemoUi.NewRect("Lane Lines", root), lanes, LanePaint);
+            SpillStrips(DemoUi.NewRect("Centre Line", root), middle, Median);
+            Gate(filed, PaintScale);
+            Debug.Log($"[RoadDemo] map street: {middle.Count} middle dashes, " +
+                      $"{lanes.Count} lane dashes");
+        }
+
+        /// <summary>One broken line down a carriageway, offset from its centre.</summary>
+        static void Dashes(Vector2 from, Vector2 dir, float len, Vector2 offset,
+            List<(Vector2 a, Vector2 b, float half)> into)
+        {
+            var start = from + offset;
+            for (float t = DashOff; t + DashOn < len - DashOff; t += DashOn + DashOff)
+                into.Add((start + dir * t, start + dir * (t + DashOn), DashHalf));
+        }
+
+        /// <summary>
+        /// What stands at the kerb. Every prop the builder laid claimed its measured
+        /// footprint in the sidewalk plan - that is how the walkers know to step round
+        /// a lamp post - so the plan of the town can be drawn from the same register
+        /// rather than from a second guess at where a bin might be.
+        /// </summary>
+        void BuildFurniture(RectTransform root)
+        {
+            var plan = _builder.Furniture;
+            if (plan != null && plan.Count > 0)
+            {
+                var props = new List<(Vector2 a, Vector2 b, float half)>();
+                foreach (var box in plan.Boxes)
+                {
+                    // a reservation is ground kept CLEAR - a crossing's mouth, the
+                    // turning room on a corner - and nothing stands on it to draw
+                    if (box.KeepClear)
+                        continue;
+                    if (props.Count >= FineBudget)
+                        break;
+                    var along = box.Ax * Mathf.Max(0.22f, box.H.x);
+                    props.Add((box.C - along, box.C + along, Mathf.Max(0.22f, box.H.y)));
+                }
+                int at = _sheets.Count;
+                SpillStrips(DemoUi.NewRect("Furniture", root), props, PropInk);
+                Gate(at, PropScale);
+                Debug.Log($"[RoadDemo] map street: {props.Count} props at the kerb");
+            }
+
+            // The city's trees are NOT drawn. The pass that did it is gone rather
+            // than tuned: a plan of a downtown wants the streets, the walks and the
+            // blocks, and every palm and yard tree in the grid printed over them is a
+            // green rash that hides all three - which is what it looked like the one
+            // time it was tried. The parks and the lawns keep their green, drawn as
+            // GROUND (the seams and a green lot in BuildPlan), which is what a map of
+            // a park is.
+        }
+
+        /// <summary>Hold every sheet made since <paramref name="from"/> back until the
+        /// plan is drawn this close - the zoom gate on a layer of the fine print.
+        ///
+        /// They are switched OFF as they are filed, whatever the gate: a sheet's mesh is
+        /// generated the first time its canvas updates with the thing active, and the
+        /// fine print is a hundred thousand quads. Left on, every one of them would be
+        /// built in the frame the map first comes up - for ground the view is nowhere
+        /// near. Relayout turns on the handful the view is actually over.</summary>
+        void Gate(int from, float minScale)
+        {
+            for (int i = from; i < _sheets.Count; i++)
+            {
+                var sheet = _sheets[i];
+                sheet.MinScale = minScale;
+                sheet.On = false;
+                sheet.Go.SetActive(false);
+            }
+        }
 
         /// <summary>
         /// The houses, in as few meshes as the count allows: every roof's dark line
@@ -1662,8 +1971,164 @@ namespace RoadDemo
             _movers.Add(new Mover
             {
                 Tf = tf, Img = image, Patrol = patrol, Vehicle = vehicle, Tint = tint,
-                Civilian = civilian,
+                Civilian = civilian, Floor = new Vector2(width, height),
             });
+        }
+
+        // -------------------------------------------------- what the camera sees
+
+        /// <summary>The outline of the ground in shot, in pixels of the panel, and what
+        /// it is drawn in.</summary>
+        const float FrameThick = 2f, FrameReach = 4000f;
+        static readonly Color FrameInk = new Color(0.984f, 0.965f, 0.902f, 0.85f);
+
+        Image[] _frame;
+        readonly Vector2[] _frameAt = new Vector2[4];
+
+        /// <summary>Four thin rules, one per side of the shot. Built once and moved:
+        /// the outline changes shape every frame the camera turns or the boom moves,
+        /// and a rebuilt mesh per frame for four lines is four allocations a frame for
+        /// nothing.</summary>
+        void BuildFrame(RectTransform view)
+        {
+            _frame = new Image[4];
+            for (int i = 0; i < _frame.Length; i++)
+            {
+                var rule = DemoUi.Block(view, "shot", FrameInk);
+                rule.enabled = false;
+                _frame[i] = rule;
+            }
+        }
+
+        /// <summary>
+        /// Where the player is looking, drawn on the plan: the corner panel is a map of
+        /// three hundred metres and the camera is somewhere inside it, so without this
+        /// the panel says WHERE the district is but not which part of it is on the
+        /// screen in front of him.
+        ///
+        /// The shape is taken from the camera itself - the four corners of the frame
+        /// cast down onto the ground the city stands on - and not worked out from the
+        /// boom: the camera tilts, so what it holds is a trapezium and never the
+        /// rectangle a boom-and-scale sum would draw. It is not drawn on the FULL plan,
+        /// where the camera is held and renders nothing at all.
+        /// </summary>
+        void PlotFrame()
+        {
+            if (_frame == null)
+                return;
+            bool want = _cam != null && _scale > 0f &&
+                        (_mode == Mode.Corner || _mode == Mode.Docked);
+            if (want)
+                for (int i = 0; i < 4; i++)
+                {
+                    // round the frame: bottom left, bottom right, top right, top left
+                    var at = new Vector2(i == 1 || i == 2 ? 1f : 0f, i >= 2 ? 1f : 0f);
+                    if (!OnGround(at, out _frameAt[i]))
+                    {
+                        want = false;
+                        break;
+                    }
+                }
+            if (!want)
+            {
+                for (int i = 0; i < _frame.Length; i++)
+                    if (_frame[i] != null && _frame[i].enabled)
+                        _frame[i].enabled = false;
+                return;
+            }
+
+            for (int i = 0; i < 4; i++)
+                Rule(_frame[i], _frameAt[i], _frameAt[(i + 1) & 3]);
+        }
+
+        /// <summary>Where a corner of the screen lands on the ground the city stands
+        /// on. False when it lands on the sky, or so far off that the camera is looking
+        /// at the horizon and the answer means nothing.</summary>
+        bool OnGround(Vector2 viewport, out Vector2 at)
+        {
+            at = default;
+            var ray = _cam.ViewportPointToRay(new Vector3(viewport.x, viewport.y, 0f));
+            if (ray.direction.y > -0.001f)
+                return false;
+            float run = -ray.origin.y / ray.direction.y;
+            if (run <= 0f || run > FrameReach)
+                return false;
+            var point = ray.GetPoint(run);
+            at = new Vector2(point.x, point.z);
+            return true;
+        }
+
+        /// <summary>One side of the outline: a thin rect laid between two points of the
+        /// panel and turned to face along them.</summary>
+        void Rule(Image rule, Vector2 from, Vector2 to)
+        {
+            if (rule == null)
+                return;
+            var a = ToView(from);
+            var b = ToView(to);
+            var along = b - a;
+            var rect = rule.rectTransform;
+            rect.anchoredPosition = (a + b) * 0.5f;
+            rect.sizeDelta = new Vector2(along.magnitude + FrameThick, FrameThick);
+            rect.localRotation = Quaternion.Euler(0f, 0f,
+                Mathf.Atan2(along.y, along.x) * Mathf.Rad2Deg);
+            if (!rule.enabled)
+                rule.enabled = true;
+        }
+
+        // ------------------------------------------------------------ the vignette
+
+        /// <summary>Where the shade starts, as a fraction of the way out to the corner,
+        /// and how dark it ever gets. Kept gentle: this is a plan being read, not a
+        /// photograph, and a heavy vignette eats the streets at the edge of the view -
+        /// which on this map is where the player is panning TO.</summary>
+        const float VignetteClear = 0.52f, VignetteInk = 0.30f;
+
+        Image _vignette;
+        Texture2D _vignetteTex;
+
+        /// <summary>
+        /// The shade round the edge of the plan. One stretched sprite rather than a
+        /// shader: the map is a UI canvas, and a 128 px ramp scaled over the view is
+        /// smooth at any size a screen comes in and costs one transparent quad.
+        ///
+        /// It never takes a click - the plan under it is clicked, panned and dragged,
+        /// and a full-view raycast target over the top would eat every one of those.
+        /// </summary>
+        void BuildVignette(RectTransform view)
+        {
+            const int N = 128;
+            _vignetteTex = new Texture2D(N, N, TextureFormat.RGBA32, false)
+            {
+                name = "Map Vignette",
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear,
+                hideFlags = HideFlags.HideAndDontSave,
+            };
+            var pixels = new Color32[N * N];
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    // how far out to the corner this pixel is, 0 in the middle and 1 at
+                    // the corner itself, smoothed so there is no ring where it starts
+                    float u = (x + 0.5f) / N * 2f - 1f;
+                    float v = (y + 0.5f) / N * 2f - 1f;
+                    float out2 = Mathf.Sqrt(u * u + v * v) / Mathf.Sqrt(2f);
+                    float t = Mathf.InverseLerp(VignetteClear, 1f, out2);
+                    t = t * t * (3f - 2f * t);
+                    pixels[y * N + x] = new Color32(14, 14, 18, (byte)(t * 255f));
+                }
+            _vignetteTex.SetPixels32(pixels);
+            _vignetteTex.Apply(false, false);
+
+            _vignette = DemoUi.Block(view, "Vignette",
+                new Color(1f, 1f, 1f, VignetteInk));
+            _vignette.sprite = Sprite.Create(_vignetteTex,
+                new Rect(0f, 0f, N, N), new Vector2(0.5f, 0.5f), 100f, 0,
+                SpriteMeshType.FullRect);
+            _vignette.type = Image.Type.Simple;
+            _vignette.raycastTarget = false;
+            DemoUi.Fill(_vignette.rectTransform);
         }
 
         /// <summary>The building card: a printed slip on the plan, in the map's own
@@ -1983,7 +2448,8 @@ namespace RoadDemo
                 for (int i = 0; i < _sheets.Count; i++)
                 {
                     var sheet = _sheets[i];
-                    bool on = sheet.Ground.xMax >= x0 && sheet.Ground.xMin <= x1 &&
+                    bool on = _scale >= sheet.MinScale &&
+                              sheet.Ground.xMax >= x0 && sheet.Ground.xMin <= x1 &&
                               sheet.Ground.yMax >= z0 && sheet.Ground.yMin <= z1;
                     if (on == sheet.On) continue;
                     sheet.On = on;
@@ -2022,6 +2488,17 @@ namespace RoadDemo
                 label.Rect.gameObject.SetActive(on);
             }
 
+            // The crowd and the traffic at the size they really are, once the plan is
+            // close enough for that to be bigger than the pip they are drawn as from a
+            // mile up. Done on a CHANGE OF ZOOM only: panning does not change a mark's
+            // size, and ten thousand rects resized every frame of a drag is the one
+            // thing on this map that would cost real time.
+            if (!Mathf.Approximately(_scale, _markedAt))
+            {
+                _markedAt = _scale;
+                ResizeMarks();
+            }
+
             // The plaques are drawn in the VIEW and not on the plan, so they keep their
             // size while the ground under them changes scale; they move when it does.
             for (int i = 0; i < _trades.Count; i++)
@@ -2032,6 +2509,30 @@ namespace RoadDemo
         }
 
         // ------------------------------------------------------------ the running
+
+        /// <summary>The zoom the marks were last sized for, so they are only resized
+        /// when it changes.</summary>
+        float _markedAt = -1f;
+
+        /// <summary>How many pixels a thing this many metres across is drawn at, never
+        /// below the floor the mark is worth seeing at.</summary>
+        float MarkPx(float metres, float floor) =>
+            Mathf.Max(floor, metres * _scale * (_mode == Mode.Corner ? CornerMarks : 1f));
+
+        void ResizeMarks()
+        {
+            for (int i = 0; i < _movers.Count; i++)
+            {
+                var mover = _movers[i];
+                if (mover.Img == null)
+                    continue;
+                mover.Img.rectTransform.sizeDelta = mover.Vehicle
+                    ? new Vector2(MarkPx(CarBodyWide, mover.Floor.x),
+                                  MarkPx(CarBodyLong, mover.Floor.y))
+                    : new Vector2(MarkPx(ManWide, mover.Floor.x),
+                                  MarkPx(ManWide, mover.Floor.y));
+            }
+        }
 
         void LateUpdate()
         {
@@ -2093,6 +2594,7 @@ namespace RoadDemo
                 RefreshTurf();
             }
 
+            PlotFrame();
             PlotCrews();
             PlotFronts();
         }
@@ -2240,7 +2742,10 @@ namespace RoadDemo
                         dot.sprite = DemoUi.Dot;
                         _crewDots[man] = dot;
                     }
-                    float size = man.IsLieutenant ? BossDot : CrewDot;
+                    // a man's own shoulders once the plan is walked into, and never
+                    // smaller than the pip he has to be findable as from a mile up
+                    float size = MarkPx(man.IsLieutenant ? ManWide * 1.5f : ManWide,
+                        man.IsLieutenant ? BossDot : CrewDot);
                     dot.rectTransform.sizeDelta = new Vector2(size, size);
                     var position = man.Tf.position;
                     dot.rectTransform.anchoredPosition = ToView(new Vector2(position.x, position.z));
@@ -2386,6 +2891,9 @@ namespace RoadDemo
 
         void OnDestroy()
         {
+            if (_vignetteTex != null)
+                Destroy(_vignetteTex);
+
             // Play-stop with the map up must give the world its picker and its camera
             // back - both live on objects that outlive this one in the editor.
             if (_mode != Mode.Off && _picker)

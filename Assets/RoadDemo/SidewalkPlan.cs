@@ -213,6 +213,12 @@ namespace RoadDemo
 
         public int Count => _boxes.Count;
 
+        /// <summary>Everything standing on the pavements, as it was measured and
+        /// claimed. The walkers ask this plan what is in their way; the map draws the
+        /// same boxes, so the furniture on the plan is the furniture in the street and
+        /// not a sprinkle of dots over it.</summary>
+        public IReadOnlyList<Box> Boxes => _boxes;
+
         public void Take(in Box box)
         {
             int id = _boxes.Count;

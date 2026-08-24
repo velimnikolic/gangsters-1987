@@ -41,6 +41,9 @@ namespace BikeDemo
         [MenuItem("Tools/Bike bench/Sit them on the police tourer instead", priority = 22)]
         static void MakePolice() => Make("SM_Veh_Motorbike_02");
 
+        [MenuItem("Tools/Bike bench/Sit them on the outfit's black tourer", priority = 23)]
+        static void MakeGangTourer() => Make("SM_Veh_Motorbike_Tourer_Black");
+
         // ------------------------------------------------------------------ the baking
 
         static void Make(string machine)
@@ -320,7 +323,11 @@ namespace BikeDemo
             foreach (var b in StreetBikes.Bodies())
                 if (b != null && b.name == name) return b;
             var police = StreetBikes.PoliceBody();
-            return police != null && police.name == name ? police : null;
+            if (police != null && police.name == name) return police;
+            // and the outfit's own bodies, which are in no pack and on no street: the
+            // black tourer is a machine this project cut for itself and the catalogue
+            // above has never heard of it (CrewCars asks Assets/Prefabs/Vehicles first).
+            return CrewCars.BodyNamed(name);
         }
 
         static (GameObject driver, GameObject shooter) Faces()

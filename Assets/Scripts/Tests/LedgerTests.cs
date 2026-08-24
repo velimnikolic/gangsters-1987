@@ -283,11 +283,12 @@ namespace LivingCity.Tests
         /// reads it too).</summary>
         static void MotorcyclesAreOnTheCounter(List<string> failures)
         {
-            // Two, since the scooter was measured off the pack and taken off the shelf
-            // (ArmoryCatalog.Motorcycles says why). A count, so a listing cannot be
-            // added or lost by accident without this saying so.
-            if (ArmoryCatalog.Motorcycles.Length != 2)
-                failures.Add("MotorcyclesAreOnTheCounter: the shelf is not two deep.");
+            // Three: the outfit's black tourer, the pack's motorbike and the boxless
+            // moped. The scooter is NOT among them - it was measured off the pack and
+            // taken off the shelf (ArmoryCatalog.Motorcycles says why). A count, so a
+            // listing cannot be added or lost by accident without this saying so.
+            if (ArmoryCatalog.Motorcycles.Length != 3)
+                failures.Add("MotorcyclesAreOnTheCounter: the shelf is not three deep.");
 
             var sedan = 0;
             foreach (var car in ArmoryCatalog.Vehicles)

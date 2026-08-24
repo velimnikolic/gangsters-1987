@@ -16,6 +16,10 @@ namespace RoadDemo
         readonly SidewalkPlan _plan = new SidewalkPlan();
         SidewalkDressing _dressing;
 
+        /// <summary>What stands on the pavements: lamps, bins, benches, trunks, meters.
+        /// The map draws these boxes as the street's furniture.</summary>
+        public SidewalkPlan Furniture => _plan;
+
         void PrepareDressing()
         {
             _dressing = new SidewalkDressing

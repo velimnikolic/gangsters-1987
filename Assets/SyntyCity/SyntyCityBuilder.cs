@@ -113,13 +113,13 @@ namespace SyntyCity
             LayStreets(cols, rows, xs, zs);
             LayLots(chosen, cols, rows, xs, zs, town);
 
-            int wide = xs[xs.Length - 1] + cols[cols.Length - 1] + StreetCells;
-            int deep = zs[zs.Length - 1] + rows[rows.Length - 1] + StreetCells;
-            Scene(new Vector3(wide * Cell * 0.5f, 0f, deep * Cell * 0.5f),
-                  Mathf.Max(wide, deep) * Cell);
+            int spanX = xs[xs.Length - 1] + cols[cols.Length - 1] + StreetCells;
+            int spanZ = zs[zs.Length - 1] + rows[rows.Length - 1] + StreetCells;
+            Scene(new Vector3(spanX * Cell * 0.5f, 0f, spanZ * Cell * 0.5f),
+                  Mathf.Max(spanX, spanZ) * Cell);
 
             Debug.Log($"[SyntyCity] {cols.Length} x {rows.Length} lots, " +
-                      $"{wide * Cell:F0} x {deep * Cell:F0} m, {stock.Count} ripped blocks in stock" +
+                      $"{spanX * Cell:F0} x {spanZ * Cell:F0} m, {stock.Count} ripped blocks in stock" +
                       (town != null ? $", downtown {middle.x * Cell:F0} x {middle.y * Cell:F0} m" : ""));
 #else
             Debug.LogError("[SyntyCity] loads through the AssetDatabase and only runs in the editor.");

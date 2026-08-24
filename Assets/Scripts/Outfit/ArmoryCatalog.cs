@@ -89,10 +89,12 @@ namespace LivingCity.Outfit
         /// jalopy that would carry four men, and the two that would not cost a good
         /// deal less.
         ///
-        /// Two bodies, Palm City's: the motorbike a man would choose and the moped that
-        /// delivers everybody's dinner. The police pack's tourer is liveried and is the
-        /// law's (VehicleCatalog.PoliceMotorcycles), and the two electric machines that
-        /// pack also ships are barred by the calendar.
+        /// Three machines. Two are Palm City's - the motorbike a man would choose and the
+        /// moped that delivers everybody's dinner - and the third is the outfit's own: the
+        /// police pack's big tourer with the force cut off it and painted black
+        /// (GangBikeBaker). The pack's own liveried tourer stays the law's
+        /// (VehicleCatalog.PoliceMotorcycles), and the two electric machines that pack
+        /// also ships are barred by the calendar.
         ///
         /// THE SCOOTER WAS THE THIRD AND IS NOT ANY MORE, and the reason is measured
         /// rather than felt. Read off the pack by BikeBody at runtime: the motorbike has
@@ -105,10 +107,15 @@ namespace LivingCity.Outfit
         ///
         /// What plays each listing is PortraitStudio.VehicleModelFor, so the body in the
         /// catalogue cut is the body that turns up at the kerb (CrewCars.BodyFor reads
-        /// the same table).
+        /// the same table). THE MOPED SOLD HERE IS NOT QUITE THE PACK'S: the counter's
+        /// is SM_Veh_Moped_01_NoBox, a variant with the delivery box taken off, because
+        /// the pack bolts that box over the machine's back third - where the second man
+        /// sits. The traffic's mopeds keep theirs.
         /// </summary>
         public static readonly ArmoryItem[] Motorcycles =
         {
+            new ArmoryItem(EquipmentKind.Motorcycle, "Tourer", 1_400,
+                "Big, black and built for two - the machine for a job across town."),
             new ArmoryItem(EquipmentKind.Motorcycle, "Motorbike", 1_200,
                 "Two men, a gun off the back, and gone before the street looks up."),
             new ArmoryItem(EquipmentKind.Motorcycle, "Moped", 500,

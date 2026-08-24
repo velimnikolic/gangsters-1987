@@ -1152,6 +1152,14 @@ namespace RoadDemo
         /// touched again: the map draws the slabs, the O overlay prints the rest.</summary>
         public IReadOnlyList<LotInfo> LotPlans => _lotPlans;
 
+        /// <summary>Every stretch of pavement in the city and every zebra across a
+        /// carriageway - the graph the crowd itself walks, the quarters' own walks
+        /// folded in (RegisterPavement). Both directions of each stretch are in here:
+        /// anything drawing it has to take one of the pair. The map draws these as the
+        /// pavements, because a walk the crowd does not use is a walk that is not
+        /// there.</summary>
+        public IReadOnlyList<PedLink> Pavement => _pedLinks;
+
         /// <summary>What the city calls its streets, rolled off the grid's own seed:
         /// one name per road line, the same names every time this city is built. The
         /// map letters them along the streets; anything else that has to name a place

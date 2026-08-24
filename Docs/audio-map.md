@@ -18,8 +18,9 @@ Two libraries, neither in the repo, both attribution-free:
 
 The script looks in each in turn, so a manifest entry does not have to say which
 one a clip came from. Provenance and licences: `Tools/audio/sources/SOURCES.md`.
-**Nothing in the game currently needs crediting** - check that file before adding
-a source that does.
+**No SOUND in the game currently needs crediting** - check that file before adding
+a source that does. The art is another matter: what the game owes a credit for, and
+the fact that there is still no credits screen to print it on, is `Docs/credits.md`.
 
 ## Re-baking
 

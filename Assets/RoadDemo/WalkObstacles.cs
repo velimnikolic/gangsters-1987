@@ -292,6 +292,45 @@ namespace RoadDemo
             return wanted;
         }
 
+        /// <summary>Somewhere near <paramref name="wanted"/> that a man can be left
+        /// standing WITHOUT being inside anything - and nothing else asked of it.
+        ///
+        /// This is <see cref="FreeSpot"/> with its opinions removed, and the two are
+        /// wanted for different jobs. FreeSpot chooses ground for a man who is being
+        /// put SOMEWHERE - dealt into a scene, set down out of a car - and it prefers a
+        /// pavement to a live lane, because nobody means to leave a man in the traffic.
+        /// A hood taking his place beside his lieutenant is not being put somewhere: he
+        /// is being put BESIDE HIM, and where his boss stands is the player's business.
+        /// Asked with FreeSpot, the man whose slot fell within a few metres of a kerb
+        /// was quietly pulled up onto the pavement while his boss held the road, and
+        /// the crew came apart the moment it was told to stand anywhere but a footway.
+        ///
+        /// So: solid things only. Furniture, walls, lots and cars are gone round, the
+        /// tall props get their canopy berth when there is a spot to spare for it, and
+        /// the asphalt is ground like any other. Nearest first, headings staggered ring
+        /// to ring, and NO RANDOM NUMBER (the arena shares one stream). Nothing clear
+        /// within reach: the point comes back as it went in.</summary>
+        public static Vector3 ClearSpot(Vector3 wanted, float radius, float reach = 4f)
+        {
+            bool here = InCity(wanted);
+            if (here && !Occupied(wanted, radius, CanopyBerth)) return wanted;
+            // clear of the solids but under a canopy: kept as second best, so a man is
+            // never walked half a street for the sake of a palm's fronds
+            var loose = wanted;
+            bool haveLoose = here && !Occupied(wanted, radius);
+            const int Headings = 12;
+            for (float r = 0.5f; r <= reach + 1e-3f; r += 0.5f)
+                for (int i = 0; i < Headings; i++)
+                {
+                    float a = (i * (360f / Headings) + r * 23f) * Mathf.Deg2Rad;
+                    var p = wanted + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * r;
+                    if (!InCity(p) || Occupied(p, radius)) continue;
+                    if (!Occupied(p, radius, CanopyBerth)) return p;
+                    if (!haveLoose) { loose = p; haveLoose = true; }
+                }
+            return loose;
+        }
+
         // How good a spot is to be left standing on, best first:
         //   0  clear pavement, and clear of the canopies
         //   1  clear pavement, under a canopy - he is not blocked, he only looks it,

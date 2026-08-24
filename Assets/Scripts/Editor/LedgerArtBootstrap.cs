@@ -110,15 +110,24 @@ namespace LivingCity.EditorTools
             return true;
         }
 
-        /// <summary>The three two-wheelers the counter sells
-        /// (LivingCity.Outfit.ArmoryCatalog.Motorcycles), by pack path. Palm City's, and
+        /// <summary>The two-wheelers the counter sells
+        /// (LivingCity.Outfit.ArmoryCatalog.Motorcycles), by path. Palm City's, and
         /// never the police pack's machine of the same name - that one is liveried and
-        /// is the law's.</summary>
+        /// is the law's.
+        ///
+        /// THREE, and only the three the shelf actually lists - the outfit's black tourer,
+        /// the pack's motorbike and the boxless moped. The scooter used to be baked in
+        /// beside them and has not been for sale since it was measured (0.80 m of
+        /// wheelbase, four wheels, no handlebars - ArmoryCatalog says why), so the book
+        /// was carrying a photograph of a machine nobody can buy.</summary>
         static readonly string[] MotorcyclePaths =
         {
+            "Assets/Prefabs/Vehicles/SM_Veh_Motorbike_Tourer_Black.prefab",
             "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Motorbike_01.prefab",
-            "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Moped_01.prefab",
-            "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Scooter_01.prefab",
+            // the counter's moped is the boxless variant, not the pack's delivery
+            // machine - the book must photograph the body that turns up at the kerb
+            // (PortraitStudio.VehicleModelFor says why the box came off)
+            "Assets/Prefabs/Vehicles/SM_Veh_Moped_01_NoBox.prefab",
         };
 
         /// <summary>Fills set.motorcycles the additive way the other two tables are

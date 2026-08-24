@@ -277,7 +277,23 @@ namespace LivingCity.UI
             // substring: "Motorbike" also names the police pack's liveried tourer, and
             // the outfit does not ride one of those.
             "Motorbike" => "SM_Veh_Motorbike_01",
-            "Moped" => "SM_Veh_Moped_01",
+            // THE TOURER IS NO PACK BODY AT ALL. The other machine big enough to carry
+            // two armed men is the police pack's, and it comes dressed as a patrol bike -
+            // panniers, top box, mast, chequer. GangBikeBaker cuts all that off and paints
+            // it black, and Assets/Prefabs/Vehicles/SM_Veh_Motorbike_Tourer_Black.prefab
+            // is what this listing sells. The law still rides the pack's own
+            // (VehicleCatalog.PoliceMotorcycles), untouched.
+            "Tourer" => "SM_Veh_Motorbike_Tourer_Black",
+            // THE OUTFIT'S MOPED IS THE BOXLESS ONE. The pack ships the moped with a
+            // delivery box bolted over its back third (SM_Veh_Moped_01_Box, 0.61 m of
+            // it centred 0.79 m behind the axle line) - which is exactly where a
+            // pillion sits, so a man on the back of the stock machine rides inside the
+            // luggage. Assets/Prefabs/Vehicles/SM_Veh_Moped_01_NoBox.prefab is a
+            // variant of the pack's with that box taken off, and it is what the
+            // counter sells and what CrewCars stands at the kerb. The traffic's
+            // delivery mopeds are untouched (VehicleCatalog.Motorcycles still names
+            // the stock body) - a delivery boy keeps his box.
+            "Moped" => "SM_Veh_Moped_01_NoBox",
             "Scooter" => "SM_Veh_Scooter_01",
             _ => "SM_Veh_Sedan_01",
         };

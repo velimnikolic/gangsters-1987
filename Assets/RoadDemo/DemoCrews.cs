@@ -942,7 +942,7 @@ namespace RoadDemo
                 for (int k = 0; k < Selected.Hoods.Count; k++)
                 {
                     var hood = Selected.Hoods[k];
-                    hood.OrderToPoint(WalkObstacles.FreeSpot(
+                    hood.OrderToPoint(WalkObstacles.ClearSpot(
                         world + rot * FormationOffset(Selected.CrewId, k), WalkObstacles.Radius), HoodBeat());
                     hood.Urgent = run;
                 }
@@ -1001,7 +1001,7 @@ namespace RoadDemo
                 if (man == null || man.Dead || man == boss || man.Riding) continue;
                 Reseat(man);
                 // spread behind him, so three men arrive as a crew and not as a column
-                man.OrderAcross(WalkObstacles.FreeSpot(
+                man.OrderAcross(WalkObstacles.ClearSpot(
                     world + rot * FormationOffset(unit.CrewId, k), WalkObstacles.Radius), HoodBeat());
                 man.Urgent = run;
             }
@@ -2583,12 +2583,19 @@ namespace RoadDemo
                     if (man.Dead || man.Tf == null || IsAboard(man) || man.Riding) continue;
                     if (OnRaid(man) || Chasing(man)) continue;   // the raid's man, and the chaser, are their own business
                     if (man.State != CrewWalker.Mode.Standing) continue;
-                    // inside something, or stood out on the asphalt (a crossing his
-                    // order ended on, a lane he stopped short in): both are spots a
-                    // man does not stand on, and he walks himself off them
-                    if (!WalkObstacles.Occupied(man.Tf.position, WalkObstacles.Radius) &&
-                        !CrewWalker.OnCarriageway(man.Tf.position)) continue;
-                    var free = WalkObstacles.FreeSpot(man.Tf.position, WalkObstacles.Radius, 6f);
+                    // INSIDE SOMETHING, and only that. The asphalt used to count as a
+                    // fault too, and it is what tore a crew apart: told to stand in the
+                    // road, the men near enough a kerb were walked off it one by one by
+                    // this pass, and the tether - measuring them against a lieutenant who
+                    // was still out in the traffic - walked them straight back. Two of
+                    // them settled at 7.0 m, a hair off TetherNear, and stepped over the
+                    // line and back for the rest of the run: the pacing the player
+                    // watched. WHERE A CREW STANDS IS THE PLAYER'S BUSINESS - the road,
+                    // a junction, the middle of a square - and the men stand round their
+                    // lieutenant wherever he is. The one thing that is nobody's order is
+                    // a man with his shoulders in a bin, and he still steps out of it.
+                    if (!WalkObstacles.Occupied(man.Tf.position, WalkObstacles.Radius)) continue;
+                    var free = WalkObstacles.ClearSpot(man.Tf.position, WalkObstacles.Radius, 6f);
                     if ((free - man.Tf.position).sqrMagnitude < 0.3f * 0.3f) continue;
                     if (DriveTrace.On)
                     {
@@ -2704,7 +2711,7 @@ namespace RoadDemo
                             DriveTrace.Str(sb, "what", "left at a light: crossing after the crew");
                             DriveTrace.Row("tether", sb.ToString());
                         }
-                        man.OrderAcross(WalkObstacles.FreeSpot(
+                        man.OrderAcross(WalkObstacles.ClearSpot(
                             lead.Tf.position + lead.Tf.rotation * FormationOffset(unit.CrewId, k),
                             WalkObstacles.Radius));
                         man.Urgent = lead.Urgent;   // a run is the crew's, not one man's
@@ -2796,7 +2803,7 @@ namespace RoadDemo
             }
             if (!walked)
             {
-                var spot = WalkObstacles.FreeSpot(
+                var spot = WalkObstacles.ClearSpot(
                     lead.Tf.position + lead.Tf.rotation * FormationOffset(unit.CrewId, k), WalkObstacles.Radius);
                 man.OrderAcross(spot);
             }
@@ -3626,7 +3633,7 @@ namespace RoadDemo
                 var facing = boss.HasOrder ? (boss.Destination - boss.Tf.position) : boss.Tf.forward;
                 facing.y = 0f;
                 var rot = Quaternion.LookRotation(facing.sqrMagnitude > 1e-3f ? facing.normalized : Vector3.forward);
-                var spot = WalkObstacles.FreeSpot(
+                var spot = WalkObstacles.ClearSpot(
                     boss.Destination + rot * FormationOffset(unit.CrewId, k), WalkObstacles.Radius);
                 if ((hood.Tf.position - spot).sqrMagnitude > 0.35f * 0.35f)
                     hood.OrderToPoint(spot, beat);

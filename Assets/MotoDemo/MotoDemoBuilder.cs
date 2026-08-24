@@ -18,7 +18,9 @@ namespace MotoDemo
     // Nothing here is a list typed out by hand, and that is the point. The packs are
     // scanned for anything two-wheeled (MotoDemoBuilder.Machines), so a pack added
     // tomorrow turns up in the line without this file being touched. What the scan
-    // finds today is nine machines out of two packs:
+    // finds today is nine machines out of two packs, plus one this project cut for
+    // itself (Moped_01_NoBox - the pack moped with its delivery box off, because the
+    // box sits where a pillion does; PortraitStudio.VehicleModelFor):
     //
     //   MOTORCYCLES   Motorbike_01 (palm city), Motorbike_01 and Motorbike_02 (police)
     //   MOPEDS        Moped_01, Scooter_01
@@ -123,6 +125,12 @@ namespace MotoDemo
         /// Assets/Synty (this project holds ~137,000 assets).</summary>
         static readonly string[] Hunt = { "Motorbike", "Moped", "Scooter", "Bike" };
 
+        /// <summary>Where the scan looks. The packs, and this project's own vehicle
+        /// folder - a machine the outfit had remade out of a pack body (the boxless
+        /// moped) is a machine in the project and belongs in the line beside the one it
+        /// was cut from, which is the comparison the showroom exists to make.</summary>
+        static readonly string[] SearchRoots = { "Assets/Synty", "Assets/Prefabs" };
+
         /// <summary>Two-wheeled by name and not a machine: the parts a machine is dressed
         /// with, the rack you lean one against, the sign that says where to leave it, and
         /// the gym's exercise bike. The pavement robot answers to nothing here but is
@@ -141,11 +149,13 @@ namespace MotoDemo
         {
             "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/",
             "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/",
+            "Assets/Prefabs/Vehicles/",
         };
 
         static readonly string[] KnownMachines =
         {
             "SM_Veh_Motorbike_01", "SM_Veh_Motorbike_02", "SM_Veh_Moped_01",
+            "SM_Veh_Moped_01_NoBox",
         };
 
         /// <summary>Every two-wheeler in the project, in the order the line stands them:
@@ -159,7 +169,7 @@ namespace MotoDemo
             var seen = new HashSet<string>();
             foreach (var token in Hunt)
             {
-                foreach (var guid in DemoAssetLoad.Find(token + " t:Prefab", new[] { "Assets/Synty" }))
+                foreach (var guid in DemoAssetLoad.Find(token + " t:Prefab", SearchRoots))
                 {
                     var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid).Replace('\\', '/');
                     if (!path.EndsWith(".prefab") || !seen.Add(path)) continue;
@@ -228,6 +238,8 @@ namespace MotoDemo
         static string PackOf(string path)
         {
             const string root = "Assets/Synty/";
+            // not out of a pack at all: this project's own body, cut from one
+            if (path.StartsWith("Assets/Prefabs/")) return "OUTFIT";
             if (!path.StartsWith(root)) return "?";
             int cut = path.IndexOf('/', root.Length);
             var folder = cut < 0 ? path.Substring(root.Length) : path.Substring(root.Length, cut - root.Length);
@@ -558,8 +570,21 @@ namespace MotoDemo
         {
             if (LivingCity.Gameplay.VehicleCatalog.IsBarred(m.Name)) return "BARRED";
             if (LivingCity.Gameplay.VehicleCatalog.IsPoliceVehicle(m.Path)) return "LAW";
-            foreach (var ridden in LivingCity.Gameplay.VehicleCatalog.Motorcycles)
-                if (ridden == m.Name) return "RIDDEN";
+
+            bool ridden = false, sold = false;
+            foreach (var name in LivingCity.Gameplay.VehicleCatalog.Motorcycles)
+                if (name == m.Name) ridden = true;
+            // The counter is a SECOND question and the two answers differ on purpose:
+            // the traffic rides the pack's delivery moped, the outfit buys the boxless
+            // one. Asked through the same table the ledger and CrewCars ask through, so
+            // a plaque cannot drift from what actually turns up at the kerb.
+            foreach (var item in LivingCity.Outfit.ArmoryCatalog.Motorcycles)
+                if (LivingCity.UI.PortraitStudio.VehicleModelFor(item.DisplayName) == m.Name)
+                    sold = true;
+
+            if (ridden && sold) return "RIDDEN / SOLD";
+            if (ridden) return "RIDDEN";
+            if (sold) return "SOLD";
             return "not asked for";
         }
 

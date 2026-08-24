@@ -50,6 +50,10 @@ namespace RoadDemo
         // back: a crew does not drive a liveried cruiser (VehicleCatalog).
         static readonly string[] Folders =
         {
+            // The outfit's own bodies first: a machine this project made out of a pack
+            // one (the boxless moped) wins over the pack's, and any pack body nobody
+            // has remade is found exactly where it always was.
+            "Assets/Prefabs/Vehicles/",
             "Assets/Synty/PolygonGangWarfare/Prefabs/Vehicles/",
             "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/",
             "Assets/Synty/PolygonCity/Prefabs/Vehicles/",
