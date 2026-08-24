@@ -4039,6 +4039,16 @@ namespace RoadDemo
             // the street kit's own colliders stay mute
             _picker = camGo.AddComponent<LivingCity.CameraRig.BuildingCardPicker>();
             _picker.pickRoot = _blocks;
+
+            // and down in the street, the near facades get out of the way of it: the
+            // block bakes and the quarters are what may be seen through, and nothing
+            // else is - the harbour's ships and the airfield's hangars are the picture
+            // where they stand, not something between the player and a pavement.
+            var cutaway = camGo.AddComponent<StreetCutaway>();
+            cutaway.rig = dc;
+            var seeThrough = new List<Transform> { _blocks };
+            seeThrough.AddRange(_districtStatic);
+            cutaway.roots = seeThrough.ToArray();
         }
 
         // ------------------------------------------------------------- day/night

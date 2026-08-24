@@ -158,6 +158,12 @@ namespace RoadDemo
 
         const float MergeCell = 120f;
 
+        /// <summary>How tall a piece has to be before the merge bothers to remember which
+        /// chunk swallowed it. What asks is the cutaway (<see cref="StreetCutaway"/>), and
+        /// it only ever asks about buildings - a kerb, a bin or a parked car is not one,
+        /// and there are a hundred thousand of those.</summary>
+        public const float CutawayHeight = 5f;
+
         struct MergeKey : System.IEquatable<MergeKey>
         {
             public int Chunk;
@@ -178,6 +184,15 @@ namespace RoadDemo
             while (steps.MoveNext()) { }
         }
 
+        /// <summary>Whether a merge is folding a scene in right now. While it is, nothing
+        /// may touch a source renderer: the gather reads each one's shadow mode INTO the
+        /// group key, so a building hidden a frame too early (<see cref="StreetCutaway"/>
+        /// hides by shadow mode) would be merged as a shadows-only group and never come
+        /// back. The fold-in is a second or two at the start of a scene, and the cutaway
+        /// stands down for it.</summary>
+        public static bool Merging => _merging > 0;
+        static int _merging;
+
         /// <summary>The merge, one step at a time. While it is still GATHERING it yields
         /// every few thousand renderers and after every root, and nothing is switched off
         /// yet - the whole city keeps drawing as its own pieces. While it is BUILDING it
@@ -189,6 +204,7 @@ namespace RoadDemo
         /// instead of one locked frame.</summary>
         public static IEnumerator MergeSteps(IList<MergeRoot> roots, Transform mergedRoot, string tag)
         {
+            _merging++;
             var groups = new Dictionary<MergeKey, List<CombineInstance>>();
             // which renderers fed each group, and how many groups each renderer still has
             // left to be built: a source is only safe to hide once that count hits zero,
@@ -198,6 +214,17 @@ namespace RoadDemo
             var mrKeys = new HashSet<MergeKey>();
             var sources = new HashSet<Mesh>();
             var chunkOf = new Dictionary<Transform, int>();
+            // one holder per chunk, carrying the receipt the cutaway reads: it takes the
+            // merged meshes as children and remembers the pieces they stand for
+            var chunks = new Dictionary<int, MergedChunk>();
+            MergedChunk ChunkObject(int id)
+            {
+                if (chunks.TryGetValue(id, out var found)) return found;
+                var holder = new GameObject("Chunk " + id);
+                holder.transform.SetParent(mergedRoot, false);
+                chunks[id] = found = holder.AddComponent<MergedChunk>();
+                return found;
+            }
             var unreadable = new HashSet<string>();
             int nextChunk = 1;
             int walked = 0;
@@ -244,6 +271,13 @@ namespace RoadDemo
                         chunk = 100000 + Mathf.FloorToInt(p.x / MergeCell) * 1000 + Mathf.FloorToInt(p.z / MergeCell)
                                 + entry.Salt;
                     }
+
+                    // From here the piece is the chunk's: it will be switched off below
+                    // and the chunk is the only thing that can give it back. Buildings -
+                    // tall, and carrying the footprint collider every bake has - are
+                    // registered for reverse lookup too; nothing else is ever asked for.
+                    ChunkObject(chunk).Adopt(mr, mr.bounds.size.y >= CutawayHeight
+                                                 && mr.TryGetComponent<Collider>(out _));
 
                     var mats = mr.sharedMaterials;
                     var matrix = mr.transform.localToWorldMatrix;
@@ -351,13 +385,15 @@ namespace RoadDemo
                 // the occlusion hider's stub cutter already asks isReadable first and skips
                 // what says no.
                 merged.UploadMeshData(true);
+                var chunkObject = ChunkObject(key.Chunk);
                 var go = new GameObject(merged.name) { layer = key.Layer };
-                go.transform.SetParent(mergedRoot, false);
+                go.transform.SetParent(chunkObject.transform, false);
                 go.AddComponent<MeshFilter>().sharedMesh = merged;
                 var mr = go.AddComponent<MeshRenderer>();
                 mr.sharedMaterial = key.Material;
                 mr.shadowCastingMode = key.Shadows;
                 mr.receiveShadows = true;
+                chunkObject.StandsFor(mr);
                 made++;
 
                 // this group now draws as one mesh, so the sources that fed it and have no
@@ -386,6 +422,12 @@ namespace RoadDemo
             // PlayerOcclusionHider's stub cutter, and it asks isReadable first and caches
             // the refusal, so it degrades to "no stub" rather than breaking. (In this scene
             // it never even runs: it needs a CityBuilder and Game.unity has none.)
+            // Every group is built, so each chunk now stands for exactly what it
+            // swallowed and may be taken apart on demand. Before this line it is half
+            // folded and pulling it apart would leave a hole, which is what Ready says.
+            foreach (var kv in chunks) kv.Value.Ready = true;
+            _merging = Mathf.Max(0, _merging - 1);
+
             int freed = 0;
             foreach (var mesh in sources)
             {

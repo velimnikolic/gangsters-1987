@@ -160,6 +160,9 @@ namespace RoadDemo
             {
                 var t = hit.collider.transform;
                 if (_pickRoot != null && !t.IsChildOf(_pickRoot)) continue;
+                // a facade the cutaway has taken out of the way is not under the
+                // pointer as far as the player is concerned: the ray goes on through
+                if (StreetCutaway.Invisible(hit.collider)) continue;
                 return GangFront.Of(t);   // the first building decides, front or not
             }
 

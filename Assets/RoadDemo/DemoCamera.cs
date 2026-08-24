@@ -66,7 +66,7 @@ namespace RoadDemo
         public string hint =
             "WASD/arrows: move   Q/E or right-click: rotate   wheel: zoom   " +
             "click a building: card   O: lot info   click a lieutenant: select   " +
-            "right-click: send his crew   M: mute";
+            "right-click: send his crew   H: see through the near buildings   M: mute";
 
         /// <summary>Pixels the hint sits below the top of the screen (the road demo's
         /// top bar is 42 canvas-px on the 1080 reference height).</summary>

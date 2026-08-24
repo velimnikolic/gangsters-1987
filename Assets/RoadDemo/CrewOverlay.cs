@@ -439,6 +439,8 @@ namespace RoadDemo
             for (int i = 0; i < hits.Length; i++)
             {
                 if (hits[i].collider == null) continue;
+                // an order cannot be given to premises the camera is seeing through
+                if (StreetCutaway.Invisible(hits[i].collider)) continue;
                 var f = GangFront.Of(hits[i].collider.transform);
                 if (f != null) return f;
             }

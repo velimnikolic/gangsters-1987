@@ -127,6 +127,12 @@ namespace LivingCity.CameraRig
                 var t = hit.collider.transform;
                 if (pickRoot != null && !t.IsChildOf(pickRoot))
                     continue;
+                // A facade the cutaway is currently seeing through is still solid to
+                // physics - the wall has not moved - but it must not answer a click
+                // nobody aimed at it: the street behind it is what the player can see,
+                // and what he sees is what he is clicking on.
+                if (RoadDemo.StreetCutaway.Invisible(hit.collider))
+                    continue;
                 root = t;
                 break;
             }
