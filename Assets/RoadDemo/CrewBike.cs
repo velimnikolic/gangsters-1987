@@ -279,6 +279,8 @@ namespace RoadDemo
             DriveByTarget = target;
             PassSpent = false;
             ShotsFired = 0;
+            NoTurnBack = false;   // the way OUT may turn in the road; the way home may not
+            _passCheck = 1.5f;
             var t = target.Position;
             if (Road != null)
             {
@@ -287,6 +289,44 @@ namespace RoadDemo
             }
             else _passDir = Vector3.Dot(t - Position, Forward) >= 0f ? 1 : -1;
             PlanPass();
+        }
+
+        /// <summary>How far off a carriageway the mark may stand and still have a street
+        /// the pass can be ridden down, tried in turn: a man on a pavement, a crew at a
+        /// frontage, a crew in a yard or a lot.</summary>
+        static readonly float[] PassReach = { 14f, 30f, 60f };
+
+        /// <summary>No street near the mark at all - a crew stood in the middle of open
+        /// ground. The pass is ridden AT him over that ground rather than dropped: the
+        /// mark is kept, so the guns bear as the machine goes by, and the run past ends
+        /// the pass the ordinary way (TickFree calls OnArrived).</summary>
+        /// <summary>Where the mark stood when this pass was laid against him. A pass is a
+        /// line of road chosen for a POINT, and the ride to it takes as long as the traffic
+        /// takes - a minute and a half, in the quarter the lab drives. A crew does not
+        /// stand still for that, so the machine arrived at a stretch of empty street and
+        /// rode home with the guns unfired ("3 of 3 passes ridden, 0 with shots"). The
+        /// mark is looked at again on the way in, and the pass re-laid when he has moved
+        /// off the one it was drawn for - which is what a rider does with his eyes.</summary>
+        Vector3 _passLaidAt;
+        float _passCheck;
+
+        /// <summary>Metres the mark may drift before the pass is drawn again.</summary>
+        public static float PassRelayWithin = 15f;
+
+        /// <summary>How far the gun on the back reaches from the saddle.</summary>
+        float PillionRange()
+        {
+            var man = Pillion ?? Rider;
+            return (man != null ? man.Ballistics.Range : 10f) * PillionReach;
+        }
+
+        void RideFreePast(Vector3 t)
+        {
+            var f = t - Position;
+            f.y = 0f;
+            if (f.sqrMagnitude < 1e-4f) f = Forward;
+            f.Normalize();
+            GoFree(new Vector3(t.x, RoadY, t.z) + f * PassOvershoot);
         }
 
         void PlanPass()
@@ -299,14 +339,36 @@ namespace RoadDemo
                 GoFree(new Vector3(t.x, RoadY, t.z) + f * PassOvershoot);
                 return;
             }
-            var road = Net.Locate(t, out float ts, out float td, within: 14f);
-            if (road == null) { RideTo(t); return; }
+            // WHICH STREET IS HIS, and the search widens rather than giving up. Fourteen
+            // metres is a man standing on a pavement; a crew at a FRONTAGE stands behind
+            // the pavement, further off than that - and every pass ever ordered at one of
+            // those was quietly thrown away here: RideTo clears the mark, the arena reads
+            // a raid with no mark as a raid that is over, and two men rode out, rode home
+            // and fired nothing. Three passes out of three, in every run of the lab, with
+            // "3 of 3 passes ridden home, 0 with shots fired" as the only trace of it.
+            Carriageway road = null;
+            float ts = 0f, td = 0f;
+            foreach (float within in PassReach)
+            {
+                road = Net.Locate(t, out ts, out td, within);
+                if (road != null) break;
+            }
+            if (road == null) { RideFreePast(t); return; }
+            // HOW FAR OFF THE STREET HE STANDS DECIDES WHETHER A STREET PASS IS A PASS AT
+            // ALL. A pillion's reach is his gun and a bit (PillionReach) - eighteen metres
+            // with the .38 every man carries. A crew stood thirty or forty metres back off
+            // the carriageway, which is where a crew at a FRONTAGE stands, is not shot at
+            // by riding down the street past it: the machine goes by, nothing bears, and
+            // the pass is spent. It rides AT them over the ground between instead, which
+            // is what a drive-by across a forecourt looks like.
+            _passLaidAt = t;
             int dir = Road == road ? _passDir : (td >= 0f ? 1 : -1);
             float endS = Mathf.Clamp(ts + dir * PassOvershoot, 8f, road.Length - 8f);
             var lane = road.LaneFor(dir, td) ?? road.LaneFor(-dir, td);
-            if (lane == null) { RideTo(t); return; }
+            if (lane == null) { RideFreePast(t); return; }
             _passDir = lane.Heading;
-            GoTo(road.Pose(endS, lane.Offset), park: false, standOff: 0f, stopAtGoal: false);
+            GoTo(road.Pose(endS, lane.Offset), park: false, standOff: 0f, stopAtGoal: false,
+                 wantHeading: lane.Heading);
         }
 
         protected override void OnArrived()
@@ -382,6 +444,19 @@ namespace RoadDemo
             // inside a car before anybody noticed. Getaway is the profile with that lane
             // work taken out; there is no leg of a drive-by that wants it back.
             Profile = DriverProfile.Getaway;
+            // the mark, looked at again on the way in (see _passLaidAt)
+            if (DriveByTarget != null && !PassSpent)
+            {
+                _passCheck -= dt;
+                if (_passCheck <= 0f)
+                {
+                    _passCheck = 1.5f;
+                    var now = DriveByTarget.Position;
+                    if ((now - _passLaidAt).sqrMagnitude > PassRelayWithin * PassRelayWithin &&
+                        !NearMark(PillionRange()))
+                        PlanPass();
+                }
+            }
             base.Tick(dt);
             TickGuns(dt);
         }

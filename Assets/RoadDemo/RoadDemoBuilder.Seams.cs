@@ -1348,6 +1348,8 @@ namespace RoadDemo
                 var prefab = prefabs[Random.Range(0, prefabs.Count)];
                 var go = Instantiate(prefab, parent);
                 go.name = "Highway " + prefab.name;
+                // a colour of its own, unless the body carries somebody's livery
+                LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
                 foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
                 foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
                 // a driver, now and then a passenger - nobody drives an empty car

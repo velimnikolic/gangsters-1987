@@ -99,6 +99,8 @@ namespace RoadDemo
                     var prefab = prefabs[Random.Range(0, prefabs.Count)];
                     var go = Instantiate(prefab, root);
                     go.name = prefab.name;
+                    // a colour of its own, unless the body carries somebody's livery
+                    LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
                     foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>()) Destroy(mb);
                     foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
                     foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);

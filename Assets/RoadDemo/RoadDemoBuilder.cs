@@ -789,7 +789,13 @@ namespace RoadDemo
                 // drove all four of them as ordinary traffic
                 if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(path)) continue;
                 var v = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
-                if (v != null) _carPrefabs.Add(v);
+                if (v == null) continue;
+                // duplicate-as-weight: every pool in the demo is drawn from uniformly, so the
+                // only place a mix can be tuned is the list itself. An exotic takes one seat
+                // where a saloon takes six (VehicleCatalog.PoolWeight)
+                for (int seat = 0, seats = LivingCity.Gameplay.VehicleCatalog.PoolWeight(path);
+                     seat < seats; seat++)
+                    _carPrefabs.Add(v);
             }
 
             foreach (var name in LivingCity.Gameplay.VehicleCatalog.PoliceCars)
@@ -3585,6 +3591,8 @@ namespace RoadDemo
 
                     var prefab = _carPrefabs[Random.Range(0, _carPrefabs.Count)];
                     var go = Instantiate(prefab, Vector3.zero, Quaternion.identity, _cars);
+                    // a colour of its own, unless the body carries somebody's livery
+                    LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
                     foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
                     foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
 

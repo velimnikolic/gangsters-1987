@@ -38,6 +38,20 @@ namespace RoadDemo
         /// <summary>Degrees it rests at on its side stand.</summary>
         public static float StandLean = 8f;
 
+        /// <summary>What the ROAD takes a machine to be, as a share of what its MESH
+        /// measures. The model is untouched - this is only the box the lane network and
+        /// the belt reason about.
+        ///
+        /// The mesh is measured over everything the prefab has: mirrors, screen, panniers,
+        /// the rear rack. A tourer's bounds are a small car's, and the road then treats it
+        /// as one - it fits nowhere a bike should fit, and it meets things a bike would
+        /// have gone past. The big machine was the only one of the three that wedged in a
+        /// junction (1618 refused steps in one run; the moped and the motorbike ran at
+        /// zero). What the road wants is the machine's own footprint: the wheels, the
+        /// engine and the two men, which is most of the length and well under the width of
+        /// the widest handlebar.</summary>
+        public static float RoadBodyLong = 0.82f, RoadBodyWide = 0.7f;
+
         float _lean, _leanRate;
 
         public RoadBike()
@@ -87,8 +101,8 @@ namespace RoadDemo
                 // on the road at all. It does NOT filter between the lanes - that is the
                 // lane network's business and not a body measurement - but it takes a
                 // bike's room at a kerb and behind a lorry, not a car's.
-                HalfLen = body.HalfLength + 0.2f,
-                HalfWide = Mathf.Max(0.42f, body.HalfWidth),
+                HalfLen = Mathf.Max(0.9f, body.HalfLength * RoadBodyLong),
+                HalfWide = Mathf.Max(0.34f, body.HalfWidth * RoadBodyWide),
                 AxleBack = body.AxleBack,
                 RoadY = roadY,
                 Net = net != null ? net : LaneNet.Active,

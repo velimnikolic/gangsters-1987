@@ -698,6 +698,11 @@ namespace BlockDemo
         Vector3 _backMark;
         float _backStall;
 
+        /// <summary>Seconds a pull-out or a pull-in is allowed to be the reason a car is
+        /// standing still before the watch stops taking it for an answer.</summary>
+        const float kerbPatience = 25f;
+        float _kerbFor;
+
         float _walkBack;
         bool _orderedOut;
 
@@ -743,8 +748,18 @@ namespace BlockDemo
             // never clears.
             // Waiting at a light, in a queue, or at the kerb for a gap to pull out into
             // is traffic, not a fault. Stuck is standing still with the way clear.
+            //
+            // A KERB MANOEUVRE IS ONLY TRAFFIC WHILE IT IS GOING SOMEWHERE. Excused
+            // outright, it excused the worst fault this lab has had: a car ordered
+            // across town that never left its slot at all - "waiting for a gap" with the
+            // lane empty, because what was in its way was a body parked in front of it
+            // and nothing in the manoeuvre could ever get round one. Sixty-five seconds
+            // of live lane went with it, and the run still passed. Past this much of it,
+            // the wait IS the fault.
+            bool kerb = _car.Doing == RoadCar.Manoeuvre.PullOut || _car.Doing == RoadCar.Manoeuvre.PullIn;
+            _kerbFor = kerb ? _kerbFor + Time.deltaTime : 0f;
             bool waiting = _car.InQueue || _car.Why.StartsWith("red") || _car.Why.StartsWith("yellow") ||
-                           _car.Doing == RoadCar.Manoeuvre.PullOut || _car.Doing == RoadCar.Manoeuvre.PullIn;
+                           (kerb && _kerbFor < kerbPatience);
             if (busy && !waiting && Mathf.Abs(_car.Speed) < 0.3f) _stillFor += Time.deltaTime;
             else { _stillFor = 0f; _saidStuck = 0f; }
 

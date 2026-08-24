@@ -1574,7 +1574,16 @@ namespace RoadDemo
                 }
             }
 
-            bool closing = !_coverSpot.HasValue && (_wasClosing ? dist > range * RangeFactor : dist > range * 1.15f);
+            // A MAN ON A MACHINE IS NOT CHASED ON FOOT. Shot at from a passing
+            // motorcycle, a crew used to set off after it - five men walking down the
+            // street behind a bike doing fifty, for as long as it kept moving. Nobody
+            // does that. What a man does is get behind something and fire back, which is
+            // exactly what he does here with the closing taken away: the cover look above
+            // still runs, and the shooting below still runs the moment the machine comes
+            // back into his reach.
+            bool mounted = Target.Riding || Target.Astride;
+            bool closing = !mounted && !_coverSpot.HasValue &&
+                           (_wasClosing ? dist > range * RangeFactor : dist > range * 1.15f);
             _wasClosing = closing;
             if (closing)
             {

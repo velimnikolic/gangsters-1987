@@ -778,6 +778,12 @@ namespace RoadDemo
                 // lane, with air off the car in front (DriverProfile.Getaway). Cleared
                 // again in Finish, so a machine on its stand is never hot.
                 bike.Hot = true;
+                // AND NOT BACK THE WAY IT CAME. Home is behind the mark, so the shortest
+                // route home is a turn in the road and a second ride past the men who
+                // have just been shot at - which is not a getaway, it is a second pass
+                // nobody ordered. The turn is taken away for this leg only; the machine
+                // rides on and comes home round the block.
+                bike.NoTurnBack = true;
                 bike.RideTo(raid.Home);
                 Step(raid, Stage.Returning, "coming back",
                     Budget(Vector3.Distance(bike.Position, raid.Home), RidingPace));

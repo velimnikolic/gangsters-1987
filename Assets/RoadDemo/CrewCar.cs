@@ -51,6 +51,10 @@ namespace RoadDemo
         public bool Hot;
 
         const float PassOvershoot = 22f;    // metres past the target before the turn-round
+
+        /// <summary>How far off a carriageway the mark may stand and still have a street
+        /// the pass can be driven down (CrewBike.PassReach's opposite number).</summary>
+        static readonly float[] PassReach = { 14f, 30f, 60f };
         const float PassSpeed = 9f;         // metres a second alongside the mark
 
         int _passDir = 1;
@@ -272,8 +276,23 @@ namespace RoadDemo
                 GoFree(new Vector3(t.x, RoadY, t.z) + f * PassOvershoot);
                 return;
             }
-            var road = Net.Locate(t, out float ts, out float td, within: 14f);
-            if (road == null) { ParkNear(t); return; }
+            // the same widening the bike's pass does, and for the same reason: a crew at
+            // a frontage stands further than fourteen metres off the carriageway, and
+            // ParkNear would clear the mark and end the drive-by before a round was fired
+            Carriageway road = null;
+            float ts = 0f, td = 0f;
+            foreach (float within in PassReach)
+            {
+                road = Net.Locate(t, out ts, out td, within);
+                if (road != null) break;
+            }
+            if (road == null)
+            {
+                var f0 = t - Position; f0.y = 0f;
+                if (f0.sqrMagnitude < 1e-4f) f0 = Forward;
+                GoFree(new Vector3(t.x, RoadY, t.z) + f0.normalized * PassOvershoot);
+                return;
+            }
             // which way along the target's road this pass runs: on it already, the way
             // the passes alternate; coming from elsewhere, the lane on the mark's side
             int dir = Road == road ? _passDir : (td >= 0f ? 1 : -1);
@@ -282,7 +301,7 @@ namespace RoadDemo
             if (lane == null) { ParkNear(t); return; }
             _passDir = lane.Heading;
             var goal = road.Pose(endS, lane.Offset);
-            GoTo(goal, park: false, standOff: 0f, stopAtGoal: false);
+            GoTo(goal, park: false, standOff: 0f, stopAtGoal: false, wantHeading: lane.Heading);
         }
 
         protected override void OnArrived()

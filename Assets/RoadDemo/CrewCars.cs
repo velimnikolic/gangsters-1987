@@ -102,6 +102,20 @@ namespace RoadDemo
         /// <summary>How far apart the tries are along the kerb.</summary>
         const float Step = 3f;
 
+        /// <summary>Metres of empty kerb left at each end of the slot.
+        ///
+        /// It was a metre and a half, on the reasoning that a metre and a half is room to
+        /// pull out. It is not. Leaving a slot is a DIAGONAL - the flank has to be past
+        /// what is parked ahead by the time the nose is level with it - and on a wide
+        /// street the swing from the kerb to the lane is four metres of lateral, which
+        /// the turning circle spreads over seven metres of road. Parked a metre and a
+        /// half behind the outfit's own motorcycle, a crew car ordered across town never
+        /// got out of its slot at all: it reversed, crept up, reversed again, and held
+        /// the running lane beside it for a minute and a half of the run that found it.
+        /// Four metres is the swing's first three plus a margin - still a tight kerb, and
+        /// one a car can actually leave.</summary>
+        const float PullOutRoom = 4f;
+
         /// <summary>How far off the carriageway the man may stand and still have this
         /// road count as "his": the pavement's width and a stride.</summary>
         const float OffRoad = 14f;
@@ -156,8 +170,8 @@ namespace RoadDemo
                 {
                     if (side == 1 && out_ <= 0f) continue;
                     float s = Mathf.Clamp(s0 + (side == 0 ? out_ : -out_), lo, hi);
-                    // a gap of a metre and a half at each end: room to pull out
-                    if (road.Busy(null, s - halfLength - 1.5f, s + halfLength + 1.5f, d0, d1)) continue;
+                    // and room at each end to get out of it again (PullOutRoom)
+                    if (road.Busy(null, s - halfLength - PullOutRoom, s + halfLength + PullOutRoom, d0, d1)) continue;
                     var p = road.Pose(s, kerb);
                     pos = new Vector3(p.x, near.y, p.z);
                     rot = Quaternion.LookRotation(road.Axis * heading, Vector3.up);
