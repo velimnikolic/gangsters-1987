@@ -71,14 +71,29 @@ namespace RoadDemo
             /// the bearing of the map's own corner.</summary>
             public bool HasLastSeen;
 
-            /// <summary>While this crew has men out running after somebody it can no
-            /// longer see: the moment they give it up. Zero when nobody is chasing.</summary>
+            /// <summary>The backstop on the leg of a search running now: the moment the
+            /// men give up walking to the place, whether they got there or not. Zero when
+            /// no leg is out.</summary>
             public float ChaseUntil;
 
-            /// <summary>When this crew last ran after somebody - a crew does not set off
-            /// again the instant it has given up, or a machine going past twice makes a
-            /// mob that never stops running.</summary>
+            /// <summary>When this crew last laid a leg of a search.</summary>
             public float ChasedAt = -1000f;
+
+            /// <summary>Where the crew stood when the SEARCH began - its own door. Every
+            /// leg is measured from here (SearchRange), and it is where the men are
+            /// walked back to when the search is given up. Set on the first leg and kept
+            /// for all of them: measuring from wherever the last leg ended would let one
+            /// glimpse after another carry a crew across the town in fifty-metre
+            /// steps.</summary>
+            public Vector3 SearchHome;
+
+            /// <summary>Whether <see cref="SearchHome"/> is a place and not the origin -
+            /// a search is running.</summary>
+            public bool Searching;
+
+            /// <summary>While the men who got to the place stand there looking: the
+            /// moment the search is given up. Zero while they are still running.</summary>
+            public float LookUntil;
 
             /// <summary>Whether this fight was ORDERED rather than picked up.
             ///
@@ -223,32 +238,45 @@ namespace RoadDemo
         // TickCombat), and what the crew is left holding is the last place it saw him
         // and the way he was pointing. A few of them run at THAT.
 
+        /// <summary>Seconds a MAN keeps his gun on a mark he can no longer see. Long
+        /// enough to carry him past a van or the corner of a building, short enough that
+        /// he is never walking at somebody he lost - the crew's own memory of where the
+        /// man went is the chase below, and that is a remembered point, not a live one.
+        /// </summary>
+        const float BlindGrace = 0.6f;
+
         /// <summary>Seconds out of sight before the crew sets off after him. Not nought:
         /// a machine going past at fifty flickers in and out of sight behind every van
         /// on the street, and a chase that starts on the first flicker starts six times
         /// in a firefight.</summary>
         public static float ChaseAfter = 1.5f;
 
-        /// <summary>How long they run before giving it up.</summary>
-        public static float ChaseSeconds = 10f;
+        /// <summary>The longest ONE LEG of a search may take - a backstop and nothing
+        /// more. A leg ends when the men get where they are going; this ends one whose
+        /// walk never arrives (a point behind a shutter, a man wedged on a kerb).</summary>
+        public static float ChaseSeconds = 25f;
 
-        /// <summary>How far up his own heading they reckon he went. A guess, and meant
-        /// to be one - it is the length of street a man can still see down, not
-        /// knowledge of where the machine actually turned.</summary>
-        public static float ChaseAhead = 20f;
+        /// <summary>How long a man stands at the place he last saw somebody, looking,
+        /// before the search is given up and he turns for home.</summary>
+        public static float ChaseLook = 2.5f;
 
-        /// <summary>The furthest from where the crew stands a chase will take a man. A
-        /// crew that empties itself across the quarter after one motorcycle has left its
-        /// own door unguarded, which is the fault this whole range business exists to
-        /// stop (see <see cref="SightRange"/>).</summary>
-        public static float ChaseRange = 45f;
+        /// <summary>How far from where the search STARTED it is allowed to get. Each
+        /// fresh sighting lays a new leg from wherever the men have got to, so a crew
+        /// that keeps catching glimpses can be drawn a long way down the quarter - but
+        /// not across the town: past this they stop, whatever they can see, and go back
+        /// to their own door.</summary>
+        public static float SearchRange = 150f;
 
         /// <summary>How many of them go. Some run, the rest hold the door - a crew does
         /// not move as one for this.</summary>
         public static int Chasers = 3;
 
-        /// <summary>Seconds before the same crew will run after anybody again.</summary>
-        public static float ChaseAgainAfter = 30f;
+        /// <summary>Seconds before the same crew lays another leg. Short: this is the
+        /// gap between the legs OF ONE SEARCH - they lose him behind a corner, run to
+        /// the corner, see him again, and go again - and not a cooling-off. What stops
+        /// a search going on for ever is <see cref="SearchRange"/> and nothing else.
+        /// </summary>
+        public static float ChaseAgainAfter = 2f;
 
         /// <summary>The men out running after somebody nobody can see. Short-lived and
         /// held here rather than on the man, exactly as a raid is (DemoCrews.DriveBy):
@@ -420,14 +448,66 @@ namespace RoadDemo
             {
                 var bike = Bikes[i];
                 if (bike == null || bike.Tf == null) continue;
-                // a bike whose rider has been shot off it is a bike on its side in the
-                // road: it stops where it is, and everybody on it comes off with it -
-                // the man behind him does NOT take the bars (the raid ends the same
+                // A machine whose rider is shot goes DOWN, and everybody on it goes with
+                // it - the man behind him does not take the bars (the raid ends the same
                 // frame, DemoCrews.Over). Two men on one machine is one bullet from
                 // being two men on the road, and that is the price of the order.
-                if (bike.Rider != null && bike.Rider.Dead) bike.DismountAll();
+                //
+                // It used to be done here, and wrongly: DismountAll set them both on
+                // their feet beside a motorcycle that then stood upright in the middle of
+                // the street with nobody holding it, and the dead one was hidden where he
+                // stood a few seconds later (ReportDeaths). The machine owns the whole
+                // business now - who is thrown, who dies, whether it goes over and
+                // whether it burns - because it is the only thing that knows how fast it
+                // was going (CrewBike.TickRiders).
                 bike.Tick(dt);
+
+                // and the tank goes, a few seconds after it caught. Not the machine's to
+                // set off: an explosion is a thing that happens to whoever is standing
+                // near it, and only the arena knows who that is.
+                if (bike.TakeBlast())
+                {
+                    if (DriveTrace.On)
+                        DriveTrace.Event("crewbike", bike.DisplayName, "the tank went up");
+                    CrewOverlay.Announce("THE TANK'S GONE UP", 4f, new Color(1f, 0.55f, 0.3f));
+                    Explosion.Blow(bike.Position + Vector3.up * 0.4f, this, null,
+                        bike.Owner != null ? bike.Owner.Faction : 0, GroundY);
+                    BurntOut(bike);
+                }
+
+                // a man the spill has finished with: on his feet in the road, or lying
+                // where he stopped. Either way he is the crew's again and not the bike's.
+                for (var landed = bike.TakeLanded(); landed != null; landed = bike.TakeLanded())
+                {
+                    if (landed.Dead)
+                    {
+                        // the pool goes where he ACTUALLY lies. At the moment the round
+                        // landed he was on a moving machine, so it was held back then
+                        // (Resolve, floor: false) - laid there it would be a stain in the
+                        // middle of a carriageway thirty metres from the body.
+                        CrewGore.Death(landed, GroundY);
+                        continue;
+                    }
+                    Rejoin(landed);
+                }
             }
+        }
+
+        /// <summary>A machine that has burnt out is off the outfit's books: struck out
+        /// of the ledger, and the wreck left lying in the road as the scene's own.
+        ///
+        /// Without the first half the book still says the outfit owns a motorcycle, and
+        /// StandLedgerBikes - which stands one machine per line of the book, outside the
+        /// front - quietly puts a brand new one on its stand within the second. The
+        /// player watches his machine explode and sees another appear at his door.</summary>
+        void BurntOut(CrewBike bike)
+        {
+            if (bike == null) return;
+            var roster = PersonnelDirector.Instance != null ? PersonnelDirector.Instance.Roster : null;
+            if (roster != null && bike.ItemId >= 0) RosterOps.LoseItem(roster, bike.ItemId);
+            bike.ItemId = -1;
+            bike.Owner = null;
+            _ledgerBikes.Remove(bike);
         }
 
         // Deserters run their own course: ticked here, off the street once they have
@@ -454,6 +534,12 @@ namespace RoadDemo
             {
                 var (man, at) = _deaths[i];
                 if (Time.time < at) continue;
+                // NOT WHILE HE IS STILL COMING OFF A MOTORCYCLE. The books are told five
+                // seconds after a man dies and the body is hidden with them - which,
+                // for a man shot off a pillion, used to fire while he was in the air or
+                // still sliding. He simply vanished, mid-fall, and the chalk was drawn
+                // wherever he happened to be at that instant.
+                if (man != null && man.Spilling) continue;
                 _deaths.RemoveAt(i);
                 if (man == null) continue;
                 // the body is taken away; the police's chalk stays where it lay (a man
@@ -2140,8 +2226,18 @@ namespace RoadDemo
 
         void SetTarget(Unit unit, Unit target) => SetTarget(unit, target, ordered: false);
 
+        /// <summary>How far round an ordered job the traffic is thinned, and for how
+        /// long. Wide enough to take in the street the job is on and the mouths of the
+        /// ones either side of it; long enough for a crew to walk in, do it and leave.
+        /// See StreetTraffic.Quiet - it is a stage direction and nothing more.</summary>
+        public static float QuietRadius = 80f, QuietSeconds = 90f;
+
         void SetTarget(Unit unit, Unit target, bool ordered)
         {
+            // an ordered job clears its own street: the player asked for this fight, so
+            // the town is not left putting a bus between him and it
+            if (ordered && target != null)
+                StreetTraffic.Quiet(target.Position, QuietRadius, QuietSeconds);
             unit.TargetUnit = target;
             unit.OrderedFight = ordered;
             unit.SawEnemyAt = Time.time;   // the fight starts with them in sight
@@ -2149,12 +2245,19 @@ namespace RoadDemo
             // somebody went is about the man it was watching, and it does not carry over
             unit.HasLastSeen = false;
             unit.LastSeenDir = Vector3.zero;
+            unit.Searching = false;
+            unit.LookUntil = 0f;
+            // AN ORDERED JOB REACHES; A FIGHT PICKED UP DOES NOT. The player's KILL
+            // carries across the quarter, but a crew that has just been shot at squares
+            // up only on what it can SEE - handing every man the nearest of them at any
+            // range was how one pass of a drive-by put a mob on a car it had lost.
+            float reach = ordered ? float.MaxValue : SightRange;
             foreach (var man in unit.All())
                 // riding - in a car's seat or on a machine's saddle - is not a man who
                 // walks up to somebody and opens fire; his gun is the vehicle's business
                 // (TickRiders, CrewBike.TickGuns)
                 if (!man.Dead && !IsAboard(man) && !man.Riding)
-                    man.Engage(BestMark(target, man.Tf.position, float.MaxValue));
+                    man.Engage(BestMark(target, man.Tf.position, reach, sighted: !ordered));
         }
 
         static CrewWalker NearestStanding(Unit unit, Vector3 from) =>
@@ -2166,7 +2269,16 @@ namespace RoadDemo
         /// enemies while the one still shooting stands his ground gets picked apart by
         /// him, which is what the player watched. Only with nobody of them left
         /// fighting does the nearest runner do.</summary>
-        static CrewWalker BestMark(Unit unit, Vector3 from, float within)
+        static CrewWalker BestMark(Unit unit, Vector3 from, float within) =>
+            BestMark(unit, from, within, sighted: true);
+
+        /// <summary>The same, saying whether the man has to be able to SEE him. He
+        /// does, everywhere the crew picked the fight up by watching - a wall between
+        /// them and he is not a mark, whatever the range says. The one exception is a
+        /// job the PLAYER ordered: the crew was given an address and closes on it, and
+        /// asking a man to see through the block he is walking round would cancel the
+        /// order at the first corner.</summary>
+        static CrewWalker BestMark(Unit unit, Vector3 from, float within, bool sighted)
         {
             CrewWalker fighting = null, running = null;
             float fd = within * within, rd = within * within;
@@ -2174,10 +2286,67 @@ namespace RoadDemo
             {
                 if (m.Dead || !m.Tf) continue;
                 float d = (m.Tf.position - from).sqrMagnitude;
-                if (m.Panicked || m.Retreating) { if (d < rd) { rd = d; running = m; } }
-                else if (d < fd) { fd = d; fighting = m; }
+                bool runner = m.Panicked || m.Retreating;
+                // the range first and the walls after: a look down the sight line is
+                // several cells of the ground walked, and most men are out of range
+                if (d >= (runner ? rd : fd)) continue;
+                if (sighted && !InSight(from, m.Tf.position)) continue;
+                if (runner) { rd = d; running = m; }
+                else { fd = d; fighting = m; }
             }
             return fighting ?? running;
+        }
+
+        /// <summary>Is there anything but air between these two - can the first see the
+        /// second? The city's walls only (WalkObstacles.Sees): a bin is cover, not a
+        /// hiding place.</summary>
+        static bool InSight(Vector3 eye, Vector3 mark) => WalkObstacles.Sees(eye, mark);
+
+        /// <summary>Can anybody of this crew see that man, at all? What a crew SHOT AT
+        /// is asked before it is handed the shooter's whole crew as its enemy: a round
+        /// out of a car going past the end of the street is a bang and a man down, not
+        /// an address. Without this, one pass of a drive-by gave every mob in the
+        /// quarter a live handle on the outfit and they came across the city for it.</summary>
+        static bool Spotted(Unit unit, CrewWalker man)
+        {
+            if (unit == null || man == null || man.Tf == null) return false;
+            foreach (var a in unit.All())
+            {
+                if (a.Dead || a.Tf == null) continue;
+                if ((a.Tf.position - man.Tf.position).sqrMagnitude > SightRange * SightRange) continue;
+                if (InSight(a.Tf.position, man.Tf.position)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>The enemy crew nearest THIS MAN that he can actually see - his own
+        /// eyes, not his crew's. What a man handed back into the street on his own asks
+        /// (a rider whose machine went down under him): the crew he belongs to may be
+        /// two hundred metres away and know nothing about it.
+        ///
+        /// The law is left out. A man does not pick a fight with the police because he
+        /// can see one - that is PoliceDispatch's business and the warning shout's.</summary>
+        Unit SeenBy(CrewWalker man)
+        {
+            if (man == null || man.Tf == null || man.Dead) return null;
+            var mine = UnitOf(man);
+            Unit best = null;
+            float bestD = SightRange * SightRange;
+            foreach (var other in Units)
+            {
+                if (other == mine || other.Wiped || other.IsPolice) continue;
+                if (mine != null && other.Faction == mine.Faction) continue;
+                foreach (var b in other.All())
+                {
+                    if (b.Dead || b.Tf == null || IsAboard(b)) continue;
+                    float d = (b.Tf.position - man.Tf.position).sqrMagnitude;
+                    if (d >= bestD) continue;
+                    if (!InSight(man.Tf.position, b.Tf.position)) continue;
+                    bestD = d;
+                    best = other;
+                }
+            }
+            return best;
         }
 
         /// <summary>The nearest man of that crew to this point, out to a limit. Past the
@@ -2206,6 +2375,8 @@ namespace RoadDemo
                 {
                     unit.TargetUnit = null;
                     unit.OrderedFight = false;
+                    unit.Searching = false;
+                    unit.LookUntil = 0f;
                     foreach (var man in unit.All()) man.Disengage();
                 }
 
@@ -2217,6 +2388,8 @@ namespace RoadDemo
                     unit.Retreated = true;
                     var threat = unit.TargetUnit != null ? unit.TargetUnit.Position : StreetAlarm.Incident;
                     unit.TargetUnit = null;
+                    unit.Searching = false;
+                    unit.LookUntil = 0f;
                     foreach (var man in unit.All())
                         if (!man.Dead && !IsAboard(man)) man.Retreat(threat);
                 }
@@ -2270,10 +2443,12 @@ namespace RoadDemo
                 {
                     if (man.Dead || !man.Armed || man.Panicked || IsAboard(man) ||
                         man.Riding) continue;
-                    var mark = BestMark(unit.TargetUnit, man.Tf.position, reach);
+                    var mark = BestMark(unit.TargetUnit, man.Tf.position, reach,
+                                        sighted: !unit.OrderedFight);
                     if (mark != null && mark.Tf != null)
                     {
                         anySeen = true;
+                        man.SawMarkAt = Time.time;
                         float d = (mark.Tf.position - man.Tf.position).sqrMagnitude;
                         if (d < seenNear) { seenNear = d; seenAt = mark.Tf.position; }
                     }
@@ -2292,6 +2467,11 @@ namespace RoadDemo
                     // chase below, and that is laid against a remembered place.
                     if (man.Target != null && !man.Target.Dead && mark == null)
                     {
+                        // not on the frame he disappears. A fight runs past parked vans
+                        // and round the corners of buildings, and a man whose gun came
+                        // down the instant a mark stepped behind one and up again the
+                        // instant he stepped out is a man twitching, not fighting.
+                        if (Time.time - man.SawMarkAt < BlindGrace) continue;
                         man.Disengage();
                         continue;
                     }
@@ -2329,18 +2509,39 @@ namespace RoadDemo
                 StartChase(unit);
                 if (unit.OrderedFight) continue;   // a job stands until it is done
                 if (Time.time - unit.SawEnemyAt < LoseSight) continue;
+                // MEN ARE OUT LOOKING FOR HIM. The fight is not written off under their
+                // feet - it is what they are asking BestMark about every frame they run,
+                // and dropping it eight seconds in was what left them running at nothing
+                // and stopping the moment somebody went behind a building. The search
+                // ends it, when it ends (EndSearch).
+                //
+                // Unless there is no search left to end it: nobody out on their feet and
+                // the last leg longer ago than a leg can last (a crew that got into a car
+                // mid-search, one whose runners were all shot). Without this the fight
+                // stands for the rest of the scene on a crew that is not looking for
+                // anybody.
+                if (unit.Searching && !AnyChasing(unit) &&
+                    Time.time - unit.ChasedAt > ChaseSeconds) EndSearch(unit);
+                if (unit.Searching) continue;
                 unit.TargetUnit = null;
                 foreach (var man in unit.All()) if (!Chasing(man)) man.Disengage();
             }
         }
 
-        /// <summary>Send a few of them running after somebody they can no longer see.
+        /// <summary>Send a few of them running to THE PLACE THEY LAST SAW HIM.
         ///
         /// The whole discipline of this is in what it is NOT given: the enemy's crew is
-        /// never asked where it is. The men are sent to a POINT, worked out once, from
-        /// the last place anybody actually saw him and the way he was pointing - so if
-        /// the machine took a turning they never saw, they run past the mouth of it and
-        /// stand there looking, which is what the player asked for.</summary>
+        /// never asked where it is. The men are sent to a point, worked out once, from
+        /// the last place anybody actually laid eyes on him - so if the machine took a
+        /// turning they never saw, they run to the mouth of it and stand there looking,
+        /// which is what the player asked for.
+        ///
+        /// A search is made of LEGS. They run to the point; if they see him from there
+        /// the fight starts again and, when they lose him again, the next leg is laid
+        /// from the new last-seen place - round the corner, down the next street, as
+        /// long as he keeps showing himself. If they get there and there is nothing to
+        /// see, they stand a moment and go home. Nothing carries them past
+        /// <see cref="SearchRange"/> from the door they started at.</summary>
         void StartChase(Unit unit)
         {
             if (unit == null || unit.TargetUnit == null) return;
@@ -2353,17 +2554,23 @@ namespace RoadDemo
             if (unit.Faction == 0 || unit.IsPolice) return;
             if (unit.Retreated || unit.Car != null) return;
             if (!unit.HasLastSeen) return;                          // never laid eyes on him
-            if (unit.LastSeenDir.sqrMagnitude < 0.01f) return;      // never saw him move
             if (Time.time - unit.SawEnemyAt < ChaseAfter) return;   // he may only be behind a van
-            if (Time.time - unit.SawEnemyAt > LoseSight) return;    // too late: he is long gone
             if (Time.time - unit.ChasedAt < ChaseAgainAfter) return;
+            if (AnyChasing(unit)) return;                           // a leg is already running
 
-            var home = unit.Position;
-            var after = unit.LastSeenPos + unit.LastSeenDir * ChaseAhead;
-            // never further from the crew's own door than the chase is allowed to go
-            var reach = after - home;
+            // where this search started - the door they are to end up back at
+            if (!unit.Searching)
+            {
+                unit.SearchHome = unit.Position;
+                unit.Searching = true;
+            }
+
+            var after = unit.LastSeenPos;
+            var reach = after - unit.SearchHome;
             reach.y = 0f;
-            if (reach.magnitude > ChaseRange) after = home + reach.normalized * ChaseRange;
+            // too far from their own door: the search is over, whatever they think they
+            // saw. They are walked back by the tether the moment nobody is chasing.
+            if (reach.magnitude > SearchRange) { EndSearch(unit); return; }
 
             int sent = 0;
             foreach (var man in unit.All())
@@ -2374,8 +2581,13 @@ namespace RoadDemo
                 if (OnRaid(man) || Chasing(man)) continue;
                 man.Disengage();
                 // spread out across the street rather than running in one another's
-                // footprints - three men on one point is a queue, not a chase
-                var across = Vector3.Cross(Vector3.up, unit.LastSeenDir).normalized;
+                // footprints - three men on one point is a queue, not a chase. Across
+                // the way he was last going when there is one, else across the way they
+                // are running.
+                var along = unit.LastSeenDir.sqrMagnitude > 0.01f
+                    ? unit.LastSeenDir
+                    : (after - man.Tf.position).normalized;
+                var across = Vector3.Cross(Vector3.up, along).normalized;
                 var spot = after + across * ((sent - 1) * 1.6f);
                 // the stagger is COUNTED, not drawn. A draw here would be three more
                 // pulls on the shared stream every time a machine went past a door,
@@ -2388,7 +2600,8 @@ namespace RoadDemo
                 _chasers.Add(man);
                 sent++;
             }
-            if (sent == 0) return;
+            if (sent == 0) { EndSearch(unit); return; }
+            unit.LookUntil = 0f;
             unit.ChaseUntil = Time.time + ChaseSeconds;
             unit.ChasedAt = Time.time;
             if (DriveTrace.On)
@@ -2397,18 +2610,57 @@ namespace RoadDemo
                 DriveTrace.Str(sb, "who", unit.GangName);
                 DriveTrace.Int(sb, "men", sent);
                 DriveTrace.Vec(sb, "after", after);
-                DriveTrace.Num(sb, "from", Vector3.Distance(home, after));
+                DriveTrace.Num(sb, "from", reach.magnitude);
                 DriveTrace.Row("chase", sb.ToString());
             }
         }
 
-        /// <summary>The chase, frame by frame. It ends three ways and all of them are
-        /// endings rather than faults: they see him again (and it becomes a fight), they
-        /// get where they were going (and stand looking), or the time runs out.
+        /// <summary>Has this crew anybody out on their feet after somebody?</summary>
+        bool AnyChasing(Unit unit)
+        {
+            if (unit == null) return false;
+            foreach (var man in unit.All()) if (Chasing(man)) return true;
+            return false;
+        }
+
+        /// <summary>The search is over: the fight is written off, the guns come down,
+        /// and the crew WALKS BACK to the door it set off from.
+        ///
+        /// The march home is not the tether's to do. The tether hangs a crew on its own
+        /// lieutenant, and he runs with them - so a crew that had chased sixty metres
+        /// down the street was simply moored there, and three mobs ended a run standing
+        /// wherever the last thing they saw had gone. The search remembers the door
+        /// (SearchHome) precisely so somebody can send them back to it.</summary>
+        void EndSearch(Unit unit)
+        {
+            if (unit == null) return;
+            bool searched = unit.Searching;
+            unit.Searching = false;
+            unit.LookUntil = 0f;
+            unit.ChaseUntil = 0f;
+            unit.HasLastSeen = false;
+            unit.LastSeenDir = Vector3.zero;
+            if (!unit.OrderedFight) unit.TargetUnit = null;
+            foreach (var man in unit.All())
+                if (!man.Dead && !Chasing(man) && man.Target != null) man.Disengage();
+            if (!searched || unit.OrderedFight || unit.Retreated || unit.Car != null) return;
+            var strayed = unit.Position - unit.SearchHome;
+            strayed.y = 0f;
+            // a crew that never left its door is left where it stands: a march order laid
+            // on men who are already home is three men shuffling on the spot
+            if (strayed.sqrMagnitude > 25f) MarchTo(unit, unit.SearchHome);
+        }
+
+        /// <summary>The search, frame by frame. A leg ends four ways: they see him
+        /// (and it is a fight again, and the next loss of sight lays the next leg), they
+        /// get to the place and nothing is there (they stand looking, then go home), the
+        /// walk never arrives (ChaseSeconds), or they have been drawn SearchRange from
+        /// their own door and stop wherever they are.
         ///
         /// Nothing here reads the enemy's position. The only question asked of him is
         /// whether he is IN SIGHT of the man running - which is the same question every
-        /// other man of the crew is asked, through the same door (BestMark).</summary>
+        /// other man of the crew is asked, through the same door (BestMark), walls and
+        /// all.</summary>
         void TickChase()
         {
             if (_chasers.Count == 0) return;
@@ -2420,30 +2672,42 @@ namespace RoadDemo
                 { _chaseDone.Add(man); continue; }
 
                 var unit = UnitOf(man);
-                if (unit == null || Time.time > unit.ChaseUntil)
-                { _chaseDone.Add(man); continue; }
+                // the search was given up this frame - by another of them getting to the
+                // end of it, or by the fight being dropped from under them
+                if (unit == null || !unit.Searching) { _chaseDone.Add(man); continue; }
 
-                // THE RUN OUTLIVES THE FIGHT. The crew writes the fight off after
-                // LoseSight - eight seconds - and the chase starts a second and a half
-                // into that, so ending it with the fight would cut every chase down to
-                // six and a half seconds whatever ChaseSeconds said. A man already
-                // running down a street does not stop dead because the men back at the
-                // door have lowered their guns; he finishes the length of street he
-                // set off down. There is simply nobody left to look for by then.
+                var drawn = man.Tf.position - unit.SearchHome;
+                drawn.y = 0f;
+                if (drawn.magnitude > SearchRange) { EndSearch(unit); _chaseDone.Add(man); continue; }
+
                 var mark = unit.TargetUnit != null
                     ? BestMark(unit.TargetUnit, man.Tf.position, SightRange) : null;
                 if (mark != null)
                 {
-                    // there he is: the chase is over and a fight has started
+                    // there he is: this leg is over and a fight has started. The search
+                    // itself is not - lose him again and the next leg goes from wherever
+                    // he was standing when they last had eyes on him.
                     unit.SawEnemyAt = Time.time;
+                    unit.LookUntil = 0f;
+                    man.SawMarkAt = Time.time;
                     man.Engage(mark);
                     _chaseDone.Add(man);
                     continue;
                 }
 
-                // got there, and nothing to see: he stands a moment looking down the
-                // street before he turns round. The tether walks him home after that.
-                if (!man.HasOrder) { man.Linger(2.5f); _chaseDone.Add(man); }
+                // got there (or the walk gave out): he stands in the road looking down
+                // it. The crew gets ChaseLook of that between them, and if nobody has
+                // seen anything by the end of it the search is over and the tether walks
+                // them back to their own door.
+                if (!man.HasOrder || Time.time > unit.ChaseUntil)
+                {
+                    man.Hustle = false;
+                    man.Urgent = false;
+                    if (unit.LookUntil <= 0f) unit.LookUntil = Time.time + ChaseLook;
+                    if (Time.time < unit.LookUntil) continue;
+                    EndSearch(unit);
+                    _chaseDone.Add(man);
+                }
             }
             foreach (var man in _chaseDone) EndChase(man);
         }
@@ -2984,7 +3248,11 @@ namespace RoadDemo
                     if (a.Dead) continue;
                     // a man in a car is just a car going by until somebody shoots
                     foreach (var b in other.All())
-                        if (!b.Dead && !IsAboard(b) && (a.Tf.position - b.Tf.position).sqrMagnitude < r2)
+                        // close enough AND in view: a crew on the far side of a block of
+                        // flats has not "seen the outfit walk up", whatever the tape says
+                        if (!b.Dead && !IsAboard(b) &&
+                            (a.Tf.position - b.Tf.position).sqrMagnitude < r2 &&
+                            InSight(a.Tf.position, b.Tf.position))
                             return other;
                 }
             }
@@ -3083,8 +3351,14 @@ namespace RoadDemo
             // it is under has stopped holding its fire
             if (victimUnit != null && shooterUnit != null && !shooterUnit.IsPolice)
                 victimUnit.ProvokedAt = Time.time;
+            // AND THE FIGHT ITSELF IS ONLY EVER PICKED UP OFF SOMEBODY IN SIGHT. Being
+            // shot at is provocation (above) and provocation is answered by looking
+            // round for whoever is there to answer - it is not knowledge of who fired.
+            // A car that shot up a doorway and turned the corner is gone; the crew it
+            // shot at keeps its guns up and its temper, and finds nobody.
             if (victimUnit != null && shooterUnit != null && victimUnit.TargetUnit == null &&
-                (IsAboard(target) || Time.time - victimUnit.OrderedAt > HoldFireAfterOrder))
+                (IsAboard(target) || Time.time - victimUnit.OrderedAt > HoldFireAfterOrder) &&
+                Spotted(victimUnit, shooter))
                 SetTarget(victimUnit, shooterUnit);
 
             if (DriveTrace.On)
@@ -3113,8 +3387,11 @@ namespace RoadDemo
                 // him. This is the whole of the damage model's input: shoot at men in a
                 // car for long enough and the car is what you hit (CrewCar.TakeRound).
                 var carriage = IsAboard(target) ? CarWith(target) : null;
+                var machine = carriage == null && target.Riding ? BikeWith(target) : null;
                 if (carriage != null && Random.value < RoundsIntoTheTin)
                     PutRoundIntoTin(carriage, muzzle);
+                else if (machine != null && Random.value < RoundsIntoTheMachine)
+                    PutRoundIntoMachine(machine, muzzle);
                 else
                     Miss(muzzle, target);
                 target.UnderFire();
@@ -3125,8 +3402,10 @@ namespace RoadDemo
             if (DriveTrace.On)
                 DriveTrace.Event("hit", shooter.DisplayName, target.DisplayName,
                     $"\"dist\":{dist:F1},\"dead\":{(target.Dead ? "true" : "false")}");
-            // a man hit in the car bleeds in the car - nothing on the road outside it
-            CrewGore.Hit(target, from, GroundY, floor: !IsAboard(target));
+            // a man hit in the car bleeds in the car - nothing on the road outside it,
+            // and the same for a man on a moving motorcycle: what lands on the road
+            // lands where he does (TickBikes, when his spill settles)
+            CrewGore.Hit(target, from, GroundY, floor: !IsAboard(target) && !target.Riding);
             // a man one hit from the ground may lose his nerve and run - not all do
             // (not out of a car: a rider has nowhere to run to)
             if (!target.Dead)
@@ -3139,7 +3418,7 @@ namespace RoadDemo
             }
             else
             {
-                CrewGore.Death(target, GroundY, floor: !IsAboard(target));
+                CrewGore.Death(target, GroundY, floor: !IsAboard(target) && !target.Riding);
                 _deaths.Add((target, Time.time + DeathReportDelay));
                 StreetAlarm.Death(target.Tf.position,
                     target.Faction == StreetAlarm.PoliceFaction ? StreetAlarm.DeathOf.Officer : StreetAlarm.DeathOf.Gangster);
@@ -3192,6 +3471,64 @@ namespace RoadDemo
         /// <summary>Of the rounds that miss a man sat in a car, this many hit the car.
         /// Most of them: the car is the thing being aimed at, near enough.</summary>
         const float RoundsIntoTheTin = 0.72f;
+
+        /// <summary>And of the rounds that miss a man on a MOTORCYCLE, this many hit the
+        /// machine. Far fewer than a car takes, and it is the honest reason: a car is a
+        /// wall behind the man and a motorcycle is a frame between his knees, so most of
+        /// what goes past him goes past everything.</summary>
+        const float RoundsIntoTheMachine = 0.38f;
+
+        /// <summary>Which machine this man is riding, or null. A short list walked, like
+        /// CarWith: there are two or three of these in a city, not two hundred.</summary>
+        CrewBike BikeWith(CrewWalker man)
+        {
+            if (man == null) return null;
+            for (int i = 0; i < Bikes.Count; i++)
+            {
+                var bike = Bikes[i];
+                if (bike != null && (bike.Rider == man || bike.Pillion == man)) return bike;
+            }
+            return null;
+        }
+
+        /// <summary>A round that missed the man and found the machine under him. Where
+        /// along it decides what it cost - the middle is the tank and the engine, and
+        /// enough of those and it is alight (CrewBike.TakeRound).
+        ///
+        /// The trace carries the INPUT and not only the outcome, which is the lesson the
+        /// car's engine model had to be taught twice: a threshold nothing ever reaches
+        /// looks exactly like a rule that is working.</summary>
+        void PutRoundIntoMachine(CrewBike bike, Vector3 muzzle)
+        {
+            if (bike == null || bike.Tf == null) return;
+            var local = bike.Tf.InverseTransformPoint(muzzle);
+            float side = local.x >= 0f ? 1f : -1f;
+            // THE BODY, NOT THE BOX IT DRIVES IN. HalfWide and HalfLen are what the ROAD
+            // takes a machine to be - deliberately smaller than the mesh, so a bike takes
+            // a bike's room at a kerb (RoadBike.RoadBodyWide) - and a hole placed off
+            // them lands a third of the way INSIDE the bodywork instead of on its flank.
+            float flank = bike.Body != null ? bike.Body.HalfWidth : bike.HalfWide;
+            float along = bike.Body != null ? bike.Body.HalfLength : bike.HalfLen;
+            var at = bike.Tf.TransformPoint(new Vector3(
+                side * flank, Random.Range(0.35f, 0.95f),
+                Random.Range(-along * 0.9f, along * 0.9f)));
+            int before = bike.TankHits;
+            bike.TakeRound(at, muzzle);
+            if (DriveTrace.On)
+            {
+                var sb = DriveTrace.Take();
+                DriveTrace.Str(sb, "bike", bike.DisplayName);
+                DriveTrace.Bool(sb, "tank", bike.TankHits > before);
+                DriveTrace.Int(sb, "hits", bike.TankHits);
+                DriveTrace.Bool(sb, "burning", bike.Burning);
+                DriveTrace.Row("tin", sb.ToString());
+            }
+            if (ImpactPrefab)
+            {
+                var puff = Instantiate(ImpactPrefab, at, Quaternion.LookRotation(muzzle - at));
+                Destroy(puff, 1.2f);
+            }
+        }
 
         /// <summary>Where on the body a round that missed its man went in: the flank
         /// facing the shooter, somewhere along its length, at about the height of a door.
@@ -3557,6 +3894,11 @@ namespace RoadDemo
         /// pistol handed over on the armory page changes hands on the street too.</summary>
         void ArmFromLedger(Roster roster, CrewWalker man)
         {
+            // NOT WHILE HE IS ON A MACHINE. A saddle caps what a man may carry at the
+            // machine pistol (CrewBike.CapArms) and hands his own gun back when he gets
+            // off; a deal that lands mid-pass would put the rifle straight back in his
+            // fist and the cap would be undone by a page of the book being turned.
+            if (man.Riding) return;
             var item = CrewArms.FirearmOf(roster, man.CharacterId);
             var prefab = CrewArms.ModelFor(item);
             var kind = item != null ? item.Kind : EquipmentKind.Pistol;

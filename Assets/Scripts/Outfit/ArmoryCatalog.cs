@@ -69,6 +69,23 @@ namespace LivingCity.Outfit
                 "SM_Wep_SubMachineGun_01"),
         };
 
+        /// <summary>
+        /// The first shelf of wheels: what a crew rides to work in, cheapest first, and
+        /// the ladder is anonymity against money. The three pack bodies are what anybody
+        /// can buy; the fourth is the outfit's own.
+        ///
+        /// THE ARMOURED WAGON IS NO PACK BODY. It is Palm City's SUV rebuilt by
+        /// ArmouredSuvBuilder - gunmetal paint, plate over the sills and doors, a bull
+        /// bar, bars across every window and a plate on the roof - and it is priced as
+        /// the decision it is: 6,000 against a starting safe of 15,000
+        /// (Accounts.StartingSafe), which is the working car, the van and a tommy gun
+        /// all at once. It is the boss's car and the counter should make a player think
+        /// twice, not shrug.
+        ///
+        /// Like the tourer and the boxless moped, it names no model here and is found by
+        /// PortraitStudio.VehicleModelFor, the one table the catalogue's photograph and
+        /// the body at the kerb (CrewCars.BodyFor) both read.
+        /// </summary>
         public static readonly ArmoryItem[] Vehicles =
         {
             new ArmoryItem(EquipmentKind.Vehicle, "Jalopy", 800,
@@ -77,6 +94,8 @@ namespace LivingCity.Outfit
                 "The working car - seats a crew, raises no eyebrows."),
             new ArmoryItem(EquipmentKind.Vehicle, "Panel Van", 2_400,
                 "Slow and anonymous; swallows anything."),
+            new ArmoryItem(EquipmentKind.Vehicle, "Armoured Wagon", 6_000,
+                "Plated doors, barred glass, a bar on the nose - and every eye on the street."),
         };
 
         /// <summary>

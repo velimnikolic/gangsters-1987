@@ -29,6 +29,46 @@ namespace RoadDemo
     /// </summary>
     public sealed class RiderSpill : MonoBehaviour
     {
+        /// <summary>What a spill needs a body to be, and no more than that.
+        ///
+        /// There are two kinds of man on a motorcycle in this project and they animate
+        /// nothing like each other. The traffic's rider (<see cref="BikeOccupant"/>) is
+        /// a dumb body with a two-input mixer whose whole life is "play this clip". The
+        /// outfit's hood (<see cref="CrewWalker"/>) carries the crowd's nineteen-slot
+        /// pose graph, walks, fights and dies in it, and has to be handed back to it
+        /// afterwards. Everything a FALL needs is in this interface - somewhere to move,
+        /// a pose to switch off, and a way to put a clip on him - so the flight, the
+        /// road and the getting up are written once and both kinds spill the same.
+        ///
+        /// The bench next door (Assets/BikeDemo) is what the numbers were tuned against
+        /// with the dumb kind, and the street then gets exactly what the bench shows.</summary>
+        public interface IBody
+        {
+            /// <summary>The transform the spill throws. His root, not a bone.</summary>
+            Transform Root { get; }
+
+            /// <summary>The riding pose that has to stop writing him. May be null.</summary>
+            BikePose Pose { get; }
+
+            /// <summary>What is on him this instant, or null.</summary>
+            AnimationClip Playing { get; }
+
+            /// <summary>A one-shot that has run out and is being held on its last
+            /// frame - what "he has finished dying" means.</summary>
+            bool Finished { get; }
+
+            /// <summary>His death is ALREADY running - he was killed in the saddle by
+            /// something that owns his animation (a crew man's Kill plays the crowd's
+            /// own death). Such a man comes off limp whatever the dice say, and nothing
+            /// here plays a clip over the top of it.</summary>
+            bool AlreadyDying { get; }
+
+            /// <summary>Play this on him. A body that cannot (a man whose own death is
+            /// running) simply does not, which is this project's rule for every
+            /// optional asset applied to an optional actor.</summary>
+            void Play(AnimationClip clip, bool loop, float fade, float speed, float at);
+        }
+
         /// <summary>The four clips a spill can want. Any of them may be null - a missing
         /// one simply means that beat is played in whatever was already on him, the
         /// project's rule for every optional asset.</summary>
@@ -175,7 +215,7 @@ namespace RoadDemo
         /// over.</summary>
         public bool Settled { get; private set; }
 
-        BikeOccupant _man;
+        IBody _man;
         Wardrobe _wardrobe;
         Vector3 _vel, _spinAxis;
         Quaternion _face = Quaternion.identity;
@@ -191,16 +231,16 @@ namespace RoadDemo
         /// off it. <paramref name="dies"/> decides which of the two endings he gets.
         /// <paramref name="world"/> is what he is re-parented to - anything that is not
         /// the bike, because the bike is about to go somewhere he is not.</summary>
-        public static RiderSpill Throw(BikeOccupant man, Vector3 velocity, bool dies,
+        public static RiderSpill Throw(IBody man, Vector3 velocity, bool dies,
             Wardrobe wardrobe, Transform world, float side = 1f, float groundY = 0f)
         {
-            if (man == null) return null;
-            if (man.GetComponent<RiderSpill>() != null) return null;   // already off it
+            if (man == null || man.Root == null) return null;
+            if (man.Root.GetComponent<RiderSpill>() != null) return null;   // already off it
 
             var pose = man.Pose;
             var right = Vector3.right;
             var flat = new Vector3(velocity.x, 0f, velocity.z);
-            var ahead = flat.sqrMagnitude > 0.01f ? flat.normalized : man.transform.forward;
+            var ahead = flat.sqrMagnitude > 0.01f ? flat.normalized : man.Root.forward;
             if (pose != null)
             {
                 right = pose.transform.right;
@@ -211,11 +251,11 @@ namespace RoadDemo
                 pose.enabled = false;
             }
 
-            var tf = man.transform;
+            var tf = man.Root;
             tf.localScale = Vector3.one;   // BikePose may have taken him down to fit the saddle
             tf.SetParent(world, worldPositionStays: true);
 
-            var spill = man.gameObject.AddComponent<RiderSpill>();
+            var spill = tf.gameObject.AddComponent<RiderSpill>();
             spill._man = man;
             spill._wardrobe = wardrobe;
             spill.Dying = dies;
@@ -228,15 +268,18 @@ namespace RoadDemo
             spill._death = Draw(wardrobe);
             spill._deathSpeed = 1f + Random.Range(-DeathSpeedJitter, DeathSpeedJitter);
             spill._lie = Mathf.Max(0f, LieThere + Random.Range(-LieJitter, LieJitter));
-            spill.Limp = dies && Random.value < LimpChance;
+            // A man whose own death is already running left the saddle a body, whatever
+            // the dice would have said (IBody.AlreadyDying): the street shoots a hood off
+            // a pillion and CrewWalker.Kill has him crumpling before this is ever called.
+            spill.Limp = dies && (man.AlreadyDying || Random.value < LimpChance);
 
             // head over heels about his own right - which is what a living man does and
             // also what a man the ROAD is going to kill does, because until he lands
             // there is nothing to tell them apart. Only the man who left the saddle dead
             // turns about his own axis: a crumple thrown end over end reads as a rag.
             spill._spinAxis = spill.Limp ? Vector3.up : right;
-            if (spill.Limp) spill._man.Play(spill._death, loop: false, fade: 0.08f, speed: spill._deathSpeed);
-            else spill._man.Play(wardrobe.Fall, loop: false, fade: 0.08f);
+            if (spill.Limp) spill._man.Play(spill._death, false, 0.08f, spill._deathSpeed, 0f);
+            else spill._man.Play(wardrobe.Fall, false, 0.08f, 1f, 0f);
             return spill;
         }
 
@@ -315,13 +358,13 @@ namespace RoadDemo
             {
                 // no death anywhere in the wardrobe: the old behaviour, which at least
                 // puts him on his feet rather than leaving him in the fall
-                _man.Play(_wardrobe.Land, loop: false, fade: 0.08f);
+                _man.Play(_wardrobe.Land, false, 0.08f, 1f, 0f);
                 return;
             }
             float len = Mathf.Max(0.01f, _death.length);
-            _man.Play(_death, loop: false, fade: 0.07f,
-                speed: Mathf.Max(0.1f, SprawlSpeed * _deathSpeed),
-                at: len * Mathf.Clamp01(SprawlFrom));
+            _man.Play(_death, false, 0.07f,
+                Mathf.Max(0.1f, SprawlSpeed * _deathSpeed),
+                len * Mathf.Clamp01(SprawlFrom));
         }
 
         void Lie(float dt)
@@ -360,8 +403,8 @@ namespace RoadDemo
                 _rising = true;
                 if (_man != null && _wardrobe.Land != null)
                 {
-                    _man.Play(_wardrobe.Land, loop: false, fade: RiseFade,
-                        speed: Mathf.Max(0.1f, RiseSpeed));
+                    _man.Play(_wardrobe.Land, false, RiseFade,
+                        Mathf.Max(0.1f, RiseSpeed), 0f);
                     return;
                 }
             }
@@ -370,7 +413,7 @@ namespace RoadDemo
                         _man.Finished;
             if (!done) return;
             if (_man != null && _wardrobe.Idle != null && _man.Playing != _wardrobe.Idle)
-                _man.Play(_wardrobe.Idle, loop: true, fade: StandFade);
+                _man.Play(_wardrobe.Idle, true, StandFade, 1f, 0f);
             Settled = true;
         }
 

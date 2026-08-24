@@ -507,6 +507,52 @@ namespace RoadDemo
 
         static readonly List<Vector2> _taken = new List<Vector2>();
 
+        /// <summary>Move the road user to where the WORLD has put it, without driving it
+        /// there.
+        ///
+        /// One caller, and it is the reason this exists: a motorcycle on its side slides
+        /// twenty metres down the road under its own class (BikeSpill), which owns the
+        /// transform outright while it does. Everything the street knows about where a
+        /// vehicle IS comes from this position and not from the transform - the belt, the
+        /// queueing, the parking search - so a wreck that slid and never said so leaves
+        /// the traffic refusing a spot with nothing standing on it and driving through
+        /// the one that has a machine lying in it. The height is not the caller's: a
+        /// road user's y is the road's.</summary>
+        public void Slid(Vector3 worldPos)
+        {
+            _pos = new Vector3(worldPos.x, _pos.y, worldPos.z);
+
+            // AND THE ROAD FRAME WITH IT. A vehicle is in this project TWICE: as a world
+            // position, which is what the belt reads (RoadPosition), and as (s, d) on a
+            // carriageway, which is what every question about LANES reads - the parking
+            // search, the queueing, the room to pull out. They are refreshed in different
+            // places, so a fix to one looks right in any test that watches bodies meet
+            // and says nothing at all in a test that watches traffic plan.
+            //
+            // Left out, the band this wreck claims stays where it fell while the wreck
+            // itself slides twenty metres on: the street plans round empty road at the
+            // one end and drives through the machine at the other. Its published speed
+            // stays whatever it was doing when it lost the road, too, so the queue behind
+            // it waits for a phantom to move off instead of going round a dead thing.
+            if (Road == null) return;
+            Road.Project(_pos, out float s, out float d);
+            S = Mathf.Clamp(s, 0f, Road.Length);
+            D = d;
+            UpdateOccupant();
+        }
+
+        /// <summary>It is not going anywhere again - a wreck, and the street is to plan
+        /// round it rather than queue behind it. The same standing-down the belt does to
+        /// a car wedged with no answers left, said by whatever knows the vehicle is
+        /// finished (a motorcycle on its side: CrewBike.GoDown).</summary>
+        protected void StandDown()
+        {
+            if (Derelict) return;
+            Derelict = true;
+            LeaveBox();
+            DropNext();
+        }
+
         /// <summary>Nothing more to do: the goal dropped, the car drives on as the
         /// traffic does (a patrol car released from a call).</summary>
         public void Stop()
@@ -2413,6 +2459,39 @@ namespace RoadDemo
                 for (int i = 0; i < rights.Count; i++) Consider(rights[i]);
                 if (best != null) return best;
             }
+            // THE STREET A JOB HAS BEEN ORDERED ON IS LEFT TO IT. A wanderer with no
+            // reason to be anywhere takes the turning that keeps him out of it - or, if
+            // he is already inside, the one that gets him out soonest. He is told
+            // nothing else: he does not brake, he does not hurry, and the moment the
+            // claim lapses he wanders it like any other street.
+            if (Profile.Wanders && StreetTraffic.QuietOpen)
+            {
+                RoadEdge away = null;
+                float awayD = -1f;
+                bool anyClear = false;
+                void Weigh(RoadEdge e)
+                {
+                    if (e == null) return;
+                    // the WHOLE stretch, not where it ends: an avenue that runs through
+                    // the middle of the claim and out the far side ends further from the
+                    // fight than anything else at the junction, and judged by its end
+                    // alone it was the turning the traffic kept being sent down
+                    bool through = StreetTraffic.CrossesQuiet(e.Start, e.End);
+                    var d = e.End - StreetTraffic.QuietAt;
+                    d.y = 0f;
+                    float far = through ? -1f : d.magnitude;
+                    if (!through) anyClear = true;
+                    if (far > awayD) { awayD = far; away = e; }
+                }
+                Weigh(straight);
+                for (int i = 0; i < lefts.Count; i++) Weigh(lefts[i]);
+                for (int i = 0; i < rights.Count; i++) Weigh(rights[i]);
+                // only when there IS somewhere else to go: a junction whose every exit
+                // lies inside the claim is driven as usual, or the car stands at the
+                // line for as long as the fight lasts
+                if (away != null && anyClear) return away;
+            }
+
             float roll = Random.value;
             if (straight != null && (roll < 0.55f || (lefts.Count == 0 && rights.Count == 0))) return straight;
             if (rights.Count > 0 && (roll < 0.8f || lefts.Count == 0)) return rights[Random.Range(0, rights.Count)];

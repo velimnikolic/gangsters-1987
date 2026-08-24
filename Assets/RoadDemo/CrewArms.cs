@@ -143,6 +143,36 @@ namespace RoadDemo
             _ => 0.40f,
         };
 
+        /// <summary>The longest piece a man may carry on a SADDLE - the machine pistol's
+        /// cap, and everything at or under it.
+        ///
+        /// The player's rule, and it is a rule about SIZE rather than about firepower:
+        /// "he cannot use the kalashnikov, the most is that automatic pistol - the
+        /// kalashnikov is too big". A pillion is sitting on the back of a moving
+        /// motorcycle holding on to a man; a long gun is a metre of barrel he has to
+        /// clear the rider's head with, and it reads as a man carrying a fence post. So
+        /// the test is the one measurement the arms already keep - LengthCap - and not a
+        /// hand-written list that would have to be remembered every time the counter
+        /// gains a gun. It bars the rifle, the tommy gun and the shotgun, and leaves the
+        /// sidearms and the machine pistol.
+        ///
+        /// BOTH SADDLES, which is why it is not named for the pillion: a man steering
+        /// with a metre of rifle in his fist reads exactly as wrong as the man behind
+        /// him holding one, and CrewBike.CapArms asks this of the rider too.</summary>
+        public static bool FitsASaddle(EquipmentKind kind) =>
+            LengthCap(kind) <= LengthCap(EquipmentKind.MachinePistol) + 1e-4f;
+
+        /// <summary>The pack body the counter sells for this kind of gun - the first
+        /// listing of that kind, resolved exactly as a ledger item would be. What a man
+        /// is handed when what he was carrying will not ride (CrewBike.Mount).</summary>
+        public static GameObject ModelForKind(EquipmentKind kind)
+        {
+            string modelName = null;
+            foreach (var listing in LivingCity.Outfit.ArmoryCatalog.Weapons)
+                if (listing.Kind == kind) { modelName = listing.ModelName; break; }
+            return LivingCity.UI.LedgerModelSet.WeaponModelFor(kind, modelName);
+        }
+
         /// <summary>The kind a pack body stands for, read off the same catalogue that
         /// chose the body (ArmoryCatalog.ModelName). Attach is handed a prefab and
         /// nothing else - the two bike benches have no ledger item at all - so the model

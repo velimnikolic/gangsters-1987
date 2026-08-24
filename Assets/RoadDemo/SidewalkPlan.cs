@@ -151,9 +151,23 @@ namespace RoadDemo
             public bool KeepClear;   // a reservation, not a prop: refuses props, blocks nobody
             public bool Tall;        // a trunk or a post: the box is the bit at knee height,
                                      // and the thing itself carries on up over the walker
+            public float Rise;       // how high the thing stands, when whoever laid it
+                                     // measured that; 0 is "not measured", and a thing
+                                     // nobody measured is taken for a wall (Blocks)
         }
 
         const float Cell = 4f;
+
+        /// <summary>How high a thing has to stand before a man cannot see over it.
+        /// Above his eyes and then some: a wall he can look over the top of hides
+        /// nobody.</summary>
+        public const float EyeLevel = 2.2f;
+
+        /// <summary>How much of a wall's own footprint the sight line ignores. A prop's
+        /// box is measured off its renderers and a crew is dealt AGAINST the shopfront,
+        /// so a man's shoulders are routinely inside the building he has his back to;
+        /// without a berth he would be looking at the inside of it.</summary>
+        public const float SightBerth = 0.4f;
 
         readonly List<Box> _boxes = new List<Box>();
         readonly Dictionary<long, List<int>> _grid = new Dictionary<long, List<int>>();
@@ -332,6 +346,10 @@ namespace RoadDemo
 
         static readonly HashSet<int> SeenNear = new HashSet<int>();
 
+        // the sight line's own, so a look taken while a gather is being read cannot
+        // wipe the gather's dedupe out from under it
+        static readonly HashSet<int> SeenSight = new HashSet<int>();
+
         /// <summary>Every solid prop standing within <paramref name="reach"/> of a
         /// point - the furniture itself, not a yes or no. What a man under fire looks
         /// over when he wants something to get behind (DemoCrews.CoverNear).
@@ -358,6 +376,121 @@ namespace RoadDemo
                         if (ox * ox + oz * oz <= reach * reach) into.Add(b);
                     }
                 }
+        }
+
+
+        // -------------------------------------------------------------- the sight line
+
+        /// <summary>Does anything SOLID stand across this line - is the far end of it
+        /// out of sight from the near end?
+        ///
+        /// The walls of the city are the only thing asked. A bin, a post, a parked car
+        /// is something a man shoots over or leans round, not something that hides a
+        /// crew from him, and a sight line that broke on every piece of street furniture
+        /// would flicker a fight on and off every stride. The boxes are flat and so is
+        /// the question: a building is a building all the way up, which is the only
+        /// height anything in this arena has.
+        ///
+        /// The grid is walked cell by cell along the line itself (a plain DDA), so a
+        /// seventy-metre look costs the twenty cells it crosses and not the four hundred
+        /// in the square around it.</summary>
+        public bool Blocks(Vector2 a, Vector2 b)
+        {
+            var d = b - a;
+            if (d.sqrMagnitude < 1e-6f) return false;
+
+            int cx = Mathf.FloorToInt(a.x / Cell), cz = Mathf.FloorToInt(a.y / Cell);
+            int ex = Mathf.FloorToInt(b.x / Cell), ez = Mathf.FloorToInt(b.y / Cell);
+            int sx = d.x >= 0f ? 1 : -1, sz = d.y >= 0f ? 1 : -1;
+            float ax = Mathf.Abs(d.x), az = Mathf.Abs(d.y);
+            // how far along the line (0..1) one whole cell is, and how far the first
+            // edge of the cell we start in is
+            float tdx = ax > 1e-6f ? Cell / ax : float.MaxValue;
+            float tdz = az > 1e-6f ? Cell / az : float.MaxValue;
+            float tx = ax > 1e-6f
+                ? (d.x >= 0f ? (cx + 1) * Cell - a.x : a.x - cx * Cell) / ax : float.MaxValue;
+            float tz = az > 1e-6f
+                ? (d.y >= 0f ? (cz + 1) * Cell - a.y : a.y - cz * Cell) / az : float.MaxValue;
+
+            SeenSight.Clear();
+            // the guard is a backstop and nothing else: a line the length of the city
+            // crosses a few hundred cells, and a degenerate one must not spin here
+            for (int guard = 0; guard < 4096; guard++)
+            {
+                if (Crossed(cx, cz, a, b)) return true;
+                if (cx == ex && cz == ez) return false;
+                if (tx < tz) { tx += tdx; cx += sx; }
+                else { tz += tdz; cz += sz; }
+            }
+            return false;
+        }
+
+        // Everything solid indexed into one cell, asked whether it lies across the line.
+        // A prop already tested in an earlier cell is skipped - a building spans a dozen
+        // of them and its box is the same box in each.
+        bool Crossed(int cx, int cz, Vector2 a, Vector2 b)
+        {
+            if (!_grid.TryGetValue(Key(cx, cz), out var bucket)) return false;
+            for (int k = 0; k < bucket.Count; k++)
+            {
+                int id = bucket[k];
+                if (!SeenSight.Add(id)) continue;
+                var box = _boxes[id];
+                // KeepClear is a reservation and Tall is a trunk with daylight round it:
+                // neither hides a man
+                if (!box.Solid || box.KeepClear || box.Tall) continue;
+                // NOR DOES ANYTHING A MAN LOOKS OVER. The solids are not all walls: a
+                // scene blocks off whatever it likes by hand, and the labs block their
+                // parked cars that way (CrewDemoBuilder, CoverDemoBuilder) - a car is a
+                // metre and a half of tin and two crews either side of one can see each
+                // other perfectly well. Anything nobody measured stands as a wall.
+                if (box.Rise > 0f && box.Rise < EyeLevel) continue;
+                if (Crosses(box, a, b)) return true;
+                
+            }
+            return false;
+        }
+
+        // One box against one line, in the box's own frame: clip the line to each slab
+        // in turn and see whether anything of it is left inside both.
+        //
+        // Two things keep a man from being blinded by the wall he is standing at. The
+        // box is shrunk by SightBerth first - a footprint is measured off the renderers
+        // and a crew is dealt against the shopfront, so a man is regularly a hand's
+        // width inside the building he has his back to - and a box that CONTAINS either
+        // end of the line is not an occluder at all: whatever is between them, it is not
+        // the thing they are both standing in. Without the second rule a mob stood in a
+        // doorway could not see the street it was being shot from, and a whole quarter
+        // of rivals watched a drive-by go past without returning a round.
+        static bool Crosses(in Box box, Vector2 a, Vector2 b)
+        {
+            var oa = a - box.C;
+            var ob = b - box.C;
+            var pa = new Vector2(Vector2.Dot(oa, box.Ax), Vector2.Dot(oa, box.Az));
+            var pb = new Vector2(Vector2.Dot(ob, box.Ax), Vector2.Dot(ob, box.Az));
+            var half = new Vector2(Mathf.Max(0.1f, box.H.x - SightBerth),
+                                   Mathf.Max(0.1f, box.H.y - SightBerth));
+            // the FULL box, not the shrunk one: a man 0.2 m inside a facade is inside the
+            // building whatever berth the crossing test is given
+            if (Inside(pa, box.H) || Inside(pb, box.H)) return false;
+            var dir = pb - pa;
+            float t0 = 0f, t1 = 1f;
+            if (!Slab(dir.x, -half.x - pa.x, half.x - pa.x, ref t0, ref t1)) return false;
+            if (!Slab(dir.y, -half.y - pa.y, half.y - pa.y, ref t0, ref t1)) return false;
+            return true;
+        }
+
+        static bool Inside(Vector2 p, Vector2 half) =>
+            Mathf.Abs(p.x) <= half.x && Mathf.Abs(p.y) <= half.y;
+
+        static bool Slab(float dir, float lo, float hi, ref float t0, ref float t1)
+        {
+            if (Mathf.Abs(dir) < 1e-6f) return lo <= 0f && hi >= 0f;  // parallel to the slab
+            float ta = lo / dir, tb = hi / dir;
+            if (ta > tb) { float swap = ta; ta = tb; tb = swap; }
+            if (ta > t0) t0 = ta;
+            if (tb < t1) t1 = tb;
+            return t0 <= t1;
         }
 
         // ------------------------------------------------------------- the grid

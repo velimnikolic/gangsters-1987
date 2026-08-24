@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.Gameplay;
 using LivingCity.Personnel;
 using UnityEngine;
@@ -210,6 +210,12 @@ namespace RoadDemo
         {
             if (bike == null) return;
             CallOffRaid(bike, "taken off the street");
+            // whoever it still has in the air comes down here rather than with the
+            // GameObject: a spill lives on the MAN, and the thing that ticks it is the
+            // machine that threw him
+            bike.LetGo();
+            for (var landed = bike.TakeLanded(); landed != null; landed = bike.TakeLanded())
+                Rejoin(landed);
             bike.DismountAll();
             bike.Despawn();
             StreetTraffic.Users.Remove(bike);
@@ -367,6 +373,11 @@ namespace RoadDemo
             var bike = Pick(Selected, target, out var rider, out var pillion);
             if (bike == null) return false;
 
+            // The street it will be done on is thinned out for it, exactly as an ordered
+            // kill thins its own (DemoCrews.SetTarget): a pass is a car going past a
+            // crew at speed, and a pass made through a queue is a car crawling past one.
+            StreetTraffic.Quiet(target.Position, QuietRadius, QuietSeconds);
+
             // A crew ordered onto the machine is a crew no longer walking anywhere as
             // one: the two who go are taken off whatever the crew was doing, and the
             // rest are left exactly as they were. That is the price of the order and it
@@ -434,6 +445,12 @@ namespace RoadDemo
             if (RaidOf(bike) != null)
             {
                 DriveByRefusal = "The machine is already out";
+                return null;
+            }
+            if (bike.Down)
+            {
+                DriveByRefusal = bike.BurntOut
+                    ? "The machine burned out" : "The machine is on its side in the road";
                 return null;
             }
             if (bike.Rider != null || bike.Pillion != null)
@@ -598,6 +615,16 @@ namespace RoadDemo
 
         void TickDriveBy(float dt)
         {
+            // the claim on the street follows the job: a raid ordered across the quarter
+            // spends a minute walking to the machine and riding over, and a claim laid
+            // once at the order would have lapsed by the time the pass is made
+            for (int r = 0; r < _raids.Count; r++)
+            {
+                var live = _raids[r];
+                if (live?.Target == null || live.Target.Wiped) continue;
+                StreetTraffic.Quiet(live.Target.Position, QuietRadius, QuietSeconds);
+            }
+
             for (int i = _raids.Count - 1; i >= 0; i--)
             {
                 var raid = _raids[i];
@@ -619,6 +646,15 @@ namespace RoadDemo
         bool Over(Raid raid)
         {
             if (raid.Bike == null || raid.Bike.Tf == null) return true;
+
+            // ON ITS SIDE IN THE ROAD. Whatever put it there - the rider shot, the tank
+            // gone - both men are already off it and in the spill's hands, and there is
+            // no machine left to ride home on.
+            if (raid.Bike.Down)
+            {
+                Finish(raid, raid.Bike.BurntOut ? "the tank went up" : "the machine went down");
+                return true;
+            }
 
             // The mate shot on his way to the machine, before either of them is on it:
             // there is no drive-by left to ride - one man cannot shoot and steer - and
@@ -767,6 +803,18 @@ namespace RoadDemo
         void TickPassing(Raid raid)
         {
             var bike = raid.Bike;
+            // NOBODY ON THE BACK, NOBODY SHOOTING. The rider does not fire - both hands
+            // are on the bars and they stay there (CrewBike.TickGuns) - so a machine
+            // whose pillion has been shot off it has nothing left to do on that street
+            // except be shot at. The pass is spent where it stands and it goes home.
+            bool gunless = bike.Pillion == null || bike.Pillion.Dead;
+            if (gunless && bike.DriveByTarget != null)
+            {
+                if (DriveTrace.On)
+                    DriveTrace.Event("driveby", raid.Crew != null ? raid.Crew.GangName : "?",
+                        "the man on the back is down - the pass is over");
+                bike.EndPass();
+            }
             if (bike.PassSpent || bike.DriveByTarget == null ||
                 Time.time - raid.StepAt > raid.StepBudget)
             {
@@ -913,7 +961,11 @@ namespace RoadDemo
             var bike = raid.Bike;
             RaidsFinished++;
             LastRaidShots = bike != null ? bike.ShotsFired : 0;
-            var crashed = raid.Rider != null && raid.Rider.Dead;
+            // Down where it fell, or up on its stand. A machine whose rider was shot off
+            // it is not parked - it is lying in the road (CrewBike.Down), with both men
+            // already thrown clear of it, and the next two who are sent walk out to
+            // wherever that is.
+            var crashed = bike != null && bike.Down;
             if (bike != null)
             {
                 bike.SinglePass = false;
@@ -924,12 +976,12 @@ namespace RoadDemo
                 // later pass. That is the whole HotWithin split undone by one flag left
                 // standing (it is what put "prof":"Hot" on a parked bike in the trace).
                 bike.Hot = false;
-                bike.HardStop();
-                bike.DismountAll();
-                // Down where it fell, or up on its stand. A machine whose rider was shot
-                // off it is not parked; it is lying in the road, and the next two men
-                // walk out to wherever that is (StandLedgerBikes leaves it be).
-                if (!crashed) bike.SettleStand();
+                if (!crashed)
+                {
+                    bike.HardStop();
+                    bike.DismountAll();
+                    bike.SettleStand();
+                }
             }
             // AFTER they are off it: Standing asks whether a man is on his own feet,
             // and asking that while he is still sitting on the saddle answered no every
@@ -957,13 +1009,56 @@ namespace RoadDemo
         void Rejoin(CrewWalker man)
         {
             if (man == null || man.Tf == null || man.Dead) return;
+            // NOT WHILE HE IS STILL IN THE AIR. A raid ends the instant its machine goes
+            // down, which is a good half-second before the two men it threw have reached
+            // the road - and this is the line that ended the raid by ordering one of them
+            // to walk to where he stood, which took him out of the riding state and let
+            // the whole town start giving him orders in mid-flight (the trace has him
+            // Engaging at 12 m/s, then Fleeing, while the spill flew him). The machine
+            // hands each man back itself the moment he is down (CrewBike.TakeLanded), and
+            // that hand-back comes through here.
+            if (man.Spilling) return;
             Reseat(man);
             _doorTries.Remove(man);
+
+            // AND THEN HE IS A MAN STANDING IN THE ROAD WITH THEIR CREW COMING. The
+            // machine is down, the raid is over, and everything that had him - the
+            // saddle, the pass, the order - is finished; all that was left for him was
+            // the tether, which walks him home at a stroll while a mob runs him down.
+            // The player watched exactly that: "on hoda umesto da bezi".
+            //
+            // So he is asked the only question a man in that street has: are they in
+            // sight? If they are, he is either broken - and then he runs flat out, which
+            // is what Flee is - or he is not, and then he turns round and fights, through
+            // the same door every other fight in the town comes through (SetTarget, and
+            // TickCombat squares him up from there).
+            var seen = SeenBy(man);
+            if (seen != null)
+            {
+                var near = NearestStanding(seen, man.Tf.position);
+                if (man.Panicked || man.Retreating)
+                {
+                    if (near != null && near.Tf != null)
+                    {
+                        man.Flee(near.Tf.position, 30f, 55f, comeBack: true);
+                        man.Urgent = true;
+                    }
+                    return;
+                }
+                var crew = UnitOf(man);
+                if (crew != null && crew.TargetUnit == null) SetTarget(crew, seen);
+                return;
+            }
             if (!man.HasOrder) man.OrderToPoint(man.Tf.position);
         }
 
+        /// <summary>On his own two feet, or on his way to being. A man in the middle of
+        /// a spill is still marked as riding on purpose (CrewWalker.Spilling), because
+        /// every order in the town is written to leave a rider alone - but he is alive
+        /// and he WILL stand up, and a raid that ends while he is still in the air must
+        /// not be written down as a raid that lost a man.</summary>
         static bool Standing(CrewWalker man) =>
-            man != null && man.Tf != null && !man.Dead && !man.Riding;
+            man != null && man.Tf != null && !man.Dead && (!man.Riding || man.Spilling);
 
         void CallOffRaid(CrewBike bike, string why)
         {

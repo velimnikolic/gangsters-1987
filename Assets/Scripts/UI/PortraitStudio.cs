@@ -222,14 +222,15 @@ namespace LivingCity.UI
         /// scripts to strip), traffic bodies as the fallback.</summary>
         public static GameObject FindVehiclePrefab(string prefabName)
         {
-            // The two-wheelers first, and out of a table of their own: no scan in the
-            // project will put one in the PrefabDatabase (every one of them denies
-            // "bike", "moped" and "scooter" by name), so asking the database for a
-            // motorcycle can only ever fail into the editor fallback - which a build
-            // does not have.
-            var bike = LedgerModelSet.MotorcycleNamed(prefabName);
-            if (bike)
-                return bike;
+            // The project's OWN bodies first, out of tables of their own: no scan will
+            // put one in the PrefabDatabase - every traffic scan denies a two-wheeler by
+            // name ("bike", "moped", "scooter"), and a car this project built is in no
+            // traffic bucket because the city does not drive it - so asking the database
+            // for one can only ever fail into the editor fallback, which a build does
+            // not have.
+            var own = LedgerModelSet.OwnBodyNamed(prefabName);
+            if (own)
+                return own;
 
             var prefabs = Database();
             if (!prefabs)
@@ -273,6 +274,12 @@ namespace LivingCity.UI
             "Jalopy" => "SM_Veh_Pickup_01",
             "Sedan" => "SM_Veh_Sedan_01",
             "Panel Van" => "SM_Veh_Van_01",
+            // THE WAGON IS THE OUTFIT'S OWN BODY, like the tourer below: Palm City's SUV
+            // rebuilt by ArmouredSuvBuilder into Assets/Prefabs/Vehicles/
+            // SM_Veh_Suv_01_Armoured.prefab. No traffic bucket holds it (it is not in
+            // VehicleCatalog and never turns up in the city's own cars), so the ledger
+            // photographs it off LedgerModelSet.vehicles the way it photographs a bike.
+            "Armoured Wagon" => "SM_Veh_Suv_01_Armoured",
             // The three two-wheelers, Palm City's. Named exactly, and never by a
             // substring: "Motorbike" also names the police pack's liveried tourer, and
             // the outfit does not ride one of those.

@@ -599,6 +599,10 @@ namespace RoadDemo
             for (int i = 0; i < _signals.Count; i++) _signals[i].UpdateBulbs(_signalMats);
             TickTimer.Mark(0, "signals");
             for (int i = 0; i < _vehicles.Count; i++) _vehicles[i].Tick(dt);
+            // and where a job has been ordered, the street is thinned out for it: the
+            // cars nobody is looking at are lifted off it (StreetTraffic.Thin), one
+            // every second or so, while the ones in shot drive out on their own
+            StreetTraffic.Thin(_vehicles, _edges, Camera.main);
             TickTimer.Mark(1, "cars");
             for (int i = 0; i < _policeCars.Count; i++) _policeCars[i].TickPatrol(dt);
             TickTimer.Mark(2, "patrol cars");

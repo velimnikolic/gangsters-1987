@@ -29,6 +29,7 @@ namespace LivingCity.Tests
             PurchaseGateDebitsAndBooks(failures);
             CataloguePricesMatchTheSheet(failures);
             MotorcyclesAreOnTheCounter(failures);
+            CarsAreOnTheCounter(failures);
             NewStockEntersThePoolUnheld(failures);
             StancesTurnOverAtCommit(failures);
             TurfIsHeldPerBuilding(failures);
@@ -322,6 +323,59 @@ namespace LivingCity.Tests
                     failures.Add($"MotorcyclesAreOnTheCounter: {item.DisplayName} " +
                                  $"photographs the law's own {body}.");
             }
+        }
+
+        /// <summary>The counter's first shelf of wheels. Every listing must name a body
+        /// the tables can actually answer for, and the armoured wagon - the one car on
+        /// the shelf this project built rather than imported - must be dearest, because
+        /// its whole point is that it is a decision against everything else money buys.</summary>
+        static void CarsAreOnTheCounter(List<string> failures)
+        {
+            var dearest = 0;
+            var dearestName = "";
+            var seen = new List<string>();
+
+            foreach (var car in ArmoryCatalog.Vehicles)
+            {
+                if (car.Kind != EquipmentKind.Vehicle)
+                    failures.Add($"CarsAreOnTheCounter: {car.DisplayName} is not a vehicle.");
+                if (car.Price <= 0)
+                    failures.Add($"CarsAreOnTheCounter: {car.DisplayName} is free.");
+                if (car.Note.Length == 0)
+                    failures.Add($"CarsAreOnTheCounter: {car.DisplayName} has no note.");
+                if (seen.Contains(car.DisplayName))
+                    failures.Add($"CarsAreOnTheCounter: {car.DisplayName} twice - the " +
+                                 "display name is the key every lookup uses.");
+                seen.Add(car.DisplayName);
+
+                // Same trap as the bikes: the body table's fallback IS a sedan, so a
+                // listing it has never heard of fails silently as a plain car. Only the
+                // sedan itself may answer with that body.
+                var body = LivingCity.UI.PortraitStudio.VehicleModelFor(car.DisplayName);
+                if (string.IsNullOrEmpty(body) ||
+                    (body == "SM_Veh_Sedan_01" && car.DisplayName != "Sedan"))
+                    failures.Add($"CarsAreOnTheCounter: {car.DisplayName} falls back to " +
+                                 "the sedan body.");
+                if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(body))
+                    failures.Add($"CarsAreOnTheCounter: {car.DisplayName} drives the " +
+                                 $"law's own {body}.");
+
+                if (car.Price > dearest)
+                {
+                    dearest = car.Price;
+                    dearestName = car.DisplayName;
+                }
+            }
+
+            if (dearestName != "Armoured Wagon")
+                failures.Add("CarsAreOnTheCounter: the armoured wagon is not the dearest " +
+                             $"car on the shelf - {dearestName} at {dearest} is.");
+
+            // A plated car the outfit cannot afford in its first week is the point; one
+            // it can never afford at all is a listing nobody will ever click.
+            if (dearest <= Accounts.StartingSafe / 4 || dearest >= Accounts.StartingSafe)
+                failures.Add($"CarsAreOnTheCounter: the wagon at {dearest} against a " +
+                             $"{Accounts.StartingSafe} safe is not a decision.");
         }
 
         static void NewStockEntersThePoolUnheld(List<string> failures)

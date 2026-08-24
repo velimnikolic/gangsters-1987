@@ -935,11 +935,16 @@ namespace RoadDemo
         /// showing the last one (swapping under a visible weight cuts mid-pose). A
         /// refusal is never an error: the caller simply does without, which is the
         /// plain crossfade every walker had before this layer.</summary>
-        bool PutClip(int pose, AnimationClip clip)
+        bool PutClip(int pose, AnimationClip clip, bool force = false)
         {
             if (clip == null || !_graph.IsValid() || !_mixer.IsValid()) return false;
             if (_slotClip[pose] == clip) return true;
-            if (_weights[pose] > 0.01f) return false;
+            // A SWAP UNDER A VISIBLE WEIGHT CUTS MID-POSE, and for a fidget that is a
+            // fault: the refusal is what keeps a man from twitching between two idle
+            // takes. A SPILL is the case where the cut is the point - the fall gives way
+            // to the sprawl on the frame he touches the road, and there is nothing
+            // gradual about arriving - so it may insist (PlayTake).
+            if (_weights[pose] > 0.01f && !force) return false;
             if (_poses[pose].IsValid())
             {
                 _graph.Disconnect(_mixer, pose);
@@ -1310,6 +1315,58 @@ namespace RoadDemo
         /// <summary>Is one running? A derived agent holds off its own business while
         /// a man is in the middle of something.</summary>
         protected bool Acting => _actLeft > 0f;
+
+        // ---------------------------------------------------------------- the takes
+
+        /// <summary>What PlayTake put on him, while it is still showing.</summary>
+        AnimationClip _take;
+
+        /// <summary>Play this take over everything, and HOLD it until somebody takes it
+        /// off him (<see cref="EndTake"/>).
+        ///
+        /// <see cref="PlayAction"/> is the polite door and every one of its refusals is
+        /// right for a fidget: not while he is mid-join, not over another one-shot, not
+        /// on a man too far off to read. All of them are wrong for a man who has just
+        /// left a motorcycle at fifty kilometres an hour, which is the one thing in the
+        /// town that happens TO a body rather than being chosen by it (RiderSpill).
+        ///
+        /// The hold is the other half. A one-shot handed back when its clock runs out is
+        /// what a gesture wants; a man in the air whose fall clip runs out and hands him
+        /// back stands bolt upright in mid-flight. So the slot is held on the clip's last
+        /// frame - which is also what makes <see cref="TakeFinished"/> a read rather than
+        /// a thing anyone has to stop.</summary>
+        public bool PlayTake(AnimationClip clip, bool loop, float speed, float at)
+        {
+            if (clip == null) return false;
+            CancelJoin();                       // clears the act slot with it
+            if (!PutClip(PoseAct, clip, force: true)) return false;
+            RestartPose(PoseAct, at, Mathf.Max(0.05f, speed));
+            _actLoop = loop;
+            _actLeft = float.MaxValue;          // held: nothing hands this one back
+            _actFrom = PoseIdle;
+            _pose = PoseAct;
+            _take = clip;
+            return true;
+        }
+
+        /// <summary>The take on him this instant, or null.</summary>
+        public AnimationClip Take => _pose == PoseAct ? _take : null;
+
+        /// <summary>A one-shot take that has reached its last frame.</summary>
+        public bool TakeFinished =>
+            _take != null && _pose == PoseAct && !_actLoop &&
+            PoseTime(PoseAct) >= PoseLength(PoseAct) - 0.03f;
+
+        /// <summary>Give him back to himself - the take off, the slot cleared, whatever
+        /// he was doing before it resumed. A held take never ends on its own, so this is
+        /// not a tidy-up: without it the man goes on standing in the last frame of his
+        /// landing for ever, and every SetPose he makes afterwards is swallowed.</summary>
+        public void EndTake()
+        {
+            _take = null;
+            _actLeft = 0f;
+            EndAct();
+        }
 
         protected void EndAct()
         {

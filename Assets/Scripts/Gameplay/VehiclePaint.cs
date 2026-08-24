@@ -74,12 +74,7 @@ namespace LivingCity.Gameplay
         /// Returns true only when the instance actually changed colour: a liveried body, a
         /// marked one, or a pack this holds no palette for all come back false and untouched.
         /// </summary>
-        public static bool Apply(GameObject instance, GameObject prefab) =>
-            Apply(instance, prefab, Random.Range(0, 1 << 24));
-
-        /// <summary>The seeded form, for a caller that owns an rng stream and needs the same
-        /// city to come back the same colours.</summary>
-        public static bool Apply(GameObject instance, GameObject prefab, int roll)
+        public static bool Apply(GameObject instance, GameObject prefab)
         {
             if (!instance || !prefab)
                 return false;
@@ -90,7 +85,21 @@ namespace LivingCity.Gameplay
             if (VehicleCatalog.WearsLivery(prefab.name))
                 return false;
 
-            var body = BodyMaterial(instance);
+            // ONE WALK OF THE BODY, and one reading of each renderer's slots. Both are
+            // wanted twice - once to find which material the paint is on, once to swap it -
+            // and both allocate every time they are asked: GetComponentsInChildren returns a
+            // fresh array, and so does the sharedMaterials GETTER, which copies. This runs on
+            // every car in the city rather than on a handful, so it is asked once and the
+            // answers are held.
+            //
+            // sharedMaterials, never materials: reading .materials instantiates a private
+            // copy per renderer, which leaks and drops the car out of batching.
+            var renderers = instance.GetComponentsInChildren<MeshRenderer>(true);
+            var slots = new Material[renderers.Length][];
+            for (var r = 0; r < renderers.Length; r++)
+                slots[r] = renderers[r].sharedMaterials;
+
+            var body = BodyMaterial(slots);
             if (!body)
                 return false;
 
@@ -98,37 +107,39 @@ namespace LivingCity.Gameplay
             if (palette == null || palette.Length == 0)
                 return false;
 
-            var paint = palette[(roll & 0x7fffffff) % palette.Length];
+            var paint = palette[Random.Range(0, palette.Length)];
             if (!paint || paint == body)
                 return false;   // the factory colour came up; the car keeps it
 
             var painted = false;
 
-            foreach (var renderer in instance.GetComponentsInChildren<MeshRenderer>(true))
+            for (var r = 0; r < renderers.Length; r++)
             {
-                // sharedMaterials, never materials: reading .materials instantiates a private
-                // copy per renderer, which leaks and drops the car out of batching - and this
-                // runs on every car in the city, not on a handful.
-                var slots = renderer.sharedMaterials;
+                var mine = slots[r];
                 var changed = false;
 
-                for (var i = 0; i < slots.Length; i++)
+                for (var i = 0; i < mine.Length; i++)
                 {
-                    if (slots[i] != body)
+                    if (mine[i] != body)
                         continue;   // glass has its own material, and a second tone is an accent
-                    slots[i] = paint;
+                    mine[i] = paint;
                     changed = true;
                 }
 
                 if (!changed)
                     continue;
 
-                renderer.sharedMaterials = slots;
+                renderers[r].sharedMaterials = mine;
                 painted = true;
             }
 
             return painted;
         }
+
+        /// <summary>The tally BodyMaterial counts in, kept between cars rather than allocated
+        /// per car: a dictionary a spawn loop throws away is a dictionary the collector has to
+        /// come back for, and this is called once per vehicle in the city.</summary>
+        static readonly Dictionary<Material, int> Counts = new Dictionary<Material, int>();
 
         /// <summary>
         /// The material the bodywork is on, by weight of renderers.
@@ -138,23 +149,23 @@ namespace LivingCity.Gameplay
         /// buggy six of 01_A under one of 01_C - and only the majority material is the paint.
         /// The minority is trim, and repainting it too would flatten the two tones into one.
         /// </summary>
-        static Material BodyMaterial(GameObject instance)
+        static Material BodyMaterial(Material[][] slots)
         {
-            var counts = new Dictionary<Material, int>();
+            Counts.Clear();
 
-            foreach (var renderer in instance.GetComponentsInChildren<MeshRenderer>(true))
-                foreach (var material in renderer.sharedMaterials)
+            foreach (var mine in slots)
+                foreach (var material in mine)
                 {
                     if (!material || PaletteFor(material.name) == null)
                         continue;
-                    counts.TryGetValue(material, out var seen);
-                    counts[material] = seen + 1;
+                    Counts.TryGetValue(material, out var seen);
+                    Counts[material] = seen + 1;
                 }
 
             Material best = null;
             var most = 0;
 
-            foreach (var pair in counts)
+            foreach (var pair in Counts)
                 if (pair.Value > most) { most = pair.Value; best = pair.Key; }
 
             return best;

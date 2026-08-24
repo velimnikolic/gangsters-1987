@@ -41,6 +41,12 @@ namespace LivingCity.UI
                  "at all, because every traffic scan denies one by name.")]
         public GameObject[] motorcycles = System.Array.Empty<GameObject>();
 
+        [Tooltip("Cars the counter sells that the CITY never drives - the outfit's own " +
+                 "bodies, baked by name. A pack car is found in the database above; a " +
+                 "car this project built (the armoured wagon) is in no traffic bucket " +
+                 "at all, so without this table its listing photographs nothing in a build.")]
+        public GameObject[] vehicles = System.Array.Empty<GameObject>();
+
         [Tooltip("The Synty cast the book photographs - the men's mugshots, the capos, the " +
                  "paper's faces. Plain pack character prefabs (Humanoid, no scripts), " +
                  "baked by name from the Synty folders so a portrait never depends on the " +
@@ -82,6 +88,26 @@ namespace LivingCity.UI
             if (!set || set.motorcycles == null || string.IsNullOrEmpty(name))
                 return null;
             foreach (var prefab in set.motorcycles)
+                if (prefab && prefab.name == name)
+                    return prefab;
+            return null;
+        }
+
+        /// <summary>The body of this name among the machines the project built for
+        /// itself - both tables, because a caller asking for a listing's body does not
+        /// know or care whether it has two wheels or four. Asked before the database for
+        /// the same reason the bikes are: the city drives none of these, so no traffic
+        /// bucket holds one.</summary>
+        public static GameObject OwnBodyNamed(string name)
+        {
+            var bike = MotorcycleNamed(name);
+            if (bike)
+                return bike;
+
+            var set = Instance;
+            if (!set || set.vehicles == null || string.IsNullOrEmpty(name))
+                return null;
+            foreach (var prefab in set.vehicles)
                 if (prefab && prefab.name == name)
                     return prefab;
             return null;

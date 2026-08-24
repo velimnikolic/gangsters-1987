@@ -117,6 +117,11 @@ namespace BlockDemo
         public bool missionRoadblock;
         [Tooltip("Two wheels: how many passes to ride before the run is done.")]
         [Min(1)] public int missionPassesRidden = 3;
+        [Tooltip("Two wheels: force one of the four endings on every pass rather than " +
+                 "waiting for the quarter to deal it - 2 the man on the back is shot, " +
+                 "3 the rider is shot, 4 the tank catches. 0 rides them as they fall. " +
+                 "See BlockDemoMission.forceAct.")]
+        [Range(0, 4)] public int missionMotoAct;
         [Tooltip("A motorcycle bought off the armory counter and signed for by the " +
                  "outfit's first lieutenant, by listing name: Motorbike, Moped, " +
                  "Scooter. Empty buys none.")]
@@ -248,6 +253,7 @@ namespace BlockDemo
                 mission.motoDriveBy = missionMoto;
                 mission.roadblock = missionRoadblock;
                 mission.passes = missionPassesRidden;
+                mission.forceAct = missionMotoAct;
                 mission.bombRun = missionBomb;
                 mission.bombThrows = missionBombThrows;
                 mission.bombShotCam = missionBombShot;

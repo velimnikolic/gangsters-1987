@@ -726,7 +726,14 @@ namespace CrewDemo
             })
             {
                 var p = FindCivilianVehicle(name);
-                if (p) bodies.Add(p);
+                if (!p) continue;
+                // duplicate-as-weight, the same way the city's pool is built: this list is
+                // drawn from uniformly, so a hand-written list of nine bodies made the muscle
+                // car one street car in nine. It takes two seats where a saloon takes six
+                // (VehicleCatalog.PoolWeight), which is the mix the quarter drives.
+                for (int seat = 0, seats = LivingCity.Gameplay.VehicleCatalog.PoolWeight(name);
+                     seat < seats; seat++)
+                    bodies.Add(p);
             }
             return bodies;
         }
@@ -751,9 +758,15 @@ namespace CrewDemo
                 float x = cx + (northbound ? kerb : -kerb);
                 // clear of the crossing in the middle of the street and of both junctions
                 float z = (Random.value < 0.5f ? -1f : 1f) * Random.Range(14f, BlockZMax - 4f);
-                var go = Instantiate(bodies[Random.Range(0, bodies.Count)],
+                var prefab = bodies[Random.Range(0, bodies.Count)];
+                var go = Instantiate(prefab,
                     new Vector3(x, -0.08f, z), Quaternion.Euler(0f, northbound ? 0f : 180f, 0f), root);
                 go.name = go.name.Replace("(Clone)", "");
+                // a colour of its own, unless the body carries somebody's livery - the same
+                // as the traffic gets. Without it the cars at the kerb are the only ones in
+                // the scene still in the colour the pack shipped, parked beside repainted
+                // traffic wearing the same bodies.
+                LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
                 foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
                 WalkObstacles.Block(BoundsOf(go));
                 // and it is on the ROAD: a car coming round the corner has to go round

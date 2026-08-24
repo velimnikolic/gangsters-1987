@@ -1,3 +1,4 @@
+﻿using LivingCity.Personnel;
 using UnityEngine;
 
 namespace RoadDemo
@@ -13,10 +14,18 @@ namespace RoadDemo
     /// So the rules a car's riders fire under are not this one's. A car's man may only
     /// shoot out of his own window, within sixty degrees of abeam and on his own side
     /// (DemoCrews.TickRiders); a pillion may shoot all the way round except through the
-    /// man in front of him. What he cannot do is shoot while the bike is standing on
-    /// its stand, and what the RIDER cannot do is shoot at all with both hands on the
-    /// bars - he takes a hand off the bar only when the bike has slowed to walking
-    /// pace and there is nobody behind him to do it for him.
+    /// man in front of him.
+    ///
+    /// THE RIDER NEVER FIRES. Both hands are on the bars and they stay there - the
+    /// player's ruling, against an earlier branch that let him take one off at walking
+    /// pace when he was alone on the machine. And NEITHER man carries a long gun: what
+    /// goes on a saddle is capped at the machine pistol, because a rifle is a metre of
+    /// barrel on a moving motorcycle (CapArms, CrewArms.FitsASaddle).
+    ///
+    /// It can also come off. Four endings, and they are the four the bench rides side
+    /// by side in Assets/BikeDemo: both ride on, the pillion is shot off the back, the
+    /// rider is shot and the whole machine goes down with him, or the tank goes and it
+    /// burns and then blows. See <see cref="TickRiders"/>.
     /// </summary>
     public sealed class CrewBike : RoadBike
     {
@@ -144,7 +153,319 @@ namespace RoadDemo
         int _passDir = 1;
         BikePose _riderPose, _pillionPose;
         Transform _riderHome, _pillionHome;
-        float _riderShot, _pillionShot;
+        float _pillionShot;
+
+        // ------------------------------------------------------------- what he carries
+
+        /// <summary>The gun each man was carrying before he got on, when what he was
+        /// carrying would not ride (see CrewArms.FitsASaddle). Given back the moment he
+        /// is off it, on his own feet or in the road - a machine borrows a man's arms for
+        /// the length of a ride, it does not confiscate them.</summary>
+        GameObject _stowedRider, _stowedPillion;
+        EquipmentKind _stowedRiderKind, _stowedPillionKind;
+
+        /// <summary>What goes on a saddle, both saddles.
+        ///
+        /// The player's rule is about SIZE - "the kalashnikov is too big" - and size is
+        /// no more a passenger's problem than a driver's: a man steering a motorcycle
+        /// with a metre of rifle in his fist reads exactly as wrong as the man behind him
+        /// holding one. So both men are held to it, and CrewArms owns the measurement.</summary>
+        void CapArms(CrewWalker man, bool pillion)
+        {
+            if (man == null || !man.Armed || CrewArms.FitsASaddle(man.WeaponKind)) return;
+            var swap = CrewArms.ModelForKind(EquipmentKind.MachinePistol);
+            // Nothing to swap TO - the ledger's model set has no machine pistol in it.
+            // He keeps the long gun rather than riding out empty-handed: an unarmed pass
+            // is the quiet failure the whole drive-by exists to avoid.
+            if (swap == null) return;
+            if (pillion) { _stowedPillion = man.WeaponPrefab; _stowedPillionKind = man.WeaponKind; }
+            else { _stowedRider = man.WeaponPrefab; _stowedRiderKind = man.WeaponKind; }
+            man.Arm(swap, EquipmentKind.MachinePistol);
+        }
+
+        /// <summary>His own gun back - a dead man's too. He is shot off the pillion
+        /// holding the machine pistol the saddle put in his hand, and the body that
+        /// lands in the road is then carrying something the books say he never owned.
+        /// The slot is cleared either way: the machine has finished borrowing.</summary>
+        void GiveArmsBack(CrewWalker man, bool pillion)
+        {
+            var stowed = pillion ? _stowedPillion : _stowedRider;
+            if (stowed == null) return;
+            var kind = pillion ? _stowedPillionKind : _stowedRiderKind;
+            if (pillion) _stowedPillion = null; else _stowedRider = null;
+            if (man == null || man.Tf == null) return;
+            // ...unless it has already left his hand. A dead man drops his gun part-way
+            // through the fall and it lies where it fell; putting his own back in the
+            // fist afterwards would be a second gun out of nowhere.
+            if (man.Dead && man.Weapon == null) return;
+            man.Arm(stowed, kind);
+        }
+
+        // ------------------------------------------------------------- the machine's tin
+
+        /// <summary>Rounds that went into the machine, and into something on it that
+        /// matters. A motorcycle is not a health bar any more than a car is (CrewCar):
+        /// this counts what went into the tank and the engine, and everything else a
+        /// round does to a machine it does to the paint.</summary>
+        public int TankHits { get; private set; }
+
+        /// <summary>Of the rounds that go into the machine, this many find the tank or
+        /// the engine - and how many of those it takes before it is alight.
+        ///
+        /// Count the INPUT, not the outcome - the lesson the car's engine had to be
+        /// taught twice. MEASURED over four runs of the lab (DemoCrews puts the round in
+        /// and traces it as "tin"): four to seven rounds go into the MACHINE in a run of
+        /// one to six passes, which is a tenth of what a car standing under fire takes,
+        /// because a car is a wall behind the man and a motorcycle is a frame between
+        /// his knees. Two finds at four in ten is about five of those rounds - reachable,
+        /// which a threshold nothing can meet is not, and rare enough that it stays the
+        /// last of the four endings: it burned in one of the four runs.</summary>
+        public static float TankChance = 0.4f;
+        public static int TankHitsToBurn = 2;
+
+        /// <summary>The tank is gone: it goes down alight and the men jump clear.</summary>
+        public bool Burning => TankHits >= TankHitsToBurn;
+
+        /// <summary>A round into the machine. Where it went decides what it cost - the
+        /// middle of it is the tank and the engine, the ends are a hole in a mudguard.</summary>
+        public void TakeRound(Vector3 at, Vector3 from)
+        {
+            if (Tf == null) return;
+            var local = Tf.InverseTransformPoint(at);
+            // measured on the MESH, like the hole itself: HalfLen is the road's smaller
+            // idea of the machine, and the tank is a fact about the machine
+            float along = Body != null ? Body.HalfLength : HalfLen;
+            bool vitals = Mathf.Abs(local.z) < along * 0.6f;
+            if (vitals && !Burning && Random.value < TankChance) TankHits++;
+            var facing = from - at;
+            facing.y = 0f;
+            if (facing.sqrMagnitude < 1e-4f) facing = Tf.right;
+            if (Tilt != null) CrewGore.Hole(Tilt, at, facing);
+        }
+
+        // ------------------------------------------------------------- on its side
+
+        /// <summary>It is down - on its side in the road, sliding or stopped. Nothing
+        /// drives it again: RoadCar's whole frame is skipped while this stands, and the
+        /// spill owns the transform (BikeSpill).</summary>
+        public bool Down => _spill != null;
+
+        /// <summary>It went down BURNING - the tank is gone and it is scrap. The machine
+        /// that merely fell over is not this: it is lying in the road and could in
+        /// principle be picked up.</summary>
+        public bool BurntOut => _spill != null && _spill.Alight;
+
+        BikeSpill _spill;
+        RiderSpill _riderSpill, _pillionSpill;
+        CrewWalker _riderOff, _pillionOff;
+
+        static RiderSpill.Wardrobe _wardrobe;
+        static bool _wardrobeDrawn;
+
+        // Drawn once for the whole game, not once per machine: it is four clips off
+        // CrewKit and a pool of deaths, and every one of those is an AssetDatabase load
+        // in the editor.
+        static RiderSpill.Wardrobe Wardrobe()
+        {
+            if (!_wardrobeDrawn)
+            {
+                _wardrobe = RiderSpill.Wardrobe.Stock();
+                _wardrobeDrawn = true;
+            }
+            return _wardrobe;
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ForgetWardrobe() => _wardrobeDrawn = false;
+
+        /// <summary>Which way it goes over: on with the lean it already has, and onto
+        /// the stand side when it is upright. Never a coin toss - a machine that falls
+        /// the other way from the way it was leaning reads as a machine being pushed.</summary>
+        float FallSide => Lean > 0.5f ? 1f : -1f;
+
+        /// <summary>The wreck the blast is owed, once. The arena reads it (DemoCrews) -
+        /// a machine cannot set off an explosion, because it cannot be asked who was
+        /// standing near it.</summary>
+        public bool TakeBlast() => _spill != null && _spill.TakeBlast();
+
+        /// <summary>The four things that can come of two men on one machine, decided
+        /// here and nowhere in the spill classes - which only know how to fall. They are
+        /// the four the bench rides side by side (Assets/BikeDemo, BikeShow.Act):
+        ///
+        ///   1  BOTH RIDE ON      nothing below fires; the ordinary pass.
+        ///   2  THE PILLION SHOT  he goes off the back and stays in the road. The
+        ///                        machine rides on with the driver alone - and with
+        ///                        nobody to shoot, so the pass is spent.
+        ///   3  THE RIDER SHOT    the machine goes down and takes his mate with it. The
+        ///                        player's own ruling, made against the alternative: a
+        ///                        motorcycle whose rider is shot at fifty kilometres an
+        ///                        hour does not change drivers, it falls over.
+        ///   4  THE TANK GOES     it goes down alight, both men jump clear, and a few
+        ///                        seconds later it blows (BikeSpill.Fuse).
+        ///
+        /// And the fault this replaced, which is what the player actually watched: a dead
+        /// man was set down on his feet beside the machine and then hidden where he stood
+        /// (DemoCrews.ReportDeaths - "one of them vanished"), and the machine was left
+        /// standing upright in the road with nobody on it, which nothing can do.</summary>
+        void TickRiders()
+        {
+            if (Down) return;
+            // the tank first, and before the empty test: a machine shot up until it
+            // catches goes over whether or not anybody is still sitting on it
+            if (Burning) { GoDown(alight: true); return; }
+            if (Rider == null && Pillion == null) return;
+
+            if (Rider != null && Rider.Dead) { GoDown(alight: false); return; }
+            if (Pillion != null && Pillion.Dead) ThrowPillion(dies: true);
+        }
+
+        /// <summary>Off the back, and the machine never knows about it.</summary>
+        void ThrowPillion(bool dies)
+        {
+            var man = Pillion;
+            if (man == null) return;
+            _pillionSpill = Throw(man, _pillionPose, dies, FallSide);
+            _pillionOff = man;
+            Pillion = null;
+            _pillionPose = null;
+            _pillionShot = 0f;
+        }
+
+        /// <summary>Over it goes, and everybody on it with it. A man who was already
+        /// dead stays down; a man who was not gets up out of the road.</summary>
+        public void GoDown(bool alight)
+        {
+            if (Down || Tf == null) return;
+            float side = FallSide, speed = Mathf.Abs(Speed);
+
+            // The plan is torn up BEFORE the transform changes hands: a machine on its
+            // side with a goal still on it is a machine the driving would go on steering
+            // if anything ever ticked it again.
+            DriveByTarget = null;
+            PassSpent = true;
+            Hot = false;
+            Halt(hard: true);
+            // and the street is told what it is now: a thing to plan round, not a
+            // vehicle to queue behind. Without it the wreck goes on publishing the speed
+            // it had when it lost the road, and the traffic waits for it to move off.
+            StandDown();
+
+            if (Pillion != null)
+            {
+                _pillionSpill = Throw(Pillion, _pillionPose, Pillion.Dead, side);
+                _pillionOff = Pillion;
+                Pillion = null;
+                _pillionPose = null;
+            }
+            if (Rider != null)
+            {
+                _riderSpill = Throw(Rider, _riderPose, Rider.Dead, side);
+                _riderOff = Rider;
+                Rider = null;
+                _riderPose = null;
+            }
+
+            // the lean goes with the rider: the spill's ninety degrees is the whole of
+            // the angle, laid on the same axis, and a lean left under it double-counts
+            if (Tilt != null) Tilt.localRotation = Quaternion.identity;
+
+            // AND IT GOES DOWN TOWARD ITS OWN KERB. Where it fell is where it stays -
+            // and a machine on its side in the middle of a lane is a lane nobody can use
+            // (BikeSpill.Beach has the sums). The fall carries it over instead, and it
+            // goes over onto the side it is sliding to, which is the way a machine that
+            // has lost the road actually leaves it.
+            var road = Road;
+            var across = Vector3.zero;
+            float far = 0f;
+            if (road != null && OnRoad)
+            {
+                float over = road.KerbDOnSide(D, HalfWide) - D;
+                if (Mathf.Abs(over) > 0.05f)
+                {
+                    across = road.Right * Mathf.Sign(over);
+                    far = Mathf.Abs(over);
+                    side = Vector3.Dot(across, Tf.right) >= 0f ? 1f : -1f;
+                }
+            }
+            _spill = BikeSpill.Begin(Tf, speed, Forward, side, alight, Tf.position.y);
+            if (far > 0f) _spill?.Beach(across, far);
+        }
+
+        RiderSpill Throw(CrewWalker man, BikePose pose, bool dies, float side)
+        {
+            if (man == null || man.Tf == null) return null;
+            bool pillion = man == Pillion;
+            GiveArmsBack(man, pillion);
+            // off the machine's books BEFORE the pose is destroyed, or the list is left
+            // holding a component Unity is about to take away
+            Drop(pose);
+            man.BeginSpill();
+            // back under whatever he was parented to before he got on, exactly as
+            // Dismount would put him - a man who came off a machine is not a part of it
+            var spill = RiderSpill.Throw(man, Forward * Mathf.Abs(Speed), dies, Wardrobe(),
+                pillion ? _pillionHome : _riderHome, side, Tf != null ? Tf.position.y : 0f);
+            // the pose is the bike's, and he is not on the bike any more. RiderSpill has
+            // already switched it off; this is what stops it coming back on him.
+            if (pose != null) Object.Destroy(pose);
+            return spill;
+        }
+
+        /// <summary>A man the spill has finished with - read one at a time, by the
+        /// arena, which is the only thing that can put him back on the pavement graph
+        /// and give him something to do (DemoCrews.Rejoin). Null when there is none.</summary>
+        public CrewWalker TakeLanded() => _landed.Count > 0 ? _landed.Dequeue() : null;
+
+        readonly System.Collections.Generic.Queue<CrewWalker> _landed =
+            new System.Collections.Generic.Queue<CrewWalker>();
+
+        void TickSpills()
+        {
+            Settle(ref _pillionSpill, ref _pillionOff);
+            Settle(ref _riderSpill, ref _riderOff);
+        }
+
+        /// <summary>Give up whoever this machine still has in the air. It is being taken
+        /// off the street - sold off the books, or the scene torn down - and a man in a
+        /// spill that nothing will ever tick again is a man who has left the game, which
+        /// is the exact fault this whole layer was written to end. He is set down where
+        /// he has got to and handed back like any other landing (TakeLanded).</summary>
+        public void LetGo()
+        {
+            LetGo(ref _pillionSpill, ref _pillionOff);
+            LetGo(ref _riderSpill, ref _riderOff);
+        }
+
+        void LetGo(ref RiderSpill spill, ref CrewWalker man)
+        {
+            if (spill != null) { Object.Destroy(spill); spill = null; }
+            if (man == null) return;
+            var down = man;
+            man = null;
+            down.EndSpill();
+            _landed.Enqueue(down);
+        }
+
+        void Settle(ref RiderSpill spill, ref CrewWalker man)
+        {
+            if (spill == null)
+            {
+                // thrown with no spill at all (no wardrobe, no transform): he is simply
+                // off it, and must not be left in the riding state for ever
+                if (man == null) return;
+                man.EndSpill();
+                _landed.Enqueue(man);
+                man = null;
+                return;
+            }
+            if (!spill.Settled) return;
+            var down = man;
+            Object.Destroy(spill);
+            spill = null;
+            man = null;
+            if (down == null) return;
+            down.EndSpill();
+            _landed.Enqueue(down);
+        }
 
         public CrewBike()
         {
@@ -217,6 +538,7 @@ namespace RoadDemo
                 _riderHome = home;
                 if (_pillionPose != null) _pillionPose.Rider = pose;
             }
+            CapArms(man, pillion);
             Take(pose);
             return true;
         }
@@ -228,6 +550,7 @@ namespace RoadDemo
             bool pillion = man == Pillion;
             if (!pillion && man != Rider) return;
 
+            GiveArmsBack(man, pillion);
             var pose = pillion ? _pillionPose : _riderPose;
             Drop(pose);
             if (pose != null) Object.Destroy(pose);
@@ -296,10 +619,6 @@ namespace RoadDemo
         /// frontage, a crew in a yard or a lot.</summary>
         static readonly float[] PassReach = { 14f, 30f, 60f };
 
-        /// <summary>No street near the mark at all - a crew stood in the middle of open
-        /// ground. The pass is ridden AT him over that ground rather than dropped: the
-        /// mark is kept, so the guns bear as the machine goes by, and the run past ends
-        /// the pass the ordinary way (TickFree calls OnArrived).</summary>
         /// <summary>Where the mark stood when this pass was laid against him. A pass is a
         /// line of road chosen for a POINT, and the ride to it takes as long as the traffic
         /// takes - a minute and a half, in the quarter the lab drives. A crew does not
@@ -308,6 +627,8 @@ namespace RoadDemo
         /// mark is looked at again on the way in, and the pass re-laid when he has moved
         /// off the one it was drawn for - which is what a rider does with his eyes.</summary>
         Vector3 _passLaidAt;
+
+        /// <summary>Seconds until the mark is looked at again.</summary>
         float _passCheck;
 
         /// <summary>Metres the mark may drift before the pass is drawn again.</summary>
@@ -320,6 +641,10 @@ namespace RoadDemo
             return (man != null ? man.Ballistics.Range : 10f) * PillionReach;
         }
 
+        /// <summary>No street near the mark at all - a crew stood in the middle of open
+        /// ground. The pass is ridden AT him over that ground rather than dropped: the
+        /// mark is kept, so the guns bear as the machine goes by, and the run past ends
+        /// the pass the ordinary way (TickFree calls OnArrived).</summary>
         void RideFreePast(Vector3 t)
         {
             var f = t - Position;
@@ -395,6 +720,19 @@ namespace RoadDemo
             RideTo(Position + Forward * 30f);
         }
 
+        /// <summary>The pass is over where it stands - the mark dropped, the guns down,
+        /// the machine still rolling. It does NOT pick its own way out of the street:
+        /// the arena is what knows where home is (DemoCrews.TickPassing), and this only
+        /// says that there is nothing more to be done here. Called when the crew being
+        /// shot at is finished, and when the man on the back is.</summary>
+        public void EndPass()
+        {
+            if (DriveByTarget == null) return;
+            DriveByTarget = null;
+            PassSpent = true;
+            Profile = DriverProfile.Gangster;
+        }
+
         /// <summary>Both wheels stopped, here, now - the plan torn up.</summary>
         public void HardStop()
         {
@@ -421,6 +759,27 @@ namespace RoadDemo
         public new void Tick(float dt)
         {
             if (Tf == null) return;
+
+            // ON ITS SIDE. The spill owns the transform outright, so RoadCar's entire
+            // frame is skipped - anything that steers, brakes, claims a lane or writes a
+            // position would be fighting it - and all the machine still owes is wheels
+            // that spin down with the slide and a word to the street about where the
+            // wreck has actually got to (RoadCar.Slid).
+            if (Down)
+            {
+                Body?.Tick(dt, _spill.Speed, 0f);
+                Slid(Tf.position);
+                TickSpills();
+                return;
+            }
+            TickRiders();
+            // ALWAYS, and not only when the machine is down: the man shot off the back
+            // of a machine that RIDES ON is the commonest of the four endings, and his
+            // spill has nobody else to tick it. Left unticked he never lands, so he is
+            // never handed back, never chalked, and stays marked as riding a machine he
+            // came off two streets ago.
+            TickSpills();
+            if (Down) return;   // it went down on this very frame
 
             // A MACHINE WITH NOBODY ON IT DOES NOT DRIVE. Every driver profile has
             // Wanders on by default - "no route: random turns at junctions" - which is
@@ -530,19 +889,18 @@ namespace RoadDemo
             var mark = DemoCrews.NearestOf(target, Position);
             if (mark == null || mark.Tf == null) { Aim(_pillionPose, Pillion, null); Aim(_riderPose, Rider, null); return; }
 
-            // the pillion: all the way round except through the rider's back
+            // THE MAN ON THE BACK IS THE ONLY ONE WHO SHOOTS. The rider had a branch of
+            // his own - alone on the machine, at a crawl, one hand off the bar - and the
+            // player struck it out: a drive-by is two men and a job each, and a man
+            // steering a motorcycle one-handed while he fires down a pavement is not a
+            // thing that happens, it is a thing that ends in a shop window. With nobody
+            // behind him the machine simply rides past; the pass is spent and it goes
+            // home (DemoCrews.TickPassing).
             bool pillionOn = Pillion != null && !Pillion.Dead && Pillion.Armed && Sees(Pillion, mark, blindAhead: true);
             Aim(_pillionPose, Pillion, pillionOn ? mark : null);
             if (pillionOn) Shoot(Pillion, mark, ref _pillionShot, dt);
             else _pillionShot = 0f;
-
-            // the rider: only with nobody behind him to do it, and only at a crawl -
-            // a hand off the bar at speed puts the bike in a shop window
-            bool riderOn = !pillionOn && Pillion == null && Rider != null && !Rider.Dead && Rider.Armed &&
-                           Mathf.Abs(Speed) < PassSpeed * 0.8f && Sees(Rider, mark, blindAhead: false);
-            Aim(_riderPose, Rider, riderOn ? mark : null);
-            if (riderOn) Shoot(Rider, mark, ref _riderShot, dt);
-            else _riderShot = 0f;
+            Aim(_riderPose, Rider, null);
         }
 
         bool Sees(CrewWalker man, CrewWalker mark, bool blindAhead)
@@ -576,7 +934,9 @@ namespace RoadDemo
             else StreetAlarm.Report(Position, null, 0, man.Ballistics.Loudness);
         }
 
-        public string StatusLine => State switch
+        public string StatusLine => Down
+            ? (BurntOut ? "Burnt out in the road" : "On its side in the road")
+            : State switch
         {
             Mode.DriveBy => DriveByTarget != null ? "Drive-by on " + DriveByTarget.GangName : "Drive-by",
             Mode.Riding => Hot ? "On the road, under fire" : "On the road",

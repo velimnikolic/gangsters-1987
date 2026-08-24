@@ -59,3 +59,6 @@ Tools/RoadSim/obj/
 
 # Unity mono crash dumps
 mono_crash.*.json
+
+# Unity review gate state (per-fingerprint review markers)
+.claude/.unity-review/

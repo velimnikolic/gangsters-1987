@@ -1,3 +1,44 @@
 {
-  "worktree": { "bgIsolation": "none" }
+  "worktree": {
+    "bgIsolation": "none"
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/unity-review-gate.sh\" check 3",
+            "timeout": 30,
+            "statusMessage": "Unity review gate"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/unity-review-gate.sh\" check 1",
+            "timeout": 30,
+            "statusMessage": "Unity review gate"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/unity-review-gate.sh\" gate 3",
+            "timeout": 30,
+            "statusMessage": "Unity review gate"
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -78,6 +78,17 @@ namespace BlockDemo
         public bool motoDriveBy;
         [Tooltip("Two wheels: how many passes to ride before the run is done.")]
         [Min(1)] public int passes = 3;
+        [Tooltip("Two wheels: FORCE one of the four endings on every pass, instead of " +
+                 "waiting for the quarter to deal it. 0 rides the pass as it falls; " +
+                 "2 shoots the man on the back off it; 3 shoots the rider, which puts " +
+                 "the whole machine down; 4 empties rounds into the tank until it " +
+                 "catches. The lab does not make these scenes by itself - a rider is " +
+                 "shot off a machine in about one pass in three and the tank is found " +
+                 "in fewer, so the other three endings are code that a soak reaches by " +
+                 "luck if at all. Same reasoning as the roadblock: it is a MODE, not a " +
+                 "default, because a run where the machine always goes down measures " +
+                 "the falling and not the riding.")]
+        [Range(0, 4)] public int forceAct;
         [Tooltip("Two wheels: seconds one pass may take, door to door - the walk to the " +
                  "machine, the pass, and the ride home - before it is written off. The " +
                  "outer bound of the crews' own three (DemoCrews.Budget measures each " +
@@ -700,7 +711,7 @@ namespace BlockDemo
 
         /// <summary>Seconds a pull-out or a pull-in is allowed to be the reason a car is
         /// standing still before the watch stops taking it for an answer.</summary>
-        const float kerbPatience = 25f;
+        const float KerbPatience = 25f;
         float _kerbFor;
 
         float _walkBack;
@@ -759,7 +770,7 @@ namespace BlockDemo
             bool kerb = _car.Doing == RoadCar.Manoeuvre.PullOut || _car.Doing == RoadCar.Manoeuvre.PullIn;
             _kerbFor = kerb ? _kerbFor + Time.deltaTime : 0f;
             bool waiting = _car.InQueue || _car.Why.StartsWith("red") || _car.Why.StartsWith("yellow") ||
-                           (kerb && _kerbFor < kerbPatience);
+                           (kerb && _kerbFor < KerbPatience);
             if (busy && !waiting && Mathf.Abs(_car.Speed) < 0.3f) _stillFor += Time.deltaTime;
             else { _stillFor = 0f; _saidStuck = 0f; }
 
@@ -830,10 +841,24 @@ namespace BlockDemo
             // (RosterOps.NormalizeArms) and the street follows the book, so the machine
             // leaves the kerb. It is the ledger working, not a seam coming apart, and it
             // ends the run the way running out of hoods does.
-            if (_passesRidden > 0 && _crews.BikeOf(_ours) == null)
+            var machine = _crews.BikeOf(_ours);
+            if (_passesRidden > 0 && machine == null)
             {
                 Note($"the book took the machine back after {_passesRidden} pass" +
                      $"{(_passesRidden == 1 ? "" : "es")}");
+                Finish();
+                return;
+            }
+
+            // AND THE MACHINE ON ITS SIDE ends it the same way. Two of the four endings
+            // put it there and there is no picking one up: a lab with no motorcycle left
+            // has nothing to ride, which is the ending working rather than a seam coming
+            // apart. Without this the run that measures act 3 measures it once and then
+            // fails on the refusal it went looking for.
+            if (_passesRidden > 0 && machine != null && machine.Down)
+            {
+                Note($"the machine {(machine.BurntOut ? "burnt out" : "went down")} after " +
+                     $"{_passesRidden} pass{(_passesRidden == 1 ? "" : "es")}");
                 Finish();
                 return;
             }
@@ -866,10 +891,12 @@ namespace BlockDemo
         {
             if (State != Phase.Passing) return;
             if (!_passWaiting) { Send(); return; }
+            ForceTheAct();
 
             // the raid ends itself, every way it can end (DemoCrews.Finish)
             if (!_crews.RaidActive(_ours))
             {
+                ReadTheAct();
                 _passWaiting = false;
                 _passesRidden++;
                 if (_crews.LastRaidShots > 0) _passesFired++;
@@ -889,23 +916,126 @@ namespace BlockDemo
             }
         }
 
+        // ------------------------------------------------------------------ the four acts
+
+        bool _actForced;
+        int _actsForced, _actsWentDown, _actsRodeOn, _actsBurnt;
+
+        /// <summary>The ending this run is measuring, laid on the pass by hand.
+        ///
+        /// It fires ONCE per pass, and only with the machine on the pass, both men on
+        /// it, and the mark inside the reach it is being ridden at - the point of the
+        /// pass, which is where the picture is worth looking at. Forced from a standing
+        /// start it would only ever show a machine falling over in a car park.</summary>
+        void ForceTheAct()
+        {
+            if (forceAct <= 0 || _actForced || _crews == null || _ours == null) return;
+            var bike = _crews.BikeOf(_ours);
+            if (bike == null || bike.Down || bike.DriveByTarget == null) return;
+            if (bike.Rider == null || bike.Pillion == null || _quarry == null) return;
+            var gap = bike.Position - _quarry.Position;
+            gap.y = 0f;
+            if (gap.sqrMagnitude > ActWithin * ActWithin) return;
+
+            _actForced = true;
+            _actsForced++;
+            switch (forceAct)
+            {
+                case 2:
+                    Note($"forcing act 2 on pass {_passesRidden + 1}: the man on the back is shot");
+                    bike.Pillion.Kill();
+                    break;
+                case 3:
+                    Note($"forcing act 3 on pass {_passesRidden + 1}: the rider is shot");
+                    bike.Rider.Kill();
+                    break;
+                case 4:
+                    Note($"forcing act 4 on pass {_passesRidden + 1}: rounds into the tank");
+                    // Through the middle of it, from its own flank - the same shape of
+                    // hit DemoCrews.PutRoundIntoMachine lands, and as many as it takes.
+                    // SPREAD ALONG IT, because every one of these leaves a hole: at four
+                    // in ten it is five rounds on average and sixty in the tail, and
+                    // sixty decals on one pixel is a black smear, not a shot-up machine.
+                    var flank = bike.Tf.right * 6f + Vector3.up * 1.2f;
+                    float reach = bike.Body != null ? bike.Body.HalfLength : bike.HalfLen;
+                    for (int i = 0; i < 60 && !bike.Burning; i++)
+                        bike.TakeRound(
+                            bike.Tf.position + Vector3.up * 0.5f
+                                + bike.Tf.forward * Random.Range(-reach * 0.6f, reach * 0.6f),
+                            bike.Tf.position + flank);
+                    break;
+            }
+        }
+
+        /// <summary>How near the mark an act is forced - the pass's own reach.</summary>
+        const float ActWithin = 30f;
+
+        /// <summary>What came of the forced act, read the frame the raid ended. The
+        /// whole point of forcing one is to be able to say it did what it says on the
+        /// tin, and "the run did not crash" is not that.</summary>
+        void ReadTheAct()
+        {
+            if (forceAct <= 0 || !_actForced) return;
+            var bike = _crews != null && _ours != null ? _crews.BikeOf(_ours) : null;
+            bool down = bike != null && bike.Down;
+            bool burnt = bike != null && bike.BurntOut;
+            if (down) _actsWentDown++; else _actsRodeOn++;
+            if (burnt) _actsBurnt++;
+
+            // A MACHINE THAT STANDS UP WITH NOBODY HOLDING IT is the fault this whole
+            // layer was written for, so it is the one the lab asks about by name.
+            if (forceAct == 2 && down)
+                Fault("actdown", "the man on the back was shot and the machine went down with him");
+            if (forceAct == 3 && !down)
+                Fault("actstood", "the rider was shot and the machine did not go down");
+            if (forceAct == 4 && !burnt)
+                Fault("actcold", "the tank was emptied into and the machine did not burn");
+            _actForced = false;
+        }
+
         void Finish()
         {
+            if (forceAct > 0)
+                Note($"act {forceAct} forced on {_actsForced} pass(es): " +
+                     $"{_actsWentDown} went down ({_actsBurnt} of them burning), " +
+                     $"{_actsRodeOn} rode on");
+
             // Every pass ridden and not one round fired off the machine: the men rode
             // past and the guns never bore. Nothing else in the run would have said so.
             // Asked only of runs that rode a pass at all - a run cut short before the
             // first one came home has not failed to fire, it has not fired yet.
-            if (_passesRidden > 0 && _passesFired == 0)
+            // Not asked of a run that is FORCING an ending (forceAct): the act is laid on
+            // the pass the moment the mark is in reach, which is a beat before the first
+            // round would have gone, and act 2 takes the only man who fires off the
+            // machine outright. A run that removes the gun on purpose has not failed to
+            // fire, and a fault that cries wolf on every run of a mode is a fault
+            // nobody reads.
+            if (_passesRidden > 0 && _passesFired == 0 && forceAct == 0)
                 Fault("noshot", $"{_passesRidden} passes ridden and nothing was fired");
 
             // And the two of them back on their own feet - a man left parented to a
             // motorcycle is a man who has left the game, and he leaves quietly.
+            //
+            // A MAN IN THE AIR IS NOT ON THE MACHINE. One of the four endings throws
+            // both men off it (CrewBike.TickRiders) and a thrown man is deliberately
+            // left marked as riding until he lands - every order in the town is written
+            // to leave a rider alone, and that is exactly what has to keep the town's
+            // hands off a man in mid-flight. The mission finishes on the same frame the
+            // raid ends, which is half a second before he reaches the road, so without
+            // this the last pass of every run that put a machine down read as a man
+            // abandoned on it.
             foreach (var man in _ours.All())
-                if (!man.Dead && man.Riding)
+            {
+                if (man.Dead) continue;
+                if (man.Spilling)
                 {
-                    Fault("notback", man.DisplayName + " is still on the machine");
-                    break;
+                    Note(man.DisplayName + " was still coming off the machine when the run ended");
+                    continue;
                 }
+                if (!man.Riding) continue;
+                Fault("notback", man.DisplayName + " is still on the machine");
+                break;
+            }
 
             Go(Phase.Done, $"{_passesRidden} pass{(_passesRidden == 1 ? "" : "es")} ridden, " +
                            $"{_passesFired} with shots fired, {_killed} crews down");

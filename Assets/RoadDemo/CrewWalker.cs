@@ -16,7 +16,7 @@ namespace RoadDemo
     // squares up, and fires on his cadence until the other man is down or he is.
     // Who is hit is not his call - he raises the gun and reports the shot; the
     // arena (DemoCrews) rolls the dice and hands out the wounds.
-    public class CrewWalker : PedestrianAgent
+    public class CrewWalker : PedestrianAgent, RiderSpill.IBody
     {
         public enum Mode { Standing, Walking, Homing, Striding, Engaging, Fleeing, Riding, Dead }
 
@@ -58,6 +58,14 @@ namespace RoadDemo
 
         /// <summary>Whom he is shooting at, or null.</summary>
         public CrewWalker Target { get; private set; }
+
+        /// <summary>When he last actually LAID EYES on the man he is shooting at -
+        /// the arena stamps it every frame the mark is in sight (DemoCrews.TickCombat).
+        /// A mark that steps behind a wall is not dropped on the frame it disappears
+        /// (a man rounding the corner of a van would flicker the gun up and down every
+        /// stride); it is dropped when this has gone stale. Carried on the man rather
+        /// than in a register on the arena so it dies with him.</summary>
+        public float SawMarkAt = -100f;
 
         /// <summary>The last man who put a bullet in him - the arena's cue to answer.</summary>
         public CrewWalker LastAttacker { get; private set; }
@@ -327,6 +335,7 @@ namespace RoadDemo
         /// his boss rather than in the same frame.</summary>
         public void OrderTo(PedLink link, float t, float delay = 0f)
         {
+            if (Spilling) return;   // in the air off a machine: he is the spill's until he lands
             if (Dead || Riding || link == null || link.Length <= 0.01f || _link == null) return;
             Target = null;
             _coverSpot = null;
@@ -376,6 +385,7 @@ namespace RoadDemo
         /// order. Off the graph only; on it the sidewalks are the way.</summary>
         public void OrderToPoint(Vector3 point, float delay = 0f)
         {
+            if (Spilling) return;   // in the air off a machine: he is the spill's until he lands
             if (Dead) return;
             Target = null;
             _coverSpot = null;
@@ -415,6 +425,7 @@ namespace RoadDemo
         /// walks at it and gets as near as the ground lets him.</summary>
         public void OrderAcross(Vector3 point, float delay = 0f)
         {
+            if (Spilling) return;   // in the air off a machine: he is the spill's until he lands
             if (Dead) return;
             Target = null;
             _coverSpot = null;
@@ -537,6 +548,12 @@ namespace RoadDemo
         float _aimBlend;
         Vector3 _aimDir;
 
+        /// <summary>How far off a man will still put his gun up at somebody riding past
+        /// - on a saddle or behind a windscreen. Further than any gun in the town shoots
+        /// well, on purpose: he cannot walk up to a machine doing fifty, so it is this or
+        /// he stands and watches it go.</summary>
+        public static float PassingShot = 25f;
+
         /// <summary>Point the gun at the man he is fighting - the whole right arm,
         /// turned at the shoulder by whatever it takes for the muzzle's line to pass
         /// through the target's chest, eased in and out so the raise reads as a
@@ -554,8 +571,22 @@ namespace RoadDemo
                 var flat = Target.Tf.position - Tf.position;
                 flat.y = 0f;
                 // inside the fight's reach, and squared up enough that the arm and
-                // not the whole man does the turning
-                aiming = flat.magnitude <= Ballistics.Range * 1.35f &&
+                // not the whole man does the turning.
+                //
+                // A MAN ON A MACHINE OR IN A CAR IS SHOT AT FURTHER OFF. Every other
+                // fight in the town is fought at the gun's own reach because a man who
+                // wants a closer shot WALKS UP - and that is exactly what nobody can do
+                // to a motorcycle (TickEngage refuses to close on a mounted mark). With
+                // the same reach on both, a crew shot up by a pass standing off twenty
+                // metres never raised its guns at all: the aim blend is what lets a
+                // round leave the barrel, and it only came up inside eight metres. The
+                // rounds that answer a drive-by are long, wild and mostly miss - the
+                // falloff sees to that (DemoCrews.Resolve) - and they are the whole
+                // scene.
+                float reach = Target.Riding || Target.Astride
+                    ? Mathf.Max(Ballistics.Range * 1.35f, PassingShot)
+                    : Ballistics.Range * 1.35f;
+                aiming = flat.magnitude <= reach &&
                          Vector3.Angle(Tf.forward, flat) < 70f;
             }
             _aimBlend = Mathf.MoveTowards(_aimBlend, aiming ? 1f : 0f, 6f * dt);
@@ -652,6 +683,19 @@ namespace RoadDemo
             // what the player watched - men who crouch as they set off and men who
             // never stand back up.
             _keepingLow = false;
+            // IN THE AIR OFF A MOTORCYCLE. The spill writes his transform and holds a
+            // take on him; all he wants from here is the blend that shows it. Every
+            // branch below would fight it - the riding one re-asserts the seated pose
+            // every frame, which cancels the act slot the fall is playing in, so a man
+            // thrown off used to tumble in whatever he was sitting in.
+            // A DEAD one still goes through the Dead branch below: it writes no
+            // transform, and it is what drops the gun out of his hand and holds the
+            // death on its last frame.
+            if (Spilling && !Dead)
+            {
+                TickBlend(dt);
+                return;
+            }
             switch (State)
             {
                 case Mode.Dead:
@@ -659,11 +703,13 @@ namespace RoadDemo
                     if (HasPose(PoseDeath))
                     {
                         float len = PoseLength(PoseDeath), at = PoseTime(PoseDeath);
-                        // the gun leaves the hand part-way down and lies where it fell
-                        if (!_gunDropped && at >= len * 0.45f) DropGun();
+                        // the gun leaves the hand part-way down and lies where it fell -
+                        // but not while he is still in the air off a machine, or it is
+                        // left hanging at head height over the road he is falling into
+                        if (!_gunDropped && !Spilling && at >= len * 0.45f) DropGun();
                         if (at >= len - 0.03f) HoldPose(PoseDeath);
                     }
-                    else if (!_gunDropped) DropGun();
+                    else if (!_gunDropped && !Spilling) DropGun();
                     return;
 
                 case Mode.Standing:
@@ -1185,6 +1231,60 @@ namespace RoadDemo
         /// stay where everyone can see them and BikePose puts them on the pegs.</summary>
         public bool Astride { get; private set; }
 
+        // ------------------------------------------------------- off the machine
+
+        /// <summary>He is in the air, or in the road, having come off a motorcycle -
+        /// the spill owns his transform and his pose until it settles (RiderSpill).
+        ///
+        /// He is left in <see cref="Mode.Riding"/> throughout, and that is the whole
+        /// trick: every question the town asks about a man it may order about - is he
+        /// a body in the carriageway, has he a place in his crew's line, may he be sent
+        /// somewhere - is already written as "not while he is riding". A new state
+        /// would have to be added to all of them and would be missed in one.</summary>
+        public bool Spilling { get; private set; }
+
+        /// <summary>RiderSpill.IBody. His root is what the fall throws; his riding pose
+        /// is the thing that must stop writing him first; and a man the town has already
+        /// killed comes off limp, because CrewWalker.Kill started the crowd's own death
+        /// on him the moment the round landed and nothing here improves on that.</summary>
+        Transform RiderSpill.IBody.Root => Tf;
+        BikePose RiderSpill.IBody.Pose => Tf != null ? Tf.GetComponent<BikePose>() : null;
+        AnimationClip RiderSpill.IBody.Playing => Dead ? null : Take;
+        bool RiderSpill.IBody.Finished => Dead || TakeFinished;
+        bool RiderSpill.IBody.AlreadyDying => Dead;
+
+        void RiderSpill.IBody.Play(AnimationClip clip, bool loop, float fade, float speed, float at)
+        {
+            // A DEAD MAN IS NOT DRESSED TWICE. His death is running in the pose graph
+            // already (Kill), held on its last frame by the Dead branch of TickCrew, and
+            // a wardrobe death laid over it in the act slot would be the same body dying
+            // two ways at two rates. The fade is the graph's own (a fixed crossfade) and
+            // is not the caller's to set here.
+            if (Dead) return;
+            PlayTake(clip, loop, speed, at);
+        }
+
+        /// <summary>He has left the machine: hand him to the spill. Called by CrewBike,
+        /// which is the only thing that knows he was on one.</summary>
+        public void BeginSpill()
+        {
+            Spilling = true;
+            RidingAim = false;
+            Target = null;
+            State = Dead ? Mode.Dead : Mode.Riding;
+        }
+
+        /// <summary>The spill is over: back on his own feet, or lying where he stopped.
+        /// The take comes off him here and nowhere else - a held one never ends by
+        /// itself, and a man still wearing it swallows every pose he is given after.</summary>
+        public void EndSpill()
+        {
+            if (!Spilling) return;
+            Spilling = false;
+            EndTake();
+            if (!Dead) SetRiding(false);
+        }
+
         /// <summary>Put in a seat, or set down beside the car again.</summary>
         public void SetRiding(bool on) => SetRiding(on, astride: false);
 
@@ -1367,7 +1467,7 @@ namespace RoadDemo
         /// <summary>Off the scene for good: a long run away from here, and gone.</summary>
         public void Retreat(Vector3 from)
         {
-            if (Dead) return;
+            if (Dead || Spilling || Riding) return;
             Retreating = true;
             _returnTo = null;
             Flee(from, 60f, 90f, comeBack: false);
@@ -1386,7 +1486,7 @@ namespace RoadDemo
         /// fight and runs from whoever hit him, and stays out of it a while after.</summary>
         public void MaybePanic(CrewWalker threat, float chance)
         {
-            if (Dead || _nerveRolled || Health > 1) return;
+            if (Dead || Spilling || _nerveRolled || Health > 1) return;
             _nerveRolled = true;
             if (Random.value >= chance) return;
             Flee(threat != null && threat.Tf ? threat.Tf.position : Tf.position - Tf.forward);
@@ -1399,7 +1499,14 @@ namespace RoadDemo
         /// nerve returns (a man rattled by a friend going down beside him).</summary>
         public void Flee(Vector3 from, float near, float far, bool comeBack)
         {
-            if (Dead) return;
+            // NOT OFF A MOVING MACHINE, AND NOT OUT OF A MOVING CAR. A man whose nerve
+            // goes while he is riding was put into Mode.Fleeing on the saddle: the
+            // vehicle went on writing his transform, so he sat there looking like a
+            // pillion while the town thought he was running for his life - and the
+            // machine's own guns went on firing him (CrewBike.TickGuns), which is a man
+            // fleeing and shooting at once. His nerve is asked again the moment he is
+            // back on his feet (DemoCrews.Rejoin, and the car's DriverLost).
+            if (Dead || Spilling || Riding) return;
             Target = null;
             _coverSpot = null;
             InCover = false;

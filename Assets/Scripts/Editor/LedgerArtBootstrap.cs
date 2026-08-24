@@ -51,6 +51,7 @@ namespace LivingCity.EditorTools
             changed |= Wire(ref set.tommyGun, GangWarfare + "SM_Wep_SubMachineGun_01.prefab");
             changed |= WireWeapons(set);
             changed |= WireMotorcycles(set);
+            changed |= WireVehicles(set);
             changed |= WirePeople(set);
 
             // The photographs' model source for city-less scenes.
@@ -153,6 +154,42 @@ namespace LivingCity.EditorTools
                 return false;
 
             set.motorcycles = bikes.ToArray();
+            return true;
+        }
+
+        /// <summary>The CARS the counter sells that no traffic bucket holds - the ones
+        /// this project built for itself. A pack car is found in the PrefabDatabase and
+        /// needs no line here; the armoured wagon is a variant of Palm City's SUV
+        /// (ArmouredSuvBuilder) that the city never drives, so without this its listing
+        /// would photograph nothing outside the editor.</summary>
+        static readonly string[] VehiclePaths =
+        {
+            "Assets/Prefabs/Vehicles/SM_Veh_Suv_01_Armoured.prefab",
+        };
+
+        /// <summary>Fills set.vehicles additively, exactly as the bikes are filled, so an
+        /// Inspector override survives a re-bake.</summary>
+        static bool WireVehicles(LedgerModelSet set)
+        {
+            var cars = new System.Collections.Generic.List<GameObject>();
+            if (set.vehicles != null)
+                foreach (var prefab in set.vehicles)
+                    if (prefab)
+                        cars.Add(prefab);
+
+            var before = cars.Count;
+            foreach (var path in VehiclePaths)
+            {
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (prefab && !cars.Contains(prefab))
+                    cars.Add(prefab);
+            }
+
+            var pruned = set.vehicles != null && set.vehicles.Length != before;
+            if (cars.Count == before && !pruned)
+                return false;
+
+            set.vehicles = cars.ToArray();
             return true;
         }
 

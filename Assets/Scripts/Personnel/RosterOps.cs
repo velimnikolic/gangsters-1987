@@ -187,6 +187,22 @@ namespace LivingCity.Personnel
             return false;
         }
 
+        /// <summary>Struck off the books - the thing itself is gone, not sold. One
+        /// caller so far: a motorcycle whose tank went up under a drive-by (DemoCrews).
+        /// Nothing is refunded and nobody is told; the line simply stops being there,
+        /// which is what the street has just made true. False if it was not on them.</summary>
+        public static bool LoseItem(Roster roster, int itemId)
+        {
+            if (roster == null) return false;
+            for (var i = roster.Equipment.Count - 1; i >= 0; i--)
+                if (roster.Equipment[i].Id == itemId)
+                {
+                    roster.Equipment.RemoveAt(i);
+                    return true;
+                }
+            return false;
+        }
+
         public static OpResult GiveEquipment(Roster roster, int itemId, int id)
         {
             var item = FindItem(roster, itemId);

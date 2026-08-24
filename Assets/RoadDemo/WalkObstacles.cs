@@ -111,18 +111,26 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ the solids
 
-        /// <summary>Block off this ground - a building's footprint, world axes.</summary>
-        public static void Block(float xMin, float xMax, float zMin, float zMax)
+        /// <summary>Block off this ground - a building's footprint, world axes. The
+        /// rise is how HIGH the thing stands, and the only thing that reads it is the
+        /// sight line (<see cref="Sees"/>): a man sees over a parked car and not over a
+        /// wall. Left out, the thing is taken for a wall, which is what a caller that
+        /// never measured a height is nearly always blocking off.</summary>
+        public static void Block(float xMin, float xMax, float zMin, float zMax, float rise = 0f)
         {
             if (xMax <= xMin || zMax <= zMin) return;
             Grew(xMin, xMax, zMin, zMax);
-            _solids.Take(SidewalkPlan.Make(
+            var box = SidewalkPlan.Make(
                 new Vector2((xMin + xMax) * 0.5f, (zMin + zMax) * 0.5f), 0f,
-                new Vector2((xMax - xMin) * 0.5f, (zMax - zMin) * 0.5f), solid: true));
+                new Vector2((xMax - xMin) * 0.5f, (zMax - zMin) * 0.5f), solid: true);
+            box.Rise = rise;
+            _solids.Take(box);
         }
 
-        /// <summary>Block off the ground under these world bounds.</summary>
-        public static void Block(Bounds b) => Block(b.min.x, b.max.x, b.min.z, b.max.z);
+        /// <summary>Block off the ground under these world bounds - which carry the
+        /// thing's height, so the sight line gets it for nothing.</summary>
+        public static void Block(Bounds b) =>
+            Block(b.min.x, b.max.x, b.min.z, b.max.z, b.size.y);
 
         /// <summary>Block off an oriented box: centre, yaw in degrees, half extents
         /// in its own frame.</summary>
@@ -201,6 +209,22 @@ namespace RoadDemo
         /// past, frame by frame (Steer).</summary>
         public static bool Standing(Vector3 p, float radius) =>
             OnGround(new Vector2(p.x, p.z), radius);
+
+        /// <summary>Can this point SEE that one - is there nothing but air between
+        /// them? Only the city's own walls are asked (the blocks a scene laid: buildings,
+        /// lots, yards). The furniture is deliberately left out: a bin is cover, not a
+        /// hiding place, and a sight line that broke on every one of them would flicker
+        /// a fight on and off down the length of a dressed street.
+        ///
+        /// This exists for the crews' eyes (DemoCrews.InSight). Before it, "in sight"
+        /// was a RADIUS, so a mob shot at by a car going past kept the car in view
+        /// through a block of flats and ran at wherever it actually was - the player
+        /// watched crews come to him across a quarter they could not possibly have seen
+        /// him cross. A scene that blocked nothing off has nothing in the way and
+        /// everything is in sight, which is the only sensible reading of an empty lab
+        /// floor.</summary>
+        public static bool Sees(Vector3 from, Vector3 to) =>
+            !_solids.Blocks(new Vector2(from.x, from.z), new Vector2(to.x, to.z));
 
         /// <summary>Is there a WALL here - a building face, a lot's edge - as opposed
         /// to a piece of furniture? The blocks laid by the builder, and nothing out of

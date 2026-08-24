@@ -45,6 +45,8 @@ MonoBehaviour:
   - {fileID: 4001005343886489682, guid: 6800e238fdd1d481eaea0dd2666dfffb, type: 3}
   - {fileID: 7491684092619624340, guid: 7a992456d1cd1d8428eb4f42bd5c9935, type: 3}
   - {fileID: 7008481642919929893, guid: 4e81ae15b4f064c2fb54c0e51bf87e22, type: 3}
+  vehicles:
+  - {fileID: 5479439671414294133, guid: 338eae0e123564072b2a743efb27b974, type: 3}
   people:
   - {fileID: 17189799186563761, guid: bc9b3a9556793d34e917f082a7745fff, type: 3}
   - {fileID: 4681667460326336885, guid: d94b2a42b709b0148b2ade390a5c50df, type: 3}

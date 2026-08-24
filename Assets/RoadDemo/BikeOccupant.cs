@@ -15,7 +15,7 @@ namespace RoadDemo
         // Not ExecuteAlways either: nothing here is driven by a Unity message off Play -
     // Seat() and Dress() are called outright - so running in edit mode would buy nothing
     // and would drag BikePose back in with it.
-    public sealed class BikeOccupant : MonoBehaviour
+    public sealed class BikeOccupant : MonoBehaviour, RiderSpill.IBody
     {
         PlayableGraph _graph;
 
@@ -36,6 +36,13 @@ namespace RoadDemo
         /// <summary>The pose this body is riding in - the caller sets its speed, its
         /// foot down and its gun (RoadBike does it every frame).</summary>
         public BikePose Pose { get; private set; }
+
+        /// <summary>RiderSpill.IBody: the transform a fall throws, and whether his
+        /// death is already running. It never is for one of these - a body out of the
+        /// traffic has no life of its own to be killed in, so the spill decides.</summary>
+        public Transform Root => transform;
+
+        public bool AlreadyDying => false;
 
         /// <summary>What is playing on him this instant, and how far into it.</summary>
         public AnimationClip Playing => _clip;

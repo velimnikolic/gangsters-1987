@@ -29,8 +29,9 @@ namespace BikeDemo
     ///                        the machine rides on with the driver alone.
     ///   3  RIDER SHOT      - the man at the bars is hit. The machine goes down with him
     ///                        and takes the pillion with it; the pillion gets up.
-    ///   4  BURNS           - the tank goes up, the machine falls on its side and slides
-    ///                        away burning, and both of them get up out of the road.
+    ///   4  BURNS           - the machine is hit until it catches, falls on its side and
+    ///                        slides away burning while both men get up out of the road,
+    ///                        and then the tank goes (BikeSpill.Fuse).
     ///
     /// The loop is synchronised on purpose: every lane is put back at the start line
     /// together, once all four have finished and the wreck has been left standing long
@@ -143,6 +144,10 @@ namespace BikeDemo
         [Tooltip("How big the pack's fire is drawn on a motorcycle. The prefabs are " +
                  "authored for a burning car.")]
         public float fireScale = 0.55f;
+        [Tooltip("Seconds a burning machine has before the tank goes. The fire is the " +
+                 "warning and the bang is what it was warning about - long enough to " +
+                 "read as a machine burning, short enough that nobody forgets it.")]
+        [Min(0.5f)] public float fuse = 4.5f;
 
         [Header("Watching")]
         [Tooltip("The camera goes with the pack. Off, or the moment WASD is touched, it " +
@@ -390,6 +395,13 @@ namespace BikeDemo
                 // the spill drives the machine's own transform now; all this owes it is
                 // wheels that spin down with it
                 lane.Body.Tick(dt, lane.Spill.Speed, 0f);
+                // AND THEN THE TANK GOES. A machine that catches fire and burns quietly
+                // for ever is not what a burning machine does, and the bench is where
+                // the seconds between the two are argued about (fuse). The street sets
+                // the same one off with the same read (DemoCrews.TickBikes) - it just
+                // has people standing near it to catch in the blast.
+                if (lane.Spill.TakeBlast())
+                    Explosion.Blow(lane.Machine.position + Vector3.up * 0.4f, null, null, 0, 0f);
             }
 
             Wear(lane);
@@ -405,8 +417,14 @@ namespace BikeDemo
                     lane.Done = ridden && Settled(lane.ShooterOff);
                     break;
                 case Act.RiderShot:
-                case Act.Burns:
                     lane.Done = lane.Spill != null && lane.Spill.Settled &&
+                                Settled(lane.DriverOff) && Settled(lane.ShooterOff);
+                    break;
+                case Act.Burns:
+                    // and not until it has blown: the bang is the last beat of this act,
+                    // and a loop that restarts the lane while the machine is still
+                    // burning never shows it
+                    lane.Done = lane.Spill != null && lane.Spill.Settled && lane.Spill.Blown &&
                                 Settled(lane.DriverOff) && Settled(lane.ShooterOff);
                     break;
             }
@@ -501,6 +519,7 @@ namespace BikeDemo
             BikeSpill.Drag = machineDrag;
             BikeSpill.Slew = slew;
             BikeSpill.FireScale = fireScale;
+            BikeSpill.Fuse = fuse;
         }
 
         void Restart()
