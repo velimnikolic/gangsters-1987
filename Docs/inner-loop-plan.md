@@ -1,6 +1,6 @@
 # Plan: autoput v4 — „Inner Loop" (gradski autoput 1987, kako se zaista gradi)
 
-> Predlog 2026-08-25, još **neodobren**. Aritmetika plana: `python Docs/innerloop.py`.
+> Predlog 2026-08-25, još **neodobren**. Aritmetika plana: `python Docs/innerloop.py` — **39 provera, 0 padova**.
 > Prethodna tri pokušaja (šav-nadvožnjak + dijamant, belt sa slip-rampama, FreewayDemo
 > sa naplatnom) ostaju u kodu isključeni dok ovaj ne stane na noge; odeljak 12 kaže šta
 > se od njih zadržava.
@@ -92,7 +92,7 @@ denivelisan, sa pravim rampama, sa krivinama.
             │  │  ══════════ prsten (D=120) ═══ │    │   R  = 260 m u sva četiri ugla
             │  │ ║  ┌────────────────────────┐ ║│    │   H  = 7.0 m visina kolovoza (vijadukt)
             │  │ ║  │        GRID            │ ║│    │
-            │  │ ║  │  15×9 linija, 1.4–2 km │ ║│    │   luk R=260 seče dijagonalu ugla na 30 m
+            │  │ ║  │  15×9 linija, 1.4–2 km │ ║│    │   luk R=260 seče dijagonalu ugla na 62 m
             │  │ ║  └────────────────────────┘ ║│    │   od ugla grida (ne dira ivični trotoar)
             │  │  ═════════════════════════════ │    │
             │  ╰────────────────────────────────╯    │
@@ -102,8 +102,8 @@ denivelisan, sa pravim rampama, sa krivinama.
 
 - **Osa** na `D = 120 m` od spoljne ivice trotoara ivične ulice grida, paralelno sa sve
   četiri strane; četiri **luka `R = 260 m`** (50 mph, e = 6 %) spajaju strane. Luk počinje
-  260 m pre ugla na svakoj strani i prolazi 30 m od ugla grida.
-- Zašto 120: unutrašnji terminal dijamanta je na `D − 58 = 62 m` od ivičnjaka, tj. **77 m
+  140 m (R − D) pre ugla grida na svakoj strani i prolazi 62 m od samog ugla.
+- Zašto 120: unutrašnji terminal dijamanta je na `D − 58 = 62 m` od ivičnjaka, tj. **76 m
   osa–osa** od ivične ulice grida — jedan kratak gradski blok, koliko je i u Majamiju
   između rampe i prve avenije; manje od toga bi dve raskrsnice sedele jedna drugoj u
   krilu (isti prigovor kao kod servisnih ulica).
@@ -207,8 +207,8 @@ njim.
 
 | deonica | dužina | napomena |
 |---|---|---|
-| traka za usporavanje (paralelna, na decku) | 120 m (sužavanje 50 + paralelno 70) | 24.6 → 13 m/s, a = 1.45 m/s² |
-| gore: nos + razmicanje osa 13.2 → 18 m | 35 m | ovde rampa dobija svoj parapet |
+| traka za usporavanje (paralelna, na decku) | 120 m (sužavanje 50 + paralelno 70) | 24.6 → 13 m/s, a = 1.8 m/s² |
+| gore: nos + razmicanje osa 14.1 → 18 m | 35 m | ovde rampa dobija svoj parapet |
 | ispupčena vertikalna krivina | 30 m (pad 0.9 m) | K = 5 m/% (rampa 25 mph) |
 | ravan pad 6 % | 85 m (pad 5.08 m) | |
 | udubljena vertikalna krivina | 30 m (pad 0.9 m) | ukupno 6.88 m = 7.0 − 0.12 ✓ |
@@ -244,21 +244,22 @@ raste za 20 m i priključak za 40 m — ostavljen kao konstanta.
      deck A (+u) ═══════╪═════════════════════════════════════════════════════
    ...izlaz A ─────╗   │   ╔═══ ulaz A → nos A → ...traka za ubrzanje (+u)
                    ╚───┼───╝
-                 unutrašnji terminal (T, semafor)  ← arterija ide u grid (77 m do ivične raskrsnice)
+                 unutrašnji terminal (T, semafor)  ← arterija ide u grid (76 m do ivične raskrsnice)
                        │
-   stanice duž ose:  −400 … −220 (nos izlaza) … 0 (arterija) … +220 (nos ulaza) … +400
+   stanice duž ose:  −340 … −220 (nos izlaza) … 0 (arterija) … +220 (nos ulaza) … +400
 ```
 
 | stanica (m od ose arterije) | šta |
 |---|---|
-| −400 | početak trake za usporavanje (deck se širi na 15.2) |
-| −280 … −220 | nos izlaza; rampa dobija parapet, osa odlazi na ±18 |
-| −220 … −75 | pad 6 % sa krivinama (145 m) |
-| −75 … 0 | luk R=40 do terminala na v = ±58 |
+| −340 | početak trake za usporavanje (deck se širi na 15.2) |
+| −220 … −185 | nos izlaza; rampa dobija parapet, osa odlazi sa 14.1 na ±18 |
+| −185 … −40 | pad 6 % sa krivinama (145 m) |
+| −40 … 0 | luk R=40 do terminala na v = ±58 |
 | 0 | arterija (bulevar 35 m) prolazi ispod decka; terminali na v = −58 (unutra) i +58 (spolja), 116 m između |
-| 0 … +75 | luk R=40 sa terminala |
-| +75 … +220 | uspon 6 % |
-| +220 … +400 | nos ulaza, traka za ubrzanje 180 m (deck širi) |
+| 0 … +40 | luk R=40 sa terminala |
+| +40 … +185 | uspon 6 % |
+| +185 … +220 | nos ulaza |
+| +220 … +400 | traka za ubrzanje 180 m (deck širi) |
 
 Svaki deck ima izlaz **pre** arterije i ulaz **posle** nje, oba na svojoj desnoj strani;
 deck A sleće na unutrašnji terminal, deck B na spoljni. Kvadrat priključka: **840 × 140 m**.
@@ -286,8 +287,8 @@ bulevar na signalisanoj raskrsnici" — jedini realan način da se autoput zavr�
 
 | prigovor | ovde |
 |---|---|
-| „glupe uključne/isključne rampe" | rampa je 400 m od trake za usporavanje do terminala, nagib 6 %, luk R = 40 na dnu, pomoćne trake na decku, nos sa parapetom, terminal sa semaforom — mere iz priručnika, ne iz grafa |
-| „loše se povezivao na grad" | priključak samo na arteriju koja vodi negde (kvart ↔ grid), arterija je bulevar, terminal 77 m od ivične raskrsnice, nema servisnih ulica ni praznih kvadrata; sve ostale ulice prolaze ispod bez ikakvog čvora |
+| „glupe uključne/isključne rampe" | rampa je 340 m od trake za usporavanje do terminala, nagib 6 %, luk R = 40 na dnu, pomoćne trake na decku, nos sa parapetom, terminal sa semaforom — mere iz priručnika, ne iz grafa |
+| „loše se povezivao na grad" | priključak samo na arteriju koja vodi negde (kvart ↔ grid), arterija je bulevar, terminal 76 m od ivične raskrsnice, nema servisnih ulica ni praznih kvadrata; sve ostale ulice prolaze ispod bez ikakvog čvora |
 | ukrštanja u nivou | nijedno |
 | glavni tok staje na spajanju | nikad (§5.3 — invarijanta harnessa) |
 
@@ -306,7 +307,7 @@ pretvorilo u četiri raskrsnice.
 
 ### 5.2 Trake sa početkom i krajem (`Lane.s0, s1`)
 
-Pomoćna traka za usporavanje postoji od −400 do −220, za ubrzanje od +220 do +400;
+Pomoćna traka za usporavanje postoji od −340 do −220, za ubrzanje od +220 do +400;
 glavne trake celom dužinom. `Ahead/Behind` upiti po traci gledaju samo kola čiji `s` je u
 opsegu trake.
 
@@ -420,8 +421,8 @@ UV-e pa se u sceni ne razlikuje od pločice. Traži potvrdu (§13).
 
 **Bez Unity-ja — `python Docs/innerloop.py`** (mora da prođe pre prve linije C#):
 koridor i kvadrat priključka u pojasu sela; luk R=260 ne dira ivični trotoar; rampa:
-zbir padova = 7.0 − 0.12, nagib ≤ 6 %, K ≥ 5, dužina ≥ 150; terminali na ±58, ≥ 90 m od
-ivične raskrsnice grida i od kapije sela; brzina po krivini; razmak priključaka ≥ 850 sa
+zbir padova = 7.0 − 0.12, nagib ≤ 6 %, K ≥ 5, dužina ≥ 150; terminali na ±58, ≥ 70 m od
+ivične raskrsnice grida (76) i ≥ 90 m od kapije sela (102); brzina po krivini; razmak priključaka ≥ 850 sa
 nosevima ≥ 400; broj priključaka po tipičnom gridu ≥ 3; svetla visina ≥ 4.9; obala +90
 drži tri prstena; dužina prstena.
 

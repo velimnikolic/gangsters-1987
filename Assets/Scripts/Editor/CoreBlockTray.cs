@@ -170,6 +170,7 @@ namespace LivingCity.EditorTools
             tray.transform.SetParent(trays, false);
             tray.transform.position = centre;
 
+            Buttons(tray.transform);
             Pad(centre, width, depth, tray.transform);
             Caption(LabelName,
                     $"{name}\n{width:F0} x {depth:F0} m\nsave the scene to bake",
@@ -348,53 +349,8 @@ namespace LivingCity.EditorTools
 
             foreach (Transform tray in trays)
             {
-                if (!TryRect(tray, out var rect)) continue;
-
-                var already = tray.Find(PavingName);
-                if (already && !force) continue;
-
-                // the buildings alone say where the block is. A lamp's box hangs out over
-                // the road it lights and a parked car covers most of a cell, and either of
-                // them read as ground would pull the kerb out into the street
-                var walls = new List<Bounds>();
-                foreach (var piece in pieces)
-                {
-                    // an earlier tray's old pavement was destroyed a few lines ago and the
-                    // sweep still remembers it
-                    if (!piece.Go) continue;
-                    if (piece.Owner != tray && (piece.Owner != null || !Holds(rect, piece.Box.center)))
-                        continue;
-                    if (already && piece.Go.transform.parent == already) continue;
-                    if (!Named(piece.Go, "SM_Bld_")) continue;
-                    // standing ON the ground, and tall enough to be a wall: the fire
-                    // escapes and roof housings the pack also calls buildings are up in
-                    // the air, and a block is not as wide as its roofline
-                    if (piece.Box.min.y > 1f || piece.Box.max.y < 2f) continue;
-                    walls.Add(piece.Box);
-                }
-                if (walls.Count == 0) continue;
-
-                if (already) Undo.DestroyObjectImmediate(already.gameObject);
-
-                var group = new GameObject(PavingName);
-                Undo.RegisterCreatedObjectUndo(group, "Pave block tray");
-                group.transform.SetParent(tray, false);
-
-                // the seed is the tray's NAME: the same tray is furnished the same way every
-                // time it is paved, and no two trays come out wearing the same lamps
-                int seed = 17;
-                foreach (char letter in tray.name) seed = seed * 31 + letter;
-
-                var plan = RoadDemo.CorePavement.Around(walls);
-                int laid = RoadDemo.CorePavement.Lay(
-                    plan, (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent),
-                    group.transform, out var line, y: tray.position.y, seed: seed);
-
-                if (laid == 0)
-                {
-                    Undo.DestroyObjectImmediate(group);
-                    continue;
-                }
+                Buttons(tray);
+                if (!PaveTray(tray, pieces, force, out var line)) continue;
                 paved++;
                 said.Add($"{tray.name}: {line}");
             }
@@ -406,6 +362,140 @@ namespace LivingCity.EditorTools
             }
             return paved;
         }
+
+        /// <summary>One tray paved. Returns false for a tray holding no buildings, and for
+        /// one that is already paved unless <paramref name="force"/> says otherwise.</summary>
+        static bool PaveTray(Transform tray, List<Piece> pieces, bool force, out string said)
+        {
+            said = null;
+            if (!TryRect(tray, out var rect)) return false;
+
+            var already = tray.Find(PavingName);
+            if (already && !force) return false;
+
+            // the buildings alone say where the block is. A lamp's box hangs out over the
+            // road it lights and a parked car covers most of a cell, and either of them
+            // read as ground would pull the kerb out into the street
+            var walls = Walls(tray, rect, already, pieces);
+            if (walls.Count == 0) return false;
+
+            if (already) Undo.DestroyObjectImmediate(already.gameObject);
+
+            var group = new GameObject(PavingName);
+            Undo.RegisterCreatedObjectUndo(group, "Pave block tray");
+            group.transform.SetParent(tray, false);
+
+            // the seed is the tray's NAME: the same tray is furnished the same way every
+            // time it is paved, and no two trays come out wearing the same lamps
+            int seed = 17;
+            foreach (char letter in tray.name) seed = seed * 31 + letter;
+
+            var plan = RoadDemo.CorePavement.Around(walls);
+            int laid = RoadDemo.CorePavement.Lay(
+                plan, (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent),
+                group.transform, out said, y: tray.position.y, seed: seed);
+
+            if (laid != 0) return true;
+            Undo.DestroyObjectImmediate(group);
+            return false;
+        }
+
+        /// <summary>The buildings standing on one tray - what its block is measured from.
+        /// Only the pack's own, only the ones with their feet on the ground and tall enough
+        /// to be a wall: the fire escapes and roof housings it also calls buildings are up
+        /// in the air, and a block is not as wide as its roofline.</summary>
+        static List<Bounds> Walls(Transform tray, Rect rect, Transform paving, List<Piece> pieces)
+        {
+            var walls = new List<Bounds>();
+            foreach (var piece in pieces)
+            {
+                // an earlier tray's old pavement was destroyed a moment ago and the sweep
+                // still remembers it
+                if (!piece.Go) continue;
+                if (piece.Owner != tray && (piece.Owner != null || !Holds(rect, piece.Box.center)))
+                    continue;
+                if (paving && piece.Go.transform.parent == paving) continue;
+                if (!Named(piece.Go, "SM_Bld_")) continue;
+                if (piece.Box.min.y > 1f || piece.Box.max.y < 2f) continue;
+                walls.Add(piece.Box);
+            }
+            return walls;
+        }
+
+        /// <summary>Gives a tray its buttons if it has none - an old tray, laid before there
+        /// were any. Adding a component dirties the scene, so this only ever runs where the
+        /// scene is being written to anyway.</summary>
+        static void Buttons(Transform tray)
+        {
+            if (!tray.GetComponent<RoadDemo.CoreTray>()) tray.gameObject.AddComponent<RoadDemo.CoreTray>();
+        }
+
+        // ------------------------------------------------------ what the buttons ask for
+
+        /// <summary>Paves one tray, sweeping the scene for it. The Pave button.</summary>
+        internal static bool PaveOne(Transform tray, out string said)
+        {
+            said = "this tray is not in an open scene.";
+            var scene = tray.gameObject.scene;
+            var trays = TraysOf(scene);
+            if (!trays) return false;
+
+            if (!PaveTray(tray, Sweep(scene, trays), force: true, out said))
+            {
+                said = "nothing to pave: no building of the pack's stands on this tray.";
+                return false;
+            }
+            Undo.SetCurrentGroupName("Pave block tray");
+            EditorSceneManager.MarkSceneDirty(scene);
+            return true;
+        }
+
+        /// <summary>Takes everything off one tray, without baking any of it. Through Undo,
+        /// like every other deletion here.</summary>
+        internal static int EmptyOne(Transform tray)
+        {
+            var scene = tray.gameObject.scene;
+            var trays = TraysOf(scene);
+            if (!trays || !TryRect(tray, out var rect)) return 0;
+
+            var mine = new List<GameObject>();
+            foreach (var piece in Sweep(scene, trays))
+                if (piece.Go && (piece.Owner == tray ||
+                                 (piece.Owner == null && Holds(rect, piece.Box.center))))
+                    mine.Add(piece.Go);
+            return Remove(scene, mine);
+        }
+
+        /// <summary>What one tray is holding, for the buttons to say so. Sweeps the scene,
+        /// so it is read when the selection or the hierarchy changes and not every
+        /// repaint.</summary>
+        internal static void Holding(Transform tray, out int pieces, out int buildings,
+                                     out bool paved, out Vector2 size)
+        {
+            pieces = buildings = 0;
+            size = Vector2.zero;
+            var paving = tray.Find(PavingName);
+            paved = paving;
+
+            var scene = tray.gameObject.scene;
+            var trays = TraysOf(scene);
+            if (!trays || !TryRect(tray, out var rect)) return;
+
+            var mine = new List<Piece>();
+            foreach (var piece in Sweep(scene, trays))
+                if (piece.Go && (piece.Owner == tray ||
+                                 (piece.Owner == null && Holds(rect, piece.Box.center))))
+                    mine.Add(piece);
+
+            pieces = mine.Count;
+            buildings = Walls(tray, rect, paving, mine).Count;
+            if (mine.Count == 0) return;
+            var box = Ground(mine);
+            size = new Vector2(box.size.x, box.size.z);
+        }
+
+        /// <summary>Where a tray's block would be written.</summary>
+        internal static string PrefabPath(Transform tray) => $"{OutDir}/{tray.name}.prefab";
 
         // --------------------------------------------------------------- the review row
 
@@ -2343,16 +2433,26 @@ namespace LivingCity.EditorTools
                     Bag(child, tray, found);
                 }
 
+            // the rectangles, for the stock rule below
+            var counters = new List<Rect>();
+            if (trays)
+                foreach (Transform tray in trays)
+                    if (TryRect(tray, out var counter)) counters.Add(counter);
+
             foreach (var root in scene.GetRootGameObjects())
             {
-                // the review row is what has already been baked, the map is paint, the
-                // industrial candidates are a question nobody has answered yet, and the
-                // bare library is stock standing right beside the trays - none of the four
-                // is a block waiting to be claimed by a rectangle. The library most of all:
-                // it stands within arm's reach of the rectangles by design, and a harvest
-                // that swept it would file the whole of it back over its own prefabs
-                if (root.name == ReviewRoot || root.name == MapRoot || root.name == BareRoot ||
+                // the review row is what has already been baked, the map is paint, and the
+                // industrial candidates are a question nobody has answered yet - none of
+                // the three is a block waiting to be claimed by a rectangle
+                if (root.name == ReviewRoot || root.name == MapRoot ||
                     root.name == IndustrialBlockForge.CandidatesRoot) continue;
+
+                // the bare library is STOCK, and stock is invisible until it is put on the
+                // counter. A block of it slid onto a rectangle is being used and is swept
+                // like anything else; the rest of the row is not there at all - which is
+                // what stops a harvest from filing the whole library back over the very
+                // prefabs it was made from, while it stands within arm's reach by design
+                bool stock = root.name == BareRoot;
                 foreach (var r in root.GetComponentsInChildren<Renderer>(true))
                 {
                     var go = PrefabUtility.GetNearestPrefabInstanceRoot(r.gameObject);
@@ -2366,9 +2466,11 @@ namespace LivingCity.EditorTools
                     // costs nothing - a copy is made from its own source prefab, so scene
                     // parenting is flattened rather than duplicated.
                     if (!seen.Add(go)) continue;
+                    if (Reads(go)) continue;
                     if (!TryBox(go, out var box)) continue;
                     // the painted skyline and the skydome would swallow every rectangle
                     if (box.size.x > 400f || box.size.z > 400f) continue;
+                    if (stock && !counters.Any(counter => Holds(counter, box.center))) continue;
 
                     found.Add(new Piece { Go = go, Box = box, Owner = null });
                 }
@@ -2391,6 +2493,7 @@ namespace LivingCity.EditorTools
         /// </summary>
         static void Bag(Transform thing, Transform tray, List<Piece> found)
         {
+            if (Reads(thing.gameObject)) return;
             if (thing.childCount == 0 || PrefabUtility.IsAnyPrefabInstanceRoot(thing.gameObject))
             {
                 found.Add(new Piece { Go = thing.gameObject, Box = BoxOf(thing.gameObject),
@@ -2399,6 +2502,12 @@ namespace LivingCity.EditorTools
             }
             foreach (Transform inside in thing) Bag(inside, tray, found);
         }
+
+        /// <summary>Writing, not building: the caption over a tray and the name over every
+        /// block in the bare library. It has a renderer like anything else, so without this
+        /// a block slid onto a rectangle with its own name floating above it would bake the
+        /// name into the prefab.</summary>
+        static bool Reads(GameObject go) => go.GetComponent<TextMesh>();
 
         static void Mark(Transform branch, HashSet<GameObject> seen)
         {

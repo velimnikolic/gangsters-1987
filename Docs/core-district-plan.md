@@ -52,6 +52,12 @@ mreža sa parcelama) dala su praznine ili nečitljive puteve. Odluka: **Synty ra
       Pravila i brojevi: `Docs/synty-demo-anatomy.md §2.1`.
       Tray to sada radi sam: `Tools/City/Core/Pave The Trays`, i bake pre pečenja popločava
       svaki tray koji drži zgrade a nema trotoar (drugi put nikad — ručna izmena preživi).
+      **DUGME NA TRAYU** (2026-08-25): `RoadDemo.CoreTray` (prazan marker) + `CoreTrayInspector`
+      daju trayu panel u Inspectoru — ime bloka (= ime prefaba) i putanja, šta drži
+      (komada / zgrada / mera / da li je popločan), pa **Pave**, **Bake** i **Empty**.
+      Stanje se čita na selekciju i na `hierarchyChanged`, nikad na repaint (sweep scene od
+      5000 instanci nije za 60 puta u sekundi). Stari trayevi dobiju dugme sami (`Buttons()`
+      u `PaveAll`), novi kroz `NewTray`.
       **Provera**: generator pušten na Syntyjeve sopstvene blokove i poređen pločicu po
       pločicu — **825 istih, 168 različitih (sve razlika u OBRISU: njihovi blokovi imaju
       dvorišta i parkinge preko pojasa, moj prati zgrade), i tačno JEDNA pločica u 993 sa
