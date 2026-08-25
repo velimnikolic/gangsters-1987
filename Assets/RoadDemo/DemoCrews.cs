@@ -3602,8 +3602,15 @@ namespace RoadDemo
             // more of them land forward of the middle: a man shooting at a car shoots at
             // the part of it he can see coming
             float along = Random.Range(-car.HalfLength * 0.85f, car.HalfLength * 0.95f);
+            // A CAR IS NOT A BOX AT ITS ENDS. HalfWidth is the widest the body ever gets,
+            // which is true across the doors and a lie over the bonnet and the boot - a
+            // round placed on that plane at the nose sits in mid-air beside the wing,
+            // and that is the hole the player watched float. Pulled in towards the
+            // centreline as the body runs out.
+            float station = Mathf.Abs(along) / Mathf.Max(car.HalfLength, 1e-3f);
+            float flank = car.HalfWidth * Mathf.Lerp(1f, 0.7f, Mathf.InverseLerp(0.5f, 1f, station));
             var at = car.Tf.TransformPoint(new Vector3(
-                side * car.HalfWidth, Random.Range(0.55f, 1.15f), along));
+                side * flank, Random.Range(0.55f, 1.15f), along));
             int before = car.EngineHits;
             car.TakeRound(at, muzzle);
             if (DriveTrace.On)

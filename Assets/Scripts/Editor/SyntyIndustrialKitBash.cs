@@ -30,13 +30,21 @@ namespace LivingCity.EditorTools
     /// stack. The rooftop water tower is PolygonCity's SM_Prop_Water_Tower_01 (2.5 x 2.5,
     /// 5.4 high, centred pivot at its base). Cross-pack borrowing is already the kit's
     /// habit - the fire station takes PalmCity garage doors into PoliceStation walls.
+    ///
+    /// v3 adds the two layers a bare wall ring was missing, both counted off the pack's own
+    /// demo scene rather than guessed at. That scene stands 2,902 pieces of 355 kinds on one
+    /// compound, and what it spends them on is almost never more wall: it is ROOF - 45
+    /// extract fans, a jointed venting run, air vents, hoardings - and FITTINGS on the face
+    /// of the wall - 27 lights, 20 wall fans, 14 cameras, pipe risers, ladders, company
+    /// boards. Those are the two bands a city camera actually sees, and a works that has
+    /// neither reads as a shed with windows drawn on it however carefully the walls are laid.
     /// </summary>
     public static class SyntyIndustrialKitBash
     {
         const string Bld = "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/";
         const string Props = "Assets/Synty/PolygonGangWarfare/Prefabs/Props/";
 
-        public const int Version = 2;
+        public const int Version = 3;
         const string VersionPath = SyntyKitExtractor.BuildingsDir + "/IndustrialKitVersion.txt";
 
         const float M = 3f;      // the gang module: 3.0 wide, 3.0 per storey
@@ -51,6 +59,8 @@ namespace LivingCity.EditorTools
         const string MetalCorner = Bld + "SM_Bld_Wall_Metal_Exterior_Corner_01.prefab";
         const string BrickWall = Bld + "SM_Bld_Wall_Brick_01.prefab";
         const string BrickWindow = Bld + "SM_Bld_Wall_Brick_Window_01.prefab";
+        const string BrickWindowB = Bld + "SM_Bld_Wall_Brick_Window_02.prefab";
+        const string BrickWindowC = Bld + "SM_Bld_Wall_Brick_Window_03.prefab";
         const string BrickDoor = Bld + "SM_Bld_Wall_Brick_Door_01.prefab";
         const string BrickCorner = Bld + "SM_Bld_Wall_Brick_Exterior_Corner_01.prefab";
 
@@ -64,15 +74,90 @@ namespace LivingCity.EditorTools
         const string HallTruss = Bld + "SM_Bld_Roof_Truss_01.prefab";
 
         // Roof furniture
-        const string Fan = Props + "SM_Prop_Warehouse_Fan_01.prefab";
+        const string Fan = Props + "SM_Prop_Warehouse_Fan_02.prefab";
         const string Vent = Props + "SM_Prop_AirVent_02.prefab";
 
-        // The cross-pack borrows: the chimney block and the rooftop water tower.
+        // The venting run. Straight, and not for want of trying: the pack's two "corner"
+        // pieces both turn UP (Corner_01 climbs 3 m, Corner_02 climbs 1) and no piece in the
+        // set extends in z at all, so a duct that turns in PLAN cannot be built from this kit.
+        const string Duct = Props + "SM_Prop_Warehouse_Venting_01.prefab";
+        const string DuctEnd = Props + "SM_Prop_Warehouse_Venting_End_02.prefab";
+        const string DuctCollar = Props + "SM_Prop_Warehouse_Venting_Support_01.prefab";
+
+        // Fittings on the face of a wall. Every one of these is authored facing +Z with what
+        // it sticks out sticking out along +z, which is what makes WallProp a yaw per side.
+        const string WallLight = Props + "SM_Prop_Warehouse_WallLight_01.prefab";
+        const string BracketLight = Props + "SM_Prop_Light_Wall_01.prefab";
+        const string WallVent = Props + "SM_Prop_AirVent_01.prefab";
+        const string WallFan = Props + "SM_Prop_WallFan_01.prefab";
+        const string WallCamera = Props + "SM_Prop_Security_Camera_01.prefab";
+        const string PowerBox = Props + "SM_Prop_Warehouse_PowerBox_01.prefab";
+        const string Firehose = Props + "SM_Prop_Warehouse_Firehose_01.prefab";
+        const string CompanySign = Props + "SM_Prop_CompanySign_01.prefab";
+        const string Ladder = Props + "SM_Prop_Ladder_03.prefab";
+        const string WallLadder = Props + "SM_Prop_Ladder_01.prefab";
+        const string Riser = Bld + "SM_Bld_Piping_01.prefab";
+        const string Awning = Bld + "SM_Bld_Exterior_Shade_01.prefab";
+
+        // The gantry on the hall's flank
+        const string Walkway = Bld + "SM_Bld_Walkway_Double_01.prefab";
+        const string Landing = Bld + "SM_Bld_Walkway_Single_01.prefab";
+        const string WalkwayRail = Bld + "SM_Bld_Walkway_Rail_01.prefab";
+        const string WalkwayLeg = Bld + "SM_Bld_Walkway_Support_01.prefab";
+
+        // The cross-pack borrows: the chimney block, the rooftop water tower and the hoarding.
         const string ChimneyBlock =
             "Assets/Synty/PolygonPalmCity/Prefabs/Buildings/SM_Bld_Villa_Chimney_01.prefab";
         const string WaterTower =
             "Assets/Synty/PolygonCity/Prefabs/Buildings/SM_Prop_Water_Tower_01.prefab";
+        const string Hoarding =
+            "Assets/Synty/PolygonCity/Prefabs/Props/SM_Prop_Billboard_01.prefab";
         const float ChimneyCourse = 2.505f; // block height; base sits 0.126 under the pivot
+
+        // ---------------------------------------------------------------- measured offsets
+        //
+        // Every number below was measured off an instance rather than reasoned about, because
+        // these pieces pivot wherever their author found convenient and half of them are not
+        // pivoted on the thing they are attached by.
+
+        /// <summary>How far a wall's outer face stands beyond the half-dimension it is laid
+        /// on. A gang wall piece is 0.39 thick about its own plane and hangs 0.197 of that
+        /// outside, so a fitting screwed to the front of a building goes at halfD + this and
+        /// not at halfD, where it would be half swallowed.</summary>
+        const float Face = 0.197f;
+
+        /// <summary>Top of a flat roof slab above the storey it caps: Roof_Flat_Open_01 is
+        /// 8 cm of deck. Roof furniture stands on THAT, not on the wall head - the old 0.15
+        /// left every fan hovering seven centimetres over its own roof.</summary>
+        const float RoofDeck = 0.08f;
+
+        /// <summary>Height of the venting duct's axis above what it stands on: the pieces
+        /// pivot at the middle of the duct, not at its underside.</summary>
+        const float DuctAxis = 0.651f;
+
+        /// <summary>
+        /// What the mirrored end cap has to be nudged in z so its duct lines up with the run.
+        ///
+        /// Every venting piece spans z -0.672..+0.342 about its pivot - the duct is NOT
+        /// centred on it - so a piece turned through 180 degrees puts its duct a third of a
+        /// metre the other side of the line. A duct that steps sideways at the end of its own
+        /// run is the sort of fault nobody sees until it is pointed out, and then cannot stop
+        /// seeing.
+        /// </summary>
+        const float DuctMirror = -0.330f;   // (-0.672) + (+0.342)
+
+        /// <summary>Fan_02 pivots 7.4 cm under its own base, so it is dropped by that much to
+        /// stand on the deck rather than float over it.</summary>
+        const float FanSink = 0.074f;
+
+        /// <summary>The hoarding's lowest geometry sits 0.717 above its pivot - it is drawn to
+        /// hang off a wall, not to stand on a roof - so standing one on a parapet means
+        /// dropping the pivot by exactly that.</summary>
+        const float HoardingFoot = 0.717f;
+
+        /// <summary>Which wall a fitting hangs on, named from outside looking at the building.
+        /// Front is the +Z face every kit bake is authored to front.</summary>
+        enum Side { Front, Right, Back, Left }
 
         [MenuItem("Tools/City/Catalog/Rebuild Synty Industrial Kit (Kit-Bash)", priority = 3)]
         public static void ForceBuild()
@@ -105,28 +190,51 @@ namespace LivingCity.EditorTools
         static void BuildFactory()
         {
             const int w = 8, d = 5;
+            const float topY = 2 * Course;
             var root = new GameObject("building-factory");
             try
             {
                 WallRing(root, w, d, floor: 0,
-                    front: Row((BrickWall, 1), (BrickWindow, 1), (BrickDoor, 1), (BrickWindow, 1),
-                               (MetalSlide, 1), (BrickWindow, 1), (BrickWindow, 1), (BrickWall, 1)),
+                    front: Row((BrickWall, 1), (Glazing(0), 1), (BrickDoor, 1), (Glazing(1), 1),
+                               (MetalSlide, 1), (Glazing(2), 1), (Glazing(3), 1), (BrickWall, 1)),
                     back: Enumerable.Repeat(BrickWall, w).ToArray(),
                     side: new[] { BrickWall, BrickWall, BrickWindow, BrickWall, BrickWall });
                 WallRing(root, w, d, floor: 1,
-                    front: Row((BrickWall, 1), (BrickWindow, 1), (BrickWindow, 1), (BrickWindow, 1),
-                               (BrickWindow, 1), (BrickWindow, 1), (BrickWindow, 1), (BrickWall, 1)),
-                    back: new[] { BrickWall, BrickWindow, BrickWindow, BrickWindow,
-                                  BrickWindow, BrickWindow, BrickWindow, BrickWall },
-                    side: new[] { BrickWall, BrickWindow, BrickWindow, BrickWindow, BrickWall });
+                    front: Row((BrickWall, 1), (Glazing(4), 1), (Glazing(5), 1), (Glazing(6), 1),
+                               (Glazing(7), 1), (Glazing(8), 1), (Glazing(9), 1), (BrickWall, 1)),
+                    back: new[] { BrickWall, Glazing(2), Glazing(3), Glazing(4),
+                                  Glazing(5), Glazing(6), Glazing(7), BrickWall },
+                    side: new[] { BrickWall, Glazing(1), Glazing(2), Glazing(3), BrickWall });
                 CornerPosts(root, w, d, floors: 2, BrickCorner);
-                FlatRoof(root, w, d, topY: 2 * Course);
+                FlatRoof(root, w, d, topY);
 
-                var roofY = 2 * Course + 0.15f;
-                Place(root, Fan, -4.5f, roofY, 1.5f, 0f);
-                Place(root, Fan, 4.5f, roofY, -1.5f, 90f);
-                Place(root, Vent, -1.5f, roofY, -3f, 0f);
-                Place(root, WaterTower, 7f, roofY, 0f, 0f);
+                // --- the roof, which is what the city camera is actually looking at ---------
+                var deck = topY + RoofDeck;
+                RoofDuct(root, -9f, 7.5f, -5f, deck);
+                FanRow(root, -7.5f, 1.5f, -2.5f, deck, 3f);
+                Place(root, Vent, -9f, deck, 1f, 0f);
+                Place(root, Vent, -5f, deck, 1f, 0f);
+                Place(root, WaterTower, 7f, deck, 0f, 0f);
+
+                // The firm's hoarding over the street, which is the one piece of this block a
+                // pedestrian reads a WORD off - and 1987 is the right decade for it.
+                Place(root, Hoarding, 6f, deck - HoardingFoot, 6f, 0f);
+
+                // --- the front: office door at -4.5, goods door at +1.5 ---------------------
+                WallProp(root, Awning, w, d, Side.Front, -4.5f, Course + 0.05f);
+                WallProp(root, WallLight, w, d, Side.Front, 1.5f, Course + 0.25f);
+                WallProp(root, CompanySign, w, d, Side.Front, -10.5f, 4.6f, standoff: 0.06f);
+                WallProp(root, WallCamera, w, d, Side.Front, 10.5f, 5.6f);
+
+                // The back is blind brick on both storeys, so it takes everything that wants a
+                // wall rather than a window: the risers, the roof ladder and the vents.
+                WallProp(root, Riser, w, d, Side.Back, 9f, 0f, standoff: 0.129f);
+                WallProp(root, Riser, w, d, Side.Back, 9f, Course, standoff: 0.129f);
+                WallProp(root, Ladder, w, d, Side.Back, -9f, 0f);
+                WallProp(root, Ladder, w, d, Side.Back, -9f, Course);
+                WallProp(root, WallVent, w, d, Side.Back, -6f, 2f);
+                WallProp(root, WallVent, w, d, Side.Back, 6f, 2f);
+                WallProp(root, PowerBox, w, d, Side.Left, 0f, 1.2f, standoff: 0.05f);
 
                 SyntyKitExtractor.BakeGroup(root, root.name, yaw: 0f);
             }
@@ -145,27 +253,50 @@ namespace LivingCity.EditorTools
         static void BuildFactoryOld()
         {
             const int w = 7, d = 4;
+            const float topY = 2 * Course;
             float halfW = w * M / 2f, halfD = d * M / 2f;
             var root = new GameObject("building-factory-old");
             try
             {
                 WallRing(root, w, d, floor: 0,
-                    front: Row((BrickWall, 1), (BrickWindow, 1), (BrickWindow, 1), (BrickDoor, 1),
-                               (BrickWindow, 1), (BrickWindow, 1), (BrickWall, 1)),
+                    front: Row((BrickWall, 1), (Glazing(2), 1), (Glazing(3), 1), (BrickDoor, 1),
+                               (Glazing(4), 1), (Glazing(5), 1), (BrickWall, 1)),
                     back: Enumerable.Repeat(BrickWall, w).ToArray(),
-                    side: new[] { BrickWall, BrickWindow, BrickWindow, BrickWall });
+                    side: new[] { BrickWall, Glazing(0), Glazing(1), BrickWall });
                 WallRing(root, w, d, floor: 1,
-                    front: Row((BrickWall, 1), (BrickWindow, 1), (BrickWindow, 1), (BrickWindow, 1),
-                               (BrickWindow, 1), (BrickWindow, 1), (BrickWall, 1)),
-                    back: new[] { BrickWall, BrickWall, BrickWindow, BrickWindow,
-                                  BrickWindow, BrickWall, BrickWall },
-                    side: new[] { BrickWall, BrickWindow, BrickWindow, BrickWall });
+                    front: Row((BrickWall, 1), (Glazing(6), 1), (Glazing(7), 1), (Glazing(8), 1),
+                               (Glazing(9), 1), (Glazing(10), 1), (BrickWall, 1)),
+                    back: new[] { BrickWall, BrickWall, Glazing(1), Glazing(2),
+                                  Glazing(3), BrickWall, BrickWall },
+                    side: new[] { BrickWall, Glazing(4), Glazing(5), BrickWall });
                 CornerPosts(root, w, d, floors: 2, BrickCorner);
-                FlatRoof(root, w, d, topY: 2 * Course);
+                FlatRoof(root, w, d, topY);
 
-                var roofY = 2 * Course + 0.15f;
-                Place(root, Fan, -3f, roofY, 1.5f, 0f);
-                Place(root, Vent, 3f, roofY, -1.5f, 180f);
+                // --- the roof: two parallel runs, because the one thing this kit cannot do is
+                // turn a duct in plan, and a works roof with a single pipe on it reads as bare
+                var deck = topY + RoofDeck;
+                RoofDuct(root, -7.5f, 7.5f, -3.5f, deck);
+                RoofDuct(root, -4.5f, 4.5f, 3f, deck);
+                FanRow(root, -6f, 3f, -1f, deck, 3f);
+                Place(root, Vent, -4.5f, deck, 2f, 0f);
+                Place(root, Vent, 1.5f, deck, 2f, 0f);
+
+                // --- the front: the door is dead centre on this one ------------------------
+                WallProp(root, Awning, w, d, Side.Front, 0f, Course + 0.05f);
+                WallProp(root, WallLight, w, d, Side.Front, -6f, Course + 0.25f);
+                WallProp(root, WallLight, w, d, Side.Front, 6f, Course + 0.25f);
+                WallProp(root, CompanySign, w, d, Side.Front, -9f, 4.6f, standoff: 0.06f);
+                WallProp(root, WallCamera, w, d, Side.Front, 9f, 5.6f);
+
+                // The back carries windows across its middle upstairs, so the riser and the
+                // ladder take the two blind columns at either end of it.
+                WallProp(root, Riser, w, d, Side.Back, -9f, 0f, standoff: 0.129f);
+                WallProp(root, Riser, w, d, Side.Back, -9f, Course, standoff: 0.129f);
+                WallProp(root, Ladder, w, d, Side.Back, 9f, 0f);
+                WallProp(root, Ladder, w, d, Side.Back, 9f, Course);
+                WallProp(root, WallVent, w, d, Side.Back, -3f, 2f);
+                WallProp(root, WallVent, w, d, Side.Back, 3f, 2f);
+                WallProp(root, PowerBox, w, d, Side.Right, -4.5f, 1.2f, standoff: 0.05f);
 
                 // The chimney: five blocks from the ground up, snug against the back-left
                 // corner (block half-width 0.6 m outside the wall plane).
@@ -220,6 +351,22 @@ namespace LivingCity.EditorTools
                 for (var i = 1; i < w; i++)
                     Place(root, HallTruss, -halfW + i * M, topY, halfD, 0f);
 
+                // --- the front: two 6 m roller doors with a personnel door between them -----
+                //
+                // No roof furniture on this one, and that is a measurement rather than an
+                // oversight: SM_Bld_Roof_01 rises to 1.88 over a curved rib, so anything stood
+                // on it at a single height is either buried in the sheeting or hanging off it.
+                WallProp(root, WallLight, w, d, Side.Front, 0f, Course);
+                WallProp(root, BracketLight, w, d, Side.Front, -7.9f, 4.5f);
+                WallProp(root, BracketLight, w, d, Side.Front, 7.9f, 4.5f);
+                WallProp(root, CompanySign, w, d, Side.Front, -9f, 4.5f, standoff: 0.06f);
+                WallProp(root, WallCamera, w, d, Side.Front, 10f, 5.6f);
+                WallProp(root, WallFan, w, d, Side.Right, -3f, 4.5f);
+                WallProp(root, WallFan, w, d, Side.Left, -3f, 4.5f);
+                WallProp(root, Firehose, w, d, Side.Back, 7f, 0f);
+
+                Gantry(root, w, d, deckY: Course);
+
                 SyntyKitExtractor.BakeGroup(root, root.name, yaw: 0f);
             }
             finally
@@ -233,6 +380,7 @@ namespace LivingCity.EditorTools
         static void BuildWorkshop()
         {
             const int w = 5, d = 4;
+            const float topY = Course;
             var root = new GameObject("building-workshop");
             try
             {
@@ -242,11 +390,22 @@ namespace LivingCity.EditorTools
                     back: new[] { MetalWall, MetalWall, MetalWindow, MetalWall, MetalWall },
                     side: new[] { MetalWall, MetalWindow, MetalWindow, MetalWall });
                 CornerPosts(root, w, d, floors: 1, MetalCorner);
-                FlatRoof(root, w, d, topY: Course);
+                FlatRoof(root, w, d, topY);
 
-                var roofY = Course + 0.15f;
-                Place(root, Fan, -1.5f, roofY, 1.5f, 0f);
-                Place(root, Vent, 3f, roofY, -1.5f, 180f);
+                var deck = topY + RoofDeck;
+                RoofDuct(root, -4.5f, 4.5f, -3f, deck);
+                FanRow(root, -4.5f, 1.5f, 0f, deck, 3f);
+                Place(root, Vent, 0f, deck, 3f, 0f);
+
+                // --- the front: roller door at -3, personnel door at 0 ---------------------
+                WallProp(root, Awning, w, d, Side.Front, 0f, 2.45f);
+                WallProp(root, WallLight, w, d, Side.Front, -6f, 2.5f);
+                WallProp(root, CompanySign, w, d, Side.Front, 6f, 1.9f, standoff: 0.06f);
+                WallProp(root, WallCamera, w, d, Side.Front, 7f, 2.7f);
+                WallProp(root, WallVent, w, d, Side.Back, -4.5f, 1.8f);
+                WallProp(root, Ladder, w, d, Side.Back, 4.5f, 0f);
+                WallProp(root, Firehose, w, d, Side.Right, -4.5f, 0f);
+                WallProp(root, PowerBox, w, d, Side.Left, -4.5f, 1.2f, standoff: 0.05f);
 
                 SyntyKitExtractor.BakeGroup(root, root.name, yaw: 0f);
             }
@@ -257,6 +416,135 @@ namespace LivingCity.EditorTools
         }
 
         static (string path, int modules)[] Row(params (string path, int modules)[] row) => row;
+
+        // ------------------------------------------------------------------ the dressing
+
+        /// <summary>
+        /// A brick window that is not the same brick window every time.
+        ///
+        /// The pack draws three of them and the kit was using one, which is what makes a long
+        /// elevation read as wallpaper - the pack's own demo spends 11, 10 and 10 on the three,
+        /// so they are peers rather than a default and two oddities. Dealt from the column
+        /// index and not from a random: a kit bake has to come out identical every run, or the
+        /// blocks baked off it stop matching the ones already on disk.
+        /// </summary>
+        static string Glazing(int column) => (column % 3) switch
+        {
+            0 => BrickWindow,
+            1 => BrickWindowB,
+            _ => BrickWindowC,
+        };
+
+        /// <summary>
+        /// Hangs a fitting on the OUTSIDE of a wall.
+        ///
+        /// <paramref name="along"/> is the world coordinate along that face - x on the front
+        /// and back, z on the flanks - rather than a distance from one end, because every
+        /// elevation here is already reasoned about in the same frame the wall rows are laid
+        /// in, and a second convention is a second thing to get backwards.
+        ///
+        /// <paramref name="y"/> is the piece's own pivot height, which for this pack is as
+        /// often its middle as its underside; the callers carry the measured number.
+        /// <paramref name="standoff"/> is for the few fittings centred on their own depth - a
+        /// pipe riser, a sign - which would otherwise sit half inside the brick.
+        /// </summary>
+        static void WallProp(GameObject root, string path, int w, int d, Side side,
+                             float along, float y, float standoff = 0f)
+        {
+            float halfW = w * M / 2f, halfD = d * M / 2f;
+            var front = halfD + Face + standoff;
+            var flank = halfW + Face + standoff;
+
+            switch (side)
+            {
+                case Side.Front: Place(root, path, along, y, front, 0f); break;
+                case Side.Right: Place(root, path, flank, y, along, 90f); break;
+                case Side.Back: Place(root, path, along, y, -front, 180f); break;
+                default: Place(root, path, -flank, y, along, 270f); break;
+            }
+        }
+
+        /// <summary>
+        /// A straight venting run across a flat roof, from <paramref name="x0"/> to
+        /// <paramref name="x1"/> at <paramref name="z"/>.
+        ///
+        /// Straight because straight is all this kit can do - see the note on Duct - and
+        /// because a run is what a roof duct mostly is anyway. A segment pivots at its low-x
+        /// end and reaches 3 m the other way with an 8 cm flange behind the pivot, so
+        /// consecutive segments laid a module apart overlap at the flange exactly as drawn.
+        ///
+        /// <paramref name="x1"/> is where the last WHOLE segment may end, not where the duct
+        /// does: the cap that finishes it reaches 1.73 m further. Every caller here is sized
+        /// with that in hand and keeps clear of its own parapet, which sits 0.2 m inside the
+        /// roof edge.
+        /// </summary>
+        static void RoofDuct(GameObject root, float x0, float x1, float z, float deckY)
+        {
+            if (x1 - x0 < M)
+                return;
+
+            var y = deckY + DuctAxis;
+
+            // The low end is the SAME cap turned round, nudged by DuctMirror so its duct stays
+            // on the line rather than stepping a third of a metre off it.
+            Place(root, DuctEnd, x0, y, z + DuctMirror, 180f);
+
+            var cursor = x0;
+            for (var run = 0; cursor + M <= x1 + 0.01f; run++, cursor += M)
+            {
+                Place(root, Duct, cursor, y, z, 0f);
+
+                // A collar at every other joint. On every joint they read as a concertina;
+                // on none of them a 15 m duct has nothing holding it up.
+                if (run % 2 == 1)
+                    Place(root, DuctCollar, cursor, y, z, 0f);
+            }
+
+            Place(root, DuctEnd, cursor, y, z, 0f);
+        }
+
+        /// <summary>A rank of extract fans, which is how the pack's own artists cover a roof -
+        /// their demo compound stands forty-five of them and no other single prop comes
+        /// close.</summary>
+        static void FanRow(GameObject root, float x0, float x1, float z, float deckY, float pitch)
+        {
+            for (var x = x0; x <= x1 + 0.01f; x += pitch)
+                Place(root, Fan, x, deckY - FanSink, z, 0f);
+        }
+
+        /// <summary>
+        /// The maintenance gantry down the hall's right flank: two bays of walkway with a
+        /// landing at the near end, a rail along the outer edge, legs to the ground and a
+        /// ladder up the wall to the landing.
+        ///
+        /// It is here rather than in the yard dressing because it belongs to the BUILDING -
+        /// baked in, it costs the block nothing and it cannot drift off the wall it is bolted
+        /// to. The pieces pivot at a far corner and mirror in x (walkway local x runs -3..0,
+        /// local z -1.5..0), so the whole run is laid at yaw 270, where local +x reads out
+        /// along world +z and local +z reads out along world +x, away from the wall.
+        /// </summary>
+        static void Gantry(GameObject root, int w, int d, float deckY)
+        {
+            float halfW = w * M / 2f, halfD = d * M / 2f;
+            var wall = halfW + Face;          // the face the gantry is bolted to
+            var edge = wall + 1.5f;           // its outer edge, one walkway deep
+
+            // Two full bays off the far end, then the landing, which leaves the last 1.5 m of
+            // flank clear for the ladder to climb.
+            Place(root, Walkway, wall, deckY, halfD, 270f);
+            Place(root, Walkway, wall, deckY, halfD - M, 270f);
+            Place(root, Landing, wall, deckY, halfD - 2f * M, 270f);
+
+            Place(root, WalkwayRail, edge, deckY, halfD, 270f);
+            Place(root, WalkwayRail, edge, deckY, halfD - M, 270f);
+
+            // Legs land 0.04 into the underside of the deck, which is what stops a hairline of
+            // daylight showing between a leg and the thing it is holding up.
+            for (var k = 0; k < 3; k++)
+                Place(root, WalkwayLeg, edge - 0.3f, 0f, halfD - 1.5f - k * M, 0f);
+
+            WallProp(root, WallLadder, w, d, Side.Right, halfD - 2.5f * M, 0f);
+        }
 
         /// <summary>
         /// One storey of the wall ring. Gang corner-pivot arithmetic (local x -M..0,

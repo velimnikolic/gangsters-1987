@@ -232,13 +232,14 @@ namespace RoadDemo
         static readonly Queue<GameObject> holes = new Queue<GameObject>();
 
         /// <summary>A round that went into a car's tin instead of the man behind it.
+        /// <paramref name="outward"/> is the PANEL'S OWN NORMAL - which way the tin it
+        /// went through is facing - not the way back to the shooter.
         ///
         /// PARENTED TO THE BODY, unlike everything else in here: blood and chalk belong
         /// to the road and stay where the road is, and a hole belongs to the car and
-        /// goes where the car goes. A flat dark quad stood a centimetre off the panel,
-        /// facing out the way the round came in, and pooled like the splats so a long
-        /// fight cannot fill a scene with them.</summary>
-        public static void Hole(Transform body, Vector3 at, Vector3 facing)
+        /// goes where the car goes. Pooled like the splats so a long fight cannot fill
+        /// a scene with them.</summary>
+        public static void Hole(Transform body, Vector3 at, Vector3 outward)
         {
             if (body == null) return;
             if (holeMaterial == null)
@@ -246,6 +247,24 @@ namespace RoadDemo
                 var shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
                 if (shader == null) return;
                 holeMaterial = new Material(shader) { name = "Bullet Hole" };
+                // A HOLE IS ROUND. The dot the blood is drawn with, inked near-black:
+                // an opaque quad at the size a hole has to be to read at the game's own
+                // boom is a black SQUARE stuck to a door, which is what the player saw.
+                // Same sprite, same transparent setup as Splat - the alpha is what makes
+                // it a hole instead of a tile.
+                var dot = DemoUi.Dot;
+                if (dot != null)
+                {
+                    holeMaterial.mainTexture = dot.texture;
+                    holeMaterial.SetFloat("_Surface", 1f);
+                    holeMaterial.SetFloat("_Blend", 0f);
+                    holeMaterial.SetFloat("_ZWrite", 0f);
+                    holeMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                    holeMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                    holeMaterial.SetOverrideTag("RenderType", "Transparent");
+                    holeMaterial.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                    holeMaterial.renderQueue = 3000;
+                }
                 holeMaterial.SetColor(BaseColorId, HoleInk);
                 holeMaterial.SetColor(ColorId, HoleInk);
             }
@@ -259,22 +278,24 @@ namespace RoadDemo
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = false;
 
+            var n = outward.sqrMagnitude < 1e-6f ? body.right : outward.normalized;
             var tf = quad.transform;
             tf.SetParent(body, worldPositionStays: true);
-            tf.position = at + facing.normalized * 0.012f;
+            // FLUSH TO THE TIN, a finger's width proud of it. Turned to face the SHOOTER
+            // it stood at an angle across the panel and read as a card floating beside
+            // the car - a hole in a door lies in the plane of the door, whoever fired it.
+            tf.position = at + n * 0.02f;
             // A Unity quad's visible face is -forward, NOT +forward: Splat lies flat with
             // Euler(90,..), which points its forward at the ground, and it is the face you
-            // see from above. So a mark that must face the shooter looks AWAY from him -
-            // exactly as Stain does it, a dozen lines up. Looking AT him hid every hole
-            // inside the panel it was stood on, which is a thing nothing can see and so no
-            // thing at all.
-            tf.rotation = Quaternion.LookRotation(-facing.normalized, Vector3.up);
+            // see from above. So the quad's forward goes INTO the panel and its face
+            // comes out along the normal - the same trick Stain plays with -toShooter.
+            tf.rotation = Quaternion.LookRotation(-n, Vector3.up);
             // Sized off the marks the game already reads at, not off a real bullet. The
             // boom stands at 170m through a 45 degree lens: 141m of world over 1080 pixels,
             // 0.13m to the pixel. The 6cm hole this used to draw was half a pixel wide.
-            // A stain on a man's shirt is 0.14-0.24 (Stain) and reads; tin takes a little
-            // more than cloth.
-            float size = Random.Range(0.16f, 0.26f);
+            // A stain on a man's shirt is 0.14-0.24 (Stain) and reads; a round dot can
+            // sit at the smaller end of that because its corners are not there.
+            float size = Random.Range(0.13f, 0.19f);
             tf.localScale = new Vector3(size, size, size);
             quad.layer = body.gameObject.layer;
 

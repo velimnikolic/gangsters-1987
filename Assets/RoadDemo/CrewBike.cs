@@ -237,10 +237,11 @@ namespace RoadDemo
             float along = Body != null ? Body.HalfLength : HalfLen;
             bool vitals = Mathf.Abs(local.z) < along * 0.6f;
             if (vitals && !Burning && Random.value < TankChance) TankHits++;
-            var facing = from - at;
-            facing.y = 0f;
-            if (facing.sqrMagnitude < 1e-4f) facing = Tf.right;
-            if (Tilt != null) CrewGore.Hole(Tilt, at, facing);
+            // the flank the round went into: a machine is narrow enough that the side
+            // it is nearest IS the side it went through, and the hole has to lie in
+            // that plane rather than turn to face whoever fired it
+            var outward = Tf.right * Mathf.Sign(local.x == 0f ? (from - at).x >= 0f ? 1f : -1f : local.x);
+            if (Tilt != null) CrewGore.Hole(Tilt, at, outward);
         }
 
         // ------------------------------------------------------------- on its side

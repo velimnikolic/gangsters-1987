@@ -136,6 +136,124 @@ namespace LivingCity.EditorTools
         const string Cone = PalmProps + "SM_Prop_Cone_01.prefab";
         const string Barrier = CityProps + "SM_Prop_Barrier_01.prefab";
 
+        // ------------------------------------------------------------------ the weathering
+        //
+        // Everything below is FLAT, or near enough, and none of it books ground. It is the
+        // layer the pack's own demo compound spends most of its prop budget on and the one a
+        // composed block had none of: 24 puddles, twenty-odd clumps of weed through the
+        // asphalt, loose stone, drains, and a mottle of differently-worn floor tiles over the
+        // one surface the floor pass laid everywhere. A few dozen quads, and they do more for
+        // the picture than another lorry would.
+
+        const string GangGen = "Assets/Synty/PolygonGangWarfare/Prefabs/Generic/";
+
+        /// <summary>The gang floor tiles are a 3 m module against this block's 5 m one, which
+        /// is exactly why they are laid as PATCHES rather than as cells: at their own size
+        /// they break the grid up, and stretched to it they would only re-draw it.</summary>
+        static readonly string[] WornAsphalt =
+        {
+            GangBld + "SM_Bld_Floor_Asphalt_02.prefab",
+            GangBld + "SM_Bld_Floor_Asphalt_03.prefab",
+        };
+
+        static readonly string[] PaintedFloor =
+        {
+            GangBld + "SM_Bld_Floor_Lines_02.prefab",
+            GangBld + "SM_Bld_Floor_Lines_04.prefab",
+        };
+
+        static readonly string[] Puddles =
+        {
+            GangProps + "SM_Prop_Puddle_02.prefab",
+            GangProps + "SM_Prop_Puddle_03.prefab",
+            GangProps + "SM_Prop_Puddle_03.prefab",
+            GangProps + "SM_Prop_Puddle_04.prefab",
+            GangProps + "SM_Prop_Puddle_04.prefab",
+            GangProps + "SM_Prop_Puddle_05.prefab",
+        };
+
+        /// <summary>
+        /// Weed coming up through the asphalt - NOT the pack's Plant_01/02, which are the
+        /// demo's grow-house crop and would put a cannabis nursery in the middle of a foundry.
+        /// The crack pieces are drawn long in their own z, so a run beside a wall that goes
+        /// east-west is laid at a quarter turn.
+        /// </summary>
+        static readonly string[] WeedClumps =
+        {
+            GangProps + "SM_Prop_Grass_Cracks_01.prefab",
+            GangProps + "SM_Prop_Grass_Cracks_02.prefab",
+            GangProps + "SM_Prop_Grass_Cracks_03.prefab",
+            GangProps + "SM_Prop_Grass_Cracks_04.prefab",
+            GangProps + "SM_Prop_Grass_Cracks_05.prefab",
+        };
+
+        static readonly string[] Rubble =
+        {
+            GangGen + "SM_Generic_Small_Rocks_01.prefab",
+            GangGen + "SM_Generic_Small_Rocks_02.prefab",
+        };
+
+        static readonly string[] Litter = { GangProps + "SM_Prop_Papers_01.prefab" };
+        static readonly string[] Drains =
+        {
+            GangProps + "SM_Prop_Manhole_01.prefab",
+            GangBld + "SM_Bld_Floor_Drain_01.prefab",
+        };
+        const string SpeedBump = GangProps + "SM_Prop_Speed_Bump_01.prefab";
+        const string Bollard = GangProps + "SM_Prop_Bollard_01.prefab";
+        /// <summary>The plate on the perimeter's street face. A wall fitting, not a yard prop:
+        /// 0.556 x 0.313 with its printed side on its own +z, which is what makes the yaw per
+        /// side in <see cref="Block.StreetPlate"/> the whole of the placement.</summary>
+        const string KeepOutSign = GangProps + "SM_Prop_Sign_KeepOut_01.prefab";
+
+        // ------------------------------------------------------------------ the clutter
+        //
+        // Not a scatter. Each of these is a small STORY - the bags that go beside the bin, the
+        // timber and the gas bottles that go against a wall under a caution board, the boxes
+        // left where the lorry was unloaded - and that is most of what makes the pack's demo
+        // yard read as somewhere people work rather than as a surface with inventory on it.
+
+        static readonly string[][] BagFamilies =
+        {
+            new[] { GangProps + "SM_Prop_Bag_Blue_01.prefab",
+                    GangProps + "SM_Prop_Bag_Blue_02.prefab",
+                    GangProps + "SM_Prop_Bag_Blue_03.prefab" },
+            new[] { GangProps + "SM_Prop_Bag_Green_01.prefab",
+                    GangProps + "SM_Prop_Bag_Green_02.prefab",
+                    GangProps + "SM_Prop_Bag_Green_03.prefab" },
+            new[] { GangProps + "SM_Prop_Bag_White_01.prefab",
+                    GangProps + "SM_Prop_Bag_White_02.prefab",
+                    GangProps + "SM_Prop_Bag_White_03.prefab" },
+        };
+
+        const string Woodstack = GangProps + "SM_Prop_Woodstack_01.prefab";
+        const string PropaneTall = GangProps + "SM_Prop_Propane_Tall_01.prefab";
+        const string PropaneTallB = GangProps + "SM_Prop_Propane_Tall_02.prefab";
+        const string GasCan = GangProps + "SM_Prop_GasCan_01.prefab";
+        const string PaintCan = GangProps + "SM_Prop_PaintCan_02.prefab";
+        const string YardBucket = GangProps + "SM_Prop_Bucket_01.prefab";
+        const string BoxStack = GangProps + "SM_Prop_CardboardBox_Stack_01.prefab";
+        const string BoxStackB = GangProps + "SM_Prop_CardboardBox_Stack_02.prefab";
+        const string WrappedLoad = GangProps + "SM_Prop_Packet_Stack_Large_01.prefab";
+        const string ProcessTank = GangProps + "SM_Prop_Lab_Tank_01.prefab";
+        const string ProcessTankB = GangProps + "SM_Prop_Lab_Tank_03.prefab";
+        const string YardSubstation = GangProps + "SM_Prop_Powerbox_01.prefab";
+        const string StorageRack = GangProps + "SM_Prop_Warehouse_Rack_01.prefab";
+
+        /// <summary>The moths round a yard lamp. A particle system with no mesh of its own, so
+        /// it costs a renderer and nothing else, and it is the one thing in the pack's demo
+        /// that makes a lamp read as switched ON rather than as a pole.</summary>
+        const string BugLights = "Assets/Synty/PolygonGangWarfare/Prefabs/FX/FX_BugLights_01.prefab";
+
+        /// <summary>The works' own traffic: a van and two cars for the men who run it, which is
+        /// what a painted bay is for and what every bay in the block was missing.</summary>
+        static readonly string[] StaffCars =
+        {
+            GangVeh + "SM_Veh_Van_01.prefab",
+            GangVeh + "SM_Veh_LowCar_01.prefab",
+            GangVeh + "SM_Veh_LowCar_02.prefab",
+        };
+
         static readonly string[] Containers =
         {
             KitShips + "container-20-red.prefab",
@@ -337,6 +455,7 @@ namespace LivingCity.EditorTools
             readonly Surface[] _floor;
             readonly List<Rect> _taken = new List<Rect>();   // anything standing, for the props
             readonly List<Rect> _footprints = new List<Rect>();   // buildings, for their apron
+            readonly Dictionary<string, int> _refused = new Dictionary<string, int>();
 
             Vector2 _way;
 
@@ -579,9 +698,23 @@ namespace LivingCity.EditorTools
             /// of everything already standing.</summary>
             public bool Room(Rect want)
             {
-                if (want.width <= 0f || want.height <= 0f) return false;
                 foreach (var taken in _taken)
                     if (taken.Overlaps(want)) return false;
+
+                return OnYard(want);
+            }
+
+            /// <summary>
+            /// Ground that belongs to the block and is not the kerb ring - the half of
+            /// <see cref="Room"/> that asks about the GROUND rather than about what is already
+            /// standing on it.
+            ///
+            /// Tested at the four corners of a slightly shrunk rectangle, so a piece laid
+            /// flush against a cell line is not refused by the last bit of a float.
+            /// </summary>
+            bool OnYard(Rect want)
+            {
+                if (want.width <= 0f || want.height <= 0f) return false;
 
                 var inset = new Rect(want.xMin + 0.15f, want.yMin + 0.15f,
                                      Mathf.Max(0.1f, want.width - 0.3f),
@@ -599,6 +732,10 @@ namespace LivingCity.EditorTools
                 }
                 return true;
             }
+
+            /// <summary>What the block has built on it, so the passes that dress the ground
+            /// can keep off the brick and hug the foot of it.</summary>
+            public IReadOnlyList<Rect> Built => _footprints;
 
             // ------------------------------------------------------------ what stands
 
@@ -622,11 +759,67 @@ namespace LivingCity.EditorTools
             {
                 var foot = Foot(path, yaw);
                 var where = new Rect(x - foot.x * 0.5f, z - foot.y * 0.5f, foot.x, foot.y);
-                if (!Room(where)) return null;
+                if (!Room(where))
+                {
+                    var name = System.IO.Path.GetFileNameWithoutExtension(path);
+                    _refused[name] = _refused.TryGetValue(name, out var seen) ? seen + 1 : 1;
+                    return null;
+                }
+
                 var go = Sit(path, Root, x, z, yaw, Deck + lift);
                 if (go != null) _taken.Add(where);
                 return go;
             }
+
+            /// <summary>
+            /// What was asked for and would not fit, worst first.
+            ///
+            /// Reported with the candidate because it is the one fault this pipeline could not
+            /// see. Every refusal returns null and says nothing, so a recipe whose hand-picked
+            /// coordinates went stale - a building grew, a rank got longer - comes out as a
+            /// yard that is quietly half empty and a summary that says everything is fine.
+            /// </summary>
+            public string Refused()
+            {
+                if (_refused.Count == 0) return "";
+
+                var worst = _refused.OrderByDescending(one => one.Value).Take(5)
+                                    .Select(one => $"{one.Key} x{one.Value}");
+                return string.Join(", ", worst);
+            }
+
+            /// <summary>
+            /// A flat overlay laid straight on the yard: a worn patch, a puddle, weed through
+            /// a crack, litter.
+            ///
+            /// It books no ground and is refused by nothing standing, which is the whole
+            /// point. A puddle under a pallet is still a puddle, and weathering that gave way
+            /// wherever the yard is actually USED would be weathering everywhere except where
+            /// anyone is looking. The one thing it will not do is lie inside a building or out
+            /// on the kerb ring, because there it is not weathering, it is a mistake.
+            /// </summary>
+            public GameObject Decal(string path, float x, float z, float yaw, float lift = 0f)
+            {
+                var foot = Foot(path, yaw);
+                var where = new Rect(x - foot.x * 0.5f, z - foot.y * 0.5f, foot.x, foot.y);
+                if (!OnYard(where)) return null;
+
+                foreach (var built in _footprints)
+                    if (built.Overlaps(where)) return null;
+
+                return Sit(path, Root, x, z, yaw, Deck + lift);
+            }
+
+            /// <summary>
+            /// A thing set down exactly where it is asked for, booking nothing and refused by
+            /// nothing.
+            ///
+            /// For the few pieces whose position IS the point and where a fit test against
+            /// ground already booked could only ever say no: a bollard on the cheek of a gate,
+            /// a car in a bay that has just been painted, the second container of a stack.
+            /// </summary>
+            public GameObject Fix(string path, float x, float z, float yaw, float lift = 0f) =>
+                Sit(path, Root, x, z, yaw, Deck + lift);
 
             /// <summary>
             /// A works stack: a tall round shaft that TAPERS, with a crown at the top.
@@ -697,11 +890,18 @@ namespace LivingCity.EditorTools
             /// <summary>A thing that goes on top of another - the second container of a
             /// stack - which has no ground of its own to book.</summary>
             public GameObject Atop(string path, float x, float z, float yaw, float lift) =>
-                Sit(path, Root, x, z, yaw, Deck + lift);
+                Fix(path, x, z, yaw, lift);
 
-            /// <summary>Painted bays, the pack's own ten metres by five, laid on the grid so
-            /// they take the floor of the cells they cover.</summary>
-            public void Bay(float minX, float minZ, float yaw)
+            /// <summary>
+            /// Painted bays, the pack's own ten metres by five, laid on the grid so they take
+            /// the floor of the cells they cover - and, where one is asked for, something
+            /// standing in one of the two.
+            ///
+            /// A yard full of freshly painted empty bays is a car park nobody uses. One car in
+            /// two is what the pack's own demo does and it is what a works looks like at any
+            /// hour somebody is inside it.
+            /// </summary>
+            public void Bay(float minX, float minZ, float yaw, string parked = null)
             {
                 float sizeX = Turned(yaw) ? Cell : Cell * 2f;
                 float sizeZ = Turned(yaw) ? Cell * 2f : Cell;
@@ -711,6 +911,15 @@ namespace LivingCity.EditorTools
                     where.xMax > Way.x - 1f && where.xMin < Way.y + 1f) return;   // not across the gate
                 Lay(PaintedBays, Root, minX, minZ, sizeX, sizeZ, yaw);
                 Claim(where);
+
+                if (string.IsNullOrEmpty(parked)) return;
+
+                // The bay pair is two 5 m stalls side by side; the car takes the near one and
+                // stands nose-in, which on a bay laid at yaw 0 is along z.
+                var stall = Turned(yaw)
+                    ? new Vector2(where.center.x, where.yMin + Cell * 0.5f)
+                    : new Vector2(where.xMin + Cell * 0.5f, where.center.y);
+                Fix(parked, stall.x, stall.y, yaw);
             }
 
             public void Scatter(string path, int count, Rect area, float spread)
@@ -859,6 +1068,7 @@ namespace LivingCity.EditorTools
                     if (Wall == Wall.Wire) Run(FenceCrown, piece, line, alongX, far, crownY);
                     Pillar(piece.x, line, alongX, far);
                     Pillar(piece.y, line, alongX, far);
+                    StreetPlate(piece, line, alongX, far);
                 }
 
                 if (!wayIn) return;
@@ -921,6 +1131,33 @@ namespace LivingCity.EditorTools
                     else Lay(path, Root, far ? line - thick : line, a, thick, step, yaw, y);
                 }
                 return length;
+            }
+
+            /// <summary>
+            /// A keep-out plate on the STREET face of a run of wall - the one thing somebody
+            /// walking past a blank perimeter can actually read off it, and a fitting the
+            /// pack's own demo hangs ten of round a single compound.
+            ///
+            /// The outer face of a wall is at <paramref name="line"/> whichever side of the
+            /// block it is on: a run laid near occupies [line, line + thick] and one laid far
+            /// occupies [line - thick, line], so both put their street side exactly there. The
+            /// only thing that changes between the four sides is which way the plate looks,
+            /// which is the yaw - and the three centimetres it stands proud, which is the sign.
+            /// </summary>
+            void StreetPlate(Vector2 span, float line, bool alongX, bool far)
+            {
+                if (span.y - span.x < 4f || !Chance(Rng, 0.6)) return;
+
+                var at = Between(Rng, span.x + 1.5f, span.y - 1.5f);
+                var off = far ? 0.03f : -0.03f;
+                var yaw = alongX ? (far ? 0f : 180f) : (far ? 90f : 270f);
+
+                // Stood rather than sat: this plate pivots at its own middle, and dropping it
+                // onto its underside would hang it a hand's breadth higher than asked for.
+                Stand(KeepOutSign, Root,
+                      alongX ? at : line + off,
+                      alongX ? line + off : at,
+                      yaw, Deck + 1.9f);
             }
 
             void Pillar(float at, float line, bool alongX, bool far)
@@ -1119,8 +1356,9 @@ namespace LivingCity.EditorTools
             block.Prop(PipeRiserTall, hall.xMin + 4f, hall.yMin - 1.2f, 0f);
             if (Chance(rng, 0.6)) block.Prop(PipeRiserWide, hall.xMax - 5f, hall.yMin - 2f, 0f);
             if (hall.width > 8f)
-                block.Prop(LoadingDock, hall.center.x,
-                           hall.yMin - Foot(LoadingDock, 0f).y * 0.5f, 0f);
+                Shuffled(block, LoadingDock, hall.center.x,
+                         hall.yMin - Foot(LoadingDock, 0f).y * 0.5f, 0f,
+                         new Vector2(1f, 0f), 9);
 
             // a store in the yard and the stock ranked along the wall: a works yard is
             // full of what the works is working on, not a car park with litter on it
@@ -1133,11 +1371,19 @@ namespace LivingCity.EditorTools
             block.Scatter(Pallet, rng.Next(2, 5), yard, 6f);
             block.Scatter(BarrelPlastic, rng.Next(2, 5), yard, 8f);
             block.Prop(PipeStack, east - 4f, from + 8f, 90f);
-            block.Prop(WireSpool, east - 4f, from + 14f, 0f);
+            block.Prop(WireSpool, east - 4f, from + 11f, 0f);
             if (Chance(rng, 0.7))
                 block.Prop(BoxLorry, Between(rng, yard.xMin + 6f, yard.xMax - 6f), to - 7f, 180f);
             if (Chance(rng, 0.5)) block.Prop(Forklift, yard.xMin + 5f, from + 5f, 90f);
             block.Prop(Dumpster, newer.center.x, newer.yMax + 1.6f, 0f);
+            BinBags(block, rng, newer.center.x + 2f, newer.yMax + 1.4f, rng.Next(3, 6));
+
+            // The three small stories: what was unloaded at the dock and not cleared, the
+            // plant that feeds the hall, and the timber and gas against the far wall.
+            Unloaded(block, rng, hall.center.x + 6f, hall.yMin - 3f);
+            ProcessPlant(block, rng, hall.center.x - 4f, hall.yMin - 5.5f, 0f);
+            HazardStore(block, rng, east - 2f, Mathf.Lerp(from, to, 0.55f), 0f);
+
             Lamps(block, yard, 2);
             Gatepost(block, rng);
             return block;
@@ -1179,10 +1425,10 @@ namespace LivingCity.EditorTools
             block.Prop(WaterTower, west.xMin - 3.5f, yardTo - 4f, 0f);
             block.Prop(PipeRiserTall, west.xMin + 4f, west.yMin - 1.2f, 0f);
             block.Prop(PipeRiserWide, far.xMax - 5f, far.yMin - 2f, 0f);
-            block.Prop(LoadingDock, west.center.x,
-                       west.yMin - Foot(LoadingDock, 0f).y * 0.5f, 0f);
-            block.Prop(LoadingDock, far.center.x,
-                       far.yMin - Foot(LoadingDock, 0f).y * 0.5f, 0f);
+            Shuffled(block, LoadingDock, west.center.x,
+                     west.yMin - Foot(LoadingDock, 0f).y * 0.5f, 0f, new Vector2(1f, 0f), 9);
+            Shuffled(block, LoadingDock, far.center.x,
+                     far.yMin - Foot(LoadingDock, 0f).y * 0.5f, 0f, new Vector2(1f, 0f), 9);
 
             Ranks(block, BarrelMetal, Cell + 2f, yardFrom + 3f, 3, rng.Next(4, 7), 1.15f);
             Ranks(block, Pallet, east - 9f, yardFrom + 3f, 2, rng.Next(4, 6), 1.6f);
@@ -1195,6 +1441,15 @@ namespace LivingCity.EditorTools
             if (Chance(rng, 0.7)) block.Prop(BoxLorry, block.Way.x + 4f, yardFrom + 7f, 0f);
             if (Chance(rng, 0.6)) block.Prop(Forklift, yard.center.x, yardFrom + 4f, 90f);
             block.Prop(Dumpster, shop.xMin - 2f, shop.center.y, 90f);
+            BinBags(block, rng, shop.xMin - 2f, shop.center.y + 2f, rng.Next(3, 6));
+
+            // A plant is mostly process, so it gets both tank groups - one at each shed's
+            // gable - and what came off the last lorry left standing between them.
+            ProcessPlant(block, rng, west.xMin + 1.5f, west.yMin - 5f, 0f);
+            ProcessPlant(block, rng, far.xMax - 6f, far.yMin - 5f, 0f);
+            Unloaded(block, rng, (west.xMax + far.xMin) * 0.5f, yardTo - 4f);
+            HazardStore(block, rng, Cell + 2.2f, Mathf.Lerp(yardFrom, yardTo, 0.5f), 0f);
+
             Lamps(block, yard, 3);
             Gatepost(block, rng);
             return block;
@@ -1223,7 +1478,9 @@ namespace LivingCity.EditorTools
             for (int k = 0; k < 3; k++)
             {
                 float x = Mathf.Round((Cell + 2f + k * 12f) / Cell) * Cell;
-                if (x + 10f < hut.xMin) block.Bay(x, Mathf.Round(block.In / Cell) * Cell + Cell, 0f);
+                var parked = Chance(rng, 0.55) ? StaffCars[rng.Next(StaffCars.Length)] : null;
+                if (x + 10f < hut.xMin)
+                    block.Bay(x, Mathf.Round(block.In / Cell) * Cell + Cell, 0f, parked);
             }
 
             var apron = Rect.MinMaxRect(Cell + 2f, Cell + 8f, east - 2f, shed.yMin - 5f);
@@ -1246,6 +1503,10 @@ namespace LivingCity.EditorTools
             block.Scatter(WireSpool, rng.Next(1, 3), alongEast, 0f);
             var spare = Containers[rng.Next(Containers.Length)];
             block.Prop(spare, alongEast.center.x, alongEast.yMin + 4f, 0f);
+
+            Unloaded(block, rng, shed.center.x - 10f, shed.yMin - 4f);
+            BinBags(block, rng, hut.xMin - 2.5f, Cell + 4f, rng.Next(3, 6));
+            block.Prop(StorageRack, alongWest.xMin + 1f, alongWest.center.y, 90f);
 
             Lamps(block, apron, 3);
             Gatepost(block, rng);
@@ -1319,6 +1580,10 @@ namespace LivingCity.EditorTools
             block.Scatter(BarrelPlastic, rng.Next(2, 5), flankEast, 8f);
             block.Prop(Dumpster, flankEast.center.x, flankEast.yMax - 2f, 90f);
             block.Prop(BoxLorry, (west.xMax + far.xMin) * 0.5f, lane - 6f, 0f);
+            BinBags(block, rng, flankEast.center.x, flankEast.yMax - 3.5f, rng.Next(3, 6));
+            block.Prop(StorageRack, flankWest.xMin + 1f, flankWest.center.y, 90f);
+            Unloaded(block, rng, open.center.x, open.center.y);
+
             Lamps(block, Rect.MinMaxRect(Cell + 2f, Cell + 2f, east - 2f, back - 2f), 3);
             Gatepost(block, rng);
             return block;
@@ -1342,14 +1607,23 @@ namespace LivingCity.EditorTools
 
             float from = Mathf.Max(shop.yMax, hall.yMax);
 
-            block.Bay(Cell, block.D - Cell * 2f, 0f);
-            block.Bay(Cell, block.D - Cell * 3f, 0f);
+            block.Bay(Cell, block.D - Cell * 2f, 0f,
+                      Chance(rng, 0.7) ? StaffCars[rng.Next(StaffCars.Length)] : null);
+            block.Bay(Cell, block.D - Cell * 3f, 0f,
+                      Chance(rng, 0.5) ? StaffCars[rng.Next(StaffCars.Length)] : null);
 
             var yard = Rect.MinMaxRect(Cell + 2f, from + 2f, east - 2f, block.D - Cell - 2f);
             block.Prop(Dumpster, hall.center.x, hall.yMax + 1.6f, 0f);
+            BinBags(block, rng, hall.center.x + 2f, hall.yMax + 1.4f, rng.Next(3, 6));
             block.Scatter(BarrelPlastic, rng.Next(2, 5), yard, 8f);
             block.Scatter(Pallet, rng.Next(2, 4), yard, 6f);
             if (Chance(rng, 0.6)) block.Prop(BoxLorry, middle, from + 6f, 0f);
+
+            // A service strip is a trade unit, so what it keeps outside is trade stock rather
+            // than process: the bottles and the timber against the shop's own flank.
+            HazardStore(block, rng, Cell + 2.2f, shop.yMax + 4f, 0f);
+            Unloaded(block, rng, hall.center.x, from + 4f);
+
             Lamps(block, yard, 2);
             Gatepost(block, rng);
             return block;
@@ -1371,16 +1645,294 @@ namespace LivingCity.EditorTools
                 }
         }
 
-        /// <summary>Yard lamps down the working ground, far enough apart that they read as
-        /// lighting rather than as a fence of their own.</summary>
+        /// <summary>
+        /// Yard lamps down the working ground, far enough apart that they read as lighting
+        /// rather than as a fence of their own.
+        ///
+        /// Turned to face INTO the yard. The pole reaches its arm out along its own +z and
+        /// every one of these stands on the yard's far edge, so at yaw 0 the whole set was
+        /// lighting the wall behind it and leaving the ground it is there for in the dark.
+        /// </summary>
         static void Lamps(Block block, Rect over, int count)
         {
             if (over.width <= 0f || over.height <= 0f) return;
             for (int k = 0; k < count; k++)
             {
                 float t = (k + 0.5f) / count;
-                block.Prop(YardLamp, over.xMin + over.width * t, over.yMax - 1.2f, 0f);
+                float x = over.xMin + over.width * t, z = over.yMax - 1.2f;
+
+                var pole = Shuffled(block, YardLamp, x, z, 180f, new Vector2(1.5f, 0f), 7);
+                if (pole == null) continue;
+
+                // The moths, under the head the arm now carries at z - 0.6.
+                block.Fix(BugLights, pole.Value.x, pole.Value.y - 0.55f, 0f, 3.35f);
             }
+        }
+
+        /// <summary>
+        /// A prop worth moving a pace for: tried where it was asked and then a few steps either
+        /// side of it, taking the first ground that is free.
+        ///
+        /// For the pieces whose PRESENCE is the point and whose exact metre is not - a yard
+        /// lamp, a loading dock. They go down late, on ground the loose stock has already had
+        /// first refusal of, so the one hand-picked metre they were written for is as often as
+        /// not under a lorry by the time they ask for it. A lamp two metres to the left is a
+        /// lamp; no lamp at all is a yard gone dark.
+        ///
+        /// Probed through Room before Prop, the same way Scatter does it, so a spot that was
+        /// merely crowded is not counted against the candidate as something that would not fit.
+        ///
+        /// Returns the ground it settled on, or null if none of the paces was free. The CENTRE
+        /// rather than the instance, because the instance's transform is not where it was asked
+        /// to go: Settle offsets the transform by the prefab's own box centre, so a piece whose
+        /// mass hangs off its pivot - a lamp, whose arm reaches a half metre out - reports a
+        /// position half a metre from the spot the caller picked. Anything measured off that
+        /// lands beside the thing it was meant to sit on.
+        /// </summary>
+        static Vector2? Shuffled(Block block, string path, float x, float z, float yaw,
+                                 Vector2 step, int tries)
+        {
+            var foot = Foot(path, yaw);
+
+            for (var k = 0; k < tries; k++)
+            {
+                // 0, -1, +1, -2, +2 ... paces out from where it was asked for.
+                var pace = (k % 2 == 0 ? k : -(k + 1)) * 0.5f;
+                var at = new Vector2(x, z) + step * pace;
+                var probe = new Rect(at.x - foot.x * 0.5f, at.y - foot.y * 0.5f, foot.x, foot.y);
+
+                if (!block.Room(probe)) continue;
+                if (block.Prop(path, at.x, at.y, yaw) == null) return null;
+
+                return at;
+            }
+
+            return null;
+        }
+
+        // ------------------------------------------------------------------ the weathering
+
+        /// <summary>
+        /// The ground pass, and the layer a composed block was most obviously missing.
+        ///
+        /// A works yard is not a clean plane with things standing on it. What the pack's own
+        /// artists put on theirs - counted off the demo compound - is two dozen puddles,
+        /// twenty-odd clumps of weed coming up through the asphalt, loose stone, drains,
+        /// litter, and a mottle of differently-worn floor tiles over the one surface the floor
+        /// pass laid everywhere. It is the cheapest thing in this file and the one that
+        /// changes the picture most, because it is what the camera is pointed at.
+        ///
+        /// Everything here goes down through <see cref="Block.Decal"/>, so none of it books
+        /// ground and none of it can push a barrel out of the way.
+        /// </summary>
+        static void Weather(Block block, System.Random rng)
+        {
+            var yard = Rect.MinMaxRect(Cell + 0.8f, Cell + 0.8f,
+                                       block.W - Cell - 0.8f, block.D - Cell - 0.8f);
+            if (yard.width < Cell || yard.height < Cell) return;
+
+            // ONE running lift for the whole pass, stepped per piece laid.
+            //
+            // Not tidiness: these are quads with no thickness of their own, and two of them
+            // sharing a plane where they overlap is a z-fight that shimmers as the camera
+            // moves. Sprinkling a dozen 3 m patches across a yard makes overlaps the rule
+            // rather than the exception, so every one gets a plane to itself - in the order it
+            // went down, which is also the order they ought to stack in.
+            var lift = 0f;
+
+            // The mottle first, at the bottom: patches of a different wear of the same asphalt,
+            // at the gang kit's own 3 m rather than stretched onto this block's 5 m grid -
+            // stretched, they would only re-draw the grid they are there to break up.
+            lift = Sprinkle(block, rng, WornAsphalt, rng.Next(11, 18), yard, lift);
+            lift = Sprinkle(block, rng, Drains, rng.Next(1, 4), yard, lift);
+            lift = Sprinkle(block, rng, PaintedFloor, rng.Next(1, 3), yard, lift);
+
+            // Then standing water over it, which is what says outdoors and unswept.
+            lift = Sprinkle(block, rng, Puddles, rng.Next(7, 12), yard, lift);
+            lift = Sprinkle(block, rng, Litter, rng.Next(1, 4), yard, lift);
+
+            // And last the two that carry a height of their own, so nothing they land on can
+            // z-fight them: weed through the cracks, and loose stone.
+            Weeds(block, rng);
+            Sprinkle(block, rng, Rubble, rng.Next(2, 5), yard, lift);
+        }
+
+        /// <summary>Between one flat overlay and the next. Small enough that nothing reads as
+        /// floating from the height a city is looked at, large enough that the depth buffer can
+        /// still tell two quads apart at the far end of a block.</summary>
+        const float PlaneStep = 0.0015f;
+
+        /// <summary>
+        /// Lays flat overlays at random over an area, each on a plane of its own.
+        ///
+        /// <paramref name="lift"/> arrives as the height the first one goes down at and is
+        /// returned as the height the NEXT call should start from, so one weathering pass
+        /// shares a single ladder and no two quads in it are ever coplanar.
+        ///
+        /// A refused piece is one that would have been out on the pavement or inside a wall.
+        /// The next roll is as good a place as the last, so it is retried rather than mourned -
+        /// and it costs no rung, because nothing was laid.
+        /// </summary>
+        static float Sprinkle(Block block, System.Random rng, string[] of, int count,
+                              Rect over, float lift)
+        {
+            for (int laid = 0, guard = 0; laid < count && guard < count * 6; guard++)
+            {
+                float x = over.xMin + (float)rng.NextDouble() * over.width;
+                float z = over.yMin + (float)rng.NextDouble() * over.height;
+                if (block.Decal(of[rng.Next(of.Length)], x, z, 90f * rng.Next(4), lift) == null)
+                    continue;
+
+                laid++;
+                lift += PlaneStep;
+            }
+
+            return lift;
+        }
+
+        /// <summary>
+        /// Weed at the foot of every wall and every building: the strip nothing drives over
+        /// and nobody sweeps, which is the only place it survives in a yard.
+        ///
+        /// Laid ALONG the line it grows against. The crack pieces are drawn long in their own
+        /// z, so a run beside a wall that goes east-west is a quarter turn - and a tuft laid
+        /// across a wall instead of along it reads as something dropped there.
+        /// </summary>
+        static void Weeds(Block block, System.Random rng)
+        {
+            // The perimeter stands one cell in from the block edge and is half a metre thick,
+            // so its inside face is at Cell + 0.5 and the weed goes just clear of that.
+            const float WallFoot = Cell + 0.75f;
+
+            WeedLine(block, rng, WallFoot, block.W - WallFoot, WallFoot, alongX: true);
+            WeedLine(block, rng, WallFoot, block.W - WallFoot, block.D - WallFoot, alongX: true);
+            WeedLine(block, rng, WallFoot, block.D - WallFoot, WallFoot, alongX: false);
+            WeedLine(block, rng, WallFoot, block.D - WallFoot, block.W - WallFoot, alongX: false);
+
+            foreach (var built in block.Built)
+            {
+                if (built.width <= 0f || built.height <= 0f) continue;
+
+                WeedLine(block, rng, built.xMin, built.xMax, built.yMin - 0.35f, alongX: true);
+                WeedLine(block, rng, built.xMin, built.xMax, built.yMax + 0.35f, alongX: true);
+                WeedLine(block, rng, built.yMin, built.yMax, built.xMin - 0.35f, alongX: false);
+                WeedLine(block, rng, built.yMin, built.yMax, built.xMax + 0.35f, alongX: false);
+            }
+        }
+
+        /// <summary>One run of weed along a line, at a loose pitch with the gaps rolled, so it
+        /// comes out as weed rather than as a hedge.</summary>
+        static void WeedLine(Block block, System.Random rng, float from, float to, float at,
+                             bool alongX)
+        {
+            for (var s = from; s < to; s += Between(rng, 1.8f, 5.5f))
+            {
+                bool skip = Chance(rng, 0.35);
+                var path = WeedClumps[rng.Next(WeedClumps.Length)];
+                var drift = ((float)rng.NextDouble() * 2f - 1f) * 0.22f;
+
+                if (skip) continue;
+
+                block.Decal(path, alongX ? s : at + drift, alongX ? at + drift : s,
+                            alongX ? 90f : 0f);
+            }
+        }
+
+        // ------------------------------------------------------------------ the clutter
+
+        /// <summary>
+        /// Bin bags heaped beside something that collects them - a skip, a back door.
+        ///
+        /// Rolled from ONE colour family. Five different bags in a pile reads as five bags
+        /// somebody arranged; four of one reads as rubbish, which is the point of them.
+        /// </summary>
+        static void BinBags(Block block, System.Random rng, float x, float z, int count)
+        {
+            var family = BagFamilies[rng.Next(BagFamilies.Length)];
+            for (int laid = 0, guard = 0; laid < count && guard < count * 8; guard++)
+            {
+                float bx = x + Between(rng, -0.9f, 0.9f);
+                float bz = z + Between(rng, -0.7f, 0.7f);
+                float yaw = (float)rng.NextDouble() * 360f;
+
+                if (block.Prop(family[rng.Next(family.Length)], bx, bz, yaw) != null) laid++;
+            }
+        }
+
+        /// <summary>
+        /// The dangerous-goods corner: timber and gas bottles against a wall with the board
+        /// that says so. What a works keeps where it can be got at and where nobody drives.
+        /// The stack is drawn long in its own z, so <paramref name="yaw"/> is which way the
+        /// wall it leans on runs.
+        /// </summary>
+        static void HazardStore(Block block, System.Random rng, float x, float z, float yaw)
+        {
+            // The stack's long axis at this yaw, and the axis at right angles to it. A proper
+            // perpendicular rather than a swap of the two components, which happens to give the
+            // same answer for an axis-aligned run and a wrong one for anything else.
+            var along = yaw == 0f ? new Vector2(0f, 1f) : new Vector2(1f, 0f);
+            var across = new Vector2(along.y, -along.x);
+
+            // The timber is the anchor, and it shuffles ALONG the wall it leans on. Everything
+            // after it hangs off where it actually ended up rather than off where it was asked
+            // for, which is what holds the group together on a busy yard - and if the timber
+            // finds nowhere at all, nothing half-lands in the middle of the ground instead.
+            var stack = Shuffled(block, Woodstack, x, z, yaw, along, 9);
+            if (stack == null) return;
+
+            var foot = stack.Value;
+            var bottles = foot + across * 1.5f;
+            block.Prop(PropaneTall, bottles.x, bottles.y, 0f);
+            if (Chance(rng, 0.7))
+            {
+                var pair = bottles + along * 0.65f + across * 0.55f;
+                block.Prop(PropaneTallB, pair.x, pair.y, 0f);
+            }
+
+            // No caution board down here. Sign_Caution_01 is 27 cm tall and Sign_Danger_01 is
+            // 14: they are plates for a WALL, and stood on open ground the camera never finds
+            // them. The wall plates live on the perimeter, where Block.StreetPlate hangs them.
+            var loose = foot + across * 2.6f;
+            block.Prop(GasCan, loose.x, loose.y, (float)rng.NextDouble() * 360f);
+        }
+
+        /// <summary>What is left standing where a lorry was unloaded and not yet cleared: a
+        /// stack or two of boxes, a wrapped pallet load, a bucket somebody put down.</summary>
+        static void Unloaded(Block block, System.Random rng, float x, float z)
+        {
+            // The box stack anchors it and is allowed a pace either way; the rest is measured
+            // off where it landed, so the whole pile arrives together or not at all.
+            var stack = Shuffled(block, Chance(rng, 0.5) ? BoxStack : BoxStackB,
+                                 x, z, 90f * rng.Next(4), new Vector2(1f, 0f), 9);
+            if (stack == null) return;
+
+            x = stack.Value.x;
+            z = stack.Value.y;
+
+            if (Chance(rng, 0.7))
+                block.Prop(WrappedLoad, x + Between(rng, 1.8f, 2.6f), z + Between(rng, -0.8f, 0.8f),
+                           90f * rng.Next(4));
+            if (Chance(rng, 0.5))
+                block.Prop(YardBucket, x - Between(rng, 1.2f, 1.8f), z + Between(rng, -1f, 1f),
+                           (float)rng.NextDouble() * 360f);
+            if (Chance(rng, 0.4))
+                block.Prop(PaintCan, x - Between(rng, 1.4f, 2.2f), z + Between(rng, -1f, 1f),
+                           (float)rng.NextDouble() * 360f);
+        }
+
+        /// <summary>The plant a works runs on that is not a building: two process tanks and the
+        /// substation box that feeds them. Stood as a GROUP rather than sprinkled, because
+        /// this is equipment and equipment is installed next to what it serves.</summary>
+        static void ProcessPlant(Block block, System.Random rng, float x, float z, float yaw)
+        {
+            var first = Shuffled(block, ProcessTank, x, z, yaw, new Vector2(1f, 0f), 9);
+            if (first == null) return;
+
+            x = first.Value.x;
+            z = first.Value.y;
+
+            if (Chance(rng, 0.7)) block.Prop(ProcessTankB, x + 2.2f, z + 0.4f, yaw);
+            block.Prop(YardSubstation, x + 4.4f, z, yaw);
         }
 
         /// <summary>What every gate has around it: a board saying keep out, a cone or two
@@ -1394,6 +1946,21 @@ namespace LivingCity.EditorTools
             if (Chance(rng, 0.6)) block.Prop(Cone, block.Way.x + 1.2f, z + 1.5f, 0f);
             if (Chance(rng, 0.6)) block.Prop(Cone, block.Way.y - 1.2f, z + 1.5f, 0f);
             if (Chance(rng, 0.5)) block.Prop(Barrier, block.Way.y + 1.4f, z, 0f);
+
+            // The threshold itself, which had nothing on it at all. Both of these go down
+            // through Fix rather than Prop: the drive was booked as taken the moment the way
+            // in was set, so a fit test here could only ever say no - and a gate cheek is
+            // exactly where a bollard belongs.
+            //
+            // The step is floored rather than trusted. It is a MEASURED width, and a measured
+            // width that ever came back zero - a prefab swapped for one with no renderers, a
+            // pack reimported - would leave this loop running until the editor was killed.
+            var bump = Mathf.Max(0.5f, Foot(SpeedBump, 0f).x);
+            for (var x = block.Way.x + bump * 0.5f; x < block.Way.y; x += bump)
+                block.Fix(SpeedBump, x, Cell + 0.9f, 0f);
+
+            block.Fix(Bollard, block.Way.x + 0.5f, Cell + 1.6f, 0f);
+            block.Fix(Bollard, block.Way.y - 0.5f, Cell + 1.6f, 0f);
         }
 
         // ------------------------------------------------------------------ generating
@@ -1441,6 +2008,10 @@ namespace LivingCity.EditorTools
                 block.Kerbs();
                 block.Floor();
 
+                // Last, on top of everything, and off the same stream: the ground the block
+                // stands on is the last thing decided and the first thing looked at.
+                Weather(block, rng);
+
                 int pieces = candidate.transform.childCount;
                 candidate.transform.position = new Vector3(x, 0f, 0f);
                 Caption(candidate.transform, k + 1, recipe, block, seed);
@@ -1457,6 +2028,7 @@ namespace LivingCity.EditorTools
                     gaps = block.Gaps(),
                     wallGap = Mathf.Round(block.WallGap * 100f) / 100f,
                     wallInBuilding = block.WallInBuilding(),
+                    refused = block.Refused(),
                 });
             }
 

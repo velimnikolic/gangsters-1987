@@ -170,10 +170,16 @@ namespace RoadDemo
                 // driving it, announced or not
                 if (EngineDead) { EngineJustDied = true; CarSmoke.Bonnet(this); }
             }
-            var facing = from - at;
-            facing.y = 0f;
-            if (facing.sqrMagnitude < 1e-4f) facing = Tf.right;
-            CrewGore.Hole(Tf, at, facing);
+            // WHICH PANEL IT WENT THROUGH, not which way the shooter was stood. The
+            // hole lies in the tin, so what it needs is the tin's own normal: the flank
+            // it is nearest, or the front or back when the round went into an end. Read
+            // off the box the car already is, in the car's own frame.
+            float acrossness = Mathf.Abs(local.x) / Mathf.Max(HalfWidth, 1e-3f);
+            float alongness = Mathf.Abs(local.z) / Mathf.Max(HalfLength, 1e-3f);
+            var outward = acrossness >= alongness
+                ? Tf.right * Mathf.Sign(local.x == 0f ? 1f : local.x)
+                : Tf.forward * Mathf.Sign(local.z == 0f ? 1f : local.z);
+            CrewGore.Hole(Tf, at, outward);
         }
 
         /// <summary>Read once - the caller that says "the engine's gone" clears it.</summary>
