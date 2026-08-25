@@ -574,6 +574,7 @@ namespace RoadDemo
             Pass("SpawnCrews", SpawnCrews);
             Pass("BuildEnvironment", BuildEnvironment);
             Pass("BuildDayNight", BuildDayNight);
+            Pass("BuildExhaust", BuildExhaust);
             Pass("BuildAudio", BuildAudio);
             Pass("BuildMap", BuildMap);
             Pass("BuildLotOverlay", BuildLotOverlay);
@@ -4124,6 +4125,13 @@ namespace RoadDemo
 
             _clock = clock;
         }
+
+        // --------------------------------------------------------------- exhaust
+
+        // The smoke out of the tailpipes. One rig for the whole city and no
+        // registration at all: it reads the cars off StreetTraffic.Users itself, and
+        // smokes the few nearest the camera (CarExhaust).
+        void BuildExhaust() => CarExhaust.Install();
 
         // ----------------------------------------------------------------- audio
 

@@ -88,6 +88,9 @@ namespace RoadDemo
             var bounds = district.Frame.ToWorldRect(district.LocalBounds);
             BuildLight();
             BuildCamera(bounds);
+            // and the quarter's cars breathe here the way they do in the city: the rig
+            // finds them itself off the road's own list of users (CarExhaust)
+            CarExhaust.Install();
             if (reflectionProbe) BuildReflections(bounds);
             gameObject.AddComponent<CrewDemo.CrewDemoPace>();
 

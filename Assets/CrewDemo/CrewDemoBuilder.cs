@@ -214,6 +214,10 @@ namespace CrewDemo
             SpawnRivals();
             ParkCar(muster);
             BuildTraffic(clips);
+            // smoke out of the pipes of whatever is running near the camera - the crew's
+            // car and the bikes with the traffic, since it reads the road's own list of
+            // users rather than being handed anything (CarExhaust)
+            CarExhaust.Install();
             BuildParkedCars();
             BuildBikes(clips);
             BuildPavementLife(clips);

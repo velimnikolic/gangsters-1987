@@ -649,6 +649,9 @@ namespace RoadDemo
             if (Dead) return;
             Health = 0;
             Target = null;
+            // shot in the seat: the window pose stops writing his arm at once, or it
+            // would hold the gun out of the window over the top of him dying
+            Seated(null);
             EndChat();
             CancelJoin();   // nobody finishes a turn on the way down
             State = Mode.Dead;
@@ -791,15 +794,23 @@ namespace RoadDemo
                     // seated in the car (the arena carries him); gun out of the window
                     // when there is someone to shoot at, else just sitting.
                     //
-                    // On a bike none of that applies: BikePose writes his arms, his legs
-                    // and his spine every frame over whatever plays here, so what plays
-                    // here only has to sit his pelvis down and keep him breathing - and
-                    // it must never be the aim clip, which would fight the pose for the
-                    // gun arm and lose in a different place every frame.
-                    if (Astride)
-                        SetPose(HasPose(PoseRide) ? PoseRide : HasPose(PoseSit) ? PoseSit : PoseIdle);
-                    else
-                        SetPose(RidingAim && HasPose(PoseAim) ? PoseAim : HasPose(PoseSit) ? PoseSit : PoseIdle);
+                    // A SEATED MAN IS NEVER PLAYED A STANDING CLIP. The aim clip is a
+                    // man stood up on his own two feet, and a seat is a root on the
+                    // cushion with the pelvis carried up off it (CarBody's seats are
+                    // measured for the sit loop and nothing else): played the aim clip
+                    // he stands up where he sits, which put a head out of the roof of
+                    // every car on every drive-by the town ever drove. So the sit loop
+                    // keeps playing and the aim is DERIVED over the top of it, the lean
+                    // and the gun arm both (SeatPose).
+                    //
+                    // On a bike none of that applies either: BikePose writes his arms,
+                    // his legs and his spine every frame over whatever plays here, so
+                    // what plays here only has to sit his pelvis down and keep him
+                    // breathing.
+                    SetPose(HasPose(PoseRide) && Astride ? PoseRide : HasPose(PoseSit) ? PoseSit : PoseIdle);
+                    if (!Astride)
+                        Seated(RidingAim && Target != null && Target.Tf != null && !Target.Dead
+                            ? Target.ChestPosition : (Vector3?)null);
                     TickBlend(dt);
                     return;
 
@@ -1231,6 +1242,33 @@ namespace RoadDemo
         /// stay where everyone can see them and BikePose puts them on the pegs.</summary>
         public bool Astride { get; private set; }
 
+        // The lean and the gun arm of a man shooting out of a car window, laid over the
+        // sit loop (SeatPose - and see the Riding case of TickCrew for why it is not a
+        // clip). Hung on him the first time he puts a gun out of a window and kept: a
+        // component that has read the rig once has nothing left to do on the frames he
+        // is not firing, and taking it off and putting it back would read the rig again
+        // every pass. A body it cannot pose is asked once and never again.
+        SeatPose _seated;
+        bool _seatless;
+
+        void Seated(Vector3? aim)
+        {
+            if (_seated == null)
+            {
+                if (!aim.HasValue || _seatless || Tf == null) return;
+                var pose = Tf.gameObject.AddComponent<SeatPose>();
+                if (!pose.Setup(Tf.GetComponentInChildren<Animator>()))
+                {
+                    Object.Destroy(pose);
+                    _seatless = true;
+                    return;
+                }
+                _seated = pose;
+            }
+            _seated.AimAt = aim;
+            _seated.enabled = aim.HasValue;
+        }
+
         // ------------------------------------------------------- off the machine
 
         /// <summary>He is in the air, or in the road, having come off a motorcycle -
@@ -1296,6 +1334,8 @@ namespace RoadDemo
             Astride = on && astride;
             // the legs go with the seat either way - a dead man is lifted out whole
             HideLegs(on && !astride);
+            // out of the seat, out of the window pose: the arm goes back to the clip
+            if (!on) Seated(null);
             // whatever he was in the middle of on the pavement, he is in a seat now:
             // the car writes his transform every frame and a turn still owing degrees
             // would fight it for the same rotation
