@@ -45,6 +45,47 @@ mreža sa parcelama) dala su praznine ili nečitljive puteve. Odluka: **Synty ra
          i zaključavala (najgori run: dvoja kola stajala 132 s). Pravilo „put koji se završava na
          drugi put pravi raskrsnicu" prošireno sa POPREČNOG na **bilo koji drugi put**;
       3. deonica kraća od kola sa slobodnim krajem (bulevar od 5 m na ivici) — ne dobija trake.
+- [x] **`CorePavement`** (2026-08-25): trotoar bloka po Synty receptu — footprint zgrada na
+      rasteru od 5 m, narastao za **jednu pločicu** (to je njihova mera: 275 od 350 ivičnjaka
+      ima pročelje tačno 5 m unutra), pa ivičnjak okrenut napolje, ugao po kvadrantu,
+      unutrašnji ugao po dijagonali koja fali, ravna ploča unutra, slivnik svakih 12.
+      Pravila i brojevi: `Docs/synty-demo-anatomy.md §2.1`.
+      Tray to sada radi sam: `Tools/City/Core/Pave The Trays`, i bake pre pečenja popločava
+      svaki tray koji drži zgrade a nema trotoar (drugi put nikad — ručna izmena preživi).
+      **Provera**: generator pušten na Syntyjeve sopstvene blokove i poređen pločicu po
+      pločicu — **825 istih, 168 različitih (sve razlika u OBRISU: njihovi blokovi imaju
+      dvorišta i parkinge preko pojasa, moj prati zgrade), i tačno JEDNA pločica u 993 sa
+      pogrešnim uglom**. block-11 i block-13 se poklapaju 100 %.
+- [x] **PROPS na trotoaru** (2026-08-25): dve trake, izmerene u okviru samog ivičnjaka —
+      1.0 m lampa (okrenuta napolje, krak nad kolovozom), 1.5 m bolardi/kanta/hidrant/
+      sanduče, 4.0–4.5 m klupa/novine uz zid. Lampa svakih 20 m, prva ćeliju od ćoška.
+      Zidni props (žardinjere, antene, kamere) je zgrada, ne trotoar — ne dodaje se.
+      Sve seedovano imenom traya. Izmereno na generisanom: trake tačne, razmak lampi 20 m
+      u 44 od 51, kanta 1/15 (njihovo 1/16), bolardi 1/13 (1/17), hidrant i sanduče 1/45
+      (1/46). Tabela: `Docs/synty-demo-anatomy.md §2.1`.
+- [x] **BIBLIOTEKA GOLIH BLOKOVA** (2026-08-25): `Tools/City/Core/Show Blocks Without Pavement`
+      stoji svaki pečeni blok u red pod `CORE BLOCKS (bare)` u CoreHarvest sceni, **bez
+      trotoara i bez ulične opreme koju generator ionako vraća** (lampa, bolardi, kanta,
+      hidrant, sanduče, klupa, novine — i to samo ono što je stajalo na ivičnjak-pločici;
+      lampa u dvorištu ostaje). Give-way znaci, parking-sat, đubre, trava, ograde, drveće i
+      sve na zidovima ostaje — generator to ne pravi pa se ne može udvostručiti.
+      Blok se otpakuje samo do svog korena (`OutermostRoot`) pa delovi ostaju instance
+      paketa. Red stoji **odmah SEVERNO od trayeva**, centriran na njih (trayevi se dodaju ka
+      zapadu, pa bi biblioteka na zapadu stajala tamo gde sledeći pravougaonik hoće da legne);
+      zato je i **izuzet iz svakog sweep-a** — stoji nadohvat pravougaonika namerno, a harvest
+      bi ga inače prepekao preko originalnih prefaba. Blok se uzima prevlačenjem **na tray u
+      Hijerarhiji**, a `Sweep` sad otvara svaku običnu grupu na trayu do pojedinačnih komada
+      (`Bag()`), pa bake zadržava linkove.
+      Provereno: 17 blokova, 1420 komada skinuto, 0 trotoara ostalo; dva bloka spojena na
+      jedan tray → 65×60 m, 88 pločica + 18 props-a, **163 komada, svih 163 sa linkom**.
+- [x] **RASPORED JE SLUČAJAN, ALI ISPRAVAN SVAKI PUT** (2026-08-25, v. 2.7): `CoreLayout.Roll(seed)` deli
+      blokove u redove oko bulevara; `CoreLayout.Arrange` crta puteve, čita presudu (`Raster.Faults`) i
+      deli ponovo dok nije čisto. Synty raspored ostaje kao referenca (`CoreLayout.SyntySeed`, drugi
+      meni). Offline petlja `Tools/CoreSim` (30 seedova: 30/30 čisto, prosek 1,3 deljenja);
+      `unity command gangsters_core --seed N --count M [--draw]` isto u živom editoru.
+      **Play harness** (CoreDemo, 40 kola, 180 s): seedovi 1987, 1, 2, 4, 5 PASSED (najduže stajanje 17–42 s,
+      0 odbijanja), seed 3 = 6 odbijanja pojasa u jednom trenutku (praćenje u kutiji, 40 kola je pretovar po
+      ranijoj meri); Synty referenca sa 40 kola PASSED.
 - [ ] pešaci, semafori i **portali** (spoj na gradske ulice) — jezgro zasad stoji samo za sebe
 - [ ] ugradnja u `Game.unity`
 
@@ -186,6 +227,64 @@ zebre, parkinzi) u runtime klasu sa jednim delegatom za instanciranje
 4. Ugradnja u grad (2.4).
 5. Posle: obrisati `city-hall-block.prefab` (duplikat), `CoreCitySketch` paker ostaje samo kao
    istorija ili se briše.
+
+### 2.7 Slučajan raspored: redovi oko bulevara (`CoreLayout.Roll` / `Arrange`, 2026-08-25)
+
+Korisnik: „ovo treba da bude random ali ispravan grad svaki put". Odluka iz 2.0 (samo Synty raspored)
+ostaje kao **referenca** (`Tools/City/Core/Sketch The Core City (Synty's arrangement)`, seed −1), a
+igra i običan Sketch dele **nov raspored po seedu**:
+
+- **jedinice**: blok, ili ugnežđen par kakav je Synty napravio (07 u useku 06, 10 u useku 12) — par
+  ostaje zajedno, sa svojim uličicama (`CoreLayout.Nests`, smer uličice se okreće sa jedinicom);
+- **redovi**: jedinica se okrene za slučajnu četvrtinu (`Block.Turn`, maska i kutija se preračunaju,
+  prefab dobija yaw); red uzima dubinu prve jedinice, pa prima jedinice čiji najdublji okret nije dublji
+  od reda i nije plići više od `MaxShallow` = 4 ćelije, dok ne dostigne 40–60 ćelija dužine. Samotni
+  redovi se pripajaju drugima gde stanu (do 6 ćelija pliće); oni koji ostanu su predubok blok (16, 12+10);
+- između suseda **ulica 15 m**, ili **uličica 5 m** (40 %) kad su oba suseda dubine reda i ravne strane;
+- redovi se ređaju severno/južno od bulevara naizmenično, svaki za ulicu iza prethodnog; pročelje gleda ka
+  bulevaru. Pomak reda (±20 m oko centra) bira se tako da se poprečne ulice suseda (preko ulice između
+  redova ili preko bulevara) **ili tačno poklope ili su ≥ 30 m razmaknute** — ulice na 5–25 m stapaju
+  raskrsnice u jednu široku kutiju (izveštaj: „two crossings run together", napomena, ne greška: Synty ih ima
+  tri na ivici i vozi ih);
+- **ulica između redova i ona iza poslednjeg reda se DEKLARIŠU preko cele širine crteža** (`Plan.Bands`,
+  polažu se kao bulevar, prvo najšira). Bez toga se poprečna ulica završavala u ivičnu ulicu kraćeg reda —
+  L-ugao sa dva kraka — i tu se saobraćaj zaključavao (harness seed 1987: kola stajala 144 s); sa
+  deklarisanim trakama svaki spoj je T, a ivica crteža slepi kraj kakav vozači znaju;
+- **plići blok u redu**: tlo iza njega do zadnje ulice je njegov **parking** (`Block.Lot`; korisnik izabrao
+  ovo umesto praznog ili striktno jednakih dubina). U rasteru je to `Yard` + `lot` zastavica: koridor se
+  **ne seče iz lota** (`lotLengths ≥ ¾ kerbs`), dok kroz Synty useke ulice i dalje smeju.
+
+**Presuda i ponovno deljenje**: `Raster.Faults` = prazne mrlje + strane bloka bez puta + batrljci + sudari.
+`Arrange(seed)` dela do `Deals` = 40 puta (pod-seed = `seed·1000003 + deal·7919`), uzima prvo čisto;
+ako nema čistog, najbolje uz upozorenje. Isti seed → isti grad. Mera: 30 seedova → 30/30 čisto, 28 iz prvog
+deljenja, najviše 2 deljenja; po deljenju ~73 % čisto (`Tools/CoreSim --stats`).
+
+**Šta je čitač koridora morao da nauči** (svaka izmena proverena na Synty referenci — ostaje 0 grešaka;
+broj ulica u referenci pao sa 24 na 21 jer se ulica više ne završava u useku):
+1. **prsten** oko bloka se meri od cele kutije (usek i stepenica uključeni), inače stepenica od jedne ćelije
+   gura ivicu ulice ćeliju dalje i ta ćelija ostaje prazna;
+2. put **ne završava u useku**: dužine na krajevima koje su ceo usek se odsecaju (to je parking);
+3. put hoće **ivičnjak bar koliko je širok** (ušće useka uz bulevar čitalo se kao ulica od 5 m);
+4. „uzidan na oba kraja" nije mrtav ako je **negde otvoren sa strane** (ulica između dva bloka u redu ide
+   od bulevara do zadnje ulice i upire u blokove sledećeg reda — i to je ulica); isto važi za komad pri polaganju;
+5. među jednako širokim i dugim koridorima prednost ima onaj **uzidan s obe strane** (procep između blokova,
+   ne ista traka pomerena u tuđi usek). Redosled širina→dužina ostaje (obrnuto lomi referencu).
+
+**Alati**: `Tools/CoreSim` (dotnet, bez editora; `--stats`, `--deal`, `--trace`, `--synty`; maske blokova u
+`blocks.txt`), `unity command gangsters_core` (isto u editoru, `--draw` crta). `CoreRoads.Trace` je kuka
+za simulaciju („zašto ova traka nije put").
+
+Dump maski za `Tools/CoreSim/blocks.txt` (eval u živom editoru, bez `using`, puna imena):
+
+    var sb = new System.Text.StringBuilder(); var root = new GameObject("dump");
+    foreach (var stand in RoadDemo.CoreLayout.Blocks) {
+      var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(RoadDemo.CoreLayout.BlocksDir + stand.Prefab + ".prefab");
+      var go = (GameObject)UnityEditor.PrefabUtility.InstantiatePrefab(prefab, root.transform);
+      var b = RoadDemo.CoreLayout.Measure(stand.Prefab, go);
+      sb.Append(b.Name).Append(' ').Append(stand.X).Append(' ').Append(stand.Z).Append(' ').Append(b.Ground0.min.x).Append(' ')
+        .Append(b.Ground0.min.z).Append(' ').Append(b.CW0).Append(' ').Append(b.CD0).Append(' ').Append(b.MaxH).Append((char)10);
+      for (int j = b.CD0 - 1; j >= 0; j--) { for (int i = 0; i < b.CW0; i++) sb.Append(b.Mask0[i, j] ? '#' : '.'); sb.Append((char)10); } }
+    UnityEngine.Object.DestroyImmediate(root); System.IO.File.WriteAllText("Tools/CoreSim/blocks.txt", sb.ToString()); return "ok";
 
 ### 2.6 Provera
 

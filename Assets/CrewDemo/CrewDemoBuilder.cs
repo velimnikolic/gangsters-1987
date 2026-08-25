@@ -243,7 +243,11 @@ namespace CrewDemo
 #endif
         }
 
-        bool _carGiven, _armsGiven, _bikeOwned;
+        bool _armsGiven, _bikeOwned;
+
+        /// <summary>Lines in the stock book the last deal was made against. The book is
+        /// re-read when that count moves, and not otherwise.</summary>
+        int _wheelsSeen = -1;
 
         /// <summary>WHOSE MACHINE IT IS matters to anything but the B key. The key holds
         /// the bike in a field and sends it itself, so a scene bike never needed an
@@ -267,7 +271,7 @@ namespace CrewDemo
 
         void Update()
         {
-            GiveCarToFirstLieutenant();
+            DealTheOutfitsWheels();
             ArmTheOutfit();
             OwnTheOutfitBike();
             TickOutfitBike();
@@ -283,24 +287,49 @@ namespace CrewDemo
                     if (man.Armed) man.Arm(man.WeaponPrefab, man.WeaponKind);
         }
 
-        // The demo hands the outfit's car to its first lieutenant itself - through
+        // The demo hands the outfit's WHEELS to its first lieutenant itself - through
         // the director, so the books agree - rather than making the player open the
-        // ledger and click GIVE before he can drive anywhere. Once, when the roster is in.
-        void GiveCarToFirstLieutenant()
+        // ledger and click GIVE before he can drive anywhere.
+        //
+        // AND IT KEEPS READING THE BOOK, which the car alone never needed. A car is on
+        // the books before the scene opens; a MACHINE is bought at the armory counter
+        // in the middle of Play, and a machine nobody has been dealt is a machine in the
+        // lock-up - the street stands what a man HOLDS (DemoCrews.StandLedgerBikes), and
+        // this scene stands no front for the rest to wait outside of. So two machines
+        // bought off the counter put nothing whatever beside the crew. The stock book is
+        // re-read whenever its count moves, which is the only time it can matter.
+        //
+        // One car, every machine: the crew drives one car and the rest of the yard is
+        // the ledger's business, but a drive-by sends every machine the crew can crew
+        // (DemoCrews.OrderDriveBy) and a second one left in the lock-up is precisely the
+        // thing this bench exists to try.
+        void DealTheOutfitsWheels()
         {
-            if (_carGiven) return;
             var director = LivingCity.Gameplay.PersonnelDirector.Instance;
             if (director == null || director.Roster == null) return;
             var roster = director.Roster;
-            if (roster.Crews.Count == 0) { _carGiven = true; return; }
+            if (roster.Crews.Count == 0) return;
+            if (roster.Equipment.Count == _wheelsSeen) return;
+            _wheelsSeen = roster.Equipment.Count;
+
+            int lieutenant = roster.Crews[0].LieutenantId;
+            bool carDealt = false;
             foreach (var item in roster.Equipment)
             {
-                if (item.Kind != EquipmentKind.Vehicle) continue;
-                if (item.HolderId == LivingCity.Personnel.RosterEquipment.Unheld)
-                    director.GiveEquipment(item.Id, roster.Crews[0].LieutenantId);
-                break;
+                bool machine = item.Kind == EquipmentKind.Motorcycle;
+                if (!machine && item.Kind != EquipmentKind.Vehicle) continue;
+                if (!machine)
+                {
+                    if (carDealt) continue;
+                    carDealt = true;
+                }
+                // OwnerId, not HolderId: the boss signs a thing out to a lieutenant and
+                // the lieutenant deals it to a hand himself (RosterOps.NormalizeArms).
+                // Asking after the hand would re-give a machine that is already the
+                // crew's every time the book grew, for a refusal each time.
+                if (item.OwnerId == RosterEquipment.Unheld)
+                    director.GiveEquipment(item.Id, lieutenant);
             }
-            _carGiven = true;
         }
 
         // The outfit opens this demo with long guns rather than the .38 in the coat:

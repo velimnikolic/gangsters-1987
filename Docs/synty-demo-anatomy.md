@@ -52,6 +52,44 @@ mirroruje simetrične pločice; mi to ne radimo).
   (`Road_ParkingLines_01`, 10×5 m, tri mesta u redu, + `Bare`) u usecima blokova i uz obalu.
 - Put je samo kolovoz između ivičnjaka; trotoar pripada bloku. Tačno tako su blokovi i
   požnjeveni.
+### 2.1 Trotoar — tačna pravila (izmereno na svih 16 blokova, 2026-08-25)
+
+Prebrojano na požnjevenim prefabima: 410 ivičnjaka, 590 ravnih ploča, 74 ugla, 13 slivnika.
+Ovo je recept koji `RoadDemo.CorePavement` sada izvodi.
+
+| pitanje | odgovor iz merenja |
+|---|---|
+| širina trotoara | **jedna pločica, 5 m.** Od 350 ivičnjaka iza kojih uopšte ima zgrade, **275 ih ima pročelje tačno 5 m unutra** — fasada stoji na unutrašnjoj ivici ivičnjaka. Širi pojasevi (10, 25, 40 m) su dvorište, park ili parking, nikad trotoar |
+| ivičnjak | `SM_Env_Sidewalk_Straight_01`, okrenut **NAPOLJE**: sever 0, istok 90, jug 180, zapad 270. Svih 410 se slaže |
+| ugao | ugaona pločica obavija **jedan ugao svoje ćelije**, i koji je to ugao — to je ceo propis: **SI 0, JI 90, JZ 180, SZ 270**. Obični ugao (`Corner_01`, 15 kom.) i **unutrašnji** ugao (`Corner_02`, 11 kom.) dele istu tablicu; `Dip_Corner_01` (rampa za prelaz, 48 kom. = tri četvrtine svih uglova) je ista tablica **zaokrenuta za četvrt**: SI 90, JI 180, JZ 270, SZ 0. Svih 74 se slaže |
+| unutrašnji ugao | ćelija kojoj su sve četiri strane u bloku, a **dijagonala fali** → `Corner_02`, ugao po dijagonali koja fali |
+| pod unutar ivičnjaka | `SM_Env_Sidewalk_01`; u **11 od 16** blokova položen i **ispod zgrada** — zato se kroz blok nikad ne vidi |
+| slivnik | `Sidewalk_Gutter_01` u nizu ivičnjaka, jedan na 13–40 pločica |
+
+#### Props na trotoaru — DVE TRAKE i ništa između
+
+Izmereno tako što je svaki prop koji stoji na nekoj od 511 ivičnjak-pločica preveden u
+**okvir samog ivičnjaka**: „across" = metara unutra od ivice ka kolovozu, „turn" = zaokret u
+odnosu na to kuda ivičnjak gleda.
+
+| traka | across | šta stoji | okret |
+|---|---|---|---|
+| **uz ivičnjak** | **1.0 m** | `LightPole_Base_01` (64 od 70 na tačno 1 m), `Sign_GiveWay_03`, `ParkingMeter_01` | lampa gleda NAPOLJE — krak od 2.5 m visi nad kolovozom |
+| | **1.5 m** | `SidewalkPoles_01` (bolardi, red od 3.2 m, centriran u ćeliji), `Trashbin_01`, `Hydrant_01`, `Mailbox_01` | kanta/hidrant bilo kako; bolardi paralelno sa ivičnjakom |
+| **uz zid** | **4.0–4.5 m** | `ParkBench_01`, `Newspaper_02` | gledaju napolje |
+| (na zidu) | 5.0 m | `PlanterWindow_01/02`, `SatDish_01`, `SecurityCamera`, `Poster_Frame`, `Sign_Attachment` | to je **zgrada, ne trotoar** — generator ih ne dira |
+
+Ritam: **lampa svakih 20 m** po nizu ivičnjaka (21 od 38 njihovih razmaka je 20 m, još 9 je
+25 m) i **prva ćeliju od ćoška, nikad na ćošku**; dve trećine lampi stoji na ŠAVU između
+pločica (na višekratniku 5 m). Bolardi ćeliju od ćoška, ~1.9 reda po bloku. Zatim: kanta na
+16 ivičnjak-pločica, hidrant i poštansko sanduče na 46, klupa na 85, novinski kiosk na 102.
+Svi propovi na **y = 0**.
+
+`LightPole_Base_01` je 6.5 m i JESTE cela ulična lampa (mast + krak); 19 od 70 nose i
+semaforski pribor (`Arm + Lights_01/02 + CrossLights + CrossButton + Box`) — to su semafori,
+ne lampe, i idu kroz `TrafficSignal`, ne kroz blok.
+
+
 - Zgrade su **modularne**: `Base` + N × `Floor`/`Stack` + `Roof` kao deca base-a. Spratnost
   2–5 (Apartment, OfficeSquare, OfficeOctagon, Shop), 7–12 (OfficeOld_Large/Small =
   tornjevi). Tornjevi: 12 spr. (60,120), 10 spr. (128,118), (120,27), (43,−31), 8 spr.

@@ -35,6 +35,9 @@ namespace RoadDemo
     public static class CoreRoads
     {
         public const float Cell = 5f;
+        /// <summary>Hears why each strip of ground was or was not taken for a road - for
+        /// a simulation arguing with the drawing. Nothing in the game sets it.</summary>
+        public static Action<string> Trace;
         const string CityEnv = "Assets/Synty/PolygonCity/Prefabs/Environments/";
 
         // the kit, the pieces RoadDemoBuilder.LoadPrefabs takes, for the same jobs
@@ -99,6 +102,10 @@ namespace RoadDemo
             public int Clashes;               // cells two blocks both claim
             public string Map;                // north up, one character per cell
             public string Report;             // the ground the roads left over, and other oddities
+            /// <summary>What the report found wrong: patches of ground left bare, sides of
+            /// blocks with no road, stubs of road, cells two blocks claim. Zero is a
+            /// drawing that reads; anything else and CoreLayout deals again.</summary>
+            public int Faults;
             public int BlockArea, RoadArea, ParkingArea, SpareArea;
             /// <summary>The junction boxes: the bare asphalt where roads cross.</summary>
             public List<Rect> Junctions = new List<Rect>();
@@ -112,9 +119,10 @@ namespace RoadDemo
         /// <summary>
         /// Reads the free ground off the blocks as they stand - a ring a street wide round
         /// every block, and everything the rings enclose - runs the roads through it, and
-        /// leaves the rest to the car parks.
+        /// leaves the rest to the car parks. The plan says where the main road is and which
+        /// way each alley runs; the blocks say everything else.
         /// </summary>
-        public static Raster Build(IReadOnlyList<CoreLayout.Block> blocks)
+        public static Raster Build(IReadOnlyList<CoreLayout.Block> blocks, CoreLayout.Plan plan)
         {
             int s = StreetCells;
             float minX = float.MaxValue, minZ = float.MaxValue, maxX = float.MinValue, maxZ = float.MinValue;
@@ -152,13 +160,29 @@ namespace RoadDemo
                         else if (kinds[a, b] == Kind.Outside) kinds[a, b] = Kind.Yard;
                     }
             }
+            // and the ground a block keeps beyond its box - the car park behind a block
+            // shallower than its row - is its yard like any bay of its own, and is
+            // remembered as a lot besides: no road is carved out of one
+            var lot = new bool[w, h];
+            foreach (var block in blocks)
+            {
+                if (block.Lot.width <= 0f || block.Lot.height <= 0f) continue;
+                int i0 = Mathf.RoundToInt((block.Lot.xMin - r.X0) / Cell), j0 = Mathf.RoundToInt((block.Lot.yMin - r.Z0) / Cell);
+                int i1 = Mathf.RoundToInt((block.Lot.xMax - r.X0) / Cell), j1 = Mathf.RoundToInt((block.Lot.yMax - r.Z0) / Cell);
+                for (int a = Mathf.Max(0, i0); a < Mathf.Min(w, i1); a++)
+                    for (int b = Mathf.Max(0, j0); b < Mathf.Min(h, j1); b++)
+                        if (kinds[a, b] == Kind.Outside) { kinds[a, b] = Kind.Yard; lot[a, b] = true; }
+            }
 
-            // the ring round every block, and whatever the rings enclose
+            // the ring round every block, and whatever the rings enclose. The ring is
+            // measured from the block's whole box, its bays and notches included: a face
+            // that steps in by a cell would otherwise push the ring a cell farther out
+            // there, and that cell, beyond the street, is a cell nothing can use
             var ring = new bool[w, h];
             for (int i = 0; i < w; i++)
                 for (int j = 0; j < h; j++)
                 {
-                    if (kinds[i, j] != Kind.Block) continue;
+                    if (kinds[i, j] != Kind.Block && kinds[i, j] != Kind.Yard) continue;
                     for (int a = Mathf.Max(0, i - s); a <= Mathf.Min(w - 1, i + s); a++)
                         for (int b = Mathf.Max(0, j - s); b <= Mathf.Min(h - 1, j + s); b++)
                             ring[a, b] = true;
@@ -167,13 +191,14 @@ namespace RoadDemo
                 for (int j = 0; j < h; j++)
                     if (kinds[i, j] == Kind.Outside && ring[i, j]) kinds[i, j] = Kind.Bare;
             // the main road runs the whole width of the core, boulevard-wide, to the edge
-            var band = CoreLayout.MainRoad;
-            for (int i = 0; i < w; i++)
-                for (int j = 0; j < h; j++)
-                {
-                    float cz = r.Z(j) + Cell * 0.5f;
-                    if (cz > band.x && cz < band.y && kinds[i, j] == Kind.Outside) kinds[i, j] = Kind.Bare;
-                }
+            // and so does every other road the plan declares across it
+            foreach (var band in plan.Bands)
+                for (int i = 0; i < w; i++)
+                    for (int j = 0; j < h; j++)
+                    {
+                        float cx = r.X(i) + Cell * 0.5f, cz = r.Z(j) + Cell * 0.5f;
+                        if (band.Contains(new Vector2(cx, cz)) && kinds[i, j] == Kind.Outside) kinds[i, j] = Kind.Bare;
+                    }
             // and whatever lies between two blocks no farther apart than a boulevard: the
             // middle of a 35 m gap is farther than a street from either kerb, and is road
             int reach = BlvdCells;
@@ -202,7 +227,7 @@ namespace RoadDemo
             // a block's bay is the car park the demo had there, anything else is paved and
             // reported so the cuts can be argued about - and left-over ground is never
             // given a road's markings (Docs/core-district-plan.md).
-            var roads = Roads(kinds, w, h, r, band);
+            var roads = Roads(kinds, lot, w, h, r, plan.Bands);
 
             // where two roads cross the ground is a junction: bare asphalt, a zebra at
             // every mouth. A junction takes the whole width of BOTH roads it belongs to, so
@@ -334,17 +359,12 @@ namespace RoadDemo
                     else if (kinds[i, j] == Kind.Bare) read[i, j] = Kind.Spare;
                 }
 
-            // the alleys' directions, out of the layout's table by where each alley lies
+            // the alleys' directions, out of the plan's table by where each alley lies
             r.Dir = new sbyte[w, h];
             var unmatched = 0;
             var unmatchedAt = new List<string>();
             var shifted = new List<(Rect box, int dir)>();
-            foreach (var lane in CoreLayout.Lanes)
-            {
-                var box = lane.Box;
-                var shift = CoreLayout.Shift(box);
-                shifted.Add((new Rect(box.x + shift.x, box.y + shift.y, box.width, box.height), lane.Direction));
-            }
+            foreach (var lane in plan.Lanes) shifted.Add((lane.Box, lane.Direction));
             for (int i = 0; i < w; i++)
                 for (int j = 0; j < h; j++)
                 {
@@ -447,6 +467,7 @@ namespace RoadDemo
             public int A, W;
             public int From, To;
             public int Kerbs;          // lengths of it with a block against at least one side
+            public int Walled;         // lengths of it with a block against BOTH sides: a street down a gap
             public bool Declared;      // the layout's own, not read off the blocks
             public int Length => To - From;
             public int Cells => Length * W;
@@ -475,11 +496,11 @@ namespace RoadDemo
         /// boulevard is looked for: the core has one, the main road; a gap wide enough for a
         /// second is a street with ground left over beside it.
         ///
-        /// The alleys are read off the ground too, not laid from
-        /// <see cref="CoreLayout.Lanes"/> - that table says which way an alley runs, not
-        /// that there is one. An alley the cuts have opened onto a street is no longer an
-        /// alley: no road may be laid against the flank of another, because two roads with
-        /// no kerb between them read as one wide road with arrows painted down half of it.
+        /// The alleys are read off the ground too, not laid from the plan's lane table -
+        /// that table says which way an alley runs, not that there is one. An alley the
+        /// cuts have opened onto a street is no longer an alley: no road may be laid against
+        /// the flank of another, because two roads with no kerb between them read as one
+        /// wide road with arrows painted down half of it.
         ///
         /// What is not a road, however road-shaped it looks:
         /// - a strip walled in by block at BOTH ends. It goes nowhere. (One end is normal:
@@ -494,7 +515,7 @@ namespace RoadDemo
         /// An alley runs only as far as it is walled, not as far as the ground is clear:
         /// where the blocks either side stop, the alley has its mouth.
         /// </summary>
-        static List<Corridor> Roads(Kind[,] kinds, int w, int h, Raster r, Vector2 band)
+        static List<Corridor> Roads(Kind[,] kinds, bool[,] lot, int w, int h, Raster r, List<Rect> bands)
         {
             var roads = new List<Corridor>();
             var takenNS = new bool[w, h];
@@ -504,6 +525,7 @@ namespace RoadDemo
             bool Free(int i, int j) => Ours(i, j) && kinds[i, j] != Kind.Block && kinds[i, j] != Kind.Outside;
             bool Kerb(int i, int j) => Ours(i, j) && kinds[i, j] == Kind.Block;
             bool Yard(int i, int j) => Ours(i, j) && kinds[i, j] == Kind.Yard;
+            bool Lot(int i, int j) => Ours(i, j) && lot[i, j];
             void Spot(bool vertical, int a, int t, int k, out int i, out int j)
             {
                 if (vertical) { i = a + t; j = k; } else { i = k; j = a + t; }
@@ -529,6 +551,15 @@ namespace RoadDemo
                 Spot(vertical, a, -1, k, out int li, out int lj);
                 Spot(vertical, a, 1, k, out int ri, out int rj);
                 return Kerb(li, lj) && Kerb(ri, rj);
+            }
+            bool AllYard(bool vertical, int a, int width, int k)
+            {
+                for (int t = 0; t < width; t++)
+                {
+                    Spot(vertical, a, t, k, out int i, out int j);
+                    if (!Yard(i, j)) return false;
+                }
+                return true;
             }
             bool Vacant(bool vertical, int a, int width, int k)
             {
@@ -600,9 +631,15 @@ namespace RoadDemo
                 }
             }
 
-            // the main road, the whole width of the core, boulevard-wide
-            Declare(false, Mathf.RoundToInt((band.x - r.Z0) / Cell),
-                    Mathf.RoundToInt((band.y - band.x) / Cell), 0, w);
+            // the main road, the whole width of the core, boulevard-wide, and the streets
+            // the plan declares the same way: the widest first, so a street never takes
+            // ground from under the boulevard
+            var declared = new List<Rect>(bands);
+            declared.Sort((one, other) => other.height.CompareTo(one.height));
+            foreach (var band in declared)
+                Declare(false, Mathf.RoundToInt((band.yMin - r.Z0) / Cell), Mathf.RoundToInt(band.height / Cell),
+                        Mathf.RoundToInt(Mathf.Max(band.xMin, r.X0) / Cell - r.X0 / Cell),
+                        Mathf.RoundToInt(Mathf.Min(band.xMax, r.X(w)) / Cell - r.X0 / Cell));
             // and the rest, off the free ground. There is no boulevard among them: the
             // core has one, the main road, and it is declared. A gap wide enough for
             // another is a street with ground left over beside it
@@ -618,30 +655,65 @@ namespace RoadDemo
                             if (!Runs(vertical, a, width, k)) { k++; continue; }
                             int start = k;
                             while (k < along && Runs(vertical, a, width, k)) k++;
-                            if (k - start < Mathf.Max(2, width)) continue;
-                            if (!Opens(vertical, a, width, start - 1) && !Opens(vertical, a, width, k)) continue;
-                            int kerbs = 0, yard = 0;
-                            for (int m = start; m < k; m++)
+                            int end = k;
+                            // a road may cross a bay; it does not END in one. A run whose
+                            // last lengths lie wholly in a block's bay is a street driven
+                            // into a car park to a dead end, and those lengths are the car
+                            // park's - the run is cut back to where it has ground of its own
+                            if (width > 1)
+                            {
+                                while (end > start && AllYard(vertical, a, width, end - 1)) end--;
+                                while (start < end && AllYard(vertical, a, width, start)) start++;
+                            }
+                            string where = Trace == null ? null
+                                : $"{(vertical ? "NS" : "EW")} w{width} at {(vertical ? r.X(a) : r.Z(a)):F0} run {(vertical ? r.Z(start) : r.X(start)):F0}..{(vertical ? r.Z(end) : r.X(end)):F0}";
+                            if (end - start < Mathf.Max(2, width)) { Trace?.Invoke($"{where}: too short"); continue; }
+                            int kerbs = 0, walled = 0, yard = 0, lotLengths = 0, sideOpen = 0;
+                            for (int m = start; m < end; m++)
                             {
                                 Spot(vertical, a, -1, m, out int li, out int lj);
                                 Spot(vertical, a, width, m, out int ri, out int rj);
                                 if (Kerb(li, lj) || Kerb(ri, rj)) kerbs++;
+                                if (Kerb(li, lj) && Kerb(ri, rj)) walled++;
+                                if (!Kerb(li, lj) && !Kerb(ri, rj)) sideOpen++;
+                                int lotHere = 0;
                                 for (int t = 0; t < width; t++)
                                 {
                                     Spot(vertical, a, t, m, out int i, out int j);
                                     if (Yard(i, j)) yard++;
+                                    if (Lot(i, j)) lotHere++;
                                 }
+                                if (lotHere == width) lotLengths++;
                             }
-                            if (kerbs == 0) continue;   // no kerb either side: a lot, not a road
+                            if (kerbs == 0) { Trace?.Invoke($"{where}: no kerb"); continue; }   // no kerb either side: a lot, not a road
+                            // and a road wants kerb for its own width at least: a strip with a
+                            // single length of kerb is the mouth of a bay read as a street
+                            if (width > 1 && kerbs < width) { Trace?.Invoke($"{where}: kerbs {kerbs} < width"); continue; }
+                            // a strip walled in at both ends goes nowhere - unless it is open
+                            // down a side somewhere, where it crosses other ground: a street
+                            // between two blocks of a row runs from the boulevard to the
+                            // street behind the row and meets the next row's blocks beyond
+                            // each, and is a street for all that
+                            if (!Opens(vertical, a, width, start - 1) && !Opens(vertical, a, width, end) &&
+                                sideOpen < width) { Trace?.Invoke($"{where}: walled both ends"); continue; }
                             // a strip that is nearly all one block's bay is that block's car
                             // park, however road-shaped it looks. A street may cross a bay -
                             // the demo runs three of them through one - not be made of one.
                             // An alley is excused: walled by block on both sides is what an
                             // alley IS, and the demo tucks several of them into a block's bay
-                            if (width > 1 && yard * 4 >= (k - start) * width * 3) continue;
+                            if (width > 1 && yard * 4 >= (end - start) * width * 3) { Trace?.Invoke($"{where}: a bay"); continue; }
+                            // the ground behind a block is that block's car park, and no road
+                            // is carved out of it: read off the lengths that have a kerb - a
+                            // strip through a lot between two streets is mostly street by cell
+                            // count, the streets either side being clear ground too, and all
+                            // lot wherever it has a wall. A bay of the demo's is not a lot: the
+                            // demo runs streets through its bays, and those stay as they are
+                            if (width > 1 && lotLengths * 4 >= kerbs * 3) { Trace?.Invoke($"{where}: a lot"); continue; }
+                            Trace?.Invoke($"{where}: candidate, kerbs {kerbs} walled {walled} open {sideOpen}");
                             found.Add(new Corridor
                             {
-                                Vertical = vertical, A = a, W = width, From = start, To = k, Kerbs = kerbs,
+                                Vertical = vertical, A = a, W = width, From = start, To = end, Kerbs = kerbs,
+                                Walled = walled,
                             });
                         }
                 }
@@ -649,12 +721,15 @@ namespace RoadDemo
             // city wants streets: a 10 m road that happens to run the length of the core
             // would otherwise take the ground out from under every 15 m street that crosses
             // its band, and leave the blocks along it with a narrow road for a frontage.
-            // Where two are the same, the one with more kerb against it; the rest of the
-            // order only keeps the draw repeatable
+            // Where two are the same, the one walled down both sides - the gap between two
+            // blocks rather than the same strip shifted a cell into a bay of one of them -
+            // and then the one with more kerb against it; the rest of the order only keeps
+            // the draw repeatable
             found.Sort((one, other) =>
             {
                 int by = other.W.CompareTo(one.W);
                 if (by == 0) by = other.Cells.CompareTo(one.Cells);
+                if (by == 0) by = other.Walled.CompareTo(one.Walled);
                 if (by == 0) by = other.Kerbs.CompareTo(one.Kerbs);
                 if (by == 0) by = other.Length.CompareTo(one.Length);
                 if (by == 0) by = other.Vertical.CompareTo(one.Vertical);
@@ -672,17 +747,23 @@ namespace RoadDemo
                     if (!Layable(road, k)) { k++; continue; }
                     int start = k;
                     while (k < road.To && Layable(road, k)) k++;
-                    if (k - start < Mathf.Max(2, road.W)) continue;
-                    if (!Opens(road.Vertical, road.A, road.W, start - 1) &&
-                        !Opens(road.Vertical, road.A, road.W, k)) continue;
-                    int kerbs = 0;
+                    string where = Trace == null ? null
+                        : $"{(road.Vertical ? "NS" : "EW")} w{road.W} at {(road.Vertical ? r.X(road.A) : r.Z(road.A)):F0} piece {(road.Vertical ? r.Z(start) : r.X(start)):F0}..{(road.Vertical ? r.Z(k) : r.X(k)):F0}";
+                    if (k - start < Mathf.Max(2, road.W)) { Trace?.Invoke($"{where}: piece too short"); continue; }
+                    int kerbs = 0, sideOpen = 0;
                     for (int m = start; m < k; m++)
                     {
                         Spot(road.Vertical, road.A, -1, m, out int li, out int lj);
                         Spot(road.Vertical, road.A, road.W, m, out int ri, out int rj);
                         if (Kerb(li, lj) || Kerb(ri, rj)) kerbs++;
+                        if (!Kerb(li, lj) && !Kerb(ri, rj)) sideOpen++;
                     }
-                    if (kerbs == 0) continue;
+                    if (kerbs == 0) { Trace?.Invoke($"{where}: piece has no kerb"); continue; }
+                    // walled in at both ends and open down neither side: nowhere to go
+                    if (!Opens(road.Vertical, road.A, road.W, start - 1) &&
+                        !Opens(road.Vertical, road.A, road.W, k) && sideOpen < road.W)
+                    { Trace?.Invoke($"{where}: piece walled both ends"); continue; }
+                    Trace?.Invoke($"{where}: LAID");
                     Take(new Corridor
                     {
                         Vertical = road.Vertical, A = road.A, W = road.W, From = start, To = k, Kerbs = kerbs,
@@ -790,12 +871,16 @@ namespace RoadDemo
                                int unmatchedLanes, List<string> unmatchedAt)
         {
             var sb = new StringBuilder();
+            r.Faults = 0;
             foreach (var block in blocks)
             {
                 var sides = Unserved(r, block);
                 if (sides.Count > 0)
+                {
+                    r.Faults += sides.Count;
                     sb.AppendLine($"   WARNING: {block.Name} has no road along its {string.Join(" or ", sides)} side" +
                                   (sides.Count > 1 ? "s" : ""));
+                }
             }
             int blvd = 0, street = 0, narrow = 0, alley = 0, declared = 0;
             foreach (var road in roads)
@@ -813,6 +898,7 @@ namespace RoadDemo
             // what has to be given something to stand on
             var spare = Lots(r, Kind.Spare);
             spare.Sort((one, other) => other.Count.CompareTo(one.Count));
+            r.Faults += spare.Count;
             if (spare.Count > 0)
                 sb.AppendLine($"   {spare.Count} patches of ground left bare, {r.SpareArea} m2 in all - " +
                               "nothing is stood on them, biggest first:");
@@ -828,11 +914,28 @@ namespace RoadDemo
             foreach (var lot in Lots(r, Kind.Bare))
                 if (lot.Count > BlvdCells * BlvdCells)
                     sb.AppendLine($"   a junction wider than two boulevards: {lot.Count} cells at {Where(r, lot)}");
+            // a junction box is the crossing of two roads and measures their widths - a
+            // street's three cells, a boulevard's seven, or one more where a 5 m length was
+            // given to it. Wider than that it is two junctions run together, because two
+            // roads meet the same road a few metres apart. The demo has three of these at
+            // its edges and drives them, so they are noted, not counted against the drawing;
+            // the layout keeps its rows' cross streets in line to make as few as it can
+            foreach (var box in r.Junctions)
+            {
+                int across = Mathf.RoundToInt(box.width / Cell), along = Mathf.RoundToInt(box.height / Cell);
+                bool fits = Fits(across) && Fits(along) && !(across >= BlvdCells && along >= BlvdCells);
+                if (fits) continue;
+                sb.AppendLine($"   a junction of {across} x {along} cells at x {box.xMin:F0}..{box.xMax:F0} " +
+                              $"z {box.yMin:F0}..{box.yMax:F0}: two crossings run together");
+            }
 
             // a length of road too short to carry its own profile, caught between two
             // junctions: the drawing there is a stub of markings, not a road
             foreach (var stub in Stubs(r))
+            {
+                r.Faults++;
                 sb.AppendLine($"   WARNING: {stub}");
+            }
             int narrowCells = 0;
             for (int i = 0; i < r.NX; i++)
                 for (int j = 0; j < r.NZ; j++)
@@ -842,13 +945,21 @@ namespace RoadDemo
             if (unmatchedLanes > 0)
                 sb.AppendLine($"   alleys with no direction on record: {unmatchedLanes} cells, run north/east: " +
                               string.Join(" ", unmatchedAt) + (unmatchedLanes > unmatchedAt.Count ? " ..." : ""));
-            if (r.Clashes > 0) sb.AppendLine($"   WARNING: {r.Clashes} cell(s) claimed by two blocks");
+            if (r.Clashes > 0)
+            {
+                r.Faults += r.Clashes;
+                sb.AppendLine($"   WARNING: {r.Clashes} cell(s) claimed by two blocks");
+            }
             return sb.ToString().TrimEnd();
         }
 
         /// <summary>How many patches of left-over ground the report names before it counts
         /// the rest.</summary>
         const int Listed = 20;
+
+        /// <summary>Is this a road's width across a junction box, or one cell more?</summary>
+        static bool Fits(int cells) =>
+            cells == 2 || cells == StreetCells || cells == StreetCells + 1 || cells == BlvdCells || cells == BlvdCells + 1;
 
         /// <summary>How far off a block's face a road still counts as that side's road: the
         /// block's own kerb-side parking, or a strip of ground left over, may stand between

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using LivingCity.EditorTools;
 using RoadDemo;
 using Unity.Pipeline.Commands;
 using UnityEditor;
@@ -215,6 +216,118 @@ namespace GangstersTools
                 sets = cfg.sets.ToArray(),
                 note = "started; poll " + Path.Combine(cfg.outDir, "summary.json") +
                        ", then read it with Tools/play/analyze.py " + cfg.outDir + " --verdict",
+            };
+        }
+
+        // ---------------------------------------------------------------- the industry
+
+        /// <summary>Industrial blocks for the core, four guesses at a time. Without
+        /// <c>--bake</c> it stands them up to be looked at; with it, the ones named are
+        /// filed through the block tray's own bake and the rest are thrown away. The
+        /// looking is the point, so the two halves are deliberately separate calls.</summary>
+        [CliCommand("gangsters_industrial",
+                    "Stand four industrial block candidates in the industrial lab scene, or bake the chosen ones " +
+                    "into Assets/Prefabs/CoreBlocks. Without --bake it generates; with it, it files.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters" })]
+        public static object Industrial(
+            [CliArg("seed", "Seed the four candidates are rolled from.")] int seed = 7,
+            [CliArg("recipe", "works | depot | yard | strip, or all for one of each.")] string recipe = "all",
+            [CliArg("bake", "Candidate numbers to file, e.g. 1,2. The rest are discarded.")] string bake = "",
+            [CliArg("names", "Prefab names for --bake, in the same order. Rolled from the recipe when empty.")] string names = "",
+            [CliArg("keepOthers", "With --bake, leave the candidates that were not chosen standing.")] bool keepOthers = false)
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("The editor is in play mode; leave it first.");
+
+            if (string.IsNullOrWhiteSpace(bake))
+                return new
+                {
+                    scene = IndustrialBlockForge.LabPath,
+                    seed,
+                    recipe,
+                    candidates = IndustrialBlockForge.Generate(seed, recipe),
+                };
+
+            var chosen = bake.Split(',')
+                             .Select(one => one.Trim())
+                             .Where(one => one.Length > 0)
+                             .Select(one => int.TryParse(one, out var n) ? n : 0)
+                             .Where(n => n >= 1 && n <= 4)
+                             .ToArray();
+            if (chosen.Length == 0)
+                throw new ArgumentException("--bake wants candidate numbers between 1 and 4, e.g. 1,2.");
+
+            var called = string.IsNullOrWhiteSpace(names)
+                ? new string[0]
+                : names.Split(',').Select(one => one.Trim()).ToArray();
+
+            return new
+            {
+                scene = IndustrialBlockForge.LabPath,
+                baked = IndustrialBlockForge.BakeChosen(chosen, called, keepOthers),
+            };
+        }
+
+        // ---------------------------------------------------------------- the core
+
+        /// <summary>What a seed deals the core into, judged, without a drawing: how many
+        /// deals the seed needed before one read clean, and what that one came to. A
+        /// tally over thirty seeds is the verdict on the dealer; one seed proves nothing.
+        /// With <c>--draw</c> the first seed is also drawn in the open scene.</summary>
+        [CliCommand("gangsters_core",
+                    "Deal the city core from a seed (or a run of seeds) and report the verdict on each: " +
+                    "deals needed, faults, areas, roads. --draw also draws the first one in the open scene.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters" })]
+        public static object Core(
+            [CliArg("seed", "First seed. -1 is Synty's own arrangement.")] int seed = 1,
+            [CliArg("count", "How many consecutive seeds to deal.")] int count = 1,
+            [CliArg("draw", "Draw the first seed in the open scene as Tools/City/Core/Sketch The Core City would.")] bool draw = false,
+            [CliArg("map", "Include each seed's raster map in the answer.")] bool map = false)
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("The editor is in play mode; leave it first.");
+            int rolls = Mathf.Clamp(count, 1, 200);
+            var results = new List<object>(rolls);
+            int clean = 0, firstDeal = 0;
+            var yard = new GameObject("core (dealing)");
+            try
+            {
+                var blocks = LivingCity.EditorTools.CoreCitySketch.Stand(
+                    yard.transform, (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent));
+                for (int i = 0; i < rolls; i++)
+                {
+                    int s = seed == CoreLayout.SyntySeed ? (i == 0 ? seed : i) : seed + i;
+                    var plan = CoreLayout.Arrange(blocks, s, out var raster);
+                    if (raster.Faults == 0) clean++;
+                    if (plan.Attempt == 0) firstDeal++;
+                    results.Add(new
+                    {
+                        seed = s,
+                        plan = plan.Name,
+                        deals = plan.Attempt + 1,
+                        faults = raster.Faults,
+                        blocksM2 = raster.BlockArea,
+                        roadM2 = raster.RoadArea,
+                        parkingM2 = raster.ParkingArea,
+                        spareM2 = raster.SpareArea,
+                        size = $"{raster.NX * 5}x{raster.NZ * 5}",
+                        rows = plan.Rows.ToArray(),
+                        report = raster.Report.Split('\n').Select(line => line.Trim()).ToArray(),
+                        map = map ? raster.Map : null,
+                    });
+                }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(yard);
+            }
+            if (draw) LivingCity.EditorTools.CoreCitySketch.Draw(seed);
+            return new
+            {
+                dealsPerSeed = CoreLayout.Deals,
+                clean,
+                firstDeal,
+                seeds = results,
             };
         }
     }

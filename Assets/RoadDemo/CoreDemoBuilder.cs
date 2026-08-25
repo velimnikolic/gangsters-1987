@@ -24,6 +24,10 @@ namespace RoadDemo
         void Awake()
         {
 #if UNITY_EDITOR
+            // a sketch left in the scene from the editor menu would stand under the quarter
+            foreach (var root in gameObject.scene.GetRootGameObjects())
+                if (root.name == CoreLayout.SketchRoot) Destroy(root);
+
             var district = new CoreDistrict
             {
                 carCount = carCount,

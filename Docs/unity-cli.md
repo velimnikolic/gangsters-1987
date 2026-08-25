@@ -53,10 +53,13 @@ editor through Roslyn, which answers most one-off questions without a file being
 | `gangsters_layout` | the district roll for a seed — the paper plan, no build, no Play |
 | `gangsters_measure` | what a prefab actually measures, from the imported asset |
 | `gangsters_play` | a harness run **inside the open editor** |
+| `gangsters_core` | the city core dealt from a seed (or a run of seeds), judged: deals needed, faults, areas, roads; `--draw` draws the first in the open scene |
 
     unity command gangsters_layout --scene Assets/Scenes/Game.unity --seed 7 --json
     unity command gangsters_layout --seed 1 --count 20 --json     # sweep seeds
     unity command gangsters_measure --name building-bank --json
+    unity command gangsters_core --seed 1 --count 30 --json      # thirty seeds: is every one clean?
+    unity command gangsters_core --seed 4 --draw                 # draw seed 4 where the Sketch menu would
     unity command gangsters_play --scene Assets/Scenes/BlockDemo.unity --seconds 90 \
         --step 0.05 --out Temp/play/cli --sets "BlockDemoBuilder.rivalCrews=2"
     python Tools/play/analyze.py Temp/play/cli --verdict

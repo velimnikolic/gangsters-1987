@@ -62,3 +62,8 @@ mono_crash.*.json
 
 # Unity review gate state (per-fingerprint review markers)
 .claude/.unity-review/
+
+# Tools/CoreSim (dotnet, offline core-layout loop): keep the project, drop the build
+Tools/CoreSim/bin/
+Tools/CoreSim/obj/
+!Tools/CoreSim/CoreSim.csproj

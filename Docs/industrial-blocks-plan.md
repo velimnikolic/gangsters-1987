@@ -1,398 +1,312 @@
-# Plan: generator industrijskih blokova u stilu jezgra (CoreHarvest)
+# Industrijski blokovi za jezgro (IndustrialBlockForge)
 
-> Napisano 2026-08-25. Ovaj dokument je **kompletno uputstvo za implementaciju** — sve mere, imena
-> prefaba, fajlove i redosled koraka. Ne izmišljaj ništa što ovde nije napisano; ako nešto fali,
-> izmeri (`unity command gangsters_measure --name ...`) i zapiši u ovaj dokument.
+> Plan napisan i **implementiran 2026-08-25**. Alat radi; četiri kandidata stoje u
+> `Assets/Scenes/IndustrialLab.unity`, probni bake je prošao i obrisan.
 >
-> Cilj u jednoj rečenici: editor alat koji u sceni `Assets/Scenes/CoreHarvest.unity` podigne
-> **4 kandidata industrijskog bloka odjednom** (svaki drugačiji), korisnik ih pogleda i kaže
-> „ispeci 1 i 2, ignoriši 3 i 4“, a alat one izabrane snimi kao prefabe u `Assets/Prefabs/CoreBlocks/`
-> **kroz postojeći bake jezgra** (`CoreBlockTray`), tako da izgledaju i ponašaju se kao 16 blokova
-> koje već imamo (`block-01..16`).
+> U jednoj rečenici: editor alat digne **4 kandidata industrijskog bloka odjednom**, korisnik
+> ih pogleda i kaže „ispeci 1 i 2, ignoriši 3 i 4", a alat izabrane snimi kao prefabe u
+> `Assets/Prefabs/CoreBlocks/` **kroz postojeći bake jezgra** (`CoreBlockTray`), tako da su
+> nerazlučivi od 16 blokova koje smo požnjeli iz Synty demoa.
+
+| šta | gde |
+|---|---|
+| generator | `Assets/Scripts/Editor/IndustrialBlockForge.cs` |
+| radna scena | `Assets/Scenes/IndustrialLab.unity` |
+| meni | `Tools/City/Core/Industrial/…` |
+| komanda | `unity command gangsters_industrial` (`Assets/Scripts/Editor/PipelineCommands.cs`) |
+| izlaz | `Assets/Prefabs/CoreBlocks/ind-<recept>-NN.prefab` |
 
 ---
 
-## 0. Šta „u stilu CoreHarvest blokova“ tačno znači (izmereno, ne pretpostavljeno)
+## 1. Radni tok
 
-Pročitaj `Docs/synty-demo-anatomy.md §2` i `Docs/core-district-plan.md`. Sažetak pravila koja
-**moraju** da važe i za industrijski blok:
+```bash
+# 1. četiri kandidata (otvara/pravi lab scenu sam ako je tekuća scena čista)
+unity command gangsters_industrial --seed 7 --recipe all
+#    → [{index, recipe, seed, width, depth, pieces, gaps}, …]
+
+# 2. pogledaj ih
+unity command screenshot --view scene
+
+# 3. ispeci izabrane, ostale baci
+unity command gangsters_industrial --bake 1,2 --names ind-works-01,ind-depot-01
+#    → [{index, name, path, wrote, trouble}]
+```
+
+- `--recipe works|depot|yard|strip` pravi 4 varijante istog recepta; `all` (podrazumevano) po
+  jednog od svakog.
+- bez `--names`, ime je `ind-<recept>-NN` (prvi slobodan broj u folderu). Postojeće ime se
+  **odbija** (`trouble`), ne prepisuje.
+- `--keepOthers true` ostavlja neizabrane kandidate da stoje.
+- Meni ekvivalenti: `Open The Industrial Lab`, `Generate Four Candidates`,
+  `Bake Candidate 1..4`, `Discard Candidates`.
+
+Posle bake-a: tray se ukloni, scena se snimi, a ako u sceni stoji review red
+(`Tools/City/Core/Show Baked Blocks`) osveži se — tu se novi blok vidi u istom redu sa 16
+Synty blokova, što je i prava provera stila.
+
+---
+
+## 2. Šta „u stilu CoreHarvest blokova" znači (izmereno)
 
 | pravilo | vrednost | izvor |
 |---|---|---|
-| Rešetka | **5 m**, svi pivoti pločica na višekratnicima 5, faza 0, y = 0 | `CoreLayout.Cell` (`Assets/RoadDemo/CoreLayout.cs:26`) |
-| Blok nosi SVOJ trotoar | ivičnjak = prsten od **jedne pločice 5 m** `SM_Env_Sidewalk_Straight_01` oko cele kutije, `SM_Env_Sidewalk_Corner_01` na 4 ugla | `Docs/synty-demo-anatomy.md:50-54` |
-| Put NIJE deo bloka | kolovoz između ivičnjaka polaže `CoreRoads` po razmaku (1 ćelija = uličica, 3 = ulica 15 m, 7 = bulevar) — blok ne sme da sadrži nijednu `SM_Env_Road_*` pločicu **izvan** svog prstena ivičnjaka, osim parkinga u useku | `Assets/RoadDemo/CoreRoads.cs:58-67` |
-| Unutrašnjost | pod od `SM_Env_Sidewalk_01` (PolygonCity, 5 m pločica; ista koju bake koristi za `floor patch`), trava `SM_Env_Grass_01` samo ako ima smisla, **parkinzi** = `SM_Env_Road_ParkingLines_01` (10×5 m, tri mesta) u usecima | `CoreBlockTray.cs:1791` (`FillTile`), anatomija §2 |
-| Pod miran | **jedna pločica po površini**, bez šahovnice, bez random rotacija, bez mešanja paketa | memorija `block-floor-calm` |
-| Nema praznog prostora | svaki usek = parking / dvorište / manji objekat; u industriji: parking kamiona, kontejneri, bačve, ograđeno dvorište | anatomija §3 pravilo 4 |
-| Rotacija bloka | uvek **0°** (`CoreLayout.Place` postavlja `Quaternion.identity`) — pročelja gledaju na ulicu zato što su TAKO složena, ne zato što blok nosi podatak o fasadi | `CoreLayout.cs:241-244` |
-| Pivot prefaba | sredina **ground kutije** (samo strukture: `SM_Bld_*`, `SM_Env_Sidewalk*`, `SM_Env_Grass*`), snap na 5 m; X/Z centrirani, **Y netaknut** | `CoreBlockTray.Bake` (`:659-683`) |
-| Hijerarhija prefaba | **ravna**: svaki komad je DIREKTNO dete korena, ime = ime instance u sceni; `CoreLayout.Measure` čita samo direktnu decu i klasifikuje po prefiksu imena | `CoreLayout.cs:192-238` |
-| Jedina komponenta korena | `LivingCity.Generation.BlockLotTag` sa `lotWidth/lotDepth` (bake je sam dodaje) | `CoreBlockTray.cs:690` |
-| Bez kolajdera/slojeva/merge-a | bake ne dodaje ništa; kolajderi dolaze iz Synty izvornih prefaba | izveštaj tray-a |
-| Vrh pločice trotoara | `PrefabBounds(SM_Env_Sidewalk_Straight_01).max.y` ≈ **0.13 m** (PolygonCity) — zgrade sa ravnim podom stoje na `TileTop + 0.02` (pravilo iz luke, `HarborDistrict.Yard.cs Seat`) | `RoadDemoBuilder.cs:1731-1735` |
+| Rešetka | **5 m**, svi pivoti na višekratnicima 5, y = 0 | `CoreLayout.Cell` |
+| Blok nosi SVOJ trotoar | prsten od **jedne pločice 5 m** oko cele kutije | `Docs/synty-demo-anatomy.md:50` |
+| Put nije deo bloka | kolovoz polaže `CoreRoads` po razmaku između blokova | `CoreRoads.cs:58` |
+| Pod miran | jedna pločica po površini, bez rotacija; **najviše dve površine** | memorija `block-floor-calm` |
+| Nema praznog prostora | svaki kutak je parking / radna površina / roba | anatomija §3 |
+| Rotacija bloka | uvek 0° (`CoreLayout.Place` postavlja identitet) | `CoreLayout.cs:241` |
+| Pivot prefaba | sredina ground kutije, snap na 5 m; X/Z centrirani, **Y netaknut** | `CoreBlockTray.Bake` |
+| Hijerarhija | **ravna** — svaki komad direktno dete korena | `CoreLayout.Measure` |
+| Koren nosi | samo `BlockLotTag` (bake ga sam dodaje) | `CoreBlockTray.cs:690` |
 
-**Razlika od grid-grada (RoadDemo/Game.unity):** tamo ulica sama polaže trotoar od 6.5 m
-(`StreetKit`, `SidewalkDressing.Width`) i blok = samo unutrašnjost lota. **Ovde ne.** Jezgro (i
-industrijski blokovi za jezgro) nose 5 m ivičnjak u sebi. Ne mešati dva pipeline-a:
+**Ne mešati sa grid-gradom**: tamo ulica sama polaže trotoar od 6.5 m (`StreetKit`) i blok je
+samo unutrašnjost lota; izlaz ide u `Assets/CityKit/Blocks` i čita ga `RoadDemoBuilder`. Ovde
+blok nosi 5 m ivičnjak u sebi, izlaz je `Assets/Prefabs/CoreBlocks`, čita ga `CoreLayout`.
 
-| pipeline | meni | izlaz | potrošač |
-|---|---|---|---|
-| **jezgro** (OVAJ) | `Tools/City/Core/*` | `Assets/Prefabs/CoreBlocks/*.prefab` | `CoreLayout` + `CoreRoads` (`CoreCitySketch`, budući `CoreDistrict`) |
-| katalog | `Tools/City/Catalog/*` | `Assets/CityKit/Blocks/*.prefab` (`BlockLotTag.lot` = A1..C3) | `RoadDemoBuilder` |
+### Izmerene mere pločica (2026-08-25)
 
----
-
-## 1. Građa: koji prefabi smeju (sve osim `Assets/SimpleAirport`)
-
-### 1.1 Zgrade — gotove, ispečene, pod na y=0, pročelje na **+Z**, pivot u centru otiska
-Folder `Assets/CityKit/Buildings/`. Mere iz `Logs/harbor-kit-probe.txt` (X × Y × Z u metrima).
-Za neizmerene: `unity command gangsters_measure --name building-factory`.
-
-| prefab | mere | šta je | uloga u bloku |
-|---|---|---|---|
-| `building-warehouse-large` | 32.7 × 13.2 × 40.0 | velika hala (MilWarehouse), ima **ukopan nivo na y=−3** → ispod nje NEMA poda (memorija `no-floor-under-sunken-buildings`) | glavna zgrada depoa |
-| `building-warehouse-small` | 22.7 × 7.4 × 17.7 | mala hala | red hala, zaleđe |
-| `building-depot-garage` | 25.2 × 7.8 × 17.5 | garaža sa roller vratima | servis, red hala |
-| `building-yard-shed` | 6.9 × 3.9 × 6.1 | ostava/portirnica — **nikad u redu**, samo uz kapiju | portirnica |
-| `building-warehouse` | izmeriti | stovarište iz GangWarfare demoa (sa dvorišnim propsima) | samostalni blok |
-| `building-factory` | ~24 × ? × 15 | fabrika od cigle, 2 sprata, vodotoranj na krovu | pročelje ulice |
-| `building-factory-old` | izmeriti | cigla + dimnjak ~12.5 m | pročelje ulice / ugao |
-| `building-factory-hall` | ~21 × ? × 9 | metalna hala, dvoja klizna vrata 6×6 | zaleđe |
-| `building-workshop` | ~15 × ? × 12 | jednospratna metalna radionica | servisna traka |
-
-Ova imena ne počinju sa `SM_Bld_`, pa ih `CoreLayout.Measure` (`CoreLayout.cs:204`) **ne broji kao
-zgrade** (MaxH/MeanH). Popravka u koraku 4.6 (jedan red).
-
-### 1.2 Pod i ivičnjak (PolygonCity, `Assets/Synty/PolygonCity/Prefabs/Environments/`)
-Sve pločice: 5 × 5 m, **pivot u +X/+Z uglu** (kao `CoreRoads.Kit.Tile`, `CoreRoads.cs:897` i
-`StreetKit.PlaceTile`, `StreetKit.cs:379`), materijal jedan zajednički atlas
-`Assets/Synty/PolygonCity/Materials/Alts/PolygonCity_01_A.mat`.
-
-| pločica | upotreba |
-|---|---|
-| `SM_Env_Sidewalk_Straight_01` | ivičnjak — prsten širine 1 ćelije oko bloka; ivičnjak („stepenica“) je na **spoljnoj** ivici; yaw kao u `StreetKit.cs:206-248` (jug 0, sever 180, zapad 90, istok 270) |
-| `SM_Env_Sidewalk_Corner_01` | 4 ugla prstena; yaw 0/90/180/270 kao u `StreetKit.LayCrossroads` (`StreetKit.cs:370-373`), ali ugao je OKRENUT KA SPOLJA bloka (ovde blok nosi ugao, ne raskrsnica) — proveri vizuelno na prvom kandidatu i zapiši ispravan yaw ovde |
-| `SM_Env_Sidewalk_Dip_01` / `SM_Env_Sidewalk_Dip_Corner_01` | rampa na ivičnjaku tamo gde kolski ulaz/kapija seče ivičnjak (isto kao Synty demo na prelazima) — **obavezno na svakoj kapiji** |
-| `SM_Env_Sidewalk_01` | plato/unutrašnji pod bloka (5 m pločica, ista kao `FillTile` bake-a) |
-| `SM_Env_Road_Bare_01` | asfalt dvorišta IZA ograde (jedina druga površina) |
-| `SM_Env_Road_ParkingLines_01` | 10 × 5 m, tri mesta — parking kamiona/auta u useku uz ulicu |
-| `SM_Env_Grass_01` | samo za „pojas trave uz ogradu“ recept (opciono, v1 bez) |
-
-### 1.3 Ograda, kapija, utovar (`Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/`)
-| prefab | mere | napomena |
+| pločica | mere | y raspon |
 |---|---|---|
-| `SM_Bld_Fence_01` | 3.00 × 2.92, panel žičane ograde | ograda dvorišta; polagati preko `HarborKit.LayRun` logike (moduli jednako razvučeni, bez rupe) |
-| `SM_Bld_Fence_Wire_01` | 0.77 m **bodljikava KRUNA**, pivot na 3.16 m — NIJE ograda | spušta se za `crownDrop = max(0, PrefabBounds(kruna).min.y − PrefabBounds(panel).max.y)` (`HarborDistrict.Yard.cs:540 FenceRun`) |
-| `SM_Bld_Fence_Gate_01` | 6.02 m širine | kapija; dva krila; ulaz uvek ka ulici, preko `Sidewalk_Dip` |
-| `SM_Bld_Fence_Pole_01` | stub | na krajevima ograde i uz kapiju |
-| `SM_Bld_LoadingDock_02` | 6.00 × 1.06 × 3.24 | uz zadnji zid hale, yaw 180 (kao `HarborDistrict.Yard.cs:237 BackDocks`) |
+| `SM_Env_Sidewalk_01` (pod) | 5.000 × 5.000 | 0 … **0.034** |
+| `SM_Env_Sidewalk_Straight_01` (ivičnjak) | 5.000 × 5.000 | −0.230 … **0.070** |
+| `SM_Env_Sidewalk_Corner_01` | 5.000 × 5.000 | −0.230 … 0.070 |
+| `SM_Env_Sidewalk_Dip_01` | 5.000 × 5.000 | −0.230 … 0.070 |
+| `SM_Env_Road_Bare_01` (asfalt) | 5.000 × 5.000 | 0 |
+| `SM_Env_Road_ParkingLines_01` | **10.000 × 5.000** | 0 |
 
-### 1.4 Props dvorišta (samo ono što je već u luci — dokazano da izgleda dobro)
-Konstante i putanje uzmi iz `Assets/HarborDemo/HarborKit.cs:35-148` (ne prepisivati stringove
-napamet — referencirati `HarborKit.Pallet`, `HarborKit.BarrelMetal` itd. ako je klasa dostupna
-iz editor asemblija; ako nije, kopirati konstante uz komentar odakle su).
+Sve pločice se polažu na **y = 0**, kao u demou. `Deck` (visina na koju staju zgrade i props)
+= vrh pod-pločice + 2 cm = **0.054** (isti razmak koji luka daje halama).
 
-| šta | prefab |
+### Okretanje ivičnjaka — PROVERENO, ne pogađati
+
+`StreetKit` polaže južni trotoar ulice na yaw 0, što znači da je **ivičnjak-kamen na +Z
+strani pločice** pri yaw 0. Odatle za blok (put je spolja):
+
+| strana bloka | put je na | yaw |
+|---|---|---|
+| jug | −Z | **180** |
+| sever | +Z | **0** |
+| zapad | −X | **270** |
+| istok | +X | **90** |
+
+Ugaona pločica pri yaw 0 nosi kamen na **+X i +Z**, pa za blok: **NE = 0, SE = 90, SW = 180,
+NW = 270**. (Izvedeno iz `StreetKit.LayCrossroads:370-373` i potvrđeno u sceni.)
+
+---
+
+## 3. Građa (sve osim `Assets/SimpleAirport`)
+
+### Zgrade — gotove, pečene, pročelje na +Z, pod na y = 0
+`Assets/CityKit/Buildings/` — mere izmerene 2026-08-25 (X × Y × Z):
+
+| prefab | mere | uloga |
+|---|---|---|
+| `building-factory` | 24.39 × 11.66 × 15.39 | pročelje ulice (cigla, vodotoranj na krovu) |
+| `building-factory-old` | 22.47 × 12.61 × 12.39 | pročelje/ćošak (cigla + dimnjak) |
+| `building-factory-hall` | 21.36 × 8.01 × 9.97 | hala u zaleđu |
+| `building-workshop` | 15.39 × 4.09 × 12.39 | radionica |
+| `building-warehouse-large` | 32.73 × 13.18 × 40.00 | glavna hala depoa (**krov ima svetlarnike**, nije bez krova) |
+| `building-warehouse-small` | 22.74 × 7.41 × 17.74 | red hala |
+| `building-depot-garage` | 25.24 × 7.83 × 17.50 | garaža sa roller vratima |
+| `building-yard-shed` | 6.89 × 3.93 × 6.14 | portirnica uz kapiju, **nikad u redu** |
+| `building-warehouse` | **70.70 × 13.41 × 61.50** | ceo GangWarfare kompaund — prevelik za blok < 85×75, zasad se ne koristi |
+
+### Dvorište
+`SM_Bld_Fence_01` (3.00 × 2.92 panel) · `SM_Bld_Fence_Wire_01` (**nije ograda** — 0.775 m
+bodljikava kruna, pivot na 3.164) · `SM_Bld_Fence_Gate_01` (6.03 × 1.03) ·
+`SM_Bld_Fence_Pole_01` · `SM_Bld_LoadingDock_02` (žuta zaštitna ograda, 6.00 × 3.24) ·
+palete/bačve/kolutovi/cevi/dumpster/bandera/znak iz `PolygonGangWarfare/Prefabs/Props` ·
+viljuškar i kamion iz `…/Vehicles` · sanduk `PolygonGeneric` · bure-vatra i kupa `PolygonPalmCity` ·
+betonska barijera `PolygonCity` · kontejneri `Assets/CityKit/Ships/container-20-*` (3.36 × 3.21 × 6.38).
+
+**Zabranjeno:** `Assets/SimpleAirport`; iz `PolygonMapsMilitaryWarehouse` samo bodljikava žica
+(ostalo je sivo, atlas fali); `SM_Env_Background_Crane_*` (kulisa); uspavani
+`Assets/Scripts/Generation/Industrial*.cs` + `PortLayout.cs` (pišu za polyperfect katalog koji
+ne postoji — **ne dirati**).
+
+---
+
+## 4. Četiri recepta
+
+Blok je **maska ćelija 5 m**, ne pravougaonik — zato `strip` može da ima usek. Prsten ivičnjaka
+= rubne ćelije maske; unutrašnjost = ostalo.
+
+`--recipe all` deli prva četiri; `depot` se dobija samo imenom (`--recipe depot`) jer je
+magacin, a stovarište već postoji u četvorci.
+
+| recept | mere | zid | šta je |
+|---|---|---|---|
+| `works` | 75/90 × 60/75 | cigla | dve ciglane + radionica **popune celu ulicu**, kapija u procepu, hala u dnu, **zidani dimnjak** iza kotlarnice, vodotoranj, ostava, roba u redovima |
+| `plant` | 90/105 × 60/75 | cigla | dve procesne hale u dnu sa **dimnjakom u procepu između njih**, fabrika i radionica na ulici, dug zid sa kapijom između njih, 2 utovarne rampe, cevni riseri |
+| `yard` | 90/105 × 60/75 | **žica** | red hala u zaleđu, do 3 reda kontejnera (visina 1–3, 35 % „jedan brodar = jedna boja"), viljuškar |
+| `strip` | 60/75 × 45/60 | cigla | radionica + hala na ulici, prolaz između njih, **usek 20 × 10 m u SI ćošku** koji ulica preuzima kao parking |
+| `depot` | 75/90 × 75 | žica | velika hala uz zadnju liniju, 2 rampe, manevarski plato, portirnica, parking trake |
+
+Zajednička pravila: pročelje = južna ivica; **jedan prolaz na jug**, oba krila kapije otvorena
+u dvorište; props se odbijaju ako nema mesta (`Room`) i **nikad ne staju na prsten**.
+
+### Površine: dvorište je asfalt
+
+Jedno pravilo za sve blokove (`Block.Surfaces`), ne po receptu:
+
+- **unutrašnjost = asfalt**;
+- **pločnik samo na dva mesta**: pojas uz unutrašnju stranu ograde (ono po čemu se hoda), i
+  apron od jedne ćelije oko svake zgrade;
+- **apron pobeđuje prilaz**: zgrada koja stoji pola na pločniku a pola na putu nije ni jedno ni
+  drugo. Prilaz seče samo pojas uz ogradu — iza njega je dvorište ionako asfalt, pa nema šta da
+  se seče.
+
+Zgrade se povlače `Setback` od ivice; **svaka jedna** mora da koristi `block.In/Out/Far`, ne
+`Cell`. Jedna promašena linija (`building-factory`) ostavila je zgradu tačno na zidu i osam
+panela je prolazilo kroz nju. Provera je u probi: presek otiska zgrade sa panelima zida mora
+biti **0**.
+
+Bilo je obrnuto — pločnik svuda, pa po jedan pravougaonik asfalta po receptu — i svaki blok je
+imao ploču čistog pločnika nasred radnog dvorišta, a odluka koja je ista za sve stajala je u pet
+recepata.
+
+### Zid, a ne žica
+
+Perimetar je **zid od cigle** (`SM_Bld_Fence_Brick_01` 3.00 × 3.00 × 0.51 +
+`SM_Bld_Fence_Brick_Pillar_01`), kao svaka druga ograda u ovom gradu. Bodljikava žica
+(`SM_Bld_Fence_01` + kruna `SM_Bld_Fence_Wire_01`) ostaje **samo za stovarište i depo** — to su
+jedina dva mesta gde je i u stvarnosti žica.
+
+**Zid je zatvoren prsten. Jedini prekid je kapija.** Prva verzija ga je sekla svuda gde zgrada
+stoji uz liniju („zgrada je ionako zid"), i rezultat je bio perimetar sa rupama: svuda gde se
+dve zgrade sretnu pod uglom ili gde jedna stane pola metra kratko, ostane procep. Umesto toga
+zgrade se **povlače 1.6 m unutra** (`Setback`, `Block.In/Out/Far`) i zid prolazi ispred njih.
+
+**Ćoškovi se ne preklapaju i ne zjape.** Kraj poteza gde blok PRESTAJE je spoljni ugao: potez
+staje jednu ćeliju pre njega, pa se dve strane sretnu umesto da se ukrste. Kraj gde se blok
+nastavlja na drugoj dubini je **unutrašnji ugao useka** — tamo se dva poteza uopšte ne sreću,
+nego se mimoiđu za pet metara — pa se potez tu produžava za ćeliju. Bez prvog svaki blok nosi
+dva panela jedan kroz drugi na sva četiri ugla; bez drugog svaki usek ima rupu na stepenici.
+Oba su u `Block.Corner`.
+
+Kapija ostavlja **koridor**: u stovarištu nijedan red kontejnera ne zatvara traku na koju kapija
+izlazi, inače je dvorište dvorište u koje se ne može ući.
+
+**Ulaz je samo jedan, prekida trotoar, i put od njega unutra je NEPREKINUT.** Ćelije prstena na
+koje kapija izlazi gube pločicu ivičnjaka i dobijaju **`SM_Env_Road_Bare_01`**; odatle prilaz
+ide pravo unutra sve dok na njega nešto ne stane (zgrada, obeležen parking) ili dok ne stigne do
+suprotnog ivičnjaka — izmereno 40–55 m po bloku.
+
+Zato `Way` nije polje nego **svojstvo**: postavljanje odmah polaže prilaz (`Block.Corridor`) i
+**rezerviše to tlo**, pa se posle na njega ne spušta ni props ni kontejner. Prilaz se uz to
+**nikad ne prepokriva** — `Pave` preskače njegove ćelije, inače depo koji posle asfalta popločava
+svoj apron prebaci ploču preko puta.
+
+Odbačene verzije: `SM_Env_Sidewalk_Dip_01` (spuštena ivica nije prekid pločnika) i „dve ćelije
+asfalta iza kapije" (dalo je *malo put, malo pločnik, malo put* — prilaz koji se prekine na pola
+nije prilaz).
+
+**Krila kapije stoje UNUTAR otvora.** Zabačena na drugu stranu, svako je ulazilo pola metra u
+zgradu pored — a kapija se po pravilu i seče između dve zgrade. To se odozgo ne vidi, pa se i to
+sada broji: `wallInBuilding` = koliko komada ograde (panel, stub, krilo) stoji unutar otisка
+zgrade. Mora biti **0**.
+
+**Rupe se mere protiv TLA, ne protiv onoga što je zid tražio.** `Block.WallGap` računa obim
+zemljišta koje zid opasuje (ćelije unutar prstena) minus kapija, pa oduzima položene metre.
+Prva verzija je poredila položeno sa *traženim* — što nije provera: strana koju graditelj poteza
+nikad nije izračunao je strana koju nikad nije ni tražio, pa je rupa na unutrašnjem uglu useka
+prošla kao „0". Uz to, potez kraći od jednog
+modula se sada **razvuče na modul i pusti da prepusti**, umesto da ostane nepokriven — to je bio
+poslednji izvor rupa koje se u screenshot-u ne vide dok se ne traže.
+
+### Dimnjak
+
+`Block.Chimney(x, z, visina)`: **visok okrugli dimnjak koji se sužava** — bubnjevi (Unity valjak)
+od poluprečnika 2.3 m u dnu do 1.15 m na vrhu, po ~2.2 m, plus kruna koja malo prepušta.
+`works` 22–27 m, `plant` 26–32 m. Boja: ravna cigla-crvena, `Assets/Materials/IndustrialStack.mat`.
+
+Ravna boja bez teksture ovde **nije kompromis**: svaki Synty komad u bloku je ravno polje sa
+atlasa, pa se ravna cigla-crvena među njima uklapa tačno — a okrugло okno ionako nema UV-ove
+kojima bi pogodilo ciglu na tom atlasu.
+
+Dva odbačena pokušaja: naslagana villa-kapa (`SM_Bld_Villa_Chimney_01` × 6) — metar široko okno
+sa kapom na svaka 2.5 m čita se kao stub sanduka; i kvadratno okno od `SM_Bld_Wall_Brick_01`
+panela — kutija, koja se ne može suziti bez skaliranja panela ispod originala, što ovaj projekat
+ne radi.
+
+Ako dimnjaku nema mesta, `Chimney` to **kaže u konzoli** umesto da blok tiho ostane ravan (jednom
+je `plant` ostao bez dimnjaka jer mu je prilaz prolazio kroz to mesto).
+
+Na vrhu dimnjaka stoji **dim**: `FX_Smoke_Black_Small_01` (PolygonParticleFX, isti koji luka
+koristi za brodske dimnjake), skaliran ×2.2, `playOnAwake`. Postavlja se **ručno na koordinatu**,
+ne kroz `Sit` — particle renderer prijavljuje kakve god granice drži dok ne svira, pa bi ga
+sedanje na njih odnelo bilo gde. U Scene view-u se ne vidi bez `ps.Simulate(...)`; u igri svira sam.
+
+Ostala „fabrička" oprema: `SM_Prop_Pipe_Preset_01` (4.46 × 7.05, cevni riser uz zid hale),
+`_02` (4.07 × 6.91), `SM_Prop_Water_Tower_01` (2.42 × 5.51), `SM_Bld_LoadingDock_02`.
+
+### Roba u redovima, ne samo rasuta
+
+`Ranks(...)` slaže bačve/palete u redove uz zid (12 % šanse da jedno mesto fali), pored
+`Scatter` koji ih rasipa. Dvorište u kome je sve rasuto izgleda kao smetlište; dvorište u kome
+je sve u redu izgleda kao render. Treba oboje.
+
+---
+
+## 5. Kako je napravljeno (i zamke koje su plaćene)
+
+- **Postavljanje se MERI, ne izvodi iz pivota.** `Lay()` instancira, okrene, skalira, pa pomeri
+  po izmerenim `Renderer.bounds` tako da otisak padne tačno na traženi pravougaonik. Pločice
+  pivotiraju u ćošku, zidovi na kraju, i koji je to ćošak menja se sa okretanjem — merenje je
+  jedini odgovor tačan za sve.
+- **`PrefabUtility.InstantiatePrefab`, uvek.** Bake replay-uje override-e na svežu instancu
+  izvora; goli `Object.Instantiate` bi dao dubok primerak. Provereno: 300/300 dece pečenog
+  prefaba je povezano na izvor.
+- **Ništa se ne skalira ispod originala.** Ograda deli razmak na **cele module i razvlači**
+  (`floor`, ne `round`); stretch kraći od jednog modula se preskoči. Faktor u granici 0.5 %
+  se zaokruži na tačno 1 (`Whole`), da prefab ne nosi scale 0.9999996.
+- **Seed:** `System.Random(seed*97 + k*31 + recept*7)` po kandidatu. Nigde `UnityEngine.Random`.
+- **NIKAD ne zovi `CoreBlockTray.BakeNow()` iz komande.** Uvek završi
+  `EditorUtility.DisplayDialog` — modalni prozor koji zaustavi main thread editora dok neko ne
+  klikne OK; svaki sledeći pipeline poziv onda puca na „Main thread operation timed out".
+  Ovo se desilo 2026-08-25 i editor je morao da se odblokira spolja. Zato postoji
+  `CoreBlockTray.BakeQuietly(scene, out said)` — isti bake bez dijaloga. Bake bez dijaloga
+  traje **~2 s**.
+- **Lab je svoja scena**, ne `CoreHarvest.unity`: harvest scena nosi ceo Synty demo, snima se
+  sekundama, i bake koji na kraju snimi scenu tamo probije pipeline tajmaut.
+- **Lab se učitava ADITIVNO, pored onoga što je otvoreno** (`IndustrialBlockForge.Lab()`), i
+  aktivan je samo dok posao traje (`InTheLab`), pa se vraća prethodna aktivna scena. Sve što
+  editor alat digne — privremena instanca za merenje prefaba, tray — sleti u AKTIVNU scenu, pa
+  je to jedini način da ništa ne završi u tuđoj. `Generate` odmah snimi lab.
+  Razlog: 2026-08-25 je druga sesija radila u `CoreDemo.unity` sa nesnimljenim izmenama i alat
+  je dvaput ostao blokiran (a jedan set kandidata koji je živeo samo u memoriji je nestao kad
+  je scena zamenjena). Prva verzija je odbijala da radi dok je tuđa scena prljava; aditivna
+  ne mora ništa da odbija.
+- Play mode i dalje blokira: `gangsters_industrial` odbija dok editor svira.
+- Izmene u postojećem kodu, minimalne: `CoreBlockTray.MakeTray` (tray pod zadatim imenom),
+  `CoreBlockTray.BakeQuietly`, izuzimanje korena kandidata iz `Sweep` (samo tamo — merenje
+  ivica scene ih i dalje vidi, da review red i novi tray ne slete na njih), i
+  `CoreLayout.Measure` sada broji i `building-` prefiks kao zgradu.
+
+---
+
+## 6. Stanje i provere (2026-08-25)
+
+| provera | rezultat |
 |---|---|
-| paleta | GangWarfare `SM_Prop_Pallet_01` (1.44 × 0.23 × 1.42) |
-| bačve | GangWarfare `SM_Prop_Barrel_Metal_01`, `SM_Prop_Barrel_Plastic_01` |
-| kontejner 20' | `Assets/CityKit/Ships/container-20-{red,blue,green,rust,white}.prefab` (3.36 × 3.21 × 6.38) |
-| kontejner (dumpster) | GangWarfare `SM_Prop_Dumpster_01` (2.22 × 1.68 × 1.26) |
-| kolut žice / cevi | `SM_Prop_Wirespool_01`, `SM_Prop_PipeStack_01` |
-| sanduci | PolygonGeneric `SM_Gen_Prop_Crate_01/02` |
-| bandera dvorišta | GangWarfare `SM_Prop_Light_Pole_01` (3.91 m) |
-| znak | GangWarfare `SM_Prop_Sign_Danger_01`, `SM_Prop_KeepOut_01` |
-| betonska barijera | PolygonCity `SM_Prop_Barrier_01` |
-| kupa | PalmCity `SM_Prop_Cone_01` |
-| vatra u buretu | PalmCity `SM_Prop_Barrel_Burn_01` |
-| kamion (parkiran, dekor) | GangWarfare `SM_Veh_Truck_01` (2.75 × 3.76 × 8.28), Town `SM_Veh_Truck_01` (flatbed), Town `SM_Veh_Truck_Delivery_01` |
-| viljuškar (dekor) | GangWarfare `SM_Veh_Forklift_01` |
+| kompajl | čist |
+| četiri kandidata, seed 7 | works 75×60 (254 komada), plant 90×60 (321), yard 90×60 (399), strip 60×45 (138) |
+| rupe u podu | **0** u sva četiri |
+| nedostajući prefabi | nijedan |
+| pečen prefab | 300 dece, **300 povezano na izvor**, 0 skalirano ispod 1, koren = `Transform + BlockLotTag` |
+| kutija pečenog | 75.14 × 60.14, pivot u sredini, dno na −0.23 (kamen ivičnjaka) |
+| bake dva odjednom + odbacivanje ostalih | radi; tray uklonjen, scena snimljena |
+| review red sa 16 Synty blokova | novi blokovi se čitaju kao ista porodica |
+| trajanje bake-a | ~2 s po bloku |
 
-**Zabranjeno:** bilo šta iz `Assets/SimpleAirport`; iz `PolygonMapsMilitaryWarehouse` samo
-bodljikava žica `SM_Prop_Barbed_Wire_01/02` (ostalo je sivo — atlas fali, memorija
-`military-warehouse-atlas-missing`); `SM_Env_Background_Crane_*` (kulisa — memorija
-`no-backdrop-scenery`); uspavani sistem `Assets/Scripts/Generation/Industrial*.cs` +
-`PortLayout.cs` (piše za polyperfect katalog koji ne postoji — **ne dirati, ne oživljavati**).
+**Poznato i ostavljeno:** `BlockLotTag` pečenog bloka kaže 80 × 65 za blok 75 × 60, jer
+`CoreBlockTray.Bake` zaokružuje ground kutiju naviše na peticu a prsten prelazi 7 cm preko.
+Svi požnjeveni blokovi imaju istu osobinu (isti kod), a `CoreLayout` ionako meri sam — pa se
+zajednički bake ne dira.
 
----
-
-## 2. Četiri recepta (kandidati)
-
-Svaki kandidat = jedan recept + seed. Podrazumevano generator pravi **po jedan od svakog recepta**
-(4 kandidata); sa `--recipe works` pravi 4 varijante istog recepta sa 4 seed-a.
-
-Zajedničke mere (sve višekratnici 5):
-- širina bloka W ∈ {60, 75, 90, 105}, dubina D ∈ {45, 60, 75} (industrija je krupnija od jezgra,
-  gde su blokovi 25–90 × 25–105).
-- prsten ivičnjaka 5 m ⇒ unutrašnjost (W−10) × (D−10).
-- **pročelje = južna ivica (−Z lokalno)**: zgrade uz južnu ivicu gledaju ka −Z (yaw 180, jer
-  CityKit zgrade imaju front na +Z). Kad `CoreLayout` bude slagao ove blokove, jug bloka ide na
-  ulicu. (Blok je simetričan po potrebi: recept može da ima pročelje i na severu — „dva lica“.)
-- ograda dvorišta ide po unutrašnjoj ivici prstena (0.5 m unutar ivičnjaka) tamo gde nema zgrade
-  na ivici; **kapija** je tamo gde ograda seče ivičnjak i uvek dobija `Sidewalk_Dip` pločicu.
-- pod: plato `SM_Env_Sidewalk_01` ispod svih zgrada uz ulicu i ispred njih; iza ograde asfalt
-  `Road_Bare_01`. Ispod `building-warehouse-large` **nema pločica** (ukopan nivo).
-- props: nasumično po seed-u, ali po pravilima luke (`HarborDistrict.Yard.cs BuildBackLots /
-  DressYard`): palete u gomili od 2–5, bačve u 2–3 reda na 1.1 m, kontejneri u redu 1–2 visine sa
-  20 % praznina, jedan kamion na 25 %, viljuškar na 40 %, bandera dvorišta svakih ~30 m uz ogradu.
-  **Ništa na prstenu ivičnjaka** osim `Sidewalk_Dip`. (Props su dozvoljeni jer je ovo *authoring*
-  alat u editoru → rezultat je predefinisani bake; memorija `blocks-catalog-only`, dopuna 16.08.)
-
-### Recept A — `works` (fabrika uz ulicu)
-- Pročelje: `building-factory-old` na zapadnom uglu (dimnjak ka ulici) + `building-factory`
-  desno od nje, obe leđima ka dvorištu, razmak 5 m između njih zatvoren ogradom sa kapijom
-  (širina 6 m ⇒ kapija stoji u tom procepu, ivičnjak ispred dobija `Dip`).
-- Zaleđe: `building-factory-hall` uz severnu ivicu, yaw 0 (vrata ka dvorištu); ako D ≥ 60,
-  `building-workshop` u NE uglu.
-- Dvorište: asfalt; bačve + palete + `PipeStack` + 1 kamion uz halu.
-- Ograda: istok + zapad + sever (gde nema zgrade), bodljikava kruna.
-
-### Recept B — `depot` (distributivni magacin)
-- `building-warehouse-large` centrirano (x = 0), pročelje ka jugu ali **uvučeno 15 m** od
-  ivičnjaka: ispred njega parking sa `Road_ParkingLines_01` (2–3 komada po 10 m) i kolski
-  prilaz; ivičnjak dobija dva `Dip`-a.
-- Zadnji zid: 2 × `SM_Bld_LoadingDock_02` na ±6 m (pravilo iz `BackDocks`), iza njih asfalt i
-  1–2 `SM_Veh_Truck_01` na 4.6 m koraka (`lorry park` pravilo).
-- Portirnica `building-yard-shed` uz kapiju.
-- Ograda po celom obodu osim prilaza.
-- **Bez poda ispod velike hale.**
-
-### Recept C — `yard` (stovarište / kontejnersko dvorište)
-- Zgrade: red od `building-warehouse-small` + `building-depot-garage` uz **severnu** ivicu
-  (pravilo reda iz `BuildWarehouses`: blokovi od 2–3, 6–11 m razmaka u bloku, 25 % šanse da
-  plitka hala stane bočno).
-- Jug: ograda + široka kapija (2 × `Fence_Gate_01` = 12 m), `Dip` na ivičnjaku.
-- Dvorište: red kontejnera (`container-20-*`, 35 % šanse „jedan brodar = jedna boja“), 1–2
-  visine, forklift, kolut žice, bačve u uglu, burn barrel + 2 sanduka.
-- Kad W ≥ 90: drugi red kontejnera sa prolazom `CrossLane` 4 m.
-
-### Recept D — `strip` (servisna traka: radionica + parking)
-- Jug: `building-workshop` na zapadu + `building-factory-hall` na istoku, obe pročeljem ka
-  ulici (yaw 180), između njih 10 m otvoreni parking (`ParkingLines` × 1) sa `Dip`.
-- Sever: pojas asfalta (usek) sa `ParkingLines` × 2–3 = parking zaposlenih (otvoren ka
-  severnoj ulici — **to je usek koji `CoreRoads` čita kao `Parking`**, pa ne sme da ima ogradu
-  sa te strane); dumpster uz zid hale, `Barrier_01` × 2 na uglu.
-- Ograda samo istok/zapad.
-
-Svaki recept mora da **zatvori ceo pravougaonik** (nema gole ćelije): proverava se rasterom
-(korak 4.7).
-
----
-
-## 3. Radni tok korisnika (šta se dešava kad se sve napravi)
-
-1. Otvorena scena `Assets/Scenes/CoreHarvest.unity` u editoru.
-2. `unity command gangsters_industrial --seed 7` (ili meni
-   `Tools/City/Core/Industrial/Generate 4 Candidates`) → u sceni nastane koren
-   `INDUSTRIAL CANDIDATES` sa 4 deteta `candidate-1 … candidate-4`, poređana u red **južno od
-   `CORE BLOCKS (review)`** (ako ga nema, južno od svega), razmak `Gap = 30 m`, svaki sa
-   `TextMesh` etiketom `"candidate-3  yard  seed 7-3  90 x 60 m"`.
-   Komanda vraća JSON: `[{index, recipe, seed, width, depth, pieces, gaps}]`.
-3. Korisnik pogleda (Scene view / `unity command screenshot`) i kaže agentu: „ispeci 1 i 2,
-   ignoriši 3 i 4“.
-4. Agent: `unity command gangsters_industrial --bake 1,2 --names ind-works-01,ind-depot-01`
-   → za svaki izabrani indeks: komadi kandidata se prebace pod NOVI tray `<ime>` u `CORE TRAYS`,
-   pozove se postojeći `CoreBlockTray.BakeNow()` (force), prefab nastane u
-   `Assets/Prefabs/CoreBlocks/<ime>.prefab`, `Clear Tray After Bake` ih izbaci iz scene, ostali
-   kandidati (3, 4) se obrišu, koren `INDUSTRIAL CANDIDATES` nestane, review red se osveži
-   (`ShowBaked`) pa korisnik vidi ispečene blokove u redu sa ostalih 16.
-   Vraća JSON `[{index, name, path, wrote}]`.
-5. Ponovo od 2 sa drugim seed-om dok ne bude dosta blokova.
-
-Bez `--names`: podrazumevano ime `ind-<recept>-<NN>` gde NN = prvi slobodan broj u folderu.
-
----
-
-## 4. Implementacija — korak po korak
-
-Sve u **jednom novom fajlu** `Assets/Scripts/Editor/IndustrialBlockForge.cs`
-(`namespace LivingCity.EditorTools`, `public static class IndustrialBlockForge`), plus male
-izmene u `CoreBlockTray.cs`, `CoreLayout.cs`, `PipelineCommands.cs`. Nema runtime koda — sve je
-editor authoring. Nema novih scena.
-
-### 4.1 Konstante (vrh fajla)
-```csharp
-internal const string CandidatesRoot = "INDUSTRIAL CANDIDATES";
-const string CandidatePrefix = "candidate-";
-const float Cell = 5f;
-const float Gap = 30f;                 // isti kao CoreBlockTray.Gap
-const string CityEnv  = "Assets/Synty/PolygonCity/Prefabs/Environments/";
-const string GangBld  = "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/";
-const string GangProps= "Assets/Synty/PolygonGangWarfare/Prefabs/Props/";
-const string GangVeh  = "Assets/Synty/PolygonGangWarfare/Prefabs/Vehicles/";
-const string KitBld   = "Assets/CityKit/Buildings/";
-const string Ships    = "Assets/CityKit/Ships/";
-static readonly int[] Widths = { 60, 75, 90, 105 };
-static readonly int[] Depths = { 45, 60, 75 };
-enum Recipe { Works, Depot, Yard, Strip }
-```
-
-### 4.2 Instanciranje — OBAVEZNO `PrefabUtility.InstantiatePrefab`
-`CoreBlockTray.Restand` (`CoreBlockTray.cs:719`) zadržava vezu na izvorni prefab samo ako je
-komad **prefab instanca**; goli `Object.Instantiate` daje dubok primerak (radi, ali prefab
-naraste i gubi vezu). Zato jedini način da se nešto postavi:
-```csharp
-static GameObject Stand(string path, Vector3 pos, float yaw, Transform parent, Vector3? scale = null)
-{
-    var src = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-    if (src == null) { Missing.Add(path); return null; }
-    var go = (GameObject)PrefabUtility.InstantiatePrefab(src, parent);
-    go.transform.SetPositionAndRotation(pos, Quaternion.Euler(0f, yaw, 0f));
-    if (scale.HasValue) go.transform.localScale = scale.Value;
-    Undo.RegisterCreatedObjectUndo(go, "Industrial candidate");
-    return go;
-}
-```
-- Sve je **direktno dete kandidata** (`parent = candidate.transform`). NIKAKVE među-grupe
-  („fence“, „props“) — grupa nije prefab instanca pa bi bake pravio dubok primerak, a
-  `CoreLayout.Measure` čita samo direktnu decu.
-- Zgrade koje su gotove pečene (`building-*`) su prefabi → OK.
-- Ime instance ostaje ime prefaba (Unity to radi sam) — `CoreLayout.Measure` sudi po prefiksu.
-
-### 4.3 Pločice
-Pločice pivotiraju u +X/+Z uglu; kopiraj tačno logiku `CoreRoads.Kit.Tile`
-(`Assets/RoadDemo/CoreRoads.cs:897`) — po yaw-u pivot ide u odgovarajući ugao ćelije, skala
-`size/5`. Za ivičnjak: ne razvlačiti (5 × 5, skala 1). Ceo blok se gradi u **lokalnim**
-koordinatama sa jugozapadnim uglom u (0,0) pa se kandidat kao celina pomeri na svoje mesto u
-redu (`candidate.transform.position = slot`, deca prate).
-
-Prsten: za x u [0, W) korak 5: jug `(x, 0)` yaw 0, sever `(x, D−5)` yaw 180; za z u [5, D−5):
-zapad `(0, z)` yaw 90, istok `(W−5, z)` yaw 270; četiri ugla `Sidewalk_Corner_01`. **Prvo
-proveri yaw-ove na kandidatu vizuelno** (ivičnjak-stepenica mora biti ka spolja) i upiši
-konačne vrednosti u ovaj dokument.
-
-Rampe: tamo gde recept ima kapiju/kolski prilaz na ivici, zameni `Straight` sa `Sidewalk_Dip_01`
-na tim ćelijama (isti yaw).
-
-### 4.4 Zgrade i props
-- Zgrada se stavlja preko `Stand(KitBld + "building-factory.prefab", pos, yaw, parent)` gde je
-  `pos.y = TileTop + 0.02f`, `TileTop = PrefabBounds(Sidewalk_Straight_01).max.y` (izmeri jednom,
-  keširaj; `HarborKit.PrefabBounds` je uzor — meri renderere sa asseta bez instance).
-  Izuzetak: `building-warehouse-large` na `y = 0` (ima sopstveni ukopani nivo) i ispod nje se
-  **ne polažu** pločice poda (preskoči ćelije koje njen otisak pokriva ≥ 35 %).
-- Otisak zgrade = `PrefabBounds(prefab)` rotiran za yaw; zgrada se poravna tako da joj front
-  stoji **na unutrašnjoj ivici prstena** (front zida na z = 5 lokalno za južno pročelje), ne
-  na sredini pločice.
-- Props: `Sit` logika iz luke (`HarborKit.Sit`) — seti na sopstveno dno, jer Synty pivotira
-  neke propse u sredini. Sve props pozicije snap na 0.5 m, yaw ∈ {0, 90, 180, 270} + do ±8°
-  za palete/bačve (kao luka).
-- Ograda: `LayRun(panel, from, to)` — n = round(len/3), skala x = len/(3n); kruna spuštena za
-  `crownDrop`; stub `Fence_Pole_01` na oba kraja i uz kapiju. Kapija = 2 krila `Fence_Gate_01`
-  otvorena ravno uz ogradu (`HarborDistrict.Yard.cs:550 BuildFence` je uzor).
-
-### 4.5 Slučajnost
-`var rng = new System.Random(seed * 31 + index)` po kandidatu. **Nikad `UnityEngine.Random`** —
-kandidat sa istim `--seed` mora ponovo da ispadne isti (da bi „vrati mi kandidata 2 od seed-a 7“
-imalo smisla). Sve odluke (W, D, izbor kontejnera, broj paleta…) iz `rng`.
-
-### 4.6 Izmene u postojećim fajlovima (minimalne)
-1. `CoreBlockTray.cs`: kandidati ne smeju da uđu u `Sweep` ni u merenje ivica. Na **tri** mesta
-   (`:252`, `:393`, `:1995`) gde stoji
-   `if (root.name == ReviewRoot || root.name == MapRoot) continue;`
-   dodaj `|| root.name == IndustrialBlockForge.CandidatesRoot`. Ništa drugo se ne menja — bake
-   se koristi kakav jeste.
-2. `CoreBlockTray.cs`: `internal static void BakeNow()` je već `public` (meni) — koristi ga.
-   `AddTray()` pravi tray na zapadu sa podrazumevanim imenom; za bake kandidata treba tray sa
-   **zadatim imenom i merama** → izvuci privatnu logiku iz `AddTray` u
-   `internal static Transform MakeTray(Scene scene, string name, float width, float depth, Vector3 at)`
-   (pad + label kao i sad), a `AddTray` neka je zove.
-3. `CoreLayout.cs:204`: `bool building = Starts(piece, "SM_Bld_") || Starts(piece, "building-");`
-   da industrijske zgrade uđu u `MaxH/MeanH/Buildings`.
-4. `PipelineCommands.cs`: nova komanda (4.8).
-
-### 4.7 Provera kandidata pre nego što se pokaže (u samom generatoru)
-Za svaki kandidat izračunaj raster W/5 × D/5 nad pločicama poda + otiscima zgrada (pravilo
-„pokriveno ≥ 35 % ćelije“, isto kao `CoreBlockTray.Covers`) i:
-- **gole ćelije = 0** (osim ispod `warehouse-large`) — inače kandidat dobija u etiketu
-  `"GAPS: 3"` i u JSON `gaps: 3`; nije greška, ali korisnik vidi.
-- nijedan komad ne prelazi kutiju bloka (`PrefabBounds` rotiran u granicama `[0,W]×[0,D]`
-  ± 0.3 m) — inače `Debug.LogWarning` sa imenom komada.
-- lista `Missing` (prefabi koji nisu nađeni) ide u JSON i u konzolu; kandidat se i dalje pravi.
-
-### 4.8 Pipeline komanda `gangsters_industrial` (`PipelineCommands.cs`, obrazac `gangsters_layout`)
-```csharp
-[CliCommand("gangsters_industrial",
-    "Stand 4 industrial block candidates in the open CoreHarvest scene, or bake chosen ones.",
-    MainThreadRequired = true, Tags = new[] { "gangsters" })]
-public static object Industrial(
-    [CliArg("seed", "Seed for the four candidates.")] int seed = 7,
-    [CliArg("recipe", "works|depot|yard|strip|all (all = one of each).")] string recipe = "all",
-    [CliArg("bake", "Comma list of candidate indices to bake, e.g. 1,2. Others are discarded.")] string bake = "",
-    [CliArg("names", "Comma list of prefab names for --bake, same order.")] string names = "",
-    [CliArg("keepOthers", "With --bake: leave unchosen candidates standing.")] bool keepOthers = false)
-```
-- bez `--bake`: `IndustrialBlockForge.Generate(seed, recipe)` → JSON liste kandidata.
-- sa `--bake`: `IndustrialBlockForge.Bake(indices, names, keepOthers)` → JSON rezultata.
-- Meni ekvivalenti: `Tools/City/Core/Industrial/Generate 4 Candidates`,
-  `.../Bake Candidate 1` … `4` (svaki poziva `Bake(new[]{i}, null, keepOthers:true)`),
-  `.../Discard Candidates`.
-- Scena mora biti `CoreHarvest.unity`; ako nije, vrati grešku `"open Assets/Scenes/CoreHarvest.unity first"`.
-  Posle bake-a scena se snimi (`EditorSceneManager.SaveScene`) — **pažnja**: scena ima 8 MB i
-  `SaveScene` kroz pipeline eval ume da pređe 5 s tajmauta (memorija `core-city-sketch`); zato
-  bake vraća JSON PRE snimanja i snimanje radi kroz `EditorApplication.delayCall`, kao
-  `CoreBlockTray.OnSceneSaved` (`:475-482`).
-
-### 4.9 `Bake(indices, names, keepOthers)` — tačan redosled
-1. nađi `INDUSTRIAL CANDIDATES`; za svaki indeks nađi `candidate-<i>`; ako ime nije dato,
-   `ind-<recept>-<NN>` (recept iz etikete/komponente kandidata, NN = prvi slobodan u
-   `Assets/Prefabs/CoreBlocks`). Odbij ime koje već postoji (kao tray: „refused, taken“).
-2. `var tray = CoreBlockTray.MakeTray(scene, name, W, D, candidate.position)`; prebaci svu
-   direktnu decu kandidata (osim `label`) pod tray **bez promene svetskih koordinata**
-   (`SetParent(tray, worldPositionStays: true)`); obriši prazan kandidat.
-3. `CoreBlockTray.BakeNow()` — jednom, za sve izabrane (svaki tray = svoj prefab). Pošto je
-   `Clear Tray After Bake` podrazumevano uključen, komadi nestaju; tray-evi ostaju prazni →
-   obriši ih (`Undo.DestroyObjectImmediate`) da `CORE TRAYS` ostane kakav je bio (`core-01`).
-4. ako `!keepOthers`: obriši ceo `INDUSTRIAL CANDIDATES`.
-5. ako postoji `CORE BLOCKS (review)`: `CoreBlockTray.ShowBaked()` da se red osveži.
-6. JSON: `[{index, name, path, wrote: "Yes|Unchanged|No"}]` (reč iz `said` linija BakeAll-a).
-
-**Zamka:** `Bake Trays On Save` je podrazumevano uključen — dok kandidati stoje, običan Ctrl+S
-ih **ne** peče (nisu u tray-u ni u rect-u), i to je namerno; ali ako neko prevuče kandidata na
-`core-01` rect, Ctrl+S ga peče pod imenom `core-01`. Napomenuti u konzoli posle Generate.
-
----
-
-## 5. Redosled rada i provere (za agenta koji ovo radi)
-
-1. **Pročitaj**: ovaj dokument, `Docs/synty-demo-anatomy.md §2–3`, `CoreBlockTray.cs:1–120,
-   650–760, 1975–2030`, `CoreRoads.cs:890–948` (Kit.Tile), `HarborKit.cs` (helperi),
-   `HarborDistrict.Yard.cs:94–300, 540–600` (raspored hala, ograda).
-2. **Izmeri** neizmerene zgrade: `unity command gangsters_measure --name building-factory` (i
-   `-old`, `-hall`, `-workshop`, `building-warehouse`) → upiši mere u tabelu 1.1.
-3. Napiši `IndustrialBlockForge.cs` sa receptom **A samo**, plus izmene 4.6 i komandu 4.8.
-4. `unity command recompile && unity command recompile_status --json` — mora biti čisto.
-5. **Review pre pokretanja**: `code-review-unity` skill nad diff-om, pa
-   `.claude/hooks/unity-review-gate.sh record` (hook inače odbija `eval`/`menu`).
-6. Otvori `CoreHarvest.unity`, `unity command gangsters_industrial --seed 7 --recipe works`,
-   `unity command screenshot` (Scene view iznad kandidata; kamera ~80 m, 35° nagib). Proveri:
-   prsten ivičnjaka ka spolja, ugaone pločice ispravno, nema gole ćelije, zgrade ne štrče, sve
-   su direktna deca, sve su prefab instance (`PrefabUtility.IsAnyPrefabInstanceRoot` u eval-u
-   nad svom decom → 100 %).
-7. `--bake 1 --names ind-test-01` → proveri da `Assets/Prefabs/CoreBlocks/ind-test-01.prefab`
-   postoji, koren ima samo `BlockLotTag` (W×D tačni), deca su `PrefabInstance` blokovi (otvori
-   YAML: broj `PrefabInstance` ≈ broj komada), da je nestao iz scene, da review red stoji.
-   **Obriši** `ind-test-01.prefab` posle provere (test, ne građa).
-8. Dodaj recepte B, C, D; ponovi 4–7 sa `--recipe all`.
-9. Provera sa `CoreCitySketch`: privremeno dodaj jedan `ind-*` blok u `CoreLayout.Blocks` na
-   praznom mestu južno od jezgra (npr. `new Stand("ind-works-01", 0f, -220f)`), pokreni
-   `Tools/City/Core/Sketch The Core City`, proveri da `CoreRoads` čita prsten (raster ne
-   prijavljuje `Outside` rupu unutar bloka) — pa **vrati** `CoreLayout.Blocks` (ugradnja u
-   raspored jezgra je posebna odluka korisnika, ne deo ovog zadatka).
-10. Konačni review (`code-review-unity`), pa izveštaj korisniku sa snimkom 4 kandidata.
-
-**Ne diraj**: `Assets/HarborDemo/HarborDistrict.Ground.cs` i `HarborKit.cs` imaju nekomitovane
-izmene od ranije — ne mešati ih u ovaj posao. Ne menjati `SyntyDemoBlockRip`, `BlockRandomiser`,
-`RoadDemoBuilder` (drugi pipeline).
-
----
-
-## 6. Šta je namerno OSTAVLJENO za kasnije (nije deo zadatka)
-- Gde industrijski blokovi stoje u jezgru / gradu (`CoreLayout.Blocks` je fiksna tabela; grid
-  grad bira bake po veličini lota, ne po zoni — `RoadDemoBuilder.Zones.cs:6-10`). Za kvart
-  „Works“ biće ili nova tabela u `CoreLayout`, ili `IndustrialDistrict : IDistrict` po obrascu
-  `PadDistrict`/`HarborDistrict` (`RoadDemoBuilder.Districts.cs:291 MakeDistrict`).
-- Život (kamioni koji voze, radnici) — blok je statičan bake, kao i ostalih 16.
-- Dimnjak sa dimom (`FX_Smoke_Black_Small_01`) — FX nije za bake.
-- Benzinska pumpa, silos, rezervoar — nema gotovih modela (Town ima samo `SM_Prop_Gaspump_*`);
-  ako korisnik zatraži, kitbash iz PolygonGeneric Base stubova + krovnih kapa, kao poseban zadatak.
+**Nije deo ovog zadatka:** gde industrijski blokovi stoje u jezgru/gradu (`CoreLayout.Blocks`
+je fiksna tabela; grid grad bira bake po veličini lota, ne po zoni), život u bloku (blok je
+statičan bake, kao i ostalih 16), benzinska/silos/rezervoar (nema modela — Town ima samo
+`SM_Prop_Gaspump_*`).

@@ -5,26 +5,36 @@ namespace RoadDemo
 {
     /// <summary>
     /// The city core's layout: the blocks harvested out of the POLYGON City demo scene,
-    /// standing exactly where Synty stood them, with the demo's streets widened to the
-    /// city's. One source of truth for the drawing in the editor and the district in the
-    /// game (Docs/core-district-plan.md, Docs/synty-demo-anatomy.md).
+    /// stood in ROWS either side of a boulevard, a street between every two. One source
+    /// of truth for the drawing in the editor and the district in the game
+    /// (Docs/core-district-plan.md, Docs/synty-demo-anatomy.md).
     ///
-    /// The demo's own arrangement is kept because it is the one arrangement of these
-    /// blocks that is known to work: every gap between two kerbs is a street, a one-way
-    /// lane, a car park or a courtyard, and nothing is left over. What the demo has and
-    /// the city does not is streets of 10 m with no parking strip - so the layout carries
-    /// a list of CUTS: straight lines along which everything beyond the line is moved
-    /// outward, which widens the street on that line and nothing else. All measures are
-    /// multiples of 5 m, so every gap that results is again a whole number of cells.
+    /// A layout is a <see cref="Plan"/>: where every block stands and which way it is
+    /// turned, which way each alley runs, and where the main road lies. Two plans exist.
+    /// <see cref="Synty"/> is the demo's own arrangement with its 10 m streets opened to
+    /// the city's by a list of CUTS - the one arrangement of these blocks that was known to
+    /// work, kept as the reference. <see cref="Roll"/> deals a new one from a seed: the
+    /// blocks shuffled into rows of a depth, a 15 m street or a 5 m alley between
+    /// neighbours, the rows stacked out from the boulevard. A block shallower than its row
+    /// keeps the ground behind it as its car park - the demo's own rule for a bay.
     ///
-    /// Positions here are the DEMO's coordinates (metres; +X east, +Z north; the main road
-    /// runs along z -10..0). A host that stands the core somewhere else in the world does
-    /// so through its DistrictFrame, never by editing these numbers.
+    /// Neither plan is trusted on its own word. <see cref="Arrange"/> draws the roads off
+    /// the plan (<see cref="CoreRoads.Build"/>) and reads the verdict - ground left bare, a
+    /// block with no road down one side, a stub of road between two junctions - and deals
+    /// again from the next sub-seed until the verdict is clean. Same seed, same city.
+    ///
+    /// All measures are multiples of 5 m, so every gap is a whole number of cells. Positions
+    /// are the core's own coordinates (metres; +X east, +Z north; the main road runs along
+    /// z -10..25). A host that stands the core somewhere else in the world does so through
+    /// its DistrictFrame, never by editing these numbers.
     /// </summary>
     public static class CoreLayout
     {
         public const float Cell = 5f;
         public const string BlocksDir = "Assets/Prefabs/CoreBlocks/";
+        /// <summary>The root the editor's sketch draws the core under. A scene that still
+        /// holds one at Play would show two cores on top of each other.</summary>
+        public const string SketchRoot = "CORE CITY (sketch)";
 
         /// <summary>A block prefab and where its pivot stood in the demo. The pivot is the
         /// one the harvest gave the prefab (the middle of its ground box, on the 5 m beat);
@@ -60,8 +70,8 @@ namespace RoadDemo
         };
 
         /// <summary>
-        /// A line the layout is opened along. Everything whose box lies wholly on the far
-        /// side of the line (at or beyond <see cref="At"/> for a positive delta, at or
+        /// A line the demo layout is opened along. Everything whose box lies wholly on the
+        /// far side of the line (at or beyond <see cref="At"/> for a positive delta, at or
         /// short of it for a negative one) and overlaps the line's span moves by
         /// <see cref="Delta"/>. A block that straddles the line never moves, which is
         /// what keeps a cut from tearing a block in two.
@@ -98,8 +108,10 @@ namespace RoadDemo
             new Cut(false, 105f, -Any, Any, 10f, "street z 95..105 and the lane z 100..105"),
         };
 
-        /// <summary>The main road, kerb to kerb (z), as it stands after the cuts: the
-        /// demo's z -10..0 opened to the boulevard. It runs the whole width of the core.</summary>
+        /// <summary>The main road, kerb to kerb (z): the demo's z -10..0 opened to the
+        /// boulevard. It runs the whole width of the core, in every plan - the rolled rows
+        /// stand against the same two kerbs, so the boulevard's centre line (z 7.5) is the
+        /// line the quarter is pinned to in the city whichever plan built it.</summary>
         public static Vector2 MainRoad
         {
             get
@@ -120,6 +132,26 @@ namespace RoadDemo
             public Lane(bool vertical, float at, float from, float to, int direction)
             { Vertical = vertical; At = at; From = from; To = to; Direction = direction; }
             public Rect Box => Vertical ? new Rect(At, From, Cell, To - From) : new Rect(From, At, To - From, Cell);
+
+            /// <summary>The lane moved by an offset.</summary>
+            public Lane Moved(Vector2 by) => new Lane(Vertical, At + (Vertical ? by.x : by.y),
+                                                      From + (Vertical ? by.y : by.x), To + (Vertical ? by.y : by.x), Direction);
+
+            /// <summary>The lane turned about the origin by a yaw of whole quarters, its
+            /// direction turned with it.</summary>
+            public Lane Turned(int yaw)
+            {
+                var box = Box;
+                var a = Turn(new Vector2(box.xMin, box.yMin), yaw);
+                var b = Turn(new Vector2(box.xMax, box.yMax), yaw);
+                var min = Vector2.Min(a, b);
+                var max = Vector2.Max(a, b);
+                var way = Turn(Vertical ? new Vector2(0f, Direction) : new Vector2(Direction, 0f), yaw);
+                bool vertical = Mathf.Abs(way.y) > Mathf.Abs(way.x);
+                int direction = vertical ? (way.y > 0f ? 1 : -1) : (way.x > 0f ? 1 : -1);
+                return vertical ? new Lane(true, min.x, min.y, max.y, direction)
+                                : new Lane(false, min.y, min.x, max.x, direction);
+            }
         }
 
         /// <summary>The demo's lanes and the way they run. The directions are read off the
@@ -160,19 +192,41 @@ namespace RoadDemo
             return new Vector2(dx, dz);
         }
 
+        /// <summary>A point turned about the origin by a yaw in degrees, the way Unity turns
+        /// it: a yaw of 90 carries north round to east.</summary>
+        public static Vector2 Turn(Vector2 p, int yaw)
+        {
+            switch (((yaw % 360) + 360) % 360)
+            {
+                case 90: return new Vector2(p.y, -p.x);
+                case 180: return new Vector2(-p.x, -p.y);
+                case 270: return new Vector2(-p.y, p.x);
+                default: return p;
+            }
+        }
+
         // ------------------------------------------------------------------ the blocks
 
-        /// <summary>A block as measured off its instance: its ground, its shape, its height.</summary>
+        /// <summary>A block as measured off its instance: its ground, its shape, its height.
+        /// The measure is taken unturned (<see cref="Ground0"/>, <see cref="Mask0"/>) and
+        /// read through the block's yaw (<see cref="Ground"/>, <see cref="Mask"/>).</summary>
         public sealed class Block
         {
             public string Name;
             public GameObject Go;
-            public Vector2 Pivot;              // where the demo stood it
-            public Vector2 Shift;              // what the cuts add
-            public Bounds Ground;              // pivot-relative box of its paving
+            public Vector2 Pivot;              // where the plan stood it
+            public Vector2 Shift;              // what the demo cuts add (the Synty plan only)
+            public int Yaw;                    // 0, 90, 180 or 270
+            /// <summary>Ground the block keeps beyond its own box - the car park behind a
+            /// block shallower than its row. Empty when it keeps none.</summary>
+            public Rect Lot;
+            public Bounds Ground;              // pivot-relative box of its paving, turned
             public int CW, CD;                 // the box in cells
             public bool[,] Mask;               // which cells of the box the block fills, [i along x, j along z]
             public int Cells;
+            public Bounds Ground0;             // the same, as measured, unturned
+            public int CW0, CD0;
+            public bool[,] Mask0;
             public float MaxH, MeanH;
             public int Buildings, Pieces;
 
@@ -181,17 +235,63 @@ namespace RoadDemo
             /// <summary>The ground box where the block stands now.</summary>
             public Rect Box => new Rect(Pivot.x + Shift.x + Ground.min.x, Pivot.y + Shift.y + Ground.min.z, CW * Cell, CD * Cell);
             public Vector3 Position => new Vector3(Pivot.x + Shift.x, 0f, Pivot.y + Shift.y);
+            public Quaternion Rotation => Quaternion.Euler(0f, Yaw, 0f);
+
+            /// <summary>The unturned ground box turned by a yaw, about the pivot.</summary>
+            public Rect Footprint(int yaw)
+            {
+                var a = CoreLayout.Turn(new Vector2(Ground0.min.x, Ground0.min.z), yaw);
+                var b = CoreLayout.Turn(new Vector2(Ground0.max.x, Ground0.max.z), yaw);
+                var min = Vector2.Min(a, b);
+                var max = Vector2.Max(a, b);
+                return Rect.MinMaxRect(min.x, min.y, max.x, max.y);
+            }
+
+            /// <summary>Reads the block through a yaw: its box and its mask turned about
+            /// the pivot, cell for cell.</summary>
+            public void Turn(int yaw)
+            {
+                Yaw = ((yaw % 360) + 360) % 360;
+                var box = Footprint(Yaw);
+                Ground = new Bounds(new Vector3(box.center.x, Ground0.center.y, box.center.y),
+                                    new Vector3(box.width, Ground0.size.y, box.height));
+                CW = Mathf.Max(1, Mathf.RoundToInt(box.width / Cell));
+                CD = Mathf.Max(1, Mathf.RoundToInt(box.height / Cell));
+                Mask = new bool[CW, CD];
+                Cells = 0;
+                for (int i = 0; i < CW; i++)
+                    for (int j = 0; j < CD; j++)
+                    {
+                        // the turned cell's centre, carried back to the unturned frame
+                        var c = CoreLayout.Turn(new Vector2(box.xMin + (i + 0.5f) * Cell, box.yMin + (j + 0.5f) * Cell), -Yaw);
+                        int i0 = Mathf.FloorToInt((c.x - Ground0.min.x) / Cell);
+                        int j0 = Mathf.FloorToInt((c.y - Ground0.min.z) / Cell);
+                        bool filled = i0 >= 0 && j0 >= 0 && i0 < CW0 && j0 < CD0 && Mask0[i0, j0];
+                        Mask[i, j] = filled;
+                        if (filled) Cells++;
+                    }
+            }
+
+            /// <summary>Is the block's whole side along this edge kerb - no bay, no step?
+            /// An alley wants a wall the length of it, and only such a side gives one.</summary>
+            public bool Straight(bool west)
+            {
+                int i = west ? 0 : CW - 1;
+                for (int j = 0; j < CD; j++) if (!Mask[i, j]) return false;
+                return true;
+            }
         }
 
         /// <summary>
         /// Reads a block off an instance of its prefab standing at the origin, unturned:
         /// its ground (the paving the demo gave it, which is its kerb line), what stands
         /// on that ground, and how tall it is. Pieces are the instance's direct children -
-        /// the harvest laid every piece flat under the block's root.
+        /// the harvest laid every piece flat under the block's root. Where it stands is
+        /// the plan's to say afterwards.
         /// </summary>
-        public static Block Measure(string name, GameObject go, Vector2 pivot)
+        public static Block Measure(string name, GameObject go)
         {
-            var block = new Block { Name = name, Go = go, Pivot = pivot };
+            var block = new Block { Name = name, Go = go };
             var cover = new List<Bounds>();
             bool anyGround = false;
             float sumHA = 0f, sumA = 0f;
@@ -200,14 +300,16 @@ namespace RoadDemo
                 block.Pieces++;
                 if (!BoxOf(t.gameObject, out var box)) continue;
                 string piece = t.name;
-                bool building = Starts(piece, "SM_Bld_");
+                // "SM_Bld_" is what the pack calls a building; "building-" is what our own
+                // kit bakes are called, and an industrial block is made of those
+                bool building = Starts(piece, "SM_Bld_") || Starts(piece, "building-");
                 bool ground = box.size.y <= 1.5f &&
                               (Starts(piece, "SM_Env_Sidewalk") || Starts(piece, "SM_Env_Grass") ||
                                Starts(piece, "SM_Env_Road") || piece.StartsWith("floor patch"));
                 if (ground)
                 {
-                    if (!anyGround) { block.Ground = box; anyGround = true; }
-                    else block.Ground.Encapsulate(box);
+                    if (!anyGround) { block.Ground0 = box; anyGround = true; }
+                    else block.Ground0.Encapsulate(box);
                 }
                 // environment pieces by their footprint, props by their foot: a lamp's box
                 // reaches out over the road it lights
@@ -225,22 +327,38 @@ namespace RoadDemo
                 bool any = false;
                 foreach (var box in cover)
                 {
-                    if (!any) { block.Ground = box; any = true; }
-                    else block.Ground.Encapsulate(box);
+                    if (!any) { block.Ground0 = box; any = true; }
+                    else block.Ground0.Encapsulate(box);
                 }
             }
             block.MeanH = sumA > 0f ? sumHA / sumA : 0f;
-            block.CW = Mathf.Max(1, Mathf.RoundToInt(block.Ground.size.x / Cell));
-            block.CD = Mathf.Max(1, Mathf.RoundToInt(block.Ground.size.z / Cell));
+            block.CW0 = Mathf.Max(1, Mathf.RoundToInt(block.Ground0.size.x / Cell));
+            block.CD0 = Mathf.Max(1, Mathf.RoundToInt(block.Ground0.size.z / Cell));
             Shape(block, cover);
-            block.Shift = Shift(block.DemoBox);
+            block.Turn(0);
             return block;
         }
 
-        /// <summary>Stands the instance where the layout puts it.</summary>
+        /// <summary>A block described rather than measured - its ground box (pivot-relative,
+        /// metres) and its mask - for a test or a simulation with no scene to stand it in.</summary>
+        public static Block Describe(string name, Vector2 groundMin, int cw, int cd, bool[,] mask, float maxH = 0f)
+        {
+            var block = new Block
+            {
+                Name = name,
+                Ground0 = new Bounds(new Vector3(groundMin.x + cw * Cell * 0.5f, 0f, groundMin.y + cd * Cell * 0.5f),
+                                     new Vector3(cw * Cell, 0f, cd * Cell)),
+                CW0 = cw, CD0 = cd, Mask0 = mask, MaxH = maxH, MeanH = maxH,
+            };
+            block.Turn(0);
+            return block;
+        }
+
+        /// <summary>Stands the instance where the plan puts it, turned the way it says.</summary>
         public static void Place(Block block)
         {
-            block.Go.transform.SetPositionAndRotation(block.Position, Quaternion.identity);
+            if (block.Go == null) return;
+            block.Go.transform.SetPositionAndRotation(block.Position, block.Rotation);
         }
 
         /// <summary>
@@ -252,8 +370,8 @@ namespace RoadDemo
         /// </summary>
         static void Shape(Block block, List<Bounds> cover)
         {
-            int w = block.CW, d = block.CD;
-            float x0 = block.Ground.min.x, z0 = block.Ground.min.z;
+            int w = block.CW0, d = block.CD0;
+            float x0 = block.Ground0.min.x, z0 = block.Ground0.min.z;
             var covered = new bool[w, d];
             foreach (var box in cover)
                 for (int i = 0; i < w; i++)
@@ -286,11 +404,10 @@ namespace RoadDemo
                 }
             }
 
-            block.Mask = new bool[w, d];
-            block.Cells = 0;
+            block.Mask0 = new bool[w, d];
             for (int i = 0; i < w; i++)
                 for (int j = 0; j < d; j++)
-                    if (!open[i, j]) { block.Mask[i, j] = true; block.Cells++; }
+                    if (!open[i, j]) block.Mask0[i, j] = true;
         }
 
         static bool BoxOf(GameObject go, out Bounds box)
@@ -307,5 +424,470 @@ namespace RoadDemo
 
         static bool Starts(string name, string prefix) =>
             name.StartsWith(prefix, System.StringComparison.OrdinalIgnoreCase);
+
+        // ------------------------------------------------------------------ the plans
+
+        /// <summary>Where everything stands: the blocks' stands are written onto the blocks
+        /// themselves, and the plan keeps what the raster needs besides - the alleys and
+        /// the way each runs, and the main road.</summary>
+        public sealed class Plan
+        {
+            public string Name;
+            public int Seed;               // the seed asked for; -1 is the Synty arrangement
+            public int Attempt;            // which deal of that seed this is
+            public Vector2 MainRoad;
+            /// <summary>Roads declared by the plan rather than read off the blocks, as
+            /// boxes (x, z): the main road the whole width of the core, and in a dealt plan
+            /// the street between every two rows and the one behind the last, each as long
+            /// as the rows beside it and a short dead end beyond their edge streets. A
+            /// street that stopped flush with the edge street would end in a corner box
+            /// with two legs, and that is a box the traffic locks up in (the play harness
+            /// found it); run 15 m past it, the meeting is a T and the end a dead end the
+            /// drivers know. Run to the edge of the drawing instead, it is a road into
+            /// nothing.</summary>
+            public readonly List<Rect> Bands = new List<Rect>();
+            public readonly List<Lane> Lanes = new List<Lane>();
+            /// <summary>The rows the blocks were dealt into, for the log.</summary>
+            public readonly List<string> Rows = new List<string>();
+        }
+
+        /// <summary>The seed that asks for the demo's own arrangement.</summary>
+        public const int SyntySeed = -1;
+
+        /// <summary>The demo's arrangement, its streets opened by the cuts.</summary>
+        public static Plan Synty(List<Block> blocks)
+        {
+            var plan = new Plan { Name = "Synty", Seed = SyntySeed, MainRoad = MainRoad };
+            plan.Bands.Add(Rect.MinMaxRect(-Any, plan.MainRoad.x, Any, plan.MainRoad.y));
+            foreach (var block in blocks)
+            {
+                block.Turn(0);
+                block.Pivot = Vector2.zero;
+                block.Lot = Rect.zero;
+                foreach (var stand in Blocks)
+                    if (stand.Prefab == block.Name) block.Pivot = new Vector2(stand.X, stand.Z);
+                block.Shift = Shift(block.DemoBox);
+            }
+            foreach (var lane in Lanes) plan.Lanes.Add(lane.Moved(Shift(lane.Box)));
+            plan.Rows.Add("as Synty stood them");
+            return plan;
+        }
+
+        // ------------------------------------------------------------------ the deal
+
+        /// <summary>
+        /// Two blocks the demo nested - the small one in the big one's bay, an alley between
+        /// - stay nested: the bay is the small block's size for a reason. The offsets are
+        /// the demo's (small pivot less big pivot) and the lanes are the alleys between
+        /// the two, in the big block's own frame.
+        /// </summary>
+        sealed class Nest
+        {
+            public string Big, Small;
+            public Vector2 Offset;
+            public Lane[] Lanes;
+        }
+
+        static readonly Nest[] Nests =
+        {
+            new Nest
+            {
+                Big = "block-06", Small = "block-07", Offset = new Vector2(15f, 10f),
+                Lanes = new[] { new Lane(true, -10f, -10f, 30f, +1), new Lane(false, -10f, -10f, 30f, -1) },
+            },
+            new Nest
+            {
+                Big = "block-12", Small = "block-10", Offset = new Vector2(-15f, -35f),
+                Lanes = new[] { new Lane(true, 10f, -50f, -15f, +1), new Lane(false, -15f, -45f, 10f, -1) },
+            },
+        };
+
+        /// <summary>What the packer deals: one block, or a nested pair, as one piece.</summary>
+        sealed class Unit
+        {
+            public readonly List<Block> Members = new List<Block>();
+            public readonly List<Vector2> Offsets = new List<Vector2>();   // each member's pivot less the anchor's
+            public Lane[] Lanes = new Lane[0];
+            public int Yaw;
+            public Rect Box;               // anchor-relative, metres, at the current yaw
+            public int W => Mathf.RoundToInt(Box.width / Cell);
+            public int D => Mathf.RoundToInt(Box.height / Cell);
+
+            /// <summary>The unit's box at a yaw, without turning it.</summary>
+            public Rect Footprint(int yaw)
+            {
+                bool any = false;
+                var box = new Rect();
+                for (int m = 0; m < Members.Count; m++)
+                {
+                    var foot = Members[m].Footprint(yaw);
+                    var off = CoreLayout.Turn(Offsets[m], yaw);
+                    var one = new Rect(foot.x + off.x, foot.y + off.y, foot.width, foot.height);
+                    if (!any) { box = one; any = true; }
+                    else box = Rect.MinMaxRect(Mathf.Min(box.xMin, one.xMin), Mathf.Min(box.yMin, one.yMin),
+                                               Mathf.Max(box.xMax, one.xMax), Mathf.Max(box.yMax, one.yMax));
+                }
+                return box;
+            }
+
+            public void Turn(int yaw)
+            {
+                Yaw = yaw;
+                foreach (var member in Members) member.Turn(yaw);
+                Box = Footprint(yaw);
+            }
+
+            /// <summary>Is the unit's whole side along this edge a wall? Only the anchor
+            /// block can make it one: a nested pair's bay is on the small block's side.</summary>
+            public bool Straight(bool west)
+            {
+                if (Members.Count > 1) return false;
+                return Members[0].Straight(west);
+            }
+        }
+
+        sealed class Row
+        {
+            public readonly List<Unit> Units = new List<Unit>();
+            public readonly List<int> Gaps = new List<int>();   // cells after each unit but the last: 1 alley, 3 street
+            public int Depth;
+            public int Length
+            {
+                get
+                {
+                    int n = 0;
+                    foreach (var unit in Units) n += unit.W;
+                    foreach (var gap in Gaps) n += gap;
+                    return n;
+                }
+            }
+        }
+
+        /// <summary>A street between two neighbours in a row, in cells; and an alley.</summary>
+        const int StreetGap = 3, AlleyGap = 1;
+        /// <summary>How much shallower than its row a block may stand. The ground behind
+        /// it is its car park; more than this and the car park is bigger than the block.</summary>
+        const int MaxShallow = 4;
+        /// <summary>A row is dealt until it is this long, in cells.</summary>
+        const int RowMin = 40, RowMax = 60;
+        /// <summary>How often two neighbours that could share an alley do.</summary>
+        const double AlleyOdds = 0.4;
+
+        /// <summary>
+        /// Deals the blocks into rows from a seed, and stands them. Nested pairs stay
+        /// nested. Every unit is turned a random quarter; a row takes the depth of its first
+        /// unit and then whatever fits it - the deepest turn of a unit no deeper than the row
+        /// and no more than <see cref="MaxShallow"/> cells shallower - until it is long
+        /// enough. Rows go north and south of the boulevard turn and turn about, each one a
+        /// street behind the last, and are stood roughly centred with a little jitter, so
+        /// the cross streets of one row seldom line up with the next: T-junctions, which is
+        /// what the demo has. A block shallower than its row keeps the ground behind it.
+        /// </summary>
+        public static Plan Roll(List<Block> blocks, int seed)
+        {
+            var dice = new System.Random(seed);
+            var plan = new Plan { Name = $"seed {seed}", Seed = seed, MainRoad = MainRoad };
+            plan.Bands.Add(Rect.MinMaxRect(-Any, plan.MainRoad.x, Any, plan.MainRoad.y));
+
+            // the units: the nested pairs, then everything else on its own
+            var units = new List<Unit>();
+            var taken = new HashSet<Block>();
+            Block Named(string name)
+            {
+                foreach (var block in blocks) if (block.Name == name) return block;
+                return null;
+            }
+            foreach (var nest in Nests)
+            {
+                var big = Named(nest.Big);
+                var small = Named(nest.Small);
+                if (big == null || small == null) continue;
+                var unit = new Unit { Lanes = nest.Lanes };
+                unit.Members.Add(big); unit.Offsets.Add(Vector2.zero);
+                unit.Members.Add(small); unit.Offsets.Add(nest.Offset);
+                units.Add(unit);
+                taken.Add(big); taken.Add(small);
+            }
+            foreach (var block in blocks)
+            {
+                if (taken.Contains(block)) continue;
+                var unit = new Unit();
+                unit.Members.Add(block); unit.Offsets.Add(Vector2.zero);
+                units.Add(unit);
+            }
+            Shuffle(units, dice);
+
+            // the rows
+            var rows = new List<Row>();
+            var pool = new List<Unit>(units);
+            while (pool.Count > 0)
+            {
+                var row = new Row();
+                var first = pool[0];
+                pool.RemoveAt(0);
+                first.Turn(dice.Next(4) * 90);
+                row.Depth = first.D;
+                row.Units.Add(first);
+                int target = dice.Next(RowMin, RowMax + 1);
+                for (int i = 0; i < pool.Count && row.Length < target;)
+                {
+                    var unit = pool[i];
+                    int best = -1, bestDepth = -1;
+                    foreach (int yaw in Quarters(dice))
+                    {
+                        var foot = unit.Footprint(yaw);
+                        int depth = Mathf.RoundToInt(foot.height / Cell);
+                        if (depth > row.Depth || row.Depth - depth > MaxShallow) continue;
+                        if (depth > bestDepth) { bestDepth = depth; best = yaw; }
+                    }
+                    if (best < 0) { i++; continue; }
+                    unit.Turn(best);
+                    pool.RemoveAt(i);
+                    // a street between neighbours, or an alley where both are as deep as
+                    // the row and walled the length of it
+                    var last = row.Units[row.Units.Count - 1];
+                    bool alley = last.D == row.Depth && unit.D == row.Depth &&
+                                 last.Straight(false) && unit.Straight(true) &&
+                                 dice.NextDouble() < AlleyOdds;
+                    row.Gaps.Add(alley ? AlleyGap : StreetGap);
+                    row.Units.Add(unit);
+                }
+                rows.Add(row);
+            }
+            // a row of one unit is a tail hanging off the core; where the unit can stand
+            // in another row - no deeper than it, and not much shallower - it goes there
+            for (int r = rows.Count - 1; r >= 0; r--)
+            {
+                if (rows[r].Units.Count > 1) continue;
+                var lone = rows[r].Units[0];
+                Row home = null;
+                int best = -1, bestDepth = -1;
+                foreach (var other in rows)
+                {
+                    if (other == rows[r] || other.Units.Count < 2) continue;
+                    foreach (int yaw in Quarters(dice))
+                    {
+                        int depth = Mathf.RoundToInt(lone.Footprint(yaw).height / Cell);
+                        if (depth > other.Depth || other.Depth - depth > MaxShallow + 2) continue;
+                        if (depth > bestDepth) { bestDepth = depth; best = yaw; home = other; }
+                    }
+                }
+                if (home == null) continue;
+                lone.Turn(best);
+                home.Gaps.Add(StreetGap);
+                home.Units.Add(lone);
+                rows.RemoveAt(r);
+            }
+
+            // the rows out from the boulevard, north and south turn and turn about
+            float southKerb = plan.MainRoad.x, northKerb = plan.MainRoad.y;
+            float northNext = northKerb, southNext = southKerb;
+            bool north = dice.Next(2) == 0;
+            var northStreets = new List<int>();   // cross streets of the last row stood on each side, in cells
+            var southStreets = new List<int>();
+            foreach (var row in rows)
+            {
+                int length = row.Length;
+                // the row's cross streets - the edge street at either end and every
+                // street between two units - must line up with the neighbouring row's
+                // across the street between them, or stand well clear of them: two
+                // streets meeting the same road a few metres apart merge into one wide
+                // junction box, and the lane graph cannot drive that. The neighbour is
+                // the last row stood on this side, or the other side's first row across
+                // the boulevard. The row is stood roughly centred, at whichever offset
+                // clashes least; ties fall to the dice
+                var facing = north ? (northStreets.Count > 0 ? northStreets : southStreets)
+                                   : (southStreets.Count > 0 ? southStreets : northStreets);
+                int centre = Mathf.RoundToInt(-length * 0.5f);
+                int bestX = centre, bestClash = int.MaxValue;
+                foreach (int jitter in Jitters(dice))
+                {
+                    int clash = 0;
+                    foreach (int street in Streets(row, centre + jitter))
+                        foreach (int other in facing)
+                        {
+                            int apart = System.Math.Abs(street - other);
+                            if (apart > 0 && apart < StreetGap + StreetGap) clash++;
+                        }
+                    if (clash < bestClash) { bestClash = clash; bestX = centre + jitter; }
+                }
+                var streets = Streets(row, bestX);
+                if (north) { northStreets = streets; } else { southStreets = streets; }
+                float x = bestX * Cell;
+                float z0, z1;
+                // the street behind the row: as long as the row, and as long as the row
+                // that will stand behind it, which is not known yet - so it is written for
+                // this row now and widened when the next row on this side is stood
+                float xEnd = x + length * Cell;
+                if (north)
+                {
+                    z0 = northNext; z1 = z0 + row.Depth * Cell;
+                    northNext = z1 + StreetGap * Cell;
+                    Widen(plan, Rect.MinMaxRect(x, z0 - StreetGap * Cell, xEnd, z0));
+                    plan.Bands.Add(Rect.MinMaxRect(x, z1, xEnd, northNext));
+                }
+                else
+                {
+                    z1 = southNext; z0 = z1 - row.Depth * Cell;
+                    southNext = z0 - StreetGap * Cell;
+                    Widen(plan, Rect.MinMaxRect(x, z1, xEnd, z1 + StreetGap * Cell));
+                    plan.Bands.Add(Rect.MinMaxRect(x, southNext, xEnd, z0));
+                }
+                var line = new System.Text.StringBuilder();
+                line.Append(north ? "north" : "south").Append($" row, {row.Depth} deep, z {z0:F0}..{z1:F0}:");
+                for (int u = 0; u < row.Units.Count; u++)
+                {
+                    var unit = row.Units[u];
+                    // the front faces the boulevard; the ground behind a shallow unit is its lot
+                    float zFront = north ? z0 : z1 - unit.D * Cell;
+                    var anchor = new Vector2(x - unit.Box.xMin, zFront - unit.Box.yMin);
+                    for (int m = 0; m < unit.Members.Count; m++)
+                    {
+                        var block = unit.Members[m];
+                        block.Pivot = anchor + Turn(unit.Offsets[m], unit.Yaw);
+                        block.Shift = Vector2.zero;
+                        block.Lot = Rect.zero;
+                    }
+                    if (unit.D < row.Depth)
+                    {
+                        float lotZ0 = north ? zFront + unit.D * Cell : z0;
+                        unit.Members[0].Lot = new Rect(x, lotZ0, unit.W * Cell, (row.Depth - unit.D) * Cell);
+                    }
+                    foreach (var lane in unit.Lanes) plan.Lanes.Add(lane.Turned(unit.Yaw).Moved(anchor));
+                    line.Append(' ').Append(unit.Members[0].Name).Append(unit.Members.Count > 1 ? "+" + unit.Members[1].Name : "")
+                        .Append($"@{unit.Yaw}");
+                    x += unit.W * Cell;
+                    if (u >= row.Gaps.Count) continue;
+                    int gap = row.Gaps[u];
+                    if (gap == AlleyGap)
+                    {
+                        plan.Lanes.Add(new Lane(true, x, z0, z1, dice.Next(2) == 0 ? 1 : -1));
+                        line.Append(" |alley|");
+                    }
+                    else line.Append(" |street|");
+                    x += gap * Cell;
+                }
+                plan.Rows.Add(line.ToString());
+                north = !north;
+            }
+            // every declared street runs past the edge streets at either end of the rows
+            // beside it: the edge street itself, and a dead end a street's width beyond
+            for (int b = 1; b < plan.Bands.Count; b++)
+            {
+                var band = plan.Bands[b];
+                plan.Bands[b] = Rect.MinMaxRect(band.xMin - 2f * StreetGap * Cell, band.yMin,
+                                                band.xMax + 2f * StreetGap * Cell, band.yMax);
+            }
+            return plan;
+        }
+
+        /// <summary>Widens the declared street on this z band, if there is one, to cover
+        /// <paramref name="span"/> as well.</summary>
+        static void Widen(Plan plan, Rect span)
+        {
+            for (int b = 1; b < plan.Bands.Count; b++)
+            {
+                var band = plan.Bands[b];
+                if (Mathf.Abs(band.yMin - span.yMin) > 0.01f) continue;
+                plan.Bands[b] = Rect.MinMaxRect(Mathf.Min(band.xMin, span.xMin), band.yMin,
+                                                Mathf.Max(band.xMax, span.xMax), band.yMax);
+                return;
+            }
+        }
+
+        /// <summary>The row's cross streets, stood with its first unit at <paramref name="x0"/>
+        /// cells: the edge street off either end and every street between two units, each
+        /// by its first cell.</summary>
+        static List<int> Streets(Row row, int x0)
+        {
+            var streets = new List<int> { x0 - StreetGap };
+            int x = x0;
+            for (int u = 0; u < row.Units.Count; u++)
+            {
+                x += row.Units[u].W;
+                if (u < row.Gaps.Count)
+                {
+                    if (row.Gaps[u] == StreetGap) streets.Add(x);
+                    x += row.Gaps[u];
+                }
+            }
+            streets.Add(x);
+            return streets;
+        }
+
+        /// <summary>The offsets a row may be stood at, either side of centre, in a random
+        /// order - so that among equally good ones the dice choose.</summary>
+        static int[] Jitters(System.Random dice)
+        {
+            var jitters = new List<int>();
+            for (int j = -4; j <= 4; j++) jitters.Add(j);
+            Shuffle(jitters, dice);
+            return jitters.ToArray();
+        }
+
+        static void Shuffle<T>(List<T> list, System.Random dice)
+        {
+            for (int i = list.Count - 1; i > 0; i--)
+            {
+                int j = dice.Next(i + 1);
+                (list[i], list[j]) = (list[j], list[i]);
+            }
+        }
+
+        static int[] Quarters(System.Random dice)
+        {
+            var quarters = new List<int> { 0, 90, 180, 270 };
+            Shuffle(quarters, dice);
+            return quarters.ToArray();
+        }
+
+        // ------------------------------------------------------------- the verdict
+
+        /// <summary>How many deals of one seed are tried before the best of them is taken
+        /// with its faults on record.</summary>
+        public const int Deals = 40;
+
+        /// <summary>
+        /// The plan for a seed, with the roads drawn off it and the drawing judged:
+        /// <see cref="SyntySeed"/> gives the demo's arrangement, any other seed a deal of
+        /// the rows. A deal whose drawing has a fault - ground left bare, a block with no
+        /// road down a side, a stub of road, two blocks on one cell - is thrown away and the
+        /// seed's next deal tried, up to <see cref="Deals"/> times; the same seed always
+        /// runs the same deals, so the same seed is the same city. If none is clean the
+        /// cleanest is kept, and its report says what is wrong with it.
+        /// </summary>
+        public static Plan Arrange(List<Block> blocks, int seed, out CoreRoads.Raster raster)
+        {
+            if (seed == SyntySeed)
+            {
+                var synty = Synty(blocks);
+                raster = CoreRoads.Build(blocks, synty);
+                return synty;
+            }
+            Plan best = null;
+            CoreRoads.Raster bestRaster = null;
+            for (int attempt = 0; attempt < Deals; attempt++)
+            {
+                var plan = Roll(blocks, unchecked(seed * 1000003 + attempt * 7919));
+                plan.Seed = seed;
+                plan.Attempt = attempt;
+                plan.Name = $"seed {seed}" + (attempt > 0 ? $" (deal {attempt + 1})" : "");
+                var drawn = CoreRoads.Build(blocks, plan);
+                if (drawn.Faults == 0)
+                {
+                    raster = drawn;
+                    return plan;
+                }
+                if (bestRaster == null || drawn.Faults < bestRaster.Faults)
+                {
+                    best = plan;
+                    bestRaster = drawn;
+                }
+            }
+            // the blocks stand where the last deal left them: put them back on the best
+            Roll(blocks, unchecked(seed * 1000003 + best.Attempt * 7919));
+            raster = CoreRoads.Build(blocks, best);
+            return best;
+        }
     }
 }

@@ -139,7 +139,20 @@ namespace RoadDemo
                 else
                 {
                     int keeper = CrewCars.KeeperOf(item);
-                    if (keeper < 0) continue;                              // in the lock-up
+                    if (keeper < 0)
+                    {
+                        // IN THE LOCK-UP, AND SAID OUT LOUD. A machine nobody has been
+                        // dealt has no man to stand beside, and a scene with no front
+                        // has nowhere else to put it - so a player who bought two off
+                        // the counter got nothing at all at the kerb and not a word
+                        // about why ("kad kupim dva motora ne postave mi se pored
+                        // crew"). The rule is the cars' rule and it stands; what was
+                        // missing was anybody saying it.
+                        WarnOnce("bikeheld:" + item.Id,
+                            $"[Crews] the ledger's {item.DisplayName} is in the lock-up - " +
+                            "give it to a lieutenant in the ledger and it goes to the kerb.");
+                        continue;
+                    }
                     if (!_byCharacter.TryGetValue(keeper, out man) || man == null || man.Dead || !man.Tf)
                     {
                         var unit = OwnerFor(roster, item);

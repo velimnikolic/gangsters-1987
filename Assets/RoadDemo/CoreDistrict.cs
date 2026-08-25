@@ -4,9 +4,10 @@ using UnityEngine;
 namespace RoadDemo
 {
     /// <summary>
-    /// The city core as a quarter: the blocks Synty stood in the POLYGON City demo, the
-    /// roads <see cref="CoreRoads"/> runs between them, and the lane graph the traffic
-    /// rides over both (Docs/core-district-plan.md).
+    /// The city core as a quarter: the blocks harvested out of the POLYGON City demo,
+    /// dealt into rows by the seed (<see cref="CoreLayout.Arrange"/>), the roads
+    /// <see cref="CoreRoads"/> runs between them, and the lane graph the traffic rides
+    /// over both (Docs/core-district-plan.md).
     ///
     /// Nothing here drives. The lane graph is the city's own - <see cref="LaneNet"/>
     /// nodes, carriageways and lanes, laid the way <c>RoadDemoBuilder.BuildGraph</c> lays
@@ -77,14 +78,20 @@ namespace RoadDemo
                 if (prefab == null) continue;
                 var go = Object.Instantiate(prefab, Vector3.zero, Quaternion.identity, _yard);
                 go.name = stand.Prefab;
-                var block = CoreLayout.Measure(stand.Prefab, go, new Vector2(stand.X, stand.Z));
-                CoreLayout.Place(block);
-                _blocks.Add(block);
+                _blocks.Add(CoreLayout.Measure(stand.Prefab, go));
             }
-            _raster = CoreRoads.Build(_blocks);
+            // the seed deals the rows and the drawing is judged before it is taken; the
+            // Synty seed asks for the demo's own arrangement instead
+            _plan = CoreLayout.Arrange(_blocks, seed, out _raster);
+            foreach (var block in _blocks) CoreLayout.Place(block);
             _bounds = Rect.MinMaxRect(_raster.X0, _raster.Z0,
                                       _raster.X(_raster.NX), _raster.Z(_raster.NZ));
         }
+
+        /// <summary>The plan the quarter was dealt: which seed, which deal of it, and the
+        /// rows the blocks went into.</summary>
+        public CoreLayout.Plan Layout => _plan;
+        CoreLayout.Plan _plan;
 
         public void Reserve(DistrictReservations into)
         {
@@ -119,9 +126,10 @@ namespace RoadDemo
             for (int i = 0; i < _vehicles.Count; i++) host.RegisterVehicle(_vehicles[i]);
             BlockTheBuildings(host);
 
-            Debug.Log($"[Core] {_blocks.Count} blocks, {_raster.Junctions.Count} junctions, " +
+            Debug.Log($"[Core] {_plan.Name}: {_blocks.Count} blocks, {_raster.Junctions.Count} junctions, " +
                       $"{_raster.Stretches.Count} stretches of road, {_edges.Count} lanes, " +
-                      $"{_vehicles.Count} cars.{System.Environment.NewLine}{_raster.Report}");
+                      $"{_vehicles.Count} cars, {_raster.Faults} faults.{System.Environment.NewLine}" +
+                      string.Join(System.Environment.NewLine, _plan.Rows) + System.Environment.NewLine + _raster.Report);
         }
 
         /// <summary>
