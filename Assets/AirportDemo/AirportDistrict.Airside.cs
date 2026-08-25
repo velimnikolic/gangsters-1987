@@ -22,22 +22,33 @@ namespace AirportDemo
             float half = RunwayHalf;
             float w = AirportSpec.RunwayHalfWidth;
             float y = AirportSpec.MarkY;
-            var white = new Painter();
+            var white = new Painter(WearTiers);
             var rubber = new Painter();
 
-            // side stripes, their outer edge on the pavement edge
-            white.Rect(-half, half, w - AirportSpec.EdgeStripeWidth, w, y);
-            white.Rect(-half, half, -w, -w + AirportSpec.EdgeStripeWidth, y);
+            // side stripes, their outer edge on the pavement edge. Laid in lengths
+            // rather than as one stripe end to end, so the paint can be scrubbed in the
+            // touchdown zones and fresh in the middle - which is what an edge stripe
+            // actually looks like from the air.
+            for (float x = -half; x < half - 0.1f; x += EdgeStripeRun)
+            {
+                float x1 = Mathf.Min(half, x + EdgeStripeRun);
+                white.Tier = RunwayWear(x + (x1 - x) * 0.5f);
+                white.Rect(x, x1, w - AirportSpec.EdgeStripeWidth, w, y);
+                white.Rect(x, x1, -w, -w + AirportSpec.EdgeStripeWidth, y);
+            }
 
             // centreline, symmetric about the middle of the runway
             float pitch = AirportSpec.CentrelineStripe + AirportSpec.CentrelineGap;
             float cw = AirportSpec.CentrelineWidth * 0.5f;
             // the middle stripe straddles the midpoint; every other one is laid in
             // pairs either side of it, so the pattern is symmetric about the field
+            white.Tier = RunwayWear(0f);
             white.Rect(-AirportSpec.CentrelineStripe * 0.5f, AirportSpec.CentrelineStripe * 0.5f, -cw, cw, y);
-            for (float x = AirportSpec.CentrelineStripe * 0.5f + AirportSpec.CentrelineGap; x < half - 60f; x += pitch)
+            for (float x = AirportSpec.CentrelineStripe * 0.5f + AirportSpec.CentrelineGap; x < half - 40f; x += pitch)
             {
+                white.Tier = RunwayWear(x);
                 white.Rect(x, x + AirportSpec.CentrelineStripe, -cw, cw, y);
+                white.Tier = RunwayWear(-x);
                 white.Rect(-x - AirportSpec.CentrelineStripe, -x, -cw, cw, y);
             }
 
@@ -49,6 +60,7 @@ namespace AirportDemo
                 // the threshold bar: eight stripes, four either side of the centreline
                 float x0 = thr + sign * AirportSpec.ThresholdOffset;
                 float x1 = x0 + sign * AirportSpec.ThresholdStripeLength;
+                white.Tier = RunwayWear((x0 + x1) * 0.5f);
                 for (int i = 0; i < AirportSpec.ThresholdStripes; i++)
                 {
                     int side = i < AirportSpec.ThresholdStripes / 2 ? -1 : 1;
@@ -63,11 +75,13 @@ namespace AirportDemo
                 string number = sign < 0f ? "09" : "27";
                 float yaw = sign < 0f ? 90f : 270f;
                 float dx = thr + sign * (AirportSpec.DesignatorOffset + AirportSpec.DesignatorHeight * 0.5f);
+                white.Tier = RunwayWear(dx);
                 PaintLegend(white, number, new Vector3(dx, 0f, 0f), AirportSpec.DesignatorHeight, yaw, y);
 
                 // the aiming point: a bar either side, 300 m in
                 float ax = thr + sign * AirportSpec.AimingPointFrom;
                 float axEnd = ax + sign * AirportSpec.AimingBarLength;
+                white.Tier = RunwayWear(ax);
                 for (int s = -1; s <= 1; s += 2)
                 {
                     float z0 = s * AirportSpec.AimingBarInner;
@@ -76,16 +90,23 @@ namespace AirportDemo
                 }
 
                 // the touchdown zone, black with rubber - the one place on an airfield
-                // that is always dirty, and the surest sign it is used
-                for (int i = 0; i < 7; i++)
+                // that is always dirty, and the surest sign it is used. Two smears
+                // rather than one band: the mains touch either side of the centreline
+                // and leave the middle of the runway comparatively clean, which is what
+                // makes it read as rubber and not as a stripe of tarmac.
+                for (int i = 0; i < 10; i++)
                 {
-                    float bx = thr + sign * (120f + i * 26f);
-                    float spread = 5.5f + i * 0.8f;
-                    rubber.Rect(bx - 9f, bx + 9f, -spread, spread, y - 0.004f);
+                    float bx = thr + sign * (80f + i * 26f);
+                    float heavy = 1f - i / 11f;                 // thickest just past the flare
+                    float inner = 1.6f + i * 0.25f;
+                    float outer = inner + 3.2f + heavy * 3.4f;
+                    float len = 7f + heavy * 6f;
+                    for (int s = -1; s <= 1; s += 2)
+                        rubber.Rect(bx - len, bx + len, Mathf.Min(s * inner, s * outer), Mathf.Max(s * inner, s * outer), y - 0.004f);
                 }
             }
 
-            white.Emit("Runway markings", _whitePaint, _markingRoot);
+            white.Emit("Runway markings", _whiteTiers, _markingRoot);
             rubber.Emit("Touchdown rubber", _rubberMat, _markingRoot);
         }
 
@@ -97,10 +118,18 @@ namespace AirportDemo
             float tz = AirportSpec.TaxiwayZ, th = AirportSpec.TaxiwayHalf;
             float y = AirportSpec.MarkY;
             float cw = AirportSpec.TaxiCentrelineWidth * 0.5f;
-            var yellow = new Painter();
+            var yellow = new Painter(WearTiers);
 
-            // the parallel taxiway's centreline, unbroken from end to end
-            yellow.Rect(-half - 18f, half + 18f, tz - cw, tz + cw, y);
+            // the parallel taxiway's centreline, unbroken from end to end - laid in
+            // lengths so it wears where the traffic is, which on a taxiway is the ends
+            // and the exits and not the long middle
+            for (float x = -half - 18f; x < half + 18f; x += EdgeStripeRun)
+            {
+                float x1 = Mathf.Min(half + 18f, x + EdgeStripeRun);
+                yellow.Tier = TaxiwayWear(x + (x1 - x) * 0.5f);
+                yellow.Rect(x, x1, tz - cw, tz + cw, y);
+            }
+            yellow.Tier = 1;
             // and its edge markings: a double dashed line at the pavement edge
             for (int s = -1; s <= 1; s += 2)
             {
@@ -112,6 +141,9 @@ namespace AirportDemo
             foreach (float cx in AirportSpec.ConnectorX)
             {
                 float x = Mathf.Clamp(cx, -half + 30f, half - 30f);
+                // every connector is worn: it is the one piece of pavement on the field
+                // that every movement crosses
+                yellow.Tier = 2;
                 // the connector's own centreline, from the runway out to the taxiway,
                 // with the curve at each end drawn as a short diagonal
                 yellow.Rect(x - cw, x + cw, AirportSpec.RunwayHalfWidth + 8f, tz - 8f, y);
@@ -130,10 +162,11 @@ namespace AirportDemo
             }
 
             // the taxilanes onto the ramp
+            yellow.Tier = 1;
             foreach (float cx in AirportSpec.ApronEntryX)
                 yellow.Rect(cx - cw, cx + cw, tz, AirportSpec.ApronZ0 + 6f, y);
 
-            yellow.Emit("Taxiway markings", _yellowPaint, _markingRoot);
+            yellow.Emit("Taxiway markings", _yellowTiers, _markingRoot);
         }
 
         // ------------------------------------------------------------ the ramp
@@ -141,19 +174,23 @@ namespace AirportDemo
         void PaintApron()
         {
             float y = AirportSpec.MarkY;
-            var yellow = new Painter();
-            var white = new Painter();
+            var yellow = new Painter(WearTiers);
+            var white = new Painter(WearTiers);
             float cw = AirportSpec.TaxiCentrelineWidth * 0.5f;
 
             // the ramp's own taxilanes: one along the front of the stands, one down
             // each row of tie-downs
             float lane = AirportSpec.ApronZ0 + 12f;
+            yellow.Tier = 2;
             yellow.Rect(AirportSpec.ApronX0 + 6f, AirportSpec.ApronX1 - 6f, lane - cw, lane + cw, y);
 
-            // the tie-down rows: a tee at every stand and a lane down each row
+            // the tie-down rows: a tee at every stand and a lane down each row. The
+            // rows nearest the hangars are used every day and the back row hardly at
+            // all, which is what the tier off the row index says.
             for (int row = 0; row < AirportSpec.TieDownRows; row++)
             {
                 float z = AirportSpec.TieDownRowZ0 + row * AirportSpec.TieDownRowPitch;
+                yellow.Tier = row == 0 ? 2 : row == 1 ? 1 : 0;
                 yellow.Rect(AirportSpec.TieDownX0 - 6f, AirportSpec.TieDownX1 + 6f, z - 13f - cw, z - 13f + cw, y);
                 for (float x = AirportSpec.TieDownX0; x <= AirportSpec.TieDownX1 + 0.1f; x += AirportSpec.TieDownPitch)
                 {
@@ -169,14 +206,19 @@ namespace AirportDemo
             {
                 float sx = AirportSpec.CommuterStandX[i];
                 float stop = AirportSpec.CommuterStandZ;
+                // a stand's lead-in is under a nosewheel four times a day
+                yellow.Tier = 2;
                 yellow.Rect(sx - cw, sx + cw, lane, stop, y);
                 yellow.Rect(sx - 3.5f, sx + 3.5f, stop, stop + 0.3f, y);
+                yellow.Tier = 1;
                 PaintLegend(yellow, (i + 1).ToString(), new Vector3(sx + 6.5f, 0f, stop - 5f), 3.2f, 180f, y);
                 // and the safety line a wingtip must stay inside
+                white.Tier = 1;
                 white.Rect(sx - 9f, sx + 9f, stop - 14f, stop - 13.8f, y);
             }
 
             // the helipad: the circle a helicopter comes to, and the H in the middle
+            white.Tier = 1;
             var pad = new Vector3(AirportSpec.HelipadX, 0f, AirportSpec.HelipadZ);
             white.Ring(pad, AirportSpec.HelipadCircle * 0.5f, 0.5f, y);
             white.Rect(pad.x - 2.4f, pad.x - 1.6f, pad.z - 3f, pad.z + 3f, y);
@@ -186,6 +228,7 @@ namespace AirportDemo
             // the service road: a white edge either side, dashed, so a driver on the
             // ramp knows where he may be and an aeroplane knows where he may not
             float sr = AirportSpec.ServiceRoadWidth * 0.5f;
+            white.Tier = 2;
             for (int s = -1; s <= 1; s += 2)
             {
                 float z = AirportSpec.ServiceRoadZ + s * sr;
@@ -193,10 +236,11 @@ namespace AirportDemo
             }
 
             // the apron edge line: where the concrete stops being anybody's to park on
+            yellow.Tier = 1;
             yellow.Rect(AirportSpec.ApronX0, AirportSpec.ApronX1, AirportSpec.ApronZ0, AirportSpec.ApronZ0 + 0.2f, y);
 
-            yellow.Emit("Ramp markings", _yellowPaint, _markingRoot);
-            white.Emit("Ramp markings white", _whitePaint, _markingRoot);
+            yellow.Emit("Ramp markings", _yellowTiers, _markingRoot);
+            white.Emit("Ramp markings white", _whiteTiers, _markingRoot);
         }
 
         // ------------------------------------------------------------ the lights
@@ -208,11 +252,14 @@ namespace AirportDemo
             float edge = AirportSpec.RunwayHalfWidth + 2.5f;
             int laid = 0;
 
-            // runway edge lights every 60 m, amber over the last 600 m of each end -
-            // what a pilot sees as the runway shortening ahead of him
+            // runway edge lights every 60 m, amber over the last quarter of each end -
+            // what a pilot sees as the runway shortening ahead of him. The zone is a
+            // share of the runway and not a fixed 600 m: on a 1,200 m field that fixed
+            // figure made EVERY light amber, which reads as a runway with no middle.
+            float amberFrom = Mathf.Min(AirportSpec.AmberZone, half * 0.5f);
             for (float x = -half; x <= half + 0.1f; x += 60f)
             {
-                bool amber = x > half - 600f || x < -half + 600f;
+                bool amber = x > half - amberFrom || x < -half + amberFrom;
                 var prefab = amber ? _lightAmber : _lightWhite;
                 for (int s = -1; s <= 1; s += 2)
                     if (Light(prefab, new Vector3(x, AirportSpec.LightY, s * edge))) laid++;

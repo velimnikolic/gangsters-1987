@@ -91,6 +91,26 @@ namespace RoadDemo
             foreach (var rb in model.GetComponentsInChildren<Rigidbody>()) Object.Destroy(rb);
             foreach (var col in model.GetComponentsInChildren<Collider>()) Object.Destroy(col);
 
+            // A COLOUR OF ITS OWN, and here rather than at the four places that build
+            // bikes. Every two-wheeler in the game comes through this method - the ones
+            // riding a lane (StreetBikes.Init), the ones on their stands at a kerb
+            // (StreetBikes.Park), the outfit's (DemoCrews.AddBike) and the drive-by's -
+            // so painting them anywhere else would be painting them three times out of
+            // four. The cars have been asking the same question at their own spawns
+            // since VehiclePaint was written; bikes simply never asked it, which is the
+            // whole reason a street of them came out in one colour.
+            //
+            // The law is safe without being named: its tourer wears the police atlas,
+            // which VehiclePaint holds no palette for, and the tourer paints the OUTFIT's
+            // machine carries are on no pack body at all. Which matters more than it
+            // looks, because both machines answer to the bare name "SM_Veh_Motorbike_01"
+            // and a name is all VehicleCatalog.WearsLivery is given here.
+            //
+            // The draw comes off UnityEngine.Random, the same cosmetic stream the cars
+            // have always painted out of. No seeded layout moves for it: the city is laid
+            // out of System.Random instances of its own.
+            LivingCity.Gameplay.VehiclePaint.Apply(model.gameObject, prefab);
+
             var body = new BikeBody(model);
             var bike = new T
             {

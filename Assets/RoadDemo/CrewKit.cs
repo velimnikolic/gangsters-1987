@@ -26,6 +26,8 @@ namespace RoadDemo
         const string ImpactPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Impact_Small_01.prefab";
         const string FirePath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Fire_Big_01.prefab";
         const string FireBurstPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Fire_Explosion_01.prefab";
+        const string ExhaustPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Smoke_White_Small_01.prefab";
+        const string EngineSmokePath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Smoke_Black_Small_01.prefab";
         const string ShotDir = "Assets/Audio/Weapons/";
 
         /// <summary>The crowd's walk and idle plus the gun wardrobe. Missing pieces stay
@@ -429,6 +431,16 @@ namespace RoadDemo
         /// is still sliding (BikeSpill).</summary>
         public static GameObject Fire => Load<GameObject>(FirePath);
         public static GameObject FireBurst => Load<GameObject>(FireBurstPath);
+
+        /// <summary>The two smokes a car makes. Both are the pack's mesh puffs, whose
+        /// mesh measures 0.19m across, so every size in CarSmoke is read against that
+        /// and not against a metre - the pack's own "Small" preset starts them at three
+        /// to six, which is a bonfire, not a tailpipe.
+        ///
+        /// White for what a running engine puts out of the back, black for what a shot
+        /// one puts out of the front.</summary>
+        public static GameObject Exhaust => Load<GameObject>(ExhaustPath);
+        public static GameObject EngineSmoke => Load<GameObject>(EngineSmokePath);
 
         /// <summary>The civilian wardrobe: the crowd's own clips plus a run, a flinch,
         /// a fall and the cower - so a bystander can bolt, be hit, and go down.</summary>

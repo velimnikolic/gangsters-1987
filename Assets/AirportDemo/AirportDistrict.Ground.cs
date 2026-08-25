@@ -18,6 +18,20 @@ namespace AirportDemo
     {
         Material _grassMat, _concreteMat, _asphaltMat, _shoulderMat;
         Material _whitePaint, _yellowPaint, _blackPaint, _redPaint, _rubberMat;
+        /// <summary>The same paint in three states - fresh, faded, scrubbed - indexed by
+        /// a Painter's Tier. Airfield paint is repainted a stretch at a time and worn
+        /// off a stretch at a time, and a runway whose every stripe is the same white is
+        /// a runway nobody has ever landed on.</summary>
+        Material[] _whiteTiers, _yellowTiers;
+        /// <summary>What the field has spilt, patched and worn: oil on a stand, a
+        /// bitumen patch on the tarmac, the seal down a crack, the dirt a lorry has
+        /// tracked onto the grass.</summary>
+        Material _stainMat, _patchMat, _sealMat, _dirtMat;
+        /// <summary>Two more tones of the ramp's own concrete. A ramp is not one pour -
+        /// it is fifty of them, laid over thirty years, and no two batches came out the
+        /// same colour. Laying a few bays in these instead of a repeating texture is
+        /// what stops eighty thousand square metres reading as one flat sheet.</summary>
+        Material _pourPale, _pourDark;
 
         GameObject _lightWhite, _lightAmber, _lightGreen, _lightRed, _lightBlue;
         GameObject _conePrefab, _bollardPrefab;
@@ -25,14 +39,19 @@ namespace AirportDemo
         void LoadKit()
         {
             _grassMat = AirportKit.LoadMaterial(AirportKit.GrassMat) ?? AirportKit.Flat("airport grass", new Color(0.35f, 0.47f, 0.25f));
-            _concreteMat = AirportKit.LoadMaterial(AirportKit.ConcreteMat) ?? AirportKit.Flat("airport concrete", new Color(0.62f, 0.62f, 0.60f));
-            _asphaltMat = AirportKit.LoadMaterial(AirportKit.AsphaltMat) ?? AirportKit.Flat("airport asphalt", new Color(0.28f, 0.28f, 0.29f));
+
+            // concrete, tarmac and shoulder are ONE tiling material taken to three
+            // tones. An airfield's surfaces differ by shade and by age far more than
+            // they differ by texture - poured concrete on the ramp, a darker bitumen on
+            // the runway, a darker one again on its shoulders - and driving all three
+            // off one material means they tile against each other without a join.
+            _concreteMat = Surface("airport concrete", 1.16f, new Color(0.62f, 0.62f, 0.60f));
+            _asphaltMat = Surface("airport asphalt", 0.52f, new Color(0.28f, 0.28f, 0.29f));
             // the shoulders are the same tarmac, a shade darker, so the runway edge
             // reads as an edge from the air even before the paint goes on
-            _shoulderMat = AirportKit.LoadMaterial(AirportKit.AsphaltMat) ?? AirportKit.Flat("airport shoulder", new Color(0.22f, 0.22f, 0.23f));
-            if (_shoulderMat != null && _shoulderMat.HasProperty("_BaseColor"))
-                _shoulderMat.SetColor("_BaseColor", _shoulderMat.GetColor("_BaseColor") * 0.72f);
-            _shoulderMat.name = "airport shoulder";
+            _shoulderMat = Surface("airport shoulder", 0.40f, new Color(0.22f, 0.22f, 0.23f));
+            _pourPale = Surface("airport pour pale", 1.30f, new Color(0.69f, 0.69f, 0.67f));
+            _pourDark = Surface("airport pour dark", 1.02f, new Color(0.55f, 0.55f, 0.54f));
 
             // airfield paint. No pack has a road decal at runway scale - a centreline
             // stripe is 36 m long and 90 cm wide - so the markings are flat colour on
@@ -43,6 +62,26 @@ namespace AirportDemo
             _redPaint = AirportKit.Flat("airport paint red", new Color(0.60f, 0.10f, 0.09f), 0.05f);
             _rubberMat = AirportKit.Flat("airport rubber", new Color(0.16f, 0.16f, 0.17f), 0.02f);
 
+            // paint ages toward the surface it is on: white goes grey, yellow goes to
+            // the colour of the tarmac showing through it
+            _whiteTiers = new[]
+            {
+                _whitePaint,
+                AirportKit.Flat("airport paint white faded", new Color(0.74f, 0.74f, 0.72f), 0.04f),
+                AirportKit.Flat("airport paint white worn", new Color(0.58f, 0.58f, 0.57f), 0.03f),
+            };
+            _yellowTiers = new[]
+            {
+                _yellowPaint,
+                AirportKit.Flat("airport paint yellow faded", new Color(0.72f, 0.60f, 0.17f), 0.04f),
+                AirportKit.Flat("airport paint yellow worn", new Color(0.56f, 0.49f, 0.24f), 0.03f),
+            };
+
+            _stainMat = AirportKit.Flat("airport stain", new Color(0.20f, 0.19f, 0.18f), 0.14f);
+            _patchMat = AirportKit.Flat("airport patch", new Color(0.20f, 0.20f, 0.21f), 0.03f);
+            _sealMat = AirportKit.Flat("airport crack seal", new Color(0.11f, 0.11f, 0.12f), 0.10f);
+            _dirtMat = AirportKit.Flat("airport dirt", new Color(0.40f, 0.35f, 0.26f), 0.02f);
+
             _lightWhite = AirportKit.TryLoad(AirportKit.EdgeLights[AirportKit.LightWhite]);
             _lightAmber = AirportKit.TryLoad(AirportKit.EdgeLights[AirportKit.LightAmber]);
             _lightGreen = AirportKit.TryLoad(AirportKit.EdgeLights[AirportKit.LightGreen]);
@@ -52,13 +91,42 @@ namespace AirportDemo
             _bollardPrefab = AirportKit.TryLoad(AirportKit.Bollard);
         }
 
+        /// <summary>One of the field's paved surfaces: the tiling concrete taken to the
+        /// tone this surface is, or a flat colour of that tone when the pack material is
+        /// not there. The multiplier is applied to the material's OWN base colour rather
+        /// than replacing it, so whatever shading the pack authored survives the tint.</summary>
+        Material Surface(string name, float tone, Color fallback)
+        {
+            var mat = AirportKit.LoadMaterial(AirportKit.ConcreteMat);
+            if (mat == null) return AirportKit.Flat(name, fallback, 0.05f);
+            mat.name = name;
+            if (mat.HasProperty("_BaseColor"))
+            {
+                var c = mat.GetColor("_BaseColor") * tone;
+                c.a = 1f;
+                mat.SetColor("_BaseColor", c);
+            }
+            return mat;
+        }
+
         // ------------------------------------------------------------ surfaces
 
-        /// <summary>One plane over a rectangle, subdivided at <paramref name="cell"/>,
-        /// with the pack material's UV inset off the atlas edge and each cell turned a
-        /// quarter at a time. The harbour's FlatPlane, which is how every large paved
-        /// area in this project is laid.</summary>
-        GameObject FlatPlane(string name, float x0, float x1, float z0, float z1, float y, Material mat, float cell, Transform parent)
+        /// <summary>One plane over a rectangle, subdivided at <paramref name="cell"/>.
+        ///
+        /// Two ways of laying the UVs, and which one is right depends entirely on the
+        /// material. An ATLAS material - a patch of a shared page - has to have each
+        /// cell mapped inside its own patch, inset off the page edge and turned a
+        /// quarter at a time so the few flecks in it do not march in step. A TILING
+        /// material must NOT: resetting its UVs every cell is what puts a seam every
+        /// fifteen metres across the ramp and makes eighty thousand square metres of
+        /// concrete read as a chessboard. For those the UVs run CONTINUOUSLY off the
+        /// world position, so the surface has no cell in it at all.
+        ///
+        /// The airport's big surfaces are all tiling now (AirportKit.ConcreteMat), so
+        /// <paramref name="atlas"/> is false for every one of them; the flag stays for
+        /// the pack pieces that still need the old behaviour.</summary>
+        GameObject FlatPlane(string name, float x0, float x1, float z0, float z1, float y, Material mat, float cell, Transform parent,
+                             bool atlas = false, float tile = 24f)
         {
             if (x1 - x0 < 0.05f || z1 - z0 < 0.05f) return null;
             const float U0 = 0.04f, U1 = 0.96f;
@@ -74,9 +142,22 @@ namespace AirportDemo
                     float cx0 = x0 + i * cell, cx1 = Mathf.Min(x1, cx0 + cell);
                     float cz0 = z0 + j * cell, cz1 = Mathf.Min(z1, cz0 + cell);
                     float fu = (cx1 - cx0) / cell, fv = (cz1 - cz0) / cell;
-                    int turn = fu < 0.999f || fv < 0.999f ? 0 : (i * 7 + j * 13 + (int)(x0 * 3f)) & 3;
-                    var corners = new[] { new Vector2(U0, U0), new Vector2(U0 + (U1 - U0) * fu, U0),
+                    int turn = 0;
+                    Vector2[] corners;
+                    if (atlas)
+                    {
+                        turn = fu < 0.999f || fv < 0.999f ? 0 : (i * 7 + j * 13 + (int)(x0 * 3f)) & 3;
+                        corners = new[] { new Vector2(U0, U0), new Vector2(U0 + (U1 - U0) * fu, U0),
                                           new Vector2(U0 + (U1 - U0) * fu, U0 + (U1 - U0) * fv), new Vector2(U0, U0 + (U1 - U0) * fv) };
+                    }
+                    else
+                    {
+                        // straight off the world, so two neighbouring cells share an
+                        // edge in UV as well as in space and the seam disappears
+                        float t = Mathf.Max(0.01f, tile);
+                        corners = new[] { new Vector2(cx0 / t, cz0 / t), new Vector2(cx1 / t, cz0 / t),
+                                          new Vector2(cx1 / t, cz1 / t), new Vector2(cx0 / t, cz1 / t) };
+                    }
                     int b = verts.Count;
                     verts.Add(new Vector3(cx0, y, cz0)); verts.Add(new Vector3(cx1, y, cz0));
                     verts.Add(new Vector3(cx1, y, cz1)); verts.Add(new Vector3(cx0, y, cz1));
@@ -185,6 +266,67 @@ namespace AirportDemo
             go.isStatic = true;
         }
 
+        /// <summary>A band of pavement swept round an arc: the turn at each end of the
+        /// kerb loop. A loop road whose ends are square is not a loop - it is a
+        /// rectangle a car has to stop and reverse round - and squareness is most of
+        /// what made the forecourt read as a car park with a hole in it.
+        ///
+        /// Angles are degrees measured the usual way (0 along +X, rising toward +Z).</summary>
+        GameObject RoadArc(string name, Vector3 centre, float rInner, float rOuter,
+                           float a0, float a1, float y, Material mat, Transform parent, int steps = 28)
+        {
+            if (rOuter <= rInner || steps < 2) return null;
+            var verts = new List<Vector3>((steps + 1) * 2);
+            var uvs = new List<Vector2>((steps + 1) * 2);
+            var norms = new List<Vector3>((steps + 1) * 2);
+            var tris = new List<int>(steps * 6);
+            float span = (a1 - a0) * Mathf.Deg2Rad;
+            float arc = Mathf.Abs(span) * (rInner + rOuter) * 0.5f;
+            for (int i = 0; i <= steps; i++)
+            {
+                float a = a0 * Mathf.Deg2Rad + span * i / steps;
+                float c = Mathf.Cos(a), s = Mathf.Sin(a);
+                verts.Add(new Vector3(centre.x + c * rInner, y, centre.z + s * rInner));
+                verts.Add(new Vector3(centre.x + c * rOuter, y, centre.z + s * rOuter));
+                // along the arc in metres, across it in metres: the same units the
+                // straight legs are laid in, so the tarmac tiles through the turn
+                float u = arc * i / steps / 24f;
+                uvs.Add(new Vector2(u, 0f));
+                uvs.Add(new Vector2(u, (rOuter - rInner) / 24f));
+                norms.Add(Vector3.up); norms.Add(Vector3.up);
+            }
+            // Winding. On a straight plane "along" and "across" make a right-handed
+            // pair and the quad winds one way; on an arc the outward radial is the
+            // across, and it points the OPPOSITE way round that pair - so the obvious
+            // winding faces the ground and the turn is invisible from above with the
+            // grass showing through it. Sweeping backwards flips it again.
+            for (int i = 0; i < steps; i++)
+            {
+                int b = i * 2;
+                if (span > 0f)
+                {
+                    tris.Add(b); tris.Add(b + 3); tris.Add(b + 1);
+                    tris.Add(b); tris.Add(b + 2); tris.Add(b + 3);
+                }
+                else
+                {
+                    tris.Add(b); tris.Add(b + 1); tris.Add(b + 3);
+                    tris.Add(b); tris.Add(b + 3); tris.Add(b + 2);
+                }
+            }
+            var mesh = new Mesh { name = name };
+            mesh.SetVertices(verts); mesh.SetUVs(0, uvs); mesh.SetNormals(norms); mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = mat;
+            mr.shadowCastingMode = ShadowCastingMode.Off;
+            go.isStatic = true;
+            return go;
+        }
+
         /// <summary>The ramp: one slab of concrete from the west hangar line to the
         /// freight shed, with the airside service road in asphalt along its back edge
         /// so a truck's route is visible even when nothing is on it.</summary>
@@ -226,7 +368,19 @@ namespace AirportDemo
             readonly List<Vector3> _v = new List<Vector3>();
             readonly List<Vector3> _n = new List<Vector3>();
             readonly List<Vector2> _uv = new List<Vector2>();
-            readonly List<int> _t = new List<int>();
+            readonly List<int>[] _t;
+
+            /// <summary>Which shade the next quad is painted in - fresh, faded, worn.
+            /// One mesh still, one renderer still: the tiers are submeshes, so the paint
+            /// on a scrubbed touchdown zone can be a different grey from the paint at
+            /// the far end without three hundred more GameObjects.</summary>
+            public int Tier;
+
+            public Painter(int tiers = 1)
+            {
+                _t = new List<int>[Mathf.Max(1, tiers)];
+                for (int i = 0; i < _t.Length; i++) _t[i] = new List<int>();
+            }
 
             public int Count { get; private set; }
 
@@ -285,22 +439,41 @@ namespace AirportDemo
                 _v.Add(a); _v.Add(b); _v.Add(c); _v.Add(d);
                 for (int k = 0; k < 4; k++) _n.Add(Vector3.up);
                 _uv.Add(new Vector2(0f, 0f)); _uv.Add(new Vector2(1f, 0f)); _uv.Add(new Vector2(1f, 1f)); _uv.Add(new Vector2(0f, 1f));
-                _t.Add(i); _t.Add(i + 2); _t.Add(i + 1);
-                _t.Add(i); _t.Add(i + 3); _t.Add(i + 2);
+                var tris = _t[Mathf.Clamp(Tier, 0, _t.Length - 1)];
+                tris.Add(i); tris.Add(i + 2); tris.Add(i + 1);
+                tris.Add(i); tris.Add(i + 3); tris.Add(i + 2);
                 Count++;
             }
 
             public GameObject Emit(string name, Material mat, Transform parent)
+                => Emit(name, new[] { mat }, parent);
+
+            /// <summary>One mesh, one renderer, a submesh per tier that has anything in
+            /// it. An empty tier is dropped along with its material rather than left as
+            /// a submesh drawing nothing.</summary>
+            public GameObject Emit(string name, Material[] mats, Transform parent)
             {
-                if (_v.Count == 0) return null;
+                if (_v.Count == 0 || mats == null || mats.Length == 0) return null;
+                var used = new List<Material>();
+                var sets = new List<List<int>>();
+                for (int i = 0; i < _t.Length; i++)
+                {
+                    if (_t[i].Count == 0) continue;
+                    used.Add(mats[Mathf.Min(i, mats.Length - 1)]);
+                    sets.Add(_t[i]);
+                }
+                if (sets.Count == 0) return null;
+
                 var mesh = new Mesh { name = name, indexFormat = _v.Count > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16 };
-                mesh.SetVertices(_v); mesh.SetNormals(_n); mesh.SetUVs(0, _uv); mesh.SetTriangles(_t, 0);
+                mesh.SetVertices(_v); mesh.SetNormals(_n); mesh.SetUVs(0, _uv);
+                mesh.subMeshCount = sets.Count;
+                for (int i = 0; i < sets.Count; i++) mesh.SetTriangles(sets[i], i);
                 mesh.RecalculateBounds();
                 var go = new GameObject(name);
                 go.transform.SetParent(parent, false);
                 go.AddComponent<MeshFilter>().sharedMesh = mesh;
                 var mr = go.AddComponent<MeshRenderer>();
-                mr.sharedMaterial = mat;
+                mr.sharedMaterials = used.ToArray();
                 mr.shadowCastingMode = ShadowCastingMode.Off;
                 go.isStatic = true;
                 return go;

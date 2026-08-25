@@ -823,3 +823,199 @@ patrola) i čarter.
 - `Docs/airplan.py`: **346 provera, 0 padova** (bilo 306; +40 za četiri pozicije
   i za šetnju putnika).
 - **U Play-u još neviđeno.**
+
+## 13. Polje je smanjeno na okružni aerodrom, i prestalo je da bude sterilno (2026-08-25)
+
+*Korisnik: „trenutni aerodrom izgleda jako sterilno i prevelik je na mapi, daj plan kako da ga
+napravimo realisticnijim i da ima vise smisla za igru."*
+
+Dve odvojene mane sa jednim korenom: polje je crtano oko **trijeta**. Pista 1800 × 45 m je ADG
+III, i sve ostalo — ramena, RSA, rulna staza, platforma, ograda, mapa — bilo je krojeno na nju.
+Otud i 2100 × 800 m otiska, tj. cela obala grada. Sterilnost je bila druga posledica: toliko
+površine, a ništa na njoj osim sveže farbe.
+
+### Faza 1 — okružno polje (ADG II)
+
+| | pre | posle |
+|---|---|---|
+| pista | 1800 × 45 m | **1200 × 30 m** |
+| rame / RSA | 7.5 / ±76 | 3 / ±45 |
+| rulna staza | z 122, širina 18 | z 105, širina 15 |
+| konektori | 4 (`A1`–`A4`) | **3** (`A1`–`A3`), krajevi + sredina |
+| platforma | x −580…350 | x −360…210 |
+| hangari | 6, od x −520 | **5**, od x −320 |
+| terminal | širina 120 | 100 |
+| ograda | x −600…380, z 315 | x −400…280, z 310 |
+| ulica | z 432, x ±420 | z 415, x ±380 |
+| mapa | ±1050 × −300…500 | **±710 × −170…440** |
+| **površina** | 1.68 M m² | **0.87 M m² (52 %)** |
+
+- `MapX1` sada **izvedeno**: `RunwayHalf + EndGrass`. Skraćenje piste odmah smanjuje obalu.
+- `CityLayout.AirportFlank/AirportDepth` više nisu ručno prepisani brojevi — čitaju
+  `AirportSpec.MapX1` i `AirportDistrict.BoundaryZ`. Bila su to dva izvora iste cifre, držana
+  u koraku rukom; skraćena pista sa starim `1050` dala bi polju obalu koju ne koristi.
+- `JetRunwayMin = 1500`: ispod toga raspored je turboprop, a jet je čarter na krajnjem stajanku.
+  `runwayLength` je time postao lever koji nešto **znači**.
+- Popravljen bug: amber ivična svetla su bila „poslednjih 600 m", što na pisti od 1200 m znači
+  **sva** svetla. Sada `AmberZone` = četvrtina piste.
+
+### Faza 2 — habanje (`AirportDistrict.Wear.cs`)
+
+`Painter` je dobio **tier-ove**: jedan mesh, submesh po nijansi, pa farba može da bledi bez
+trista novih renderera. Tri stanja (`_whiteTiers`, `_yellowTiers`), a koliko je šta izlizano
+čita se iz **geometrije**, ne iz šuma: `RunwayWear(x)` po udaljenosti od praga, `TaxiwayWear(x)`
+po izlazima i ulazima na platformu. Pored toga: guma u zonama dodira i tragovi skretanja na
+krajevima piste i konektorima, mrlje ulja na stajankama i vezovima, zakrpe i zaliveni fugni na
+asfaltu, korov kroz šavove (nikad tamo gde avion prelazi), i **obodna staza** od zbijene zemlje
+uz žicu — jedina linija koja najviše govori da je polje ograđeno i obilaženo.
+
+### Faza 3 — klutter sa svrhom (`AirportDistrict.Detail.cs`)
+
+Oprema koja stoji i kad se ništa ne dešava: čokovi i čunjevi po stajankama, rezervne stepenice i
+niz kolica na stajankama koje raspored ne koristi; bund od stubića i lanca oko rezervoara sa
+buradima i tablama; **groblje aviona** — dva otpisana jednomotorca u travi iza skladišta i jedan
+oljušten trup u procepu pored radionice, položeni pod uglom koji nijedan stajni trap ne drži;
+šiblje **spolja** uz žicu (unutra se kosi, spolja ne).
+
+### Faza 4 — prilaz (`AirportDistrict.Approach.cs`)
+
+Put ka aerodromu više ne počinje iz ničega: **pumpa** i **kafana pored puta** su gotovi Town
+klasteri (`TownClusters.GasStation` / `Shop`) — isti oni koje grad već postavlja uz svaki put ka
+kvartu — plus bilbordi i **šalter rent-a-car** u zapadnom uglu parkinga. Sve stoji na travi
+između parkinga i krajeva prilaznog puta, dakle **na zemlji koju polje već drži**: kupiti
+atmosferu novom obalom bi poništilo fazu 1. `TownKit.Prop` se zove sa `groundY: 0f`, jer je
+`TownKit.Ground` hook onog kvarta koji ga je poslednji postavio.
+
+### Faza 5 — smisao za igru (`AirportDistrict.Trade.cs`, `AirportFreight.cs`)
+
+**Noćna tura.** Kombi čeka na bankini kod GA kapije, ulazi kroz žicu kad polje utihne, stoji uz
+avion na prvom vezu koliko treba, i odlazi na istok prilaznim putem. Minut kasnije civilni sedan
+koji ionako gleda kapiju kreće za njim. Ispričano **isključivo kretanjem** — dva vozila, po ruta,
+i gomila torbi koja je na betonu devedeset sekundi. Bez novog podsistema, bez kartice. Sat se
+poštuje kad ga ima (`DemoClock`, 21:30–04:30); bez sata radi na interval.
+
+**Mesta.** `FreightDock`, `GeneralAviationGate`, `FreightGate`, `FboDoor`, `TerminalDoor`,
+`FuelFarm`, `NightTransfer` — u **svetskim** koordinatama. Polje se gradi u svom okviru i nosi na
+obalu, pa misija koja hoće „utovarnu rampu" mora da dobije tačku; ovo je mesto odakle ta tačka
+dolazi. Namerno **nije** dirana `PropertyRegistry`/`BusinessMarker`: to je sloj *generisanog*
+grada, a aerodrom stoji u uličnom (RoadDemo), gde zgrade nemaju markere (v. napomenu u
+`GangRegistry`). Vlasništvo po zgradi u RoadDemo je zaseban sloj, ne deo ovog posla.
+
+`AirportKitBash.Version` → **7**: terminal, hangari i ARFF se peku iz `AirportSpec`, a te mere su
+se promenile. Auto-bake to hvata na Play, korisnik ne pokreće meni.
+
+### Dodatak — pavement: atlas vs. tiling (isti dan)
+
+*Korisnik: „koristi neki drugi pavement za ovaj aerodromski blok, ovaj iz palm city mi ne ide" +
+slika platforme.*
+
+Slika je pokazivala roze-bež **šahovsku tablu**: šav svakih 15 m preko cele platforme. Dva
+uzroka, oba morala da padnu:
+
+1. **Materijal.** `Sidewalk_01` / `Road_Grey_01` iz Palm City-ja su **atlas** parčad — mala
+   oblast zajedničke stranice, crtana za pločicu trotoara od 5 m. Preko 80.000 m² platforme to
+   je bilo 80.000 m² iste pločice.
+2. **UV.** `FlatPlane` je mapirao **svaku ćeliju** na isti UV pravougaonik `[0.04, 0.96]` sa
+   rotacijom po ćeliji. Za atlas materijal to je obavezno; za tiling materijal je upravo ono što
+   pravi šav.
+
+Sada: `AirportKit.ConcreteMat` je zatvorski `Concrete_Dark_01` (tiling, pisan za livene ploče), a
+`FlatPlane` ima `atlas` zastavicu — kad je `false` (podrazumevano za sve velike površine) UV ide
+**kontinuirano iz svetske pozicije**, pa dve susedne ćelije dele ivicu i u UV-u i u prostoru.
+Beton, asfalt i rame su **jedan** materijal u tri tona (`Surface(name, tone, fallback)`), pa se
+slažu bez spoja.
+
+Varijaciju više ne daje tekstura nego **livenje**: `BuildPours()` boji poneki zaliv od 30 m u
+nijansu svetliju ili tamniju. Tako izgleda prava platforma — pedeset livenja kroz trideset
+godina, nijedno iste boje — i to je jedina varijacija koja ne izgleda kao ponavljanje.
+
+Kamera demoa je okrenuta: pivot je stajao **na** platformi (z 200) i gledao ka gradu, pa je pista
+bila iza leđa. Sada pivot z 30, distanca 430 — pista u prvom planu, pa rulna staza, vezovi,
+platforma, hangari, terminal.
+
+### Dodatak — zgrade v8, i jedan nezatvoren trag (isti dan)
+
+*Korisnik: „poradi malo na zgradicama ne svidjaju mi se".*
+
+Terminal je bio **100 m jednospratnice pod jednim neprekinutim pojasom prozora** — hodnik, ne
+terminal: nema sredine u koju se ulazi, nema ničega po čemu se prepoznaje sa puta. `Version = 8`:
+
+- **Hala polazaka**: sredina ide na dva sprata (`ux = 23`, dubina skoro puna), zastakljena i ka
+  platformi i ka kolovozu. Terminal sada ima sredinu.
+- **Pilastri** svakih 12.5 m lome pojas prozora na krilima.
+- **Nadstrešnica na stubovima** nad ulazom sa kolovoza (26 × 6.8 m) + plava traka — jedina stvar
+  koja sa sto metara kaže „ovuda se ulazi".
+- **Instalacije po celom krovu** (klime, ventilacije, stepenišna kućica, rezervoar, satelitske
+  antene) umesto tri kutije na sredini.
+- Natpis `AIRPORT` prešao na fasadu **hale**, gde se čita sa puta.
+- `RoofDeck` — nov materijal, bledi šljunak (0.72) umesto betona: ravan krov je najveća površina
+  koju kamera uopšte vidi od terminala.
+
+**Nezatvoreno.** Krov se i dalje renderuje tamnije nego što mu je albedo — i to tamnije od
+susednog betona platforme, iako je svetliji materijal. Isključeno merenjem, ne nagađanjem:
+
+- **nije materijal** — obojen u crveno 0.9, krov je pocrveneo (dakle to JESTE deck, i tint radi);
+- **nije senka** — `receiveShadows = false` na svim zgradama ne menja ništa;
+- **nije shadow distance** — 300 m, kamera na 135 m.
+
+Ostaje da se proveri normala generisanih `Slab` ploča posle merge-a (`ScenePerf`) i ambijent
+(`ambientMode = Skybox` uz `reflectionProbe = false` u `AirportDemoBuilder` — bez probe-a
+ambijent na licima okrenutim naviše može biti skoro nula). To je sledeći korak, nije urađen.
+
+### Dodatak — parking i kružni tok (isti dan)
+
+*Korisnik: „parking na ulazu i kruzni tok su preprosti".*
+
+**Kružni tok** je bio pravougaonik: dve prave i dva **oštra ugla**. Sad je trkačka staza — krajevi
+su polukrugovi (`RoadArc`, nov pomoćnik u `Ground.cs`), poluprečnik ose 12 m, tj. tačno pola
+razmaka između krakova, pa se luk sastaje sa svakim krakom pod pravim uglom. Ostrvo u sredini
+prati oblik (stadion, ne pravougaonik), ima **betonski ivičnjak** celom dužinom, drveće, žbunje,
+klupe, korpe i lampe. Dodato: **strelice** na oba kraka (jednosmerna petlja bez strelice je samo
+put), **četiri zebre** (po dve preko svakog kraka, na x = ±30, van puta spura), i **šrafirani nos**
+tamo gde spur ulazi u povratni krak. `_loopRoute` sada ide tačkama po luku — vozač koji prati
+oštar ugao seče preko oba kolovoza.
+
+**Trap zabeležen:** `RoadArc` je prvo bio nevidljiv — trougao okrenut nadole, video se travnjak
+kroz njega. Na ravnoj ploči „duž" i „popreko" čine desnu trojku i quad se namotava jednim
+smerom; na luku je „popreko" **radijalno napolje**, što je suprotan smer te trojke. Očigledno
+namotavanje gleda u zemlju. Isto važi za `RoadArc` sa `rInner = 0` (lepeza).
+
+**Parking** je bio jedan pravougaonik traka — i, gore od toga, **spur put je išao pravo kroz
+njega**, preko obeleženih mesta (`LayRoadAlongZ(ApproachX, …)` na x = 0, parking x −140…120).
+Sad su **dva bloka** levo i desno od spura (`SpurVerge = 15`), a to je istovremeno ispravka
+preklapanja i tačan raspored — tim putem se u parking i ulazi:
+
+- vozna traka uz stranu ka spuru, sa strelicama i ivičnim linijama;
+- **travnata ostrva** na krajevima redova, da red ne izlazi u traku, sa žbunjem;
+- **ulaz po bloku**: grlo sa spura, rampa, kućica sa kartama, tabla, čunjevi;
+- **žute široke boksove** uz pešačku stazu (prvi red), belo ostalo;
+- **pešačka staza** od parkinga do zebri, pa preko ostrva do kolovoza — dotad se sa parkinga do
+  terminala moglo samo kolovozom.
+
+`WalkObstacles` na ostrvu blokira **samo zasađene deonice**, ne i dve staze: blokirati ostrvo
+celo znači poslati sve pešake u saobraćajnu traku.
+
+### Dodatak — ljubičasto: dva materijala koja fale iz Plaza paketa (isti dan)
+
+*Korisnik: „imas ljubicaste gluposti" + slika.*
+
+Nadstrešnica nad ulazom, njeni stubovi, bilbordi i autobuska stanica bili su magenta. **Nije
+shader** (URP crta ceo grad bez problema) — slot za materijal je bio **prazan**, a Unity prazan
+materijal crta magentom.
+
+Uzrok: `PolygonMapsPlaza` je uvezen **bez glavnog atlasa**. GUID `fb5a8f1b9970d0f41a73e9afcbe48579`
+(glavni materijal) i `02ce1768db094cc4aa90010892c7576a` (staklo) ne postoje nigde u projektu, a na
+njih pokazuje **30 prefaba** paketa. Ni atlas tekstura ne postoji, pa se originalni izgled ne može
+vratiti.
+
+Popravka je na **nivou asseta, ne na aerodromu**: napravljena su dva materijala u
+`Assets/Synty/PolygonMapsPlaza/Materials/` (`PolygonShops_01_A`, `PolygonShops_Glass_02`,
+URP/Lit, neutralan ton i staklo), a njihovim `.meta` fajlovima su upisani **tačno ti GUID-ovi**
+koji su falili. Tako se svih 30 prefaba rešava odjednom i svuda, bez ijedne linije runtime koda i
+bez zaobilaženja u `AirportKit`.
+
+Provereno: svih pet Plaza komada koje aerodrom koristi ima **0 praznih slotova** od ukupno 8.
+
+Merenje je bilo ključno — prvi pokušaj je tražio „nepodržan shader" i vratio 55 vrsta, sve
+lažno pozitivne (Synty shaderi koji rade). Tačan upit je bio `sharedMaterials` sa `m == null`,
+koji je vratio tačno 8 vrsta i imena objekata.

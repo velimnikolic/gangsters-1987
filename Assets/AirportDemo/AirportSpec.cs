@@ -6,16 +6,21 @@ namespace AirportDemo
     // bakes the buildings at build time and the builder that lays the field at Play
     // are working off the same numbers.
     //
-    // The field is a 1987 American regional airport: one runway long and wide enough
-    // for the trijet that brings the morning flight in, a full-length parallel
-    // taxiway, a continuous ramp behind it, a row of box hangars and a maintenance
-    // shop at the west end for the light aeroplanes, the FBO and its fuel island, the
-    // terminal and the control tower in the middle, the fire station, the freight
-    // shed and the fuel farm at the east end, the perimeter fence, and the landside -
-    // kerb loop, car park, approach road - beyond it.
+    // The field is a 1987 American COUNTY airport: one runway long enough for the
+    // turboprop that works the scheduled runs, a full-length parallel taxiway, a
+    // continuous ramp behind it, a row of box hangars and a maintenance shop at the
+    // west end for the light aeroplanes, the FBO and its fuel island, the terminal and
+    // the control tower in the middle, the fire station, the freight shed and the fuel
+    // farm at the east end, the perimeter fence, and the landside - kerb loop, car
+    // park, approach road - beyond it.
     //
-    // Geometry follows FAA AC 150/5300-13 for Airplane Design Group III (wingspans of
-    // 79 to 118 ft, which is what a 727 and a Dash 8 are) and approach category C;
+    // It is deliberately NOT an international: 4,000 ft of runway and a hundred feet
+    // of width is what the county built when the airlines came, and it is a third of
+    // the ground a 6,000 ft trijet field takes. On the city map that difference is the
+    // whole point - the field used to eat an entire shore.
+    //
+    // Geometry follows FAA AC 150/5300-13 for Airplane Design Group II (wingspans of
+    // 49 to 79 ft, which is what a Dash 8 and a King Air are) and approach category B;
     // the marking dimensions are the runway markings circular's, AC 150/5340-1.
     //
     // Axes: the runway lies along X with its centreline at z = 0 and its west
@@ -48,11 +53,16 @@ namespace AirportDemo
         public const float CommuterSpan = 27f;
         public const float CommuterLength = 25f;
         public const float CommuterHeight = 7.5f;
-        /// <summary>The trijet: the one aeroplane a field this size sees that needs
-        /// the whole runway. A 727 is 108 ft across and 153 ft long.</summary>
+        /// <summary>The jet. A county field does not have one on the schedule - it sees
+        /// one when a charter or a company aeroplane comes in, and only if the runway is
+        /// long enough for it (<see cref="JetRunwayMin"/>).</summary>
         public const float JetSpan = 33f;
         public const float JetLength = 47f;
         public const float JetHeight = 10.5f;
+        /// <summary>The shortest runway a loaded jet will use out of a field like this.
+        /// Below it the schedule is turboprops and the jets go to the city's field -
+        /// which at 1,200 m is exactly what this one is.</summary>
+        public const float JetRunwayMin = 1500f;
         /// <summary>The light helicopter on the pad: rotor diameter, and the fuselage.</summary>
         public const float HeliRotor = 10f;
         public const float HeliLength = 11.5f;
@@ -63,102 +73,114 @@ namespace AirportDemo
         public const float BiggestLength = JetLength;
 
         // ------------------------------------------------------------ runway
-        /// <summary>6,000 ft: what a loaded trijet wants out of a regional field on a
-        /// warm day, and what those fields were lengthened to when the jets came.</summary>
-        public const float RunwayLength = 1800f;
-        /// <summary>150 ft - ADG III.</summary>
-        public const float RunwayWidth = 45f;
+        /// <summary>4,000 ft: what the county lengthened the strip to when the airline
+        /// began the scheduled run, and all a loaded turboprop wants. A jet needs half
+        /// as much again (<see cref="JetRunwayMin"/>), which is why one is a visitor
+        /// here and not a timetable.</summary>
+        public const float RunwayLength = 1200f;
+        /// <summary>100 ft - ADG II.</summary>
+        public const float RunwayWidth = 30f;
         public const float RunwayHalfWidth = RunwayWidth * 0.5f;
-        /// <summary>Paved shoulder outside the runway edge, 25 ft.</summary>
-        public const float RunwayShoulder = 7.5f;
+        /// <summary>Paved shoulder outside the runway edge, 10 ft.</summary>
+        public const float RunwayShoulder = 3f;
         /// <summary>Half the runway's length: the thresholds sit at -/+ this.</summary>
         public const float RunwayHalf = RunwayLength * 0.5f;
-        /// <summary>Runway safety area half width (500 ft wide RSA, ADG III): kept
+        /// <summary>Runway safety area half width (300 ft wide RSA, ADG II): kept
         /// clear of everything but frangible lights.</summary>
-        public const float SafetyHalf = 76f;
+        public const float SafetyHalf = 45f;
+        /// <summary>Grass beyond each threshold and out to the map's edge. The field is
+        /// this much wider than its runway either side, and nothing else decides how
+        /// much of a shore it takes (<see cref="MapX1"/>).</summary>
+        public const float EndGrass = 110f;
 
         // runway markings (AC 150/5340-1, visual runway)
-        /// <summary>Threshold bar: on a 150 ft runway, twelve stripes 150 ft long and
-        /// 5.75 ft wide, in two groups of six either side of the centreline.</summary>
-        public const int ThresholdStripes = 12;
-        public const float ThresholdStripeLength = 45f;
+        /// <summary>Threshold bar: on a 100 ft runway, eight stripes 80 ft long and
+        /// 5.75 ft wide, in two groups of four either side of the centreline.</summary>
+        public const int ThresholdStripes = 8;
+        public const float ThresholdStripeLength = 24f;
         public const float ThresholdStripeWidth = 1.75f;
         public const float ThresholdStripeGap = 1.75f;
         /// <summary>The wider gap over the centreline between the two groups.</summary>
         public const float ThresholdCentreGap = 3.5f;
         /// <summary>The threshold bar set back from the paved end.</summary>
-        public const float ThresholdOffset = 6f;
-        /// <summary>Runway designator ("09" / "27"), 60 ft figures.</summary>
-        public const float DesignatorHeight = 18f;
-        public const float DesignatorStroke = 3f;      // the pen the figures are drawn with
-        public const float DesignatorOffset = 62f;     // threshold to the figures' near edge
-        /// <summary>Centreline: 120 ft stripe, 80 ft gap, 3 ft wide.</summary>
-        public const float CentrelineStripe = 36f;
-        public const float CentrelineGap = 24f;
+        public const float ThresholdOffset = 5f;
+        /// <summary>Runway designator ("09" / "27"), 40 ft figures.</summary>
+        public const float DesignatorHeight = 12f;
+        public const float DesignatorStroke = 2f;      // the pen the figures are drawn with
+        public const float DesignatorOffset = 40f;     // threshold to the figures' near edge
+        /// <summary>Centreline: 100 ft stripe, 65 ft gap, 3 ft wide.</summary>
+        public const float CentrelineStripe = 30f;
+        public const float CentrelineGap = 20f;
         public const float CentrelineWidth = 0.9f;
-        /// <summary>Aiming point: a pair of bars 150 x 20 ft, 1,000 ft in.</summary>
+        /// <summary>Aiming point: a pair of bars 100 x 15 ft, 1,000 ft in.</summary>
         public const float AimingPointFrom = 300f;
-        public const float AimingBarLength = 45f;
-        public const float AimingBarWidth = 6f;
-        /// <summary>Inner edge from the centreline: 72 ft between the two bars on a
-        /// runway this wide, so the pair sits 11.25 to 17.25 m out.</summary>
-        public const float AimingBarInner = 11.25f;
+        public const float AimingBarLength = 30f;
+        public const float AimingBarWidth = 4.5f;
+        /// <summary>Inner edge from the centreline: 57 ft between the two bars on a
+        /// runway this wide, so the pair sits 8.5 to 13 m out.</summary>
+        public const float AimingBarInner = 8.5f;
         /// <summary>Runway side stripe, 3 ft wide, its outer edge on the pavement edge.</summary>
         public const float EdgeStripeWidth = 0.9f;
+        /// <summary>How much of each end carries amber edge lights instead of white -
+        /// the runway shortening ahead of the pilot. A quarter of the runway either
+        /// end; on 1,200 m that is the last 300.</summary>
+        public const float AmberZone = RunwayLength * 0.25f;
 
         // ------------------------------------------------------------ taxiways
-        /// <summary>Taxiway A: parallel, full length, 60 ft wide (ADG III), its
-        /// centreline 400 ft from the runway's.</summary>
-        public const float TaxiwayZ = 122f;
-        public const float TaxiwayWidth = 18f;
+        /// <summary>Taxiway A: parallel, full length, 50 ft wide (ADG II), its
+        /// centreline 345 ft from the runway's.</summary>
+        public const float TaxiwayZ = 105f;
+        public const float TaxiwayWidth = 15f;
         public const float TaxiwayHalf = TaxiwayWidth * 0.5f;
-        public const float TaxiwayShoulder = 7.5f;
+        public const float TaxiwayShoulder = 3f;
         public const float TaxiCentrelineWidth = 0.15f;
-        /// <summary>Runway holding position, 250 ft from the runway centreline.</summary>
-        public const float HoldShortZ = 76f;
+        /// <summary>Runway holding position, 200 ft from the runway centreline.</summary>
+        public const float HoldShortZ = 60f;
         /// <summary>The holding position marking: two solid then two dashed 6 in lines,
         /// the solid pair on the side the aircraft holds.</summary>
         public const float HoldBarWidth = 0.15f;
         public const float HoldBarGap = 0.15f;
-        /// <summary>Taxiway object free area half width, ADG III - nothing stands in
+        /// <summary>Taxiway object free area half width, ADG II - nothing stands in
         /// it, so no stand may begin before TaxiwayZ plus this.</summary>
-        public const float TaxiObjectFreeHalf = 40f;
-        /// <summary>Where the connectors leave the runway: the two ends and two in the
-        /// middle, so a landing rolls out onto whichever is nearest.</summary>
-        public static readonly float[] ConnectorX = { -860f, -290f, 290f, 860f };
-        public static readonly string[] ConnectorName = { "A1", "A2", "A3", "A4" };
+        public const float TaxiObjectFreeHalf = 26f;
+        /// <summary>Where the connectors leave the runway: the two ends and one at the
+        /// middle, abeam the terminal, so a landing rolls out onto whichever is nearest.
+        /// Three is what 4,000 ft of runway is given; the four-exit field was the
+        /// 6,000 ft one.</summary>
+        public static readonly float[] ConnectorX = { -570f, 0f, 570f };
+        public static readonly string[] ConnectorName = { "A1", "A2", "A3" };
 
         // ------------------------------------------------------------ apron
         /// <summary>The ramp: one slab of concrete behind the taxiway, from the west
         /// hangar line to the freight shed.</summary>
-        public const float ApronZ0 = 150f;
-        public const float ApronZ1 = 265f;
-        public const float ApronX0 = -580f;
-        public const float ApronX1 = 350f;
+        public const float ApronZ0 = 145f;
+        public const float ApronZ1 = 260f;
+        public const float ApronX0 = -360f;
+        public const float ApronX1 = 210f;
         /// <summary>Where aircraft may actually stand: clear of the taxiway's object
-        /// free area, whose edge is 40 m from its centreline.</summary>
-        public const float StandZ0 = 170f;
+        /// free area, whose edge is 26 m from its centreline.</summary>
+        public const float StandZ0 = 165f;
         /// <summary>Apron entrance taxilanes off the parallel taxiway.</summary>
-        public static readonly float[] ApronEntryX = { -470f, -80f, 80f, 260f };
-        public const float TaxilaneWidth = 18f;
+        public static readonly float[] ApronEntryX = { -280f, -120f, 60f, 180f };
+        public const float TaxilaneWidth = 15f;
 
         // tie-downs on the general aviation ramp - light aeroplanes only
-        public const float TieDownX0 = -540f;
-        public const float TieDownX1 = -375f;
+        public const float TieDownX0 = -330f;
+        public const float TieDownX1 = -195f;
         /// <summary>Wingtip to wingtip: a light single is 11 m across, so 15 m of pitch
         /// leaves 4 m between two of them standing side by side.</summary>
         public const float TieDownPitch = 15f;
         public const float TieDownRowPitch = 20f;   // nose to tail plus a walkway
         public const int TieDownRows = 3;
-        public const float TieDownRowZ0 = 178f;
+        public const float TieDownRowZ0 = 173f;
 
-        // the airline stands, nose in to the terminal. Four of them: sixty metres
-        // of pitch leaves twenty-seven between two trijets' wingtips, which is what a
-        // regional field allowed itself, and four stands is what makes the ramp look
+        // the airline stands, nose in to the terminal. Four of them: fifty metres of
+        // pitch leaves twenty-three between two turboprops' wingtips, which is what a
+        // county field allowed itself, and four stands is what makes the ramp look
         // worked rather than visited.
-        public static readonly float[] CommuterStandX = { -90f, -30f, 30f, 90f };
+        public static readonly float[] CommuterStandX = { -75f, -25f, 25f, 75f };
         /// <summary>Where an airliner's nosewheel stops on its stand.</summary>
-        public const float CommuterStandZ = 246f;
+        public const float CommuterStandZ = 241f;
         /// <summary>The gate door a stand's passengers walk to and from, in the
         /// terminal's apron wall. The outer stands are wider apart than the building,
         /// so their walk is a diagonal to the end door - which is what it was.</summary>
@@ -170,118 +192,127 @@ namespace AirportDemo
         }
         public const float GateDoorZ = BuildingFrontZ - 2f;
         /// <summary>The helipad's centre, at the east end of the ramp.</summary>
-        public const float HelipadX = 150f;
-        public const float HelipadZ = 200f;
+        public const float HelipadX = 140f;
+        public const float HelipadZ = 195f;
         public const float HelipadHalf = 4.5f;
         public const float HelipadCircle = 18f;
 
         // ------------------------------------------------------------ buildings
         /// <summary>The airside service road, between the ramp and the buildings.</summary>
-        public const float ServiceRoadZ = 272f;
+        public const float ServiceRoadZ = 267f;
         public const float ServiceRoadWidth = 6f;
         /// <summary>The building line: every apron-facing wall stands here.</summary>
-        public const float BuildingFrontZ = 280f;
+        public const float BuildingFrontZ = 275f;
 
-        // box hangar row (west)
-        public const int Hangars = 6;
+        // box hangar row (west). Five sheds, not six: a county field's T-hangar line is
+        // short, and the sixth was only ever there to fill a ramp that was too long.
+        public const int Hangars = 5;
         public const float HangarWidth = 21f;       // 7 metal modules of 3 m
         public const float HangarDepth = 20f;       // two 10 m roof spans
         public const float HangarHeight = 6f;       // two courses of 3 m wall
         public const float HangarDoorWidth = 18f;   // three 6 m sliding leaves
         public const float HangarPitch = 27f;
-        public const float HangarRowX0 = -520f;
+        public const float HangarRowX0 = -320f;
 
-        public const float MaintHangarX = -300f;
+        public const float MaintHangarX = -130f;
         public const float MaintHangarWidth = 36f;
         public const float MaintHangarDepth = 26f;
         public const float MaintHangarDoorWidth = 30f;
 
-        public const float FboX = -220f;
+        public const float FboX = -70f;
         public const float FboWidth = 20f;
         public const float FboDepth = 12f;
         /// <summary>The avgas island, out on the ramp in front of the FBO.</summary>
-        public const float FuelIslandX = -220f;
-        public const float FuelIslandZ = 240f;
+        public const float FuelIslandX = -70f;
+        public const float FuelIslandZ = 235f;
 
         public const float TerminalX = 0f;
         /// <summary>Wide enough to front the airline stands and their gate doors.</summary>
-        public const float TerminalWidth = 120f;
+        public const float TerminalWidth = 100f;
         public const float TerminalDepth = 30f;
 
-        public const float TowerX = 70f;
-        public const float TowerZ = 292f;
+        public const float TowerX = 62f;
+        public const float TowerZ = 287f;
         public const float TowerBase = 12f;
         public const int TowerStoreys = 6;
         public const float StoreyHeight = 3.01f;
 
-        public const float ArffX = 130f;
+        public const float ArffX = 105f;
         public const float ArffWidth = 18f;
         public const float ArffDepth = 15f;
 
-        public const float CargoX = 230f;
+        public const float CargoX = 165f;
         public const float CargoWidth = 30f;
         public const float CargoDepth = 20f;
 
-        public const float FuelFarmX = 312f;
-        public const float FuelFarmZ = 286f;
+        public const float FuelFarmX = 225f;
+        public const float FuelFarmZ = 281f;
 
         // ------------------------------------------------------------ fence, landside
         /// <summary>The wire: behind the buildings, tying into the terminal's back wall,
         /// which is the boundary itself - as it is at any small field.</summary>
-        public const float FenceZ = 315f;
+        public const float FenceZ = 310f;
         public const float FenceHeight = 2.93f;     // the police pack's panel
         public const float FenceModule = 2.5f;
-        public const float FenceX0 = -600f;
-        public const float FenceX1 = 380f;
-        /// <summary>Where the wire turns south down each flank of the field.</summary>
-        public const float FenceSouthZ = -90f;
+        public const float FenceX0 = -400f;
+        public const float FenceX1 = 280f;
+        /// <summary>Where the wire turns south down each flank of the field. Outside the
+        /// runway safety area, which nothing but a frangible light may stand in.</summary>
+        public const float FenceSouthZ = -120f;
 
-        /// <summary>The two gates through the wire: general aviation (west, by the
-        /// hangars) and freight (east, by the shed).</summary>
-        public const float GaGateX = -345f;
-        public const float CargoGateX = 275f;
+        /// <summary>The two gates through the wire: general aviation (west, past the
+        /// hangar line) and freight (east, by the shed).</summary>
+        public const float GaGateX = -350f;
+        /// <summary>Between the freight shed's east wall (x 180) and the tank farm's
+        /// bund (x 210): a gate road that ran up against the bollards would have a
+        /// lorry turning in with two metres to spare.</summary>
+        public const float CargoGateX = 197f;
         public const float GateHalf = 5f;
 
         /// <summary>The kerb loop in front of the terminal: one-way, anticlockwise.</summary>
-        public const float KerbZ = 326f;            // the drop-off kerb line
-        public const float LoopRoadZ = 332f;        // the near leg's centre
-        public const float LoopBackZ = 356f;        // the return leg's centre
-        public const float LoopHalfX = 110f;
+        public const float KerbZ = 321f;            // the drop-off kerb line
+        public const float LoopRoadZ = 327f;        // the near leg's centre
+        public const float LoopBackZ = 351f;        // the return leg's centre
+        public const float LoopHalfX = 90f;
         public const float LoopRoadHalf = 5f;
 
-        public const float ParkX0 = -190f;
-        public const float ParkX1 = 170f;
-        public const float ParkZ0 = 368f;
-        public const float ParkZ1 = 412f;
+        public const float ParkX0 = -140f;
+        public const float ParkX1 = 120f;
+        public const float ParkZ0 = 363f;
+        public const float ParkZ1 = 401f;
         /// <summary>A car park bay, 9 x 18 ft.</summary>
         public const float BayWidth = 2.7f;
         public const float BayDepth = 5.4f;
         public const float ParkAisle = 6.5f;
 
         /// <summary>The approach road, StreetKit's own street, running out of the map.</summary>
-        public const float StreetZ = 432f;
-        public const float StreetX0 = -420f;
-        public const float StreetX1 = 420f;
+        public const float StreetZ = 415f;
+        public const float StreetX0 = -380f;
+        public const float StreetX1 = 380f;
         /// <summary>Where the terminal loop meets the street.</summary>
         public const float ApproachX = 0f;
 
         // ------------------------------------------------------------ the field
-        public const float MapX0 = -1050f;
-        public const float MapX1 = 1050f;
-        public const float MapZ0 = -300f;
-        public const float MapZ1 = 500f;
+        /// <summary>The field's own ground, and with it how much shore the city has to
+        /// hand over (CityLayout.AirportFlank reads these): the runway, and
+        /// <see cref="EndGrass"/> of grass past each threshold.</summary>
+        public const float MapX1 = RunwayHalf + EndGrass;
+        public const float MapX0 = -MapX1;
+        public const float MapZ0 = -170f;
+        public const float MapZ1 = 440f;
 
         /// <summary>Where the windsock and its segmented circle stand: between the
-        /// runway and the taxiway, out of everybody's way, seen from the whole field.</summary>
+        /// runway and the taxiway, outside the safety area, out of everybody's way and
+        /// seen from the whole field.</summary>
         public const float WindsockX = -180f;
-        public const float WindsockZ = 96f;
-        public const float SegmentedCircleRadius = 15f;
+        public const float WindsockZ = 62f;
+        public const float SegmentedCircleRadius = 12f;
 
         /// <summary>PAPI: four boxes on the left of the runway as the pilot sees it on
         /// approach to 09 - which is the north side - abeam the aiming point.</summary>
-        public const float PapiZ = 34f;
+        public const float PapiZ = 26f;
         public const float PapiFromThreshold = 300f;
-        public const float PapiBoxPitch = 6f;
+        public const float PapiBoxPitch = 4.5f;
 
         // ------------------------------------------------------------ speeds
         /// <summary>Taxi: 15 kt on the straight, walking pace round a corner. The same
@@ -302,8 +333,8 @@ namespace AirportDemo
         /// aeroplane going round stays in frame with the runway.</summary>
         public const float PatternAltitude = 220f;
         /// <summary>The downwind leg, from the runway centreline.</summary>
-        public const float PatternWidth = 700f;
-        public const float FinalLength = 1700f;
+        public const float PatternWidth = 550f;
+        public const float FinalLength = 1400f;
         public const float ClimbAngle = 6f;         // degrees
         public const float DescentAngle = 3f;
 

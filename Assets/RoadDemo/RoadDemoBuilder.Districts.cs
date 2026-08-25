@@ -427,6 +427,12 @@ namespace RoadDemo
                 var cityNode = NearestEdgeNode(slot, world, vertical, out var faceWorld);
                 if (cityNode == null) continue;
 
+                // the first road out to each quarter gets a filling station halfway, now
+                // that halfway is a real drive through the wild. WHERE it stands is
+                // settled here, before a tile of the street is laid, because the street
+                // has to leave two gaps in its pavement for the forecourt's crossovers.
+                var pump = p == 0 ? PlanWayside(faceWorld, world, slot) : null;
+
                 // the carriageway: along the axis the pin line runs on, from the
                 // district's boundary to the junction's face - stopping short of the
                 // freeway's link road where one crosses, whose crossroads is laid
@@ -435,29 +441,30 @@ namespace RoadDemo
                 {
                     float cx = cityNode.X;
                     float z0 = Mathf.Min(world.z, faceWorld.z), z1 = Mathf.Max(world.z, faceWorld.z);
-                    LayConnector(slot.edge, true, cx, z0, z1);
+                    LayConnector(slot.edge, true, cx, z0, z1, pump);
                 }
                 else
                 {
                     float cz = cityNode.Z;
                     float x0 = Mathf.Min(world.x, faceWorld.x), x1 = Mathf.Max(world.x, faceWorld.x);
-                    LayConnector(slot.edge, false, cz, x0, x1);
+                    LayConnector(slot.edge, false, cz, x0, x1, pump);
                 }
 
                 ReserveCorridor(faceWorld, world);
                 WeldRoads(cityNode, portal, faceWorld, world, frame);
                 WeldPavement(cityNode, portal, slot);
 
-                // the first road out to each quarter gets a filling station halfway,
-                // now that halfway is a real drive through the wild
-                if (p == 0) WaysideStation(faceWorld, world, slot);
+                // and it is built only now, because a customer needs a lane to arrive on
+                // and the lane graph is welded above
+                StandWayside(pump);
             }
         }
 
         /// <summary>The connector's carriageway, split around the freeway's link road
         /// where that road crosses it: the crossroads there belongs to the link road's
         /// own pass, and a street laid straight through it would double the tiles.</summary>
-        void LayConnector(CityEdge edge, bool vertical, float centre, float lo, float hi)
+        void LayConnector(CityEdge edge, bool vertical, float centre, float lo, float hi,
+                          WaysidePlan pump)
         {
             const float Gap = StreetKit.StreetHalf + StreetKit.Cell;
 
@@ -470,41 +477,23 @@ namespace RoadDemo
                 ? (new Vector2(centre, lo), new Vector2(centre, hi), StreetKit.StreetHalf)
                 : (new Vector2(lo, centre), new Vector2(hi, centre), StreetKit.StreetHalf));
 
+            // every stretch goes through LayStreet, which is what leaves the two gaps in
+            // the pavement where a filling station fronts onto it
             if (BeltOn && _beltU.TryGetValue(edge, out float beltU) && beltU > lo + 1f && beltU < hi - 1f)
             {
                 // across the belt freeway: the street stops at the pad's edge either side
                 // of it (the pad and the junction are the belt's own, BuildBelt)
-                if (vertical)
-                {
-                    if (beltU - BeltPadHalf - lo > 1f) _connectorKit.LayAlongZ(centre, lo, beltU - BeltPadHalf);
-                    if (hi - (beltU + BeltPadHalf) > 1f) _connectorKit.LayAlongZ(centre, beltU + BeltPadHalf, hi);
-                }
-                else
-                {
-                    if (beltU - BeltPadHalf - lo > 1f) _connectorKit.LayAlongX(centre, lo, beltU - BeltPadHalf);
-                    if (hi - (beltU + BeltPadHalf) > 1f) _connectorKit.LayAlongX(centre, beltU + BeltPadHalf, hi);
-                }
+                LayStreet(vertical, centre, lo, beltU - BeltPadHalf, pump);
+                LayStreet(vertical, centre, beltU + BeltPadHalf, hi, pump);
             }
             else if (_highwayEnds.TryGetValue(edge, out var end) && end.Vertical == vertical &&
                 end.LinkU > lo + 1f && end.LinkU < hi - 1f)
             {
-                if (vertical)
-                {
-                    if (end.LinkU - Gap - lo > 1f) _connectorKit.LayAlongZ(centre, lo, end.LinkU - Gap);
-                    if (hi - (end.LinkU + Gap) > 1f) _connectorKit.LayAlongZ(centre, end.LinkU + Gap, hi);
-                }
-                else
-                {
-                    if (end.LinkU - Gap - lo > 1f) _connectorKit.LayAlongX(centre, lo, end.LinkU - Gap);
-                    if (hi - (end.LinkU + Gap) > 1f) _connectorKit.LayAlongX(centre, end.LinkU + Gap, hi);
-                }
+                LayStreet(vertical, centre, lo, end.LinkU - Gap, pump);
+                LayStreet(vertical, centre, end.LinkU + Gap, hi, pump);
                 _linkJunctions.Add((edge, centre));
             }
-            else if (hi - lo > 1f)
-            {
-                if (vertical) _connectorKit.LayAlongZ(centre, lo, hi);
-                else _connectorKit.LayAlongX(centre, lo, hi);
-            }
+            else LayStreet(vertical, centre, lo, hi, pump);
         }
 
         /// <summary>The ground the connecting street stands on: flat at the city's own

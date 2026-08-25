@@ -44,8 +44,11 @@ namespace AirportDemo
         // ---------------------------------------------------------------- settings
 
         public int seed = 1987;
-        /// <summary>Runway length in metres. 1800 m (6,000 ft) takes the trijet; 1200 is
-        /// a plain general aviation strip and the jet will not use it.</summary>
+        /// <summary>Runway length in metres. 1200 m (4,000 ft) is what the county built
+        /// and what the turboprop schedule wants; at 1500 m or more
+        /// (<see cref="AirportSpec.JetRunwayMin"/>) the jets come too. The grass, the
+        /// wire and the map are laid to <see cref="AirportSpec.RunwayLength"/>, so a
+        /// runway longer than that runs out past the field's own ground.</summary>
         public float runwayLength = AirportSpec.RunwayLength;
         /// <summary>Which way the wind is blowing: with it westerly, runway 27 is in use
         /// and every circuit is flown to the west.</summary>
@@ -64,7 +67,7 @@ namespace AirportDemo
         /// sees a handful of light movements an hour, and a Cessna in the circuit every
         /// half minute reads as a flying school rather than as an airport.</summary>
         public int lightAircraft = 2;
-        public int parkedAircraft = 18;
+        public int parkedAircraft = 14;
         public float commuterInterval = 220f;
         /// <summary>Three on the ramp: the sheriff's, which keeps its pad and flies a
         /// patrol; a charter that comes and goes; and an air ambulance that is not here
@@ -82,12 +85,16 @@ namespace AirportDemo
         public int rampCrew = 8;
         public int lorries = 1;
 
-        public int cars = 13;
-        public int parkedCars = 60;
-        public int passengers = 34;
+        public int cars = 11;
+        public int parkedCars = 40;
+        public int passengers = 26;
         /// <summary>A sheriff's car on the kerb and a plain sedan watching the general
         /// aviation gate - 1987, and this is how the cocaine came north.</summary>
         public bool theLaw = true;
+        /// <summary>The night run: a van in through the general aviation gate to an
+        /// aeroplane on the tie-down row, and the sedan out after it (Trade.cs). What
+        /// the field is for, as far as the outfit is concerned.</summary>
+        public bool nightFreight = true;
 
         // ------------------------------------------------------------ roots, state
 
@@ -213,6 +220,7 @@ namespace AirportDemo
             PaintRunway();          // the markings, once every surface is down
             PaintTaxiways();
             PaintApron();
+            BuildWear();            // and what the field has done to itself, over them
             BuildAirfieldLights();
             BuildWindsock();
             BuildBuildings();
@@ -230,6 +238,7 @@ namespace AirportDemo
             BuildRotorcraft();
             BuildGroundOps();
             BuildLandsideTraffic();
+            BuildNightFreight();    // after the law: the run borrows its sedan (Trade.cs)
             BuildPeople();
             BuildParkedAircraft();
 
@@ -261,6 +270,7 @@ namespace AirportDemo
             _ground?.Tick(dt);
             _boarding?.Tick(dt);
             _traffic?.Tick(dt);
+            _freight?.Tick(dt);
             _people?.Tick(dt);
         }
 

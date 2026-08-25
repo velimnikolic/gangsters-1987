@@ -30,17 +30,40 @@ namespace LivingCity.EditorTools
     /// of police kit off a machine that keeps its frame, its seat, its tail and its
     /// exhaust.
     ///
-    /// PAINT. The colour is not the material's, it is the ATLAS the UVs point into, so
-    /// tinting the material darkens the tyres and the chrome along with the bodywork and
-    /// still leaves the chequer readable in silhouette. Instead the livery is repainted
-    /// in UV SPACE: every triangle whose atlas pixel is the white bodywork, the chequer's
-    /// yellow or its navy is moved onto the atlas's darkest paint swatch. The chrome, the
-    /// tyres, the glass and the lamps keep their own squares, which is why the machine
-    /// reads as a black bike and not as a black cut-out.
+    /// PAINT, and it is two operations rather than one because the first cut of this
+    /// made the machine flat. The colour is not the material's, it is the ATLAS the UVs
+    /// point into, so tinting the whole material darkens the tyres and the chrome along
+    /// with the bodywork. The first bake answered that by moving EVERY livery triangle -
+    /// the white bodywork, the chequer's yellow and both its navies - onto one dark
+    /// swatch, and that is exactly what was wrong with it: the tank, the fairing, the
+    /// mudguards and the flanks all came out the same square, so the bike read as one
+    /// unbroken block of colour with a wheel at each end.
     ///
-    /// Beware the colour space: the atlas is sampled through a LINEAR render texture, so
-    /// the numbers below are linear and look far darker than the swatch does on screen
-    /// (linear 13 is about sRGB 64). Read them as atlas keys, not as paint.
+    /// So the livery is split by what it WAS:
+    ///
+    ///   the chequer   yellow and the two navies, the flanks and the bands - moved onto
+    ///                 the atlas's darkest paint swatch, as before. This is the trim, and
+    ///                 it stays dark whatever the machine is painted.
+    ///   the bodywork  the white panels - LEFT WHERE THEY ARE, on the atlas's big flat
+    ///                 white field (sRGB 214,211,210, which covers most of the upper
+    ///                 half), and moved instead onto a SUBMESH OF THEIR OWN under a
+    ///                 material this project owns.
+    ///
+    /// That second move is what makes the machine colourable at all. The police pack
+    /// ships no alts - its twelve vehicle atlases hold one paint palette between them -
+    /// so there is nothing to swap. But a bright flat field under a material whose
+    /// _BaseColor the shader MULTIPLIES into the albedo takes any colour asked of it, and
+    /// VehiclePaint.TourerPalette is the list of them; <see cref="BakePaints"/> writes one
+    /// material per colour, all sharing the pack's one texture, so the palette is free.
+    /// The prefab is saved wearing the graphite, which lands near sRGB 48 - the black the
+    /// machine has always been - and the street swaps it for another at spawn.
+    ///
+    /// Beware the colour space, TWICE over. The atlas is sampled through a LINEAR render
+    /// texture, so the livery keys below are linear and look far darker than the swatch
+    /// does on screen (linear 171 is sRGB 214). And the shader's BaseColor is declared
+    /// HDR (Generic_Basic.shadergraph, m_ColorMode 1), which is the one kind of colour
+    /// property Unity does NOT gamma-convert on the way in - see <see cref="BakePaints"/>,
+    /// which asks the shader rather than assuming either way.
     /// </summary>
     public static class GangBikeBaker
     {
@@ -49,30 +72,55 @@ namespace LivingCity.EditorTools
         const string PoliceMaterial =
             "Assets/Synty/PolygonPoliceStation/Materials/Vehicles/Police_Vehicle_01.mat";
         const string Folder = "Assets/Prefabs/Vehicles";
+        const string PaintFolder = Folder + "/Tourer";
         const string Name = "SM_Veh_Motorbike_Tourer_Black";
 
-        /// <summary>The atlas colours the force is wearing, LINEAR, as sampled off
-        /// _Albedo_Map: the white bodywork, the chequer's yellow, its two navies, and the
-        /// one stray light square. Anything within 10 units of one of these is repainted;
-        /// the chrome (97,97,97) and the tyre blacks sit well outside that.
+        /// <summary>The atlas colours the machine's PANELS are wearing, LINEAR, as sampled
+        /// off _Albedo_Map: the white bodywork and the one stray light square. Anything
+        /// within 10 units of one of these becomes the paint - its own submesh, its own
+        /// material, its UVs untouched, because the white field it already points at is
+        /// the brightest flat ground on the atlas and so the best thing to tint.
         ///
         /// The pale grey (107,114,124) was tried here and taken back out: the rear deck
         /// that looks light in a render is ALREADY on the black swatch, and only reads
         /// pale because a flat deck takes the key light square on. Sample the atlas before
         /// adding a colour to this list, do not judge it off a picture.</summary>
-        static readonly Vector3[] Livery =
+        static readonly Vector3[] Bodywork =
         {
-            new Vector3(171, 166, 164),
-            new Vector3(192, 179, 9),
-            new Vector3(9, 19, 66),
-            new Vector3(14, 24, 64),
+            new Vector3(171, 166, 164),   // sRGB 214,211,210 - the big white field
             new Vector3(190, 190, 190),
         };
 
-        /// <summary>Where the repainted triangles are sent: the darkest paint square on
-        /// the atlas (linear 13,15,17 - about sRGB 64). Deliberately NOT the tyre black,
-        /// so a black tank still reads as a different surface from a tyre.</summary>
-        static readonly Vector2 Paint = new Vector2(0.088f, 0.251f);
+        /// <summary>The force's markings, same units: the chequer's yellow and its two
+        /// navies. These are moved onto <see cref="Trim"/> and stay on the pack's own
+        /// material, so they read as the machine's dark flanks whatever it is painted.
+        /// The chrome (97,97,97) and the tyre blacks sit well outside the 10-unit reach
+        /// of any of them and are never touched.</summary>
+        static readonly Vector3[] Chequer =
+        {
+            new Vector3(192, 179, 9),
+            new Vector3(9, 19, 66),
+            new Vector3(14, 24, 64),
+        };
+
+        /// <summary>
+        /// Where the markings are sent: the bottom step of the atlas's charcoal column
+        /// (sRGB 37,39,42 - linear about 5,5,6). Deliberately NOT the tyre black, so a
+        /// dark flank still reads as a different surface from a tyre.
+        ///
+        /// One step down from where the first bake put them, and the step is the whole
+        /// point. The flanks have to stay darker than ANY paint the machine can wear, or
+        /// the two-tone collapses on the dark end of the palette - measured against the
+        /// old swatch (sRGB 63,66,71) the maroon came out at a luminance ratio of 1.00,
+        /// which is to say the panels and the flanks were the same tone and the machine
+        /// was flat again in all but hue. Against this one the worst paint in the palette
+        /// separates by 1.42. Its own column runs 37,39,42 up to 106,110,116, so the
+        /// neighbours a mip drags in are charcoal too.
+        ///
+        /// The swatch grid is 44 px on a 4096 atlas (0.0107 of u), NOT the 128 px a
+        /// glance at the layout suggests; these are the centre of a cell, measured.
+        /// </summary>
+        static readonly Vector2 Trim = new Vector2(0.0804f, 0.2296f);
 
         [MenuItem("Tools/City/Vehicles/Bake the outfit's black tourer")]
         public static void Bake()
@@ -106,20 +154,45 @@ namespace LivingCity.EditorTools
             foreach (var screen in screens)
                 Object.DestroyImmediate(screen);
 
+            // The palette before the meshes: the paint slot they are about to grow needs
+            // a material to be born wearing, and the graphite is it.
+            //
+            // And nothing may proceed without one. A mesh split into two submeshes whose
+            // renderer holds one material draws the second submesh with NOTHING - which
+            // on this machine is every panel it has, so the bike would come out of the
+            // bake as a frame, two wheels and a hole where the bodywork was. Better no
+            // re-bake at all than that, and the prefab on disk is left as it stands.
+            var paints = BakePaints();
+            if (paints.Length == 0)
+            {
+                Debug.LogError("[GangBike] no paints baked - the machine would lose its "
+                               + "bodywork to an empty material slot. Nothing written.");
+                Object.DestroyImmediate(atlas);
+                Object.DestroyImmediate(go);
+                return;
+            }
+
+            var graphite = paints[0];
+
             // Then every mesh on the machine. Only the BODY is cut (the police kit is
             // baked into it); the wheels, bars and shocks are repainted only, and a mesh
             // that came out unchanged is left pointing at the pack's own.
             var meshes = new List<Mesh>();
-            int cut = 0, repainted = 0;
+            int cut = 0, marked = 0, painted = 0;
             foreach (var filter in go.GetComponentsInChildren<MeshFilter>(true))
             {
                 var body = filter.transform == go.transform;
-                var made = Rebuild(filter.sharedMesh, atlas, body, out int dropped, out int painted);
+                var made = Rebuild(filter.sharedMesh, atlas, body,
+                                   out int dropped, out int trimmed, out int bodywork);
                 cut += dropped;
-                repainted += painted;
-                if (dropped == 0 && painted == 0) continue;
+                marked += trimmed;
+                painted += bodywork;
+                if (dropped == 0 && trimmed == 0 && bodywork == 0) continue;
                 filter.sharedMesh = made;
                 meshes.Add(made);
+                // A mesh that grew a paint submesh needs the slot to go with it. Meshes
+                // that came out one submesh keep the one material they had.
+                if (bodywork > 0) GivePaintSlot(filter, graphite);
             }
             Object.DestroyImmediate(atlas);
 
@@ -138,8 +211,13 @@ namespace LivingCity.EditorTools
             AssetDatabase.SaveAssets();
 
             Debug.Log("[GangBike] " + prefabPath + " - " + cut + " triangles of police kit cut, " +
-                      repainted + " repainted black, " + screens.Count + " screen parts off. " +
-                      (saved != null ? "Saved." : "SAVE FAILED."));
+                      marked + " markings blacked, " + painted + " onto the paint submesh, " +
+                      screens.Count + " screen parts off, " + paints.Length + " paints in " +
+                      PaintFolder + ". " + (saved != null ? "Saved." : "SAVE FAILED."));
+            if (painted == 0)
+                Debug.LogWarning("[GangBike] NOTHING went onto the paint submesh - the machine " +
+                                 "cannot take a colour. Sample the atlas at the bodywork before " +
+                                 "trusting the Bodywork keys.");
             if (saved != null)
                 Selection.activeObject = saved;
         }
@@ -170,12 +248,21 @@ namespace LivingCity.EditorTools
             return copy;
         }
 
-        /// <summary>One mesh, cut (bodies only) and repainted. Returns a new mesh even
-        /// when nothing changed; the caller decides whether to keep it.</summary>
-        static Mesh Rebuild(Mesh src, Texture2D atlas, bool cutPoliceKit, out int dropped, out int painted)
+        /// <summary>
+        /// One mesh, cut (bodies only) and split. Returns a new mesh even when nothing
+        /// changed; the caller decides whether to keep it.
+        ///
+        /// Comes back with ONE submesh when the mesh has no bodywork on it (a wheel, a
+        /// shock) and TWO when it has: submesh 0 is everything the pack's own material
+        /// still draws, submesh 1 is the panels that take the paint. Two submeshes share
+        /// one vertex buffer, so the split costs a draw call and not a byte of geometry.
+        /// </summary>
+        static Mesh Rebuild(Mesh src, Texture2D atlas, bool cutPoliceKit,
+                            out int dropped, out int trimmed, out int bodywork)
         {
             dropped = 0;
-            painted = 0;
+            trimmed = 0;
+            bodywork = 0;
             if (src == null) return null;
 
             var verts = src.vertices;
@@ -196,6 +283,11 @@ namespace LivingCity.EditorTools
             }
             else keep.AddRange(tris);
 
+            // Which of the kept triangles are panels. Read once, off the atlas, and held
+            // as a flag per triangle: the answer is wanted twice below - to move the
+            // markings, and to sort the triangles into their two submeshes - and each
+            // reading is a bilinear sample of a 4096px texture.
+            var isPanel = new bool[keep.Count / 3];
             var repainted = (Vector2[])uv.Clone();
             for (int t = 0; t < keep.Count; t += 3)
             {
@@ -203,12 +295,18 @@ namespace LivingCity.EditorTools
                 var pixel = atlas.GetPixelBilinear(centre.x, centre.y);
                 var rgb = new Vector3(Mathf.Round(pixel.r * 255f), Mathf.Round(pixel.g * 255f),
                                       Mathf.Round(pixel.b * 255f));
-                bool livery = false;
-                foreach (var colour in Livery)
-                    if ((rgb - colour).sqrMagnitude < 100f) { livery = true; break; }
-                if (!livery) continue;
-                for (int k = 0; k < 3; k++) repainted[keep[t + k]] = Paint;
-                painted++;
+
+                if (Matches(rgb, Bodywork))
+                {
+                    // NOT moved. The white field it already sits on is the tint's ground.
+                    isPanel[t / 3] = true;
+                    bodywork++;
+                    continue;
+                }
+
+                if (!Matches(rgb, Chequer)) continue;
+                for (int k = 0; k < 3; k++) repainted[keep[t + k]] = Trim;
+                trimmed++;
             }
 
             // Only the vertices the kept triangles actually use. Not housekeeping: a mesh
@@ -226,19 +324,28 @@ namespace LivingCity.EditorTools
             var outUv = new List<Vector2>(verts.Length);
             var outUv2 = uv2 != null ? new List<Vector2>(verts.Length) : null;
             var outColors = colors != null ? new List<Color>(verts.Length) : null;
-            var outTris = new List<int>(keep.Count);
-            foreach (var index in keep)
+            // Two index lists over ONE vertex buffer. The sort is by triangle, so a
+            // vertex a panel shares with its neighbour is written once and pointed at
+            // from both.
+            var packTris = new List<int>(keep.Count);
+            var paintTris = new List<int>(bodywork * 3);
+            for (int t = 0; t < keep.Count; t += 3)
             {
-                if (moved[index] < 0)
+                var into = isPanel[t / 3] ? paintTris : packTris;
+                for (int k = 0; k < 3; k++)
                 {
-                    moved[index] = outVerts.Count;
-                    outVerts.Add(verts[index]);
-                    outNormals?.Add(normals[index]);
-                    outUv.Add(repainted[index]);
-                    outUv2?.Add(uv2[index]);
-                    outColors?.Add(colors[index]);
+                    var index = keep[t + k];
+                    if (moved[index] < 0)
+                    {
+                        moved[index] = outVerts.Count;
+                        outVerts.Add(verts[index]);
+                        outNormals?.Add(normals[index]);
+                        outUv.Add(repainted[index]);
+                        outUv2?.Add(uv2[index]);
+                        outColors?.Add(colors[index]);
+                    }
+                    into.Add(moved[index]);
                 }
-                outTris.Add(moved[index]);
             }
 
             var mesh = new Mesh { name = src.name };
@@ -248,10 +355,107 @@ namespace LivingCity.EditorTools
             mesh.SetUVs(0, outUv);
             if (outUv2 != null) mesh.SetUVs(1, outUv2);
             if (outColors != null) mesh.SetColors(outColors);
-            mesh.SetTriangles(outTris, 0);
+            mesh.subMeshCount = paintTris.Count > 0 ? 2 : 1;
+            mesh.SetTriangles(packTris, 0);
+            if (paintTris.Count > 0) mesh.SetTriangles(paintTris, 1);
             mesh.RecalculateBounds();
             mesh.RecalculateTangents();
             return mesh;
+        }
+
+        /// <summary>Whether an atlas reading is one of these keys, within the 10 units
+        /// either side that a bilinear sample off a 4096px texture can wander.</summary>
+        static bool Matches(Vector3 rgb, Vector3[] keys)
+        {
+            foreach (var key in keys)
+                if ((rgb - key).sqrMagnitude < 100f) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// The machine's paints, one material per colour in VehiclePaint.TourerPalette,
+        /// written into <see cref="PaintFolder"/> and returned in the palette's order -
+        /// so the first of them is the graphite the prefab is saved wearing.
+        ///
+        /// Each is a copy of the pack's own vehicle material with one property changed,
+        /// which is why the palette costs nothing: all of them point at the SAME 4096px
+        /// atlas the machine was already loading. A material that is already there is
+        /// re-copied from the pack rather than left alone, so a pack update reaches the
+        /// paints on the next re-bake instead of leaving them on a stale shader.
+        ///
+        /// THE COLOUR SPACE IS ASKED FOR, NOT ASSUMED. A plain ShaderLab Color property
+        /// is authored in sRGB and Unity converts it on the way to the GPU; an [HDR] one
+        /// is taken as already linear and is not converted. Generic_Basic declares
+        /// BaseColor HDR (m_ColorMode 1), so writing the palette's sRGB values straight
+        /// in would give a machine far darker and duller than the swatch says - which is
+        /// the kind of wrongness that looks like a lighting problem for a week. The
+        /// shader is asked which it is and the value converted to match.
+        /// </summary>
+        static Material[] BakePaints()
+        {
+            var source = AssetDatabase.LoadAssetAtPath<Material>(PoliceMaterial);
+            if (source == null)
+            {
+                Debug.LogError("[GangBike] no pack material at " + PoliceMaterial + "; no paints baked.");
+                return new Material[0];
+            }
+
+            if (!AssetDatabase.IsValidFolder(PaintFolder))
+                AssetDatabase.CreateFolder(Folder, "Tourer");
+
+            var linear = WantsLinear(source.shader, "_BaseColor");
+            var palette = LivingCity.Gameplay.VehiclePaint.TourerPalette;
+            var made = new List<Material>(palette.Length);
+
+            foreach (var paint in palette)
+            {
+                var file = LivingCity.Gameplay.VehiclePaint.TourerMaterialName(paint.Name);
+                var path = PaintFolder + "/" + file + ".mat";
+                var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+                var fresh = material == null;
+                if (fresh) material = new Material(source);
+                else material.CopyPropertiesFromMaterial(source);
+
+                material.name = file;
+                material.SetColor("_BaseColor", linear ? paint.Tint.linear : paint.Tint);
+
+                if (fresh) AssetDatabase.CreateAsset(material, path);
+                else EditorUtility.SetDirty(material);
+                made.Add(material);
+            }
+
+            return made.ToArray();
+        }
+
+        /// <summary>Whether this shader wants a linear value written into that colour -
+        /// true for an [HDR] property, false for the ordinary kind Unity converts for us.
+        /// A shader that has no such property at all answers false, which is the harmless
+        /// way round: the write is then a no-op rather than a wrong colour.</summary>
+        static bool WantsLinear(Shader shader, string property)
+        {
+            if (shader == null) return false;
+            var index = shader.FindPropertyIndex(property);
+            if (index < 0) return false;
+            var flags = shader.GetPropertyFlags(index);
+            return (flags & UnityEngine.Rendering.ShaderPropertyFlags.HDR) != 0
+                   && QualitySettings.activeColorSpace == ColorSpace.Linear;
+        }
+
+        /// <summary>Gives this renderer the second material slot its new paint submesh
+        /// draws through, keeping whatever the pack put in the first. Called only for
+        /// meshes that actually grew one - a renderer with more slots than submeshes
+        /// draws nothing extra, but it is a lie about the body and the next reader has
+        /// to work out which.</summary>
+        static void GivePaintSlot(MeshFilter filter, Material paint)
+        {
+            if (paint == null) return;
+            var renderer = filter.GetComponent<MeshRenderer>();
+            if (renderer == null) return;
+
+            var slots = renderer.sharedMaterials;
+            if (slots.Length >= 2) { slots[1] = paint; renderer.sharedMaterials = slots; return; }
+
+            renderer.sharedMaterials = new[] { slots.Length > 0 ? slots[0] : null, paint };
         }
 
         /// <summary>Which island each vertex belongs to, and what each island measures.

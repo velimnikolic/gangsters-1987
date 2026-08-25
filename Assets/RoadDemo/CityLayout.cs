@@ -111,10 +111,15 @@ namespace RoadDemo
         // --------------------------------------------------------------- measures
 
         /// <summary>How much shore an airport takes either side of its approach road:
-        /// the field's own grass, runway end to runway end (AirportSpec.MapX0/X1).</summary>
-        public const float AirportFlank = 1050f;
-        /// <summary>The field from its approach road to the far side of the runway.</summary>
-        public const float AirportDepth = 810f;
+        /// the field's own grass, runway end to runway end. Read off the field's own
+        /// plan rather than written down twice - the two numbers were kept in step by
+        /// hand, and a shortened runway that left this at a mile handed the field a
+        /// shore it no longer used.</summary>
+        public static readonly float AirportFlank = AirportDemo.AirportSpec.MapX1;
+        /// <summary>The field from its approach road to the far side of the runway,
+        /// with a little country beyond the wire.</summary>
+        public static readonly float AirportDepth =
+            AirportDemo.AirportDistrict.BoundaryZ - AirportDemo.AirportSpec.MapZ0 + 70f;
         /// <summary>The port's own ground, from the street behind it to the quay wall.</summary>
         public const float HarborDepth = 145f;
         /// <summary>Water off the quay a freighter needs to come alongside.</summary>

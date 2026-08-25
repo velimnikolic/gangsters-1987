@@ -38,7 +38,7 @@ namespace RoadDemo
         public const float TrafficHumVolume = 0.30f;
         public const float MurmurVolume = 0.22f;
         public const float EngineVolume = 0.32f;
-        public const float FootstepVolume = 0.3f;
+        public const float PassByVolume = 0.45f;
         public const float StreetVoiceVolume = 0.24f;
         public const float DoorVolume = 0.35f;
         public const float UiVolume = 0.35f;
@@ -86,21 +86,10 @@ namespace RoadDemo
         public static AudioClip CarPassBy => Load<AudioClip>(Root + "Traffic/car_pass_by.wav");
         public static AudioClip TruckPassBy => Load<AudioClip>(Root + "Traffic/truck_pass_by.wav");
 
-        public static AudioClip[] Footsteps =>
-            _footsteps ??= Gather(
-                Load<AudioClip>(Root + "People/footstep_concrete_1.wav"),
-                Load<AudioClip>(Root + "People/footstep_concrete_2.wav"),
-                Load<AudioClip>(Root + "People/footstep_concrete_3.wav"),
-                Load<AudioClip>(Root + "People/footstep_concrete_4.wav"),
-                Load<AudioClip>(Root + "People/footstep_concrete_5.wav"),
-                Load<AudioClip>(Root + "People/footstep_concrete_6.wav"));
-
-        public static AudioClip[] FootstepsGravel =>
-            _gravel ??= Gather(
-                Load<AudioClip>(Root + "People/footstep_gravel_1.wav"),
-                Load<AudioClip>(Root + "People/footstep_gravel_2.wav"),
-                Load<AudioClip>(Root + "People/footstep_gravel_3.wav"),
-                Load<AudioClip>(Root + "People/footstep_gravel_4.wav"));
+        // The footstep clips in Assets/Audio/People are deliberately not listed. The
+        // demo has no footstep layer: at any rate loud enough to hear, a 0.19 s
+        // concrete crack repeated over a crowd reads as tapping rather than as
+        // people, and the crowd murmur already carries the pavement.
 
         /// <summary>A man on the pavement, once in a while: a whistle, a cough, a
         /// laugh. Not chatter - the murmur bed is the chatter, and a per-body voice
@@ -159,7 +148,7 @@ namespace RoadDemo
         /// the overlay is drawn as.</summary>
         public static AudioClip Paper => Load<AudioClip>(Root + "Ui/paper_rustle.wav");
 
-        static AudioClip[] _engines, _footsteps, _gravel, _voices, _screams, _radio;
+        static AudioClip[] _engines, _voices, _screams, _radio;
 
         public static AudioClip Pick(AudioClip[] clips) =>
             clips == null || clips.Length == 0 ? null : clips[Random.Range(0, clips.Length)];

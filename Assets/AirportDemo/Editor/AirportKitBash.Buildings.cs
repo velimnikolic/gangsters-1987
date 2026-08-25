@@ -289,22 +289,59 @@ namespace AirportDemo.EditorTools
                 return i % 2 == 0 ? window : wall;
             }
             BaseCourse(t, -hx, hx, -hz, hz, 0f, Ground);
-            FlatRoof(t, "roof", -hx, hx, -hz, hz, BaseStorey, Concrete, Plaster);
+            FlatRoof(t, "roof", -hx, hx, -hz, hz, BaseStorey, RoofDeck, Plaster);
 
-            // the upper floor: a shorter block over the middle, glazed at the ramp -
-            // the operations offices and whatever passes for an observation deck
-            float ux = 17.5f, uz = 8.75f;
-            GameObject Upper(int side, int i) => side == 2 ? glass : (i % 2 == 0 ? window : wall);
-            BaseCourse(t, -ux, ux, -uz, uz, BaseStorey, Upper);
-            FlatRoof(t, "upper roof", -ux, ux, -uz, uz, BaseStorey * 2f, Concrete, Plaster);
+            // THE HALL. A hundred metres of single storey with one window band from end
+            // to end is a corridor, not a terminal - it has no middle to walk into and
+            // nothing to see it by from the road. So the middle goes up two storeys and
+            // out to nearly the full depth: the departures hall, glazed on BOTH faces,
+            // which is what every county terminal built in the jet age actually is.
+            float ux = 23f, uz = hz - 2f;
+            GameObject Hall(int side, int i)
+            {
+                if (side == 2 || side == 0) return glass;      // glazed to the ramp AND to the kerb
+                return i % 2 == 0 ? glass : wall;
+            }
+            BaseCourse(t, -ux, ux, -uz, uz, BaseStorey, Hall);
+            FlatRoof(t, "hall roof", -ux, ux, -uz, uz, BaseStorey * 2f, RoofDeck, Plaster);
 
-            // the plant a flat roof carries, and the field's name over the door
-            for (int i = -1; i <= 1; i++)
-                Slab(t, "aircon", new Vector3(i * 8f, BaseStorey * 2f + 0.55f, -4f), new Vector3(2.6f, 1.1f, 1.8f), Steel);
-            Slab(t, "fascia", new Vector3(0f, BaseStorey - 0.5f, -hz - 0.14f), new Vector3(w * 0.55f, 1.1f, 0.16f), Steel);
-            Legend(t, "AIR", new Vector3(0f, BaseStorey - 0.5f, -hz - 0.25f), 0.72f, White, 180f);
-            // the kerbside doors read from a distance by their canopy band
-            Slab(t, "entrance band", new Vector3(0f, BaseStorey + 0.2f, -hz - 0.2f), new Vector3(12f, 0.4f, 0.3f), Blue);
+            // and the piers that break the ribbon: without them the ground storey is one
+            // unbroken band of glass a hundred metres long, which is the other half of
+            // why the thing read as a slab
+            for (float px = -hx + 12f; px < hx - 6f; px += 12.5f)
+            {
+                if (Mathf.Abs(px) < ux + 1f) continue;
+                Slab(t, "pier", new Vector3(px, BaseStorey * 0.5f, -hz - 0.16f), new Vector3(0.9f, BaseStorey, 0.32f), Plaster);
+                Slab(t, "pier", new Vector3(px, BaseStorey * 0.5f, hz + 0.16f), new Vector3(0.9f, BaseStorey, 0.32f), Plaster);
+            }
+
+            // the plant a flat roof carries. Spread over the WHOLE roof rather than three
+            // units on the middle: plant is what stops a roof reading as a painted plane,
+            // and there is no such thing as a bare hundred-metre roof.
+            for (int i = -3; i <= 3; i++)
+            {
+                float px = i * 13f;
+                if (Mathf.Abs(px) < ux + 3f) continue;
+                Slab(t, "aircon", new Vector3(px, BaseStorey + 0.55f, -6f), new Vector3(3.2f, 1.1f, 2.2f), Steel);
+                Slab(t, "aircon", new Vector3(px + 4f, BaseStorey + 0.4f, 5f), new Vector3(2.2f, 0.8f, 1.6f), Steel);
+                Tube(t, "vent", new Vector3(px - 3f, BaseStorey + 0.45f, 1.5f), 0.28f, 0.9f, Steel, 8);
+            }
+            // the hall's own roof carries the stair head, the tank and the dishes
+            Slab(t, "stair head", new Vector3(-ux + 5f, BaseStorey * 2f + 1.2f, 0f), new Vector3(4.4f, 2.4f, 3.6f), Plaster);
+            Slab(t, "roof tank", new Vector3(ux - 6f, BaseStorey * 2f + 1f, -3f), new Vector3(3f, 2f, 3f), Steel);
+            for (int i = -1; i <= 1; i += 2)
+                Tube(t, "hall vent", new Vector3(i * 9f, BaseStorey * 2f + 0.5f, 4f), 0.32f, 1f, Steel, 8);
+
+            // the fascia and the name, now carried on the HALL where they are read from
+            // the road, not tucked under a one-storey eaves
+            Slab(t, "fascia", new Vector3(0f, BaseStorey * 2f - 0.7f, -uz - 0.16f), new Vector3(ux * 1.5f, 1.5f, 0.18f), Steel);
+            Legend(t, "AIRPORT", new Vector3(0f, BaseStorey * 2f - 0.7f, -uz - 0.28f), 0.95f, White, 180f);
+            // the kerbside canopy: a real slab on posts over the doors, which is the one
+            // thing that says "this is the way in" from a hundred metres away
+            Slab(t, "entrance canopy", new Vector3(0f, BaseStorey - 0.35f, -hz - 3.2f), new Vector3(26f, 0.35f, 6.8f), White);
+            Slab(t, "canopy band", new Vector3(0f, BaseStorey - 0.05f, -hz - 6.5f), new Vector3(26f, 0.45f, 0.3f), Blue);
+            for (int i = -2; i <= 2; i++)
+                Tube(t, "canopy post", new Vector3(i * 6f, 0f, -hz - 6.2f), 0.12f, BaseStorey - 0.5f, Steel, 8);
             Bake(root, "airport-terminal");
         }
 
@@ -328,7 +365,7 @@ namespace AirportDemo.EditorTools
                 return i % 2 == 0 ? window : wall;
             }
             BaseCourse(t, -hx, hx, -hz, hz, 0f, Choose);
-            FlatRoof(t, "roof", -hx, hx, -hz, hz, BaseStorey, Concrete, Plaster);
+            FlatRoof(t, "roof", -hx, hx, -hz, hz, BaseStorey, RoofDeck, Plaster);
             Slab(t, "canopy", new Vector3(0f, BaseStorey - 0.3f, hz + 1.4f), new Vector3(w * 0.6f, 0.22f, 3f), Steel);
             for (int i = -1; i <= 1; i += 2)
                 Tube(t, "canopy post", new Vector3(i * w * 0.25f, 0f, hz + 2.7f), 0.09f, BaseStorey - 0.4f, Steel, 8);

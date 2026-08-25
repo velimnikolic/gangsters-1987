@@ -100,24 +100,15 @@ namespace RoadDemo
 
                 // one position read per car, then a partial selection over plain
                 // floats: the nearest 24 cars to the front, the rest in any order
-                if (_key.Length != _rigs.Count)
-                {
-                    _key = new float[_rigs.Count];
-                    _order = new int[_rigs.Count];
-                }
+                DemoStreetLamps.Prepare(ref _key, ref _order, _rigs.Count);
                 for (int i = 0; i < _rigs.Count; i++)
                 {
-                    _order[i] = i;
                     var car = _rigs[i].Car;
                     _key[i] = car ? (car.position - eye).sqrMagnitude : float.MaxValue;
                 }
                 DemoStreetLamps.Nearest(_key, _order, LitBeamBudget / 2);
             }
-            else if (_order.Length != _rigs.Count)
-            {
-                _order = new int[_rigs.Count];
-                for (int i = 0; i < _rigs.Count; i++) _order[i] = i;
-            }
+            else DemoStreetLamps.Prepare(ref _key, ref _order, _rigs.Count);
 
             for (int rank = 0; rank < _order.Length; rank++)
             {

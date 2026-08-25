@@ -783,6 +783,23 @@ namespace RoadDemo
                 : (System.Action)null,
                 lit: canPlant);
 
+            // The plain answer to a car: walk up and empty into it. It needs nothing
+            // bought and nothing signed out, so unlike the charge it is almost never
+            // the faded row - which is the point of it being on this card at all.
+            var canShoot = _crews.CanShootCar(crew, car);
+            Row("IZREŠETAJ",
+                canShoot ? "the crew walks up and empties into it"
+                         : (_crews.ShootCarRefusal ?? "cannot shoot it"),
+                canShoot ? () =>
+                {
+                    if (_crews.OrderShootCar(car))
+                        ShowMark(car.Position + Vector3.up * 1.2f, AttackTint);
+                    else if (_crews.ShootCarRefusal != null)
+                        _refusal = (_crews.ShootCarRefusal, Time.unscaledTime + 2.5f);
+                }
+                : (System.Action)null,
+                lit: canShoot);
+
             LayoutAndShow(screen);
         }
 

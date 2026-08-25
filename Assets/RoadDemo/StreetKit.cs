@@ -88,6 +88,14 @@ namespace RoadDemo
         /// in the game could see.</summary>
         public SidewalkPlan Plan => _plan;
 
+        /// <summary>The height this kit lays its carriageway at. The road tile is flat
+        /// with no thickness, so this IS the asphalt a car drives on; the pavement's own
+        /// prefab stands 7 cm proud of it, which is the kerb. Anything that has to meet
+        /// the road at road level - a filling station's forecourt, which is a dropped
+        /// kerb the whole way across its frontage - asks for it rather than assuming the
+        /// nought the constructor happens to default to.</summary>
+        public float Surface => _y;
+
         /// <summary>The benches laid, for anything that wants to seat people on them.</summary>
         public readonly List<(Vector3 pos, float yaw)> Benches = new List<(Vector3, float)>();
 

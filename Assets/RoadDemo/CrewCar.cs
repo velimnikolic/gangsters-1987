@@ -164,7 +164,11 @@ namespace RoadDemo
             if (bonnet && !EngineDead && Random.value < EngineChance)
             {
                 EngineHits++;
-                if (EngineDead) EngineJustDied = true;
+                // the smoke is lit HERE and not where EngineJustDied is read: that flag is
+                // a one-shot for whichever caller wants to say so out loud, and a car whose
+                // engine has been shot out must look shot out to anybody who happens to be
+                // driving it, announced or not
+                if (EngineDead) { EngineJustDied = true; CarSmoke.Bonnet(this); }
             }
             var facing = from - at;
             facing.y = 0f;

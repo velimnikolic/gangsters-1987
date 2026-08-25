@@ -48,12 +48,30 @@ namespace RoadDemo
         // and on one thread
         static readonly Vector2[] _rank = new Vector2[Slots];
 
+        // one list, reused: sampling runs at build only and on one thread
+        static readonly List<SidewalkPlan> _one = new List<SidewalkPlan>(1);
+
         public void SampleClearance(SidewalkPlan plan, float radius)
+        {
+            if (plan == null) { Free = null; return; }
+            _one.Clear();
+            _one.Add(plan);
+            SampleClearance(_one, radius);
+        }
+
+        /// <summary>The same, read against SEVERAL plans at once - a slot is free only
+        /// if every one of them leaves it free.
+        ///
+        /// A walk laid across ground that more than one pass has furnished needs this:
+        /// the street kit knows where its own lamps and bins are, and knows nothing about
+        /// the shop wall, the hedge or the parked car that another pass blocked off. Read
+        /// against the kit alone, the crowd walks through all three.</summary>
+        public void SampleClearance(List<SidewalkPlan> plans, float radius)
         {
             var span = To.Pos - From.Pos;
             span.y = 0f;
             float len = span.magnitude;
-            if (len < 0.01f || plan == null) { Free = null; return; }
+            if (len < 0.01f || plans == null || plans.Count == 0) { Free = null; return; }
             var dir = span / len;
             var right = new Vector3(dir.z, 0f, -dir.x);
 
@@ -79,7 +97,8 @@ namespace RoadDemo
                         var p = at + right * SlotLateral(k);
                         _rank[k] = new Vector2(p.x, p.z);
                     }
-                    mask = plan.FreeSlots(_rank, Slots, radius, mask);
+                    for (int p = 0; p < plans.Count && mask != 0; p++)
+                        if (plans[p] != null) mask = plans[p].FreeSlots(_rank, Slots, radius, mask);
                     if (mask == 0) break;
                 }
                 free[s] = mask;
@@ -486,6 +505,8 @@ namespace RoadDemo
             BlendLocomotion(dt, !_waiting && _hold > 0.25f);
 
             if (_waiting) { Jostle(dt); TracePed(dt); return; }
+            // and a man about to step in front of a car crossing the pavement stops too
+            if (StandingBack()) { BlendLocomotion(dt, false); TracePed(dt); return; }
             _shuffle = 0f;
             Move(dt);
             TracePed(dt);
@@ -582,9 +603,81 @@ namespace RoadDemo
 
         static readonly List<PedestrianAgent> Walking = new List<PedestrianAgent>();
 
+        // ------------------------------------------------------ ground a car is crossing
+        //
+        // A forecourt, a station's stall, a yard gate: the few places where a car leaves
+        // the road and drives over ground people walk on. There is no lane there and no
+        // signal, so the discipline is the plain one of the street - WHOEVER IS ALREADY
+        // MOVING OVER IT HAS IT, and a man about to step into that ground waits until it
+        // is his again. A man already standing in it walks straight out rather than
+        // freezing under the bumper, which is also what a man does.
+        //
+        // The claim is a rolling one: the car re-makes it every frame a few metres ahead
+        // of itself and it lapses on its own, so nothing has to remember to give it back
+        // and a car that stops existing stops claiming.
+
+        readonly struct Crossing
+        {
+            public readonly Vector3 At;
+            public readonly float Radius, Until;
+
+            public Crossing(Vector3 at, float radius, float until) { At = at; Radius = radius; Until = until; }
+        }
+
+        static readonly List<Crossing> Crossings = new List<Crossing>();
+
+        /// <summary>Ground a car is about to drive over. Called every frame while it
+        /// crosses; <paramref name="seconds"/> is only how long the claim outlives the
+        /// call, so a couple of frames is plenty.</summary>
+        public static void CarCrossing(Vector3 at, float radius, float seconds)
+        {
+            for (int i = Crossings.Count - 1; i >= 0; i--)
+                if (Crossings[i].Until < Time.time) Crossings.RemoveAt(i);
+            Crossings.Add(new Crossing(at, radius, Time.time + seconds));
+        }
+
+        static bool InCrossing(Vector3 p)
+        {
+            float now = Time.time;
+            for (int i = 0; i < Crossings.Count; i++)
+            {
+                var c = Crossings[i];
+                if (c.Until < now) continue;
+                var d = c.At - p;
+                d.y = 0f;
+                if (d.sqrMagnitude < c.Radius * c.Radius) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Is his next stride into ground a car is crossing? Only if he is not
+        /// standing in it already - a man under the bumper walks out of it.</summary>
+        bool StandingBack()
+        {
+            if (Crossings.Count == 0 || Tf == null) return false;
+            var here = Tf.position;
+            if (InCrossing(here)) return false;
+            var way = LinkDirection;
+            way.y = 0f;
+            if (way.sqrMagnitude < 1e-4f) return false;
+            return InCrossing(here + way.normalized * StandBackStep);
+        }
+
+        /// <summary>How far ahead he looks for it - a stride and a half, so he stops at
+        /// the edge of the ground rather than on it.</summary>
+        const float StandBackStep = 1.6f;
+
+        /// <summary>Everybody on foot in the scene, whoever put them there: the crowd,
+        /// the outfit, the mobs and the law all register here for the crowd's own
+        /// bucketing, so it is also the one list an overlay can ask "who is out there"
+        /// (DemoPeopleDebug). Read only - the list is the crowd's, and a man leaves it
+        /// when his body goes.</summary>
+        public static IReadOnlyList<PedestrianAgent> Everyone => Walking;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ForgetCrowd()
         {
+            Crossings.Clear();
             Walking.Clear();
             Cells.Clear();
             SpareCells.Clear();
@@ -1436,6 +1529,30 @@ namespace RoadDemo
 
         /// <summary>The selected pose, for derived agents that branch on it.</summary>
         protected int CurrentPose => _pose;
+
+        // ------------------------------------------------------- the debug tag
+        //
+        // What a man says about himself when the F3 overlay asks. Three questions,
+        // because they are three different things: who he is, what state his own
+        // machine is in, and what he means to do about it. The trace already asks
+        // the first two of every walker in the town (TraceState), so the tag is that
+        // answer put on the screen rather than a second bookkeeping of it.
+
+        /// <summary>What to call him over his head. A man with no name is his tag and
+        /// his number, which is what the trace calls him too.</summary>
+        public virtual string DebugName => Tag + " #" + Id;
+
+        /// <summary>The state his own machine is in - the enum, near enough.</summary>
+        public virtual string DebugState => TraceState();
+
+        /// <summary>What he means to do: where he is going, who he is going at, what
+        /// is holding him. Empty for a walker with nothing to say.</summary>
+        public virtual string DebugIntent => string.Empty;
+
+        /// <summary>The gait his body is playing this frame - the one place a tag can
+        /// be read against the legs, so "walking" over a man in a sprint clip is a
+        /// bug the overlay shows rather than hides.</summary>
+        public string DebugGait => PoseName(_pose);
 
         // ------------------------------------------------------------ the foot slip
         //

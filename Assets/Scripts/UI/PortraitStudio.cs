@@ -71,12 +71,26 @@ namespace LivingCity.UI
 
         static PortraitStudio instance;
 
+        /// <summary>The stream the showroom's paint comes out of, and deliberately not
+        /// UnityEngine.Random. Three hundred call sites on the running street draw from
+        /// that one - a hood's pace, a bonnet catching fire, where a man is sent - and a
+        /// page the player opens whenever he feels like it must not reach into it, or
+        /// looking at the book moves what the street does next. (The city's LAYOUT is
+        /// safe either way: that is laid out of seeded System.Random instances and never
+        /// touches this stream.) Unseeded, so the counter stands a different set of
+        /// colours each session; the prints are cached under their job key, so it stands
+        /// the same set all session. Remade in <see cref="ResetForPlay"/> with the rest
+        /// of the static state, or with domain reload off the second Play would inherit
+        /// the first's stream.</summary>
+        static System.Random showroom = new System.Random();
+
         // Static state outlives Play when domain reload is off - same fix as OverlayRegistry.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
         {
             instance = null;
             warned.Clear();
+            showroom = new System.Random();
         }
 
         sealed class Job
@@ -437,6 +451,15 @@ namespace LivingCity.UI
             staged.transform.localPosition = Vector3.zero;
             staged.transform.localRotation = Quaternion.identity;
             Strip(staged);
+
+            // The showroom machine gets a colour like any other, so the page does not
+            // sell three motorcycles in the one shade the pack shipped. The roll is
+            // taken ONCE - prints are cached under job.Key - so the photograph is
+            // steady for the whole session, and it is the counter's own machine rather
+            // than the one delivered: the street rolls again when the outfit takes it.
+            if (job.Framing == Framing.Vehicle)
+                LivingCity.Gameplay.VehiclePaint.Apply(staged, job.Prefab, showroom);
+
             stand.gameObject.SetActive(true);
 
             SetLayer(staged.transform);

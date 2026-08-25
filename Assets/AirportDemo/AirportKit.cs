@@ -58,11 +58,23 @@ namespace AirportDemo
         public const string Kit = "Assets/CityKit/Airport/";
 
         // ------------------------------------------------------------ materials
-        /// <summary>The palm city's tiling concrete and tarmac - what the ramp, the
-        /// runway and the roads are laid in, one plane each rather than a grid of slabs
-        /// (the harbour's rule: a working surface is not a chessboard).</summary>
-        public const string ConcreteMat = "Assets/Synty/PolygonPalmCity/Materials/Buildings/Sidewalk_01.mat";
-        public const string AsphaltMat = "Assets/Synty/PolygonPalmCity/Materials/Buildings/Road_Grey_01.mat";
+        /// <summary>What the ramp, the runway and the roads are laid in.
+        ///
+        /// NOT the palm city's Sidewalk_01/Road_Grey_01 any more. Those are ATLAS
+        /// pieces: a small patch of a shared page, meant for a 5 m pavement tile. Laid
+        /// over eighty thousand square metres of ramp they gave the thing that was
+        /// wrong with the field at a glance - a pink-beige chessboard, one seam every
+        /// fifteen metres, marching from the hangars to the freight shed.
+        ///
+        /// The prison pack's yard concrete is a TILING material: it was authored for
+        /// big poured slabs and repeats without a page edge to show. Paired with
+        /// FlatPlane's continuous UVs (atlas: false) the ramp has no seam in it at all.
+        /// The tarmac is the same material taken down to a road's tone - which is what
+        /// the shoulder already did to the asphalt, one step further.</summary>
+        public const string ConcreteMat = "Assets/Synty/PolygonMapsPrison/Materials/Concrete_Dark_01.mat";
+        public const string AsphaltMat = "Assets/Synty/PolygonMapsPrison/Materials/Concrete_Dark_01.mat";
+        /// <summary>The gravel the perimeter track and the unpaved corners are in.</summary>
+        public const string GravelMat = "Assets/Synty/PolygonMapsPrison/Materials/Triplaner_Gravel_01.mat";
         public const string GrassMat = "Assets/Synty/PolygonPalmCity/Materials/Env/Grass_Triplanar_01.mat";
         public const string GenericConcreteMat = "Assets/Synty/PolygonGeneric/Materials/Generic_Concrete.mat";
         public const string GenericPlasterMat = "Assets/Synty/PolygonGeneric/Materials/Generic_Plaster.mat";
@@ -334,6 +346,9 @@ namespace AirportDemo
         public const string Taxi = CityVeh + "SM_Veh_Car_Taxi_01.prefab";
         public const string PoliceCar = CityVeh + "SM_Veh_Car_Police_01.prefab";
         public const string Limousine = PalmVeh + "SM_Veh_Limousine_01.prefab";
+        /// <summary>The panel van the night run comes in: no windows behind the cab,
+        /// which in 1987 is the whole specification.</summary>
+        public const string NightVan = CityVeh + "SM_Veh_Car_Van_01.prefab";
         /// <summary>What parks landside and drives the approach road: 1987 saloons and
         /// vans only - no supercar, no electric anything (the outfit's own rule about
         /// anachronisms, kept here by hand because this demo has no VehicleCatalog).</summary>

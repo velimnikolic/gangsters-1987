@@ -7,19 +7,17 @@ namespace LivingCity.Audio
     /// <summary>
     /// What a crowd sounds like, at crowd scale.
     ///
-    /// Ten thousand pedestrians and not one of them owns an AudioSource. Two layers stand in
+    /// Ten thousand pedestrians and not one of them owns an AudioSource. One layer stands in
     /// for all of it:
     ///
     ///   MURMUR - one looping 2D bed whose volume follows how many people are near the camera
     ///   focus. One spatial-hash query a few times a second buys "a busy street sounds busy,
     ///   an empty one doesn't" at any population.
     ///
-    ///   FOOTSTEPS - a budgeted trickle of positional one-shots on walkers sampled near the
-    ///   focus. Not synced to any animation on purpose: from an isometric camera a plausible
-    ///   patter at the right density is indistinguishable from exact foot-to-ground sync, and
-    ///   sync would mean touching every pedestrian every frame - the exact cost the LOD pass
-    ///   exists to avoid. The budget scales with DetailGain, so steps fade out across the same
-    ///   zoom band where the LOD stops animating the walkers they would belong to.
+    /// There is no footstep layer. A trickle of positional one-shots over the crowd was the
+    /// obvious second half of this and it was wrong in the ear: the concrete clip is 0.19 s,
+    /// so any rate loud enough to register lays the cracks end to end and the street taps
+    /// instead of walking. The mass of a crowd is a bed, not a set of events.
     /// </summary>
     public sealed class PedestrianAudioSystem : MonoBehaviour
     {
@@ -32,19 +30,12 @@ namespace LivingCity.Audio
         [Tooltip("Seconds between crowd censuses. The volume itself is smoothed every frame.")]
         [SerializeField, Min(0.05f)] float censusInterval = 0.25f;
 
-        [Tooltip("Footstep one-shots per second when fully zoomed in.")]
-        [SerializeField, Min(0f)] float footstepsPerSecond = 4f;
-
         [SerializeField] SoundDatabase sounds;
 
         CityAudioDirector director;
         AudioSource murmur;
         float murmurTarget;
         float nextCensus;
-        float stepBudget;
-
-        // Its own stream, like the director's: audio randomness must never touch the city's.
-        readonly System.Random rng = new System.Random(1177);
 
         void Awake()
         {
@@ -66,7 +57,6 @@ namespace LivingCity.Audio
                 return;
 
             UpdateMurmur();
-            EmitFootsteps();
         }
 
         void UpdateMurmur()
@@ -99,37 +89,6 @@ namespace LivingCity.Audio
 
             // One smoothed value between censuses, so a burst of spawns cannot click the bed.
             murmur.volume = Mathf.MoveTowards(murmur.volume, murmurTarget, Time.deltaTime * 0.5f);
-        }
-
-        /// <summary>
-        /// The footstep trickle. An accumulator rather than a timer: at 4 steps/second and
-        /// DetailGain 0.3 it correctly emits 1.2 steps' worth, where a timer would emit either
-        /// 4 or none.
-        /// </summary>
-        void EmitFootsteps()
-        {
-            if (sounds.footsteps.Length == 0)
-                return;
-
-            stepBudget += footstepsPerSecond * director.DetailGain * Time.deltaTime;
-            if (stepBudget < 1f)
-                return;
-
-            stepBudget -= 1f;
-
-            // Steps land on people the view can plausibly attribute them to - inside roughly
-            // the visible half-frame, not the whole murmur radius.
-            var reach = Mathf.Min(murmurRadius, director.Ortho * 0.5f);
-            var body = PedestrianRegistry.SampleNear(director.Focus, reach, rng);
-
-            if (body == null || !body.Tf || body.Stationary || body.SpeedMs < 0.3f)
-                return; // This tick's step is forfeit, not deferred - the budget is a cap.
-
-            CityAudioDirector.PlayOneShot(
-                SoundDatabase.Pick(sounds.footsteps, rng),
-                body.Tf.position,
-                sounds.footstepVolume,
-                pitchJitter: 0.12f);
         }
     }
 }

@@ -1222,6 +1222,16 @@ namespace RoadDemo
             => base.Moving && (State == Mode.Walking || State == Mode.Flee || State == Mode.ToDoor ||
                                State == Mode.ToBench || State == Mode.FromBench);
 
+        public override string DebugName => "Citizen #" + Id;
+
+        public override string DebugState => State.ToString();
+
+        /// <summary>A bystander's whole intention is his errand and his nerve, and the
+        /// fear is the half of it the state cannot show: a man walking with 0.9 of
+        /// fear on him is about to bolt, and reads as "About their business".</summary>
+        public override string DebugIntent =>
+            StatusLine + (_fear > 0.01f ? "  ·  fear " + _fear.ToString("F2") : "");
+
         public string StatusLine => State switch
         {
             Mode.Flee => "Running from the shooting",

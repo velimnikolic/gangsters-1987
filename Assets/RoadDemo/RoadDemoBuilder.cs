@@ -606,6 +606,10 @@ namespace RoadDemo
             StreetTraffic.Thin(_vehicles, _edges, Camera.main);
             TickTimer.Mark(1, "cars");
             for (int i = 0; i < _policeCars.Count; i++) _policeCars[i].TickPatrol(dt);
+            // the cars that want petrol drive with the traffic above (they are in
+            // _vehicles) and this is only the errand on top of it - the booking, the two
+            // curves across the forecourt, and the man who gets out
+            for (int i = 0; i < _fuelCustomers.Count; i++) _fuelCustomers[i].TickErrand(dt);
             TickTimer.Mark(2, "patrol cars");
             for (int i = 0; i < _pedestrians.Count; i++) _pedestrians[i].TickCivilian(dt);
             TickTimer.Mark(3, "civilians");
@@ -625,6 +629,7 @@ namespace RoadDemo
                 CivilianAgent.PairChats(_pedestrians, chatSeconds);
             }
             TickTimer.Mark(7, "chats");
+            TickWaysideWatch(dt);
             TickTimer.Report(updateProfile, dt,
                 $"{_vehicles.Count} cars, {_pedestrians.Count} civilians, " +
                 $"{_policeCars.Count + _policeOfficers.Count} police, {_districtWalkers.Count} district hands");
@@ -634,6 +639,7 @@ namespace RoadDemo
         {
             for (int i = 0; i < _pedestrians.Count; i++) _pedestrians[i].Dispose();
             for (int i = 0; i < _policeOfficers.Count; i++) _policeOfficers[i].Dispose();
+            DisposeWayside();
             DisposeDistricts();
         }
 

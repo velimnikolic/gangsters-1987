@@ -116,6 +116,12 @@ namespace RoadDemo
         public float Speed { get; protected set; }
         /// <summary>Stood at the kerb, engine off, not in anyone's way in the lane.</summary>
         public bool Parked { get; private set; }
+
+        /// <summary>Switched off: nothing is turning under the bonnet, whatever the car
+        /// is doing. A car standing at a pump is off, and a car being hand-driven across
+        /// a forecourt is not - which is the difference Parked cannot express, since the
+        /// forecourt is not the road and the car left it (Despawn) to get there.</summary>
+        public bool EngineOff;
         public bool OnRoad => Road != null || Via != null;
         public Manoeuvre Doing => _man;
 
@@ -238,6 +244,12 @@ namespace RoadDemo
             SetLane(lane);
             Speed = Mathf.Min(Cruise(), Road.SpeedLimit) * 0.5f;
             Parked = false;
+            // a car put onto a lane is a car being put back into traffic: whatever it was
+            // told to stand still for belonged to the life it had before. Left set, a halt
+            // survived the Spawn and the car sat in the running lane for ever - which is
+            // what a customer coming off a forecourt did, having held the kerb on the way in.
+            _halted = false;
+            _haltWhenClear = false;
             _occ = NewOccupant(Road);
             _lastPlaced = false;
             Place(0f);

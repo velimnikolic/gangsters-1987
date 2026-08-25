@@ -40,7 +40,16 @@ namespace AirportDemo.EditorTools
         //     the pack), so the terminal and the FBO had no wall on the apron side
         // v6: four airline stands, so the terminal is half again as wide - and a tall
         //     flight of airstairs, because the passengers now walk up them
-        public const int Version = 6;
+        // v7: the field came down to a 1,200 m county strip, so every dimension the
+        //     bake reads out of AirportSpec moved with it
+        // v8: the terminal had no middle. A hundred metres of single storey under one
+        //     unbroken window band is a corridor; it now has a two-storey departures
+        //     hall glazed both ways, piers breaking the ribbon, a canopy on posts over
+        //     the kerb doors, and plant spread over the whole roof. The flat roofs are
+        //     pale gravel (RoofDeck) rather than concrete - at a low camera angle a
+        //     terminal roof is the biggest face it shows, and in concrete grey it read
+        //     as a black slab.
+        public const int Version = 8;
         const string KitDir = "Assets/CityKit/Airport";
         const string MeshDir = KitDir + "/Meshes";
         const string MatDir = KitDir + "/Materials";
@@ -134,6 +143,13 @@ namespace AirportDemo.EditorTools
         /// <summary>The sheet roof over a shed: the walls' own colour, a shade greyer,
         /// so the building reads as one thing from the air.</summary>
         static Material RoofMetal => _roof ??= Tinted("airport-roof", AirportKit.GenericConcreteMat, new Color(0.46f, 0.43f, 0.40f), 0.22f);
+        /// <summary>A flat roof's own deck: pale gravel, not concrete. A terminal's roof
+        /// is the largest single face the camera ever sees of it - a hundred metres by
+        /// thirty, looked at almost edge-on from a low camera - and in the grey of
+        /// concrete it read as a black slab with a building somewhere under it. Gravel
+        /// is what a built-up flat roof is actually finished in, and it is pale.</summary>
+        static Material RoofDeck => _roofDeck ??= Tinted("airport-roof-deck", AirportKit.GenericConcreteMat, new Color(0.72f, 0.70f, 0.66f), 0.05f);
+        static Material _roofDeck;
         static Material White => _white ??= Tinted("airport-white", AirportKit.GenericPlasterMat, new Color(0.90f, 0.90f, 0.88f));
         static Material Yellow => _yellow ??= Tinted("airport-yellow", AirportKit.GenericPlasterMat, new Color(0.86f, 0.70f, 0.10f));
         static Material Black => _black ??= Tinted("airport-black", AirportKit.GenericPlasterMat, new Color(0.08f, 0.08f, 0.09f));

@@ -15,13 +15,13 @@ namespace AirportDemo
     {
         [Header("The field")]
         public int seed = 1987;
-        [Tooltip("Runway length in metres. 1800 m (6,000 ft) takes the trijet; 1200 is a plain general aviation strip and the jet will not use it.")]
+        [Tooltip("Runway length in metres. 1200 m (4,000 ft) is what the county built and what the turboprop schedule wants; at 1500 m or more a charter jet comes too. The grass and the wire are laid to 1200, so a longer runway runs out past the field's own ground.")]
         public float runwayLength = AirportSpec.RunwayLength;
         [Tooltip("Which way the wind is blowing: with it westerly, runway 27 is in use and every circuit is flown to the west.")]
         public bool westerlyWind = true;
-        [Tooltip("Edge lights, threshold bars, PAPI and the beacon. Off saves a hundred and thirty small renderers.")]
+        [Tooltip("Edge lights, threshold bars, PAPI and the beacon. Off saves ninety small renderers.")]
         public bool airfieldLighting = true;
-        [Tooltip("How many of the six box hangars stand open with an aeroplane inside.")]
+        [Tooltip("How many of the five box hangars stand open with an aeroplane inside.")]
         [Range(0, 3)] public int openHangars = 1;
 
         [Header("Flying")]
@@ -30,7 +30,7 @@ namespace AirportDemo
         [Tooltip("Light singles that actually fly. Few on purpose - a county field sees a handful of light movements an hour, not one a minute.")]
         [Range(0, 6)] public int lightAircraft = 2;
         [Tooltip("Aeroplanes tied down on the general aviation ramp, going nowhere.")]
-        [Range(0, 30)] public int parkedAircraft = 18;
+        [Range(0, 30)] public int parkedAircraft = 14;
         [Tooltip("Seconds an airline aeroplane spends off the map between its departure and its next arrival.")]
         public float commuterInterval = 220f;
         [Tooltip("Three: the sheriff's, which keeps its pad and flies a patrol; a charter that comes and goes; and an air ambulance that drops in off the country.")]
@@ -50,11 +50,13 @@ namespace AirportDemo
         [Range(0, 4)] public int lorries = 1;
 
         [Header("Landside")]
-        [Range(0, 40)] public int cars = 13;
-        [Range(0, 120)] public int parkedCars = 60;
-        [Range(0, 80)] public int passengers = 34;
+        [Range(0, 40)] public int cars = 11;
+        [Range(0, 120)] public int parkedCars = 40;
+        [Range(0, 80)] public int passengers = 26;
         [Tooltip("A sheriff's car on the kerb and a plain sedan watching the general aviation gate - 1987, and this is how the cocaine came north.")]
         public bool theLaw = true;
+        [Tooltip("The night run: a van in through the general aviation gate to an aeroplane on the tie-down row, bags on the concrete, and the plain sedan out after it.")]
+        public bool nightFreight = true;
 
         void Awake()
         {
@@ -81,18 +83,22 @@ namespace AirportDemo
                 parkedCars = parkedCars,
                 passengers = passengers,
                 theLaw = theLaw,
+                nightFreight = nightFreight,
             };
 
             var host = gameObject.AddComponent<StandaloneDistrictHost>();
-            // over the ramp looking down the field: the terminal and the tower in the
-            // middle distance, the runway beyond them, the hangars off to the left
-            host.cameraPivot = AirportDistrict.StandaloneWorld(new Vector3(-20f, 0f, 200f));
-            host.cameraDistance = 330f;
-            host.cameraYaw = 12f;
-            host.cameraPitch = 32f;
-            // the far end of the runway is 750 m off and the circuit goes further
-            host.cameraFar = 4000f;
-            host.fogRange = new Vector2(900f, 2600f);
+            // from beyond the runway looking across the whole field: the strip in the
+            // foreground, the taxiway behind it, then the tie-down rows, the ramp, the
+            // hangar line and the terminal with its tower. The old pivot stood ON the
+            // ramp at z 200 and looked landside, which put the runway - the one thing
+            // that makes the place an airport - behind the camera.
+            host.cameraPivot = AirportDistrict.StandaloneWorld(new Vector3(-20f, 0f, 30f));
+            host.cameraDistance = 430f;
+            host.cameraYaw = 14f;
+            host.cameraPitch = 24f;
+            // the far end of the runway is 600 m off and the circuit goes further
+            host.cameraFar = 3200f;
+            host.fogRange = new Vector2(750f, 2200f);
             host.fogColour = new Color(0.70f, 0.78f, 0.86f);
             host.clearColour = new Color(0.58f, 0.70f, 0.84f);
             // late afternoon out of the south-west: the hangar fronts and the terminal

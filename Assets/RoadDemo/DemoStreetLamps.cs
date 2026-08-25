@@ -184,6 +184,18 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>Size the pair of arrays a ranking runs on and fill order with
+        /// 0..count. BOTH are sized here, together, on purpose: a caller that sizes one
+        /// off the other's length lets the two drift apart the moment it takes a branch
+        /// that touches only one of them, and the next fill walks off the end of the
+        /// short one. Every ranking in the demo goes through this.</summary>
+        internal static void Prepare(ref float[] key, ref int[] order, int count)
+        {
+            if (key.Length != count) key = new float[count];
+            if (order.Length != count) order = new int[count];
+            for (int i = 0; i < count; i++) order[i] = i;
+        }
+
         /// <summary>Partial selection: after it, order[0..count) are the count smallest
         /// keys (in no particular order among themselves) and the rest follow. Quickselect,
         /// in place, no allocation.</summary>

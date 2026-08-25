@@ -60,16 +60,28 @@ namespace RoadDemo
         /// lane gets a short swing rather than a loop past the kerb and back.</summary>
         public static Curve Undock(
             Vector3 stall, Vector3 stallOut, Vector3 kerb, Vector3 kerbForward)
+            => Sweep(stall, stallOut, kerb, kerbForward);
+
+        /// <summary>The two-control curve the undock is: away from A along
+        /// <paramref name="fromWay"/> and into B along <paramref name="toWay"/>, so a
+        /// car driving it forwards leaves and arrives pointing the way it is going.
+        /// Both handles clip to half the span, so a short hop gets a short swing
+        /// rather than a loop past the far end and back.
+        ///
+        /// It is the same curve a car turning OFF a road onto a forecourt wants, with
+        /// the road's direction as fromWay and the bay's as toWay - which is why it is
+        /// named for its shape rather than for the patrol car's errand.</summary>
+        public static Curve Sweep(Vector3 from, Vector3 fromWay, Vector3 to, Vector3 toWay)
         {
-            var span = Flat(kerb - stall);
+            var span = Flat(to - from);
             float handle = Mathf.Min(MouthOffset, span.magnitude * 0.5f);
 
             return new Curve
             {
-                A = stall,
-                ControlA = stall + Flat(stallOut).normalized * handle,
-                ControlB = kerb - Flat(kerbForward).normalized * handle,
-                B = kerb,
+                A = from,
+                ControlA = from + Flat(fromWay).normalized * handle,
+                ControlB = to - Flat(toWay).normalized * handle,
+                B = to,
             };
         }
 

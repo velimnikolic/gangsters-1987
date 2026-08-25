@@ -57,7 +57,22 @@ namespace RoadDemo
         protected override bool InCrowd => !Dead && !Riding;
 
         /// <summary>Whom he is shooting at, or null.</summary>
-        public CrewWalker Target { get; private set; }
+        CrewWalker _target;
+        /// <summary>The man he has his gun on. Setting it drops any CAR he was on:
+        /// a man shoots at a man or at the tin, never at both, and ONE assignment
+        /// enforces that rather than every one of the dozen places that clear a
+        /// target having to remember the other mark exists.</summary>
+        public CrewWalker Target
+        {
+            get => _target;
+            private set { _target = value; CarMark = null; }
+        }
+
+        /// <summary>The CAR he is emptying his gun into, when there is no man to shoot
+        /// at. A machine stood at the kerb with nobody in it is still worth shooting up
+        /// - and it is the one mark in the town that cannot shoot back, so nothing here
+        /// looks for cover or waits for it to duck.</summary>
+        public CrewCar CarMark { get; private set; }
 
         /// <summary>When he last actually LAID EYES on the man he is shooting at -
         /// the arena stamps it every frame the mark is in sight (DemoCrews.TickCombat).
@@ -509,6 +524,40 @@ namespace RoadDemo
                 _fireTimer = Ballistics.Interval * Random.Range(0.4f, 1f); // squares up first
         }
 
+        /// <summary>Put his gun on a car and walk him to it. The tin does not have to
+        /// be empty - a car with men in it is shot up just as well - but nothing about
+        /// this is aimed at the men: the rounds go into the machine (DemoCrews.Resolve).</summary>
+        public void ShootUp(CrewCar car)
+        {
+            if (Dead || Riding || !Armed || Panicked) return;
+            if (car == null || car.Tf == null || car.Wrecked) return;
+            Target = null;            // clears any car mark too, and then we set ours
+            CarMark = car;
+            EndChat();
+            _blockedFor = 0f;
+            _steerSide = 0;
+            _strideDir = Vector3.zero;
+            _runningLeg = false;
+            _sprinting = false;
+            _keepingLow = false;
+            _coverSpot = null;
+            InCover = false;
+            SetPace(1f);
+            State = Mode.Engaging;
+            if (_fireTimer <= 0f)
+                _fireTimer = Ballistics.Interval * Random.Range(0.4f, 1f);
+        }
+
+        /// <summary>Metres a second at which a car counts as driving off rather than
+        /// standing: past this nobody walks after it.</summary>
+        const float DrivingOff = 2.5f;
+
+        /// <summary>Where on a machine a man puts his rounds: the middle of it at about
+        /// the height of a door. NOT its pivot - a car's origin sits on the road between
+        /// its wheels, and a crew aiming at that fires into the tarmac.</summary>
+        public static Vector3 CarAim(CrewCar car) =>
+            car == null || car.Tf == null ? Vector3.zero : car.Tf.position + Vector3.up * 0.9f;
+
         /// <summary>Lower the gun and stand.</summary>
         public void Disengage()
         {
@@ -563,12 +612,16 @@ namespace RoadDemo
         /// laid over the top, and blends away the moment the fight is over.</summary>
         public void AimGun(float dt)
         {
+            bool onCar = Target == null && CarMark != null && CarMark.Tf != null && !CarMark.Wrecked;
             bool aiming = !Dead && Armed && State == Mode.Engaging && _flinch <= 0f &&
-                          Target != null && Target.Tf && !Target.Dead &&
+                          (onCar || (Target != null && Target.Tf && !Target.Dead)) &&
                           !(InCover && _ducked);
+            // what the arm is turned at: a man's chest, or the flank of a machine
+            var markAt = onCar ? CarMark.Tf.position : (Target != null && Target.Tf ? Target.Tf.position : Tf.position);
+            var markAim = onCar ? CarAim(CarMark) : (Target != null ? Target.ChestPosition : Tf.position);
             if (aiming)
             {
-                var flat = Target.Tf.position - Tf.position;
+                var flat = markAt - Tf.position;
                 flat.y = 0f;
                 // inside the fight's reach, and squared up enough that the arm and
                 // not the whole man does the turning.
@@ -583,7 +636,7 @@ namespace RoadDemo
                 // rounds that answer a drive-by are long, wild and mostly miss - the
                 // falloff sees to that (DemoCrews.Resolve) - and they are the whole
                 // scene.
-                float reach = Target.Riding || Target.Astride
+                float reach = Target != null && (Target.Riding || Target.Astride)
                     ? Mathf.Max(Ballistics.Range * 1.35f, PassingShot)
                     : Ballistics.Range * 1.35f;
                 aiming = flat.magnitude <= reach &&
@@ -594,7 +647,7 @@ namespace RoadDemo
             var muzzle = CrewArms.MuzzleOf(Weapon);
             var mp = muzzle != null ? muzzle.position : Weapon.position;
             var mf = muzzle != null ? muzzle.forward : Weapon.forward;
-            if (aiming) _aimDir = (Target.ChestPosition - mp).normalized;
+            if (aiming) _aimDir = (markAim - mp).normalized;
             if (_aimDir.sqrMagnitude < 1e-4f) return;
             var turn = Quaternion.FromToRotation(mf, _aimDir);
             turn.ToAngleAxis(out float angle, out var axis);
@@ -1014,7 +1067,9 @@ namespace RoadDemo
             bool jog = run && HasPose(PoseJog) && PaceScale > 0.95f;
             // and a man running for his life is never dawdled anyway - the tether
             // leaves a panicked man alone
-            float pace = jog ? RunPace
+            bool sprint = jog && _sprinting && HasPose(PoseSprint);
+            float sprintClip = ClipPace(PoseSprint, SprintClipPace);
+            float pace = jog ? (sprint ? _sprintSpeed : JogSpeed)
                 : (hurry ? Speed * HurryFactor : Speed) * PaceScale *
                   (_keepingLow ? CrouchFactor : 1f);
             var want = delta / dist;
@@ -1048,7 +1103,16 @@ namespace RoadDemo
             // walks those strides instead (the walk's rate follows any pace), and the
             // run comes back when the way opens. A touch more asked to re-enter than
             // to stay, so the gait does not flicker at the band's edge.
-            if (jog && pace < RunRateMin * (_strideJog ? 1f : 1.1f) * RunClipPace)
+            // THE LADDER HAS A MIDDLE RUNG. A man dropping out of the sprint drops
+            // into the JOG, not into a walk: the sprint's own band is the widest of
+            // the three and a single test against it turned every braked flee into a
+            // stroll - which is what the player watched a beaten mob do.
+            if (sprint && pace < SprintRateMin * (_strideJog ? 1f : 1.1f) * sprintClip)
+            {
+                sprint = false;
+                pace = JogSpeed * held;
+            }
+            if (jog && pace < RunRateMin * (_strideJog ? 1f : 1.1f) * ClipPace(PoseJog, JogClipPace))
             {
                 jog = false;
                 pace = (hurry ? Speed * HurryFactor : Speed) * PaceScale * held *
@@ -1122,15 +1186,16 @@ namespace RoadDemo
             bool moving = step > 1e-4f;
             if (jog && moving)
             {
-                LocomotionPose = RunPose;
+                LocomotionPose = sprint ? PoseSprint : PoseJog;
                 BlendLocomotion(dt, true);
                 // the run keeps step with the ground he actually covers: the crowd
                 // takes pace off him, and a jog played at its own rate over a
                 // shortened step is a man skating. Held inside the rates a run clip
                 // reads at (RunRateMin/Max) - past those it is a moon-walk - and his
                 // own hair off the beat kept, so a crew never runs in lockstep.
-                SetPoseSpeed(RunPose, Mathf.Clamp(
-                    pace / RunClipPace, RunRateMin, RunRateMax) * _runJitter);
+                SetPoseSpeed(LocomotionPose, Mathf.Clamp(
+                    pace / (sprint ? sprintClip : ClipPace(PoseJog, JogClipPace)),
+                    sprint ? SprintRateMin : RunRateMin, RunRateMax) * _runJitter);
             }
             else if (!moving) Loco(dt, false);
             else
@@ -1150,16 +1215,6 @@ namespace RoadDemo
         /// and looking slow is most of what says he is under fire.</summary>
         const float CrouchFactor = 0.6f;
 
-        /// <summary>Which run he is in: the sprint when he is running for his life
-        /// and his body has one, else the jog every other errand uses. ONE place
-        /// decides it, so the pose, the clip rate and the metres a second can never
-        /// come from different clips - which is the fault CrewKit.Runs is a whole
-        /// essay about.</summary>
-        int RunPose => _sprinting && HasPose(PoseSprint) ? PoseSprint : PoseJog;
-        float RunClipPace => _sprinting && HasPose(PoseSprint)
-            ? ClipPace(PoseSprint, SprintClipPace) : ClipPace(PoseJog, JogClipPace);
-        float RunPace => _sprinting && HasPose(PoseSprint) ? _sprintSpeed : JogSpeed;
-
         /// <summary>Running for his life rather than to somewhere - the one thing in
         /// the town that reaches for the sprint. Cleared by every order, like every
         /// other thing about the last one.</summary>
@@ -1173,6 +1228,17 @@ namespace RoadDemo
         /// <summary>The band a man may sprint in, the run band's rule one storey up:
         /// the clip sets the look, the town sets how fast a man can be.</summary>
         const float SprintSlowest = 4.2f, SprintQuickest = 6.2f;
+
+        /// <summary>How far off its natural rate the SPRINT clip may be played - and it
+        /// is not the jog's figure, because the two bands do not sit the same way round
+        /// their clips. The pack's sprint covers 7.27 m a second and the town will not
+        /// carry a man faster than SprintQuickest, so the only rate the band can ever
+        /// ask for is 6.2/7.27 = 0.85 - under the jog's floor of 0.9. Judged by that
+        /// floor the sprint failed its own gait test on an EMPTY STREET: every flee in
+        /// the game fell straight through to the walk, which is a beaten man strolling
+        /// away from a gunfight. A flat-out run read 15 per cent slow is a man tiring;
+        /// it is not a man skating, which is what the floor exists to catch.</summary>
+        const float SprintRateMin = 0.72f;
 
         /// <summary>Break into the flat-out run, if he has one. The pace comes off the
         /// clip and is then held to the town's band, the same trade as SetJog.</summary>
@@ -1587,6 +1653,84 @@ namespace RoadDemo
             State = Mode.Fleeing;
         }
 
+        /// <summary>Emptying a gun into a machine. It is TickEngage with everything a
+        /// MAN needs taken out: a car does not duck, does not shoot back and does not
+        /// walk away, so there is no cover to look for, no flank to re-check and no
+        /// chase. He walks into his own range, squares up, and fires until it is a
+        /// wreck or the order is taken off him.</summary>
+        void TickShootUp(float dt)
+        {
+            var car = CarMark;
+            if (car == null || car.Tf == null || car.Wrecked || !Armed)
+            {
+                CarMark = null;
+                State = Mode.Standing;
+                Loco(dt, false);
+                return;
+            }
+
+            var to = car.Tf.position - Tf.position;
+            to.y = 0f;
+            float dist = to.magnitude;
+            float range = Ballistics.Range;
+
+            // A MACHINE THAT IS DRIVING IS NOT WALKED AFTER. The same rule the fight
+            // keeps for a motorcycle, and for the same reason: five men walking down a
+            // street behind a car that is pulling away is a thing nobody does, and the
+            // car wins the footrace anyway. He fires while it is in his reach and lets
+            // it go when it is not - a car stopped, or crawling in traffic, he closes on.
+            bool rolling = Mathf.Abs(car.Speed) > DrivingOff;
+            // the same hysteresis the fight uses, so a man does not jog in place at the
+            // line when the car he is shooting at rolls a metre
+            bool closing = !rolling &&
+                           (_wasClosing ? dist > range * RangeFactor : dist > range * 1.15f);
+            _wasClosing = closing;
+            if (closing)
+            {
+                TickStride(dt, car.Tf.position, range * RangeFactor, hurry: true,
+                    run: RunWhile(dist > range * (_runningLeg ? RunOffFight : RunToFight)),
+                    keepOffRoad: !OnCarriageway(car.Tf.position));
+                return;
+            }
+
+            if (dist > 1e-3f)
+                Tf.rotation = Quaternion.RotateTowards(Tf.rotation,
+                    Quaternion.LookRotation(to / dist), 360f * dt);
+
+            if (_flinch > 0f)
+            {
+                _flinch -= dt;
+                SetPose(PoseHit);
+                TickBlend(dt);
+                return;
+            }
+
+            _fireTimer -= dt;
+            if (_shootHold > 0f)
+            {
+                _shootHold -= dt;
+                SetPose(HasPose(PoseShoot) ? PoseShoot : PoseAim);
+            }
+            else
+                SetPose(HasPose(PoseAim) ? PoseAim : PosePistolIdle);
+            TickBlend(dt);
+
+            // squared up, and the arm actually up: the same two gates a man gets, for
+            // the same reason - a round let off while the gun is still coming up goes
+            // into the pavement
+            if (_fireTimer <= 0f && dist <= range && Vector3.Angle(Tf.forward, to) < 25f &&
+                _aimBlend >= 0.5f && BarrelOn(CarAim(car)))
+            {
+                _fireTimer = Ballistics.Interval;
+                if (HasPose(PoseShoot))
+                {
+                    RestartPose(PoseShoot);
+                    _shootHold = Mathf.Min(PoseLength(PoseShoot), 0.45f);
+                }
+                Fired?.Invoke(this);
+            }
+        }
+
         void TickEngage(float dt)
         {
             // A man he was shooting at whose BODY has since been taken off the street
@@ -1594,6 +1738,10 @@ namespace RoadDemo
             // the way a C# reference is null - his Tf is a destroyed Unity object, and
             // reading it throws. It threw every frame for every engaged man, which is
             // to say the fight stopped dead and nobody fired another round.
+            // a man put on a machine instead of on a man: no cover, no closing on a
+            // thing that walks, no waiting for it to stand up
+            if (Target == null && CarMark != null) { TickShootUp(dt); return; }
+
             if (Target == null || !Target.Tf || Target.Dead || !Armed)
             {
                 Target = null;
@@ -1840,9 +1988,13 @@ namespace RoadDemo
         /// <summary>Is last frame's posed barrel near enough the line to this man's
         /// chest? Point blank the angle means nothing - the round goes in regardless -
         /// which is the audit's own let-off.</summary>
-        bool BarrelOn(CrewWalker mark)
+        bool BarrelOn(CrewWalker mark) => BarrelOn(mark.ChestPosition);
+
+        /// <summary>Is the barrel actually on the thing he is shooting at? A man and a
+        /// car ask the same question of the same muzzle, so they ask it here.</summary>
+        bool BarrelOn(Vector3 at)
         {
-            var to = mark.ChestPosition - MuzzlePosition;
+            var to = at - MuzzlePosition;
             return to.magnitude < 2f || Vector3.Angle(MuzzleForward, to) < BarrelOnLimit;
         }
 
@@ -2359,6 +2511,38 @@ namespace RoadDemo
         /// or every deliberate wait reads as a man wedged on a bin.</summary>
         protected override bool Moving => HasOrder && _hold <= 0f;
 
+        /// <summary>Over his head in the F3 tag: his name and his family, since two
+        /// men of different mobs standing on one corner is the case the tag exists
+        /// for.</summary>
+        public override string DebugName =>
+            (string.IsNullOrEmpty(DisplayName) ? "Hood" : DisplayName) +
+            (Faction == 0 ? "  ·  the outfit" : "  ·  f" + Faction);
+
+        public override string DebugState =>
+            State + (Riding ? " · riding" : "") + (InCover ? " · in cover" : "") +
+            (Ducked ? " · down" : "");
+
+        /// <summary>What he means to do about it: the man he has his gun on and how far
+        /// off he is, or the ground still to cover, and whatever is gearing his feet.
+        /// The distance is the point - a tag that only says "Engaging" cannot tell a
+        /// man closing on a fight from one stood in it.</summary>
+        public override string DebugIntent
+        {
+            get
+            {
+                string line = StatusLine;
+                if (Target != null && Target.Tf != null)
+                    line += "  ·  " + Vector3.Distance(Tf.position, Target.Tf.position).ToString("F0") + " m off";
+                else if (HasOrder && Tf != null)
+                    line += "  ·  " + Vector3.Distance(Tf.position, Destination).ToString("F0") + " m to go";
+                if (Retreating) line += "  ·  off the map";
+                else if (Panicked) line += "  ·  nerve gone";
+                if (Urgent) line += "  ·  ordered at the run";
+                else if (Hustle) line += "  ·  quick feet";
+                return line;
+            }
+        }
+
         public string StatusLine => State switch
         {
             Mode.Standing => Retreating ? "Gone" : Alert ? "On alert - shots heard" : "Standing by",
@@ -2369,6 +2553,7 @@ namespace RoadDemo
                 ? Ducked ? "Down behind cover - " + Target.DisplayName + " out there"
                   : InCover ? "Shooting from cover at " + Target.DisplayName
                   : "Shooting at " + Target.DisplayName
+                : CarMark != null ? "Shooting up the " + CarMark.DisplayName
                 : "Engaging",
             Mode.Fleeing => Retreating ? "Getting out of here" : "Running for it",
             Mode.Riding => "In the car",

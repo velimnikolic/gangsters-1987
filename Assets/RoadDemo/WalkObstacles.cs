@@ -141,6 +141,33 @@ namespace RoadDemo
             _solids.Take(SidewalkPlan.Make(new Vector2(centre.x, centre.z), yaw, half, solid: true));
         }
 
+        /// <summary>Read a stretch of walk against EVERYTHING that has been blocked -
+        /// what <see cref="Block"/> was told about as well as every plan a kit registered
+        /// in <see cref="Props"/>.
+        ///
+        /// A crowd on a link only ever knows what its link was sampled against
+        /// (PedLink.SampleClearance), and a walk laid across ground more than one pass
+        /// furnished has to be read against all of them. A filling station's forecourt is
+        /// the case that showed it: the walk runs along the shop front, and the shop, the
+        /// hedge, the gas cage and the cars in the parking row are all blocked HERE and
+        /// in no street kit's plan - so a walk sampled against the kit alone is a walk
+        /// whose crowd goes through a wall.
+        ///
+        /// Build-time only, like the sampling it wraps. It is deliberately NOT what the
+        /// city's own pavements are read against: those are thousands of links against
+        /// thousands of building boxes, and the sampling is already the dearest thing in
+        /// the load. It is for the short, furnished walks a place lays for itself.</summary>
+        public static void SampleWalk(PedLink link, float radius)
+        {
+            if (link == null) return;
+            _against.Clear();
+            _against.Add(_solids);
+            _against.AddRange(Props);
+            link.SampleClearance(_against, radius);
+        }
+
+        static readonly List<SidewalkPlan> _against = new List<SidewalkPlan>();
+
         // ------------------------------------------------------------------ the road
 
         // A road user as the box he stands in, flat. Gathered once per query for

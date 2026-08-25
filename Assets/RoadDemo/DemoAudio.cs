@@ -28,17 +28,20 @@ namespace RoadDemo
     //   distance edge so a pair straddling the cutoff cannot trade it back and
     //   forth, restarting the loop every scan.
     //
-    //   EVENTS - one pooled set of positional one-shots for footsteps, street
-    //   voices, doors, and whatever else asks (DemoAudio.At). Footsteps are
-    //   a budgeted trickle over walkers near the focus, not foot-to-ground sync:
-    //   from this camera a plausible patter at the right density is
-    //   indistinguishable, and sync would mean touching every walker every frame.
+    //   EVENTS - one pooled set of positional one-shots for the pass-by, street
+    //   voices, doors, and whatever else asks (DemoAudio.At). The pass-by is the
+    //   traffic's only moving sound: the engine voices idle whatever the car is
+    //   doing, so a car that actually goes past the ear gets the recording of one.
+    //
+    //   No footsteps. A trickle of concrete cracks over the crowd is a patter at a
+    //   distance and a metronome up close, and the clip is 0.19 s long, so any rate
+    //   worth hearing lays them end to end. The pavement is the murmur bed's job.
     //
     // Pause is a fade of the world layers, not AudioListener.pause: the top bar's
     // own click has to survive the frame that pauses the demo, and a hard cut on
     // space reads as a bug. Everything here runs on UNSCALED time for its fades and
     // on scaled time for its emission, so a paused demo goes quiet and a 4x demo
-    // walks four times as often.
+    // spends its street voices four times as fast.
     //
     // No horns. A city that honks on a timer is a city that honks at nothing, and at
     // 4x it honks four times as often at nothing - it read as a fault rather than as
@@ -59,7 +62,17 @@ namespace RoadDemo
         const float EventMinDist = 12f;
         const float EventMaxDist = 180f;
         const float FullSpeed = 12f;      // m/s at the top of the engine pitch ramp
-        const float StepsPerSecond = 5f;
+
+        // The pass-by ring. A car fires on the census that first finds it inside
+        // PassReach and is not heard from again until it is PassLeave clear, so one
+        // sitting on the boundary cannot fire twice a second. The reach is set by
+        // the recording rather than by taste: car_pass_by is 3.2 s with its loudest
+        // moment in the middle, so a car at town speed wants roughly two seconds of
+        // road left when it starts.
+        const float PassReach = 24f;
+        const float PassLeave = 34f;
+        const float PassMinSpeed = 4f;    // m/s; a crawl is an idle, not a pass
+        const float PassSpacing = 1.2f;   // s between passes, however busy the street
 
         /// <summary>The demo's mix, for anything that wants to make a noise without
         /// being wired to it (a civilian's door, the top bar's click).</summary>
@@ -83,7 +96,13 @@ namespace RoadDemo
         float _worldGain = 1f;   // 0 while the demo is paused, faded
         float _busy;             // cars near the focus, 0..1
         float _crowd;            // people near the focus, 0..1
-        float _rescan, _stepBudget, _voiceIn = 8f;
+        float _rescan, _voiceIn = 8f, _passIn;
+
+        // Cars inside the pass-by ring, this census and the one before it. Two sets
+        // swapped rather than one set edited: a car that despawns mid-pass simply
+        // fails to turn up in the new one, so nothing has to evict it.
+        HashSet<int> _ringWas = new HashSet<int>();
+        HashSet<int> _ringNow = new HashSet<int>();
         bool _muted;
 
         /// <summary>Wired by the builder once the city, the crowd and the clock all
@@ -196,6 +215,7 @@ namespace RoadDemo
             _worldGain = Mathf.MoveTowards(_worldGain,
                 clock != null && clock.Paused ? 0f : 1f, unscaled * 4f);
 
+            if (_passIn > 0f) _passIn -= unscaled;
             _rescan -= unscaled;
             if (_rescan <= 0f)
             {
@@ -206,11 +226,7 @@ namespace RoadDemo
             UpdateBeds();
             FollowCars();
 
-            if (_worldGain > 0.01f)
-            {
-                EmitFootsteps(scaled);
-                EmitStreetVoices(scaled);
-            }
+            if (_worldGain > 0.01f) EmitStreetVoices(scaled);
         }
 
         /// <summary>The ear on the focus, turned the way the camera looks - so a car
@@ -255,14 +271,24 @@ namespace RoadDemo
             float reachSqr = EngineReach * EngineReach;
 
             int near = 0;
+            _ringNow.Clear();
             for (int i = 0; i < CarCount; i++)
             {
                 var car = CarAt(i);
                 if (car?.Tf == null) continue;
                 var delta = car.Tf.position - focus;
                 delta.y = 0f;
-                if (delta.sqrMagnitude < reachSqr) near++;
+                float away = delta.sqrMagnitude;
+                if (away < reachSqr) near++;
+
+                bool held = _ringWas.Contains(car.Id);
+                float ring = held ? PassLeave : PassReach;
+                if (away >= ring * ring) continue;
+
+                _ringNow.Add(car.Id);
+                if (!held && car.RoadSpeed >= PassMinSpeed) PassBy(car, focus);
             }
+            (_ringWas, _ringNow) = (_ringNow, _ringWas);
             // Square root: the third car on a street changes how busy it sounds far
             // more than the tenth.
             _busy = Mathf.Sqrt(Mathf.Clamp01(near / 10f));
@@ -369,22 +395,34 @@ namespace RoadDemo
 
         // -------------------------------------------------------------- the events
 
-        /// <summary>The footstep trickle. An accumulator rather than a timer: at five
-        /// steps a second and a detail gain of 0.3 it correctly emits 1.5 steps'
-        /// worth, where a timer would emit either five or none.</summary>
-        void EmitFootsteps(float dt)
+        /// <summary>A car going past the ear, laid down where it will be at its
+        /// closest rather than where it is now: the clip is a whole pass, so its
+        /// loudest moment has to land with the car's. Anything long enough to be a
+        /// flatbed gets the heavier recording, and the whole thing rides the zoom
+        /// gain - one car passing is a detail, and details die on the wide view
+        /// where the traffic hum takes the street over.</summary>
+        void PassBy(DemoVehicle car, Vector3 focus)
         {
-            if (DemoSounds.Footsteps.Length == 0) return;
+            // Zoomed out there are no individual cars to hear, and a rank of them
+            // arriving together is one pass, not five: a street at a junction can
+            // put half a dozen through the ring on the same census.
+            if (_detail <= 0.05f || _passIn > 0f || _worldGain <= 0.01f) return;
 
-            _stepBudget += StepsPerSecond * _detail * dt;
-            if (_stepBudget < 1f) return;
-            _stepBudget -= 1f;
+            var pos = car.Tf.position;
+            var fwd = car.Tf.forward;
+            fwd.y = 0f;
+            if (fwd.sqrMagnitude < 0.0001f) return;
+            fwd.Normalize();
 
-            var walker = SampleWalker();
-            if (walker == null) return; // this tick's step is forfeit, not deferred
+            // Closest approach along its own heading, capped at two seconds of road
+            // so a car aimed straight at the focus cannot throw the sound past it.
+            var toEar = focus - pos;
+            toEar.y = 0f;
+            float run = Mathf.Clamp(Vector3.Dot(toEar, fwd), 0f, car.RoadSpeed * 2f);
 
-            At(DemoSounds.Pick(DemoSounds.Footsteps), walker.Tf.position,
-                DemoSounds.FootstepVolume, pitchJitter: 0.12f);
+            var clip = car.HalfLen > 3f ? DemoSounds.TruckPassBy : DemoSounds.CarPassBy;
+            At(clip, pos + fwd * run, DemoSounds.PassByVolume * _detail, pitchJitter: 0.07f);
+            _passIn = PassSpacing;
         }
 
         void EmitStreetVoices(float dt)
@@ -402,6 +440,11 @@ namespace RoadDemo
                 DemoSounds.StreetVoiceVolume * Mathf.Lerp(0.4f, 1f, _detail), pitchJitter: 0.1f);
         }
 
+        /// <summary>Roughly the visible half-frame: the ring a voice may come out
+        /// of, so it lands on somebody the view can plausibly attribute it to.
+        /// </summary>
+        float VoiceReach => Mathf.Clamp(rig.distance * 0.45f, 20f, 120f);
+
         /// <summary>A walker out on the pavement near the focus - not one sat on a
         /// bench, stood talking, or currently indoors.</summary>
         CivilianAgent SampleWalker()
@@ -409,10 +452,7 @@ namespace RoadDemo
             if (_walkers == null || _walkers.Count == 0) return null;
 
             var focus = rig.pivot;
-            // Inside roughly the visible half-frame, so a step lands on somebody the
-            // view can plausibly attribute it to.
-            float reach = Mathf.Clamp(rig.distance * 0.45f, 20f, 120f);
-            float reachSqr = reach * reach;
+            float reachSqr = VoiceReach * VoiceReach;
 
             for (int tries = 0; tries < 8; tries++)
             {

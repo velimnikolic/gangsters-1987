@@ -1152,6 +1152,54 @@ namespace RoadDemo
             return true;
         }
 
+        /// <summary>Why the crew will not shoot up that car, for the row that offers
+        /// it. Null when it will.</summary>
+        public string ShootCarRefusal { get; private set; }
+
+        /// <summary>Can this crew shoot a car up? A man of it up, armed, and on his
+        /// feet - and something left of the car to shoot at.</summary>
+        public bool CanShootCar(Unit unit, RoadCar car)
+        {
+            if (car == null || car.Tf == null || car.Wrecked)
+            { ShootCarRefusal = "Nothing left of it to shoot"; return false; }
+            if (car is not CrewCar)
+            { ShootCarRefusal = "Not a machine the crew can be put on"; return false; }
+            if (unit == null || unit.Wiped)
+            { ShootCarRefusal = "Nobody to give it to"; return false; }
+            foreach (var man in unit.All())
+                if (!man.Dead && man.Armed && !man.Riding && !IsAboard(man))
+                { ShootCarRefusal = null; return true; }
+            ShootCarRefusal = "Nobody of the crew is up and armed";
+            return false;
+        }
+
+        /// <summary>Put the whole crew on a car: they walk up to it and empty their guns
+        /// into it. Not an attack on the men who own it - the machine is the mark, and a
+        /// crew given this stands there shooting tin whether anybody is sat in it or not.
+        ///
+        /// The crew's own fight is dropped: a man cannot be on a rival and on a car at
+        /// once, and the car is what he was just told to do.</summary>
+        public bool OrderShootCar(RoadCar car)
+        {
+            if (!CanShootCar(Selected, car)) return false;
+            var machine = (CrewCar)car;
+            Unboard(Selected, "a car to shoot up");
+            Selected.TargetUnit = null;
+            Selected.OrderedFight = false;
+            foreach (var man in Selected.All())
+                if (!man.Dead && !IsAboard(man) && !man.Riding) man.ShootUp(machine);
+
+            if (DriveTrace.On)
+            {
+                var sb = DriveTrace.Take();
+                DriveTrace.Str(sb, "who", Selected.GangName);
+                DriveTrace.Str(sb, "car", machine.DisplayName);
+                DriveTrace.Int(sb, "hits", machine.EngineHits);
+                DriveTrace.Row("shootup", sb.ToString());
+            }
+            return true;
+        }
+
         void Dispatch(Unit unit, PedLink link, float t, bool run = false)
         {
             // a man who walked off his stretch (to a car door he never got into) sets
@@ -3313,7 +3361,15 @@ namespace RoadDemo
                     if (man != shooter && !man.Dead && man.Tf && (man.Tf.position - muzzle).sqrMagnitude < ear2)
                         _heard.Add(man);
             foreach (var man in _heard) man.HearShot(muzzle);
-            if (target == null || target.Dead) return;
+            if (target == null || target.Dead)
+            {
+                // NOBODY TO ROLL AGAINST AND STILL A MARK. A man put on a machine has
+                // no man to hit or miss - the tin IS the target, so every round finds
+                // it, and the damage model reads exactly the rounds it reads from a
+                // miss into a door (PutRoundIntoTin, CrewCar.TakeRound).
+                if (target == null && shooter.CarMark != null) PutRoundIntoTin(shooter.CarMark, muzzle);
+                return;
+            }
 
             float dist = Vector3.Distance(from, target.Tf.position);
             // the gun's accuracy holds to half its reach and falls to half of itself at

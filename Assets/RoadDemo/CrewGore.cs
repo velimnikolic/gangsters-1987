@@ -262,8 +262,19 @@ namespace RoadDemo
             var tf = quad.transform;
             tf.SetParent(body, worldPositionStays: true);
             tf.position = at + facing.normalized * 0.012f;
-            tf.rotation = Quaternion.LookRotation(facing.normalized, Vector3.up);
-            float size = Random.Range(0.055f, 0.085f);
+            // A Unity quad's visible face is -forward, NOT +forward: Splat lies flat with
+            // Euler(90,..), which points its forward at the ground, and it is the face you
+            // see from above. So a mark that must face the shooter looks AWAY from him -
+            // exactly as Stain does it, a dozen lines up. Looking AT him hid every hole
+            // inside the panel it was stood on, which is a thing nothing can see and so no
+            // thing at all.
+            tf.rotation = Quaternion.LookRotation(-facing.normalized, Vector3.up);
+            // Sized off the marks the game already reads at, not off a real bullet. The
+            // boom stands at 170m through a 45 degree lens: 141m of world over 1080 pixels,
+            // 0.13m to the pixel. The 6cm hole this used to draw was half a pixel wide.
+            // A stain on a man's shirt is 0.14-0.24 (Stain) and reads; tin takes a little
+            // more than cloth.
+            float size = Random.Range(0.16f, 0.26f);
             tf.localScale = new Vector3(size, size, size);
             quad.layer = body.gameObject.layer;
 

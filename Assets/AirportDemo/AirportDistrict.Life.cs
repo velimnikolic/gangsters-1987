@@ -128,17 +128,22 @@ namespace AirportDemo
             // until the last of them is aboard rather than let go on a timer
             _flights.Turnarounds = _boarding != null && _boarding.PoolSize > 0;
 
-            // the airline stands, a trijet and a turboprop about turn. The odd ones are
-            // stood on their stands with the steps up and a turnaround already running;
-            // the even ones are not here yet - they are out to the west and will be
-            // seen coming down final in the first minute or two. That way the demo
-            // opens on the whole cycle at once: one aeroplane boarding, one landing.
+            // the airline stands. The schedule out of a county field is turboprops -
+            // 4,000 ft of runway is what the county built and a loaded jet wants half
+            // as much again - so a jet is here only when the runway is long enough for
+            // one, and then only as the single charter on the end stand. The odd ones
+            // are stood on their stands with the steps up and a turnaround already
+            // running; the even ones are not here yet - they are out to the west and
+            // will be seen coming down final in the first minute or two. That way the
+            // demo opens on the whole cycle at once: one aeroplane boarding, one
+            // landing.
             var taken = new HashSet<int>();
             int airline = Mathf.Clamp(airlineAircraft, 0, _flights.AirlineStands);
+            bool jetsWelcome = runwayLength >= AirportSpec.JetRunwayMin;
             for (int i = 0; i < airline; i++)
             {
-                var kind = (i % 2 == 0) ? Aircraft.Kind.Jet : Aircraft.Kind.Commuter;
-                string name = kind == Aircraft.Kind.Jet ? "Flight " + (21 + i * 4) : "Flight " + (108 + i * 7);
+                var kind = (jetsWelcome && i == airline - 1) ? Aircraft.Kind.Jet : Aircraft.Kind.Commuter;
+                string name = kind == Aircraft.Kind.Jet ? "Charter " + (21 + i * 4) : "Flight " + (108 + i * 7);
                 // nothing of that class in the pack: the stand takes whatever there is
                 var a = MakePlane(kind, name) ?? MakePlane(Aircraft.Kind.Commuter, name) ?? MakePlane(Aircraft.Kind.Light, name);
                 if (a == null) break;
@@ -283,9 +288,9 @@ namespace AirportDemo
                 r.Bind(go.transform, AirportSpec.HeliRotor);
                 r.SetWash(_washFx);
                 // out over the country, down the length of the field, back
-                r.Patrol.Add(new Vector3(-500f, AirportSpec.PatternAltitude, -420f));
-                r.Patrol.Add(new Vector3(500f, AirportSpec.PatternAltitude + 40f, -520f));
-                r.Patrol.Add(new Vector3(700f, AirportSpec.PatternAltitude, 320f));
+                r.Patrol.Add(new Vector3(-420f, AirportSpec.PatternAltitude, -300f));
+                r.Patrol.Add(new Vector3(420f, AirportSpec.PatternAltitude + 40f, -380f));
+                r.Patrol.Add(new Vector3(560f, AirportSpec.PatternAltitude, 260f));
                 r.Park();
                 _rotors.Add(r);
             }
@@ -299,8 +304,8 @@ namespace AirportDemo
                 AirportKit.SetLayerDeep(go, 0);
                 var r = new Rotorcraft { Pad = pad + new Vector3(-26f, 0f, 0f), PadYaw = 150f, Resident = false };
                 r.Bind(go.transform, AirportSpec.HeliRotor);
-                r.Patrol.Add(new Vector3(-900f, AirportSpec.PatternAltitude + 90f, -700f));
-                r.Patrol.Add(new Vector3(-200f, AirportSpec.PatternAltitude + 60f, -900f));
+                r.Patrol.Add(new Vector3(-700f, AirportSpec.PatternAltitude + 90f, -520f));
+                r.Patrol.Add(new Vector3(-180f, AirportSpec.PatternAltitude + 60f, -660f));
                 r.Park();
                 _rotors.Add(r);
             }
@@ -322,7 +327,7 @@ namespace AirportDemo
                     PadYaw = 20f,
                     Resident = false,
                     Visiting = true,
-                    Home = new Vector3(AirportSpec.MapX1 + 320f, AirportSpec.PatternAltitude + 120f, -740f),
+                    Home = new Vector3(AirportSpec.MapX1 + 260f, AirportSpec.PatternAltitude + 120f, -520f),
                 };
                 r.Bind(go.transform, AirportSpec.HeliRotor);
                 r.SetWash(_washFx);
@@ -475,11 +480,16 @@ namespace AirportDemo
             if (plain.Count > 0)
             {
                 var go = Vehicle(plain[0], "Plain sedan");
+                // on the verge of the general aviation gate road, nose to the wire: a
+                // man sat in it can see the gate, the hangar line and anything that
+                // taxis up to it. The night run sends this same car after the van
+                // (Trade.cs) - one car doing both is the point of it.
                 go.transform.SetLocalPositionAndRotation(
-                    new Vector3(AirportSpec.GaGateX - 26f, AirportSpec.PaveY, AirportSpec.LoopBackZ + 9f),
-                    Quaternion.Euler(0f, 96f, 0f));
+                    new Vector3(AirportSpec.GaGateX + 9f, AirportSpec.PaveY, AirportSpec.LoopBackZ + 4f),
+                    Quaternion.Euler(0f, 186f, 0f));
                 if (agents.Count > 0 && sitLoop != null)
                     CarOccupant.Crew(go.transform, agents, sitLoop, passengerChance: 0.5f, layer: CrowdLayer);
+                _lawSedan = go;
             }
         }
 
