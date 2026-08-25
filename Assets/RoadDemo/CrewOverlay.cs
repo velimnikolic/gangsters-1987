@@ -638,13 +638,23 @@ namespace RoadDemo
             // card with one line on it and nothing anywhere to say why. ("Nemam opciju
             // moto drive by samo kill.") Faded, with the reason where the note goes, is
             // what the armory counter already does with a BUY tape it cannot honour.
+            //
+            // AND IT SAYS HOW MANY MACHINES ARE GOING. The order sends every machine the
+            // crew holds and can crew, two men to each (DemoCrews.OrderDriveBy), so a
+            // crew with two machines and four men on their feet puts both on the road
+            // off one click - and the note has to say so, or the player who bought the
+            // second machine has no way of knowing it went.
             var bike = _crews.BikeOf(crew);
-            var can = bike != null && _crews.CanDriveBy(crew, target);
+            int machines = _crews.DriveByMachines(crew, target);
+            var can = bike != null && machines > 0;
             var why = bike == null ? "no machine - buy one in the ledger and give it to him"
                     : _crews.DriveByRefusal ?? "not now";
             Row("MOTO DRIVE-BY",
-                can ? "two men on the " + bike.DisplayName.ToLowerInvariant() + ", one pass"
-                    : why,
+                !can ? why
+                    : machines == 1
+                        ? "two men on the " + bike.DisplayName.ToLowerInvariant() + ", one pass"
+                        : Spell(machines) + " machines, " + Spell(machines * 2) +
+                          " men, one pass each",
                 can ? () =>
                 {
                     if (_crews.OrderDriveBy(target))
@@ -673,6 +683,25 @@ namespace RoadDemo
                 lit: canBomb);
 
             LayoutAndShow(screen);
+        }
+
+        /// <summary>Small numbers the way the card says them. The rows are written in
+        /// prose - "two men on the harley davidson" - and a digit dropped in the middle
+        /// of one reads as a stat rather than a sentence.</summary>
+        static string Spell(int n)
+        {
+            switch (n)
+            {
+                case 1: return "one";
+                case 2: return "two";
+                case 3: return "three";
+                case 4: return "four";
+                case 5: return "five";
+                case 6: return "six";
+                case 7: return "seven";
+                case 8: return "eight";
+                default: return n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
         }
 
         /// <summary>The card's rows laid out, sized, placed at the pointer and shown -

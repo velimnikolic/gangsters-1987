@@ -25,10 +25,16 @@ namespace RoadDemo
         // cannot parallax a pool away from its own post.
         const float BulbHeight = 2.5f;
 
+        //  - SM_Prop_Pier_Lamp_01: the harbour's own post, 4.2 m tall with its head
+        //    reaching about half a metre to +Z. Only the port plants it, and until it
+        //    was named here the whole quay stood dark at night while the street behind
+        //    the wire burned - which read as a port that had been abandoned rather than
+        //    as one that works two shifts.
         static readonly (string name, Vector3 bulb)[] LampKinds =
         {
             ("SM_Prop_Street_Lamp_01", new Vector3(0f, BulbHeight, 1.3f)),
             ("SM_Prop_Street_Lamp_08", new Vector3(0f, BulbHeight, 0f)),
+            ("SM_Prop_Pier_Lamp_01", new Vector3(0f, 3.4f, 0.45f)),
         };
 
         // the pack's own street-lamp amber, and a cone that paints a pool on the

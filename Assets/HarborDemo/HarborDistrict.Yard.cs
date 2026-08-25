@@ -17,6 +17,10 @@ namespace HarborDemo
         // the yard's z bands, south to north
         public const float QuayLaneZ = 8f;          // where the forklifts run (5..11)
         public const float LiveRowZ = 18f;          // the live stacks, between the cranes' rails (5.6 / 22)
+        /// <summary>The lane the devanning gang works in: the strip between the back of
+        /// the live row and the gantry's landward rail. A box is opened here and what
+        /// comes out of it is shuttled to the sheds (HarborDevanning).</summary>
+        public const float DevanZ = 20.6f;
         /// <summary>The standing blocks: their south face clear of the cranes' land rail
         /// and the legs that run on it, five rows of boxes lying along the quay, a
         /// box and a half a row.</summary>
@@ -293,11 +297,42 @@ namespace HarborDemo
             float lotZ0 = ShedFrontZ + 2f, lotZ1 = _shedBackZ - 1.5f;
             int use = _rng.Next(4);
 
-            foreach (var lot in _backLots)
+            // the widest lot in the row is the tank farm's - once to a port, and the
+            // widest because a bund wants room round it (HarborDistrict.Works.cs); and
+            // one other is kept back empty for the box nobody talks about
+            // (HarborDistrict.Contraband.cs)
+            int farm = -1, bonded = -1;
+            for (int i = 0; i < _backLots.Count; i++)
             {
+                if (_backLots[i].y - _backLots[i].x < 18f) continue;
+                if (InGateLane((_backLots[i].x + _backLots[i].y) * 0.5f, 6f)) continue;
+                if (farm < 0 || _backLots[i].y - _backLots[i].x > _backLots[farm].y - _backLots[farm].x) farm = i;
+            }
+            if (contraband)
+                for (int i = 0; i < _backLots.Count; i++)
+                {
+                    if (i == farm || _backLots[i].y - _backLots[i].x < 13f) continue;
+                    if (InGateLane((_backLots[i].x + _backLots[i].y) * 0.5f, 6f)) continue;
+                    bonded = i;
+                    break;
+                }
+
+            for (int lotIndex = 0; lotIndex < _backLots.Count; lotIndex++)
+            {
+                var lot = _backLots[lotIndex];
                 float w = lot.y - lot.x;
                 if (w < 12f) continue;
                 float x0 = lot.x + 2.5f, x1 = lot.y - 2.5f;
+                if (lotIndex == farm)
+                {
+                    RaiseTankFarm(x0, x1, lotZ0, lotZ1);
+                    continue;
+                }
+                if (lotIndex == bonded)
+                {
+                    _contrabandLot = Rect.MinMaxRect(x0, lotZ0, x1, lotZ1);
+                    continue;               // left clear: the contraband pass fills it
+                }
                 // the uses go round in turn from a random start, so two neighbouring
                 // lots are never the same thing
                 use = (use + 1) & 3;
@@ -433,9 +468,12 @@ namespace HarborDemo
             var bb = HarborKit.PrefabBounds(box);
             float boxH = Mathf.Max(1f, bb.size.y);
 
-            // the live slots: seven along per berth, two high, boxes lying along the quay
+            // the live slots: seven along per berth, two high, boxes lying along the
+            // quay - only under a berth that HAS a gantry, because the live row is the
+            // gantry's landing ground and a bulk quay or a car park has neither
             for (int i = 0; i < berths; i++)
             {
+                if (!IsBoxBerth(i)) continue;
                 float xb = BerthX(i);
                 var slots = new List<Vector3>();
                 for (int layer = 0; layer < 2; layer++)
@@ -457,7 +495,7 @@ namespace HarborDemo
             }
             for (float x = -half + 6f + BoxPitch * 0.5f; x < half - 6f; x += BoxPitch)
             {
-                if (InAisle(x))
+                if (YardClosed(x))
                 {
                     LayBlock();
                     continue;
@@ -467,7 +505,7 @@ namespace HarborDemo
                     LayBlock();
                     // the cross lane: box edge to box edge, on top of the bay's own slack
                     x += CrossLane - (BoxPitch - boxLen);
-                    if (InAisle(x) || x >= half - 6f) continue;
+                    if (YardClosed(x) || x >= half - 6f) continue;
                 }
                 bays.Add(x);
             }
@@ -547,6 +585,23 @@ namespace HarborDemo
             }
         }
 
+        /// <summary>A length of the perimeter, with the hole left in it. Every yard has
+        /// one somewhere and it is never at a gate: the cut is decided with the berths
+        /// (PlanBerthKinds) so the wire can be built round it and dressed afterwards
+        /// (HarborDistrict.Contraband.cs). Handed its ends either way round, because the
+        /// gates are not guaranteed to be in west-east order.</summary>
+        void FenceLine(float x0, float x1, float y, float z)
+        {
+            if (x1 < x0) (x0, x1) = (x1, x0);
+            if (WireCutHalf > 0f && _wireCutX > x0 + 1f && _wireCutX < x1 - 1f)
+            {
+                FenceRun(new Vector3(x0, y, z), new Vector3(_wireCutX - WireCutHalf, y, z));
+                FenceRun(new Vector3(_wireCutX + WireCutHalf, y, z), new Vector3(x1, y, z));
+                return;
+            }
+            FenceRun(new Vector3(x0, y, z), new Vector3(x1, y, z));
+        }
+
         void BuildFence()
         {
             _fencePanel = HarborKit.TryLoad(HarborKit.FencePanel);
@@ -561,9 +616,9 @@ namespace HarborDemo
                 Debug.LogWarning("[HarborDemo] the GangWarfare fence pieces are missing - the yard stands open.");
                 return;
             }
-            FenceRun(new Vector3(-half, y, z), new Vector3(_gateWestX - GateHalf, y, z));
-            FenceRun(new Vector3(_gateWestX + GateHalf, y, z), new Vector3(_gateEastX - GateHalf, y, z));
-            FenceRun(new Vector3(_gateEastX + GateHalf, y, z), new Vector3(half, y, z));
+            FenceLine(-half, _gateWestX - GateHalf, y, z);
+            FenceLine(_gateWestX + GateHalf, _gateEastX - GateHalf, y, z);
+            FenceLine(_gateEastX + GateHalf, half, y, z);
             // the ends: down the sides of the yard to the coping
             FenceRun(new Vector3(-half, y, z), new Vector3(-half, y, 3f));
             FenceRun(new Vector3(half, y, 3f), new Vector3(half, y, z));
@@ -617,8 +672,13 @@ namespace HarborDemo
             AsphaltStrip(-half + 1f, gW - 5f, YardRoadZ0, YardRoadZ1, _apronRoot);
             AsphaltStrip(gE + 5f, half - 1f, YardRoadZ0, YardRoadZ1, _apronRoot);
             AsphaltStrip(-half + 1f, half - 1f, QuayLaneZ - 3f, QuayLaneZ + 3f, _apronRoot);
+            // the forklift aisles - only where there ARE forklift aisles. A berth that
+            // works no boxes has no stacks to run a lane between, and a strip of tarmac
+            // laid up through a sand heap or a rank of parked imports is a road drawn
+            // where nothing drives.
             for (int i = 0; i < berths; i++)
-                AsphaltStrip(AisleX(i) - 2.5f, AisleX(i) + 2.5f, QuayLaneZ + 3f, YardRoadZ0, _apronRoot);
+                if (IsBoxBerth(i))
+                    AsphaltStrip(AisleX(i) - 2.5f, AisleX(i) + 2.5f, QuayLaneZ + 3f, YardRoadZ0, _apronRoot);
         }
 
         StreetKit _street, _yardStreet;
@@ -698,11 +758,31 @@ namespace HarborDemo
                         HarborKit.Prop(pallet, new Vector3(xb + 8f, y + k * pb.size.y, QuayLaneZ + 4f), k * 4f, _yardRoot, "Pallet");
                     HarborKit.Prop(pallet, new Vector3(xb + 10.5f, y, QuayLaneZ + 4.2f), 12f, _yardRoot, "Pallet");
                 }
-                if (burn != null) HarborKit.Prop(burn, new Vector3(xb - 30f, y, QuayLaneZ + 4.4f), 0f, _yardRoot, "BurnBarrel");
+                var drumAt = new Vector3(xb - 30f, y, QuayLaneZ + 4.4f);
+                if (burn != null)
+                {
+                    HarborKit.Prop(burn, drumAt, 0f, _yardRoot, "BurnBarrel");
+                    // the mugs on its rim: what says the men round it are on their break
+                    var mug = HarborKit.TryLoad(HarborKit.CoffeeCup);
+                    if (mug != null)
+                    {
+                        float rim = drumAt.y + HarborKit.PrefabBounds(burn).max.y;
+                        for (int k = 0; k < 2; k++)
+                            HarborKit.Sit(mug, new Vector3(drumAt.x - 0.18f + k * 0.34f, rim, drumAt.z + (k == 0 ? 0.1f : -0.14f)),
+                                          HarborKit.Range(_rng, 0f, 360f), _yardRoot, "Mug");
+                    }
+                }
                 if (crate != null)
                 {
-                    HarborKit.Prop(crate, new Vector3(xb - 31.6f, y, QuayLaneZ + 3.7f), 30f, _yardRoot, "Crate");
-                    HarborKit.Prop(crate, new Vector3(xb - 28.6f, y, QuayLaneZ + 3.9f), -20f, _yardRoot, "Crate");
+                    // the men's stools. Offered to the break rota as SEATS, so a docker
+                    // called off his round sits on the crate that is actually there
+                    // rather than on a point beside it (HarborDistrict.Routine.cs)
+                    var west = new Vector3(xb - 31.6f, y, QuayLaneZ + 3.7f);
+                    var east = new Vector3(xb - 28.6f, y, QuayLaneZ + 3.9f);
+                    HarborKit.Prop(crate, west, 30f, _yardRoot, "Crate");
+                    HarborKit.Prop(crate, east, -20f, _yardRoot, "Crate");
+                    OfferSeat(crate, west, 30f, drumAt);
+                    OfferSeat(crate, east, -20f, drumAt);
                 }
                 if (cone != null)
                 {
@@ -721,7 +801,7 @@ namespace HarborDemo
                 }
             // lamps down the yard road too, on the block side of it
             for (float x = -QuayHalf + 27f; x < QuayHalf - 10f; x += 45f)
-                HarborKit.Prop(_pierLamp, new Vector3(x, y, YardRoadZ0 - 0.7f), 0f, _yardRoot, "Lamp");
+                HarborKit.Prop(_pierLamp, new Vector3(x, y, YardRoadZ0 - 0.7f), 0f, _yardRoot);   // its own name: see BuildQuay
 
             BuildBackLots();
             DressPerimeter();

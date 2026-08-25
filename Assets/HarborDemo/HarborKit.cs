@@ -27,6 +27,7 @@ namespace HarborDemo
         public const string GenEnv = "Assets/Synty/PolygonGeneric/Prefabs/Environment/";
         public const string GenBase = "Assets/Synty/PolygonGeneric/Prefabs/Base/";
         public const string MilWarehouse = "Assets/Synty/PolygonMapsMilitaryWarehouse/Prefabs/";
+        public const string TownProps = "Assets/Synty/PolygonTown/Prefabs/Props/";
         public const string Fx = "Assets/Synty/PolygonParticleFX/Prefabs/";
         public const string KitBuildings = "Assets/CityKit/Buildings/";
         public const string KitTiles = "Assets/CityKit/Tiles/";
@@ -36,10 +37,18 @@ namespace HarborDemo
         public const string WaterPlane = "Assets/Synty/PNB_Core/Prefabs/SM_Env_Water_Plane_01.prefab";
         public const string OceanTile = CityEnv + "SM_Env_Ocean_Tile_01.prefab";
         public const string PalmGround = "Assets/Synty/PolygonPalmCity/Materials/Env/Grass_Triplanar_01.mat";
-        /// <summary>The palm city's tiling concrete and tarmac - what the apron and the
-        /// yard roads are laid in, as one plane each rather than a grid of slabs.</summary>
+        /// <summary>The palm city's tiling tarmac - what the yard roads are laid in, as
+        /// one plane rather than a grid of slabs - and beside it the same pack's tiling
+        /// concrete, kept only as the apron's fallback for when the paving square below
+        /// cannot be loaded.</summary>
         public const string ConcreteMat = "Assets/Synty/PolygonPalmCity/Materials/Buildings/Sidewalk_01.mat";
         public const string AsphaltMat = "Assets/Synty/PolygonPalmCity/Materials/Buildings/Road_Grey_01.mat";
+        /// <summary>The city pack's plain pavement square: five metres, three centimetres
+        /// thick, pivoted on its +X/+Z corner like every other piece of the kit. It is
+        /// what a core block's floor is made of - the demo's own paving, and what
+        /// CoreBlockTray lays in a block's holes - so the apron is floored with it too
+        /// and the port reads as the same city as the blocks behind it.</summary>
+        public const string PaveTile = CityEnv + "SM_Env_Sidewalk_01.prefab";
         public const string QuayStraight = CityEnv + "SM_Env_WaterEdge_Straight_03.prefab";
         public const string QuayWorn = CityEnv + "SM_Env_WaterEdge_Straight_02.prefab";
         public const string QuayPipe = CityEnv + "SM_Env_WaterEdge_Pipe_01.prefab";
@@ -138,6 +147,82 @@ namespace HarborDemo
         public const string FxRipple = Fx + "FX_WaterRipple_01.prefab";
         public const string FxSmoke = Fx + "FX_Smoke_Black_Small_01.prefab";
         public const string FxBirds = PalmFx + "FX_Birds_01.prefab";
+        public const string FxSparks = Fx + "FX_Sparks_01.prefab";
+        public const string FxDust = Fx + "FX_Dust_Small_01.prefab";
+        public const string FxSteam = Fx + "FX_Steam_01.prefab";
+        public const string FxSmokeWhite = Fx + "FX_Smoke_White_Small_01.prefab";
+
+        // ------------------------------------------------------------ the waterline
+        //
+        // What hangs off the front of a working quay and what the men get up and down it
+        // by. None of it is a "harbour" piece in any pack: a fender is the palm city's
+        // ball buoy hung on the generic pack's chain, and a mooring line is the generic
+        // rope - three metres of it standing up its own +Y - stretched from a bollard to
+        // a ship's rail.
+        public const string Ladder = GangProps + "SM_Prop_Ladder_01.prefab";
+        public const string Chain = GenProps + "SM_Gen_Prop_Chain_01.prefab";
+        public const string ChainAnchor = GenProps + "SM_Gen_Prop_Chain_Anchor_01.prefab";
+        public const string RopeKnot = GenProps + "SM_Gen_Prop_Rope_Knot_01.prefab";
+        // the line itself is Rope1, further down with the freight - it was already in
+        // the cupboard before the moorings wanted it
+        /// <summary>Oil and standing water: the gang pack's puddle decals, laid on the
+        /// paint plane the tyre marks are laid on.</summary>
+        public static readonly string[] Puddles =
+        {
+            GangProps + "SM_Prop_Puddle_01.prefab", GangProps + "SM_Prop_Puddle_02.prefab",
+            GangProps + "SM_Prop_Puddle_03.prefab", GangProps + "SM_Prop_Puddle_04.prefab",
+            GangProps + "SM_Prop_Puddle_05.prefab",
+        };
+        /// <summary>Bare earth, for the path worn through a hole in the wire.</summary>
+        public static readonly string[] DirtPatches =
+        {
+            GenEnv + "SM_Gen_Env_Ground_Dirt_01.prefab", GenEnv + "SM_Gen_Env_Ground_Dirt_02.prefab",
+            GenEnv + "SM_Gen_Env_Ground_Dirt_03.prefab", GenEnv + "SM_Gen_Env_Ground_Dirt_04.prefab",
+        };
+
+        // ------------------------------------------------------------ the works
+        //
+        // The gate, the tank farm and the port office: a pump for the machines, the mast
+        // and dish that say a hut is the harbourmaster's rather than another store, and
+        // the board that says a shed is on offer. (The gate arms are not a prop at all -
+        // no pack in the project ships a lift gate, so HarborBoom builds one.)
+        public const string GasPump = TownProps + "SM_Prop_Gaspump_01.prefab";
+        public const string Antenna = TownProps + "SM_Prop_Antenna_01.prefab";
+        public const string SatDish = CityProps + "SM_Prop_SatDish_01.prefab";
+        public const string Flagpole = PalmProps + "SM_Prop_Lifeguard_Flag_01.prefab";
+        public const string HireSign = PalmProps + "SM_Prop_Sign_Hire_01.prefab";
+        public const string SecurityCamera = PalmProps + "SM_Prop_Security_Camera_01.prefab";
+        /// <summary>A storage tank is the gang pack's steel drum blown up to whatever the
+        /// back lot has room for - four to eight and a half metres across: a cylinder
+        /// with two hoop rims, which is what a tank is from the far side of a yard. No
+        /// pack in the project ships one.</summary>
+        public const string TankBody = BarrelMetal;
+
+        // ------------------------------------------------------------ berth character
+        //
+        // What tells one berth from the next: the dividers a roll-on berth's ranks are
+        // marked out with, and the tackle of a fishing quay. A bulk berth's heaps are
+        // ground rather than props - the port raises them the way it raises its shore.
+        public const string ParkingDivider = PalmProps + "SM_Prop_Parking_Divider_01.prefab";
+        public const string TackleBox = PalmProps + "SM_Prop_Tackle_Box_01.prefab";
+        public const string FishingRod = PalmProps + "SM_Prop_Fishing_Rod_01.prefab";
+        public const string Bucket = PalmProps + "SM_Prop_Bucket_01.prefab";
+        public const string CrabSign = PalmProps + "SM_Prop_Crab_Sign_01.prefab";
+        public const string DrinksCooler = PalmProps + "SM_Prop_Drinks_Cooler_01.prefab";
+        public const string Keg = TownProps + "SM_Prop_Keg_01.prefab";
+        public const string Wheelbarrow = TownProps + "SM_Prop_Wheelbarrow_01.prefab";
+        public const string Workbench = TownProps + "SM_Prop_Workbench_01.prefab";
+        /// <summary>What stands on the rim of a burn barrel while the shift is on its
+        /// break. A mug is four centimetres of geometry and it is the whole difference
+        /// between men standing near a drum and men having their tea.</summary>
+        public const string CoffeeCup = PalmProps + "SM_Prop_Drink_Coffee_01.prefab";
+        /// <summary>The folders a roll-on berth's cars are drawn from: the two the city's
+        /// own traffic is scanned out of, without the police pack.</summary>
+        public static readonly string[] CarFolders =
+        {
+            "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles",
+            "Assets/Synty/PolygonCity/Prefabs/Vehicles",
+        };
 
         /// <summary>No longer laid anywhere - the finger pier and the pleasure-boat passers
         /// went when the port became a box port only. Kept for whoever wants a marina.</summary>
@@ -426,6 +511,81 @@ namespace HarborDemo
                 if (deep != null) return deep;
             }
             return null;
+        }
+
+        /// <summary>A prop hung so its own TOP rests at the given point - a fender on a
+        /// chain, a lamp under a beam. The mirror of <see cref="Sit"/>.</summary>
+        public static GameObject Hang(GameObject prefab, Vector3 at, float yaw, Transform parent, string name = null)
+        {
+            if (prefab == null) return null;
+            var b = PrefabBounds(prefab);
+            return Prop(prefab, new Vector3(at.x, at.y - b.max.y, at.z), yaw, parent, name);
+        }
+
+        /// <summary>One piece stretched to reach from A to B along its own longest axis -
+        /// a rope, a chain, a pipe - its near end put on A. Unlike <see cref="PlaceRun"/>
+        /// this works in THREE dimensions, because a mooring line comes down off a ship's
+        /// rail to a bollard on the coping and a hanging chain goes straight down. The
+        /// piece's own length axis is read off its bounds; the other two are set to
+        /// <paramref name="thickness"/>, so a three-metre rope makes a twenty-metre line
+        /// no thicker than it started.</summary>
+        public static GameObject Span(GameObject prefab, Vector3 from, Vector3 to, float thickness, Transform parent, string name = null)
+        {
+            if (prefab == null) return null;
+            var b = PrefabBounds(prefab);
+            var d = to - from;
+            float len = d.magnitude;
+            if (len < 0.01f) return null;
+            var size = b.size;
+            Vector3 own;              // the piece's own length axis
+            float module, near;       // and how far its near end lies from the pivot along it
+            if (size.y >= size.x && size.y >= size.z) { own = Vector3.up; module = Mathf.Max(0.01f, size.y); near = b.min.y; }
+            else if (size.x >= size.z) { own = Vector3.right; module = Mathf.Max(0.01f, size.x); near = b.min.x; }
+            else { own = Vector3.forward; module = Mathf.Max(0.01f, size.z); near = b.min.z; }
+
+            var go = Object.Instantiate(prefab, parent);
+            go.name = name ?? prefab.name;
+            var rot = Quaternion.FromToRotation(own, d / len);
+            float stretch = len / module;
+            var scale = Vector3.one * thickness;
+            if (own == Vector3.up) scale.y = stretch;
+            else if (own == Vector3.right) scale.x = stretch;
+            else scale.z = stretch;
+            go.transform.rotation = rot;
+            go.transform.localScale = scale;
+            go.transform.position = from - rot * (own * (near * stretch));
+            return go;
+        }
+
+        /// <summary>The cars a port may park on a roll-on berth: the scan the city's own
+        /// traffic is drawn from, less anything barred outright and anything wearing a
+        /// livery - a shipload of imports is not a shipload of squad cars.</summary>
+        public static List<GameObject> ScanCars()
+        {
+            var list = new List<GameObject>();
+#if UNITY_EDITOR
+            string[] deny = { "boat", "yacht", "jetski", "helicopter", "plane", "cart", "scooter",
+                              "bike", "moped", "bot", "steering", "wheel", "trailer", "monster",
+                              "quad", "attach" };
+            foreach (var guid in UnityEditor.AssetDatabase.FindAssets("t:Prefab", CarFolders))
+            {
+                string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                string low = path.ToLowerInvariant();
+                bool denied = false;
+                foreach (var d in deny) if (low.Contains(d)) { denied = true; break; }
+                if (denied) continue;
+                if (!System.IO.Path.GetFileName(path).StartsWith("SM_Veh")) continue;
+                if (LivingCity.Gameplay.VehicleCatalog.IsBarred(path)) continue;
+                if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(path)) continue;
+                var go = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (go != null) list.Add(go);
+            }
+            // FindAssets promises no order, and the caller draws from this list with the
+            // port's seeded RNG: unsorted, the same seed parks a different fleet after a
+            // reimport or on another machine
+            list.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
+#endif
+            return list;
         }
 
         public static float Range(System.Random rng, float lo, float hi) => lo + (float)rng.NextDouble() * (hi - lo);

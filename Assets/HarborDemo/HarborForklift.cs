@@ -24,6 +24,17 @@ namespace HarborDemo
         /// shuttle, pile to door) or back to it (a shed lift emptying a lorry at the
         /// kerb into the shed it parks in).</summary>
         public bool LadenOutward = true;
+        /// <summary>Called the moment the machine picks its load up. What the quay
+        /// shuttle's devanning gang counts its pallets off by (HarborDevanning).</summary>
+        public System.Action Took;
+
+        /// <summary>Move one node of the route while the machine is running - the pick-up
+        /// end follows the box the gantry last landed, so the shuttle is seen to go to
+        /// the box that has just come off the ship rather than to a fixed spot.</summary>
+        public void SetNode(int i, Vector3 at)
+        {
+            if (i >= 0 && i < Route.Count) Route[i] = at;
+        }
 
         Transform _carriage;
         readonly RoadDemo.WheelSpin _wheels = new RoadDemo.WheelSpin();
@@ -68,8 +79,21 @@ namespace HarborDemo
                 Spin(dt);
                 return;
             }
-            // parked at the pile while the berth is quiet
-            if (!working && _node == 0 && _outward) { _speed = 0f; return; }
+            // parked at the pile while the berth is quiet. Not asked which way she is
+            // pointing: coming home she reaches node 0 with _outward already false, and
+            // the old `&& _outward` meant this guard fired only on the very first cycle
+            if (!working && _node == 0 && !_laden) { _speed = 0f; return; }
+            // and standing at the pile with work waiting: the load goes on the forks
+            // BEFORE she sets off, not after a wasted run out and back. Only the machine
+            // that carries its load outward - a shed lift is meant to go out empty.
+            if (working && LadenOutward && _node == 0 && _outward && !_laden)
+            {
+                _laden = true;
+                if (Payload != null) Payload.SetActive(true);
+                Took?.Invoke();
+                _pause = HarborKit.Range(_rng, 1.4f, 3f);
+                return;
+            }
             if (goal < 0 || goal >= Route.Count)
             {
                 // an end: turn round after a pause. On the laden leg's far end the load
@@ -93,6 +117,7 @@ namespace HarborDemo
                     }
                     _laden = true;
                     if (Payload != null) Payload.SetActive(true);
+                    Took?.Invoke();
                 }
                 _outward = !_outward;
                 _pause = HarborKit.Range(_rng, 1.4f, 3f);

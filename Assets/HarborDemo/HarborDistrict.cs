@@ -49,6 +49,18 @@ namespace HarborDemo
         public bool deliveryTruck = true;
         public int lorries = 3;
 
+        /// <summary>Whether the berths may be anything but box berths - a bulk quay with
+        /// its heaps, a roll-on quay with its ranks of imports, a fishing wall. Off, the
+        /// port is the box terminal it always was (HarborDistrict.Berths.cs).</summary>
+        public bool mixedBerths = true;
+        /// <summary>The port's own crime: one container that is watched, a hole cut in
+        /// the wire away from the gates, and a bonded shed standing empty and on offer
+        /// (HarborDistrict.Contraband.cs).</summary>
+        public bool contraband = true;
+        /// <summary>The gate works: a boom that lifts for a lorry, the weighbridge plate
+        /// under it, a customs post and the queue outside the wire.</summary>
+        public bool gateWorks = true;
+
         // ------------------------------------------------------------ levels
 
         /// <summary>The water's surface: the palm city's own level under its quays.</summary>
@@ -61,6 +73,10 @@ namespace HarborDemo
         public const float SeabedY = -6f;
         /// <summary>The quay wall's face is this far south of the coping line (z = 0).</summary>
         public const float QuayFace = 1.51f;
+        /// <summary>Where a bollard's foot stands on the coping - the height of the
+        /// stone and a stride in from the face. Named because the mooring lines are
+        /// made fast to it and the ships are not in this file.</summary>
+        public const float BollardY = 0.43f, BollardZ = -0.75f;
 
         /// <summary>Half the quay's length: the berths and five metres of slack each end.</summary>
         public float QuayHalf => berths * berthPitch * 0.5f + 5f;
@@ -213,9 +229,14 @@ namespace HarborDemo
             _streetRoot = Root("Harbor Streetscape");
             _liveRoot = host.LiveRoot("Harbor Live");
             _roots.Add(_liveRoot);
+            // taken before anything is built, not after: the contraband pass posts a man
+            // on the watched box while the yard is still being laid, and a man given a
+            // default wardrobe stands in his T-pose for the rest of the game
+            _clips = host.Clips;
 
             LoadGroundKit();
             BuildWarehouses();      // first: their backs fix the road, the fence and the apron
+            PlanBerthKinds();       // then what each berth is FOR: the yard reads it
             if (!host.ProvidesGround)
             {
                 BuildWater();
@@ -228,17 +249,21 @@ namespace HarborDemo
             BuildFence();
             BuildBackStreet();
             DressYard();
+            BuildBerthWorks();      // the heaps, the ranks of imports, the fishing tackle
+            BuildPortWorks();       // the office, the customs post, the tank farm
+            BuildWaterline();       // fenders, ladders, life rings, the oil on the concrete
+            BuildContraband();      // the watched box, the cut wire, the shed on offer
             BuildDetail();
 
             if (_streetZ > PlannedStreetZ + 1f)
                 Debug.LogWarning($"[Harbor] the sheds want the street at z {_streetZ:F0}, further out than the " +
                                  $"{PlannedStreetZ:F0} m the ground was reserved for - the city's approach will be short.");
 
-            _clips = host.Clips;
             BuildShipping();
             BuildForklifts();
             BuildWorkers();
             BuildTraffic();
+            BuildRoutine();         // the breaks, the gate, the welder, the port's lights
 
             // the port was drawn at its own origin, every piece put down in the port's
             // own coordinates; the roots now carry the whole of it onto its shore. What
@@ -248,7 +273,15 @@ namespace HarborDemo
             MoveIntoPlace();
             BuildPortals();
 
-            for (int i = 0; i < _workers.Count; i++) host.RegisterWalker(_workers[i]);
+            // The dock hands are ticked HERE, off a list typed as HarborWorker.
+            //
+            // They used to be handed to the host with host.RegisterWalker, and the host
+            // ticks its walkers through a List<PedestrianAgent> - which binds the BASE
+            // class's Tick, not the worker's (HarborWorker hides it with `new`, as
+            // AirportWalker and the civilians do). The base tick of a man with no
+            // PedLink does nothing but blend him standing still, so every docker in the
+            // port stood on the spot: the rounds, the ship's crew's lanes and now the
+            // breaks were all written and none of them ever ran.
             host.RegisterRoads(_roads);
             BlockTheYard(host);
         }
@@ -269,7 +302,8 @@ namespace HarborDemo
             for (int i = 0; i < _cranes.Count; i++) _cranes[i].EndFrame();
             for (int i = 0; i < _forklifts.Count; i++) _forklifts[i].Tick(dt);
             for (int i = 0; i < _trucks.Count; i++) _trucks[i].Tick(dt);
-            // the workers are the host's: it ticks them with the rest of the crowd
+            TickRoutine(dt);
+            for (int i = 0; i < _workers.Count; i++) _workers[i].Tick(dt);
             if ((Time.frameCount & 63) == 0) PruneWorkers();
         }
 

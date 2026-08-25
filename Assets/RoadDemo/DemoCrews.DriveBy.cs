@@ -41,7 +41,14 @@ namespace RoadDemo
         readonly HashSet<CrewBike> _ledgerBikes = new HashSet<CrewBike>();
 
         /// <summary>The motorcycle this crew owns per the ledger, or null.</summary>
-        public CrewBike BikeOf(Unit unit)
+        public CrewBike BikeOf(Unit unit) => BikeOf(unit, null);
+
+        /// <summary>The same question with some of the crew's machines already spoken
+        /// for. An order that sends EVERY machine the crew can crew asks it once per
+        /// machine, and without the set the second ask would keep handing back the
+        /// first ask's bike - which is the whole reason a crew with two machines only
+        /// ever sent one.</summary>
+        CrewBike BikeOf(Unit unit, HashSet<CrewBike> taken)
         {
             if (unit == null) return null;
 
@@ -55,15 +62,16 @@ namespace RoadDemo
             // Free first, then whatever is owned: the fallback is what lets the card say
             // WHY when every machine the crew has is out or occupied, instead of "no
             // motorcycle" when there plainly is one.
-            CrewBike taken = null;
+            CrewBike held = null;
             for (int i = 0; i < Bikes.Count; i++)
             {
                 var bike = Bikes[i];
                 if (bike == null || bike.Owner != unit) continue;
+                if (taken != null && taken.Contains(bike)) continue;
                 if (bike.Rider == null && bike.Pillion == null && RaidOf(bike) == null) return bike;
-                if (taken == null) taken = bike;
+                if (held == null) held = bike;
             }
-            return taken;
+            return held;
         }
 
         /// <summary>The ledger's motorcycles: bound to their crews, stood where the men
@@ -362,29 +370,100 @@ namespace RoadDemo
         /// shoot without stopping (CrewBike.TickGuns), which is not a drive-by.</summary>
         public bool CanDriveBy(Unit unit, Unit target) => Pick(unit, target, out _, out _) != null;
 
-        /// <summary>Send the selected crew's two men at that crew on the machine. False
-        /// with the reason on DriveByRefusal.</summary>
+        /// <summary>Scratch for the two loops below - which machines and which men have
+        /// already been dealt out inside ONE question. Neither loop runs inside the
+        /// other and neither set outlives its own call.</summary>
+        readonly HashSet<CrewBike> _sentBikes = new HashSet<CrewBike>();
+        readonly HashSet<CrewWalker> _sentMen = new HashSet<CrewWalker>();
+        readonly HashSet<CrewBike> _countBikes = new HashSet<CrewBike>();
+        readonly HashSet<CrewWalker> _countMen = new HashSet<CrewWalker>();
+
+        /// <summary>How many machines this crew would put on the road if the order were
+        /// given at that one this instant - what the right-click card words its note
+        /// off, asked of the order's own arithmetic rather than restated beside it.
+        ///
+        /// Zero is a refusal and DriveByRefusal says why, exactly as CanDriveBy leaves
+        /// it: the card reads both off this one question.</summary>
+        public int DriveByMachines(Unit unit, Unit target)
+        {
+            _countBikes.Clear();
+            _countMen.Clear();
+            while (true)
+            {
+                bool first = _countBikes.Count == 0;
+                var bike = Pick(unit, target, out var rider, out var pillion,
+                                bossMayRide: first, takenBikes: _countBikes,
+                                takenMen: _countMen, report: first);
+                if (bike == null) break;
+                _countBikes.Add(bike);
+                _countMen.Add(rider);
+                _countMen.Add(pillion);
+            }
+            return _countBikes.Count;
+        }
+
+        /// <summary>Send the selected crew at that crew on the machine - on EVERY
+        /// machine it holds and can crew, two men to each. False with the reason on
+        /// DriveByRefusal.
+        ///
+        /// ONE ORDER, AS MANY PASSES AS THE CREW IS EQUIPPED FOR. It sent one machine
+        /// and one only, and a player who had bought a second and dealt it to the same
+        /// crew watched it stand at the kerb while two men rode past the door - which is
+        /// money spent on nothing. The men are dealt out two at a time, best hand at the
+        /// bars and best shot behind him, until the machines or the men run out: four
+        /// hoods and two machines go as two pairs; three hoods and two machines go as
+        /// one pair with a man left over, because one man on a machine cannot shoot
+        /// without stopping (CrewBike.TickGuns) and that is not a drive-by.
+        ///
+        /// The boss only ever rides on the FIRST machine, and then only where there is a
+        /// single hood left to carry him - the standing rule (see Pick). A crew that has
+        /// already got a pass on the road does not empty its own office to put a second
+        /// one there.</summary>
         public bool OrderDriveBy(Unit target)
         {
             DriveByRefusal = null;
             DriveByShortHanded = false;
             if (Selected == null || target == null) return false;
 
-            var bike = Pick(Selected, target, out var rider, out var pillion);
-            if (bike == null) return false;
+            _sentBikes.Clear();
+            _sentMen.Clear();
+            while (true)
+            {
+                bool first = _sentBikes.Count == 0;
+                var bike = Pick(Selected, target, out var rider, out var pillion,
+                                bossMayRide: first, takenBikes: _sentBikes,
+                                takenMen: _sentMen, report: first);
+                if (bike == null) break;
+                _sentBikes.Add(bike);
+                _sentMen.Add(rider);
+                _sentMen.Add(pillion);
+                Launch(Selected, target, bike, rider, pillion);
+            }
+
+            if (_sentBikes.Count == 0) return false;
 
             // The street it will be done on is thinned out for it, exactly as an ordered
             // kill thins its own (DemoCrews.SetTarget): a pass is a car going past a
             // crew at speed, and a pass made through a queue is a car crawling past one.
+            // Once for the order however many machines ride it - it is the one street.
             StreetTraffic.Quiet(target.Position, QuietRadius, QuietSeconds);
+            return true;
+        }
 
+        /// <summary>One machine on the road: the raid, the two men sent walking to it,
+        /// the trace's row. The tail of the order, run once for each machine going, so
+        /// the second machine goes out by the same code as the first and the trace has
+        /// a row for each - which is what pairs an ordered pass with the pass that came
+        /// back (Tools/play/analyze.py).</summary>
+        void Launch(Unit crew, Unit target, CrewBike bike, CrewWalker rider, CrewWalker pillion)
+        {
             // A crew ordered onto the machine is a crew no longer walking anywhere as
             // one: the two who go are taken off whatever the crew was doing, and the
             // rest are left exactly as they were. That is the price of the order and it
             // is meant to be felt.
             var raid = new Raid
             {
-                Crew = Selected,
+                Crew = crew,
                 Target = target,
                 Bike = bike,
                 Rider = rider,
@@ -406,7 +485,7 @@ namespace RoadDemo
             if (DriveTrace.On)
             {
                 var sb = DriveTrace.Take();
-                DriveTrace.Str(sb, "who", Selected.GangName);
+                DriveTrace.Str(sb, "who", crew.GangName);
                 DriveTrace.Str(sb, "what", "drive-by ordered on " + target.GangName);
                 DriveTrace.Str(sb, "bike", bike.DisplayName);
                 DriveTrace.Str(sb, "rider", rider.DisplayName);
@@ -415,47 +494,60 @@ namespace RoadDemo
                     Vector3.Distance(rider.Tf.position, bike.Position));
                 DriveTrace.Row("driveby", sb.ToString());
             }
-            return true;
         }
 
         /// <summary>Who goes, on what - or null with the refusal written down. One
         /// function, so the menu's question and the order's answer can never disagree
-        /// about whether a thing is possible.</summary>
-        CrewBike Pick(Unit unit, Unit target, out CrewWalker rider, out CrewWalker pillion)
+        /// about whether a thing is possible.
+        ///
+        /// Asked once per machine. <paramref name="takenBikes"/> and
+        /// <paramref name="takenMen"/> are what this one order has already dealt out;
+        /// <paramref name="bossMayRide"/> and <paramref name="report"/> both mean "is
+        /// this the first machine" - the boss is only ever a pillion on the first, and
+        /// only the first machine's refusal is a refusal of the ORDER. The second
+        /// machine coming up short is the crew being the size it is, and writing that
+        /// down would put "Only one man left standing" on the card of a pass that had
+        /// just ridden out.</summary>
+        CrewBike Pick(Unit unit, Unit target, out CrewWalker rider, out CrewWalker pillion,
+                      bool bossMayRide = true, HashSet<CrewBike> takenBikes = null,
+                      HashSet<CrewWalker> takenMen = null, bool report = true)
         {
             rider = pillion = null;
             // Cleared on the way IN, not only on the way out: the card reads this to
             // word a row it cannot offer, and a reason left over from the last question
             // asked is a reason about somebody else.
-            DriveByRefusal = null;
-            DriveByShortHanded = false;
+            if (report)
+            {
+                DriveByRefusal = null;
+                DriveByShortHanded = false;
+            }
             if (unit == null || unit.Faction != 0) return null;
             if (target == null || target == unit || target.Wiped)
             {
-                DriveByRefusal = "Nobody to shoot at";
+                Refuse("Nobody to shoot at");
                 return null;
             }
 
-            var bike = BikeOf(unit);
+            var bike = BikeOf(unit, takenBikes);
             if (bike == null)
             {
-                DriveByRefusal = "No motorcycle - buy one in the ledger";
+                Refuse("No motorcycle - buy one in the ledger");
                 return null;
             }
             if (RaidOf(bike) != null)
             {
-                DriveByRefusal = "The machine is already out";
+                Refuse("The machine is already out");
                 return null;
             }
             if (bike.Down)
             {
-                DriveByRefusal = bike.BurntOut
-                    ? "The machine burned out" : "The machine is on its side in the road";
+                Refuse(bike.BurntOut
+                    ? "The machine burned out" : "The machine is on its side in the road");
                 return null;
             }
             if (bike.Rider != null || bike.Pillion != null)
             {
-                DriveByRefusal = "Somebody is on it";
+                Refuse("Somebody is on it");
                 return null;
             }
 
@@ -465,12 +557,11 @@ namespace RoadDemo
             // car is the kind of thing that ends in a crew stood in the road.
             var hoods = new List<CrewWalker>();
             foreach (var man in unit.Hoods)
-                if (Available(man)) hoods.Add(man);
+                if (Available(man, takenMen)) hoods.Add(man);
 
             if (hoods.Count == 0)
             {
-                DriveByRefusal = "No hood to send";
-                DriveByShortHanded = true;
+                Refuse("No hood to send", shortHanded: true);
                 return null;
             }
 
@@ -488,7 +579,7 @@ namespace RoadDemo
                 Rank(roster, hoods, CharacterAttribute.Firearms);
                 pillion = hoods[0];
             }
-            else if (Available(unit.Boss))
+            else if (bossMayRide && Available(unit.Boss, takenMen))
             {
                 // One hood left on his feet: the boss rides behind him with the gun.
                 // Behind him, not at the bars - a lieutenant does not chauffeur, and
@@ -498,8 +589,9 @@ namespace RoadDemo
             else
             {
                 rider = null;
-                DriveByRefusal = "Only one man left standing";
-                DriveByShortHanded = true;
+                Refuse(bossMayRide ? "Only one man left standing"
+                                   : "Two short of crewing another machine",
+                       shortHanded: true);
                 return null;
             }
 
@@ -517,10 +609,23 @@ namespace RoadDemo
             // machine seats them apart instead of on top of each other. The counter does
             // not sell a machine that cannot do the job it is sold for.
             return bike;
+
+            void Refuse(string why, bool shortHanded = false)
+            {
+                if (!report) return;
+                DriveByRefusal = why;
+                DriveByShortHanded = shortHanded;
+            }
         }
 
-        static bool Available(CrewWalker man) =>
-            man != null && man.Tf != null && !man.Dead && !man.Riding;
+        /// <summary>A man who can be put on a machine: on his feet, not in a car, not
+        /// riding anything - and not already spoken for. ALREADY ON A RAID is the one
+        /// that was missing: a crew holding two machines could be ordered twice over and
+        /// deal the SAME two men to both, which sent one pair walking off to a second
+        /// bike and left the first standing empty in the road.</summary>
+        bool Available(CrewWalker man, HashSet<CrewWalker> taken = null) =>
+            man != null && man.Tf != null && !man.Dead && !man.Riding &&
+            !OnRaid(man) && (taken == null || !taken.Contains(man));
 
         /// <summary>Best at the stat first, ties by the book's own order - no draws, so
         /// the same crew always sends the same two men.</summary>

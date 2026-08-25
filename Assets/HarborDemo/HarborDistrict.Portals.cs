@@ -105,7 +105,25 @@ namespace HarborDemo
                     n++;
                 }
             }
-            if (n > 0) Debug.Log($"[Harbor] {n} sheds and fences walkers go round");
+            // and the works that have a NAME of their own - the harbourmaster's, the ice
+            // store, the bonded shed on offer. They stand under the berth and works
+            // roots rather than in the shed line, so they are handed over by hand; a
+            // building the map can put a card on is a building the player believes in.
+            foreach (var (at, what) in _namedWorks)
+            {
+                if (at == null) continue;
+                var b = new Bounds();
+                bool started = false;
+                foreach (var r in at.GetComponentsInChildren<Renderer>())
+                {
+                    if (!started) { b = r.bounds; started = true; }
+                    else b.Encapsulate(r.bounds);
+                }
+                if (!started) continue;
+                host.Blocked(b, what);
+                n++;
+            }
+            if (n > 0) Debug.Log($"[Harbor] {n} sheds, works and fences walkers go round");
         }
     }
 }

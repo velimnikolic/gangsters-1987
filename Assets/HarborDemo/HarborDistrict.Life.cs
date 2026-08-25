@@ -10,6 +10,9 @@ namespace HarborDemo
     {
         readonly List<GameObject> _workerBodies = new List<GameObject>();
         GameObject _captainBody, _palletPrefab, _cratePrefab;
+        /// <summary>The cargo handler at each box berth, kept so the forklifts can hook
+        /// the devanning gang onto the box the gantry has just landed.</summary>
+        readonly Dictionary<int, HarborCargo> _cargoes = new Dictionary<int, HarborCargo>();
 
         void BuildShipping()
         {
@@ -37,13 +40,23 @@ namespace HarborDemo
                         var crane = HarborCrane.Build(_liveRoot, _quayRoot, BerthX(i), TileTop, i + 1);
                         if (crane != null) { crane.Frame = Placed; cargo.Hook = crane; _cranes.Add(crane); }
                     }
+                    _cargoes[i] = cargo;
                 }
-                _shipping.AddBerth(BerthX(i), cargo);
+                // a berth that works no boxes takes the coaster: a bulk quay, a car park
+                // or a fishing wall is not where a seventy-metre freighter ties up
+                _shipping.AddBerth(BerthX(i), cargo, small: !IsBoxBerth(i));
             }
         }
 
         // ------------------------------------------------------------ forklifts
 
+        /// <summary>The quay shuttles: one forklift a BOX berth, running between the box
+        /// the gantry has just landed - which the devanning gang has opened - and the
+        /// shed door, a pallet a trip. What makes the port's work read as one chain
+        /// rather than as three machines each on its own clock: the shuttle stands idle
+        /// until a box comes down, goes to THAT box, and stops again when it is empty.
+        /// A berth that works no boxes has no shuttle; its own gear is in the berth
+        /// dressing (HarborDistrict.Berths.cs) and the sheds keep their own gangs.</summary>
         void BuildForklifts()
         {
             if (!forklifts) return;
@@ -51,13 +64,15 @@ namespace HarborDemo
             _palletPrefab = HarborKit.TryLoad(HarborKit.Pallet);
             _cratePrefab = HarborKit.TryLoad(HarborKit.Crate2);
             if (prefab == null) return;
+            var freight = HarborKit.LoadAll(HarborKit.Freight, quiet: true);
             for (int i = 0; i < berths; i++)
             {
+                if (!IsBoxBerth(i)) continue;
                 float xb = BerthX(i), ax = AisleX(i);
                 var route = new List<Vector3>
                 {
-                    new Vector3(xb + 8f, TileTop, QuayLaneZ),           // the pile
-                    new Vector3(ax, TileTop, QuayLaneZ),
+                    new Vector3(xb - 10f, TileTop, DevanZ),             // the box being opened; moved to each new one
+                    new Vector3(ax, TileTop, DevanZ),
                     new Vector3(ax, TileTop, YardRoadZ0 + 2.5f),
                     new Vector3(NearestDoor(ax).x - 6.5f, TileTop, YardRoadZ0 + 2.5f),
                     new Vector3(NearestDoor(ax).x - 6.5f, TileTop, NearestDoor(ax).z - 1f),   // the door, west of the shed's own lift and the lorry
@@ -67,7 +82,21 @@ namespace HarborDemo
                 HarborKit.StripBehaviours(go, keepAnimator: false);
                 var lift = new HarborForklift { Route = WorldPoints(route) };
                 var berth = _shipping != null && i < _shipping.Berths.Count ? _shipping.Berths[i] : null;
-                lift.Working = () => berth != null && berth.Working;
+                // the gang that opens the box, and the chain from the gantry to the shed.
+                // Only where there IS a cargo handler: with the container bake missing
+                // no box ever lands, so a shuttle gated on the gang would stand dead for
+                // the whole run instead of shuttling as it used to
+                _cargoes.TryGetValue(i, out var cargo);
+                if (cargo != null)
+                {
+                    var devan = new HarborDevanning(_liveRoot, Placed, route[0],
+                                                    new Vector3(0f, 0f, DevanZ - LiveRowZ),
+                                                    _palletPrefab, freight, _rng);
+                    lift.Working = () => berth != null && berth.Working && devan.HasWork;
+                    lift.Took = devan.Taken;
+                    cargo.Landed = at => { devan.Opened(at); lift.SetNode(0, devan.At); };
+                }
+                else lift.Working = () => berth != null && berth.Working;
                 if (_palletPrefab != null)
                 {
                     // the load: a pallet with a crate on it, riding the forks
@@ -147,11 +176,18 @@ namespace HarborDemo
             for (int i = 0; i < berths; i++)
             {
                 float xb = BerthX(i), ax = AisleX(i);
+                // a berth that works boxes is walked up its own aisle through the stacks;
+                // one that does not has no aisle and its apron is full of somebody's
+                // heaps or somebody's imported cars, so that leg keeps to the yard road's
+                // shoulder instead (HarborDistrict.Berths.cs owns that ground)
+                var inland = IsBoxBerth(i)
+                    ? new Vector3(ax - 3f, y, BlockZ0 + 8f)
+                    : new Vector3(ax - 3f, y, YardRoadZ0 - 2f);
                 var round = new List<Vector3>
                 {
                     new Vector3(xb - 20f, y, 3.2f),                     // by the gangway
-                    new Vector3(xb + 6f, y, QuayLaneZ + 5.5f),          // the pallets
-                    new Vector3(ax - 3f, y, BlockZ0 + 8f),              // up the aisle through the blocks
+                    new Vector3(xb + 6f, y, QuayLaneZ + 3.5f),          // the pallets
+                    inland,
                     NearestDoor(ax) + new Vector3(-11f, 0f, 0.3f),      // the door, clear of the pile and the lorry
                     new Vector3(xb - 29f, y, QuayLaneZ + 3.2f),         // the drum
                     new Vector3(xb - 8f, y, 3f),                        // the coping

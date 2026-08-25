@@ -73,6 +73,12 @@ namespace HarborDemo
         /// <summary>The gear that moves the boxes, if the berth has any.</summary>
         public IHarborHook Hook;
 
+        /// <summary>A box has just been set down on the quay, foot here (world). What
+        /// makes the chain visible: the gantry lands a box, the devanning gang opens THAT
+        /// box, and the forklift shuttles what comes out of it to the shed. Not fired for
+        /// a box going the other way - one bound for the deck is nobody's to open.</summary>
+        public System.Action<Vector3> Landed;
+
         public bool Busy => _flight != Flight.None || _wanted != null;
         public bool Finished => _stage == Stage.Done || _stage == Stage.Idle;
         public int OnQuay { get { int n = 0; foreach (var g in _onQuay) if (g != null) n++; return n; } }
@@ -290,6 +296,9 @@ namespace HarborDemo
                             _box.transform.position = _to;
                             _box.transform.rotation = Stacked;
                             if (_slotIndex >= 0) _onQuay[_slotIndex] = _box;
+                            // the box is down and the gangs may have it: the devanning
+                            // party moves to it, and the shuttle to the sheds starts
+                            Landed?.Invoke(_to);
                         }
                         _box = null;
                         Hook?.Release();

@@ -47,6 +47,18 @@ namespace HarborDemo
         public bool deliveryTruck = true;
         [Range(0, 6)] public int lorries = 3;
 
+        [Header("What the port is")]
+        [Tooltip("Let the berths be more than box berths: a bulk quay with its heaps, a " +
+                 "roll-on quay with its ranks of imports, a fishing wall. At most one of " +
+                 "each to a port, and never every berth.")]
+        public bool mixedBerths = true;
+        [Tooltip("A boom over each gate lane that lifts for a lorry, the weighbridge in " +
+                 "the inbound lane, the customs post and the lay-by.")]
+        public bool gateWorks = true;
+        [Tooltip("One box that is watched, a hole cut in the wire away from the gates, " +
+                 "and a bonded store standing empty with a board on it.")]
+        public bool contraband = true;
+
         void Awake()
         {
 #if UNITY_EDITOR
@@ -68,6 +80,9 @@ namespace HarborDemo
                 forklifts = forklifts,
                 deliveryTruck = deliveryTruck,
                 lorries = lorries,
+                mixedBerths = mixedBerths,
+                gateWorks = gateWorks,
+                contraband = contraband,
             };
 
             var host = gameObject.AddComponent<StandaloneDistrictHost>();

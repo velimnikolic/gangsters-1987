@@ -30,6 +30,10 @@ namespace HarborDemo
             public HarborCargo Cargo;
             public HarborShipSpec Spec;
             public GameObject Gangway;
+            public GameObject Mooring;
+            /// <summary>A berth that works no boxes takes the coaster: a bulk quay, a
+            /// car park or a fishing wall is not where a 72-metre freighter ties up.</summary>
+            public bool Small;
             public bool Holding;      // an inbound ship stopped short of somebody's window
             public bool Working => Phase == Phase.Alongside && Ship != null;
             public bool Manoeuvring => Phase == Phase.Approach || Phase == Phase.Depart;
@@ -85,9 +89,9 @@ namespace HarborDemo
 
         /// <summary>A berth at this x on the quay with this cargo handler; the first
         /// berth opens empty (her ship seconds away), the rest with a ship in.</summary>
-        public void AddBerth(float x, HarborCargo cargo)
+        public void AddBerth(float x, HarborCargo cargo, bool small = false)
         {
-            var berth = new Berth { Index = _berths.Count, X = x, Cargo = cargo };
+            var berth = new Berth { Index = _berths.Count, X = x, Cargo = cargo, Small = small };
             berth.LaneZ = -(LaneOffset + berth.Index * LaneStep);
             berth.RunIn = 60f + 1.6f * (Mathf.Abs(berth.LaneZ) - 12f);
             berth.RunOut = berth.RunIn;
@@ -121,6 +125,13 @@ namespace HarborDemo
 
         HarborShipSpec ChooseSpec(Berth berth)
         {
+            // a berth that works no boxes gets the coaster, and only her: the gantries,
+            // the live rows and the stacks are what a freighter is here for
+            if (berth.Small && _coaster != null)
+            {
+                berth.Spec = HarborShipSpec.For(_coaster.name);
+                return berth.Spec;
+            }
             var prefab = HarborKit.Pick(_rng, _shipPrefabs);
             var spec = HarborShipSpec.For(prefab.name);
             berth.Spec = spec;
@@ -310,6 +321,9 @@ namespace HarborDemo
             b.Phase = Phase.Depart;
             b.Cargo?.End();
             if (b.Gangway != null) { Object.Destroy(b.Gangway); b.Gangway = null; }
+            // her lines go with the gangway: a ship that sails still made fast drags
+            // four ropes over the horizon
+            if (b.Mooring != null) { Object.Destroy(b.Mooring); b.Mooring = null; }
             if (b.Ship.Bob != null) b.Ship.Bob.TargetScale = 1f;
             float y = HarborDistrict.WaterY;
             var berthAt = new Vector3(b.X, y, b.ShipZ);
@@ -327,6 +341,10 @@ namespace HarborDemo
         {
             if (b.Ship.Bob != null) b.Ship.Bob.TargetScale = 0.45f;
             b.Cargo?.Begin(b.Ship, midStay);
+            // her lines: head and stern out of her ends, a spring back along her at each,
+            // onto whichever bollards the coping carries there (HarborMooring)
+            b.Mooring = HarborMooring.Make(b.Ship, b.Spec, _live, b.X, _b.QuayHalf,
+                                           HarborDistrict.BollardY, HarborDistrict.BollardZ);
             // the gangway: a plank from the coping up to the deck edge by the house
             if (_plank != null && b.Spec != null)
             {

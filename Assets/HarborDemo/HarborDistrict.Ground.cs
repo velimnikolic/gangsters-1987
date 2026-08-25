@@ -6,7 +6,7 @@ namespace HarborDemo
 {
     // The ground the port stands on: the sea as one water plane, the land as a
     // heightfield that is flat under the yard, a beach beyond the quay's two ends
-    // and seabed under the water; the concrete apron poured over the working area;
+    // and seabed under the water; the apron paved over the working area;
     // the quay wall along the coping line with its bollards, lamps and outfalls; the
     // channel buoys. (The timber pier with the harbour's boats that used to stand off
     // the west end is gone: a box port has no marina.)
@@ -17,7 +17,7 @@ namespace HarborDemo
         const float SeaSouth = -300f;   // and the water this far out
         const float LandNorth = 330f;
 
-        GameObject _waterPrefab, _quayStraight, _quayWorn, _quayPipe, _shoreRock;
+        GameObject _waterPrefab, _quayStraight, _quayWorn, _quayPipe, _shoreRock, _paveTile;
         GameObject _bollard1, _bollard3, _pierLamp, _buoy, _buoyBall;
         Material _grassMat, _sandMat;
 
@@ -37,6 +37,7 @@ namespace HarborDemo
             _pierLamp = HarborKit.Load(HarborKit.PierLamp);
             _buoy = HarborKit.TryLoad(HarborKit.Buoy);
             _buoyBall = HarborKit.TryLoad(HarborKit.BuoyBall);
+            _paveTile = HarborKit.TryLoad(HarborKit.PaveTile);
         }
 
         // ------------------------------------------------------------ water
@@ -284,11 +285,10 @@ namespace HarborDemo
 
         Material _concreteMat, _asphaltMat;
 
-        /// <summary>The concrete, as the palm city tiles it on its sidewalks - but one
-        /// plane, not slabs. The kit's 5 m slab carries its own edge, and two hundred
-        /// of them in a grid read as graph paper from a camera a hundred metres up; a
-        /// working apron is poured in bays far bigger than that and the joints are not
-        /// what you see. Cast in twelve-metre bays.</summary>
+        /// <summary>The concrete, as the palm city tiles it on its sidewalks - one
+        /// poured plane, cast in twelve-metre bays. What the apron used to be made of,
+        /// and what it falls back to when the city's paving square is not in the
+        /// project.</summary>
         Material ConcreteMaterial()
         {
             if (_concreteMat != null) return _concreteMat;
@@ -311,6 +311,57 @@ namespace HarborDemo
             if (_asphaltMat.HasProperty("_BaseColor")) _asphaltMat.SetColor("_BaseColor", tint);
             if (_asphaltMat.HasProperty("_Color")) _asphaltMat.SetColor("_Color", tint);
             return _asphaltMat;
+        }
+
+        /// <summary>
+        /// A rectangle floored with one piece of the kit laid edge to edge, its top on
+        /// <paramref name="top"/>: a core block's floor - which is a carpet of the city
+        /// demo's own paving squares - done to a port's measurements.
+        ///
+        /// Nothing is assumed about the piece. Its footprint and where its pivot sits
+        /// inside it are both measured, so the caller need not know that this kit pivots
+        /// a ground tile on its +X/+Z corner.
+        ///
+        /// The rectangle is divided into whole tiles and EVERY tile takes the same share
+        /// of the remainder - HarborKit.LayRun's way with a wall, for the same reason. A
+        /// carpet that lays true tiles and leaves a part one at the fence draws a seam
+        /// down the yard where the sliver row starts; the same slack spread over sixty
+        /// tiles is a couple of centimetres each, on paving with no pattern to break.
+        ///
+        /// A tile keeps no collider - the poured apron never had one, and a thousand box
+        /// colliders is a physics scene nobody asked for - and is deliberately NOT marked
+        /// static, because static is how ScenePerf is told a renderer is already one mesh
+        /// and must be left out of the merge. This carpet wants merging: it comes back
+        /// off the first frame as a handful of meshes, one per 120 m cell.
+        /// </summary>
+        int TileCarpet(string name, float x0, float x1, float z0, float z1, float top,
+                       GameObject tile, Transform parent)
+        {
+            if (tile == null || x1 - x0 < 0.05f || z1 - z0 < 0.05f) return 0;
+            var b = HarborKit.PrefabBounds(tile);
+            float tx = b.size.x, tz = b.size.z;
+            if (tx < 0.05f || tz < 0.05f) return 0;
+
+            int nx = Mathf.Max(1, Mathf.RoundToInt((x1 - x0) / tx));
+            int nz = Mathf.Max(1, Mathf.RoundToInt((z1 - z0) / tz));
+            float cw = (x1 - x0) / nx, cd = (z1 - z0) / nz;
+            float sx = cw / tx, sz = cd / tz;
+            bool hasColliders = tile.GetComponentInChildren<Collider>(true) != null;
+
+            for (int i = 0; i < nx; i++)
+                for (int j = 0; j < nz; j++)
+                {
+                    // the piece's own far corner onto the cell's far corner, its top onto `top`
+                    var at = new Vector3(x0 + (i + 1) * cw - b.max.x * sx,
+                                         top - b.max.y,
+                                         z0 + (j + 1) * cd - b.max.z * sz);
+                    var go = Instantiate(tile, at, Quaternion.identity, parent);
+                    go.name = name;
+                    go.transform.localScale = new Vector3(sx, 1f, sz);
+                    if (hasColliders)
+                        foreach (var col in go.GetComponentsInChildren<Collider>(true)) Destroy(col);
+                }
+            return nx * nz;
         }
 
         /// <summary>One flat rectangle of ground at a height, built as a grid of cells
@@ -365,12 +416,19 @@ namespace HarborDemo
             return go;
         }
 
-        /// <summary>Concrete over the whole working area, top at TileTop, from the west
-        /// end of the quay to the east and from the coping line to the fence - one
-        /// plane the whole way, a port's floor is not a chessboard.</summary>
+        /// <summary>The working area's floor, top at TileTop, from the west end of the
+        /// quay to the east and from the coping line back to the fence: the city's own
+        /// pavement squares, carpeted the way a core block is floored, so a port set down
+        /// on a shore stands on the same concrete as the streets behind it. The poured
+        /// plane stands in when the paving square is not there to be had.</summary>
         void BuildApron()
         {
+            LoadGroundKit();
             float half = QuayHalf;
+            if (_paveTile == null)
+                Debug.LogWarning($"[Harbor] {HarborKit.PaveTile} is missing; the apron is poured as one plane.");
+            else if (TileCarpet("Apron", -half, half, 0f, apronDepth, TileTop, _paveTile, _apronRoot) > 0)
+                return;
             FlatPlane("Apron", -half, half, 0f, apronDepth, TileTop, ConcreteMaterial(), 12.5f, _apronRoot);
         }
 
@@ -382,6 +440,15 @@ namespace HarborDemo
         }
 
         // ------------------------------------------------------------ quay
+
+        /// <summary>How likely a length of coping is the scuffed piece rather than the
+        /// clean one: hard against a berth, hardly at all halfway between two.</summary>
+        double WearAt(float x)
+        {
+            float best = float.MaxValue;
+            for (int i = 0; i < berths; i++) best = Mathf.Min(best, Mathf.Abs(x - BerthX(i)));
+            return Mathf.Lerp(0.62f, 0.08f, Mathf.InverseLerp(20f, berthPitch * 0.5f, best));
+        }
 
         /// <summary>The wall along the coping line: the city pack's water edge, five
         /// metres a piece, its face to the sea, an outfall pipe now and then; on the
@@ -395,7 +462,11 @@ namespace HarborDemo
             {
                 for (float x = -half; x < half - 0.1f; x += 5f)
                 {
-                    var piece = _quayWorn != null && _rng.NextDouble() < 0.18 ? _quayWorn : _quayStraight;
+                    // the wall wears where it is worked: a berth's own length of it takes
+                    // the scuffed piece three times in five, the stretches between berths
+                    // one in eight. A wall equally worn end to end is a texture; a wall
+                    // worn under the cranes is a place that has been used.
+                    var piece = _quayWorn != null && _rng.NextDouble() < WearAt(x + 2.5f) ? _quayWorn : _quayStraight;
                     HarborKit.Prop(piece, new Vector3(x, 0f, 0f), 0f, _quayRoot, "Quay");
                     if (_quayPipe != null && _rng.NextDouble() < 0.05)
                         HarborKit.Prop(_quayPipe, new Vector3(x + 2.5f, WaterY + 0.9f, -QuayFace + 0.05f), 0f, _quayRoot, "Outfall");
@@ -407,11 +478,14 @@ namespace HarborDemo
             for (float x = -half + 4.5f; x < half - 4f; x += 9f, slot++)
             {
                 var bollard = slot % 2 == 0 || _bollard3 == null ? _bollard1 : _bollard3;
-                HarborKit.Prop(bollard, new Vector3(x, 0.43f, -0.75f), 0f, _quayRoot, "Bollard");
+                HarborKit.Prop(bollard, new Vector3(x, BollardY, BollardZ), 0f, _quayRoot, "Bollard");
             }
-            // lamps back from the coping, out of the forklifts' way, turned to the water
+            // lamps back from the coping, out of the forklifts' way, turned to the water.
+            // Left with the PREFAB'S OWN NAME on purpose: DemoStreetLamps finds the lamps
+            // it lights by prefab name, and while these were renamed "Lamp" the whole quay
+            // stood dark at night with the street behind the wire burning.
             for (float x = -half + 13.5f; x < half - 4f; x += 27f)
-                HarborKit.Prop(_pierLamp, new Vector3(x, TileTop, 2.2f), 180f, _quayRoot, "Lamp");
+                HarborKit.Prop(_pierLamp, new Vector3(x, TileTop, 2.2f), 180f, _quayRoot);
 
             // where the wall stops the beach begins: rock heaped over the join
             if (_shoreRock != null)

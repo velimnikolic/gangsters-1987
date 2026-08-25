@@ -102,6 +102,10 @@ namespace HarborDemo
             if (crossing == null) return;
             for (int i = 0; i < berths; i++)
             {
+                // only where the aisle was actually laid: a crossing painted across a
+                // lane that was never built is the same fault as an arrow on bare
+                // concrete (BuildYardRoads skips the aisle on a berth with no boxes)
+                if (!IsBoxBerth(i)) continue;
                 Mark(crossing, new Vector3(AisleX(i), 0f, QuayWalkZ), 90f, "Crossing");
                 // the yard road is two cells wide: a stripe across each
                 Mark(crossing, new Vector3(AisleX(i), 0f, YardLaneZ - 2.5f), 90f, "Crossing");

@@ -41,5 +41,6 @@ is keyed to a hash of the changes themselves, so the next edit closes the gate a
 |---|---|
 | the play harness, the trace, the reader | `Docs/play-harness.md` |
 | the city's districts | `Docs/city-districts-plan.md` |
+| what the port is made of | `Docs/harbor-detail.md` |
 | the period | `Docs/1987-period-reference.md` |
 | what the game owes a credit for | `Docs/credits.md` |

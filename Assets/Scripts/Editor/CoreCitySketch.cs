@@ -11,9 +11,10 @@ namespace LivingCity.EditorTools
     /// <summary>
     /// Draws the city core in the open scene, to be looked at: the harvested blocks where
     /// Synty stood them in the POLYGON City demo, the demo's streets opened to the city's
-    /// widths by the cuts in <see cref="CoreLayout"/>, and the roads read off the gaps by
-    /// <see cref="CoreRoads"/>. The same two classes build the core in the game; this is
-    /// their editor host, where the cuts get argued about (Docs/core-district-plan.md).
+    /// widths by the cuts in <see cref="CoreLayout"/>, and the roads <see cref="CoreRoads"/>
+    /// runs between them. The same two classes build the core in the game; this is their
+    /// editor host, where the cuts get argued about (Docs/core-district-plan.md) - the log
+    /// it leaves says how much ground the roads left over, and where.
     ///
     /// Re-running it wipes the last drawing. The raster is kept in
     /// <see cref="CoreRoads.Raster.Map"/> (read back through <see cref="LastMap"/>) so the
@@ -97,7 +98,8 @@ namespace LivingCity.EditorTools
 
             var log = new System.Text.StringBuilder();
             log.AppendLine($"[CoreCity] {blocks.Count} blocks drawn under \"{CityRoot}\": {maxX - minX:F0} x {maxZ - minZ:F0} m. " +
-                           $"Blocks {raster.BlockArea} m2, road {raster.RoadArea} m2, car parks {raster.ParkingArea} m2. Gaps:");
+                           $"Blocks {raster.BlockArea} m2, road {raster.RoadArea} m2, car parks {raster.ParkingArea} m2, " +
+                           $"left over {raster.SpareArea} m2:");
             log.AppendLine(raster.Report);
             log.AppendLine("   blocks (moved by the cuts):");
             foreach (var block in blocks)
