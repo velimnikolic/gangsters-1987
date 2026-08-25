@@ -87,6 +87,12 @@ namespace LivingCity.UI
         /// <summary>The embossed letters on the tape.</summary>
         public static readonly Color TapeText = new Color(0.97f, 0.96f, 0.90f);
 
+        /// <summary>A tab nobody is reading: card stock a shade under the paper, so it
+        /// still takes INK caps. A tape faded toward the page instead would leave its
+        /// white letters on near-paper - the word disappears exactly when it is the
+        /// word you need to find.</summary>
+        public static readonly Color TapeIdle = new Color(0.76f, 0.72f, 0.61f);
+
         /// <summary>A Polaroid's white border.</summary>
         public static readonly Color PolaroidWhite = new Color(0.98f, 0.97f, 0.93f);
 
@@ -108,30 +114,50 @@ namespace LivingCity.UI
         // -------------------------------------------------------------------- fonts
 
         static TMP_FontAsset type, mono, monoBold, monoItalic;
-        static TMP_FontAsset serif, serifBold, serifItalic, condensed;
+        static TMP_FontAsset serif, serifBold, serifItalic, condensed, condensedText;
         static readonly System.Collections.Generic.HashSet<string> missing =
             new System.Collections.Generic.HashSet<string>();
 
-        /// <summary>The typewriter - headings, names, typed labels.</summary>
-        public static TMP_FontAsset Type => Font(ref type, "SpecialElite-Regular", 0.10f);
+        /// <summary>The typewriter - headings, names, typed labels. Lekton is drawn off
+        /// the Olivetti office machines, and unlike a one-cut distressed face it ships a
+        /// real bold, so a heading is set in the weight instead of smeared into it.</summary>
+        public static TMP_FontAsset Type => Font(ref type, "Lekton-Bold", 0f, 0.53f);
 
-        /// <summary>Courier - the ledger's figures and body copy.</summary>
-        public static TMP_FontAsset Mono => Font(ref mono, "CourierPrime-Regular", 0.18f);
-        public static TMP_FontAsset MonoBold => Font(ref monoBold, "CourierPrime-Bold", 0.06f);
-        public static TMP_FontAsset MonoItalic => Font(ref monoItalic, "CourierPrime-Italic", 0.16f);
+        /// <summary>The ledger's figures and body copy. Fixed pitch is the point - a
+        /// column of money only lines up if every digit takes the same width.</summary>
+        public static TMP_FontAsset Mono => Font(ref mono, "IBMPlexMono-Regular", 0.05f, 0.85f);
+        public static TMP_FontAsset MonoBold => Font(ref monoBold, "IBMPlexMono-Bold", 0f, 0.85f);
+        public static TMP_FontAsset MonoItalic => Font(ref monoItalic, "IBMPlexMono-Italic", 0.05f, 0.85f);
 
-        /// <summary>The newspaper's face.</summary>
-        public static TMP_FontAsset Serif => Font(ref serif, "OldStandard-Regular", 0.08f);
-        public static TMP_FontAsset SerifBold => Font(ref serifBold, "OldStandard-Bold", 0f);
-        public static TMP_FontAsset SerifItalic => Font(ref serifItalic, "OldStandard-Italic", 0.08f);
+        /// <summary>The newspaper's face. PT Serif is cut for newsprint and for a screen,
+        /// so it holds its stems at the sizes the book actually prints at.</summary>
+        public static TMP_FontAsset Serif => Font(ref serif, "PTSerif-Regular", 0f);
+        public static TMP_FontAsset SerifBold => Font(ref serifBold, "PTSerif-Bold", 0f);
+        public static TMP_FontAsset SerifItalic => Font(ref serifItalic, "PTSerif-Italic", 0f);
 
-        /// <summary>Tabloid headlines, rubber stamps and label tape.</summary>
-        public static TMP_FontAsset Condensed => Font(ref condensed, "BarlowCondensed-Bold", 0f);
+        /// <summary>Tabloid headlines, rubber stamps and label tape. Oswald is the
+        /// Alternate Gothic the period's headline decks were actually set in.</summary>
+        public static TMP_FontAsset Condensed => Font(ref condensed, "Oswald-Bold", 0f, 0.86f);
 
-        /// <summary>Loads and caches one face. dilate is the SDF face dilation - Courier
-        /// and the typewriter are cut thin, and a hair of dilation is what makes them
-        /// print like a fresh ribbon at ledger sizes instead of a worn one.</summary>
-        static TMP_FontAsset Font(ref TMP_FontAsset slot, string name, float dilate)
+        /// <summary>The same gothic at reading weight - the running text of the screens
+        /// the city itself wears: map marks, block tags, a popup's line. A deck and its
+        /// copy set in one family is what a printed page of the period looked like.
+        /// </summary>
+        public static TMP_FontAsset CondensedText =>
+            Font(ref condensedText, "Oswald-Regular", 0.04f, 0.87f);
+
+        /// <summary>Loads and caches one face. dilate is the SDF face dilation - a face
+        /// cut thin needs a hair of it to print like a fresh ribbon at ledger sizes
+        /// instead of a worn one. A face that ships the weight asks for none.
+        ///
+        /// optical is the size the letters come out AT a given point size, which is a
+        /// property of the drawing and not of the point size: a typewriter face sits
+        /// small inside its em, a headline gothic fills it. Every size in this book was
+        /// written against the old faces, so each new one is scaled back to the cap
+        /// height it replaces and the numbers on the page keep meaning what they meant.
+        /// </summary>
+        static TMP_FontAsset Font(ref TMP_FontAsset slot, string name, float dilate,
+            float optical = 1f)
         {
             if (slot)
                 return slot;
@@ -156,6 +182,14 @@ namespace LivingCity.UI
                 slot.name = "Ledger " + name;
                 if (dilate > 0f && slot.material)
                     slot.material.SetFloat(ShaderUtilities.ID_FaceDilate, dilate);
+                if (!Mathf.Approximately(optical, 1f))
+                {
+                    // faceInfo is a struct behind a property - read, set, write back, or
+                    // the scale lands on a copy and the page is set at the wrong size.
+                    var face = slot.faceInfo;
+                    face.scale = optical;
+                    slot.faceInfo = face;
+                }
             }
             else
                 missing.Add(name);

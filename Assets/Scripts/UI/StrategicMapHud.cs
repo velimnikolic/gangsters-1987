@@ -717,6 +717,8 @@ namespace LivingCity.UI
                 var tag = new GameObject("HQ Label", typeof(RectTransform));
                 tag.transform.SetParent(mapArea, false);
                 hqLabel = tag.AddComponent<TextMeshProUGUI>();
+                if (LedgerStyle.Condensed)
+                    hqLabel.font = LedgerStyle.Condensed;
                 hqLabel.fontSize = 12f;
                 hqLabel.fontStyle = FontStyles.Bold;
                 hqLabel.color = PlayerGold;
@@ -773,6 +775,8 @@ namespace LivingCity.UI
             UiSkin.TryDress(background, UiSkin.PanelDark);
 
             cardTitle = BuildCardText("Title", 18f);
+            if (LedgerStyle.Condensed)
+                cardTitle.font = LedgerStyle.Condensed;
             cardTitle.fontStyle = FontStyles.Bold;
             var titleRect = cardTitle.rectTransform;
             titleRect.anchorMin = new Vector2(0f, 1f);
@@ -811,6 +815,10 @@ namespace LivingCity.UI
             go.transform.SetParent(cardRect ? cardRect.transform : page.transform, false);
 
             var text = go.AddComponent<TextMeshProUGUI>();
+            // The card reads as a page of the book held over the map, so it is set in the
+            // book's faces. The title overrides this to the headline gothic.
+            if (LedgerStyle.Mono)
+                text.font = LedgerStyle.Mono;
             text.fontSize = size;
             text.color = new Color(0.96f, 0.96f, 0.96f);
             text.alignment = TextAlignmentOptions.MidlineLeft;

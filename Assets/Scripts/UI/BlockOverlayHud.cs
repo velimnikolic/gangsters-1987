@@ -230,6 +230,10 @@ namespace LivingCity.UI
             go.transform.SetParent(labelRoot.transform, false);
 
             var text = go.AddComponent<TextMeshProUGUI>();
+            // Set before the material is read below: the shared outline material is cloned
+            // off whatever face is on the label at that moment.
+            if (LedgerStyle.Condensed)
+                text.font = LedgerStyle.Condensed;
             text.fontSize = fontSize;
             text.fontStyle = FontStyles.Bold;
             text.color = ZoneColour(zone);

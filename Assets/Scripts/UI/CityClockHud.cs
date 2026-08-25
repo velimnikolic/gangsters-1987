@@ -84,6 +84,15 @@ namespace LivingCity.UI
                 barBaseX = barRect.anchoredPosition.x;
             }
 
+            // Same reason the bar is skinned here, and not in the menu that baked it: the
+            // readout deserialises with TMP's default face, an Arial clone that belongs to
+            // no part of this book. The figures take the fixed-pitch face - a proportional
+            // one re-centres the whole strip every time a 1 turns into a 4.
+            if (timeLabel && LedgerStyle.Mono)
+                timeLabel.font = LedgerStyle.Mono;
+            if (dayLabel && LedgerStyle.Condensed)
+                dayLabel.font = LedgerStyle.Condensed;
+
             // Same self-heal as StreetLampLights and NightWindows (StreetLampLights.cs:118).
             // The setup menu wires this, but a component added to a scene by hand deserialises
             // with the field empty and would otherwise sit there showing nothing.
@@ -283,6 +292,8 @@ namespace LivingCity.UI
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
             rect.offsetMin = rect.offsetMax = Vector2.zero;
+            if (LedgerStyle.Condensed)
+                text.font = LedgerStyle.Condensed;
             text.fontSize = 14f;
             text.fontStyle = FontStyles.Bold;
             text.alignment = TextAlignmentOptions.Center;

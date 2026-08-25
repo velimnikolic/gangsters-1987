@@ -177,11 +177,15 @@ namespace LivingCity.UI
             UiSkin.TryDress(background, UiSkin.PanelDark);
 
             popupTitle = BuildPopupText("Title", top: true);
+            if (LedgerStyle.Condensed)
+                popupTitle.font = LedgerStyle.Condensed;
             popupTitle.fontSize = 16f;
             popupTitle.fontStyle = FontStyles.Bold;
             popupTitle.color = new Color(0.96f, 0.96f, 0.96f);
 
             popupLine = BuildPopupText("Line", top: false);
+            if (LedgerStyle.Mono)
+                popupLine.font = LedgerStyle.Mono;
             popupLine.fontSize = 13f;
             popupLine.color = new Color(0.85f, 0.85f, 0.85f);
 

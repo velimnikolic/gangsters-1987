@@ -6,8 +6,8 @@ namespace RoadDemo
 {
     /// <summary>
     /// The road demo's wardrobe: one place that owns what every screen in this scene
-    /// is made of - the Synty INTERFACE Modern Menus sprites, the pack's two type
-    /// faces, and the colour names the demo prints in.
+    /// is made of - the Synty INTERFACE Modern Menus sprites, the book's own condensed
+    /// gothic, and the colour names the demo prints in.
     ///
     /// Demo-local ON PURPOSE. RoadDemo does not borrow LivingCity's runtime (it has
     /// its own clock, sky, lamps and headlights), so it dresses itself from the
@@ -74,7 +74,6 @@ namespace RoadDemo
         const string General = Pack + "Sprites/General/";
         const string Flat = Pack + "Sprites/Icons_ModernMenus_Flat/";
         const string Icons = "Assets/Synty/PolygonIcons/Prefabs/";
-        const string Fonts = Pack + "Fonts/";
 
         /// <summary>A white vertical alpha ramp, clear at the top and solid at the
         /// bottom, uniform across its width - the glow the top strip lifts toward its
@@ -125,18 +124,20 @@ namespace RoadDemo
         /// the screens show.</summary>
         public static GameObject CarGlyph => ModelSlot(ref carGlyph, Icons + "SM_Icon_Car_01.prefab");
 
-        /// <summary>The display face: the clock, a popup's title.</summary>
-        public static TMP_FontAsset Headline => FontSlot(ref headline,
-            Fonts + "SairaCondensed/SairaCondensed-ExtraBold SDF.asset");
+        /// <summary>The display face: the clock, a popup's title. The type is the one
+        /// exception to the demo-local rule below, and for two reasons: the pack's faces
+        /// are 2010s screen gothics on a 1987 instrument, and the pack's SDF assets load
+        /// through AssetDatabase, so in a player build the screens would print in TMP's
+        /// default Arial clone. LedgerStyle builds its faces from Resources at runtime,
+        /// which is period-correct and survives a build.</summary>
+        public static TMP_FontAsset Headline => LivingCity.UI.LedgerStyle.Condensed;
 
-        /// <summary>Everything else the demo prints.</summary>
-        public static TMP_FontAsset Body => FontSlot(ref body,
-            Fonts + "BarlowCondensed/BarlowCondensed-Medium SDF.asset");
+        /// <summary>Everything else the demo prints - the same gothic, reading weight.</summary>
+        public static TMP_FontAsset Body => LivingCity.UI.LedgerStyle.CondensedText;
 
         static Sprite gradient, chip, box, iconTimer, iconPlay, iconFaster, dot;
         static Sprite iconArrow, iconCombat, iconChat, iconDeath, iconPlus, iconBack, iconShop;
         static GameObject carGlyph;
-        static TMP_FontAsset headline, body;
         static bool warned;
 
         // Static state outlives Play when domain reload is off, and a re-import can
@@ -148,7 +149,6 @@ namespace RoadDemo
             iconArrow = iconCombat = iconChat = iconDeath = iconPlus = iconBack = null;
             iconShop = null;
             carGlyph = null;
-            headline = body = null;
             warned = false;
         }
 
@@ -170,18 +170,6 @@ namespace RoadDemo
                 return cached;
 #if UNITY_EDITOR
             cached = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
-#endif
-            if (!cached)
-                Warn();
-            return cached;
-        }
-
-        static TMP_FontAsset FontSlot(ref TMP_FontAsset cached, string path)
-        {
-            if (cached)
-                return cached;
-#if UNITY_EDITOR
-            cached = RoadDemo.DemoAssetLoad.Load<TMP_FontAsset>(path);
 #endif
             if (!cached)
                 Warn();

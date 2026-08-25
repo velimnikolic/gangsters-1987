@@ -110,8 +110,11 @@ namespace LivingCity.UI
             Orders,
         }
 
+        /// <summary>The tabs the folder actually shows, in strip order. ORDERS is the
+        /// last page of the enum and deliberately has no tab: the orders panel is off
+        /// the book. Its page root still builds, so SetPage can reach it in code.</summary>
         static readonly string[] TabNames =
-            { "THE PAPER", "PERSONNEL", "FINANCES", "ARMORY", "FAMILIES", "ORDERS" };
+            { "THE PAPER", "PERSONNEL", "FINANCES", "ARMORY", "FAMILIES" };
 
         Canvas canvas;
         GameObject page;
@@ -208,12 +211,13 @@ namespace LivingCity.UI
                 return;
             }
 
-            // [ and ] turn the pages; the tabs are the pointer's way.
+            // [ and ] turn the pages; the tabs are the pointer's way. Both walk the
+            // TABS, not the page roots - a page with no tab is not in the book.
             if (keyboard.leftBracketKey.wasPressedThisFrame)
-                SetPage((LedgerPage)(((int)currentPage + pageRoots.Length - 1)
-                    % pageRoots.Length));
+                SetPage((LedgerPage)(((int)currentPage + TabNames.Length - 1)
+                    % TabNames.Length));
             if (keyboard.rightBracketKey.wasPressedThisFrame)
-                SetPage((LedgerPage)(((int)currentPage + 1) % pageRoots.Length));
+                SetPage((LedgerPage)(((int)currentPage + 1) % TabNames.Length));
 
             // F2: the sixty-man scale roster - the ledger is specified to stay usable
             // at sixty, and this is how a reviewer sees that without editor wiring.
@@ -655,7 +659,10 @@ namespace LivingCity.UI
             if (paper)
             {
                 paper.SetAsLastSibling();
-                tabRects[(int)currentPage].SetAsLastSibling();
+                // A page can be tabless (ORDERS) - then there is nothing to raise.
+                var activeTab = tabRects[(int)currentPage];
+                if (activeTab)
+                    activeTab.SetAsLastSibling();
                 var close = paper.parent.Find("Tape CLOSE");
                 if (close)
                     close.SetAsLastSibling();

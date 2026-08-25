@@ -106,6 +106,17 @@ namespace LivingCity.UI
             _ => "",
         };
 
+        /// <summary>How one piece of gear reads on a line: its kind, then the name the
+        /// counter sold it under. The catalogue names a rifle "Rifle", so the two words
+        /// are one word - print it once rather than "Rifle  ·  Rifle".</summary>
+        public static string EquipmentLine(EquipmentKind kind, string displayName)
+        {
+            var label = EquipmentLabel(kind);
+            return string.IsNullOrEmpty(displayName) || displayName == label
+                ? label
+                : label + "  ·  " + displayName;
+        }
+
         /// <summary>
         /// The balance sheet's exact figure: "$1,247", "-$300", "$0". Deliberately NOT
         /// BusinessIntention.Money, which abbreviates to "$1.2k" for 280px popups - an

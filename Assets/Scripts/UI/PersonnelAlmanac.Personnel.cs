@@ -65,7 +65,6 @@ namespace LivingCity.UI
         float listScroll;
 
         readonly List<LedgerRow> rows = new List<LedgerRow>();
-        readonly List<RosterEquipment> held = new List<RosterEquipment>();
 
         void BuildPersonnelPage(RectTransform sheet)
         {
@@ -722,8 +721,8 @@ namespace LivingCity.UI
                 var holder = roster.Find(item.HolderId);
                 anyHeld = true;
 
-                y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
-                    item.DisplayName + "  —  " +
+                y = DetailLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName) +
+                    "  —  " +
                     (holder != null ? LedgerText.HeldByLine(holder.FullName)
                         : "in the locker"),
                     LedgerStyle.Ink, y + 2f);
@@ -750,8 +749,8 @@ namespace LivingCity.UI
                     continue;
                 anyStock = true;
 
-                y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
-                    item.DisplayName, LedgerStyle.Ink, y + 2f);
+                y = DetailLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName),
+                    LedgerStyle.Ink, y + 2f);
                 var itemId = item.Id;
                 Tape(cardContent, "GIVE", CardInner - 96f, y + 23f, 88f, 20f, () =>
                 {
@@ -820,49 +819,76 @@ namespace LivingCity.UI
             return y - 24f;
         }
 
+        /// <summary>The gear half of a card - and a LIEUTENANT's card only. Gear issues
+        /// to the head of a crew and is read back off the same card, so on a hood's or a
+        /// specialist's card both listings are somebody else's book: what he carries is
+        /// already on his roster row, in the gun drawn beside his name.</summary>
         float BuildEquipmentSection(Roster roster, Character member, float y)
         {
-            y = CardHeading("In hand", y);
-
-            roster.HeldBy(member.Id, held);
-            if (held.Count == 0)
-                y = DetailLine("Nothing signed out.", LedgerStyle.InkDim, y);
-
-            for (var i = 0; i < held.Count; i++)
-            {
-                var item = held[i];
-                y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
-                    item.DisplayName, LedgerStyle.Ink, y + 2f);
-                Tape(cardContent, "RETURN", CardInner - 96f, y + 23f, 88f, 20f, () =>
-                {
-                    lastRefusal = "";
-                    var result = director.ReturnEquipment(item.Id);
-                    if (!result.Ok)
-                        lastRefusal = result.Reason;
-                    dirty = true;
-                }, size: 11f);
-            }
-
-            // The armory listing is a LIEUTENANT's business: gear issues only to a
-            // crew's head, so on a hood's or specialist's card the stock is noise.
             if (member.Rank != Rank.Lieutenant)
                 return y;
 
-            y = CardHeading("Armory", y - 6f);
+            y = BuildCrewDeck(roster, member, y);
+            return BuildArmoryStock(roster, member, y - 6f);
+        }
+
+        /// <summary>What his crew owns. Read-only by design: gear dealt to a crew stays
+        /// with it, so each line carries the word ASSIGNED where a verb would be.</summary>
+        float BuildCrewDeck(Roster roster, Character member, float y)
+        {
+            y = CardHeading("In hand", y);
+
+            // His crew's DECK, not his own two hands: every item the crew owns, wherever
+            // the deal has put it. NormalizeArms moves holders and never owners, so a
+            // piece riding on one of his hoods still reads on his card - and this is now
+            // the only card it appears on.
+            var anyHeld = false;
+            for (var i = 0; i < roster.Equipment.Count; i++)
+            {
+                var item = roster.Equipment[i];
+                if (item.OwnerId != member.Id)
+                    continue;
+                anyHeld = true;
+
+                var holder = roster.Find(item.HolderId);
+                y = DetailLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName) +
+                    (holder != null && holder.Id != member.Id
+                        ? "  —  " + LedgerText.HeldByLine(holder.FullName)
+                        : ""),
+                    LedgerStyle.Ink, y + 2f);
+
+                // Dealt gear is dealt: no tape here, because there is no taking it back
+                // off a crew. The word is a state the boss reads, not a verb he presses.
+                var mark = Line(cardContent, LedgerStyle.Type, 11.5f, LedgerStyle.InkDim,
+                    CardInner - 100f, y + 23f, 92f, 20f, "ASSIGNED",
+                    TextAlignmentOptions.MidlineRight);
+                mark.characterSpacing = 2f;
+            }
+            if (!anyHeld)
+                y = DetailLine("Nothing signed out.", LedgerStyle.InkDim, y);
+
+            return y;
+        }
+
+        /// <summary>The rest of the outfit's gear as he sees it: what is in the safe,
+        /// with GIVE, and what another group already holds, muted and untakeable.</summary>
+        float BuildArmoryStock(Roster roster, Character member, float y)
+        {
+            y = CardHeading("Armory", y);
 
             var anyStock = false;
             for (var i = 0; i < roster.Equipment.Count; i++)
             {
                 var item = roster.Equipment[i];
-                // His crew's own deck shows through his men's IN HAND lines, not here.
+                // What his crew already owns is the IN HAND listing above, not stock.
                 if (item.OwnerId == member.Id)
                     continue;
                 anyStock = true;
 
                 if (item.OwnerId == RosterEquipment.Unheld)
                 {
-                    y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
-                        item.DisplayName, LedgerStyle.Ink, y + 2f);
+                    y = DetailLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName),
+                        LedgerStyle.Ink, y + 2f);
                     if (!member.Gone)
                         Tape(cardContent, "GIVE", CardInner - 96f, y + 23f, 88f, 20f, () =>
                         {
@@ -876,10 +902,12 @@ namespace LivingCity.UI
                 else
                 {
                     // The finite pool made visible: an item another group owns shows
-                    // here, muted, with no tape - the only path is returning it.
+                    // here, muted and with no tape. Nothing on this card can take it -
+                    // a crew's gear stays with the crew, and only the front's locker
+                    // gives anything back to the safe.
                     var holder = roster.Find(item.HolderId);
-                    y = DetailLine(LedgerText.EquipmentLabel(item.Kind) + "  ·  " +
-                        item.DisplayName + "  —  " +
+                    y = DetailLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName) +
+                        "  —  " +
                         LedgerText.HeldByLine(holder != null ? holder.FullName
                             : item.OwnerId == RosterEquipment.FrontArmory
                                 ? "the front" : "?"),

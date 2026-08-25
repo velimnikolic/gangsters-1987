@@ -204,9 +204,17 @@ namespace LivingCity.UI
                         dirty = true;
                     }, size: 12f);
 
-                // the shelf you are looking at is the one that is not faded
+                // The shelf you are looking at is the black tape; the others are card
+                // stock with FULL ink caps. Not a fade: the tint MULTIPLIES the strip,
+                // so thinning black tape toward the page left white letters on
+                // near-paper and the shelf names went unreadable. The stock colour
+                // alone says which shelf is shut - the word never has to go quiet
+                // with it.
                 if (i != shelf)
-                    ButtonOf(tape).targetGraphic.color = new Color(1f, 1f, 1f, 0.45f);
+                {
+                    ButtonOf(tape).targetGraphic.color = LedgerStyle.TapeIdle;
+                    tape.color = LedgerStyle.Ink;
+                }
             }
         }
 
