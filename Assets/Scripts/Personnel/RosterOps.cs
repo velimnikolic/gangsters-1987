@@ -525,7 +525,8 @@ namespace LivingCity.Personnel
         /// coming back, and the outfit pays him while he is in there (see Wages). The
         /// day he is back on is stored, not counted down, so nothing drifts.
         /// </summary>
-        public static OpResult Hospitalize(Roster roster, int id, int backOnDay)
+        public static OpResult Hospitalize(Roster roster, int id, int backOnDay,
+            string note = "")
         {
             var member = roster.Find(id);
             if (member == null)
@@ -535,6 +536,34 @@ namespace LivingCity.Personnel
 
             member.Status = CharacterStatus.Hospitalized;
             member.BackOnDay = backOnDay;
+            member.ConditionNote = note ?? "";
+            return OpResult.Success;
+        }
+
+        /// <summary>
+        /// Taken and held. Same bargain as a hospital bed - he keeps his post, his crew
+        /// and his place on the payroll, because an outfit that stops paying the men
+        /// inside is an outfit that gets informed on - and the day he is out is stored
+        /// rather than counted down.
+        /// </summary>
+        public static OpResult Jail(Roster roster, int id, int backOnDay, string note = "",
+            string charge = "", string dateStamp = "")
+        {
+            var member = roster.Find(id);
+            if (member == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            if (member.Gone)
+                return OpResult.Fail(GoneReason(member));
+
+            member.Status = CharacterStatus.Jailed;
+            member.BackOnDay = backOnDay;
+            member.ConditionNote = note ?? "";
+
+            // Being taken goes on his record - that IS the rap sheet, and a file that
+            // showed only the priors would stop being a record the day he joined.
+            if (charge.Length > 0)
+                RapSheet.Add(member, dateStamp, charge,
+                    backOnDay > 0 ? "Held — out day " + backOnDay : "Held");
             return OpResult.Success;
         }
 
@@ -562,6 +591,9 @@ namespace LivingCity.Personnel
 
                 member.Status = CharacterStatus.Active;
                 member.BackOnDay = 0;
+                // A man on his feet carries no note - leaving the old one would print
+                // "two ribs" beside FIT for the rest of his career.
+                member.ConditionNote = "";
                 back++;
             }
             return back;

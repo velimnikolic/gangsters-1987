@@ -165,6 +165,15 @@ namespace LivingCity.Gameplay
             // "SM_Veh_Motorbike_01_..."), so without this row the machine the counter
             // sells for a job across town drove like a saloon.
             new Entry("SM_Veh_Motorbike_Tourer_Black", 1.10f, 1.25f, 1.18f),
+            // The enduro, and it is the shape of a dirt bike stated as three numbers: the
+            // hardest pull on the shelf (a light competition machine with a big single in
+            // it), the best grip (knobblies, long travel, and it does not mind what it is
+            // standing on), and a top speed under every road machine's, because wide
+            // ratios and a knobbly tyre run out long before a motorway does. It is bought
+            // to get away down an alley, not to cross the city. The grip is MaxGrip
+            // exactly - the best in the game, and the band's ceiling is what stops it
+            // being better still.
+            new Entry("SM_Veh_Motorbike_Enduro_450",   1.02f, 1.62f, 1.30f),
             // The boxless moped needs no row: it IS the pack's moped with the delivery
             // box taken off, and "SM_Veh_Moped_01_NoBox" is answered by the moped's stem,
             // which is the right answer rather than a lucky one.

@@ -95,7 +95,7 @@ namespace RoadDemo
 
         public float LaneZ(float dir) => _centreZ - Mathf.Sign(dir) * LaneOffset;
         public float KerbZ(float dir, float halfWidth) =>
-            _centreZ - Mathf.Sign(dir) * (HalfWidth - halfWidth + 0.38f); // flank on the stone, mirror over it
+            _centreZ - Mathf.Sign(dir) * StreetKit.KerbInset(HalfWidth, halfWidth); // flank on the stone, mirror over it
         public float CentreZ => _centreZ;
         public float HalfRoad => HalfWidth;
         public float XMin => _xMin;

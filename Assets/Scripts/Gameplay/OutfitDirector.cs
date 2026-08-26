@@ -35,6 +35,7 @@ namespace LivingCity.Gameplay
         public OrderBook Book => Runner.Book;
         public List<OrderRecord> Records => Runner.Records;
         public List<Improvement> Rises => Runner.Rises;
+        public Tribute Tribute => Runner.Tribute;
         public int Heat => Runner.Heat;
 
         public int Version { get; private set; }
@@ -163,7 +164,7 @@ namespace LivingCity.Gameplay
                 Version++;
 
                 if (paid > 0)
-                    Debug.Log("[Outfit] Payday - week " + Campaign.Week + " opens, " +
+                    Debug.Log("[Outfit] Payday - day " + Campaign.Day + " opens, " +
                               UI.LedgerText.Cash(paid) + " out of the safe.");
                 if (Rises.Count > 0)
                     Debug.Log("[Outfit] Day " + Campaign.Day + " - " + Rises.Count +
@@ -188,6 +189,7 @@ namespace LivingCity.Gameplay
         void Start()
         {
             Runner.DistanceOf = DistanceFromHeadquarters;
+            Runner.HoldingsOf = CollectHoldings;
             Runner.RosterMoved = () =>
             {
                 if (PersonnelDirector.Instance)

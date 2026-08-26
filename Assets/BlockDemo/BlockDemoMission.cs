@@ -20,7 +20,7 @@ namespace BlockDemo
     /// faults it watches for itself - stuck, and never arriving - are the ones the
     /// harness is looking for.
     /// </summary>
-    public class BlockDemoMission : MonoBehaviour
+    public partial class BlockDemoMission : MonoBehaviour
     {
         public enum Phase { Waiting, Boarding, Marching, Hunting, Storming, Reboarding, Parking, Passing, Done, Failed }
 
@@ -173,7 +173,8 @@ namespace BlockDemo
                 return;
             }
 
-            if (bombRun && State != Phase.Waiting) TickBomb();
+            if (carBombRun && State != Phase.Waiting) TickCarBomb();
+            else if (bombRun && State != Phase.Waiting) TickBomb();
             else if (motoDriveBy && State != Phase.Waiting) TickMoto();
             else if (walkabout && State != Phase.Waiting) TickWalk();
             else if (onFoot && State != Phase.Waiting) TickWar();
@@ -202,6 +203,11 @@ namespace BlockDemo
             foreach (var unit in _crews.Units)
                 if (unit.Faction == 0 && !unit.Wiped) { _ours = unit; break; }
             if (_ours == null) { Give("there is no crew of the outfit in the quarter"); return; }
+
+            // THE CAR BOMB: the whole of it, on a car that is not ours. A charge is laid
+            // under a rival's motor, the crew walks away, and the man it belongs to comes
+            // for it and turns the key.
+            if (carBombRun) { StartCarBomb(); return; }
 
             // THE BOMB RUN: no car mission, no march. The crew is handed grenades and
             // made to throw them and lay one.
@@ -263,8 +269,17 @@ namespace BlockDemo
         /// outfit owns it.</summary>
         CrewCar StandACar()
         {
-            var boss = _ours.Boss;
+            var boss = _ours != null ? _ours.Boss : null;
             if (boss == null || boss.Tf == null) return null;
+            return StandACarFor(_ours, boss.Tf.position);
+        }
+
+        /// <summary>The same car, stood on the nearest free kerb to a point of the run's
+        /// choosing and put on a crew of the run's choosing. The car bomb wants a motor
+        /// that belongs to the MARK, standing where the mark is not, so that he has to
+        /// walk to it - which is neither of the things StandACar assumes.</summary>
+        CrewCar StandACarFor(DemoCrews.Unit owner, Vector3 near)
+        {
             GameObject prefab = null;
             foreach (var name in LivingCity.Gameplay.VehicleCatalog.GangsterCars)
             {
@@ -275,17 +290,17 @@ namespace BlockDemo
 
             CrewCars.MeasurePrefab(prefab, out float halfLength, out float halfWidth);
             var net = LaneNet.Active;
-            if (!CrewCars.KerbSlotNear(net, boss.Tf.position, halfLength, halfWidth,
+            if (!CrewCars.KerbSlotNear(net, near, halfLength, halfWidth,
                     out var at, out var facing))
             {
-                Note("no free kerb near the lieutenant to stand a car on");
+                Note("no free kerb there to stand a car on");
                 return null;
             }
             var car = _crews.AddCar(prefab, at, facing, -0.06f);
             if (car == null) return null;
             car.DisplayName = prefab.name;
-            car.Owner = _ours;
-            Note($"stood {car.DisplayName} at the kerb for {_ours.GangName}");
+            car.Owner = owner;
+            Note($"stood {car.DisplayName} at the kerb for {(owner != null ? owner.GangName : "nobody")}");
             return car;
         }
 
@@ -541,7 +556,10 @@ namespace BlockDemo
                 {
                     _lastBlock = Now;
                     var inFront = _car.Position + _car.Tf.forward * roadblockAhead;
-                    if (_crews.MarchTo(_quarry, inFront))
+                    // the one order that MEANS the carriageway: the mob is put in the
+                    // lane in front of the car on purpose, so the march's pavement rule
+                    // is waived for it
+                    if (_crews.MarchTo(_quarry, inFront, keepOffRoad: false))
                         Note($"{_quarry.GangName} put in the road {roadblockAhead:F0} m " +
                              "ahead of the car");
                 }
@@ -1063,21 +1081,7 @@ namespace BlockDemo
             // crew's lieutenant - so the run exercises the real path (armory -> crew ->
             // thrown -> struck off). Where a scene has no roster, the unit's own tally is
             // all there is, so stock that instead.
-            int need = bombThrows + 2;   // the throws, plus the shop and the plant
-            var roster = LivingCity.Gameplay.PersonnelDirector.Instance != null
-                ? LivingCity.Gameplay.PersonnelDirector.Instance.Roster : null;
-            var crew = roster != null ? roster.FindCrew(_ours.CrewId) : null;
-            if (crew != null)
-            {
-                for (int k = 0; k < need; k++)
-                {
-                    var item = LivingCity.Personnel.RosterOps.AddEquipment(
-                        roster, LivingCity.Personnel.EquipmentKind.Grenade, "Grenade", 175);
-                    item.OwnerId = crew.LieutenantId;
-                    item.HolderId = crew.LieutenantId;
-                }
-            }
-            _ours.Bombs = Mathf.Max(_ours.Bombs, need);   // cache; BindBombs re-derives it
+            StockGrenades(bombThrows + 2);   // the throws, plus the shop and the plant
             _crews.BombThrowRange = 100000f;
             _crews.BombPlantRange = 100000f;
             _rivalMenAtStart = RivalMenStanding();

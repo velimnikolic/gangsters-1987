@@ -233,6 +233,24 @@ namespace LivingCity.Tests
             if (!(Top("Tourer") > Top("Moped")))
                 failures.Add($"TheCounterSellsRealDifferences: the tourer ({Top("Tourer")}) is worth " +
                              $"no more on the road than the moped ({Top("Moped")}).");
+
+            // The enduro is the one machine on the shelf bought for what it does OFF the
+            // road, and the table has to say so in both directions or it is just a cheap
+            // motorbike: it must out-pull every road machine and top out under all of
+            // them. Grip too - it is the whole reason a man buys one.
+            float Pull(string listing) =>
+                VehiclePerformance.For(LivingCity.Outfit.ArmoryCatalog.BodyFor(listing)).Pull;
+            float Grip(string listing) =>
+                VehiclePerformance.For(LivingCity.Outfit.ArmoryCatalog.BodyFor(listing)).Grip;
+
+            if (!(Pull("Enduro") > Pull("Motorbike")) || !(Grip("Enduro") > Grip("Motorbike")))
+                failures.Add($"TheCounterSellsRealDifferences: the enduro (pull {Pull("Enduro")}, " +
+                             $"grip {Grip("Enduro")}) is no livelier than the road motorcycle " +
+                             $"(pull {Pull("Motorbike")}, grip {Grip("Motorbike")}).");
+            if (!(Top("Enduro") < Top("Motorbike")) || !(Top("Enduro") < Top("Tourer")))
+                failures.Add($"TheCounterSellsRealDifferences: the enduro ({Top("Enduro")}) tops " +
+                             $"out no lower than the road machines ({Top("Motorbike")}, " +
+                             $"{Top("Tourer")}) - a knobbly tyre costs a bike its top speed.");
         }
 
         // ------------------------------------------------------------------ helper

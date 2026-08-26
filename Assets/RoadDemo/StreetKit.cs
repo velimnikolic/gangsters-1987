@@ -32,6 +32,19 @@ namespace RoadDemo
         public const float SidewalkWidth = SidewalkDressing.Width;   // the road demo's pavement
         public const float OuterHalf = StreetHalf + SidewalkWidth; // kerb-strip outer edge
 
+        /// <summary>How far in from the centre line a car of this half width stands
+        /// when it is parked at the kerb: its flank ends 0.38 m OVER the stone - a
+        /// mirror hangs over a kerb, and a flank that stops dead on the line reads as a
+        /// car abandoned in the road.
+        ///
+        /// Off the BODY'S own width, which is the whole of it: the packs' cars run from
+        /// 2.07 m across to 2.78, so one offset written for a car of ordinary width
+        /// parks every wide one on the pavement. Whoever puts a car at a kerb - the
+        /// street model a driver reads (StraightStreetModel.KerbZ), the rows a scene
+        /// stands there (KerbCars) - asks here.</summary>
+        public static float KerbInset(float halfRoad, float halfWidth) =>
+            halfRoad - halfWidth + 0.38f;
+
         /// <summary>The 5 m cell origins that close a carriageway of this half width,
         /// measured off its centre line - what a junction square is paved with and what
         /// a zebra band is laid in. Three cells for a street, two for a yard road.</summary>

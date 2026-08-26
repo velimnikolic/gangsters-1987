@@ -89,6 +89,25 @@ namespace CrewDemo
         [Tooltip("Straight out on foot, no car at all.")]
         public bool missionOnFoot = true;
 
+        [Tooltip("THE CAR BOMB instead of the fight: the crew walks up to a car belonging " +
+                 "to a rival, lays a charge under it, walks clear, and the rival is then " +
+                 "sent for his own car - he gets in, drives off, and it blows under him. " +
+                 "Overrides the on-foot mission.")]
+        public bool missionCarBomb;
+        [Tooltip("Car bomb: metres the crew walks away from the charge before the rival is " +
+                 "sent for his car. Must clear the blast (6 m) and the range a rival opens " +
+                 "fire at (24 m).")]
+        [Min(10f)] public float missionCarBombClearBy = 45f;
+        [Tooltip("Car bomb: seconds any one leg may take - the walk up, the walk clear, " +
+                 "the rival's walk to his car, the drive - before the run fails.")]
+        [Min(10f)] public float missionCarBombPatience = 90f;
+        [Tooltip("Car bomb: seconds to let the rest of the rival's crew climb in after the " +
+                 "first man is seated, before the car is driven off.")]
+        [Min(0f)] public float missionCarBombSettle = 8f;
+        [Tooltip("Car bomb: swing the camera onto the car so a headless --shot frames the " +
+                 "blast instead of the whole block.")]
+        public bool missionCarBombShot;
+
         [Tooltip("Open with a drive-by on the machine, then finish on foot.")]
         public bool missionMoto = false;
 
@@ -115,6 +134,10 @@ namespace CrewDemo
         public bool policeCruiser = false;
         [Tooltip("Empty: the marked cruiser out of VehicleCatalog.PoliceCars.")]
         public string policeCar = "";
+        [Tooltip("Beat officers walking the pavements, posted at a shopfront on the block. " +
+                 "They are the law that is simply THERE when the guns go off: the nearest " +
+                 "one walks to the shooting and holds the scene, with or without a cruiser.")]
+        [Range(0, 6)] public int policeBeat = 2;
 
         [Header("Layout")]
         [Tooltip("Metres between neighbouring crews on the outfit's line.")]
@@ -237,6 +260,11 @@ namespace CrewDemo
                 mission.passes = missionPassesRidden;
                 mission.passesBefore = missionPasses;
                 mission.engageWithin = missionEngageWithin;
+                mission.carBombRun = missionCarBomb;
+                mission.carBombClearBy = missionCarBombClearBy;
+                mission.carBombPatience = missionCarBombPatience;
+                mission.carBombSettle = missionCarBombSettle;
+                mission.bombShotCam = missionCarBombShot;
             }
 #else
             Debug.LogError("[CrewDemo] This demo loads Synty prefabs through the AssetDatabase and only runs in the editor.");
@@ -781,31 +809,21 @@ namespace CrewDemo
             var bodies = TrafficBodies();
             if (bodies.Count == 0) return;
             var root = new GameObject("Parked Cars").transform;
-            // the kerb a car of ordinary width stands against, either side of the centre
-            // line - the same offset StraightStreetModel parks its own cars on
-            const float kerb = Half - 0.95f + 0.38f;
-            for (int i = 0; i < parkedCars; i++)
+            // the two stretches of each side street a car may be left on: clear of the
+            // crossing in the middle of it and of both junctions
+            var spans = new[]
             {
-                float cx = (i % 2 == 0) ? WestX : EastX;
-                bool northbound = Random.value < 0.5f;    // right-hand traffic: the east lane goes north
-                float x = cx + (northbound ? kerb : -kerb);
-                // clear of the crossing in the middle of the street and of both junctions
-                float z = (Random.value < 0.5f ? -1f : 1f) * Random.Range(14f, BlockZMax - 4f);
-                var prefab = bodies[Random.Range(0, bodies.Count)];
-                var go = Instantiate(prefab,
-                    new Vector3(x, -0.08f, z), Quaternion.Euler(0f, northbound ? 0f : 180f, 0f), root);
-                go.name = go.name.Replace("(Clone)", "");
-                // a colour of its own, unless the body carries somebody's livery - the same
-                // as the traffic gets. Without it the cars at the kerb are the only ones in
-                // the scene still in the colour the pack shipped, parked beside repainted
-                // traffic wearing the same bodies.
-                LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
-                foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
-                WalkObstacles.Block(BoundsOf(go));
-                // and it is on the ROAD: a car coming round the corner has to go round
-                // it, which it only knows if the thing is among the road's users
-                StoodCar.Park(go);
-            }
+                new Vector2(-(BlockZMax - 4f), -14f),
+                new Vector2(14f, BlockZMax - 4f),
+            };
+            // KerbCars measures every body: it stands each one at the kerb by its own
+            // width, and claims its own length of kerb before it is put down, so no two
+            // are dealt the same yard of street
+            int half = parkedCars / 2;
+            KerbCars.Park(root, bodies, parkedCars - half, alongX: false, centre: WestX,
+                halfRoad: Half, roadY: -0.08f, spans: spans);
+            KerbCars.Park(root, bodies, half, alongX: false, centre: EastX,
+                halfRoad: Half, roadY: -0.08f, spans: spans);
 #endif
         }
 
@@ -992,21 +1010,7 @@ namespace CrewDemo
             if (pedestrians <= 0 || crewClips.Walk == null || crewClips.Idle == null) return;
             var prefabs = PassersBy();
             if (prefabs.Count == 0) return;
-
-            // the two loops, walked down the middle of their pavement band, and the
-            // four crossings between them - one across the middle of each street
-            Ring(BlockXMin - Walk * 0.5f, BlockXMax + Walk * 0.5f,
-                 BlockZMin - Walk * 0.5f, BlockZMax + Walk * 0.5f, out var innerMid);
-            Ring(WestX - Half - Walk * 0.5f, EastX + Half + Walk * 0.5f,
-                 SouthZ - Half - Walk * 0.5f, NorthZ + Half + Walk * 0.5f, out var outerMid);
-            for (int s = 0; s < 4; s++) Join(innerMid[s], outerMid[s], gated: true);
-
-            // and what the kit's props have left of the pavement to walk on, read into
-            // every stretch the way the city does it (BuildWalkClearance) - else the
-            // passers-by walk straight through the lamp posts and the bins
-            if (_pavementPlan != null)
-                foreach (var link in _pedLinks)
-                    link.SampleClearance(_pavementPlan, SidewalkDressing.WalkRadius);
+            EnsurePedGraph();
 
             var crowd = new PedClips
             {
@@ -1032,6 +1036,33 @@ namespace CrewDemo
             }
 #endif
         }
+
+        /// <summary>The pavements as a graph, once. The crowd wants it and so do the
+        /// beat officers, and whichever of them is built first pays for it - a scene with
+        /// no passers-by at all still has pavements for the law to walk.</summary>
+        void EnsurePedGraph()
+        {
+            if (_innerRing != null) return;
+
+            // the two loops, walked down the middle of their pavement band, and the
+            // four crossings between them - one across the middle of each street
+            _innerRing = Ring(BlockXMin - Walk * 0.5f, BlockXMax + Walk * 0.5f,
+                              BlockZMin - Walk * 0.5f, BlockZMax + Walk * 0.5f, out var innerMid);
+            Ring(WestX - Half - Walk * 0.5f, EastX + Half + Walk * 0.5f,
+                 SouthZ - Half - Walk * 0.5f, NorthZ + Half + Walk * 0.5f, out var outerMid);
+            for (int s = 0; s < 4; s++) Join(innerMid[s], outerMid[s], gated: true);
+
+            // and what the kit's props have left of the pavement to walk on, read into
+            // every stretch the way the city does it (BuildWalkClearance) - else the
+            // passers-by walk straight through the lamp posts and the bins
+            if (_pavementPlan != null)
+                foreach (var link in _pedLinks)
+                    link.SampleClearance(_pavementPlan, SidewalkDressing.WalkRadius);
+        }
+
+        /// <summary>The pavement round the block itself - the officers' post is on it,
+        /// because it is the one loop with a building at its back instead of a road.</summary>
+        List<PedNode> _innerRing;
 
         /// <summary>A closed walk round a rectangle: corners, a corner every twenty-odd
         /// metres between them, joined all the way round. <paramref name="middles"/>
@@ -1078,6 +1109,7 @@ namespace CrewDemo
         {
             for (int i = 0; i < _walkers.Count; i++) _walkers[i].TickCivilian(dt);
             CivilianAgent.TickCrowd(dt);
+            for (int i = 0; i < _beat.Count; i++) _beat[i].TickPatrol(dt);
             _chatScan -= dt;
             if (_chatScan <= 0f && _walkers.Count > 0)
             {
@@ -1089,6 +1121,7 @@ namespace CrewDemo
         void OnDestroy()
         {
             for (int i = 0; i < _walkers.Count; i++) _walkers[i].Dispose();
+            for (int i = 0; i < _beat.Count; i++) _beat[i].Dispose();
         }
 
         // ------------------------------------------------------------ the law
@@ -1100,7 +1133,40 @@ namespace CrewDemo
         void BuildPolice(PedClips clips)
         {
 #if UNITY_EDITOR
-            if (!policeCruiser) return;
+            if (!policeCruiser && policeBeat <= 0) return;
+            var officers = OfficerBodies();
+            if (officers.Count == 0)
+            {
+                Debug.LogWarning("[CrewDemo] No officer bodies in the police station pack.");
+                return;
+            }
+            var dispatch = gameObject.AddComponent<PoliceDispatch>();
+            dispatch.Init(_crews, clips, officers, CrewKit.Weapon(CrewArms.DefaultSidearm));
+
+            if (policeCruiser) BuildCruiser(dispatch);
+            if (policeBeat > 0) BuildBeat(dispatch, clips, officers);
+#endif
+        }
+
+        // The bodies the law is worn by, the police pack's own - the cruiser's two men
+        // are dealt out of them and so is every officer walking the pavements.
+        List<GameObject> OfficerBodies()
+        {
+            var officers = new List<GameObject>();
+#if UNITY_EDITOR
+            foreach (var name in new[] { "SM_Chr_Officer_Male_01", "SM_Chr_Officer_Male_02", "SM_Chr_Officer_Male_03" })
+            {
+                var body = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                    "Assets/Synty/PolygonPoliceStation/Prefabs/Characters/" + name + ".prefab") ?? Cast(name);
+                if (body) officers.Add(body);
+            }
+#endif
+            return officers;
+        }
+
+        void BuildCruiser(PoliceDispatch dispatch)
+        {
+#if UNITY_EDITOR
             var marked = LivingCity.Gameplay.VehicleCatalog.PoliceCars;
             var prefab = !string.IsNullOrEmpty(policeCar) ? FindVehicle(policeCar) : null;
             for (int i = 0; i < marked.Length && prefab == null; i++)
@@ -1111,20 +1177,6 @@ namespace CrewDemo
                                  (string.IsNullOrEmpty(policeCar) ? "(any marked cruiser)" : policeCar) + ".");
                 return;
             }
-            var officers = new List<GameObject>();
-            foreach (var name in new[] { "SM_Chr_Officer_Male_01", "SM_Chr_Officer_Male_02", "SM_Chr_Officer_Male_03" })
-            {
-                var body = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
-                    "Assets/Synty/PolygonPoliceStation/Prefabs/Characters/" + name + ".prefab") ?? Cast(name);
-                if (body) officers.Add(body);
-            }
-            if (officers.Count == 0)
-            {
-                Debug.LogWarning("[CrewDemo] No officer bodies in the police station pack.");
-                return;
-            }
-            var dispatch = gameObject.AddComponent<PoliceDispatch>();
-            dispatch.Init(_crews, clips, officers, CrewKit.Weapon(CrewArms.DefaultSidearm));
 
             // the east end, north kerb, nose west (that side's traffic runs west)
             var at = SouthKerb(EastX - 20f, -1, 0.95f);
@@ -1133,6 +1185,131 @@ namespace CrewDemo
             car.Tf.name = "Police Cruiser";
             dispatch.AddCruiser(car, at);
 #endif
+        }
+
+        // ------------------------------------------------------------ the beat
+        //
+        // Officers on foot, walking the block's own pavement and answering a shooting
+        // the way the city's do - the same PoliceFootPatrol the station spawns, given a
+        // shopfront to stand at instead of a station door. Nothing about how they walk,
+        // what they do when they are sent, or how long they hold a scene is decided
+        // here: this stands them up and hands them to the dispatcher.
+        readonly List<PoliceFootPatrol> _beat = new List<PoliceFootPatrol>();
+
+        /// <summary>Metres off the pavement's centre line the post stands - the officer's
+        /// "station door", far enough in to read as a man stood at a shopfront rather
+        /// than one planted in the middle of the walk.</summary>
+        const float PostOffPavement = 1.8f;
+
+        /// <summary>The body a beat officer is worn in. ONE of the pack's three, by the
+        /// user's own reading of them on the street: the other two are not men you would
+        /// put on a pavement. The cruiser's squad still deals from all three - they are
+        /// sat in a car.</summary>
+        const string BeatBody = "SM_Chr_Officer_Male_01";
+
+        void BuildBeat(PoliceDispatch dispatch, PedClips clips, List<GameObject> officers)
+        {
+#if UNITY_EDITOR
+            if (clips.Walk == null || clips.Idle == null) return;
+            var beatBody = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                "Assets/Synty/PolygonPoliceStation/Prefabs/Characters/" + BeatBody + ".prefab")
+                ?? Cast(BeatBody);
+            if (beatBody == null)
+            {
+                Debug.LogWarning("[CrewDemo] No " + BeatBody + " - nobody to walk the beat.");
+                return;
+            }
+            // the officer's wardrobe: the walk and the stand, the JOG he answers a call
+            // at, and the PISTOL IDLE he stands over an arrest in (CrewKit.WithArms
+            // brings the gun set with it)
+            var beatClips = CrewKit.WithArms(new PedClips { Walk = clips.Walk, Idle = clips.Idle });
+            EnsurePedGraph();
+
+            // the south-east of the block, which is a walk away from the outfit's muster
+            // at the west end: the officers are not stood in the first exchange of the
+            // scene, and their walk to it is one the camera can follow
+            var post = new Vector3(BlockXMax - 6f, 0f, BlockZMin - Walk * 0.5f);
+            var homeFwd = PostStretch(post);
+            if (homeFwd == null)
+            {
+                Debug.LogWarning("[CrewDemo] No pavement to post the beat on.");
+                return;
+            }
+            PedLink homeBack = null;
+            foreach (var l in homeFwd.To.Links)
+                if (l.To == homeFwd.From) { homeBack = l; break; }
+            if (homeBack == null) return;
+
+            var routeHome = PoliceFootPatrol.RouteHome(homeFwd);
+            // every walkable corner of both loops, the officers' waypoint pool - the
+            // same pool the city's beat draws from, read the same way
+            var corners = new HashSet<PedNode>();
+            foreach (var l in _pedLinks) { corners.Add(l.From); corners.Add(l.To); }
+            var nodes = new List<PedNode>(corners);
+
+            var along = (homeFwd.To.Pos - homeFwd.From.Pos).normalized;
+            // which way the block is from the pavement: the door is pushed THAT way, so
+            // an officer standing at his post has a building at his back and the road in
+            // front of him, never the other way about
+            var mid = Vector3.Lerp(homeFwd.From.Pos, homeFwd.To.Pos, 0.5f);
+            var inward = Vector3.Cross(Vector3.up, along);
+            if (Vector3.Dot(inward, Flat(BlockCentre - mid)) < 0f) inward = -inward;
+
+            float entryT = Mathf.Clamp(Vector3.Dot(post - homeFwd.From.Pos, along), 2f, homeFwd.Length - 2f);
+            var root = new GameObject("Beat Officers").transform;
+            for (int i = 0; i < policeBeat; i++)
+            {
+                var go = Instantiate(beatBody, root);
+                go.name = "Beat Officer " + (i + 1);
+                foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
+                foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
+                foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>()) Destroy(mb);
+                foreach (var animator in go.GetComponentsInChildren<Animator>()) animator.runtimeAnimatorController = null;
+
+                // each man his own few metres of the same stretch, so two officers do not
+                // stand in one another
+                float t = Mathf.Clamp(entryT + i * 3f, 2f, homeFwd.Length - 2f);
+                var door = Vector3.Lerp(homeFwd.From.Pos, homeFwd.To.Pos, t / homeFwd.Length)
+                           + inward * PostOffPavement;
+
+                var officer = new PoliceFootPatrol
+                    { Speed = Random.Range(1.3f, 1.5f), UnitNumber = i + 1 };
+                officer.Init(go.transform, beatClips, homeFwd, t);
+                officer.Configure(door, homeFwd, homeBack, t, nodes, routeHome,
+                    BeatRest, BeatStops, Random.Range(2f, 6f) + i * 4f);
+                _beat.Add(officer);
+                dispatch.Register(officer);
+            }
+#endif
+        }
+
+        /// <summary>Seconds an officer stands at his post between beats, and how many
+        /// corners a beat takes in. Both short: the block is a hundred metres round, and
+        /// what is being watched here is the answer to a shooting, not the rounds.</summary>
+        static readonly Vector2 BeatRest = new Vector2(4f, 10f);
+        static readonly Vector2Int BeatStops = new Vector2Int(2, 4);
+
+        Vector3 BlockCentre => new Vector3((BlockXMin + BlockXMax) * 0.5f, 0f, (BlockZMin + BlockZMax) * 0.5f);
+
+        static Vector3 Flat(Vector3 v) => new Vector3(v.x, 0f, v.z);
+
+        /// <summary>The stretch of the block's own pavement the post sits on: of the ring
+        /// round the block, the link whose middle is nearest. The outer loop is no good
+        /// for a post - its back is to the void beyond the streets - so only the inner
+        /// one is looked at.</summary>
+        PedLink PostStretch(Vector3 post)
+        {
+            if (_innerRing == null) return null;
+            PedLink best = null;
+            float bestD = float.MaxValue;
+            foreach (var node in _innerRing)
+                foreach (var l in node.Links)
+                {
+                    if (l.Gated || !_innerRing.Contains(l.To)) continue;
+                    float d = (Vector3.Lerp(l.From.Pos, l.To.Pos, 0.5f) - post).sqrMagnitude;
+                    if (d < bestD) { bestD = d; best = l; }
+                }
+            return best;
         }
 
         static readonly string[] VehicleFolders =

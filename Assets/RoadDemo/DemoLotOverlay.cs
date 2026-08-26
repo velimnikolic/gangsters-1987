@@ -34,7 +34,8 @@ namespace RoadDemo
         /// half and the map the right, so a card over the world would land on one or
         /// the other. The cards drop while it is up and come back with it, the
         /// toggle's own state untouched.</summary>
-        static bool BookOpen => LivingCity.UI.PersonnelAlmanac.IsOpen;
+        static bool BookOpen => LivingCity.UI.PersonnelAlmanac.IsOpen ||
+                                TurfMapHud.IsOpen;
 
         struct Card
         {

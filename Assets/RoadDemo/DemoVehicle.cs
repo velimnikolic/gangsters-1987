@@ -15,6 +15,11 @@ namespace RoadDemo
     /// </summary>
     public class DemoVehicle : RoadCar
     {
+        // the city's own pack car is nobody's property: stood dead, the backstop
+        // clears it (the fuel customer and the law say otherwise below - each stands
+        // still on purpose, at a pump or on a docking)
+        protected override bool VanishesWhenStuck => true;
+
         public DemoVehicle()
         {
             Profile = DriverProfile.Traffic;

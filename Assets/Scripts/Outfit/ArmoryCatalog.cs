@@ -108,12 +108,20 @@ namespace LivingCity.Outfit
         /// jalopy that would carry four men, and the two that would not cost a good
         /// deal less.
         ///
-        /// Three machines. Two are Palm City's - the motorbike a man would choose and the
-        /// moped that delivers everybody's dinner - and the third is the outfit's own: the
-        /// police pack's big tourer with the force cut off it and painted black
-        /// (GangBikeBaker). The pack's own liveried tourer stays the law's
-        /// (VehicleCatalog.PoliceMotorcycles), and the two electric machines that pack
-        /// also ships are barred by the calendar.
+        /// Four machines. Two are Palm City's - the motorbike a man would choose and the
+        /// moped that delivers everybody's dinner - and the other two are the outfit's
+        /// own: the police pack's big tourer with the force cut off it and painted black
+        /// (GangBikeBaker), and the 450 enduro, which is no pack body at all but a model
+        /// brought in from outside them and baked into a prefab (EnduroBikeBaker). The
+        /// pack's own liveried tourer stays the law's (VehicleCatalog.PoliceMotorcycles),
+        /// and the two electric machines that pack also ships are barred by the calendar.
+        ///
+        /// THE ENDURO IS THE ONE THAT LEAVES THE ROAD. It is the cheapest thing on the
+        /// shelf that will still carry two men and get away, and what it is sold for is
+        /// what a dirt bike is for: it does not care what it is standing on, it is off
+        /// down an alley or across a lot while a car is still looking for the turning.
+        /// Priced under the road machines because it is a stripped competition bike with
+        /// no plates, no lights worth the name and nowhere to hide a long gun.
         ///
         /// THE SCOOTER WAS THE THIRD AND IS NOT ANY MORE, and the reason is measured
         /// rather than felt. Read off the pack by BikeBody at runtime: the motorbike has
@@ -137,6 +145,8 @@ namespace LivingCity.Outfit
                 "Big, black and built for two - the machine for a job across town."),
             new ArmoryItem(EquipmentKind.Motorcycle, "Motorbike", 1_200,
                 "Two men, a gun off the back, and gone before the street looks up."),
+            new ArmoryItem(EquipmentKind.Motorcycle, "Enduro", 900,
+                "A dirt bike. Down an alley, over a lot, gone where a car cannot follow."),
             new ArmoryItem(EquipmentKind.Motorcycle, "Moped", 500,
                 "Nobody looks twice at a delivery boy. Nobody hears one coming either."),
         };
@@ -190,6 +200,12 @@ namespace LivingCity.Outfit
             // is what this listing sells. The law still rides the pack's own
             // (VehicleCatalog.PoliceMotorcycles), untouched.
             "Tourer" => "SM_Veh_Motorbike_Tourer_Black",
+            // THE ENDURO CAME FROM OUTSIDE THE PACKS ALTOGETHER - a .glb read and baked
+            // into Assets/Prefabs/Vehicles/SM_Veh_Motorbike_Enduro_450.prefab by
+            // EnduroBikeBaker, which is also where the note on how big it was scaled
+            // lives. Like the tourer it is in no traffic bucket: the city never rides one,
+            // the outfit does.
+            "Enduro" => "SM_Veh_Motorbike_Enduro_450",
             // THE OUTFIT'S MOPED IS THE BOXLESS ONE. The pack ships the moped with a
             // delivery box bolted over its back third (SM_Veh_Moped_01_Box, 0.61 m of
             // it centred 0.79 m behind the axle line) - which is exactly where a

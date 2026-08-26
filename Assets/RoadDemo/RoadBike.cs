@@ -23,6 +23,11 @@ namespace RoadDemo
     /// </summary>
     public class RoadBike : RoadCar
     {
+        // a street machine is nobody's property: stood dead, the backstop clears
+        // it (CrewBike says otherwise - a crew's machine, or one down in a drive-by,
+        // is the scene's to keep)
+        protected override bool VanishesWhenStuck => true;
+
         public BikeBody Body { get; private set; }
 
         /// <summary>The model under the car's transform: this is what rolls.</summary>

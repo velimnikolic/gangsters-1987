@@ -487,27 +487,25 @@ namespace CoverDemo
                 return;
             }
             var root = new GameObject("Parked Cars").transform;
-            const float kerb = Half - 0.95f + 0.38f;   // where a car of ordinary width stands
-            float step = (StreetXMax - StreetXMin - 30f) / Mathf.Max(1, parkedCars);
-            for (int i = 0; i < parkedCars; i++)
+            // the stretch of kerb a car may be left on, both sides. KerbCars measures
+            // every body: each stands at the kerb by its own width - the pack's wide
+            // ones used to park half on the pavement - and claims its own length of it
+            var spans = new[] { new Vector2(StreetXMin + 15f, StreetXMax - 15f) };
+            // unpainted, unlike the crew lab's row: nothing drives this street, so the
+            // cars have no repainted traffic to stand out against, and the cover oracle
+            // is read off screenshots where the pack's own colours tell the bodies apart
+            var stood = KerbCars.Park(root, bodies, parkedCars, alongX: true, centre: 0f,
+                halfRoad: Half, roadY: RoadY, spans: spans, paint: false);
+            foreach (var car in stood)
             {
-                bool north = i % 2 == 0;               // right-hand traffic: eastbound keeps south
-                float x = StreetXMin + 15f + step * (i + Random.Range(-0.25f, 0.25f));
-                float z = north ? kerb : -kerb;
-                var go = Instantiate(bodies[Random.Range(0, bodies.Count)],
-                    new Vector3(x, RoadY, z), Quaternion.Euler(0f, north ? 270f : 90f, 0f), root);
-                go.name = go.name.Replace("(Clone)", "");
-                foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
-                var bounds = BoundsOf(go);
-                WalkObstacles.Block(bounds);
-                StoodCar.Park(go);
-                // and the bay is spoken for, so no barrel is scattered inside a car.
+                // the bay is spoken for, so no barrel is scattered inside a car.
                 // A RESERVATION, not a prop: it refuses props and offers no flank, which
                 // is right - the car already offers its own through StreetTraffic.Users,
                 // and one body must not be two pieces of cover.
-                if (_kit != null)
-                    _kit.Plan.Reserve(new Vector3(bounds.center.x, 0f, bounds.center.z), 0f,
-                        new Vector2(bounds.extents.x + 0.3f, bounds.extents.z + 0.3f));
+                if (_kit == null) continue;
+                var bounds = car.Box;
+                _kit.Plan.Reserve(new Vector3(bounds.center.x, 0f, bounds.center.z), 0f,
+                    new Vector2(bounds.extents.x + 0.3f, bounds.extents.z + 0.3f));
             }
 #endif
         }
@@ -557,15 +555,6 @@ namespace CoverDemo
             }
 #endif
             return null;
-        }
-
-        static Bounds BoundsOf(GameObject go)
-        {
-            var renderers = go.GetComponentsInChildren<Renderer>();
-            if (renderers.Length == 0) return new Bounds(go.transform.position, Vector3.one);
-            var bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
-            return bounds;
         }
 
         // ------------------------------------------------------------------ the sky

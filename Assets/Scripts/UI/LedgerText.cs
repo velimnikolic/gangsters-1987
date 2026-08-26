@@ -295,6 +295,58 @@ namespace LivingCity.UI
             return whole + (whole == 1 ? " hour" : " hours");
         }
 
+        /// <summary>
+        /// How long until a campaign day comes round, in the only two units the ledger
+        /// owns. There are no weeks anywhere in this book: a thing eleven days out says
+        /// eleven days, and a thing due before this midnight counts down in HOURS,
+        /// because that is the horizon a man on a real-time clock actually plans on.
+        /// </summary>
+        /// <param name="dueDay">The campaign day it falls due.</param>
+        /// <param name="today">The campaign day now.</param>
+        /// <param name="hourNow">The city clock's hour, 0-24, for the last day's count.</param>
+        public static string DueIn(int dueDay, int today, float hourNow)
+        {
+            var days = dueDay - today;
+            if (days < 0)
+                return "OVERDUE";
+
+            // Inside the last day the answer is hours - and the hours LEFT of today,
+            // not the hours elapsed, which is the subtraction that reads backwards.
+            if (days == 0)
+            {
+                var left = Outfit.Campaign.HoursPerDay - hourNow;
+                if (left <= 1f)
+                    return "WITHIN THE HOUR";
+                return "IN " + (int)left + " HOURS";
+            }
+
+            if (days == 1)
+            {
+                // Tomorrow, but how far into tomorrow depends on where today stands.
+                var left = Outfit.Campaign.HoursPerDay - hourNow + Outfit.Campaign.HoursPerDay;
+                return left < 30f ? "IN " + (int)left + " HOURS" : "TOMORROW";
+            }
+
+            return "IN " + days + " DAYS";
+        }
+
+        /// <summary>The same countdown in the lower-case voice the blotter's sub-notes
+        /// and the printout's foot are typed in.</summary>
+        public static string DueInPlain(int dueDay, int today, float hourNow) =>
+            DueIn(dueDay, today, hourNow).ToLowerInvariant();
+
+        /// <summary>How long a stretch of days lasts, said as a stretch rather than a
+        /// date - what a CONDITION note under a hurt or a held man reads.</summary>
+        public static string DaysLeft(int backOnDay, int today)
+        {
+            var days = backOnDay - today;
+            if (backOnDay <= 0)
+                return "no date set";
+            if (days <= 0)
+                return "back today";
+            return days == 1 ? "1 day" : days + " days";
+        }
+
         /// <summary>The odds the job card quotes. Words rather than a percentage: the
         /// ledger is a typed memo, and "about three in four" is what a man writes.</summary>
         public static string OddsLine(float chance) =>

@@ -55,13 +55,17 @@ namespace LivingCity.UI
         /// <summary>What the payroll total at the foot takes off the bottom.</summary>
         const float RollFoot = 74f;
 
-        const float RowHeight = 28f;
+        /// <summary>Two lines fit in a row: the CONDITION column prints a state word
+        /// with its note under it, and 28 units put the note's line box through the
+        /// word's. Fewer rows on the glass at once is the price, and the roll scrolls.</summary>
+        const float RowHeight = 32f;
         const float ListHeight = PrintBodyH + RollTop - RollFoot;
         const float HoodIndent = 18f;
 
         // The printout's column grid, in printout-inner coordinates. CONDITION carries
-        // a word AND the aside that explains it ("HURT · back day 14"), so it is the
-        // widest of the scan columns - at 56 units the aside was ellipsed to "on his fe".
+        // a state word with a free-text note UNDER it ("HURT" over "2 ribs · back in 4
+        // days"), so it is the widest of the scan columns and the note gets the whole
+        // of it rather than what is left beside the word.
         const float ColName = 0f;
         const float ColCarrying = 236f;
         const float ColCondition = 318f;
@@ -100,7 +104,6 @@ namespace LivingCity.UI
 
         ViewOptions options;
         int selectedId = -1;
-        bool assignMode;
         Confirm pendingConfirm;
         string lastRefusal = "";
         float listScroll;
@@ -121,8 +124,14 @@ namespace LivingCity.UI
         /// heads, the scrolling roll, and the payroll struck across the foot.</summary>
         void BuildPrintout(RectTransform root)
         {
+            // A fraction off square, like everything else loose in the folder: paper
+            // that somebody laid down by hand is never true, and a stack of perfectly
+            // square rectangles is the one thing that reads as UI whatever is drawn on
+            // it. The design's own figure for this sheet.
             var sheet = Card("Printout", root, ListLeft, PageTop, PaneW, PaneH,
-                LedgerStyle.Printout, shadowSpread: 14f, low: LedgerStyle.PrintoutLow);
+                LedgerStyle.Printout, tiltDegrees: -0.28f, shadowSpread: 14f,
+                low: LedgerStyle.PrintoutLow);
+            Aging(sheet, PaneW, PaneH);
             var body = NewRect("Body", sheet);
             Stretch(body, PrintPad);
 
@@ -183,8 +192,15 @@ namespace LivingCity.UI
         void BuildPersonalFile(RectTransform root)
         {
             var card = Card("File", root, CardLeft, PageTop, PaneW, PaneH,
-                LedgerStyle.Card, shadowSpread: 14f, low: LedgerStyle.CardLow);
+                LedgerStyle.Card, tiltDegrees: 0.35f, shadowSpread: 14f,
+                low: LedgerStyle.CardLow);
+            Aging(card, PaneW, PaneH);
+
+            // The file is BOTH clipped and stapled - it was assembled twice, which is
+            // what a personal file in a working office looks like.
             Clip(card, PaneW * 0.5f, 0f);
+            Staple(card, 16f, -16f);
+            PencilSmudge(card, 22f, -(PaneH - 70f), 130f, 46f);
 
             Caps(card, CardPad, -10f, 300f, "PERSONAL FILE", 12f, LedgerStyle.InkMid, 5f);
             cardFileNo = Caps(card, PaneW - CardPad - 200f, -10f, 200f, "", 11f,
@@ -292,8 +308,8 @@ namespace LivingCity.UI
 
             if (payrollFigure)
             {
-                var weekly = Outfit.Wages.WeeklyPayroll(director.Roster);
-                payrollFigure.text = LedgerText.Cash(Outfit.Wages.PerDay(weekly)) + " / day";
+                payrollFigure.text =
+                    LedgerText.Cash(Outfit.Wages.DailyPayroll(director.Roster)) + " / day";
             }
         }
 
@@ -360,16 +376,7 @@ namespace LivingCity.UI
             if (roster == null)
                 return;
 
-            // Assign mode reads the whole book: filters fall away (a valid target must
-            // never be hidden by one) and the empty sections show as targets.
             var effective = options;
-            if (assignMode)
-            {
-                effective.Rank = RankFilter.All;
-                effective.Assignment = AssignmentFilter.All;
-                effective.Availability = AvailabilityFilter.All;
-                effective.IncludeEmptySections = true;
-            }
 
             RosterView.Build(roster, effective, rows);
 
@@ -456,28 +463,15 @@ namespace LivingCity.UI
             var rect = NewRect("Section", listContent);
             PlaceTopLeft(rect, 0f, y, PrintInner, RowHeight);
 
-            var isTarget = assignMode && selectedId >= 0 && kind != RowKind.SpecialistHeader;
             // The front's header is also the BOSS's row: clicking it opens the front
             // card - his face, the desk, the locker - the way a member row opens his.
-            var frontSelectable = kind == RowKind.FrontHeader && !assignMode;
+            // It is the only header that does anything: a section head is a label, and
+            // the book has nothing to drop a man onto any more.
+            var frontSelectable = kind == RowKind.FrontHeader;
             var chosen = frontSelectable && selectedId == FrontSelection;
 
-            if (isTarget || frontSelectable)
-            {
-                var surface = ClickSurface(rect);
-                if (isTarget)
-                {
-                    var toPool = kind == RowKind.PoolHeader;
-                    RowButton(rect, surface, () => FinishAssign(toPool
-                        ? director.AssignToPool(selectedId)
-                        : director.AssignToFront(selectedId)));
-                }
-                else
-                    RowButton(rect, surface, () => SelectMember(FrontSelection));
-            }
-
-            if (isTarget)
-                Highlight(rect, LedgerStyle.HighlighterGreen);
+            if (frontSelectable)
+                RowButton(rect, ClickSurface(rect), () => SelectMember(FrontSelection));
             else if (chosen)
                 Highlight(rect, LedgerStyle.Highlighter);
 
@@ -520,36 +514,12 @@ namespace LivingCity.UI
             var rect = NewRect("Row", listContent);
             PlaceTopLeft(rect, 0f, y, PrintInner, RowHeight);
 
-            var chosen = id == selectedId && !assignMode;
-            // A lieutenant's row is his crew's handle: in assign mode it lights as
-            // the drop target the crew band never became.
-            var isCrewTarget = assignMode && lieutenantRow && selectedId >= 0;
-            var surface = ClickSurface(rect);
+            var chosen = id == selectedId;
 
-            // In assign mode the LIEUTENANT'S row takes the man into his crew - the
-            // lieutenant IS his group's handle. An ordinary man is no target, so
-            // clicking one cancels the mode - the "never mind" that costs nothing.
-            var crew = lieutenantRow ? roster.CrewOf(id) : null;
-            var crewId = crew != null ? crew.Id : -1;
-            RowButton(rect, surface, () =>
-            {
-                if (assignMode)
-                {
-                    if (crewId >= 0)
-                        FinishAssign(director.AssignToCrew(selectedId, crewId));
-                    else
-                    {
-                        assignMode = false;
-                        dirty = true;
-                    }
-                }
-                else
-                    SelectMember(id);
-            });
+            // A row does ONE thing: it opens that man's file. The ledger reads.
+            RowButton(rect, ClickSurface(rect), () => SelectMember(id));
 
-            if (isCrewTarget)
-                Highlight(rect, LedgerStyle.HighlighterGreen);
-            else if (chosen)
+            if (chosen)
                 Highlight(rect, LedgerStyle.Highlighter);
             else
                 Rule(rect, 0f, -RowHeight, PrintInner, LedgerStyle.InkHair);
@@ -660,6 +630,28 @@ namespace LivingCity.UI
         };
 
         /// <summary>
+        /// The line under the state word: what happened to him and how long he is out
+        /// for, in DAYS. The man's own note carries the particulars (it was written
+        /// when he went down); the campaign supplies the countdown, so a note never
+        /// goes stale as the days pass under it.
+        /// </summary>
+        string ConditionNote(Character member, CharacterStatus status)
+        {
+            if (status == CharacterStatus.Active)
+                return "";
+            if (status == CharacterStatus.Dead)
+                return "off the books";
+            if (status == CharacterStatus.Deserted)
+                return "ran";
+
+            var today = outfit ? outfit.Campaign.Day : 1;
+            var left = LedgerText.DaysLeft(member.BackOnDay, today);
+            return member.ConditionNote.Length > 0
+                ? member.ConditionNote + " · " + left
+                : left;
+        }
+
+        /// <summary>
         /// The scan columns: CONDITION, STANDING, the sorted value when a sort is on,
         /// and the WAGE. Those four read straight down a column of sixty men, which is
         /// what makes sixty men scannable - the wage most of all, because payroll is
@@ -667,23 +659,27 @@ namespace LivingCity.UI
         /// </summary>
         void BuildRowCells(Roster roster, RectTransform rect, Character member, bool dead)
         {
-            // ---- condition ----
+            // ---- condition: a state word, and under it what is actually wrong ----
             var status = member.Status;
-            var condition = Caps(rect, 0f, 0f, 44f, ConditionWord(status), 11f,
+            var conditionW = ColStanding - ColCondition - 8f;
+            var condition = Caps(rect, 0f, 0f, conditionW, ConditionWord(status), 11f,
                 status == CharacterStatus.Active ? LedgerStyle.GreenOk
                 : dead ? LedgerStyle.InkDim : LedgerStyle.RedPen, 2f);
-            FillRow(condition.rectTransform, ColCondition, 44f);
+            FillCell(condition.rectTransform, ColCondition, conditionW, 6f, 14f);
 
-            var aside = status == CharacterStatus.Active ? "on his feet"
-                : status == CharacterStatus.Dead ? "off the books"
-                : status == CharacterStatus.Deserted ? "ran"
-                : member.BackOnDay > 0 ? "back day " + member.BackOnDay
-                : "no date set";
-            var asideText = Text("Aside", rect, LedgerStyle.Mono, 10.5f, LedgerStyle.InkDim,
-                TextAlignmentOptions.MidlineLeft);
-            asideText.overflowMode = TextOverflowModes.Ellipsis;
-            FillRow(asideText.rectTransform, ColCondition + 46f, ColStanding - ColCondition - 52f);
-            asideText.text = aside;
+            // A man on his feet gets no second line: "on his feet" under FIT is a line
+            // of type that says nothing, sixty times down the page. The note is for the
+            // men something HAPPENED to, which is the only reason to scan the column.
+            var note = ConditionNote(member, status);
+            if (note.Length > 0)
+            {
+                var noteText = Text("Note", rect, LedgerStyle.Mono, 9.5f,
+                    dead ? LedgerStyle.InkFaint : LedgerStyle.RedPen,
+                    TextAlignmentOptions.MidlineLeft);
+                noteText.overflowMode = TextOverflowModes.Ellipsis;
+                FillCell(noteText.rectTransform, ColCondition, conditionW, -7f, 13f);
+                noteText.text = note;
+            }
 
             // ---- standing ----
             var posted = roster.AssignmentOf(member.Id).Kind != AssignmentKind.Pool;
@@ -695,7 +691,7 @@ namespace LivingCity.UI
             FillRow(standingText.rectTransform, ColStanding, 76f);
 
             // ---- the sorted value, when the roll is sorted by one ----
-            if (options.Sort != SortKey.Roster && !assignMode)
+            if (options.Sort != SortKey.Roster)
             {
                 var value = Text("Value", rect, LedgerStyle.MonoBold, 13f, LedgerStyle.Ink,
                     TextAlignmentOptions.MidlineRight);
@@ -719,13 +715,6 @@ namespace LivingCity.UI
             pendingConfirm = Confirm.None;
             lastRefusal = "";
             cardScroll = 0f;
-            dirty = true;
-        }
-
-        void FinishAssign(OpResult result)
-        {
-            assignMode = false;
-            lastRefusal = result.Ok ? "" : result.Reason;
             dirty = true;
         }
 
@@ -885,7 +874,7 @@ namespace LivingCity.UI
             var y = -70f;
             y = Particular("POST", LedgerText.AssignmentLine(assignment, crewName), textX,
                 textW, y);
-            y = Particular("WAGE", LedgerText.Cash(Outfit.Wages.WageFor(member)) + " / week",
+            y = Particular("WAGE", LedgerText.Cash(Outfit.Wages.WageFor(member)) + " / day",
                 textX, textW, y);
             y = Particular("CONDITION", LedgerText.StatusLabel(member.Status), textX, textW, y,
                 member.Status == CharacterStatus.Active ? LedgerStyle.Ink : LedgerStyle.RedPen);
@@ -923,6 +912,9 @@ namespace LivingCity.UI
                 y = BuildAttributeRow(member, (CharacterAttribute)a, y);
             y -= 8f;
 
+            // ---- what the city has on him ----
+            y = BuildRapSheet(member, y);
+
             // ---- the gear the outfit keeps, and his crew's share of it ----
             y = BuildEquipmentSection(roster, member, y);
 
@@ -930,6 +922,57 @@ namespace LivingCity.UI
                 y = MarginNote(lastRefusal, y - 10f);
 
             return y;
+        }
+
+        /// <summary>
+        /// RAP SHEET: what the city has on him, oldest line first - date, charge, and
+        /// how it ended, the outcome in red because it is the half that says whether he
+        /// is a liability. Every man is dealt one with his name, so a clean sheet is a
+        /// FACT about the man and gets said out loud rather than leaving a gap.
+        /// </summary>
+        float BuildRapSheet(Character member, float y)
+        {
+            const float dateW = 96f;
+            const float outcomeW = 168f;
+            const float rowH = 19f;
+
+            Caps(cardContent, 0f, y, CardInner - 150f, "RAP SHEET", 11f,
+                LedgerStyle.InkMid, 5f);
+            Caps(cardContent, CardInner - 150f, y, 150f,
+                member.RapSheet.Count == 1 ? "1 ENTRY" : member.RapSheet.Count + " ENTRIES",
+                9f, LedgerStyle.InkLabel, 3f, TextAlignmentOptions.MidlineRight);
+            y -= 20f;
+            Rule(cardContent, 0f, y + 4f, CardInner, LedgerStyle.InkFaint);
+
+            if (member.RapSheet.Count == 0)
+            {
+                Line(cardContent, LedgerStyle.MonoItalic, 12f, LedgerStyle.InkDim,
+                    0f, y - 2f, CardInner, rowH, "No record. Nothing on him at all.");
+                return y - rowH - 10f;
+            }
+
+            for (var i = 0; i < member.RapSheet.Count; i++)
+            {
+                var entry = member.RapSheet[i];
+
+                Line(cardContent, LedgerStyle.Mono, 11f, LedgerStyle.InkLabel,
+                    0f, y - 2f, dateW, rowH, entry.Date);
+
+                var charge = Line(cardContent, LedgerStyle.Mono, 12f, LedgerStyle.InkSoft,
+                    dateW, y - 2f, CardInner - dateW - outcomeW - 8f, rowH, entry.Charge);
+                charge.overflowMode = TextOverflowModes.Ellipsis;
+
+                var outcome = Line(cardContent, LedgerStyle.Mono, 11f, LedgerStyle.RedPen,
+                    CardInner - outcomeW, y - 2f, outcomeW, rowH, entry.Outcome,
+                    TextAlignmentOptions.MidlineRight);
+                outcome.overflowMode = TextOverflowModes.Ellipsis;
+
+                y -= rowH;
+                if (i < member.RapSheet.Count - 1)
+                    DottedRule(cardContent, 0f, y + 3f, CardInner, LedgerStyle.InkHair);
+            }
+
+            return y - 10f;
         }
 
         /// <summary>One LABEL / value line of the particulars grid.</summary>
@@ -1414,19 +1457,6 @@ namespace LivingCity.UI
                 return;
             }
 
-            if (assignMode)
-            {
-                Caps(cardFoot, 0f, -8f, CardInner,
-                    "pick a crew's lieutenant, the pool, or the front", 10f,
-                    LedgerStyle.InkMid, 3f);
-                Tape(cardFoot, "NEVER MIND", 0f, -22f, half, buttonH, () =>
-                {
-                    assignMode = false;
-                    dirty = true;
-                }, outline: true);
-                return;
-            }
-
             if (member.Rank == Rank.Lieutenant)
             {
                 Tape(cardFoot, "OFF THE BOOKS", 0f, -14f, half, buttonH, () =>
@@ -1437,6 +1467,9 @@ namespace LivingCity.UI
                 return;
             }
 
+            // PROMOTE and OFF THE BOOKS are the file's ONLY two actions. Where a man
+            // stands is the map's business and the file only reports it - there is no
+            // reassign here, and putting one back would make the book a command screen.
             Tape(cardFoot, "PROMOTE", 0f, -14f, half, buttonH, () =>
             {
                 var check = director.CheckPromote(member.Id);
@@ -1448,12 +1481,6 @@ namespace LivingCity.UI
                     DoPromote(member.Id);
                 dirty = true;
             });
-            Tape(cardFoot, "REASSIGN", half + 12f, -14f, half, buttonH, () =>
-            {
-                assignMode = true;
-                lastRefusal = "";
-                dirty = true;
-            }, outline: true);
         }
 
         void DoPromote(int id)

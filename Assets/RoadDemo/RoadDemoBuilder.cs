@@ -158,6 +158,11 @@ namespace RoadDemo
         [Header("Police patrol")]
         public int policeCarCount = 3;
         public int policeOfficerCount = 2;
+        [Tooltip("Beat PAIRS dealt over the city's blocks, each walking its own block's " +
+                 "ring from the first frame - the law the player sees everywhere, not " +
+                 "just at the station door. -1 scales it: one pair to every four blocks. " +
+                 "0 leaves only the station pair.")]
+        public int policeBeatPairs = -1;
         public Vector2 policeRestSeconds = new Vector2(6f, 16f);
         // waypoints per patrol, drawn across the whole map (cars) or the beat
         // radius (officers) - each one is a routed trip, not a wandered block
@@ -3264,7 +3269,10 @@ namespace RoadDemo
             var dispatch = gameObject.AddComponent<PoliceDispatch>();
             dispatch.Init(_crews, clips, _officerPrefabs, CrewKit.Weapon(CrewArms.DefaultSidearm));
             foreach (var car in _policeCars) dispatch.Register(car);
-            foreach (var officer in _policeOfficers) dispatch.Register(officer);
+            // only the LEADS stand on the books: a pair answers a call as one unit,
+            // the wingman goes wherever his lead is sent
+            foreach (var officer in _policeOfficers)
+                if (officer.Lead == null) dispatch.Register(officer);
 
             SpawnRivals();
 
@@ -3738,13 +3746,20 @@ namespace RoadDemo
 
         void SpawnPolice()
         {
-            if (_policeStation == null || !_forecourtPlanned) return;
-
             var policeRoot = new GameObject("Police").transform;
             var markers = new List<IPatrolMarker>();
 
-            SpawnPatrolCars(policeRoot, markers);
-            SpawnFootPatrols(policeRoot, markers);
+            // the station's own layer - the cars docked at its forecourt and the
+            // pair that rests inside it - only where a station actually stands
+            if (_policeStation != null && _forecourtPlanned)
+            {
+                SpawnPatrolCars(policeRoot, markers);
+                SpawnFootPatrols(policeRoot, markers);
+            }
+
+            // and the beat pairs over the blocks, station or no station: the law
+            // the player sees on the first frame, wherever he looks
+            SpawnBlockBeats(policeRoot, markers);
 
             if (markers.Count == 0) return;
             gameObject.AddComponent<PolicePatrolOverlay>().Init(markers);
@@ -3940,13 +3955,22 @@ namespace RoadDemo
                 if (l.To == homeFwd.From) { homeBack = l; break; }
             if (homeBack == null) return;
 
-            var routeHome = BuildFootRouteHome(homeFwd);
+            var routeHome = PoliceFootPatrol.RouteHome(homeFwd);
+
+            // the station block's own pavement ring: the pair's beat. Where no ring
+            // closes (a torn graph) it comes back null and the officers keep the
+            // old wander over the quarter.
+            var ring = PoliceFootPatrol.BeatRing(homeFwd, homeBack, door);
 
             // every walkable corner, the officers' waypoint pool
             var nodeSet = new HashSet<PedNode>();
             foreach (var l in _pedLinks) { nodeSet.Add(l.From); nodeSet.Add(l.To); }
             var nodes = new List<PedNode>(nodeSet);
 
+            // dealt in PAIRS: the even man leads the beat and stands on the
+            // dispatcher's books, the odd man behind him is his wingman. An odd
+            // count leaves the last man walking his round alone.
+            PoliceFootPatrol lead = null;
             for (int i = 0; i < policeOfficerCount; i++)
             {
                 var prefab = _officerPrefabs[i % _officerPrefabs.Count];
@@ -3957,43 +3981,101 @@ namespace RoadDemo
 
                 var officer = new PoliceFootPatrol
                     { Speed = Random.Range(1.3f, 1.5f), UnitNumber = i + 1 };
-                officer.Init(go.transform, _walkClip, _idleClip, homeFwd, entryT);
+                // the beat's whole wardrobe: the walk and the stand, the JOG he answers
+                // a call at, and the PISTOL IDLE he stands over an arrest in
+                officer.Init(go.transform,
+                    CrewKit.WithArms(new PedClips { Walk = _walkClip, Idle = _idleClip }),
+                    homeFwd, entryT);
                 officer.Configure(door, homeFwd, homeBack, entryT, nodes, routeHome,
-                    policeRestSeconds, policePatrolWaypoints, Random.Range(4f, 10f) + i * 6f);
+                    policeRestSeconds, policePatrolWaypoints,
+                    Random.Range(4f, 10f) + (i / 2) * 6f);
+                if (i % 2 == 0)
+                {
+                    officer.SetBeat(ring);
+                    lead = officer;
+                }
+                else officer.FollowLead(lead);
                 _policeOfficers.Add(officer);
                 markers.Add(officer);
             }
         }
 
-        // The foot mirror: BFS from both ends of the home stretch over the ped
-        // graph, then the link toward the nearer neighbour per node.
-        Dictionary<PedNode, PedLink> BuildFootRouteHome(PedLink home)
+        // The beat pairs over the blocks: one block each, dealt in a stride down the
+        // lot list so they land spread over the whole map, and stood ON their round
+        // from the first frame - the player never watches the law file out of one door.
+        void SpawnBlockBeats(Transform parent, List<IPatrolMarker> markers)
         {
-            var dist = new Dictionary<PedNode, int> { [home.From] = 0, [home.To] = 0 };
-            var queue = new Queue<PedNode>();
-            queue.Enqueue(home.From);
-            queue.Enqueue(home.To);
-            while (queue.Count > 0)
-            {
-                var n = queue.Dequeue();
-                foreach (var l in n.Links)
-                {
-                    if (dist.ContainsKey(l.To)) continue;
-                    dist[l.To] = dist[n] + 1;
-                    queue.Enqueue(l.To);
-                }
-            }
+            if (_officerPrefabs.Count == 0 || _walkClip == null || _idleClip == null) return;
+            int pairs = policeBeatPairs < 0
+                ? Mathf.Max(1, _lotPlans.Count / 4)
+                : policeBeatPairs;
+            if (pairs <= 0 || _lotPlans.Count == 0 || _pedLinks.Count == 0) return;
+            pairs = Mathf.Min(pairs, _lotPlans.Count);
 
-            var next = new Dictionary<PedNode, PedLink>();
-            foreach (var kv in dist)
+            // the waypoint pool a call routes over - every walkable corner
+            var nodeSet = new HashSet<PedNode>();
+            foreach (var l in _pedLinks) { nodeSet.Add(l.From); nodeSet.Add(l.To); }
+            var nodes = new List<PedNode>(nodeSet);
+
+            int unit = _policeOfficers.Count;
+            for (int p = 0; p < pairs; p++)
             {
-                PedLink best = null;
-                int bestD = int.MaxValue;
-                foreach (var l in kv.Key.Links)
-                    if (dist.TryGetValue(l.To, out int d) && d < bestD) { bestD = d; best = l; }
-                if (best != null) next[kv.Key] = best;
+                var lot = _lotPlans[p * _lotPlans.Count / pairs];
+                var centre = new Vector3(lot.Interior.center.x, 0f, lot.Interior.center.y);
+
+                // the block's nearest stretch of pavement, and its reverse
+                PedLink front = null;
+                float bestD = float.MaxValue;
+                foreach (var l in _pedLinks)
+                {
+                    if (l.Gated || l.Length < 6f) continue;
+                    var ab = l.To.Pos - l.From.Pos;
+                    var dir = ab.normalized;
+                    float t = Mathf.Clamp(Vector3.Dot(centre - l.From.Pos, dir), 0f, l.Length);
+                    float d = (l.From.Pos + dir * t - centre).sqrMagnitude;
+                    if (d < bestD) { bestD = d; front = l; }
+                }
+                if (front == null) continue;
+                PedLink back = null;
+                foreach (var l in front.To.Links)
+                    if (l.To == front.From) { back = l; break; }
+                if (back == null) continue;
+
+                var ring = PoliceFootPatrol.BeatRing(front, back, centre);
+                if (ring == null) continue;
+
+                // the ring's own first stretch, to be stood on mid-stride
+                PedLink start = null;
+                foreach (var l in ring[0].Links)
+                    if (l.To == ring[1 % ring.Count]) { start = l; break; }
+                if (start == null) continue;
+
+                PoliceFootPatrol lead = null;
+                for (int i = 0; i < 2; i++)
+                {
+                    var prefab = _officerPrefabs[(unit + i) % _officerPrefabs.Count];
+                    var go = Instantiate(prefab, start.From.Pos, Quaternion.identity, parent);
+                    go.name = "Beat Officer " + (unit + i + 1);
+                    foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
+                    foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
+
+                    var officer = new PoliceFootPatrol
+                        { Speed = Random.Range(1.3f, 1.5f), UnitNumber = unit + i + 1 };
+                    officer.Init(go.transform,
+                        CrewKit.WithArms(new PedClips { Walk = _walkClip, Idle = _idleClip }),
+                        start, i == 0 ? 1.5f : 0.3f);
+                    officer.ConfigureBeat(nodes, policePatrolWaypoints);
+                    if (i == 0)
+                    {
+                        officer.SetBeat(ring);
+                        lead = officer;
+                    }
+                    else officer.FollowLead(lead);
+                    _policeOfficers.Add(officer);
+                    markers.Add(officer);
+                }
+                unit += 2;
             }
-            return next;
         }
 
         // ------------------------------------------------------------ environment
@@ -4196,6 +4278,14 @@ namespace RoadDemo
             var go = new GameObject("Map");
             go.AddComponent<DemoMap>().Init(this, _blocks, _picker, _rig,
                 _pedestrians, _policeOfficers, _vehicles, _policeCars, _crews);
+
+            // And the turf map: the same city as a 1987 survey plate, on T. Its own
+            // screen, not a mode of the plan above - it draws the city onto paper
+            // rather than photographing it, and everything on it is the outfit's
+            // business rather than the street's.
+            var turf = new GameObject("Turf Map");
+            turf.AddComponent<TurfMapHud>().Init(this, _blocks, _picker, _rig, _crews,
+                _clock, _vehicles, _policeCars);
         }
 
         // ------------------------------------------------------- the lot overlay

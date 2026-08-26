@@ -625,6 +625,27 @@ namespace RoadDemo
                 {
                     var back = a.Road.LaneFor(-a.Heading, -a.Offset);
                     if (back != null && back.From == n) AddConnector(n, a, back, uturn: true);
+                    else
+                    {
+                        // A ONE-WAY PAIR TURNS ROUND ONTO ITS TWIN. Where a divided
+                        // road ends, the lane back is not this road's - it is the
+                        // other carriageway's, a few metres across the median, and it
+                        // points dead against us so the loop above skipped it. Without
+                        // this the arriving lane got NO connector at all, and every
+                        // car that reached the line stood there wanting nothing for
+                        // the rest of the run (cars 94 and 303, measured live: one in,
+                        // one out, dot -1.0, gap 5 m, nothing to plan into).
+                        RoadEdge turn = null; float bestD = float.MaxValue;
+                        foreach (var b in n.Outgoing)
+                        {
+                            if (Vector3.Dot(Arriving(a), Leaving(b)) > -0.5f) continue;
+                            var v = b.Start - a.End; v.y = 0f;
+                            float d2 = v.sqrMagnitude;
+                            if (d2 < bestD) { bestD = d2; turn = b; }
+                        }
+                        if (turn != null && bestD < 2f * MergeReach * 2f * MergeReach)
+                            AddConnector(n, a, turn, uturn: true);
+                    }
                 }
             }
             BuildConflicts(n);

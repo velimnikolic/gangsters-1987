@@ -223,6 +223,8 @@ namespace RoadDemo
         {
             public CarBody Body;
             protected override void OnPlaced(float dt, float speed, float steerDegrees) => Body?.TickWheels(dt, speed, steerDegrees);
+            // a pack car is nobody's property: stood dead, the backstop clears it
+            protected override bool VanishesWhenStuck => true;
         }
 
         readonly List<Car> _cars = new List<Car>();

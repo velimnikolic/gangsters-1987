@@ -57,9 +57,10 @@ namespace BlockDemo
         public int carCount = 28;
         public int pedestrianCount = 70;
         [Range(0f, 1f)] public float insideAtStart = 0.35f;
-        [Tooltip("A patrol car and an officer on the beat - only if a block that lands " +
-                 "here carries the police station, since the patrols dock at its forecourt.")]
-        public bool police = false;
+        [Tooltip("The law on the street: a beat pair on every block from the first " +
+                 "frame, plus the patrol car and the station pair where a block that " +
+                 "lands here carries the police station.")]
+        public bool police = true;
 
         [Header("The lab run")]
         [Tooltip("Rival mobs standing about the quarter for the outfit to go at. The city " +
@@ -104,6 +105,21 @@ namespace BlockDemo
         [Tooltip("Bomb mission: swing the camera onto the action (burning shop, blown " +
                  "car) so a headless --shot frames it. For grabbing pictures, off otherwise.")]
         public bool missionBombShot;
+
+        [Tooltip("THE CAR BOMB: the crew walks up to a car belonging to a rival crew, lays " +
+                 "a charge under it, walks clear, and the rival is then sent for his own " +
+                 "car - he gets in, drives off, and it blows under him. Overrides every " +
+                 "other mission.")]
+        public bool missionCarBomb;
+        [Tooltip("Car bomb: metres the crew walks away from the charge before the rival is " +
+                 "sent for his car. Must clear the blast (6 m) and the range a rival opens " +
+                 "fire at (24 m).")]
+        [Min(10f)] public float missionCarBombClearBy = 45f;
+        [Tooltip("Car bomb: seconds any one leg may take before the run fails.")]
+        [Min(10f)] public float missionCarBombPatience = 90f;
+        [Tooltip("Car bomb: seconds to let the rest of the rival's crew climb in after the " +
+                 "first man is seated, before the car is driven off.")]
+        [Min(0f)] public float missionCarBombSettle = 8f;
 
         [Tooltip("The mission on two wheels: no car, no march. The outfit's crew sends " +
                  "two men on the motorcycle the ledger bought it, one pass at a rival " +
@@ -209,7 +225,10 @@ namespace BlockDemo
             city.pedestrianCount = pedestrianCount;
             city.insideAtStart = insideAtStart;
             city.policeCarCount = police ? 1 : 0;
-            city.policeOfficerCount = police ? 1 : 0;
+            city.policeOfficerCount = police ? 2 : 0;   // the station pair, two abreast
+            // and a pair on EVERY block of the lab - the quarter is small and the
+            // point is to look at them
+            city.policeBeatPairs = police ? columns * rows : 0;
             city.rivalCrewsInCity = rivalCrews;
             city.rivalHoodsInCity = rivalHoods;
             city.mixedArms = mixedArms;
@@ -257,6 +276,10 @@ namespace BlockDemo
                 mission.bombRun = missionBomb;
                 mission.bombThrows = missionBombThrows;
                 mission.bombShotCam = missionBombShot;
+                mission.carBombRun = missionCarBomb;
+                mission.carBombClearBy = missionCarBombClearBy;
+                mission.carBombPatience = missionCarBombPatience;
+                mission.carBombSettle = missionCarBombSettle;
                 if (missionWalkLegs > 0) mission.walkLegs = missionWalkLegs;
                 if (missionLegPatience > 0f) mission.legPatience = missionLegPatience;
             }

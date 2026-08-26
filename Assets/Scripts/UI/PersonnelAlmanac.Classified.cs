@@ -13,11 +13,10 @@ namespace LivingCity.UI
     /// halftone of the face the player will meet in the street if he signs him, his
     /// three best stats in stars, his own copy, and the price.
     ///
-    /// The price is quoted BY THE DAY, which is how this city advertises a man, while
-    /// the books still pay a week at a time on payday - both figures come off the one
-    /// wage table (Wages.PerDay), so the column and the balance sheet can never
-    /// disagree. Under it, the signing money: four weeks in his hand before he works a
-    /// single one.
+    /// The price is quoted BY THE DAY, which is how this city advertises a man and how
+    /// the books pay him - the column and the balance sheet read the one wage table
+    /// (Wages.WageFor), so they can never disagree. Under it, the signing money: a
+    /// month in his hand before he works a day of it.
     ///
     /// The column itself is HireMarket's - dealt off (city seed, campaign day), so the
     /// same morning always prints the same four men, and turning to the page twice
@@ -191,8 +190,8 @@ namespace LivingCity.UI
             // cut in half.
             Line(box, LedgerStyle.Mono, 11f, LedgerStyle.InkDim, 14f, -350f,
                 AdWidth - 28f, 16f,
-                LedgerText.Cash(ad.Weekly) + " the week  \u00B7  " + LedgerText.Cash(ad.Down) +
-                " down");
+                LedgerText.Cash(ad.Down) + " down  \u00B7  " + Outfit.Wages.DaysDown +
+                " days in his hand before he works one");
 
             Rule(box, 14f, -370f, AdWidth - 28f, LedgerStyle.Ink);
 

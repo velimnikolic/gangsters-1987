@@ -142,6 +142,11 @@ namespace RoadDemo
             /// left - and is getting off the street.</summary>
             public bool Retreated;
 
+            /// <summary>Hands up. The crew has given itself up to the law and is stood
+            /// still with its guns away - out of every fight, its own and anybody's,
+            /// until it is taken in (DemoCrews.TakeIn) or the arrest falls through.</summary>
+            public bool Surrendered;
+
             /// <summary>The tether's waiting ledger: seconds the boss has stood for a
             /// strung-out man without the gap improving, and the worst gap when he
             /// last checked. A wait that helps is free; one that does not is paid
@@ -1068,7 +1073,7 @@ namespace RoadDemo
         ///
         /// This is the order behind a march; the walking itself, the corners and the
         /// steering past whatever has moved into the way since, is CrewWalker's.</summary>
-        public bool MarchTo(Unit unit, Vector3 world, bool run = false)
+        public bool MarchTo(Unit unit, Vector3 world, bool run = false, bool keepOffRoad = true)
         {
             if (unit == null) return false;
             // A CREW WHOSE LIEUTENANT IS DOWN IS STILL A CREW. His hoods are on their
@@ -1083,6 +1088,30 @@ namespace RoadDemo
             unit.PendingDrive = null;
             world = WalkObstacles.ClampToCity(world);
             world.y = GroundY;
+
+            // THE PAVEMENTS ARE THE WAY, AND THE ROAD IS FOR THE CARS. A march used to
+            // go over the ground (OrderAcross - "never mind the pavements"), which drew
+            // crews diagonally down the middle of a street and left them standing in the
+            // carriageway with the traffic picking its way round. That is the drive-by
+            // scene the whole town over, and it is not what an errand looks like.
+            //
+            // So an ordinary march now walks the SIDEWALK GRAPH, which is exactly what a
+            // player's own right-click has always done (OrderSelected -> Dispatch): down
+            // the pavements, across at the crossings, in formation. Nothing is taken away
+            // from a fight - a crew closing on a mark (TickEngage), one running a chase
+            // down (StartChase) or one fleeing still cuts straight across the road as it
+            // always has, because none of those come through here. What comes through
+            // here is walking about, and walking about belongs on the pavement.
+            //
+            // keepOffRoad: false is for the order that MEANS the carriageway - the lab's
+            // roadblock, which marches a mob into the lane in front of a car on purpose.
+            if (keepOffRoad && !FreeRoam && NearestSidewalk(world, out var walk, out float walkT))
+            {
+                Dispatch(unit, boss, walk, walkT, run);
+                boss.Post = boss.Destination;
+                return true;
+            }
+
             var dir = world - boss.Tf.position;
             dir.y = 0f;
             var rot = Quaternion.LookRotation(dir.sqrMagnitude > 0.25f ? dir.normalized : boss.Tf.forward);
@@ -1194,7 +1223,7 @@ namespace RoadDemo
             if (unit == null || unit.Wiped)
             { ShootCarRefusal = "Nobody to give it to"; return false; }
             foreach (var man in unit.All())
-                if (!man.Dead && man.Armed && !man.Riding && !IsAboard(man))
+                if (!man.Dead && man.Carrying && !man.Riding && !IsAboard(man))
                 { ShootCarRefusal = null; return true; }
             ShootCarRefusal = "Nobody of the crew is up and armed";
             return false;
@@ -1227,30 +1256,37 @@ namespace RoadDemo
             return true;
         }
 
-        void Dispatch(Unit unit, PedLink link, float t, bool run = false)
+        void Dispatch(Unit unit, PedLink link, float t, bool run = false) =>
+            Dispatch(unit, unit.Boss, link, t, run);
+
+        /// <summary>The same walk, led by a named man. A crew whose lieutenant is down is
+        /// still a crew and can still be sent (MarchTo says so), so the man at the front
+        /// is passed in rather than assumed to be the lieutenant.</summary>
+        void Dispatch(Unit unit, CrewWalker lead, PedLink link, float t, bool run = false)
         {
             // a man who walked off his stretch (to a car door he never got into) sets
             // off from where he stands
-            if (!unit.Boss.Riding)
+            if (lead != null && !lead.Dead && !lead.Riding)
             {
-                Reseat(unit.Boss);
-                unit.Boss.OrderTo(link, t);
+                Reseat(lead);
+                lead.OrderTo(link, t);
                 // THIS is how a player sends a crew anywhere in this town, and it is a
                 // walk down the pavements on purpose - the men keep their lanes and
                 // their formation. It stays a walk unless he asked twice, and then it
                 // is run most of the way and walked the last few metres in
                 // (CrewWalker.GearGraphWalk) - the sidewalks can run, but only when
                 // told to.
-                unit.Boss.Urgent = run;
+                lead.Urgent = run;
             }
             for (int k = 0; k < unit.Hoods.Count; k++)
             {
                 // the two away on the machine keep their own order (the raid's); a walk
                 // given to the crew is given to the crew that is standing in the street
-                if (unit.Hoods[k].Riding) continue;
-                Reseat(unit.Hoods[k]);
-                unit.Hoods[k].OrderTo(link, FormationT(link, t, unit.CrewId, k), HoodBeat());
-                unit.Hoods[k].Urgent = run;
+                var man = unit.Hoods[k];
+                if (man == null || man == lead || man.Dead || man.Riding) continue;
+                Reseat(man);
+                man.OrderTo(link, FormationT(link, t, unit.CrewId, k), HoodBeat());
+                man.Urgent = run;
             }
         }
 
@@ -1674,6 +1710,13 @@ namespace RoadDemo
         /// stood 115 m from their doors for 148 seconds, in the run that found this.)
         /// Close in - across the pavement to the handle - the straight leg is right, and
         /// the graph would only walk him past it.</summary>
+        /// <summary>How far off a door has to be before the walk to it is ROUTED rather
+        /// than walked straight at. Nearer than this is across the pavement to the
+        /// handle, and a route drawn for that only takes a man round his own car - the
+        /// door is on the asphalt, so a way that is charged for the asphalt would rather
+        /// go round it.</summary>
+        const float DoorRouteFrom = 20f;
+
         void SendToDoor(CrewWalker man, Vector3 door, float delay = 0f, bool graph = false)
         {
             var gap = door - man.Tf.position;
@@ -1685,6 +1728,16 @@ namespace RoadDemo
                 man.OrderTo(link, t, delay);
                 return;
             }
+            // OFF THE GRAPH, a long walk to a door used to be ONE STRAIGHT LEG. A mob
+            // dealt at a shopfront never had a link (CrewWalker.OnGraph is false for
+            // every man the scene stood rather than seated), so every graph branch above
+            // was skipped and the men walked eighty-six metres diagonally down the middle
+            // of a street to their car - which is the scene the pavements exist to stop,
+            // and what the audit now calls "roadwalk". Routed instead, and the route is
+            // charged for the carriageway (WalkRoute): pavement all the way, across at
+            // the end. Close in it is still a straight leg - the door itself IS in the
+            // road, and there is no walking round to a handle.
+            if (gap.sqrMagnitude > DoorRouteFrom * DoorRouteFrom) { man.OrderAcross(door, delay); return; }
             man.OrderToPoint(door, delay);
         }
 
@@ -1951,6 +2004,7 @@ namespace RoadDemo
                                 car.CloseDoorFor(seat);
                                 car.Occupant = unit;
                                 unit.Car = car;
+                                TakeCar(unit, car);
                             }
                             else
                             {
@@ -2118,7 +2172,12 @@ namespace RoadDemo
             foreach (var man in car.Aboard)
             {
                 car.SeatOf.TryGetValue(man, out int seat);
-                if (man.Dead || !man.Armed) { man.RidingAim = false; car.SetWindow(seat, false); continue; }
+                if (man.Dead || !man.Carrying) { man.RidingAim = false; car.SetWindow(seat, false); continue; }
+                // guns out for the whole run-in, not at the instant a window comes down:
+                // the car has a crew to shoot at, and men who draw as the glass drops
+                // read as men conjuring pieces out of the air. It also keeps their own
+                // tick from putting them away between one pass and the next.
+                man.DrawGun();
                 var mark = NearestStanding(target, car.Position);
                 if (mark == null) { man.RidingAim = false; car.SetWindow(seat, false); continue; }
                 var toMark = mark.Tf.position - car.Position;
@@ -2136,7 +2195,7 @@ namespace RoadDemo
                     var sb = DriveTrace.Take();
                     DriveTrace.Str(sb, "who", man.DisplayName);
                     DriveTrace.Int(sb, "seat", seat);
-                    DriveTrace.Bool(sb, "armed", man.Armed);
+                    DriveTrace.Bool(sb, "armed", man.Carrying);
                     DriveTrace.Num(sb, "dist", dist);
                     DriveTrace.Num(sb, "range", man.Ballistics.Range * RidingReach);
                     DriveTrace.Num(sb, "abeam", abeam, "F2");
@@ -2198,6 +2257,90 @@ namespace RoadDemo
             }
 
             StandLedgerCars(roster);
+        }
+
+        /// <summary>A CAR BELONGS TO WHOEVER IS SITTING IN IT. The moment a man of one
+        /// outfit closes the door of another's motor, the motor is that outfit's - which
+        /// is what taking a car means, and the only thing that makes a car left at a kerb
+        /// worth anything to anybody.
+        ///
+        /// The ledger has to be told, or it undoes the theft within the second. A rival
+        /// driving off our car while the book still lists it is a book that hands the keys
+        /// straight back (BindCars re-derives car.Owner from the item's holder) AND stands
+        /// a brand new one outside our front to replace it (StandLedgerCars) - the same
+        /// pair of wrongs a burnt-out machine used to cause (BurntOut). So a car taken
+        /// FROM us is struck off, and a car taken BY us is written on, under the
+        /// catalogue's own name for it so the book and the armory agree.</summary>
+        void TakeCar(Unit unit, CrewCar car)
+        {
+            if (unit == null || car == null || car.Owner == unit) return;
+            var from = car.Owner;
+            car.Owner = unit;
+            if (car.Civic) return;   // the law's own car is not property anybody books
+
+            var director = PersonnelDirector.Instance;
+            var roster = director != null ? director.Roster : null;
+            var taken = SeizedAs(car);
+
+            if (car.ItemId >= 0 && unit.Faction != 0)
+            {
+                // THEY HAVE IT NOW. Off the books, out of the standing list.
+                if (roster != null) RosterOps.LoseItem(roster, car.ItemId);
+                car.ItemId = -1;
+                _ledgerCars.Remove(car);
+                if (from == null || from.Faction == 0)
+                    CrewOverlay.Announce(
+                        $"{unit.GangName.ToUpperInvariant()} HAVE TAKEN THE {taken.DisplayName.ToUpperInvariant()}",
+                        4f, new Color(1f, 0.55f, 0.45f));
+            }
+            else if (car.ItemId < 0 && unit.Faction == 0 && roster != null)
+            {
+                // AND NOW IT IS OURS. On the books, in the hands of the crew that took it.
+                var crew = roster.FindCrew(unit.CrewId);
+                if (crew != null)
+                {
+                    var item = RosterOps.AddEquipment(
+                        roster, EquipmentKind.Vehicle, taken.DisplayName, taken.Price);
+                    item.OwnerId = crew.LieutenantId;
+                    item.HolderId = crew.LieutenantId;
+                    car.ItemId = item.Id;
+                    car.DisplayName = taken.DisplayName;
+                    _ledgerCars.Add(car);
+                    CrewOverlay.Announce(
+                        $"{taken.DisplayName.ToUpperInvariant()} TAKEN" +
+                        (from != null ? " FROM " + from.GangName.ToUpperInvariant() : ""),
+                        4f, new Color(0.72f, 0.95f, 0.72f));
+                }
+            }
+
+            if (DriveTrace.On)
+            {
+                var sb = DriveTrace.Take();
+                DriveTrace.Str(sb, "who", unit.GangName);
+                DriveTrace.Str(sb, "what", "took a car" + (from != null ? " off " + from.GangName : ""));
+                DriveTrace.Str(sb, "car", taken.DisplayName);
+                DriveTrace.Int(sb, "item", car.ItemId);
+                DriveTrace.Row("crewcar", sb.ToString());
+            }
+        }
+
+        /// <summary>What a car standing in the street is called and worth once somebody
+        /// puts it on his books: the catalogue listing whose name is in the body's own
+        /// (SM_Veh_Sedan_01 is a Sedan), or the jalopy - which is what a car taken off a
+        /// kerb is worth when nobody can say what it is.</summary>
+        static LivingCity.Outfit.ArmoryItem SeizedAs(CrewCar car)
+        {
+            var listings = LivingCity.Outfit.ArmoryCatalog.Vehicles;
+            var body = car != null && car.DisplayName != null ? car.DisplayName : "";
+            for (int i = 0; i < listings.Length; i++)
+            {
+                // the LAST word of the listing is the body: "Panel Van" is a van,
+                // "Armoured Wagon" a wagon - which is what a prefab's name carries
+                var words = listings[i].DisplayName.Split(' ');
+                var key = words[words.Length - 1];
+                if (body.IndexOf(key, System.StringComparison.OrdinalIgnoreCase) >= 0) return listings[i];
+            }
+            return listings[0];
         }
 
         /// <summary>Which crew's man drives a vehicle on the books, or null.</summary>
@@ -2487,6 +2630,12 @@ namespace RoadDemo
         {
             foreach (var unit in Units)
             {
+                // A CREW WITH ITS HANDS UP IS NOT IN THE FIGHT. Not its own, not the
+                // one going on round it: it stands where it stood and waits to be
+                // taken. Skipped whole rather than disarmed man by man, because every
+                // branch below - the retarget, the watch, the shot-back rule - would
+                // otherwise put a gun back in its hands the same frame.
+                if (unit.Surrendered) continue;
                 if (unit.TargetUnit != null && unit.TargetUnit.Wiped)
                 {
                     unit.TargetUnit = null;
@@ -2565,7 +2714,7 @@ namespace RoadDemo
                 float reach = unit.OrderedFight ? float.MaxValue : SightRange;
                 foreach (var man in unit.All())
                 {
-                    if (man.Dead || !man.Armed || man.Panicked || IsAboard(man) ||
+                    if (man.Dead || !man.Carrying || man.Panicked || IsAboard(man) ||
                         man.Riding) continue;
                     var mark = BestMark(unit.TargetUnit, man.Tf.position, reach,
                                         sighted: !unit.OrderedFight);
@@ -2701,7 +2850,7 @@ namespace RoadDemo
             foreach (var man in unit.All())
             {
                 if (sent >= Chasers) break;
-                if (man == null || man.Tf == null || man.Dead || !man.Armed) continue;
+                if (man == null || man.Tf == null || man.Dead || !man.Carrying) continue;
                 if (man.Panicked || man.Retreating || man.Riding || IsAboard(man)) continue;
                 if (OnRaid(man) || Chasing(man)) continue;
                 man.Disengage();
@@ -2876,7 +3025,7 @@ namespace RoadDemo
         {
             foreach (var unit in Units)
             {
-                if (unit.IsPolice || unit.Wiped) continue;
+                if (unit.IsPolice || unit.Wiped || unit.Surrendered) continue;
                 if ((unit.Position - from).sqrMagnitude > 45f * 45f) continue;
                 if (unit.Faction == 0)
                 {

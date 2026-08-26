@@ -64,7 +64,8 @@ namespace RoadDemo
         static readonly Color PoliceHood = new Color(0.38f, 0.70f, 1f, 0.6f);
         static readonly Color AttackTint = new Color(1f, 0.36f, 0.30f, 0.9f);
 
-        static bool BookOpen => LivingCity.UI.PersonnelAlmanac.IsOpen;
+        static bool BookOpen => LivingCity.UI.PersonnelAlmanac.IsOpen ||
+                                TurfMapHud.IsOpen;
 
         DemoCrews _crews;
         Canvas _canvas;

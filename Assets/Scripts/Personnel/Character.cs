@@ -1,4 +1,6 @@
-﻿namespace LivingCity.Personnel
+﻿using System.Collections.Generic;
+
+namespace LivingCity.Personnel
 {
     /// <summary>Hood is the trade; Lieutenant leads a crew and answers to the boss.</summary>
     public enum Rank
@@ -84,6 +86,21 @@
         /// A day rather than a countdown so the figure survives a save and cannot drift
         /// with however many ticks happened to run.</summary>
         public int BackOnDay;
+
+        /// <summary>
+        /// What is actually wrong with him, in the clerk's own words - "two ribs and a
+        /// wrist", "held at Rikers". Free text on purpose: the roster's CONDITION column
+        /// prints the STATUS as a state word and this underneath it, and no enum will
+        /// ever cover what happens to a man on a bad night. Written when he goes down
+        /// (RosterOps.Hospitalize / Jail) and cleared when he stands up, so a man on his
+        /// feet never carries an old note.
+        /// </summary>
+        public string ConditionNote = "";
+
+        /// <summary>His record with the city, oldest line first. Dealt with him (every
+        /// man on this payroll has a past) and added to as the outfit earns him more.
+        /// See <see cref="RapSheet"/>; the personal file prints it.</summary>
+        public readonly List<RapEntry> RapSheet = new List<RapEntry>();
 
         readonly int[] halfSteps = new int[AttributeScale.Count];
 

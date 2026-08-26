@@ -28,16 +28,13 @@ namespace LivingCity.Outfit
         /// provenance.</summary>
         public string From = "";
 
-        /// <summary>What he asks a week - the envelope his name goes in every payday
-        /// once he signs. Read off the wage table, never stored twice.</summary>
-        public int Weekly => Wages.WageFor(Man);
-
-        /// <summary>What the ad QUOTES: the week's envelope as a day rate. A man for
-        /// hire is advertised by the day in this city, whatever day the books pay on.</summary>
-        public int Daily => Wages.PerDay(Weekly);
+        /// <summary>What he asks a day - what the ad quotes and what he draws off the
+        /// safe every midnight once he signs. Read off the wage table, never stored
+        /// twice; the books keep days, so the ad is priced in them.</summary>
+        public int Daily => Wages.WageFor(Man);
 
         /// <summary>The signing money, up front, before a single day's wage.</summary>
-        public int Down => Wages.SigningFee(Weekly);
+        public int Down => Wages.SigningFee(Daily);
     }
 
     /// <summary>

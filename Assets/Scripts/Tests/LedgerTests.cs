@@ -44,7 +44,7 @@ namespace LivingCity.Tests
             CrewKitReadsVehiclesAndSkill(failures);
             AJobRunsItsCourse(failures);
             AStandingWatchPaysDaily(failures);
-            PaydayFallsEverySeventhDay(failures);
+            PaydayFallsEveryDay(failures);
             AScriptedMonthIsRepeatable(failures);
 
             return failures;
@@ -141,10 +141,28 @@ namespace LivingCity.Tests
 
             if (job.DaysStood != 1 || !job.Live)
                 failures.Add("AStandingWatchPaysDaily: the watch did not stand a day.");
-            if (runner.Accounts.Safe <= before)
-                failures.Add("AStandingWatchPaysDaily: a business that earns nothing.");
-            if (runner.Accounts.Current.LegalIncome <= 0)
-                failures.Add("AStandingWatchPaysDaily: the takings went on the wrong line.");
+
+            // The books close EVERY midnight now, so the day the watch just stood is
+            // the sheet that closed - Current is already tomorrow, and empty. Reading
+            // the takings off Current would have been reading the wrong day.
+            if (runner.Accounts.Sheets.Count < 2)
+                failures.Add("AStandingWatchPaysDaily: the day did not close a sheet.");
+            else
+            {
+                var stood = runner.Accounts.Sheets[runner.Accounts.Sheets.Count - 2];
+                if (stood.LegalIncome <= 0)
+                    failures.Add("AStandingWatchPaysDaily: the takings went on the wrong line.");
+                if (!stood.Closed)
+                    failures.Add("AStandingWatchPaysDaily: the day's sheet stayed open.");
+
+                // The safe moved by exactly the day's takings less the day's wages.
+                // The watch may still leave the outfit DOWN on the day - six men cost
+                // more than one storefront takes - and that is the game, not a fault.
+                var moved = runner.Accounts.Safe - before;
+                if (moved != stood.LegalIncome - stood.WagesPaid)
+                    failures.Add("AStandingWatchPaysDaily: the safe and the day disagree.");
+            }
+
             if (lieutenant.GetPractice(CharacterAttribute.Business) <= learned)
                 failures.Add("AStandingWatchPaysDaily: a day's work taught nobody.");
 
@@ -161,36 +179,51 @@ namespace LivingCity.Tests
                 failures.Add("AStandingWatchPaysDaily: calling it off wrote no line.");
         }
 
-        static void PaydayFallsEverySeventhDay(List<string> failures)
+        /// <summary>
+        /// The books keep DAYS. Every midnight closes a sheet and pays the men - there
+        /// is no envelope, no boundary and no seventh day that anything waits for. Run
+        /// a fortnight and every one of its days must have paid.
+        /// </summary>
+        static void PaydayFallsEveryDay(List<string> failures)
         {
             var runner = Runner(out var roster);
-            var payroll = Wages.WeeklyPayroll(roster);
+            var payroll = Wages.DailyPayroll(roster);
 
+            const int days = 14;
             var paydays = 0;
             var paid = 0;
-            for (var day = 0; day < Campaign.DaysPerWeek * 2; day++)
+            for (var day = 0; day < days; day++)
             {
                 var wages = runner.DayTick(roster);
                 if (wages <= 0)
+                {
+                    failures.Add("PaydayFallsEveryDay: a day went by unpaid.");
                     continue;
+                }
                 paydays++;
                 paid += wages;
-                if (runner.Campaign.DayOfWeek != 0)
-                    failures.Add("PaydayFallsEverySeventhDay: paid mid-week.");
             }
 
-            if (paydays != 2)
-                failures.Add($"PaydayFallsEverySeventhDay: {paydays} paydays in a fortnight.");
-            if (paid != payroll * 2)
-                failures.Add("PaydayFallsEverySeventhDay: the envelope is the wrong size.");
+            if (paydays != days)
+                failures.Add($"PaydayFallsEveryDay: {paydays} paydays in {days} days.");
+            if (paid != payroll * days)
+                failures.Add("PaydayFallsEveryDay: the day's pay is the wrong size.");
             if (Accounts.StartingSafe - runner.Accounts.Safe != paid)
-                failures.Add("PaydayFallsEverySeventhDay: the safe did not pay them.");
+                failures.Add("PaydayFallsEveryDay: the safe did not pay them.");
 
-            // Each week gets its own sheet and the closed ones keep what was paid.
-            if (runner.Accounts.Sheets.Count != 3)
-                failures.Add("PaydayFallsEverySeventhDay: the books did not turn over.");
+            // Each day gets its own sheet: the fortnight's fourteen closed ones plus
+            // today's, still open.
+            if (runner.Accounts.Sheets.Count != days + 1)
+                failures.Add("PaydayFallsEveryDay: the books did not turn over daily.");
             if (!runner.Accounts.Sheets[0].Closed || runner.Accounts.Current.Closed)
-                failures.Add("PaydayFallsEverySeventhDay: the wrong sheet is open.");
+                failures.Add("PaydayFallsEveryDay: the wrong sheet is open.");
+            // Every sheet is one day, and they run consecutively.
+            for (var i = 1; i < runner.Accounts.Sheets.Count; i++)
+                if (runner.Accounts.Sheets[i].Day != runner.Accounts.Sheets[i - 1].Day + 1)
+                {
+                    failures.Add("PaydayFallsEveryDay: the sheets skip a day.");
+                    break;
+                }
         }
 
         /// <summary>
@@ -617,7 +650,7 @@ namespace LivingCity.Tests
         static void PurchaseGateDebitsAndBooks(List<string> failures)
         {
             var accounts = new Accounts();
-            accounts.Sheets.Add(new WeekSheet { Week = 1 });
+            accounts.Open(1);
 
             if (BalanceMath.TryPurchase(accounts, 750) != null)
                 failures.Add("PurchaseGateDebitsAndBooks: an affordable buy refused.");
@@ -665,7 +698,7 @@ namespace LivingCity.Tests
                 failures.Add("CataloguePricesMatchTheSheet: no vehicles for sale.");
         }
 
-        /// <summary>The counter's third shelf. Three machines, every one of them wheels
+        /// <summary>The counter's third shelf. Four machines, every one of them wheels
         /// rather than a gun, every one priced under the working car - what is bought
         /// here is a pass down a street, not a crew's transport - and every one of them
         /// named so that the body the catalogue photographs is the body that turns up at
@@ -673,12 +706,12 @@ namespace LivingCity.Tests
         /// reads it too).</summary>
         static void MotorcyclesAreOnTheCounter(List<string> failures)
         {
-            // Three: the outfit's black tourer, the pack's motorbike and the boxless
-            // moped. The scooter is NOT among them - it was measured off the pack and
-            // taken off the shelf (ArmoryCatalog.Motorcycles says why). A count, so a
+            // Four: the outfit's black tourer, the pack's motorbike, the enduro and the
+            // boxless moped. The scooter is NOT among them - it was measured off the pack
+            // and taken off the shelf (ArmoryCatalog.Motorcycles says why). A count, so a
             // listing cannot be added or lost by accident without this saying so.
-            if (ArmoryCatalog.Motorcycles.Length != 3)
-                failures.Add("MotorcyclesAreOnTheCounter: the shelf is not three deep.");
+            if (ArmoryCatalog.Motorcycles.Length != 4)
+                failures.Add("MotorcyclesAreOnTheCounter: the shelf is not four deep.");
 
             var sedan = 0;
             foreach (var car in ArmoryCatalog.Vehicles)
@@ -802,32 +835,32 @@ namespace LivingCity.Tests
 
         static void CalendarDerivesYear(List<string> failures)
         {
-            // The day is the counter now; every coarser figure hangs off it.
+            // The day is the ONLY counter. The weekday name still cycles, because a
+            // 1987 calendar had weekdays - but nothing is owed to one.
             var campaign = new Campaign { Day = 1 };
-            if (campaign.Year != Campaign.StartYear || campaign.WeekOfYear != 1 ||
-                campaign.Week != 1 || campaign.DayOfWeek != 0)
+            if (campaign.Year != Campaign.StartYear || campaign.DayOfWeek != 0)
                 failures.Add("CalendarDerivesYear: day 1 misreads.");
 
             campaign.Day = 7;
-            if (campaign.Week != 1 || campaign.DayOfWeek != 6)
-                failures.Add("CalendarDerivesYear: the week turns a day early.");
+            if (campaign.DayOfWeek != 6)
+                failures.Add("CalendarDerivesYear: the weekday name runs short.");
 
             campaign.Day = 8;
-            if (campaign.Week != 2 || campaign.DayOfWeek != 0)
-                failures.Add("CalendarDerivesYear: the week does not turn on the eighth.");
+            if (campaign.DayOfWeek != 0)
+                failures.Add("CalendarDerivesYear: the weekday cycle does not wrap.");
 
             campaign.Day = Campaign.DaysPerYear;
-            if (campaign.Year != Campaign.StartYear || campaign.WeekOfYear != 52)
+            if (campaign.Year != Campaign.StartYear)
                 failures.Add("CalendarDerivesYear: the last day of the year misreads.");
 
             campaign.Day = Campaign.DaysPerYear + 1;
-            if (campaign.Year != Campaign.StartYear + 1 || campaign.WeekOfYear != 1)
+            if (campaign.Year != Campaign.StartYear + 1)
                 failures.Add("CalendarDerivesYear: the year does not roll.");
 
-            // Payday falls when a week opens, and never on the first morning - an
-            // outfit does not pay wages before anybody has worked.
-            if (Campaign.OpensWeek(1) || Campaign.OpensWeek(7) || !Campaign.OpensWeek(8))
-                failures.Add("CalendarDerivesYear: payday falls on the wrong day.");
+            // The books settle every day but the first - an outfit does not pay wages
+            // before anybody has worked a day.
+            if (Campaign.Settles(1) || !Campaign.Settles(2) || !Campaign.Settles(8))
+                failures.Add("CalendarDerivesYear: the books settle on the wrong day.");
 
             // A day the field should never hold must still not throw a name.
             campaign.Day = 0;
@@ -842,14 +875,14 @@ namespace LivingCity.Tests
             foreach (var member in roster.Members)
                 expected += Wages.WageFor(member);
 
-            if (Wages.WeeklyPayroll(roster) != expected || expected <= 0)
+            if (Wages.DailyPayroll(roster) != expected || expected <= 0)
                 failures.Add("WagesDeriveFromTheRoster: payroll is not the member sum.");
 
             // The dead come off the books; the jailed stay on them.
             roster.Members[1].Status = CharacterStatus.Dead;
-            var afterDeath = Wages.WeeklyPayroll(roster);
+            var afterDeath = Wages.DailyPayroll(roster);
             roster.Members[2].Status = CharacterStatus.Jailed;
-            var afterJail = Wages.WeeklyPayroll(roster);
+            var afterJail = Wages.DailyPayroll(roster);
 
             if (afterDeath >= expected)
                 failures.Add("WagesDeriveFromTheRoster: a dead man is still paid.");
@@ -860,22 +893,22 @@ namespace LivingCity.Tests
         static void HiringMovesThePayroll(List<string> failures)
         {
             var roster = RosterSeeder.Generate(7);
-            var before = Wages.WeeklyPayroll(roster);
+            var before = Wages.DailyPayroll(roster);
 
             var recruit = new Character { Id = roster.NextCharacterId() };
             for (var a = 0; a < AttributeScale.Count; a++)
                 recruit.SetHalfSteps((CharacterAttribute)a, 6);
             roster.Members.Add(recruit);
 
-            if (Wages.WeeklyPayroll(roster) <= before)
+            if (Wages.DailyPayroll(roster) <= before)
                 failures.Add("HiringMovesThePayroll: a recruit did not raise the bill.");
         }
 
         static void BalanceArithmetic(List<string> failures)
         {
-            var sheet = new WeekSheet
+            var sheet = new DaySheet
             {
-                Week = 3,
+                Day = 3,
                 LegalIncome = 1000,
                 IllegalIncome = 2500,
                 SalesIncome = 500,
@@ -929,8 +962,8 @@ namespace LivingCity.Tests
 
         static void ReportUsesFrozenWagesWhenClosed(List<string> failures)
         {
-            var open = new WeekSheet { Week = 1 };
-            var closed = new WeekSheet { Week = 1, Closed = true, WagesPaid = 640 };
+            var open = new DaySheet { Day = 1 };
+            var closed = new DaySheet { Day = 1, Closed = true, WagesPaid = 640 };
 
             if (FinanceReport.For(open, 555, 0, 0, 0).Wages != 555)
                 failures.Add("ReportUsesFrozenWagesWhenClosed: open sheet ignores live wages.");

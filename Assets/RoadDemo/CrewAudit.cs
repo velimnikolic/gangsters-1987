@@ -67,6 +67,50 @@ namespace RoadDemo
         /// an order ended where none should.</summary>
         const float ZebraStandAfter = 8f;
 
+        /// <summary>Seconds a man not in a fight may spend walking ALONG the carriageway
+        /// before it is a fault. Crossing one is not counted at all (a boulevard takes
+        /// twenty seconds to cross and that is a man crossing a road); what is counted is
+        /// ground made down the road rather than over it, which is a man using the
+        /// carriageway as a pavement and standing in the traffic's way.</summary>
+        const float RoadWalkAfter = 3f;
+
+        /// <summary>How much of his step has to lie along the road's own axis before the
+        /// step counts as walking down it rather than over it. Half is sixty degrees -
+        /// a diagonal cut down a street, which is the thing being stopped.</summary>
+        const float RoadWalkAlong = 0.5f;
+
+        /// <summary>Is this man on the last stretch to the door of his own seat? The door
+        /// of a car standing at a kerb is out on the carriageway and there is no walking
+        /// round to a handle, so the metres that reach it are not counted against him.</summary>
+        static bool AtHisDoor(DemoCrews.Unit unit, CrewWalker man, Vector3 pos)
+        {
+            var car = unit != null ? unit.Boarding : null;
+            if (car == null || car.Tf == null) return false;
+            var door = car.SeatOf.TryGetValue(man, out int seat) ? car.DoorPoint(seat) : car.Position;
+            var gap = door - pos;
+            gap.y = 0f;
+            return gap.sqrMagnitude <= DoorReach * DoorReach;
+        }
+
+        /// <summary>Metres of "getting in" - the same figure the walk itself stops routing
+        /// at (DemoCrews.DoorRouteFrom).</summary>
+        const float DoorReach = 20f;
+
+        /// <summary>The way the road under this point runs, normalised - or zero when the
+        /// point is not on a carriageway at all. The same reading CrewWalker.OnCarriageway
+        /// makes, kept in one place so the audit and the walking cannot disagree about
+        /// where the asphalt is.</summary>
+        static Vector3 RoadAxisAt(Vector3 p)
+        {
+            var net = LaneNet.Active;
+            if (net == null) return Vector3.zero;
+            var road = net.Locate(p, out _, out float d, 10f);
+            if (road == null || Mathf.Abs(d) >= road.HalfRoad) return Vector3.zero;
+            var axis = road.Axis;
+            axis.y = 0f;
+            return axis.sqrMagnitude > 1e-6f ? axis.normalized : Vector3.zero;
+        }
+
         /// <summary>Seconds a man may keep shooting at a runner while a man of the
         /// same enemy crew still stands his ground in sight. TickCombat retargets
         /// every frame, so anything past a beat of it is the rule not holding.</summary>
@@ -93,6 +137,10 @@ namespace RoadDemo
             public Vector3 Last;
             public bool Seen, WasCarried;
             public float OffFor, StrayFor, LightFor, ZebraFor, ChaseFor, SkateFor, LeftFor;
+            public float RoadFor;
+            /// <summary>The ground he made last frame, kept because w.Last is rolled
+            /// forward before the later checks get to look at it.</summary>
+            public Vector3 Step;
             public float PrevGap = float.MaxValue;
             public bool SaidOff;
         }
@@ -220,13 +268,15 @@ namespace RoadDemo
                     }
                     else w.SkateFor = 0f;
                 }
+                w.Step = afoot && w.Seen && !w.WasCarried ? pos - w.Last : Vector3.zero;
+                w.Step.y = 0f;
                 w.Last = pos;
                 w.Seen = true;
                 w.WasCarried = !afoot;
                 if (!afoot)
                 {
                     w.OffFor = 0f; w.SaidOff = false;
-                    w.LightFor = 0f; w.ZebraFor = 0f; w.ChaseFor = 0f;
+                    w.LightFor = 0f; w.ZebraFor = 0f; w.ChaseFor = 0f; w.RoadFor = 0f;
                     continue;
                 }
 
@@ -278,6 +328,41 @@ namespace RoadDemo
                     }
                 }
                 else w.ZebraFor = 0f;
+
+                // THE ROAD IS FOR THE CARS. A crew walks the pavements and crosses at
+                // the crossings; the carriageway is a thing to get OVER, not a thing to
+                // walk down. A man who does walk down it stands in the traffic's way for
+                // as long as his errand lasts, and the town then has to pick its way
+                // round him - which is the scene the pavement march exists to stop
+                // (DemoCrews.MarchTo).
+                //
+                // A FIGHT IS EXEMPT, and deliberately so: closing on a mark, running a
+                // chase down, or breaking and running are all straight lines by design
+                // and a man who stopped at the kerb to do any of them would be absurd.
+                // A FIGHT IS EXEMPT, and so is the handle of your own car: a door at a
+                // kerb stands ON the asphalt, so the last few metres to it are a man
+                // getting in, not a man walking down the road. Only the last few - the
+                // WALK to a car parked across the quarter is routed like any other
+                // (DemoCrews.SendToDoor) and is judged like any other.
+                bool fighting = man.Target != null || (unit != null && unit.TargetUnit != null) ||
+                                man.Panicked || man.Retreating || AtHisDoor(unit, man, pos);
+                var roadAxis = fighting ? Vector3.zero : RoadAxisAt(pos);
+                if (roadAxis.sqrMagnitude > 1e-6f)
+                {
+                    // only ground made ALONG the road counts; a man crossing makes none
+                    if (w.Step.sqrMagnitude > 1e-6f &&
+                        Mathf.Abs(Vector3.Dot(w.Step.normalized, roadAxis)) > RoadWalkAlong)
+                    {
+                        w.RoadFor += dt;
+                        if (w.RoadFor > RoadWalkAfter)
+                        {
+                            Fault(man, "roadwalk",
+                                $"walking down the carriageway for {w.RoadFor:F1}s ({man.State})");
+                            w.RoadFor = -30f;   // still watched; said again if it goes on
+                        }
+                    }
+                }
+                else w.RoadFor = 0f;
 
                 // THE ROUT. A man shooting at a runner while one of the same crew
                 // still stands and fights in his sight has the wrong mark -

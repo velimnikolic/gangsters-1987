@@ -54,7 +54,8 @@ namespace RoadDemo
 
         /// <summary>The book owns the screen while it stands open, so the tags drop
         /// while it is up and come back with it - the toggle's own state untouched.</summary>
-        static bool BookOpen => LivingCity.UI.PersonnelAlmanac.IsOpen;
+        static bool BookOpen => LivingCity.UI.PersonnelAlmanac.IsOpen ||
+                                TurfMapHud.IsOpen;
 
         sealed class Tag
         {

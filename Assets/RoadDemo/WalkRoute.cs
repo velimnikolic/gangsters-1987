@@ -43,6 +43,9 @@ namespace RoadDemo
         // and whether a man can actually get from one square to the next, east and
         // north; the other two ways are the same passages read backwards
         static bool[] _passX, _passZ;
+        // the way the carriageway under each square runs, or zero where a square is not
+        // on one. Kept as two floats rather than a Vector3 to hold the lattice down.
+        static float[] _roadAx, _roadAz;
         static int _w, _h;
         static float _x0, _z0;
         static int _builtAt = -1;
@@ -58,6 +61,7 @@ namespace RoadDemo
         {
             _free = null;
             _passX = _passZ = null;
+            _roadAx = _roadAz = null;
             _cost = null; _from = null; _stamp = null;
             _w = _h = 0; _builtAt = -1; _visit = 0;
             _open.Clear();
@@ -88,6 +92,8 @@ namespace RoadDemo
             _free = new bool[n];
             _passX = new bool[n];
             _passZ = new bool[n];
+            _roadAx = new float[n];
+            _roadAz = new float[n];
             _cost = new float[n];
             _from = new int[n];
             _stamp = new int[n];
@@ -107,9 +113,17 @@ namespace RoadDemo
                     // the scene's own fence too (WalkObstacles.City): near-a-street is
                     // not enough where the ground past the pavement is bare void - a
                     // way must never cut a corner over ground nobody may stand on
-                    _free[z * _w + x] = !WalkObstacles.Standing(q, r) &&
-                                        (!bounded || InTheCity(net, q)) &&
-                                        WalkObstacles.InCity(q);
+                    int i0 = z * _w + x;
+                    _free[i0] = !WalkObstacles.Standing(q, r) &&
+                                (!bounded || InTheCity(net, q)) &&
+                                WalkObstacles.InCity(q);
+                    // and whether it is ASPHALT, and which way that asphalt runs. A way
+                    // is not forbidden the road - a man has to cross one to get anywhere
+                    // - but it is charged for going ALONG it (Search), which is what
+                    // walking down a carriageway is.
+                    var axis = RoadAxisAt(net, q);
+                    _roadAx[i0] = axis.x;
+                    _roadAz[i0] = axis.z;
                 }
 
             // TWO FREE SQUARES ARE NOT A WAY BETWEEN THEM. A square is free when a man
@@ -128,6 +142,64 @@ namespace RoadDemo
                     if (z + 1 < _h && _free[i + _w]) _passZ[i] = Walkable(Middle(i), Middle(i + _w));
                 }
             _builtAt = WalkObstacles.Version;
+        }
+
+        /// <summary>The way the carriageway under this point runs, normalised - or zero
+        /// off the asphalt. The same reading the walking makes of itself
+        /// (CrewWalker.OnCarriageway), so the way drawn and the steps taken cannot
+        /// disagree about where the road is.</summary>
+        static Vector3 RoadAxisAt(LaneNet net, Vector3 q)
+        {
+            if (net == null) return Vector3.zero;
+            var road = net.Locate(q, out _, out float d, 10f);
+            if (road == null || Mathf.Abs(d) >= road.HalfRoad) return Vector3.zero;
+            var axis = road.Axis;
+            axis.y = 0f;
+            return axis.sqrMagnitude > 1e-6f ? axis.normalized : Vector3.zero;
+        }
+
+        /// <summary>What a step ALONG a carriageway costs, as a multiple of the same step
+        /// on the pavement. Seven, which is to say: a man will go seventy metres round
+        /// rather than walk ten down the middle of a street - and still cross one the
+        /// moment crossing is the shorter way, because a step ACROSS costs nothing extra.</summary>
+        const float AlongToll = 6f;
+
+        /// <summary>How much of a straight line may lie along a carriageway before the
+        /// line is refused outright (the taut-pulling and the near-enough shortcut both
+        /// ask). Four metres is a man stepping off a kerb at an angle; forty is a man
+        /// walking down the road.</summary>
+        const float AlongLimit = 4f;
+
+        /// <summary>How far this step goes ALONG the road under the square it lands on,
+        /// as a fraction of the step: 0 straight across, 1 straight down it.</summary>
+        static float Along(int square, float dx, float dz)
+        {
+            float ax = _roadAx[square], az = _roadAz[square];
+            if (ax == 0f && az == 0f) return 0f;
+            float len = Mathf.Sqrt(dx * dx + dz * dz);
+            if (len < 1e-6f) return 0f;
+            return Mathf.Abs((dx * ax + dz * az) / len);
+        }
+
+        /// <summary>Metres of this straight line that are spent going ALONG a
+        /// carriageway rather than over one. Sampled, because a line crosses squares the
+        /// lattice cannot be asked about wholesale.</summary>
+        static float AlongRun(Vector3 a, Vector3 b)
+        {
+            var d = b - a;
+            d.y = 0f;
+            float len = d.magnitude;
+            if (len < 0.01f) return 0f;
+            var dir = d / len;
+            float run = 0f;
+            float stepLen = Mathf.Min(1f, len);
+            for (float t = 0f; t < len; t += stepLen)
+            {
+                var q = a + dir * (t + stepLen * 0.5f);
+                int i = Index(q, out _, out _);
+                run += Along(i, dir.x, dir.z) * Mathf.Min(stepLen, len - t);
+            }
+            return run;
         }
 
         /// <summary>Is this ground part of the city at all?
@@ -221,7 +293,8 @@ namespace RoadDemo
         /// <paramref name="into"/> (cleared first), ending at
         /// <paramref name="to"/>. False when there is no way at all - then the caller
         /// walks straight at it and lets the steering do what it can.</summary>
-        public static bool Plan(Vector3 from, Vector3 to, List<Vector3> into)
+        public static bool Plan(Vector3 from, Vector3 to, List<Vector3> into,
+            bool keepOffRoad = false)
         {
             into.Clear();
             if (!Ready()) return false;
@@ -236,9 +309,12 @@ namespace RoadDemo
             if (a == b) { into.Add(to); return true; }
 
             // Near enough to see it: no lattice needed, and no lattice STAIRCASE either.
-            if (Walkable(from, to)) { into.Add(to); return true; }
+            // Unless the line lies down a street - the whole point of keeping off the
+            // road is that the SHORT way is the one that goes down the middle of it.
+            if (Walkable(from, to) && (!keepOffRoad || AlongRun(from, to) <= AlongLimit))
+            { into.Add(to); return true; }
 
-            if (!Search(a, b)) return false;
+            if (!Search(a, b, keepOffRoad)) return false;
 
             // back from the mark to the man, then round the right way
             _crumbs.Clear();
@@ -250,7 +326,7 @@ namespace RoadDemo
             _crumbs.Reverse();
             if (_crumbs.Count > 0) _crumbs[_crumbs.Count - 1] = to; else _crumbs.Add(to);
 
-            Pull(from, _crumbs, into);
+            Pull(from, _crumbs, into, keepOffRoad);
             return into.Count > 0;
         }
 
@@ -267,7 +343,7 @@ namespace RoadDemo
             return z > 0 && _passZ[(z - 1) * _w + x];
         }
 
-        static bool Search(int a, int b)
+        static bool Search(int a, int b, bool keepOffRoad = false)
         {
             _visit++;
             _open.Clear();
@@ -315,6 +391,13 @@ namespace RoadDemo
                         if (!Passable(cx, cz, 0, _dz[d]) || !Passable(cx, z, _dx[d], 0)) continue;
                     }
                     float step = d >= 4 ? Cell * 1.41421f : Cell;
+                    // A CROSSING IS FREE; WALKING DOWN THE ROAD IS NOT. The toll is on
+                    // the part of the step that lies along the carriageway, so a way
+                    // over a street costs what a street is wide and a way down one costs
+                    // seven times its length - which puts the man back on the pavement
+                    // without ever walling the road off.
+                    if (keepOffRoad)
+                        step *= 1f + AlongToll * Along(nb, _dx[d], _dz[d]);
                     float cost = _cost[cur] + step;
                     if (_stamp[nb] == _visit && cost >= _cost[nb]) continue;
                     _stamp[nb] = _visit;
@@ -331,15 +414,31 @@ namespace RoadDemo
         /// <summary>The crumbs pulled into a line: from where he stands, keep the
         /// furthest crumb he can walk STRAIGHT to, stand there, and go again. What is
         /// left is the corners he actually has to get round.</summary>
-        static void Pull(Vector3 from, List<Vector3> crumbs, List<Vector3> into)
+        static void Pull(Vector3 from, List<Vector3> crumbs, List<Vector3> into,
+            bool keepOffRoad = false)
         {
             var at = from;
             int i = 0;
             while (i < crumbs.Count)
             {
                 int keep = -1;
-                for (int j = crumbs.Count - 1; j >= i; j--)
-                    if (Walkable(at, crumbs[j])) { keep = j; break; }
+                // pulling the way taut must not pull it back into the road the search
+                // just paid to stay out of
+                if (keepOffRoad)
+                    for (int j = crumbs.Count - 1; j >= i; j--)
+                        if (Walkable(at, crumbs[j]) && AlongRun(at, crumbs[j]) <= AlongLimit)
+                        { keep = j; break; }
+                // AND THE WAY MUST STILL ARRIVE. The road rule is about the WAY, not
+                // about the last few metres onto the mark - and the mark is very often
+                // ON the asphalt: a car door at a kerb is, which is what this broke. A
+                // crew sent to its car stopped between three and eight metres short of
+                // every door and stood there, because no taut line to the handle could
+                // be drawn that did not run along the kerb. Where the rule can keep no
+                // line at all, the plain one is kept instead: worst case the way is what
+                // it was before there was a rule.
+                if (keep < 0)
+                    for (int j = crumbs.Count - 1; j >= i; j--)
+                        if (Walkable(at, crumbs[j])) { keep = j; break; }
                 // Nothing on the rest of the way can be walked straight to from here. At
                 // the very start that is the awkward first metre again - he is handed the
                 // next square and steers to it. Further along it means the way has been

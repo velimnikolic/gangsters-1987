@@ -275,7 +275,7 @@ namespace RoadDemo
         {
             // The book owns the keyboard while it is open - it reads P, Esc, the
             // brackets and F2, and a stray space must not reach past it.
-            var book = LivingCity.UI.PersonnelAlmanac.IsOpen;
+            var book = LivingCity.UI.PersonnelAlmanac.IsOpen || TurfMapHud.IsOpen;
 
             if (book != _retracted && _barRect)
             {

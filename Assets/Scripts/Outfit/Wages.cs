@@ -13,9 +13,11 @@ namespace LivingCity.Outfit
     /// books while the jailed and the hospitalized stay on them - you pay the men
     /// inside, because an outfit that doesn't is an outfit that gets informed on.
     ///
-    /// Two rates, one figure: the books pay a WEEK at a time (payday is the seventh
-    /// day - see OutfitDirector's day tick), while the street and the paper quote a
-    /// DAY. Everything derives from the weekly envelope so the two can never drift.
+    /// ONE rate, and it is a DAY's. The campaign runs in real time and the books close
+    /// every midnight, so there is no envelope to wait for and no weekly figure for a
+    /// daily one to be derived from and drift against. Every wage on this table, on the
+    /// roster's WAGE column and in the classified column is what a man draws for one
+    /// day on the books.
     /// </summary>
     public static class Wages
     {
@@ -29,10 +31,11 @@ namespace LivingCity.Outfit
         public const int AccountantWage = 250;
         public const int LawyerWage = 400;
 
-        /// <summary>Weeks of wage a man who advertises wants in his hand before he
+        /// <summary>Days of wage a man who advertises wants in his hand before he
         /// starts - the signing money, and the classified column's whole barrier to
-        /// entry. A month is what the period's own help-wanted columns asked.</summary>
-        public const int WeeksDown = 4;
+        /// entry. A month is what the period's own help-wanted columns asked, and a
+        /// month is twenty-eight days of it.</summary>
+        public const int DaysDown = 28;
 
         public static int WageFor(Character member)
         {
@@ -61,7 +64,9 @@ namespace LivingCity.Outfit
             return HoodBase + HoodPerHalfStep * (above > 0 ? above : 0);
         }
 
-        public static int WeeklyPayroll(Roster roster)
+        /// <summary>What the whole roster draws for one day - the outfit's burn, and
+        /// the figure the blotter's runway divides the safe by.</summary>
+        public static int DailyPayroll(Roster roster)
         {
             if (roster == null)
                 return 0;
@@ -72,22 +77,12 @@ namespace LivingCity.Outfit
             return total;
         }
 
-        /// <summary>
-        /// A weekly envelope as the day rate the street quotes. Rounded UP, on purpose:
-        /// a paper that advertised a man for a dollar less than he costs would be
-        /// lying to the reader seven times a week.
-        /// </summary>
-        public static int PerDay(int weekly) =>
-            (weekly + Campaign.DaysPerWeek - 1) / Campaign.DaysPerWeek;
-
-        public static int DailyWageFor(Character member) => PerDay(WageFor(member));
-
-        /// <summary>What the whole roster costs for one day - the figure a realtime
-        /// campaign burns through while the week's payday is still coming.</summary>
-        public static int DailyPayroll(Roster roster) => PerDay(WeeklyPayroll(roster));
+        /// <summary>What one man draws for one day. The table IS the day rate, so this
+        /// is <see cref="WageFor"/> - kept as a name callers can read a unit off.</summary>
+        public static int DailyWageFor(Character member) => WageFor(member);
 
         /// <summary>
-        /// What a man advertising in the classified column asks a week: the
+        /// What a man advertising in the classified column asks a day: the
         /// lieutenancy's premium PLUS the same talent scale a hood is paid on. The
         /// house rate for a lieutenant is flat because the house raised him; a man who
         /// walks in off an advertisement prices his own eleven stats, which is what
@@ -103,8 +98,8 @@ namespace LivingCity.Outfit
             return LieutenantWage + HoodPerHalfStep * (above > 0 ? above : 0);
         }
 
-        /// <summary>The signing money for a weekly ask - <see cref="WeeksDown"/> weeks
-        /// up front, out of the safe, before he has worked a day.</summary>
-        public static int SigningFee(int weekly) => weekly * WeeksDown;
+        /// <summary>The signing money for a daily ask - <see cref="DaysDown"/> days up
+        /// front, out of the safe, before he has worked one of them.</summary>
+        public static int SigningFee(int daily) => daily * DaysDown;
     }
 }

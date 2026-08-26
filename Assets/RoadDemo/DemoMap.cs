@@ -397,7 +397,21 @@ namespace RoadDemo
             if (_panel == null)
                 return;
 
+            // The book owns the screen when it is open and the map is its other half;
+            // otherwise the plan is up for exactly as long as the boom is past the
+            // line the camera draws at 180 m.
+            // The 1987 turf plate took the map line over (TurfMapHud): where it is
+            // installed, THAT is what the boom opens past 180 m - and TurfMinimap is
+            // what prints in the corner down in the street, off the same survey. This
+            // plan is then down to the ONE job neither of them does: the docked half
+            // beside the open book.
+            //
+            // The corner postcard is given up rather than kept as an option. Two
+            // renderers for the same city is what this was: the card in the corner drew
+            // its own roads in its own colours and the plate the wheel opened drew
+            // different ones, so a player who learned one had to learn the other.
             var want = LivingCity.UI.PersonnelAlmanac.IsOpen ? Mode.Docked
+                : TurfMapHud.Installed ? Mode.Off
                 : _rig != null && _rig.MapOut ? Mode.Full
                 : minimap && !LivingCity.UI.StrategicMapHud.IsOpen ? Mode.Corner
                 : Mode.Off;

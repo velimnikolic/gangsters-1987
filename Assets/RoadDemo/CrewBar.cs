@@ -444,7 +444,7 @@ namespace RoadDemo
         void LateUpdate()
         {
             if (_crews == null || _row == null) return;
-            bool show = !PersonnelAlmanac.IsOpen;
+            bool show = !PersonnelAlmanac.IsOpen && !TurfMapHud.IsOpen;
             if (_row.gameObject.activeSelf != show) _row.gameObject.SetActive(show);
 
             // the outfit's crews, in book order; blocks pooled and re-bound

@@ -93,10 +93,9 @@ namespace RoadDemo
         public bool CanBombPlant(Unit unit, RoadCar car)
         {
             if (car == null || car.Tf == null || car.Wrecked) { BombRefusal = "No car to lay it under"; return false; }
-            if (Thrower(unit, car.Position, out var why) == null) { BombRefusal = why; return false; }
-            if (NearestManTo(unit, car.Position) > BombPlantRange) { BombRefusal = "Get the crew to the car first"; return false; }
-            BombRefusal = null;
-            return true;
+            var man = Planter(unit, car.Position, out var why);
+            BombRefusal = man == null ? why : null;
+            return man != null;
         }
 
         // ---------------------------------------------------------------- throw
@@ -155,13 +154,8 @@ namespace RoadDemo
                 BombRefusal = "No car to lay it under";
                 return false;
             }
-            var man = Thrower(Selected, car.Position, out var why);
+            var man = Planter(Selected, car.Position, out var why);
             if (man == null) { BombRefusal = why; return false; }
-            if (NearestManTo(Selected, car.Position) > BombPlantRange)
-            {
-                BombRefusal = "Get the crew to the car first";
-                return false;
-            }
 
             SpendBomb(Selected);
             // under the nose of the car, where a car pulling out rolls straight over it
@@ -189,41 +183,64 @@ namespace RoadDemo
         /// order's answer both go through, so they cannot disagree.</summary>
         CrewWalker Thrower(Unit unit, Vector3 targetPos, out string why)
         {
-            why = null;
-            if (unit == null || unit.Faction != 0) { why = "Not your crew"; return null; }
-            if (unit.Bombs <= 0) { why = "No grenades - none in the crew's hands"; return null; }
+            if (!HasGrenade(unit, out why)) return null;
 
+            var best = NearestUp(unit, targetPos, out float range);
+            if (best == null) { why = "Nobody up to throw it"; return null; }
+            if (range > BombThrowRange) { why = "Too far - move the crew closer"; return null; }
+            // a grenade does not pick sides: a mark inside the blast of the man throwing
+            // it takes him with it, so a throw that would land on the crew's own feet is
+            // refused rather than granted
+            if (range < Explosion.Radius + 1.5f) { why = "Too close - you'd catch your own men"; return null; }
+            return best;
+        }
+
+        /// <summary>The man who LAYS the charge: the crew's nearest to the car who is on
+        /// his feet, if a grenade is in hand and he is at the car.
+        ///
+        /// Deliberately not the thrower's test. A lob has to clear the blast, so a mark
+        /// inside <see cref="Explosion.Radius"/> is refused; a charge laid under a car
+        /// does not go off in the layer's hands - it waits for whoever turns the key -
+        /// so the ONLY distance that matters is the one he still has to walk
+        /// (<see cref="BombPlantRange"/>). Running the plant through the throw's test
+        /// left a band of 7.5 m to 12 m as the only place a charge could be laid from,
+        /// which is to say: a man standing at the car could not lay one under it.</summary>
+        CrewWalker Planter(Unit unit, Vector3 at, out string why)
+        {
+            if (!HasGrenade(unit, out why)) return null;
+
+            var best = NearestUp(unit, at, out float range);
+            if (best == null) { why = "Nobody up to lay it"; return null; }
+            if (range > BombPlantRange) { why = "Get the crew to the car first"; return null; }
+            return best;
+        }
+
+        /// <summary>The two things a throw and a plant ask for alike: the crew is ours,
+        /// and it has a grenade to spend.</summary>
+        static bool HasGrenade(Unit unit, out string why)
+        {
+            why = null;
+            if (unit == null || unit.Faction != 0) { why = "Not your crew"; return false; }
+            if (unit.Bombs <= 0) { why = "No grenades - none in the crew's hands"; return false; }
+            return true;
+        }
+
+        /// <summary>The crew's nearest man to a point who could handle a grenade - alive,
+        /// on his own two feet, not riding and not running away - with the metres to it
+        /// on <paramref name="range"/>. Null when there is nobody up.</summary>
+        static CrewWalker NearestUp(Unit unit, Vector3 pos, out float range)
+        {
             CrewWalker best = null;
             float bestD = float.MaxValue;
             foreach (var man in unit.All())
             {
                 if (man == null || man.Dead || man.Tf == null) continue;
                 if (man.Riding || man.Retreating) continue;
-                float d = (man.Tf.position - targetPos).sqrMagnitude;
+                float d = (man.Tf.position - pos).sqrMagnitude;
                 if (d < bestD) { bestD = d; best = man; }
             }
-            if (best == null) { why = "Nobody up to throw it"; return null; }
-            if (bestD > BombThrowRange * BombThrowRange) { why = "Too far - move the crew closer"; return null; }
-            // a grenade does not pick sides: a mark inside the blast of the man throwing
-            // it takes him with it, so a throw that would land on the crew's own feet is
-            // refused rather than granted
-            float safe = Explosion.Radius + 1.5f;
-            if (bestD < safe * safe) { why = "Too close - you'd catch your own men"; return null; }
+            range = best != null ? Mathf.Sqrt(bestD) : float.MaxValue;
             return best;
-        }
-
-        float NearestManTo(Unit unit, Vector3 pos)
-        {
-            float best = float.MaxValue;
-            if (unit == null) return best;
-            foreach (var man in unit.All())
-            {
-                if (man == null || man.Dead || man.Tf == null) continue;
-                if (man.Riding) continue;
-                float d = (man.Tf.position - pos).sqrMagnitude;
-                if (d < best) best = d;
-            }
-            return Mathf.Sqrt(best);
         }
 
         /// <summary>Turn a man to face where he is throwing - just his heading, no step;

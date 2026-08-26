@@ -183,6 +183,17 @@ namespace RoadDemo
         public RoadEdge CurrentEdge => Lane;
 
         Vector3 _pos, _fwd = Vector3.forward;
+
+        /// <summary>The drawn pose an abrupt recovery left behind (BackOutOfBox), and
+        /// when the drawn body finishes catching up with the logical one. The recovery
+        /// itself is instant - road, S, D, the claim, all of it - because that is what
+        /// cures the deadlock; only the TRANSFORM is eased across, so the car reads as
+        /// briskly reversing out of the box and never as a teleport. Everything the
+        /// street reads (_pos, the belt, the occupancy) uses the logical pose.</summary>
+        Vector3 _glideFrom, _glideFromFwd;
+        float _glideUntil = -1f;
+        const float GlideTime = 0.6f;
+
         /// <summary>Where the car is, WITH the height of the road it is on: what the
         /// belt needs to tell a deck from the slip road passing under it. Everything
         /// else that reads this works flat and ignores y.</summary>
@@ -341,6 +352,42 @@ namespace RoadDemo
         /// <summary>Off the network altogether (a patrol car swinging into its stall).
         /// The owner must not Tick it until the next Spawn/PlaceAt.</summary>
         public void Despawn() => Leave();
+
+        /// <summary>Removed for good - the body destroyed, every claim released. The
+        /// owner's list may still hold the reference; Tick refuses it from here on.</summary>
+        public bool Gone { get; private set; }
+
+        /// <summary>May this vehicle be CLEARED OFF THE STREET once it has stood dead
+        /// still long enough? The release backstop: whatever logic wedged it - a
+        /// derelict, a silent stop nothing ever undoes, a pair the belt cannot part -
+        /// a dead thing must not hold a quarter for the rest of a session. Opt-IN -
+        /// nothing anybody owns or the scene means (a crew's motor on the books, a
+        /// bombed wreck, the law, a machine down in a drive-by) ever vanishes; plain
+        /// street traffic does.</summary>
+        protected virtual bool VanishesWhenStuck => false;
+
+        /// <summary>Seconds of unbroken standstill before the backstop clears the car.
+        /// Longer than any wait a car makes on purpose - a red with a queue discharging
+        /// through it, the patience before a turn - so every honest recovery gets its
+        /// chance first; the flag-watching this began with missed the very jam it was
+        /// written for (the derelict flag clears itself the tick after the box is given
+        /// up, while the car goes on standing).</summary>
+        const float VanishAfterStill = 60f;
+
+        float _stoodStillFor;
+
+        /// <summary>The backstop itself: off the road, off the street's lists, and the
+        /// body destroyed. Idempotent; safe against a later Despawn from the owner.</summary>
+        public void Vanish()
+        {
+            if (Gone) return;
+            Gone = true;
+            if (DriveTrace.On)
+                DriveTrace.Event("man", "car " + Id, "derelict cleared off the street", ManFields());
+            Leave();
+            StreetTraffic.Users.Remove(this);
+            if (Tf != null) Object.Destroy(Tf.gameObject);
+        }
 
         void Leave()
         {
@@ -520,6 +567,7 @@ namespace RoadDemo
             _goalLane = goalLane;
             _spotFrom = float.NaN;
             _turnBackFor = 0f;
+            _goalUTurns = 0;
             if (park) ChooseKerbSpot();
             if (Parked) PullOut();
             Replan();
@@ -541,6 +589,27 @@ namespace RoadDemo
         /// 1827 refused steps between two cars in a box.</summary>
         float _beltFor;
 
+        /// <summary>WHEN the belt last refused a step of ours - which is not the same
+        /// question as <see cref="_beltFor"/>, the length of the UNBROKEN run of
+        /// refusals, and the difference is why a wedged pair used to stand for the whole
+        /// scene. The shove buys one of them a clear frame every couple of seconds; that
+        /// frame zeroes the run, and every recovery hung off the run is disarmed with it.
+        /// Measured in the jam that finally showed it: the run never passed 2.5 s and the
+        /// box's own clock never passed 1.0 s of the 1.5 s it needed, for eighty seconds
+        /// on the trot. A stamp does not care about the odd frame that gets through.</summary>
+        float _beltAt = -999f;
+
+        /// <summary>Seconds this car has been WEDGED - refused recently and going
+        /// nowhere - as against refused every single frame.</summary>
+        float _wedgedFor;
+
+        /// <summary>How long a refusal is remembered for. Longer than the gap the shove
+        /// buys - a single clear frame, so 0.3 s bridges it even at ten frames a second
+        /// - and shorter than the once-every-half-second touch of a queue compressing
+        /// through a box, which at the old full second read as one unbroken wedge and
+        /// had ordinary queued cars snapped out of junctions they were driving through.</summary>
+        const float BeltMemory = 0.3f;
+
         /// <summary>Metres already shoved sideways to come apart from a body we met - the
         /// budget, so the shove is a nudge and never a crab across the street.</summary>
         float _shoved;
@@ -553,7 +622,13 @@ namespace RoadDemo
         // to stand in: the claims in the kerb band (cars parked there, a prop) leave
         // gaps; the nearest gap within reach has the spot moved into it. Nothing near:
         // the car will stop in the lane at the spot (that is as near as it gets).
-        bool ChooseKerbSpot()
+        //
+        // aheadOnly is the re-pick on the approach: a gap BEHIND the car is a turn in
+        // the road to reach, and the turn's completion puts the next re-pick behind the
+        // car again - the circle a crew car was driven round for ever. On the approach
+        // only gaps ahead are considered, and finding none keeps the spot already held
+        // rather than degrading the goal.
+        bool ChooseKerbSpot(bool aheadOnly = false)
         {
             var road = _goalRoad;
             if (road == null || !_goalPark) return false;
@@ -586,13 +661,21 @@ namespace RoadDemo
                     {
                         float centre = Mathf.Clamp(_goalS, a + HalfLen + 0.8f, b - HalfLen - 0.8f);
                         float dist = Mathf.Abs(centre - _goalS);
-                        if (dist < bestDist) { bestDist = dist; bestS = centre; bestFrom = h > 0 ? a : b; }
+                        // 2 m clear ahead: the overshoot that asks for a turn needs -3,
+                        // so a spot picked here can never flip the goal behind the car
+                        bool behind = aheadOnly && (centre - S) * h < 2f;
+                        if (!behind && dist < bestDist) { bestDist = dist; bestS = centre; bestFrom = h > 0 ? a : b; }
                     }
                 }
                 end = Mathf.Max(end, t.y);
             }
             if (float.IsNaN(bestS) || bestDist > 45f)
             {
+                // on the approach the spot already held is the answer when nothing
+                // ahead is free: somebody standing in it stops the car behind him and
+                // that IS the parking (IsOurParkingSpot), or the 25 s give-up ends it -
+                // degrading the goal to the lane here moved it about instead
+                if (aheadOnly) return false;
                 _goalD = _goalLane != null ? _goalLane.Offset : kerb;  // no kerb to be had: the lane it is
                 _spotFrom = float.NaN;
                 return false;
@@ -619,6 +702,7 @@ namespace RoadDemo
         public void Slid(Vector3 worldPos)
         {
             _pos = new Vector3(worldPos.x, _pos.y, worldPos.z);
+            _glideUntil = -1f;   // a wreck the world moved must not blend against a stale capture
 
             // AND THE ROAD FRAME WITH IT. A vehicle is in this project TWICE: as a world
             // position, which is what the belt reads (RoadPosition), and as (s, d) on a
@@ -708,6 +792,15 @@ namespace RoadDemo
         float _heldInBox;    // seconds held inside a junction by something stood beyond it
 
         float _turnBackFor;     // seconds spent looking for the turn-round on this road
+
+        /// <summary>Turns in the road already spent on THIS goal. A parking goal is
+        /// re-chosen on the approach, and a re-pick that lands behind the car asks for
+        /// a turn whose completion puts the next re-pick behind the car again - a crew
+        /// car was driven round that circle for ever. Two turns is one honest overshoot
+        /// and one correction; the third want takes the long way round instead
+        /// (_turnBackFor is pinned at the giving-up mark for the goal's whole life).</summary>
+        int _goalUTurns;
+        const int MaxGoalUTurns = 2;
 
         /// <summary>Seconds a driver crawls looking for the turn-round before he gives
         /// it up and takes the long way instead.
@@ -820,6 +913,7 @@ namespace RoadDemo
         public void Tick(float dt)
         {
             if (dt <= 0f) return;
+            if (Gone) return;      // cleared off the street; the owner's list may still hold us
             if (Wrecked) return;   // a blown car drives nowhere and holds nothing
             WatchDerelict(dt);
             if (!OnRoad) { TickFree(dt); return; }
@@ -852,6 +946,19 @@ namespace RoadDemo
             // it held the whole junction for the rest of the run and a quarter queued
             // behind it (car soak: 8000+ belt refusals off one such lock).
             bool wedged = Mathf.Abs(Speed) < 0.15f && !Parked && _inNode != null;
+            // THE RELEASE BACKSTOP. A stuck car is planned round, but one left standing
+            // across the wrong metre of road still queues a quarter behind it for the
+            // rest of the run (a silent stop just past a box tail did exactly that, 233
+            // seconds of it, with the derelict flag long since self-cleared). Whatever
+            // logic put it there, a dead thing does not get to keep the street: plain
+            // traffic that has stood dead still long enough is cleared away (Vanish;
+            // opt-in per class, see VanishesWhenStuck).
+            if (VanishesWhenStuck && !Parked && Mathf.Abs(Speed) < 0.15f)
+            {
+                _stoodStillFor += dt;
+                if (_stoodStillFor > VanishAfterStill) { Vanish(); return; }
+            }
+            else _stoodStillFor = 0f;
             if (!derelict && !wedged) { _derelictFor = 0f; Derelict = false; return; }
             _derelictFor += dt;
             // a stopped-for-good car gives up quickly; a wedged one is given longer, so a
@@ -908,12 +1015,15 @@ namespace RoadDemo
             // - and a car can follow that up the street for ever; worse, a spot on
             // another street it never manages to reach keeps it driving with its crew
             // sat waiting to get out (two minutes of it, in the lab, twice). A driver
-            // gives up looking and takes the kerb he is beside. Counted wherever the car
-            // is, not only on the street the spot is on - it is the not-arriving that
-            // has to be caught.
+            // gives up looking and takes the kerb he is beside. Counted at full rate on
+            // the street the spot is on and at a fifth elsewhere: an ordered leg across
+            // the map must not burn the budget in transit - the car gave up half-way
+            // there and took a kerb the player never asked for - but the car that
+            // circles for ever WITHOUT reaching the goal's street is still caught, a
+            // couple of minutes out.
             if (_hasGoal && _goalPark && _man == Manoeuvre.None)
             {
-                _parkTrying += dt;
+                _parkTrying += Road == _goalRoad ? dt : dt * 0.2f;
                 if (_parkTrying > 25f)
                 {
                     // far enough on to actually PULL IN: a spot three metres ahead
@@ -947,6 +1057,7 @@ namespace RoadDemo
                         if (DriveTrace.On)
                             DriveTrace.Event("man", "car " + Id, $"gave up looking - taking the kerb at s={Mathf.Clamp(want, lo, hi):F0}", ManFields());
                         _parkTrying = 0f;   // and if this kerb cannot be had either, try again
+                        _goalUTurns = 0;    // a fresh goal, ahead of the car: fresh turns
                         _goalRoad = road;
                         _goalHeading = Heading;
                         _goalLane = Lane;
@@ -1022,6 +1133,7 @@ namespace RoadDemo
             // quarter, because the lane graph has no U-turn in it to route through and
             // the only road it could draw went forward.
             if (_hasGoal && _man != Manoeuvre.UTurn && !NoTurnBack &&
+                _goalUTurns < MaxGoalUTurns &&
                 (_turnFirst || (road == _goalRoad && Heading != _goalHeading && Route == null)) &&
                 road.TwoWay && Profile.UTurnsInRoad && road.MedianHalf <= 0f)
             {
@@ -1053,7 +1165,8 @@ namespace RoadDemo
                     // STREET and the long way round drawn instead. _turnBackFor is left
                     // at the giving-up mark so that Replan - which asks the same
                     // question - does not simply set the driver turning again.
-                    if (!TryUTurn())
+                    if (TryUTurn()) _goalUTurns++;
+                    else
                     {
                         if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "no turn: " + UTurnWhy, ManFields());
                         // OUT OF ROAD IS A FACT THE ARC ITSELF KNOWS. It needs a radius, a
@@ -1076,7 +1189,10 @@ namespace RoadDemo
                     }
                 }
             }
-            else _turnBackFor = 0f;
+            // the reset is what the latch has to survive: a completed turn satisfies
+            // the heading the same frame, and zeroing the patience here handed the next
+            // overshoot a fresh five seconds - for ever
+            else if (_goalUTurns < MaxGoalUTurns) _turnBackFor = 0f;
 
             // the goal on this road
             if (_hasGoal && road == _goalRoad && Heading == _goalHeading && _man != Manoeuvre.UTurn)
@@ -1088,15 +1204,26 @@ namespace RoadDemo
                     // throttle comes down first - a turn is refused above the speed its
                     // arc can carry, so charging at it only means never being allowed one.
                     bool mayTurn = Profile.UTurnsInRoad && road.TwoWay && road.MedianHalf <= 0f;
-                    if (mayTurn && UTurnAvailable()) v = Mathf.Min(v, UTurnApproachSpeed());
+                    if (_goalUTurns < MaxGoalUTurns && mayTurn && UTurnAvailable())
+                        v = Mathf.Min(v, UTurnApproachSpeed());
                     _retry -= dt;
                     if (_man == Manoeuvre.None && _retry <= 0f)
                     {
                         _retry = 0.5f;
+                        if (_goalUTurns >= MaxGoalUTurns)
+                        {
+                            // two turns spent on this goal already: the third want is
+                            // the circle, and the long way round is the answer to it
+                            _turnBackFor = 99f;
+                            if (Route == null) Replan();
+                        }
                         // still braking for it: ask again in a moment rather than give up
                         // on the turn and send the car round the block
-                        if (!mayTurn || Mathf.Abs(Speed) <= UTurnApproachSpeed() + 1f)
-                            if (!TryUTurn() && Route == null) Replan();
+                        else if (!mayTurn || Mathf.Abs(Speed) <= UTurnApproachSpeed() + 1f)
+                        {
+                            if (TryUTurn()) _goalUTurns++;
+                            else if (Route == null) Replan();
+                        }
                     }
                 }
                 else
@@ -1105,7 +1232,7 @@ namespace RoadDemo
                     if (_goalPark && _man == Manoeuvre.None && toGoal < 80f)
                     {
                         _spotCheck -= dt;
-                        if (_spotCheck <= 0f) { _spotCheck = 0.7f; ChooseKerbSpot(); toGoal = (_goalS - S) * Heading; }
+                        if (_spotCheck <= 0f) { _spotCheck = 0.7f; ChooseKerbSpot(aheadOnly: true); toGoal = (_goalS - S) * Heading; }
                     }
                     if (_goalStop) v = Mathf.Min(v, Allowed(0f, toGoal));
                     // ONE SWING SHORT OF THE SPOT, and not before: the slide is laid from
@@ -1184,12 +1311,21 @@ namespace RoadDemo
             {
                 v = Mathf.Min(v, Allowed(0f, toEnd - 0.5f));
                 MeanToStop(S + Heading * (toEnd - 0.5f));
+                if (v < 0.5f && Mathf.Abs(Speed) < 0.5f) Why = "road ends, no node";
                 if (toEnd < 1f && Mathf.Abs(Speed) < 0.1f && Profile.UTurnsInRoad && road.TwoWay && _man == Manoeuvre.None) TryUTurn();
             }
             else if (_man != Manoeuvre.UTurn)
             {
                 float stopDist = toEnd - node.StopSetback;
-                if (_next == null) { v = Mathf.Min(v, Allowed(0f, stopDist)); MeanToStop(S + Heading * stopDist); }
+                if (_next == null)
+                {
+                    v = Mathf.Min(v, Allowed(0f, stopDist));
+                    MeanToStop(S + Heading * stopDist);
+                    // SAY SO. This stop stood mute through three soaks: a lane the graph
+                    // gave no way out of read as "want 0, why ''" for two hundred
+                    // seconds and cost a live-probe session to name.
+                    if (v < 0.5f && Mathf.Abs(Speed) < 0.5f) Why = "no way on from this lane";
+                }
                 else
                 {
                     float turnV = _via != null && _via.UTurn ? Profile.UTurnSpeed
@@ -1447,6 +1583,7 @@ namespace RoadDemo
                     Speed = 0f;
                     _stuckFor += dt;
                     _beltFor += dt;
+                    _beltAt = Time.time;
                 }
                 else { _beltFor = 0f; _shoved = 0f; }
                 float yawRate = Vector3.SignedAngle(_fwd, fwd, Vector3.up) * Mathf.Deg2Rad / Mathf.Max(dt, 1e-3f);
@@ -1456,7 +1593,18 @@ namespace RoadDemo
             _pos = pos;
             _fwd = fwd;
             _lastPlaced = true;
-            if (Tf != null) Tf.SetPositionAndRotation(new Vector3(pos.x, RoadY + SurfaceLift(), pos.z), Quaternion.LookRotation(fwd, Vector3.up));
+            // the transform alone eases across an abrupt recovery (BackOutOfBox);
+            // _pos above stays the logical pose the belt and the street read
+            var drawPos = pos;
+            var drawFwd = fwd;
+            if (Time.time < _glideUntil)
+            {
+                float k = Mathf.SmoothStep(0f, 1f, 1f - (_glideUntil - Time.time) / GlideTime);
+                drawPos = Vector3.Lerp(_glideFrom, pos, k);
+                var blend = Vector3.Slerp(_glideFromFwd, fwd, k);
+                if (blend.sqrMagnitude > 1e-4f) drawFwd = blend.normalized;
+            }
+            if (Tf != null) Tf.SetPositionAndRotation(new Vector3(drawPos.x, RoadY + SurfaceLift(), drawPos.z), Quaternion.LookRotation(drawFwd, Vector3.up));
             OnPlaced(dt, Speed, steer);
         }
 
@@ -2099,7 +2247,7 @@ namespace RoadDemo
                         _sLen = 0f;
                         _man = Manoeuvre.None;
                         ClearClaim();
-                        ChooseKerbSpot();
+                        ChooseKerbSpot(aheadOnly: true);
                         if (Mathf.Abs(D - _laneD) > 0.3f)
                             Slide(_laneD, SlideLength(Mathf.Abs(D - _laneD), Mathf.Max(Mathf.Abs(Speed), 3f)));
                     }
@@ -2661,6 +2809,18 @@ namespace RoadDemo
             {
                 var e = node.Outgoing[i];
                 if (node.ConnectorFor(lane, e) == null) continue;
+                // NOT INTO A TRAP. A road with no junction at its far end is only a way
+                // on if the car can turn round in it - two-way, a driver who makes
+                // turns, and LONG enough for the arc. The city keeps the odd stub (a
+                // few metres of carriageway closed at the far end): a wanderer that
+                // took one stopped at its end wanting nothing, could never be granted
+                // the turn with the queue crowding its tail, and the junction behind
+                // wedged shut for the rest of the run (car 156, 197 seconds, a quarter
+                // queued). Such a road is left to the dead-end fallback below - taken
+                // only when it is the only connector there is.
+                if (e.Road.NodeAhead(e.Heading) == null &&
+                    (!e.Road.TwoWay || !Profile.UTurnsInRoad ||
+                     e.Road.Length < UTurnRadius() + HalfLen + 2f)) continue;
                 float dot = Vector3.Dot(e.Dir, lane.Dir);
                 if (dot > 0.5f)
                 {
@@ -2896,7 +3056,18 @@ namespace RoadDemo
                 if (o.Car == this || o.Car == null) continue;
                 if (o.Via == _via || o.Via.From == _via.From)
                 {
-                    v = Mathf.Min(v, FollowBody(o.Car, f, r));   // following him across
+                    // ON THE SAME LINE, AND STILL IN AN ORDER. Following the car in front
+                    // across the box needs a rule for WHICH of two is in front, and this
+                    // had none: FollowBody asks "is he ahead of MY nose", and through a
+                    // turn two noses point different ways - so each of a pair read the
+                    // other as the man in front, both braked to nothing, and the junction
+                    // was shut for the rest of the run with the quarter queued behind it.
+                    // (Measured: the pair was not even wedged - the belt refused only the
+                    // odd step. They were simply waiting for each other.) The crossing
+                    // case below has had a strict order for exactly this reason since a
+                    // motorcycle and a car stood nose to nose for forty-eight seconds;
+                    // it is the same order, so the two halves cannot disagree.
+                    if (YieldsInBox(o, mine)) v = Mathf.Min(v, FollowBody(o.Car, f, r));
                     continue;
                 }
                 // NOBODY ON A CROSSING LINE SHOULD BE IN HERE WITH US - the claim taken at
@@ -2913,12 +3084,7 @@ namespace RoadDemo
                 // then the lower id - so of any two exactly one gives way, and a circle
                 // of three all waiting for each other cannot form.
                 if (o.Via.Index >= _via.Conflicts.Length || !_via.Conflicts[o.Via.Index]) continue;
-                float his = o.S > 0f && o.Via.Length > 0.5f ? o.S / o.Via.Length : 0f;
-                bool yield = his > mine + 0.02f ||
-                             (his > mine - 0.02f &&
-                              (o.Car.Profile.Priority > Profile.Priority ||
-                               (o.Car.Profile.Priority == Profile.Priority && o.Car.Id < Id)));
-                if (!yield) continue;
+                if (!YieldsInBox(o, mine)) continue;
                 float vy = FollowBody(o.Car, f, r);
                 if (vy < v) { v = vy; _gaveWay = o.Car; if (v < 0.5f) Why = "box: giving way to " + o.Car.Id; }
             }
@@ -2930,6 +3096,24 @@ namespace RoadDemo
                     v = Mathf.Min(v, FollowBody(c, f, r));
                 }
             return v;
+        }
+
+        /// <summary>Of two cars in one junction box, do WE give way to him? Whoever is
+        /// further across the box has the right of way; a dead heat is settled by the
+        /// profile's priority and then by the lower id. Strict, so of any two exactly one
+        /// yields and a ring of three all waiting for each other cannot form.
+        ///
+        /// Asked of cars on crossing lines and of cars on the SAME line alike - see
+        /// BoxFollow for what the same-line case cost before it was asked. (Named apart
+        /// from GivesWayTo(int faction), which is a different question entirely: whether
+        /// this vehicle brakes for a person of that faction.)</summary>
+        bool YieldsInBox(NodeOccupant o, float mine)
+        {
+            float his = o.S > 0f && o.Via.Length > 0.5f ? o.S / o.Via.Length : 0f;
+            return his > mine + 0.02f ||
+                   (his > mine - 0.02f &&
+                    (o.Car.Profile.Priority > Profile.Priority ||
+                     (o.Car.Profile.Priority == Profile.Priority && o.Car.Id < Id)));
         }
 
         float FollowBody(RoadCar c, Vector3 f, Vector3 r)
@@ -3118,6 +3302,33 @@ namespace RoadDemo
             if (_inNode != null) _inNode.S = ViaS;
         }
 
+        /// <summary>Seconds a reverse out of a junction may make no ground at all before
+        /// it is given up and taken the abrupt way.</summary>
+        const float BackOutGiveUp = 1.5f;
+
+        /// <summary>Metres that count as having made ground while reversing.</summary>
+        const float BackOutMoved = 0.5f;
+
+        float _backOutFor, _boxSaidAt, _boxStillFor;
+
+        /// <summary>Seconds a car may stand in a junction box before it is let out of it
+        /// whatever else it thinks. Long enough that ordinary give-and-take inside a box
+        /// is never cut short, short enough that a quarter is not queued behind a pair of
+        /// cars that are each other's only reason.</summary>
+        const float BoxCrawlAfter = 8f;
+
+        /// <summary>The pace it comes out at - walking speed, so it is a car easing out of
+        /// a junction and not a car making a break for it.</summary>
+        const float BoxCrawl = 1.5f;
+
+        /// <summary>Seconds the crawl gets to prove itself before the box is given up
+        /// altogether.</summary>
+        const float BoxCrawlGiveUp = 3f;
+
+        float _crawlFor;
+        Vector3 _crawlFrom;
+        Vector3 _backOutFrom;
+
         void TickNode(float dt)
         {
             var via = Via;
@@ -3134,8 +3345,31 @@ namespace RoadDemo
             // matter - it cannot be undone from the inside (see _beltFor) - and the way
             // out is the same one a car that gave way takes: back off the line we came in
             // on and take our turn again.
-            bool wedgedInBox = _beltFor > 1.5f && Mathf.Abs(Speed) < 0.15f;
-            _boxStuck = wedgedInBox || (_gaveWay != null && !_gaveWay.Parked && Mathf.Abs(Speed) < 0.15f)
+            _wedgedFor = Time.time - _beltAt < BeltMemory && Mathf.Abs(Speed) < 0.15f
+                ? _wedgedFor + dt : 0f;
+            bool wedgedInBox = _wedgedFor > 1.5f;
+            // WHAT THE WEDGE ACTUALLY LOOKS LIKE, once a second while it lasts. A car
+            // standing inside another in a junction is the one jam that has outlived
+            // three separate recoveries, and every one of them was aimed by guesswork at
+            // a state nobody had written down. Now it is written down.
+            _boxStillFor = Mathf.Abs(Speed) < 0.15f ? _boxStillFor + dt : 0f;
+            if (DriveTrace.On && _boxStillFor > 4f && Time.time >= _boxSaidAt)
+            {
+                _boxSaidAt = Time.time + 1f;
+                DriveTrace.Event("man", "car " + Id,
+                    $"standing in a box: still {_boxStillFor:F1}s wedged {_wedgedFor:F1}s belt {_beltFor:F1}s " +
+                    $"stuck {_boxStuck:F1}s viaS {ViaS:F1}/{(_via != null ? _via.Length : 0f):F1} " +
+                    $"why '{Why}'", ManFields());
+            }
+            // ...and a car the FAR LANE has kept in the box past all patience is stuck
+            // by any reading, though no belt ever touched it and it gave way to nobody:
+            // the stretch beyond its exit is stood full, the relaxed gap (12 s,
+            // wantsGap) did not help, and the thing it waits on may be waiting on the
+            // queue behind US (a dead-end stub did exactly that: the stander could
+            // never turn with a tail crowding it, and the pair held a quarter for the
+            // run). Off the line, then, the same way every other box recovery goes.
+            _boxStuck = wedgedInBox || _heldInBox > 20f ||
+                        (_gaveWay != null && !_gaveWay.Parked && Mathf.Abs(Speed) < 0.15f)
                 ? _boxStuck + dt : 0f;
             _gaveWay = null;
             if (_boxStuck > (wedgedInBox ? 1.5f : 3f) && _man != Manoeuvre.UTurn)
@@ -3145,6 +3379,34 @@ namespace RoadDemo
                 _want = 0f;
                 if (back > 0.001f)
                 {
+                    // AND IT HAS TO ACTUALLY GO BACK. Reversing off the line is a step
+                    // like any other, so the belt refuses it too when the body we are
+                    // wedged in is the one behind us - and then the pair stands there for
+                    // the rest of the scene, one reading "box: backing out" and creeping
+                    // two centimetres a second, the other "box: following" and waiting on
+                    // it. (CrewDemo, seed 1001: 1569 refused steps from t=117 to the end
+                    // of the run, with the whole quarter queued behind them.) A back-out
+                    // that has moved the car nowhere in a second and a half is not going
+                    // to move it: it is finished the abrupt way instead - off the
+                    // connector onto the lane we came in on, which is a place, not a
+                    // step, and nothing can refuse it.
+                    // measured on Position, the road's own frame - not on the transform,
+                    // which a car need not have a live one of
+                    if (_backOutFor <= 0f) _backOutFrom = Position;
+                    _backOutFor += dt;
+                    // and only when the reverse is being REFUSED - merely slow is a
+                    // queue, and a queue is waited in, not snapped out of
+                    if (_backOutFor > BackOutGiveUp && Time.time - _beltAt < BeltMemory &&
+                        (Position - _backOutFrom).sqrMagnitude < BackOutMoved * BackOutMoved)
+                    {
+                        if (DriveTrace.On)
+                            DriveTrace.Event("man", "car " + Id,
+                                $"backing out made {(Position - _backOutFrom).magnitude:F2} m in " +
+                                $"{_backOutFor:F1}s - off the connector instead", ManFields());
+                        BackOutOfBox(dt);
+                        return;
+                    }
+
                     ViaS -= back;
                     if (_inNode != null) _inNode.S = ViaS;
                     RefreshNextOccupant(ViaS - via.Length);
@@ -3155,6 +3417,7 @@ namespace RoadDemo
                 BackOutOfBox(dt);
                 return;
             }
+            _backOutFor = 0f;
 
             float remaining = via.Length - ViaS;
             RefreshNextOccupant(ViaS - via.Length);
@@ -3181,11 +3444,21 @@ namespace RoadDemo
             // Waiting in a junction for a parked car to move is waiting for ever, and
             // every crossing car waits behind us while we do it; better a tight stop on
             // the road, where the belt is the last word and the thing can be driven round.
-            _heldInBox = lead != null && (lead.Parked || (lead.Car != null && lead.Car.Derelict))
-                ? _heldInBox + Time.deltaTime : 0f;
+            // AND A CAR THAT HAS SIMPLY STOPPED THERE IS THE SAME THING TO US. It does
+            // not have to be parked to be immovable: the one this was measured on was the
+            // tail of a queue that ran back through our own box, so it was waiting on us
+            // while we waited on it. A car one and a half metres from the end of its
+            // connector stood a hundred and fifty seconds that way, with the belt never
+            // refusing a single step of its own - nothing wedged, nothing parked, the two
+            // of them simply each other's reason. The gap is still asked for before we
+            // come out (wantsGap), so this never puts a car out into a queue with no room
+            // for it; it only stops us holding a junction against a street that is never
+            // going to clear while we hold it.
+            bool stood = lead != null && (lead.Parked ||
+                         (lead.Car != null && (lead.Car.Derelict || lead.Car.RoadSpeed < 0.15f)));
+            _heldInBox = stood ? _heldInBox + Time.deltaTime : 0f;
             float wantsGap = _heldInBox > 12f ? HalfLen + 1f : 2f * HalfLen + 2f;
-            bool standing = lead != null && (lead.Parked || (lead.Car != null && lead.Car.Derelict)) &&
-                            fgap > wantsGap;
+            bool standing = stood && fgap > wantsGap;
             if (lead != null && standing)
             {
                 // out of the box and stopped short of it ON THE ROAD, where it can be
@@ -3201,6 +3474,48 @@ namespace RoadDemo
                     ? "box: far lane " + (lead.Car != null ? "car " + lead.Car.Id : "static") + $" gap {fgap:F1} his s[{lead.S0:F1},{lead.S1:F1}] d[{lead.D0:F1},{lead.D1:F1}] farNose {farNose:F1}"
                     : "box: far lane";
             }
+            // A CAR THAT IS ALL BUT OUT MUST NOT BE HELD IN BY A MIN. Every rule above can
+            // only LOWER v, so a car braking for something inside the box (BoxFollow) is
+            // already at nothing by the time the far-lane relaxation is asked - and that
+            // relaxation is another Min, so it can never let anybody out. Measured: a car
+            // a metre and a half from the end of its connector stood ninety seconds at v 0
+            // with the belt never once touching it, braking for a car that sat at the line
+            // waiting for the very box it was holding. Each was the other's whole reason.
+            //
+            // So a car that has stood in a box long enough for that to be what is
+            // happening, and is nearly through it, and has room on the far side, is given
+            // a crawl OUT - onto the road, where the belt is the last word and a thing in
+            // the way can be driven round. The people are still asked after this: a floor
+            // on the traffic's own reasons is not a licence to drive through anybody.
+            if (_boxStillFor > BoxCrawlAfter && remaining < 2f * HalfLen && fgap > HalfLen + 1f &&
+                _man != Manoeuvre.UTurn)
+            {
+                // AND IF THE CRAWL ITSELF GETS NOWHERE, THE BOX IS GIVEN UP. A floor on
+                // the wanted speed is still only a want: a car asking for a metre and a
+                // half a second and making eight millimetres of it is a stall by any
+                // reading, and the audit rightly calls it one (measured: v 0.15, want
+                // 1.5, sixty-five seconds of it). So the crawl is given a few seconds to
+                // prove itself and then the car takes the one way out that nothing can
+                // refuse - off the connector, onto the lane it came in on, and its turn
+                // again from the line.
+                if (_crawlFor <= 0f) _crawlFrom = Position;
+                _crawlFor += dt;
+                // the same refusal test as the back-out: a crawl held up by traffic
+                // creeping ahead of it is a queue, not a stall
+                if (_crawlFor > BoxCrawlGiveUp && Time.time - _beltAt < BeltMemory &&
+                    (Position - _crawlFrom).sqrMagnitude < BackOutMoved * BackOutMoved)
+                {
+                    if (DriveTrace.On)
+                        DriveTrace.Event("man", "car " + Id,
+                            $"crawling out made {(Position - _crawlFrom).magnitude:F2} m in " +
+                            $"{_crawlFor:F1}s - off the connector instead", ManFields());
+                    BackOutOfBox(dt);
+                    return;
+                }
+                v = Mathf.Max(v, BoxCrawl);
+            }
+            else _crawlFor = 0f;
+
             v = Mathf.Min(v, WalkersAhead(StreetTraffic.Walkers));
             v = Mathf.Min(v, BodiesAhead(dt));
             bool hard = false;
@@ -3249,6 +3564,10 @@ namespace RoadDemo
         {
             var lane = _via != null ? _via.From : null;
             if (lane == null) { _boxStuck = 0f; return; }
+            // the logical move is instant - that is the cure - but the DRAWN body
+            // glides across (Place), so the recovery reads as a brisk reverse out of
+            // the box and never as a teleport
+            if (_lastPlaced) { _glideFrom = _pos; _glideFromFwd = _fwd; _glideUntil = Time.time + GlideTime; }
             LeaveBox();
             DropNext();
             Road = lane.Road;
@@ -3256,6 +3575,23 @@ namespace RoadDemo
             D = lane.Offset;
             _laneD = D;
             S = lane.RoadS(Mathf.Max(0f, lane.Length - 0.4f));
+            // AND NOT INTO WHOEVER IS QUEUED AT THE LINE ALREADY. The stop line is the
+            // obvious landing and was the only one - but a box given up because of the
+            // queue beyond it usually HAS a queue behind it too, and a body dropped on
+            // another body is a wedge the belt can only grind apart. Landed behind the
+            // tail of whatever stands on the lane instead.
+            {
+                float lo = D - HalfWide - 0.6f, hi = D + HalfWide + 0.6f;
+                float start = lane.RoadS(Mathf.Min(0.6f, lane.Length));
+                foreach (var o in Road.Occupants)
+                {
+                    if (ReferenceEquals(o.Who, this) || !o.Overlaps(lo, hi)) continue;
+                    float tail = Heading > 0 ? o.S0 : o.S1;
+                    float cand = tail - Heading * (HalfLen + 0.8f);
+                    if ((S - cand) * Heading > 0f) S = cand;
+                }
+                if ((S - start) * Heading < 0f) S = start;
+            }
             SetLane(lane);
             _occ ??= NewOccupant(Road);
             Via = null;
@@ -3268,6 +3604,10 @@ namespace RoadDemo
             Speed = 0f;
             _want = 0f;
             _boxStuck = 0f;
+            _backOutFor = 0f;
+            _crawlFor = 0f;
+            _boxStillFor = 0f;
+            _heldInBox = 0f;
             _boxEntryS = S;
             // AND HE WAITS AT THE LINE. Backing out and going straight back in is the
             // same wedge again a second later, over and over: 3510 and 6029 refused steps

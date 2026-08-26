@@ -305,6 +305,35 @@ namespace LivingCity.Outfit
         /// the same day would tend to answer the same way. Fingerprint mix from xxHash,
         /// the same one the newspaper's editions are dealt through.
         /// </summary>
+        /// <summary>
+        /// What the clerk writes under HURT on the roll. Dealt from the job's own rng so
+        /// the same night always produces the same note - a wound that re-rolled every
+        /// repaint would be a man whose ribs healed and broke as the page redrew.
+        ///
+        /// Free text rather than an injury enum: the column exists to say what an enum
+        /// cannot, and a table of phrases is honest about being flavour laid over the
+        /// one fact the sim owns, which is the day he is back.
+        /// </summary>
+        public static string InjuryNote(System.Random rng)
+        {
+            var hurt = Hurts[rng.Next(Hurts.Length)];
+            var where = Wards[rng.Next(Wards.Length)];
+            return hurt + " \u00B7 " + where;
+        }
+
+        static readonly string[] Hurts =
+        {
+            "2 ribs", "3 ribs", "cracked wrist", "shoulder", "knee",
+            "collarbone", "jaw wired", "burns to the hands", "shot in the thigh",
+            "shot through the arm", "concussion", "ruptured spleen",
+        };
+
+        static readonly string[] Wards =
+        {
+            "county ward", "St Brendan's", "the back room", "Mercy General",
+            "a doctor who asks nothing",
+        };
+
         public static int Mix(int seed, int day, int jobId)
         {
             unchecked

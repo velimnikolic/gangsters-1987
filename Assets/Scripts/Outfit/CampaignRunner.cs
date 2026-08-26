@@ -33,6 +33,10 @@ namespace LivingCity.Outfit
         public readonly GangRelations Relations = new GangRelations();
         public readonly OrderBook Book = new OrderBook();
 
+        /// <summary>What the outfit kicks up to the houses above it - re-priced off the
+        /// live city every midnight and collected when it falls due.</summary>
+        public readonly Tribute Tribute = new Tribute();
+
         /// <summary>What came of the last few days' work, most recent first.</summary>
         public readonly List<OrderRecord> Records = new List<OrderRecord>();
 
@@ -53,12 +57,20 @@ namespace LivingCity.Outfit
         /// keeps it free of UnityEngine. A test supplies its own.</summary>
         public System.Func<Job, float> DistanceOf;
 
+        /// <summary>Fills the list with who holds what across the city. Same bargain as
+        /// <see cref="DistanceOf"/>: only the scene can walk the markers, so the scene
+        /// hands the reading in and this class stays pure. Null means an empty city,
+        /// which prices every tribute claim out of existence rather than guessing one.</summary>
+        public System.Action<List<Turf.Holding>> HoldingsOf;
+
         /// <summary>Raised when the roster itself moved - a man into a hospital bed, a
         /// new name onto the books - so the caller can bump the personnel version the
         /// ledger and the street both re-deal on.</summary>
         public System.Action RosterMoved;
 
         readonly List<int> scratchMen = new List<int>();
+        readonly List<Turf.Holding> scratchHoldings = new List<Turf.Holding>();
+        readonly List<int> scratchSoured = new List<int>();
 
         // ---------------------------------------------------------------- the hours
 
@@ -165,7 +177,8 @@ namespace LivingCity.Outfit
 
             if (result.CasualtyId >= 0)
                 RosterOps.Hospitalize(roster, result.CasualtyId,
-                    Campaign.Day + OrderResolution.MisfireDays);
+                    Campaign.Day + OrderResolution.MisfireDays,
+                    OrderResolution.InjuryNote(rng));
 
             // Either of these MOVED THE ROSTER - a man into a bed, or a new name onto
             // the books - and a roster that moves without the personnel version moving
@@ -245,14 +258,14 @@ namespace LivingCity.Outfit
         /// <summary>
         /// Midnight, and the only place the books turn: a standing watch is paid its
         /// practice and its takings, practice becomes stars, the laid-up who are due
-        /// stand up, stances take effect, and on the day that opens a week the men are
-        /// paid.
+        /// stand up, stances take effect, and the men are paid - EVERY day, because a
+        /// day is the only period the outfit keeps.
         ///
         /// Everything that could surprise a player by happening mid-read happens HERE,
         /// once, rather than scattered through the frame where a wage bill could jump
         /// while the Finances page was open.
         /// </summary>
-        /// <returns>Wages paid, when this day was a payday; 0 otherwise.</returns>
+        /// <returns>Wages paid; 0 on the campaign's first day, which settles nothing.</returns>
         public int DayTick(Roster roster)
         {
             Campaign.Day++;
@@ -267,7 +280,8 @@ namespace LivingCity.Outfit
                     RosterMoved?.Invoke();
             }
 
-            var paid = Campaign.OpensWeek(Campaign.Day) ? TurnTheBooks(roster) : 0;
+            var paid = Campaign.Settles(Campaign.Day) ? TurnTheBooks(roster) : 0;
+            CollectTribute();
             Relations.ApplyPending();
             return paid;
         }
@@ -308,24 +322,55 @@ namespace LivingCity.Outfit
             }
         }
 
-        /// <summary>Payday and a fresh sheet. Wages are still a weekly envelope - it is
-        /// how a 1987 outfit paid - but nothing waits for it: the week turned because
-        /// seven days went by, not because anybody pressed anything.</summary>
+        /// <summary>Payday and a fresh sheet, every midnight. Pay falls due as it falls
+        /// due: there is no envelope and no boundary to wait for, and the jailed and the
+        /// hurt draw their day the same as the men who worked it. The day closed because
+        /// the clock passed midnight, not because anybody pressed anything.</summary>
         public int TurnTheBooks(Roster roster)
         {
             var paid = 0;
             var sheet = Accounts.Current;
             if (sheet != null && !sheet.Closed)
             {
-                paid = Wages.WeeklyPayroll(roster);
+                paid = Wages.DailyPayroll(roster);
                 sheet.WagesPaid = paid;
                 Accounts.Safe -= paid;
                 Accounts.RiskyMoney += sheet.IllegalIncome;
                 sheet.Closed = true;
             }
 
-            Accounts.Sheets.Add(new WeekSheet { Week = Campaign.Week });
+            Accounts.Open(Campaign.Day);
             return paid;
+        }
+
+        /// <summary>
+        /// Re-prices what the houses above the outfit are owed against the city as it
+        /// stands this morning, then hands over whatever has fallen due. A house that
+        /// went unpaid hardens one step - it is the only stance change in the game the
+        /// player does not choose, and it is the point of the mechanic: falling behind
+        /// on tribute is how a quiet city turns on you.
+        /// </summary>
+        void CollectTribute()
+        {
+            scratchHoldings.Clear();
+            HoldingsOf?.Invoke(scratchHoldings);
+
+            Tribute.Assess(Relations, scratchHoldings, Gangs.GangCatalog.PlayerGangId,
+                Campaign.Day);
+            Tribute.Settle(Accounts, Campaign.Day, scratchSoured);
+
+            for (var i = 0; i < scratchSoured.Count; i++)
+            {
+                var gangId = scratchSoured[i];
+                // Pending, like every other stance change: it lands with the next
+                // midnight, so a page open on the families is never rewritten under
+                // the reader's eyes.
+                var harder = Relations.StanceWith(gangId) == Stance.Peace
+                    ? Stance.Truce
+                    : Stance.War;
+                Relations.SetPending(gangId, harder);
+            }
+            scratchHoldings.Clear();
         }
 
         // ----------------------------------------------------------------- the book
@@ -432,7 +477,7 @@ namespace LivingCity.Outfit
         public void OpenFirstSheet()
         {
             if (Accounts.Sheets.Count == 0)
-                Accounts.Sheets.Add(new WeekSheet { Week = Campaign.Week });
+                Accounts.Open(Campaign.Day);
         }
     }
 }

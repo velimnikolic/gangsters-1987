@@ -25,6 +25,9 @@ namespace RoadDemo
     /// </summary>
     public sealed class FuelCustomer : DemoVehicle
     {
+        // stands at a pump on purpose; the station's own watchdogs mind it
+        protected override bool VanishesWhenStuck => false;
+
         public enum Mode
         {
             Cruising, Wanting, Approaching, TurningIn, Fuelling, Paying, Boarding, PullingOut,

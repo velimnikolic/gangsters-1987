@@ -35,7 +35,7 @@ namespace RoadDemo
     /// stare at the chalk, the crowd moved back, and after a while they drive off.
     /// One per scene; the builders register the units and the crews.
     /// </summary>
-    public sealed class PoliceDispatch : MonoBehaviour
+    public sealed partial class PoliceDispatch : MonoBehaviour
     {
         // heat: what the parked wanted system measured (WantedConfig), read as figures
         const float ShotHeat = 4f, ShotHeatCap = 12f, GangDeathHeat = 30f, CivilianDeathHeat = 45f, OfficerDeathHeat = 100f;
@@ -51,6 +51,14 @@ namespace RoadDemo
         // a patrol's own beat carries it close. (The reach of the response, not of the
         // patrols - the cars are already spread over the city; this is who answers.)
         const float ResponseRange = 150f;    // metres a unit must be within to answer a scene
+        // WHAT A MAN OF THE LAW HEARS. A block and the street round it - further than
+        // the report itself carries to the crowd (CrewArms Loudness: 45 m for a .38,
+        // 80 for a rifle), and deliberately so. Loudness is what a passer-by READS: how
+        // near he has to be for a bang to frighten him. An officer a block off does not
+        // have to be frightened by it, only to know what it was and which way it came
+        // from, and that is the whole of a beat: he turns and he goes. Anybody inside
+        // this rings it in himself, at once, and does not wait on a telephone.
+        const float Earshot = 110f;
         const float SceneSeconds = 90f;      // how long the law stays once it is quiet
 
         public float Heat { get; private set; }
@@ -136,9 +144,10 @@ namespace RoadDemo
             float add = Mathf.Min(ShotHeat, ShotHeatCap - _shotHeat);
             if (add > 0f) { _shotHeat += add; Heat = Mathf.Min(120f, Heat + add); }
 
-            // a patrol in earshot rings it in itself, at once
+            // a patrol in earshot rings it in itself, at once - no telephone, no wait
+            float heard = Mathf.Max(shot.Loudness, Earshot);
             foreach (var u in _units)
-                if (u.Tf != null && (u.Position - shot.Pos).sqrMagnitude < shot.Loudness * shot.Loudness)
+                if (u.Tf != null && (u.Position - shot.Pos).sqrMagnitude < heard * heard)
                 { _callAt = Mathf.Min(_callAt, Time.time); break; }
         }
 
@@ -177,6 +186,7 @@ namespace RoadDemo
 
             for (int i = _squads.Count - 1; i >= 0; i--) TickSquad(_squads[i], dt); // Done() removes
             TickFoot();
+            TickArrest(dt);
             foreach (var kv in _lights) kv.Value.Tick(dt);
         }
 
@@ -203,8 +213,23 @@ namespace RoadDemo
             bool any = false;
             if (first)
             {
-                var foot = Nearest(scene, carries: false);
-                if (foot != null) { foot.RouteTo(scene, 6f); any = true; }
+                // EVERY man on foot who could hear it turns out, not just the nearest.
+                // Two officers a block apart both heard the same shots; one of them
+                // walking on as though he had not is the thing that reads as nobody
+                // being home. Out of earshot it is the nearest man only - he is coming
+                // because he was told, and one man is what a telephone call sends.
+                foreach (var u in _units)
+                {
+                    if (u.Carries || !u.Available || u.Tf == null) continue;
+                    if ((u.Position - scene).sqrMagnitude > Earshot * Earshot) continue;
+                    u.RouteTo(scene, 6f);
+                    any = true;
+                }
+                if (!any)
+                {
+                    var foot = Nearest(scene, carries: false);
+                    if (foot != null) { foot.RouteTo(scene, 6f); any = true; }
+                }
             }
             while (_carsSent < wanted)
             {

@@ -351,7 +351,7 @@ namespace LivingCity.UI
 
             if (ordersWeek)
             {
-                var date = outfit.Campaign.DayName + " · WEEK " + outfit.Campaign.Week;
+                var date = outfit.Campaign.DayName + " · DAY " + outfit.Campaign.Day;
                 ordersWeek.text = outfit.TryGetHeadquarters(out _, out var hqBlock)
                     ? date + "  ·  HQ at block #" + hqBlock
                     : date + "  ·  the families are still settling in";

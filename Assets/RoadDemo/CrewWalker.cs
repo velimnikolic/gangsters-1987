@@ -50,10 +50,31 @@ namespace RoadDemo
         public Transform Weapon { get; private set; }
         public EquipmentKind WeaponKind { get; private set; }
         public GameObject WeaponPrefab { get; private set; }
+
+        /// <summary>The gun is OUT - in his fist, where it can be aimed and fired.
+        /// This is what every part of the fight means by armed: AimGun raises the arm
+        /// off it, the fire gates wait on the raise, and a man without it cannot put a
+        /// round anywhere. A man walking the town with a piece under his coat is NOT
+        /// this - see <see cref="Carrying"/>.</summary>
         public bool Armed => Weapon != null;
+
+        /// <summary>He has a gun to his name - the ledger's, in his hand or under his
+        /// coat. This is the question to ask of a man being PICKED for something: sent
+        /// into a fight, put on a car, dealt onto a saddle. Asking <see cref="Armed"/>
+        /// there would pass over every man in the town who has not drawn yet, which
+        /// since the gun stays out of sight until there is something to point it at
+        /// is nearly all of them.</summary>
+        public bool Carrying => WeaponPrefab != null;
         public CrewArms.Stats Ballistics { get; private set; }
 
         public int Health = 3;
+
+        /// <summary>His hands are up. Set by the crew giving itself up to the law
+        /// (DemoCrews.GiveUp) and read HERE, at the one gate every gun in the game
+        /// passes through: a man who has surrendered never wants his piece out, so
+        /// nothing that happens round him - a shot, an alarm, a mark walking past -
+        /// can put it back in his fist while he waits to be taken.</summary>
+        public bool Surrendered;
         public int MaxHealth = 3;
         public bool Dead => State == Mode.Dead;
 
@@ -446,7 +467,7 @@ namespace RoadDemo
         ///
         /// No way at all - walled in, or a mark stood inside something - and he simply
         /// walks at it and gets as near as the ground lets him.</summary>
-        public void OrderAcross(Vector3 point, float delay = 0f)
+        public void OrderAcross(Vector3 point, float delay = 0f, bool keepOffRoad = true)
         {
             if (Spilling) return;   // in the air off a machine: he is the spill's until he lands
             if (Dead) return;
@@ -464,7 +485,8 @@ namespace RoadDemo
             point.y = Tf.position.y;
             _legEnd = point;
             _replans = 0;
-            if (!WalkRoute.Plan(Tf.position, point, _legs)) _legs.Clear();
+            _legsOffRoad = keepOffRoad;
+            if (!WalkRoute.Plan(Tf.position, point, _legs, keepOffRoad)) _legs.Clear();
             _legAt = 0;
             _legTo = _legs.Count > 0 ? _legs[0] : point;
             var far = point - Tf.position;
@@ -486,6 +508,11 @@ namespace RoadDemo
         // closes. Getting there is measured against the far end, not the next corner.
         float _acrossBest, _acrossFor;
 
+        /// <summary>Whether this walk is keeping off the carriageway - held for the
+        /// replans, which must be drawn under the same rule as the first way or the man
+        /// steps onto the road at his first corner.</summary>
+        bool _legsOffRoad = true;
+
         /// <summary>The next corner, when there is one. Reached one, he goes on to the
         /// next; STOPPED SHORT of one, the way is drawn again from where he stands -
         /// it was drawn before he set off and the street has moved since. A few of
@@ -501,7 +528,7 @@ namespace RoadDemo
             }
             if (_legs.Count == 0 || _replans >= 3) { _legs.Clear(); return false; }
             _replans++;
-            if (!WalkRoute.Plan(Tf.position, _legEnd, _legs) || _legs.Count == 0)
+            if (!WalkRoute.Plan(Tf.position, _legEnd, _legs, _legsOffRoad) || _legs.Count == 0)
             { _legs.Clear(); return false; }
             _legAt = 0;
             _legTo = _legs[0];
@@ -512,7 +539,11 @@ namespace RoadDemo
         /// <summary>Close on this man and shoot him. Nothing happens unarmed.</summary>
         public void Engage(CrewWalker target)
         {
-            if (Dead || Riding || !Armed || Panicked || target == null || target.Dead || target == this) return;
+            if (Dead || Riding || !Carrying || Panicked || target == null || target.Dead || target == this) return;
+            // the gun comes out on the order, not on the next frame's tick: TickEngage
+            // drops a fight the moment it finds a man with nothing in his hand, so a
+            // draw a frame late is a fight that never starts.
+            DrawGun();
             if (Target != target) { _coverLooked = false; _underFire = 0; _coverRecheckAt = 0f; }
             Target = target;
             EndChat();
@@ -537,8 +568,9 @@ namespace RoadDemo
         /// this is aimed at the men: the rounds go into the machine (DemoCrews.Resolve).</summary>
         public void ShootUp(CrewCar car)
         {
-            if (Dead || Riding || !Armed || Panicked) return;
+            if (Dead || Riding || !Carrying || Panicked) return;
             if (car == null || car.Tf == null || car.Wrecked) return;
+            DrawGun();
             Target = null;            // clears any car mark too, and then we set ours
             CarMark = car;
             EndChat();
@@ -578,21 +610,111 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ arms
 
-        /// <summary>Put this gun in his hand (replacing whatever he held); null disarms.</summary>
+        /// <summary>Give him this gun (replacing whatever he carried); null disarms.
+        ///
+        /// THIS DOES NOT PUT ANYTHING IN HIS HAND. It writes what he carries, which is
+        /// the ledger's business, and the street decides on its own when the piece comes
+        /// out from under the coat (TickArms). A man dealt a rifle by the book at the
+        /// outfit's door walks off with it out of sight - the alternative is what the
+        /// player watched for months: five men strolling a shopping street with
+        /// machine guns in their fists and not a policeman in the town minding it.
+        ///
+        /// The one exception is a swap made while the gun is ALREADY out - the saddle's
+        /// cap trading a rifle for a machine pistol mid-pass (CrewBike.CapArms) - which
+        /// puts the new piece straight back in the fist it took the old one from.</summary>
         public void Arm(GameObject prefab, EquipmentKind kind)
         {
-            if (Weapon != null)
-            {
-                Object.Destroy(Weapon.gameObject);
-                Weapon = null;
-            }
+            bool wasOut = Armed;
+            Holster();
             WeaponPrefab = prefab;
             WeaponKind = kind;
             Ballistics = CrewArms.StatsFor(kind);
-            if (prefab == null) { _aimArm = null; return; }
+            // a swap made on a man who is ON HIS WAY DOWN still goes into the hand:
+            // he is shot off a pillion holding the saddle's machine pistol, the
+            // dismount hands him his own gun back, and what has to fall out of his
+            // fist a moment later is the gun the books say he owned.
+            if (wasOut) IntoTheHand();
+        }
+
+        /// <summary>Out from under the coat and into his fist, and KEPT there: every
+        /// call pushes the quiet timer back out to full, so a caller that wants the gun
+        /// out for a while (a pillion on the run-in to a pass) just says so every frame
+        /// and never has to think about the timer. Idempotent, and cheap enough to be
+        /// called from a frame tick - a man who already has it out only gets the
+        /// push.</summary>
+        public void DrawGun()
+        {
+            if (Dead) return;
+            _armsQuiet = ArmsQuiet;
+            if (Armed) return;
+            IntoTheHand();
+        }
+
+        void IntoTheHand()
+        {
+            if (WeaponPrefab == null || Tf == null) return;
             var animator = Tf.GetComponentInChildren<Animator>();
-            Weapon = CrewArms.Attach(animator, prefab);
+            Weapon = CrewArms.Attach(animator, WeaponPrefab);
             _aimArm = animator != null ? animator.GetBoneTransform(HumanBodyBones.RightUpperArm) : null;
+        }
+
+        /// <summary>Away it goes; he still carries it. The model is destroyed rather
+        /// than hidden because that is the same handful of objects the deal already
+        /// makes and unmakes every time the book changes a man's piece, and a gun
+        /// parked inside a coat is a renderer the city pays for on every one of a
+        /// thousand men.
+        ///
+        /// A DEAD MAN IS NEVER HOLSTERED. His gun leaves the hand the other way, by
+        /// falling out of it (DropGun) - it lies in the road as a prop, and destroying
+        /// it here would take that prop with it.</summary>
+        public void Holster()
+        {
+            if (Weapon == null) return;
+            Object.Destroy(Weapon.gameObject);
+            Weapon = null;
+            _aimArm = null;
+            _aimBlend = 0f;
+        }
+
+        /// <summary>How long the gun stays out after the last reason for it has gone.
+        /// A fight is not over when the man in front of you falls - the one behind him
+        /// is still somewhere - and a piece that goes back under the coat the instant a
+        /// mark drops reads as a man who was never worried. Long enough to cover the
+        /// gap between one exchange and the next, short enough that a street settles.</summary>
+        const float ArmsQuiet = 8f;
+
+        float _armsQuiet;
+
+        /// <summary>Is there anything for a gun to be out FOR? This is the whole of the
+        /// concealment rule, and it is deliberately about the moment rather than the
+        /// man: nothing here asks who he is or what he was dealt, only whether the
+        /// street he is stood on has turned into one where a piece is drawn.
+        ///
+        /// Riding is on the list twice over - a man at a wound-down window on a pass,
+        /// and the pillion on a saddle - because both are RidingAim, which is set by
+        /// whoever is driving the machine the moment it has a mark on its flank.</summary>
+        public bool WantsGunOut =>
+            !Dead && Carrying && !Surrendered &&
+            (State == Mode.Engaging ||   // a fight of his own, or a car he is emptying into
+             State == Mode.Fleeing ||    // running from one, which is still one
+             Alert ||                    // shooting within earshot, twelve seconds of it
+             RidingAim ||                // out of a window, or off the back of a machine
+             _shoutLeft > 0f);           // the law's warning, shouted with the gun up
+
+        /// <summary>The piece comes out when the street calls for it and goes away when
+        /// the street has been quiet a while. Run before anything else in the frame so
+        /// that every branch below - the fight, the ride, the pose picker - sees the
+        /// hand it is going to be posing.</summary>
+        void TickArms(float dt)
+        {
+            // a man in the air off a motorcycle keeps whatever he had: the spill owns
+            // his body for the length of it, and a gun that vanishes mid-tumble reads
+            // as the gun being what threw him
+            if (Dead || Spilling) return;
+            if (WantsGunOut) { DrawGun(); return; }
+            if (!Armed) return;
+            _armsQuiet -= dt;
+            if (_armsQuiet <= 0f) Holster();
         }
 
         // ------------------------------------------------------------------ the aim
@@ -626,7 +748,13 @@ namespace RoadDemo
                           !(InCover && _ducked);
             // what the arm is turned at: a man's chest, or the flank of a machine
             var markAt = onCar ? CarMark.Tf.position : (Target != null && Target.Tf ? Target.Tf.position : Tf.position);
-            var markAim = onCar ? CarAim(CarMark) : (Target != null ? Target.ChestPosition : Tf.position);
+            // his Tf is asked for twice over on purpose: a CrewWalker is a plain object
+            // and outlives the body it drives, so a man who was removed from the scene
+            // mid-fight (a deserter struck off the roster) is a Target that is NOT null
+            // with a Transform that has been destroyed. Reading his chest through it threw
+            // out of LateUpdate every frame for the rest of the run.
+            var markAim = onCar ? CarAim(CarMark)
+                                : (Target != null && Target.Tf ? Target.ChestPosition : Tf.position);
             if (aiming)
             {
                 var flat = markAt - Tf.position;
@@ -737,6 +865,7 @@ namespace RoadDemo
         public void TickCrew(float dt)
         {
             if (DriveTrace.On) TracePed(dt);
+            TickArms(dt);
             // KEEPING LOW IS THIS FRAME'S DECISION, NOT A STATE. It is set by the one
             // branch that wants it - the last few metres to a flank with rounds in the
             // air - and that branch re-decides it every frame, so it is cleared here
@@ -770,10 +899,10 @@ namespace RoadDemo
                         // the gun leaves the hand part-way down and lies where it fell -
                         // but not while he is still in the air off a machine, or it is
                         // left hanging at head height over the road he is falling into
-                        if (!_gunDropped && !Spilling && at >= len * 0.45f) DropGun();
+                        if (!_gunFallDone && !Spilling && at >= len * 0.45f) DropGun();
                         if (at >= len - 0.03f) HoldPose(PoseDeath);
                     }
-                    else if (!_gunDropped && !Spilling) DropGun();
+                    else if (!_gunFallDone && !Spilling) DropGun();
                     return;
 
                 case Mode.Standing:
@@ -2010,7 +2139,17 @@ namespace RoadDemo
         const float OnTheMove = 1.5f;
 
         bool _wasClosing, _coverLooked;
-        bool _gunDropped;
+
+        /// <summary>The fall has been run; do not run it again. Not the same question as
+        /// <see cref="GunDropped"/> - a man who died with the gun still under his coat
+        /// has had his fall run and dropped nothing.</summary>
+        bool _gunFallDone;
+
+        /// <summary>His gun has left his hand for the road, on the way down. A man who
+        /// died with it still under his coat never dropped anything, and this stays
+        /// false for him - which is the difference between a piece lying in the street
+        /// and a piece the books still have against his name.</summary>
+        public bool GunDropped { get; private set; }
 
         /// <summary>How far inside his gun's range this man closes to before he stops
         /// and fires - dealt per man, so a crew fans out into a loose line instead of
@@ -2021,8 +2160,9 @@ namespace RoadDemo
         // barrel where the hand was pointing. It stays a child of nothing: a prop now.
         void DropGun()
         {
-            _gunDropped = true;
-            if (Weapon == null) return;
+            _gunFallDone = true;
+            if (Weapon == null) return;   // it never came out; it goes down with him
+            GunDropped = true;
             var gun = Weapon;
             var muzzle = CrewArms.MuzzleOf(gun);
             var along = muzzle != null ? muzzle.forward : gun.forward;

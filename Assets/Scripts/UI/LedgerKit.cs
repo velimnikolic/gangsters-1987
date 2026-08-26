@@ -48,6 +48,22 @@ namespace LivingCity.UI
             rect.sizeDelta = new Vector2(w, 0f);
         }
 
+        /// <summary>
+        /// A cell inside a row that does NOT take the row's whole height - a fixed band
+        /// of it, offset from the row's centre line. What a two-line column needs: the
+        /// state word in the upper band, its note in the lower, neither of them centred
+        /// on the row and so neither of them overlapping the other.
+        /// </summary>
+        public static void FillCell(RectTransform rect, float x, float w, float centreY,
+            float height)
+        {
+            rect.anchorMin = new Vector2(0f, 0.5f);
+            rect.anchorMax = new Vector2(0f, 0.5f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.anchoredPosition = new Vector2(x, centreY);
+            rect.sizeDelta = new Vector2(w, height);
+        }
+
         public static void Stretch(RectTransform rect)
         {
             rect.anchorMin = Vector2.zero;
@@ -190,6 +206,120 @@ namespace LivingCity.UI
             return raw;
         }
 
+        /// <summary>
+        /// The three marks that make a loose sheet read as PAPER rather than a
+        /// rectangle: the foxing bloom where it was damp, the crease where it was
+        /// folded once, and the light falling across it from the top right.
+        ///
+        /// Laid over the stock and UNDER the type, so nothing here can dirty a figure.
+        /// Positions are fractions of the sheet, which is what lets the same call dress
+        /// a printout, a dossier and a newsprint page without three sets of numbers.
+        /// </summary>
+        public static void Aging(RectTransform sheet, float w, float h)
+        {
+            // Light from the top right - the same lamp the folder's shadow agrees with.
+            // Kept INSIDE the sheet: these marks are drawn on unmasked Card rects, so
+            // anything hanging over an edge lands on the folder underneath and reads as
+            // a stain on the desk rather than on the paper.
+            var lit = NewRect("Lit", sheet);
+            PlaceTopLeft(lit, w * 0.20f, 0f, w * 0.80f, h * 0.85f);
+            var light = lit.gameObject.AddComponent<RawImage>();
+            light.texture = LedgerStyle.RadialLight;
+            light.color = new Color(1f, 0.984f, 0.933f, 0.30f);
+            light.raycastTarget = false;
+
+            // The fold: one crease, at two fifths down, where a sheet folded to fit an
+            // envelope creases.
+            const float creaseBand = 14f;
+            var crease = NewRect("Crease", sheet);
+            PlaceTopLeft(crease, 0f, -h * 0.41f + creaseBand * 0.5f, w, creaseBand);
+            var fold = crease.gameObject.AddComponent<RawImage>();
+            fold.texture = LedgerStyle.Crease;
+            fold.color = Color.white;
+            fold.raycastTarget = false;
+
+            // Three blotches, at the design's own spots, each pulled in far enough that
+            // the whole bloom lands on the paper. Fixed rather than random: the same
+            // sheet must show the same stains every time it is turned to.
+            Foxing(sheet, w, h, 0.16f, 0.66f, 96f);
+            Foxing(sheet, w, h, 0.78f, 0.24f, 68f);
+            Foxing(sheet, w, h, 0.46f, 0.90f, 120f);
+        }
+
+        /// <summary>
+        /// One foxing bloom, at a fraction across and down the sheet. The centre is
+        /// clamped so the whole bloom stays on the paper - a stain that hangs off an
+        /// edge is a stain on whatever is behind the sheet, which is the desk.
+        /// </summary>
+        public static void Foxing(RectTransform sheet, float w, float h,
+            float acrossFraction, float downFraction, float diameter)
+        {
+            var radius = diameter * 0.5f;
+            var cx = Mathf.Clamp(w * acrossFraction, radius, w - radius);
+            var cy = -Mathf.Clamp(h * downFraction, radius, h - radius);
+
+            var rect = NewRect("Foxing", sheet);
+            PlaceTopLeft(rect, cx - radius, cy + radius, diameter, diameter);
+            var image = rect.gameObject.AddComponent<RawImage>();
+            image.texture = LedgerStyle.Foxing;
+            image.color = new Color(150f / 255f, 110f / 255f, 58f / 255f, 0.10f);
+            image.raycastTarget = false;
+        }
+
+        /// <summary>
+        /// The staple through the top left of a stapled file: two metal quads, canted
+        /// the way a stapler drives them, with a shadow under each. Drawn rather than
+        /// textured - it is two rectangles, and a texture for two rectangles is waste.
+        /// </summary>
+        public static void Staple(Transform parent, float x, float y)
+        {
+            for (var i = 0; i < 2; i++)
+            {
+                var rect = NewRect("Staple", parent);
+                PlaceTopLeft(rect, x + i * 9f, y - i * 2f, 16f, 4f);
+                rect.localRotation = Quaternion.Euler(0f, 0f, 38f);
+                var image = rect.gameObject.AddComponent<Image>();
+                image.color = new Color(0.72f, 0.74f, 0.77f);
+                image.raycastTarget = false;
+
+                // The bite it takes out of the paper under it.
+                var shade = NewRect("Bite", parent);
+                PlaceTopLeft(shade, x + i * 9f + 1f, y - i * 2f - 1.5f, 16f, 4f);
+                shade.localRotation = Quaternion.Euler(0f, 0f, 38f);
+                shade.SetSiblingIndex(rect.GetSiblingIndex());
+                var bite = shade.gameObject.AddComponent<Image>();
+                bite.color = new Color(0.28f, 0.22f, 0.14f, 0.35f);
+                bite.raycastTarget = false;
+            }
+        }
+
+        /// <summary>A pencil smudge - the heel of a hand dragged across soft graphite.
+        /// Elliptical and very faint; it belongs low on a sheet somebody wrote on.</summary>
+        public static void PencilSmudge(Transform parent, float x, float y, float w, float h)
+        {
+            var rect = NewRect("Smudge", parent);
+            PlaceTopLeft(rect, x, y, w, h);
+            rect.localRotation = Quaternion.Euler(0f, 0f, -7f);
+            var image = rect.gameObject.AddComponent<RawImage>();
+            image.texture = LedgerStyle.Foxing;
+            image.color = new Color(0.16f, 0.15f, 0.14f, 0.13f);
+            image.raycastTarget = false;
+        }
+
+        /// <summary>The vignette over the whole screen: the file sits in a pool of lamp
+        /// light and the corners of the room fall away. Laid LAST, over everything, and
+        /// deaf to the pointer - it is light, not surface.</summary>
+        public static void Vignette(Transform parent)
+        {
+            var rect = NewRect("Vignette", parent);
+            Stretch(rect);
+            rect.SetAsLastSibling();
+            var image = rect.gameObject.AddComponent<RawImage>();
+            image.texture = LedgerStyle.Vignette;
+            image.color = new Color(1f, 1f, 1f, 0.55f);
+            image.raycastTarget = false;
+        }
+
         /// <summary>The soft shadow under a sheet - a 9-sliced blur laid 4 units down
         /// and right, drawn BEFORE the sheet so it sits under it.</summary>
         public static void ShadowUnder(RectTransform sheet, float spread = 10f, Color? tint = null)
@@ -227,16 +357,12 @@ namespace LivingCity.UI
             if (tiltDegrees != 0f)
                 rect.localRotation = Quaternion.Euler(0f, 0f, tiltDegrees);
 
-            var shadow = NewRect("Shadow", rect);
-            shadow.anchorMin = Vector2.zero;
-            shadow.anchorMax = Vector2.one;
-            shadow.offsetMin = new Vector2(-shadowSpread + 4f, -shadowSpread - 5f);
-            shadow.offsetMax = new Vector2(shadowSpread + 4f, shadowSpread - 5f);
-            var image = shadow.gameObject.AddComponent<Image>();
-            image.sprite = LedgerStyle.SoftShadow;
-            image.type = Image.Type.Sliced;
-            image.color = LedgerStyle.Shadow;
-            image.raycastTarget = false;
+            // TWO shadows, which is what a sheet lying on another sheet actually
+            // throws: a tight dark CONTACT shadow right under its edge, and a wide soft
+            // CAST one further out. One shadow at one spread reads as a floating card;
+            // the pair reads as paper resting on paper.
+            SheetShadow(rect, "Cast", shadowSpread * 1.6f, new Vector2(4f, -16f), 0.55f);
+            SheetShadow(rect, "Contact", shadowSpread * 0.3f, new Vector2(0f, -3f), 1f);
 
             var paper = NewRect("Paper", rect);
             Stretch(paper);
@@ -245,7 +371,38 @@ namespace LivingCity.UI
             else
                 Fill(paper, stock);
             Grain(paper, w, h, 0.8f);
+
+            // The cut edge of the stock, and the lit top edge above it - a sheet is
+            // three-dimensional at its border and nowhere else.
+            var edge = NewRect("Edge", rect);
+            Stretch(edge);
+            Frame(edge, 1f, new Color(120f / 255f, 95f / 255f, 55f / 255f, 0.25f));
+            var highlight = NewRect("Top light", rect);
+            highlight.anchorMin = new Vector2(0f, 1f);
+            highlight.anchorMax = new Vector2(1f, 1f);
+            highlight.pivot = new Vector2(0.5f, 1f);
+            highlight.anchoredPosition = Vector2.zero;
+            highlight.sizeDelta = new Vector2(0f, 1f);
+            Fill(highlight, new Color(1f, 1f, 1f, 0.35f));
             return rect;
+        }
+
+        /// <summary>One layer of a sheet's shadow, inside the sheet's own rect so it
+        /// tilts, hides and dies with it.</summary>
+        static void SheetShadow(RectTransform sheet, string name, float spread,
+            Vector2 offset, float strength)
+        {
+            var shadow = NewRect(name, sheet);
+            shadow.anchorMin = Vector2.zero;
+            shadow.anchorMax = Vector2.one;
+            shadow.offsetMin = new Vector2(-spread + offset.x, -spread + offset.y);
+            shadow.offsetMax = new Vector2(spread + offset.x, spread + offset.y);
+            var image = shadow.gameObject.AddComponent<Image>();
+            image.sprite = LedgerStyle.SoftShadow;
+            image.type = Image.Type.Sliced;
+            var tint = LedgerStyle.Shadow;
+            image.color = new Color(tint.r, tint.g, tint.b, tint.a * strength);
+            image.raycastTarget = false;
         }
 
         /// <summary>The paper Image of a Card - the surface to make a raycast target.</summary>
@@ -433,9 +590,26 @@ namespace LivingCity.UI
             PlaceTopLeft(frame, x, y, w, h);
             Fill(frame, tint ?? LedgerStyle.PolaroidDark);
 
-            var hatch = NewRect("Hatch", frame);
-            Stretch(hatch);
-            Texture(hatch, LedgerStyle.Hatch, Color.white, w, h, 20f);
+            // A real halftone screen, not a line hatch: two offset dot grids over a lit
+            // gradient, which is what a photograph reproduced in a typed file in 1987
+            // actually was. The tile is 12 units square and point-filtered, so the dots
+            // stay dots at the size a mug shot is printed.
+            var lit = NewRect("Lit", frame);
+            Stretch(lit);
+            Gradient(lit, LedgerStyle.SheetFall);
+
+            var screen = NewRect("Halftone", frame);
+            Stretch(screen);
+            Texture(screen, LedgerStyle.Halftone, new Color(1f, 1f, 1f, 0.9f), w, h, 12f);
+
+            // The plate's own darkened border - the edge of an exposure, not a frame.
+            var burn = NewRect("Burn", frame);
+            Stretch(burn);
+            var burnImage = burn.gameObject.AddComponent<Image>();
+            burnImage.sprite = LedgerStyle.SoftShadow;
+            burnImage.type = Image.Type.Sliced;
+            burnImage.color = new Color(50f / 255f, 36f / 255f, 18f / 255f, 0.35f);
+            burnImage.raycastTarget = false;
 
             Frame(frame, 1f, LedgerStyle.InkFaint);
 
@@ -458,9 +632,12 @@ namespace LivingCity.UI
         public static void Greenbar(Transform parent, float x, float y, float w, float h,
             float pitch)
         {
+            // NO RectMask2D: the band heights are already clamped to what is left of
+            // the sheet, so the mask was redundant - and a RectMask2D clips on SCREEN
+            // axes, which would cut the bands square the moment the sheet was tilted
+            // off true. The sheet is tilted, so the mask had to go.
             var root = NewRect("Bands", parent);
             PlaceTopLeft(root, x, y, w, h);
-            root.gameObject.AddComponent<RectMask2D>();
             var band = 0;
             for (var top = 0f; top < h; top += pitch, band++)
                 if (band % 2 == 1)
@@ -649,18 +826,40 @@ namespace LivingCity.UI
 
         /// <summary>A rubber stamp: red condensed caps in a double frame, tilted, never
         /// quite opaque. Laid over whatever it judges.</summary>
+        /// <summary>
+        /// A rubber stamp: a double-ruled box and a letter-spaced word, canted off
+        /// square. Deliberately UNEVEN - a rubber stamp is a hand pressing a wet block
+        /// onto paper, so the box is two and a half units rather than a crisp two, one
+        /// side of the frame takes more ink than the other, and the whole thing sits at
+        /// an angle nobody would choose on purpose.
+        /// </summary>
         public static RectTransform Stamp(Transform parent, string word, float x, float y,
-            float w, float h, float tilt = -7f, float size = 20f)
+            float w, float h, float tilt = -7.4f, float size = 20f)
         {
             var rect = NewRect("Stamp " + word, parent);
             PlaceTopLeft(rect, x, y, w, h);
             rect.pivot = new Vector2(0.5f, 0.5f);
             rect.anchoredPosition = new Vector2(x + w * 0.5f, y - h * 0.5f);
             rect.localRotation = Quaternion.Euler(0f, 0f, tilt);
-            Frame(rect, 2f, LedgerStyle.StampRed);
+
+            Frame(rect, 2.5f, LedgerStyle.StampRed);
+
+            // The uneven press: the block met the paper harder down one edge, so that
+            // edge took more ink. Two extra hairlines rather than a second full frame -
+            // a stamp that inked evenly all round is a stamp nobody pressed by hand.
+            var heavy = NewRect("Heavy edge", rect);
+            heavy.anchorMin = new Vector2(0f, 0f);
+            heavy.anchorMax = new Vector2(0f, 1f);
+            heavy.pivot = new Vector2(0f, 0.5f);
+            heavy.anchoredPosition = Vector2.zero;
+            heavy.sizeDelta = new Vector2(3.5f, 0f);
+            Fill(heavy, new Color(LedgerStyle.StampRed.r, LedgerStyle.StampRed.g,
+                LedgerStyle.StampRed.b, LedgerStyle.StampRed.a * 0.55f));
+
             var inner = NewRect("Inner", rect);
             Stretch(inner, 3f);
             Frame(inner, 1f, LedgerStyle.StampRed);
+
             var text = Text("Word", rect, LedgerStyle.Condensed, size, LedgerStyle.StampRed,
                 TextAlignmentOptions.Center);
             Stretch(text.rectTransform);

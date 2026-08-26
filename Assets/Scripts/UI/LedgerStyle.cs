@@ -365,6 +365,7 @@ namespace LivingCity.UI
                 slot.name = "Ledger " + name;
                 if (dilate > 0f && slot.material)
                     slot.material.SetFloat(ShaderUtilities.ID_FaceDilate, dilate);
+                InkBleed(slot.material);
                 if (!Mathf.Approximately(optical, 1f))
                 {
                     // faceInfo is a struct behind a property - read, set, write back, or
@@ -437,11 +438,38 @@ namespace LivingCity.UI
             return slot;
         }
 
+        /// <summary>
+        /// The ink bleed: every typed letter in the book sits in a faint halo of its own
+        /// ink, the way type pressed into soft paper wicks a fraction into the fibre.
+        ///
+        /// Done on the FACE's shared material - a runtime TMP font asset owns exactly one
+        /// - so the whole book gets it for one material and no extra draw calls. The
+        /// per-label alternative (outlineWidth on a TMP_Text) instantiates a material per
+        /// label, and this page prints hundreds of them.
+        ///
+        /// A zero-offset underlay rather than a drop shadow: the design asks for
+        /// `0 0 .4px`, which is a bleed in every direction and not a light source.
+        /// </summary>
+        static void InkBleed(Material material)
+        {
+            if (!material || !material.HasProperty(ShaderUtilities.ID_UnderlayColor))
+                return;
+
+            material.EnableKeyword(ShaderUtilities.Keyword_Underlay);
+            material.SetColor(ShaderUtilities.ID_UnderlayColor,
+                new Color(36f / 255f, 31f / 255f, 26f / 255f, 0.55f));
+            material.SetFloat(ShaderUtilities.ID_UnderlayOffsetX, 0f);
+            material.SetFloat(ShaderUtilities.ID_UnderlayOffsetY, 0f);
+            material.SetFloat(ShaderUtilities.ID_UnderlayDilate, 0.05f);
+            material.SetFloat(ShaderUtilities.ID_UnderlaySoftness, 0.09f);
+        }
+
         // ------------------------------------------------------------------ sprites
 
         static Sprite rounded, softShadow, roundedSmall, disc, ring;
         static Texture2D paperGrain, radialLight, hatch, deskFall, sheetFall, deskStripe;
         static Texture2D dotRule, fadeUp;
+        static Texture2D halftone, foxing, crease, vignette, speckle;
 
         /// <summary>A 9-sliced rounded rectangle, 6-unit corners - the folder's shell.</summary>
         public static Sprite Rounded => rounded ??= MakeRounded(24, 6f);
@@ -489,6 +517,29 @@ namespace LivingCity.UI
         /// any pair of colours, at the cost of one shared 64-texel column.</summary>
         public static Texture2D FadeUp => fadeUp ??= MakeFadeUp();
 
+        /// <summary>A real halftone: two dot grids at 4 and 6 units, offset from each
+        /// other, the coarse one darker. What a 1987 photograph in a typed file actually
+        /// looks like - and what a 45-degree line hatch never did.</summary>
+        public static Texture2D Halftone => halftone ??= MakeHalftone();
+
+        /// <summary>A foxing blotch - the rust-brown bloom old paper grows where it was
+        /// damp. Soft-edged and irregular; three of them go on a sheet.</summary>
+        public static Texture2D Foxing => foxing ??= MakeFoxing();
+
+        /// <summary>The fold: dark on the upper side of the crease line, bright on the
+        /// lower, over a fourteen-unit band. A sheet that was folded once and flattened
+        /// out again catches the light differently either side of the line.</summary>
+        public static Texture2D Crease => crease ??= MakeCrease();
+
+        /// <summary>The lamp's opposite: clear in the middle, closing to darkness at the
+        /// edges. Laid over the WHOLE screen, above the folder, so the file sits in a
+        /// pool of light instead of on a lit rectangle.</summary>
+        public static Texture2D Vignette => vignette ??= MakeVignette();
+
+        /// <summary>The desk's fine speckle - dust and the grain of an old finish, at
+        /// three units. Under the stripe, over the fall.</summary>
+        public static Texture2D Speckle => speckle ??= MakeSpeckle();
+
         // Static state outlives Play when domain reload is off - the runtime-made
         // assets do not, so a stale reference would be a destroyed object.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -500,6 +551,7 @@ namespace LivingCity.UI
             rounded = roundedSmall = softShadow = disc = ring = null;
             paperGrain = radialLight = hatch = deskFall = sheetFall = deskStripe = null;
             dotRule = fadeUp = null;
+            halftone = foxing = crease = vignette = speckle = null;
         }
 
         static Sprite MakeRounded(int size, float radius)
@@ -747,6 +799,171 @@ namespace LivingCity.UI
                 new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255),
                 new Color32(255, 255, 255, 0), new Color32(255, 255, 255, 0),
             });
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        /// <summary>
+        /// A true halftone screen. Two grids of dots - a coarse one on a six-unit pitch
+        /// at 85% ink, a fine one on four at 45%, offset half a cell from each other so
+        /// they never line up into a plaid. Twelve units is the least common multiple of
+        /// the two pitches, so the tile repeats with no seam and no beat frequency.
+        ///
+        /// Point-filtered: a halftone dot is a HARD dot, and bilinear turns a screen
+        /// into grey mud at exactly the size a mug shot is printed.
+        /// </summary>
+        static Texture2D MakeHalftone()
+        {
+            const int size = 24;          // 12 logical units at 2 texels each
+            const int coarse = 12;        // a 6-unit pitch
+            const int fine = 8;           // a 4-unit pitch
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.name = "Ledger Halftone";
+            tex.wrapMode = TextureWrapMode.Repeat;
+            tex.filterMode = FilterMode.Point;
+
+            var pixels = new Color32[size * size];
+            for (var y = 0; y < size; y++)
+                for (var x = 0; x < size; x++)
+                {
+                    var a = 0f;
+
+                    // The coarse screen, centred in its cell.
+                    var cx = x % coarse - coarse * 0.5f + 0.5f;
+                    var cy = y % coarse - coarse * 0.5f + 0.5f;
+                    if (cx * cx + cy * cy <= 4.4f)
+                        a = 0.85f;
+
+                    // The fine screen, offset half a cell so the two never coincide.
+                    var fx = (x + fine / 2) % fine - fine * 0.5f + 0.5f;
+                    var fy = (y + fine / 2) % fine - fine * 0.5f + 0.5f;
+                    if (fx * fx + fy * fy <= 1.4f && a < 0.45f)
+                        a = 0.45f;
+
+                    pixels[y * size + x] = new Color32(0, 0, 0, (byte)(a * 255f));
+                }
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        /// <summary>
+        /// One foxing blotch: a soft brown bloom, deliberately off-round. The radius is
+        /// modulated by the angle so no two directions fall off alike - a perfectly
+        /// circular stain reads as a UI element, which is the one thing it must not.
+        /// </summary>
+        static Texture2D MakeFoxing()
+        {
+            const int size = 64;
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.name = "Ledger Foxing";
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
+
+            var pixels = new Color32[size * size];
+            var half = size * 0.5f;
+            for (var y = 0; y < size; y++)
+                for (var x = 0; x < size; x++)
+                {
+                    var dx = x + 0.5f - half;
+                    var dy = y + 0.5f - half;
+                    var d = Mathf.Sqrt(dx * dx + dy * dy) / half;
+
+                    // Two low harmonics wobble the edge; the phases are arbitrary and
+                    // fixed, so the same blotch comes out every run.
+                    var angle = Mathf.Atan2(dy, dx);
+                    var wobble = 1f + 0.16f * Mathf.Sin(angle * 3f + 0.7f)
+                                    + 0.09f * Mathf.Sin(angle * 5f - 1.9f);
+
+                    var a = 1f - Mathf.Clamp01(d / (0.86f * wobble));
+                    a = a * a;                       // soft, damp-edged, not a disc
+                    pixels[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+                }
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        /// <summary>The fold, as a one-column band: shadow above the crease line and a
+        /// lifted highlight below it, both dying out over seven units either way. Laid
+        /// across a sheet at the height it was folded.</summary>
+        static Texture2D MakeCrease()
+        {
+            const int size = 32;             // the 14-unit band, oversampled
+            var tex = new Texture2D(1, size, TextureFormat.RGBA32, false);
+            tex.name = "Ledger Crease";
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
+
+            var pixels = new Color32[size];
+            for (var y = 0; y < size; y++)
+            {
+                // Row 0 is the BOTTOM of the band. Below the line the paper catches the
+                // light; above it, it shades.
+                var t = (y + 0.5f) / size;               // 0 at foot, 1 at head
+                var fromLine = (t - 0.5f) * 2f;          // -1 below, +1 above
+                var fall = 1f - Mathf.Abs(fromLine);
+                fall *= fall;
+
+                pixels[y] = fromLine >= 0f
+                    ? new Color32(60, 48, 30, (byte)(fall * 60f))       // shadow above
+                    : new Color32(255, 250, 236, (byte)(fall * 70f));   // highlight below
+            }
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        /// <summary>The vignette: clear through the middle two-fifths, closing to a
+        /// heavy dark at the corners. The inverse curve of the lamp, and drawn over
+        /// everything rather than under it - the file is IN the light, not beside it.</summary>
+        static Texture2D MakeVignette()
+        {
+            const int size = 128;
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.name = "Ledger Vignette";
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
+
+            var pixels = new Color32[size * size];
+            var half = size * 0.5f;
+            for (var y = 0; y < size; y++)
+                for (var x = 0; x < size; x++)
+                {
+                    var dx = (x + 0.5f - half) / half;
+                    var dy = (y + 0.5f - half) / half;
+                    var d = Mathf.Sqrt(dx * dx + dy * dy);
+
+                    // Nothing at all inside 0.40, then a smooth close to full at the
+                    // corner - the design's own stop.
+                    var t = Mathf.Clamp01((d - 0.40f) / 0.75f);
+                    t = t * t * (3f - 2f * t);
+                    pixels[y * size + x] = new Color32(0, 0, 0, (byte)(t * 255f));
+                }
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        /// <summary>The desk's speckle: sparse single-texel dust on a three-unit grid,
+        /// dealt from a fixed seed so the desk is the same desk every run.</summary>
+        static Texture2D MakeSpeckle()
+        {
+            const int size = 48;
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.name = "Ledger Speckle";
+            tex.wrapMode = TextureWrapMode.Repeat;
+            tex.filterMode = FilterMode.Bilinear;
+
+            var rng = new System.Random(1987);
+            var pixels = new Color32[size * size];
+            for (var i = 0; i < pixels.Length; i++)
+            {
+                var roll = rng.Next(0, 100);
+                var a = roll < 4 ? 0.22f : roll < 12 ? 0.10f : 0f;
+                pixels[i] = new Color32(255, 255, 255, (byte)(a * 255f));
+            }
+            tex.SetPixels32(pixels);
             tex.Apply(false, true);
             return tex;
         }

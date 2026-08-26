@@ -15,6 +15,9 @@ namespace RoadDemo
     // the kerb in front of the station and it swings into its stall.
     public class PolicePatrolCar : DemoVehicle, IPatrolMarker, IPoliceUnit
     {
+        // the law rests on its docking and holds a scene: never cleared away
+        protected override bool VanishesWhenStuck => false;
+
         public enum Mode { Resting, Undocking, Patrolling, Returning, Docking, Responding, OnScene }
 
         /// <summary>Redraws tolerated when a drawn waypoint has no route from

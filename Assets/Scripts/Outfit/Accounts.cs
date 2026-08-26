@@ -3,14 +3,16 @@ using LivingCity.Personnel;
 
 namespace LivingCity.Outfit
 {
-    /// <summary>One week's actual transactions. Everything here is money that MOVED -
+    /// <summary>One day's actual transactions. Everything here is money that MOVED -
     /// never a display total; totals, profit, tax and wealth are derived in
     /// <see cref="BalanceMath"/> at read time. An open sheet's wages are derived live
-    /// from the roster; <see cref="WagesPaid"/> freezes only when the week commits and
-    /// the sheet becomes a historical record.</summary>
-    public sealed class WeekSheet
+    /// from the roster; <see cref="WagesPaid"/> freezes only when midnight closes the
+    /// day and the sheet becomes a historical record.</summary>
+    public sealed class DaySheet
     {
-        public int Week;
+        /// <summary>The campaign day this sheet covers - its whole identity. The
+        /// finances page pages through these one at a time.</summary>
+        public int Day;
 
         public int LegalIncome;
         public int IllegalIncome;
@@ -20,34 +22,61 @@ namespace LivingCity.Outfit
         public int Purchases;
         public int OtherCosts;
 
-        /// <summary>Frozen at commit; meaningless while the sheet is open.</summary>
+        /// <summary>Frozen at midnight; meaningless while the sheet is open.</summary>
         public int WagesPaid;
 
         public int TaxPaid;
 
-        /// <summary>A committed, read-only record of a finished week.</summary>
+        /// <summary>A committed, read-only record of a finished day.</summary>
         public bool Closed;
     }
 
     /// <summary>
-    /// The outfit's money: the safe, the unlaundered pile, and the weekly sheets - the
-    /// last sheet is the open week. Pure data; every mutation goes through
+    /// The outfit's money: the safe, the unlaundered pile, and the daily sheets - the
+    /// last sheet is today, still open. Pure data; every mutation goes through
     /// OutfitDirector so the ledger's Version moves with the books.
     /// </summary>
     public sealed class Accounts
     {
-        /// <summary>Week one's stake.</summary>
+        /// <summary>Day one's stake.</summary>
         public const int StartingSafe = 15_000;
+
+        /// <summary>How many days of closed sheets are kept. A year of them: enough for
+        /// the finances page to page back through a long campaign, bounded so a machine
+        /// left running does not accumulate sheets without end.</summary>
+        public const int SheetsKept = 365;
 
         public int Safe = StartingSafe;
 
         /// <summary>Illegal profit not yet washed through a legitimate front. Grows at
-        /// commit; the laundering order will drain it later.</summary>
+        /// midnight; the laundering order will drain it later.</summary>
         public int RiskyMoney;
 
-        public readonly List<WeekSheet> Sheets = new List<WeekSheet>();
+        /// <summary>Oldest first; the last is today's open sheet.</summary>
+        public readonly List<DaySheet> Sheets = new List<DaySheet>();
 
-        public WeekSheet Current => Sheets.Count > 0 ? Sheets[Sheets.Count - 1] : null;
+        public DaySheet Current => Sheets.Count > 0 ? Sheets[Sheets.Count - 1] : null;
+
+        /// <summary>The sheet for one campaign day, or null if it is out of the window
+        /// kept. Searched from the back: the page nearly always wants a recent day.</summary>
+        public DaySheet SheetFor(int day)
+        {
+            for (var i = Sheets.Count - 1; i >= 0; i--)
+                if (Sheets[i].Day == day)
+                    return Sheets[i];
+            return null;
+        }
+
+        /// <summary>Opens tomorrow's sheet and drops any that have fallen out of the
+        /// kept window, so a campaign that runs for years does not grow without end.</summary>
+        public DaySheet Open(int day)
+        {
+            var sheet = new DaySheet { Day = day };
+            Sheets.Add(sheet);
+            if (Sheets.Count > SheetsKept)
+                Sheets.RemoveRange(0, Sheets.Count - SheetsKept);
+            return sheet;
+        }
     }
 
     public enum RiskRating
@@ -71,16 +100,16 @@ namespace LivingCity.Outfit
         public const int RiskLowCeiling = 5_000;
         public const int RiskModerateCeiling = 20_000;
 
-        public static int TotalIncome(WeekSheet sheet) =>
+        public static int TotalIncome(DaySheet sheet) =>
             sheet == null ? 0 : sheet.LegalIncome + sheet.IllegalIncome + sheet.SalesIncome;
 
-        public static int TotalOutgoings(WeekSheet sheet, int wages) =>
+        public static int TotalOutgoings(DaySheet sheet, int wages) =>
             wages + (sheet == null ? 0 : sheet.Bribes + sheet.Purchases + sheet.OtherCosts);
 
-        public static int Profit(WeekSheet sheet, int wages) =>
+        public static int Profit(DaySheet sheet, int wages) =>
             TotalIncome(sheet) - TotalOutgoings(sheet, wages);
 
-        /// <summary>Tax falls due on profit only - a losing week owes nothing.</summary>
+        /// <summary>Tax falls due on profit only - a losing day owes nothing.</summary>
         public static int TaxDue(int profit) =>
             profit > 0 ? profit * TaxRatePercent / 100 : 0;
 
@@ -92,7 +121,7 @@ namespace LivingCity.Outfit
 
         /// <summary>
         /// The purchase gate's pure half: null means paid (safe debited, the open
-        /// week's Purchases line booked); otherwise the refusal, with the shortfall
+        /// day's Purchases line booked); otherwise the refusal, with the shortfall
         /// spelled out and no state touched. OutfitDirector wraps this with Version.
         /// </summary>
         public static string TryPurchase(Accounts accounts, int price)
@@ -126,7 +155,7 @@ namespace LivingCity.Outfit
     /// player reads and the sheet the tests assert are the same arithmetic.</summary>
     public readonly struct FinanceReport
     {
-        public readonly int Week;
+        public readonly int Day;
         public readonly bool Closed;
         public readonly int LegalIncome;
         public readonly int IllegalIncome;
@@ -148,16 +177,16 @@ namespace LivingCity.Outfit
         public readonly int TotalWealth;
 
         /// <summary>An open sheet reads live wages; a closed one reads what was paid.</summary>
-        public static FinanceReport For(WeekSheet sheet, int liveWages, int safe,
+        public static FinanceReport For(DaySheet sheet, int liveWages, int safe,
             int riskyMoney, int assets)
         {
             var wages = sheet != null && sheet.Closed ? sheet.WagesPaid : liveWages;
             return new FinanceReport(sheet, wages, safe, riskyMoney, assets);
         }
 
-        FinanceReport(WeekSheet sheet, int wages, int safe, int riskyMoney, int assets)
+        FinanceReport(DaySheet sheet, int wages, int safe, int riskyMoney, int assets)
         {
-            Week = sheet?.Week ?? 1;
+            Day = sheet?.Day ?? 1;
             Closed = sheet?.Closed ?? false;
             LegalIncome = sheet?.LegalIncome ?? 0;
             IllegalIncome = sheet?.IllegalIncome ?? 0;

@@ -38,12 +38,16 @@ namespace LivingCity.Personnel
             var roster = new Roster();
 
             // Draws 1..N, per man in id order: first name, surname (both redrawn together
-            // on a full-name collision among the six), the 11 attributes in enum order,
-            // then loyalty.
+            // on a full-name collision among the six), his rap sheet (a count, then three
+            // draws a line - see RapSheet.Deal), the 11 attributes in enum order, then
+            // loyalty. The order is FIXED: inserting a draw mid-sequence re-deals every
+            // seed's starting six, which is why the rap sheet went in beside the name
+            // rather than anywhere more convenient.
             for (var i = 0; i < MemberCount; i++)
             {
                 var member = new Character { Id = roster.NextCharacterId() };
                 DrawName(rng, roster, member);
+                RapSheet.Deal(rng, member);
 
                 for (var a = 0; a < AttributeScale.Count; a++)
                     member.SetHalfSteps((CharacterAttribute)a,
@@ -94,6 +98,7 @@ namespace LivingCity.Personnel
             {
                 var member = new Character { Id = roster.NextCharacterId() };
                 DrawName(rng, roster, member);
+                RapSheet.Deal(rng, member);
 
                 for (var a = 0; a < AttributeScale.Count; a++)
                     member.SetHalfSteps((CharacterAttribute)a,
@@ -150,6 +155,8 @@ namespace LivingCity.Personnel
         {
             var member = new Character { Id = roster.NextCharacterId() };
             DrawName(rng, roster, member);
+            RapSheet.Deal(rng, member);
+
             for (var a = 0; a < AttributeScale.Count; a++)
                 member.SetHalfSteps((CharacterAttribute)a,
                     rng.Next(AttributeScale.MinHalfSteps, RecruitCeilingHalfSteps + 1));
@@ -200,6 +207,8 @@ namespace LivingCity.Personnel
 
             var member = new Character { Id = -1 };
             DrawName(rng, roster, member);
+            RapSheet.Deal(rng, member);
+
             for (var a = 0; a < AttributeScale.Count; a++)
                 member.SetHalfSteps((CharacterAttribute)a,
                     rng.Next(AttributeScale.MinHalfSteps, ceilingHalfSteps + 1));

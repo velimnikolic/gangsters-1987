@@ -272,11 +272,6 @@ namespace LivingCity.UI
                     pendingConfirm = Confirm.None;
                     dirty = true;
                 }
-                else if (assignMode)
-                {
-                    assignMode = false;
-                    dirty = true;
-                }
                 else if (givePickerItemId >= 0)
                 {
                     givePickerItemId = -1;
@@ -382,7 +377,6 @@ namespace LivingCity.UI
             if (StrategicMapHud.Instance)
                 StrategicMapHud.Instance.SetTargetHighlights(null, Color.clear);
             lastCloseFrame = Time.frameCount;
-            assignMode = false;
             pendingConfirm = Confirm.None;
             lastRefusal = "";
             HideHoverNote();
@@ -410,7 +404,6 @@ namespace LivingCity.UI
 
             if (pageKind != LedgerPage.Personnel)
             {
-                assignMode = false;
                 pendingConfirm = Confirm.None;
                 HideHoverNote();
                 if (sortMenu)
@@ -596,6 +589,13 @@ namespace LivingCity.UI
             Texture(stripe, LedgerStyle.DeskStripe, new Color(1f, 1f, 1f, 0.35f),
                 2600f, 1200f, 32f);
 
+            // Dust and the grain of an old finish. Finer than the stripe and at a
+            // different pitch, so the two never beat against each other into a moire.
+            var dust = NewRect("Speckle", desk);
+            Stretch(dust);
+            Texture(dust, LedgerStyle.Speckle, new Color(1f, 1f, 1f, 0.22f),
+                2600f, 1200f, 48f);
+
             // The light over the desk, above and behind the file - the one source
             // every shadow on the sheet agrees with.
             var lamp = NewRect("Lamp", desk);
@@ -614,15 +614,21 @@ namespace LivingCity.UI
             folder.pivot = new Vector2(0.5f, 1f);
             folder.anchoredPosition = new Vector2(0f, BookTop);
             folder.sizeDelta = new Vector2(BookW, BookH);
+            // Even the folder is not square to the desk - an eighth of a degree, which
+            // is under noticing and over reading as a rectangle drawn by a machine.
+            folder.localRotation = Quaternion.Euler(0f, 0f, -0.12f);
             Stock(folder, LedgerStyle.Manila, LedgerStyle.ManilaLow);
             Grain(folder, BookW, BookH, 1.2f);
-            ShadowUnder(folder, 26f, LedgerStyle.FolderShadow);
+            ShadowUnder(folder, 34f, LedgerStyle.FolderShadow);
 
             // ---- the paper: the page itself; its mask clips anything laid past ----
             paper = NewRect("Paper", folder);
             PlaceTopLeft(paper, PaperInset, -PaperInset, PaperW, PaperH);
             Gradient(paper, LedgerStyle.SheetFall);
             Grain(paper, PaperW, PaperH);
+            // The folder's own leaf is the oldest paper on the desk: it takes the fold,
+            // the foxing and the light before anything is laid on top of it.
+            Aging(paper, PaperW, PaperH);
             Frame(paper, 1f, new Color(120f / 255f, 95f / 255f, 55f / 255f, 0.35f));
             paper.gameObject.AddComponent<RectMask2D>();
 
@@ -650,6 +656,11 @@ namespace LivingCity.UI
             BuildOrdersPage(paper);
 
             SetPage(LedgerPage.Newspaper);
+
+            // The lamp's other half, and the LAST thing drawn: the room falls away at
+            // the edges of the light. Over the folder, not under it - the file is IN
+            // the pool of light, and a vignette behind it would only darken the desk.
+            Vignette(page.transform);
 
             // Built active for TMP's sake (a TextMeshProUGUI only loads its font in
             // OnEnable, which never runs under an inactive parent), hidden until P.
@@ -858,7 +869,7 @@ namespace LivingCity.UI
         static readonly string[] BlotterLabels =
         {
             "ON THE CLOCK", "POLICE HEAT", "RESPECT ON THE STREET",
-            "PAYROLL DUE", "IN THE SAFE",
+            "TRIBUTE DUE", "IN THE SAFE",
         };
 
         /// <summary>
@@ -867,10 +878,10 @@ namespace LivingCity.UI
         /// and a line of plain English under each - the last of which is the point,
         /// because a number nobody can read is not a readout.
         ///
-        /// The design's fourth cell is a TRIBUTE countdown. There is no tribute in the
-        /// sim and inventing one here would be a lie printed in the boss's own book, so
-        /// the slot carries the same shape of pressure the game actually has: what the
-        /// payroll comes to and how many days until it comes out of the safe.
+        /// The fourth cell is the TRIBUTE countdown, and it reads a real book: what the
+        /// houses above the outfit are owed and when the man calls for it (Outfit.Tribute,
+        /// re-priced off live turf every midnight). Nothing on this strip is furniture -
+        /// a figure nobody can act on has no business on a blotter.
         /// </summary>
         void BuildBlotter(RectTransform sheet)
         {
@@ -931,8 +942,7 @@ namespace LivingCity.UI
                 return;
 
             var roster = director.Roster;
-            var weekly = Outfit.Wages.WeeklyPayroll(roster);
-            var perDay = Outfit.Wages.PerDay(weekly);
+            var perDay = Outfit.Wages.DailyPayroll(roster);
 
             // ---- the clock. RefreshClock writes the figure; the note is the date.
             var day = outfit ? outfit.Campaign.Day : 1;
@@ -968,19 +978,42 @@ namespace LivingCity.UI
                 ? mine + " of " + all + " houses in the city are yours"
                 : "no business in the city answers to you";
 
-            // ---- when the books turn and the payroll comes out of the safe.
-            var into = (day - 1) % Outfit.Campaign.DaysPerWeek;
-            var left = Outfit.Campaign.DaysPerWeek - into;
-            hudValue[3].text = LedgerText.Cash(weekly);
-            hudValue[3].color = left <= 2 ? LedgerStyle.SoftRed : LedgerStyle.HudCream;
-            SetMeter(3, into, Outfit.Campaign.DaysPerWeek, LedgerStyle.HudAmber);
-            hudNote[3].text = left == 1 ? "payday tomorrow" : "payday in " + left + " days";
+            // ---- what is kicked up, and when the man calls for it.
+            var levy = outfit ? outfit.Tribute.Nearest() : null;
+            if (levy == null)
+            {
+                hudValue[3].text = "NOTHING";
+                hudValue[3].color = LedgerStyle.HudCream;
+                SetMeter(3, 0, Outfit.Tribute.CycleDays, LedgerStyle.HudAmber);
+                hudNote[3].text = "no house in this city is above you";
+            }
+            else
+            {
+                var houseName = Gangs.GangCatalog.Names[levy.GangId];
+                var hourNow = cityClock ? cityClock.Hour : 0f;
+                // The meter runs DOWN as the day comes: full is a fresh cycle, empty
+                // is the man on the step. Overdue leaves it empty and turns the figure.
+                var away = Mathf.Clamp(levy.DueDay - day, 0, Outfit.Tribute.CycleDays);
+                hudValue[3].text = LedgerText.Cash(levy.Amount);
+                hudValue[3].color = levy.Overdue || away <= 1
+                    ? LedgerStyle.SoftRed
+                    : LedgerStyle.HudCream;
+                SetMeter(3, away, Outfit.Tribute.CycleDays, LedgerStyle.HudMeterWarm);
+                hudNote[3].text = levy.Overdue
+                    ? "OVERDUE to " + houseName + " · they have not forgotten"
+                    : "to " + houseName + " · " +
+                      LedgerText.DueInPlain(levy.DueDay, day, hourNow);
+            }
 
             // ---- what is in the safe, and how long it lasts at this burn.
             var safe = outfit ? outfit.Accounts.Safe : 0;
-            hudValue[4].text = LedgerText.Cash(safe);
-            hudValue[4].color = safe < weekly ? LedgerStyle.SoftRed : LedgerStyle.HudCream;
             var runway = perDay > 0 ? safe / perDay : 0;
+            hudValue[4].text = LedgerText.Cash(safe);
+            // Three days' burn is the mark: below it the outfit is one bad night from
+            // missing a payroll, and the figure says so before the arithmetic does.
+            hudValue[4].color = perDay > 0 && runway <= 3
+                ? LedgerStyle.SoftRed
+                : LedgerStyle.HudCream;
             SetMeter(4, Mathf.Clamp(runway, 0, 10), 10, LedgerStyle.HudAmber);
             hudNote[4].text = perDay > 0
                 ? "-" + LedgerText.Cash(perDay).Substring(1) + " a day · " +
@@ -1162,13 +1195,12 @@ namespace LivingCity.UI
                     }
                     return member.FullName + " · " +
                            LedgerText.AssignmentLine(post, crewName) + " · " +
-                           LedgerText.Cash(Outfit.Wages.WageFor(member)) + " a week";
+                           LedgerText.Cash(Outfit.Wages.WageFor(member)) + " a day";
                 }
             }
 
-            var weekly = Outfit.Wages.WeeklyPayroll(roster);
-            return "payroll running · " + LedgerText.Cash(Outfit.Wages.PerDay(weekly)) +
-                   " a day";
+            return "payroll running · " +
+                   LedgerText.Cash(Outfit.Wages.DailyPayroll(roster)) + " a day";
         }
     }
 }

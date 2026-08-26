@@ -29,6 +29,8 @@ namespace RoadDemo
     /// </summary>
     public sealed class CrewBike : RoadBike
     {
+        protected override bool VanishesWhenStuck => false;
+
         public enum Mode { Parked, Riding, DriveBy }
 
         /// <summary>The crew whose lieutenant owns it; the crew on it. The book sells
@@ -172,7 +174,7 @@ namespace RoadDemo
         /// holding one. So both men are held to it, and CrewArms owns the measurement.</summary>
         void CapArms(CrewWalker man, bool pillion)
         {
-            if (man == null || !man.Armed || CrewArms.FitsASaddle(man.WeaponKind)) return;
+            if (man == null || !man.Carrying || CrewArms.FitsASaddle(man.WeaponKind)) return;
             var swap = CrewArms.ModelForKind(EquipmentKind.MachinePistol);
             // Nothing to swap TO - the ledger's model set has no machine pistol in it.
             // He keeps the long gun rather than riding out empty-handed: an unarmed pass
@@ -196,8 +198,11 @@ namespace RoadDemo
             if (man == null || man.Tf == null) return;
             // ...unless it has already left his hand. A dead man drops his gun part-way
             // through the fall and it lies where it fell; putting his own back in the
-            // fist afterwards would be a second gun out of nowhere.
-            if (man.Dead && man.Weapon == null) return;
+            // fist afterwards would be a second gun out of nowhere. A dead man who
+            // never DREW is a different case and is handed his own back on paper: the
+            // saddle's machine pistol was never in his fist either, and the books
+            // should not have him buried with a piece he did not own.
+            if (man.GunDropped) return;
             man.Arm(stowed, kind);
         }
 
@@ -888,6 +893,14 @@ namespace RoadDemo
                 return;
             }
 
+            // THE GUN COMES UP ON THE RUN-IN, not at the moment it can be used. The
+            // machine has a crew to shoot at and is closing on it; a piece that appears
+            // in the pillion's fist at the twenty-five metres Sees() allows reads as a
+            // gun conjured out of the air as the trigger is pulled. Every frame of the
+            // approach says so, which also keeps his own tick from putting it away
+            // between one pass and the next.
+            if (Pillion != null && !Pillion.Dead) Pillion.DrawGun();
+
             var mark = DemoCrews.NearestOf(target, Position);
             if (mark == null || mark.Tf == null) { Aim(_pillionPose, Pillion, null); Aim(_riderPose, Rider, null); return; }
 
@@ -898,7 +911,7 @@ namespace RoadDemo
             // thing that happens, it is a thing that ends in a shop window. With nobody
             // behind him the machine simply rides past; the pass is spent and it goes
             // home (DemoCrews.TickPassing).
-            bool pillionOn = Pillion != null && !Pillion.Dead && Pillion.Armed && Sees(Pillion, mark, blindAhead: true);
+            bool pillionOn = Pillion != null && !Pillion.Dead && Pillion.Carrying && Sees(Pillion, mark, blindAhead: true);
             Aim(_pillionPose, Pillion, pillionOn ? mark : null);
             if (pillionOn) Shoot(Pillion, mark, ref _pillionShot, dt);
             else _pillionShot = 0f;
@@ -924,6 +937,10 @@ namespace RoadDemo
             if (man == null) return;
             man.RidingAim = mark != null;
             man.AimAt(mark);
+            // the piece comes out HERE rather than being left to his own frame tick:
+            // Shoot runs on the next line of the caller, and a round fired the frame
+            // before the gun exists leaves from the middle of his chest.
+            if (mark != null) man.DrawGun();
         }
 
         void Shoot(CrewWalker man, CrewWalker mark, ref float timer, float dt)

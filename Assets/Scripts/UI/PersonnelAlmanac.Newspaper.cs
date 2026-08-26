@@ -50,7 +50,9 @@ namespace LivingCity.UI
             // The paper as an object on the desk: greyer, colder stock than the ledger's,
             // with its own shadow where it overhangs the file.
             var stock = Card("Newsprint", root, PageLeft, PageTop, PageWidth, NewsH,
-                LedgerStyle.Newsprint, shadowSpread: 14f, low: LedgerStyle.NewsprintLow);
+                LedgerStyle.Newsprint, tiltDegrees: 0.14f, shadowSpread: 14f,
+                low: LedgerStyle.NewsprintLow);
+            Aging(stock, PageWidth, NewsH);
 
             newsContent = NewRect("Edition", stock);
             Stretch(newsContent);
@@ -111,7 +113,8 @@ namespace LivingCity.UI
             Rule(newsContent, NewsLeft, -74f, NewsWidth, LedgerStyle.Ink, 2f);
             var dateline = Line(newsContent, LedgerStyle.SerifItalic, 13f, LedgerStyle.Ink,
                 NewsLeft, -80f, NewsWidth, 20f,
-                date.Masthead() + "   ·   VOL. LXI, No. " + (Outfit.Campaign.WeekOf(day) + 3) +
+                date.Masthead() + "   ·   VOL. LXI, No. " +
+                ((day - 1) % Outfit.Campaign.DaysPerYear + 1) +
                 "   ·   MORNING EDITION   ·   25 CENTS", TextAlignmentOptions.Center);
             dateline.characterSpacing = 1f;
             Rule(newsContent, NewsLeft, -102f, NewsWidth, LedgerStyle.Ink, 3f);

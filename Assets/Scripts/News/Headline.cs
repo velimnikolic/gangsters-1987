@@ -128,5 +128,13 @@ namespace LivingCity.News
             return weekday + " " + Day + " " + MonthNames[Month - 1].Substring(0, 3) +
                    " " + Year;
         }
+
+        /// <summary>"MON 5 JAN" - the year dropped, for a column too narrow to carry it
+        /// and a run of days that are all in the same one anyway.</summary>
+        public string Short()
+        {
+            var weekday = WeekdayNames[(DayOfYear - 1 + 3) % 7].Substring(0, 3);
+            return weekday + " " + Day + " " + MonthNames[Month - 1].Substring(0, 3);
+        }
     }
 }

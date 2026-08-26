@@ -88,6 +88,13 @@ namespace RoadDemo
         /// the camera underneath.</summary>
         static bool BookOpen => LivingCity.UI.PersonnelAlmanac.IsOpen;
 
+        /// <summary>Something already owns the whole screen: the book, or the plan
+        /// the wheel brings up past mapAt. Neither wants the street's furniture
+        /// printed across it - and IMGUI in particular prints over every canvas in
+        /// the scene, so a hint meant for the street lands on the paper itself.
+        /// </summary>
+        static bool ScreenTaken => BookOpen || TurfMapHud.IsOpen;
+
         void LateUpdate()
         {
             float dt = Time.unscaledDeltaTime;
@@ -183,8 +190,9 @@ namespace RoadDemo
         void OnGUI()
         {
             // IMGUI prints over every canvas in the scene, so this would land on the
-            // open book itself - and none of what the hint names works there anyway.
-            if (BookOpen)
+            // open book, or on the plan - and none of what the hint names works on
+            // either of them anyway.
+            if (ScreenTaken)
                 return;
 
             if (showHint)

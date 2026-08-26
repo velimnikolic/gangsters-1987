@@ -28,7 +28,10 @@ namespace LivingCity.UI
         const int FamilyColumns = 5;
         const float FamilyGap = 18f;
         const float FamilyCardW = (PageWidth - FamilyGap * (FamilyColumns - 1)) / FamilyColumns;
-        const float FamilyCardH = 250f;
+        /// <summary>Four rows deep: standing, turf, capos and what is OWED upward. The
+        /// tribute line is the reason the card grew - a house you are behind with is a
+        /// house that is about to be a problem, and it belongs on its own card.</summary>
+        const float FamilyCardH = 272f;
 
         const float FamiliesTop = FamilyMineY - FamilyMineH - 10f;
         const float FamiliesHeight = 452f;
@@ -277,14 +280,31 @@ namespace LivingCity.UI
             CardRow(card, pad, -142f, inner, "CAPOS",
                 capos > 0 ? capos.ToString() : "not known", LedgerStyle.Ink);
 
+            // What the outfit kicks up to this house, and when. A house below the
+            // outfit levies nothing, and the row says so rather than printing $0 -
+            // "nothing" is the answer the player is working toward.
+            var levy = outfit ? outfit.Tribute.For(gang.Id) : null;
+            var today = outfit ? outfit.Campaign.Day : 1;
+            var hourNow = cityClock ? cityClock.Hour : 0f;
+            CardRow(card, pad, -164f, inner, "OWED",
+                levy == null || levy.Amount <= 0
+                    ? "nothing — you are not under them"
+                    : LedgerText.Cash(levy.Amount) + " · " +
+                      (levy.Overdue
+                          ? "OVERDUE"
+                          : LedgerText.DueIn(levy.DueDay, today, hourNow)),
+                levy != null && levy.Amount > 0
+                    ? (levy.Overdue ? LedgerStyle.RedPen : LedgerStyle.Ink)
+                    : LedgerStyle.InkDim);
+
             // The door it operates behind, written in the margin in pen. The generated
             // city binds a business marker; the street city binds only the books -
             // either one names the door.
             var front = Gangs.GangRegistry.FrontBusinessOf(gang.Id);
             var books = Gangs.GangRegistry.FrontBooksOf(gang.Id);
-            Rule(card, pad, -166f, inner, LedgerStyle.InkFaint);
+            Rule(card, pad, -188f, inner, LedgerStyle.InkFaint);
             var note = Paragraph(card, LedgerStyle.SerifItalic, 13.5f, LedgerStyle.Ballpoint,
-                pad, -174f, inner, 38f,
+                pad, -196f, inner, 38f,
                 front ? front.BusinessName + " is the door."
                 : books != null
                     ? books.Sign +
@@ -302,7 +322,7 @@ namespace LivingCity.UI
                 var choice = (Outfit.Stance)s;
                 var gangId = gang.Id;
                 var button = Tape(card, LedgerText.StanceLabel(choice),
-                    pad + s * (buttonW + 4f), -212f, buttonW, 26f, () =>
+                    pad + s * (buttonW + 4f), -234f, buttonW, 26f, () =>
                     {
                         if (outfit)
                             outfit.SetStance(gangId, choice);

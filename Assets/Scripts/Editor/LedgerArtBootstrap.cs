@@ -116,15 +116,19 @@ namespace LivingCity.EditorTools
         /// never the police pack's machine of the same name - that one is liveried and
         /// is the law's.
         ///
-        /// THREE, and only the three the shelf actually lists - the outfit's black tourer,
-        /// the pack's motorbike and the boxless moped. The scooter used to be baked in
-        /// beside them and has not been for sale since it was measured (0.80 m of
+        /// FOUR, and only the four the shelf actually lists - the outfit's black tourer,
+        /// the pack's motorbike, the enduro and the boxless moped. The scooter used to be
+        /// baked in beside them and has not been for sale since it was measured (0.80 m of
         /// wheelbase, four wheels, no handlebars - ArmoryCatalog says why), so the book
         /// was carrying a photograph of a machine nobody can buy.</summary>
         static readonly string[] MotorcyclePaths =
         {
             "Assets/Prefabs/Vehicles/SM_Veh_Motorbike_Tourer_Black.prefab",
             "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Motorbike_01.prefab",
+            // the enduro is in no pack and in no traffic bucket: without this line the
+            // shelf photographs nothing at all where the dirt bike should be
+            // (EnduroBikeBaker bakes it)
+            "Assets/Prefabs/Vehicles/SM_Veh_Motorbike_Enduro_450.prefab",
             // the counter's moped is the boxless variant, not the pack's delivery
             // machine - the book must photograph the body that turns up at the kerb
             // (PortraitStudio.VehicleModelFor says why the box came off)

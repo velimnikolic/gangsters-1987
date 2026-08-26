@@ -44,6 +44,13 @@ namespace BikeDemo
         [MenuItem("Tools/Bike bench/Sit them on the outfit's black tourer", priority = 23)]
         static void MakeGangTourer() => Make("SM_Veh_Motorbike_Tourer_Black");
 
+        // The dirt bike, and the one on this list worth checking first after a re-bake:
+        // it is the only machine here that came from outside the Synty packs
+        // (EnduroBikeBaker), so its saddle, its pegs and its bars are the only ones nobody
+        // has seen a man sit on before.
+        [MenuItem("Tools/Bike bench/Sit them on the enduro", priority = 24)]
+        static void MakeEnduro() => Make("SM_Veh_Motorbike_Enduro_450");
+
         // ------------------------------------------------------------------ the baking
 
         static void Make(string machine)
