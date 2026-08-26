@@ -868,6 +868,16 @@ namespace RoadDemo
                 ReadDossier(crew, roster);
                 _units.Add(crew);
             }
+
+            // The map opens on whoever the street had picked. The traffic goes the other
+            // way on every click up here, so it has to go this way once at the door or
+            // the wheel would silently drop a selection every time it crossed the line.
+            var standing = _crews.Selected;
+            if (standing == null)
+                return;
+            foreach (var crew in _units)
+                if (crew.Unit == standing && crew.Mine && crew.Alive)
+                    _selected.Add(crew.Id);
         }
 
         /// <summary>
@@ -983,7 +993,7 @@ namespace RoadDemo
             _inspectedBuilding = null;
             _inspectedDistrict = null;
             _inspectedCrew = null;
-            _panel.SelectionChanged();
+            Changed();
         }
 
         /// <summary>One click, in the design's priority order: our crew, then anyone
@@ -1013,7 +1023,7 @@ namespace RoadDemo
                 _inspectedCrew = null;
                 _inspectedDistrict = null;
                 _inspectedBuilding = building;
-                _panel.SelectionChanged();
+                Changed();
                 return;
             }
 
@@ -1021,7 +1031,7 @@ namespace RoadDemo
             _inspectedCrew = null;
             _inspectedBuilding = null;
             _inspectedDistrict = _survey.DistrictAtPlan(plan);
-            _panel.SelectionChanged();
+            Changed();
         }
 
         TurfCrew NearestCrew(Vector2 plan, bool oursOnly)
@@ -1046,7 +1056,7 @@ namespace RoadDemo
             _inspectedBuilding = null;
             _inspectedDistrict = null;
             _inspectedCrew = crew;
-            _panel.SelectionChanged();
+            Changed();
         }
 
         public void SelectOnly(TurfCrew crew)
@@ -1063,7 +1073,38 @@ namespace RoadDemo
             foreach (var crew in _units)
                 if (crew.Mine && crew.Alive)
                     _selected.Add(crew.Id);
+            Changed();
+        }
+
+        /// <summary>
+        /// Every path that moves the map's selection ends here, and there is exactly one
+        /// of these so that the two things a selection owes get done together: the panel
+        /// repaints, and THE STREET IS TOLD.
+        ///
+        /// The street's own selection is a single crew - it is what a right-click in the
+        /// city orders and what the crew bar rims - so it follows the lieutenant whose
+        /// file is open, or the first of a gathered lot if no file is. Picking a name off
+        /// the roster up here and finding nobody picked when the wheel comes back down is
+        /// two selections for one game.
+        /// </summary>
+        void Changed()
+        {
             _panel.SelectionChanged();
+            if (_crews == null)
+                return;
+
+            var pick = _inspectedCrew != null && _inspectedCrew.Mine && _inspectedCrew.Alive
+                ? _inspectedCrew
+                : FirstGathered();
+            _crews.Select(pick != null ? pick.Unit : null);
+        }
+
+        TurfCrew FirstGathered()
+        {
+            foreach (var crew in _units)
+                if (crew.Mine && crew.Alive && _selected.Contains(crew.Id))
+                    return crew;
+            return null;
         }
 
         /// <summary>Open a footprint's file without disturbing who is gathered - the
@@ -1073,7 +1114,7 @@ namespace RoadDemo
             _inspectedCrew = null;
             _inspectedDistrict = null;
             _inspectedBuilding = building;
-            _panel.SelectionChanged();
+            Changed();
         }
 
         public void ReadDistrict(TurfDistrict district)
@@ -1081,7 +1122,7 @@ namespace RoadDemo
             _inspectedCrew = null;
             _inspectedBuilding = null;
             _inspectedDistrict = district;
-            _panel.SelectionChanged();
+            Changed();
         }
 
         public void ClearInspection()
@@ -1090,7 +1131,7 @@ namespace RoadDemo
             _inspectedBuilding = null;
             _inspectedDistrict = null;
             _selected.Clear();
-            _panel.SelectionChanged();
+            Changed();
         }
 
         // ------------------------------------------------------------------ orders
@@ -1162,7 +1203,7 @@ namespace RoadDemo
             }
 
             _markers.Add(new Marker { World = at, Life = MarkerSeconds, Order = order });
-            _panel.SelectionChanged();
+            Changed();
         }
 
         static Vector2 Flat(Vector3 world) => new Vector2(world.x, world.z);
