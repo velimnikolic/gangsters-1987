@@ -569,7 +569,12 @@ namespace LivingCity.UI
                 var hasVehicle = Outfit.CrewKit.HasVehicle(roster, crew);
                 var distance = DraftDistance();
                 var driving = Outfit.CrewKit.BestAt(roster, crew, CharacterAttribute.Driving);
-                var travel = Outfit.OrderMath.TravelHours(distance, hasVehicle, driving);
+                // WHAT they drive, not merely whether: a jalopy and an armoured wagon are
+                // hours apart across this city (OrderMath.TravelHours), and a card that
+                // said "by car" for both was quoting a number the player could not read
+                var vehicle = Outfit.CrewKit.VehicleOf(roster, crew);
+                var travel = Outfit.OrderMath.TravelHours(distance, hasVehicle, driving,
+                    Outfit.CrewKit.MachineTopOf(roster, crew));
                 var work = Outfit.OrderMath.WorkHours(spec, targetCount, draftMen);
                 var standing = spec.Resolution == Outfit.JobResolution.Standing;
 
@@ -577,8 +582,9 @@ namespace LivingCity.UI
                     travel > 8f ? LedgerStyle.RedPen : LedgerStyle.InkDim, 4f, y,
                     OrdersInner, 18f,
                     "Travel: " + Mathf.RoundToInt(distance) + "m from HQ " +
-                    (hasVehicle ? "by car" : "ON FOOT") + " - " + LedgerText.Hours(travel) +
-                    " each way.");
+                    (hasVehicle ? "by " + (vehicle.Length > 0 ? vehicle.ToUpperInvariant() : "car")
+                                : "ON FOOT") +
+                    " - " + LedgerText.Hours(travel) + " each way.");
                 y -= 20f;
 
                 Line(ordersContent, LedgerStyle.Mono, 14f, LedgerStyle.InkDim, 4f, y, OrdersInner,

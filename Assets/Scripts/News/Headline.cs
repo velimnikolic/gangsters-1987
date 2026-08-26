@@ -119,5 +119,14 @@ namespace LivingCity.News
             var weekday = WeekdayNames[(DayOfYear - 1 + 3) % 7];
             return weekday + ", " + MonthNames[Month - 1] + " " + Day + ", " + Year;
         }
+
+        /// <summary>"MON 5 JAN 1987" - the date line a typed file carries, where the
+        /// newspaper's full masthead would take the whole margin.</summary>
+        public string Stamped()
+        {
+            var weekday = WeekdayNames[(DayOfYear - 1 + 3) % 7].Substring(0, 3);
+            return weekday + " " + Day + " " + MonthNames[Month - 1].Substring(0, 3) +
+                   " " + Year;
+        }
     }
 }

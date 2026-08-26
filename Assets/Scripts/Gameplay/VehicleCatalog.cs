@@ -97,7 +97,7 @@ namespace LivingCity.Gameplay
             if (nameOrPath.Replace('\\', '/').Contains(PoliceFleetFolder))
                 return true;
 
-            var name = FileName(nameOrPath);
+            var name = BareName(nameOrPath);
             foreach (var marked in Liveried)
                 if (name == marked || name.StartsWith(marked + "_"))
                     return true;
@@ -136,7 +136,7 @@ namespace LivingCity.Gameplay
             if (string.IsNullOrEmpty(nameOrPath))
                 return false;
 
-            var name = FileName(nameOrPath);
+            var name = BareName(nameOrPath);
             foreach (var marked in Service)
                 if (name == marked || name.StartsWith(marked + "_"))
                     return true;
@@ -167,7 +167,7 @@ namespace LivingCity.Gameplay
             if (string.IsNullOrEmpty(nameOrPath))
                 return false;
 
-            var name = FileName(nameOrPath);
+            var name = BareName(nameOrPath);
             foreach (var liveried in Liveries)
                 if (name == liveried || name.StartsWith(liveried + "_"))
                     return true;
@@ -213,7 +213,7 @@ namespace LivingCity.Gameplay
             if (string.IsNullOrEmpty(nameOrPath))
                 return OrdinaryWeight;
 
-            var name = FileName(nameOrPath);
+            var name = BareName(nameOrPath);
             foreach (var rare in Uncommon)
                 if (name == rare.Name || name.StartsWith(rare.Name + "_"))
                     return rare.Weight;
@@ -258,7 +258,7 @@ namespace LivingCity.Gameplay
             if (string.IsNullOrEmpty(nameOrPath))
                 return false;
 
-            var name = FileName(nameOrPath);
+            var name = BareName(nameOrPath);
             foreach (var barred in Barred)
                 if (name == barred || name.StartsWith(barred + "_"))
                     return true;
@@ -266,12 +266,27 @@ namespace LivingCity.Gameplay
         }
 
         /// <summary>The prefab name out of an asset path, with the extension off; a bare
-        /// name comes back as it went in.</summary>
-        static string FileName(string path)
+        /// name comes back as it went in.
+        ///
+        /// Also takes off what a SCENE adds to a name, which a path never carries: the
+        /// "(Clone)" Instantiate hangs on an instance, and the " (frame)" a bike's model
+        /// wears under its driving pivot (RoadBike.Build). Both are there so a caller
+        /// holding a live transform rather than a prefab can still ask these questions -
+        /// which is how a car finds its own machine (<see cref="VehiclePerformance"/>)
+        /// without every builder in the game having to hand it one.</summary>
+        static readonly char[] Separators = { '/', '\\' };
+
+        public static string BareName(string path)
         {
-            var cut = path.LastIndexOfAny(new[] { '/', '\\' });
+            if (string.IsNullOrEmpty(path)) return "";
+
+            var cut = path.LastIndexOfAny(Separators);
             var name = cut >= 0 ? path.Substring(cut + 1) : path;
-            return name.EndsWith(".prefab") ? name.Substring(0, name.Length - 7) : name;
+            if (name.EndsWith(".prefab")) name = name.Substring(0, name.Length - 7);
+            if (name.EndsWith("(Clone)")) name = name.Substring(0, name.Length - 7);
+            
+            if (name.EndsWith(" (frame)")) name = name.Substring(0, name.Length - 8);
+            return name.TrimEnd();
         }
     }
 }

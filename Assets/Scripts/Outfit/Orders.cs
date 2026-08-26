@@ -416,15 +416,29 @@ namespace LivingCity.Outfit
             return 0.90f + 0.25f * t;
         }
 
-        /// <summary>Game-hours to reach the job and be in a state to work.</summary>
+        /// <summary>Game-hours to reach the job and be in a state to work.
+        ///
+        /// Two things scale the book speed and they are different things. The WHEELMAN
+        /// is <see cref="DrivingScale"/> - what the man at the wheel is worth. The
+        /// MACHINE is <paramref name="machineTop"/>, straight off the body the crew
+        /// actually holds (CrewKit.MachineTopOf reads the armory listing through
+        /// VehiclePerformance), and it is the same number the street uses to decide how
+        /// fast that body drives - so a panel van is slow on the map for the same reason
+        /// it is slow at a light, and the jalopy the player bought to save six hundred
+        /// dollars costs him the difference in hours.
+        ///
+        /// A crew on foot gets neither: a fast driver with no car is a man walking, and
+        /// so is a fast driver with a fast car he has not been given.</summary>
         public static float TravelHours(float distanceMeters, bool hasVehicle,
-            int drivingHalfSteps)
+            int drivingHalfSteps, float machineTop = 1f)
         {
             if (distanceMeters < 0f)
                 distanceMeters = 0f;
+            if (machineTop <= 0f)
+                machineTop = 1f;
 
             var speed = hasVehicle
-                ? VehicleMetresPerHour * DrivingScale(drivingHalfSteps)
+                ? VehicleMetresPerHour * DrivingScale(drivingHalfSteps) * machineTop
                 : FootMetresPerHour;
             var hours = distanceMeters / speed;
 
@@ -448,8 +462,9 @@ namespace LivingCity.Outfit
 
         /// <summary>What the job card quotes before the player confirms.</summary>
         public static float TotalHours(in OrderSpec spec, int targetCount, int men,
-            float distanceMeters, bool hasVehicle, int drivingHalfSteps) =>
-            TravelHours(distanceMeters, hasVehicle, drivingHalfSteps) +
+            float distanceMeters, bool hasVehicle, int drivingHalfSteps,
+            float machineTop = 1f) =>
+            TravelHours(distanceMeters, hasVehicle, drivingHalfSteps, machineTop) +
             WorkHours(spec, targetCount, men);
     }
 
@@ -475,6 +490,64 @@ namespace LivingCity.Outfit
                     return true;
             }
             return false;
+        }
+
+        /// <summary>How fast the body the crew actually holds will go, as a share of the
+        /// book speed (VehiclePerformance.Machine.Top) - 1 for a crew on foot, and 1 for
+        /// a listing nobody has written a row for.
+        ///
+        /// The BEST of what they hold, for the same reason <see cref="HasVehicle"/> asks
+        /// whether ANY of them holds one: a crew with two cars drives to the job in the
+        /// quicker one, and which man signed it out is a personnel matter.
+        ///
+        /// Only cars. A motorcycle is not a crew's vehicle here and never was - it
+        /// carries two men to a drive-by and counts as nobody's transport
+        /// (ArmoryCatalog.Motorcycles says so), so a crew that owns a moped and nothing
+        /// else still walks to work.</summary>
+        public static float MachineTopOf(Roster roster, Crew crew)
+        {
+            var listing = VehicleOf(roster, crew);
+            return listing.Length == 0
+                ? 1f
+                : LivingCity.Gameplay.VehiclePerformance.For(ArmoryCatalog.BodyFor(listing)).Top;
+        }
+
+        /// <summary>The armory listing of the car the crew would actually take - the
+        /// quickest of what its men hold, or "" for a crew on foot. The job card names
+        /// it, so a player reading eleven hours of travel can see it says "Panel Van".
+        /// </summary>
+        public static string VehicleOf(Roster roster, Crew crew)
+        {
+            if (roster == null || crew == null)
+                return "";
+
+            // The flag rather than the name, because a name may legitimately be empty and
+            // "have I found one yet" is not the same question as "is it called anything".
+            // Read off the name, a car with a blank listing would be passed over by every
+            // later row whatever its pace - and MachineTopOf would then quote the book
+            // speed for a crew that HasVehicle says is driving.
+            var found = false;
+            var bestName = "";
+            var best = 0f;
+            for (var i = 0; i < roster.Equipment.Count; i++)
+            {
+                var item = roster.Equipment[i];
+                if (item.Kind != EquipmentKind.Vehicle ||
+                    item.HolderId == RosterEquipment.Unheld)
+                    continue;
+                if (crew.LieutenantId != item.HolderId &&
+                    !crew.HoodIds.Contains(item.HolderId))
+                    continue;
+
+                var top = LivingCity.Gameplay.VehiclePerformance
+                    .For(ArmoryCatalog.BodyFor(item.DisplayName)).Top;
+                if (found && top <= best)
+                    continue;
+                found = true;
+                best = top;
+                bestName = item.DisplayName ?? "";
+            }
+            return bestName;
         }
 
         /// <summary>Crew size as labour: the lieutenant works too.</summary>

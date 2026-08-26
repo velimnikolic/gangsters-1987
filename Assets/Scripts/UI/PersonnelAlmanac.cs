@@ -12,12 +12,16 @@ using static LivingCity.UI.LedgerKit;
 namespace LivingCity.UI
 {
     /// <summary>
-    /// The outfit ledger, 1987: a manila folder open on the boss's desk, taking the
-    /// LEFT half of the screen while the strategic map holds the right. Six tabbed
-    /// pages - the morning paper, the personnel roll, the balance sheet, the armory
-    /// catalogue, the families, the week's orders - all typed on cream stock, marked
-    /// in highlighter and red pen, stamped where the law has had a word, with
-    /// Polaroids for faces and label-maker tape for the verbs. Opened with P.
+    /// The outfit ledger, 1987: a manila file open on the boss's desk, filling the
+    /// screen - centred, so an ultrawide monitor puts the desk lamp's light either
+    /// side of it instead of stretching the file into a billboard. Five divider tabs
+    /// - the morning paper, the personnel roll, the books, the armory catalogue, the
+    /// card index of families - on aged stock, punched down both edges, with a blotter
+    /// strip of readouts under the masthead and the night's telex slips clipped in
+    /// beneath it. Opened with P.
+    ///
+    /// The ledger is READ-ONLY bookkeeping in spirit: it reports where the men are and
+    /// what they cost. Orders are laid against the city on the map, never here.
     ///
     /// Built for sixty men even though the game opens with six: grouping, sorting and
     /// filtering are the screen, not decoration.
@@ -33,45 +37,63 @@ namespace LivingCity.UI
     ///
     /// Repaint is the versioned rebuild the HUDs use: a page is torn down and rebuilt
     /// when a director's Version or any local view state moves. Mutations are
-    /// click-paced, so a few hundred objects per rebuild is the affordable choice.
-    /// This file is the shell - the desk, the folder, the tabs, the header, input and
-    /// scrolling; each page lives in its own partial.
+    /// click-paced, so a few hundred objects per rebuild is the affordable choice. The
+    /// one thing that moves every frame - the clock - is written in place instead, so
+    /// a ticking second never costs a rebuild. This file is the shell; each page lives
+    /// in its own partial.
     /// </summary>
     public sealed partial class PersonnelAlmanac : MonoBehaviour, IMapTargetingConsumer
     {
         const int SortingOrder = 110;
 
-        /// <summary>The folder is the LEFT HALF of the 1920-reference canvas; the
-        /// strategic map owns the right half while the book is open.</summary>
-        const float HalfWidth = 960f;
+        // ------------------------------------------------------------ the fixture
 
-        // The desk fixture, in canvas units from the top-left of the left half.
-        const float FolderX = 10f;
-        const float FolderY = -60f;
-        const float FolderW = 940f;
-        const float FolderH = 1010f;
+        /// <summary>The file's own width. It is FIXED, and the folder is centred in
+        /// whatever canvas it finds itself in: the sheet is a physical document, and a
+        /// document does not get wider because the monitor did. On 16:9 that leaves a
+        /// hand's breadth of desk either side; on an ultrawide, more desk.</summary>
+        const float BookW = 1600f;
+        const float BookH = 1032f;
 
-        const float PaperX = 20f;
-        const float PaperY = -72f;
-        const float PaperW = 920f;
-        const float PaperH = 988f;
+        /// <summary>How far the folder's top edge sits below the screen's, leaving room
+        /// for the divider tabs to stand above it.</summary>
+        const float BookTop = -44f;
 
-        /// <summary>The tab strip sits on the folder's top edge, above the paper.</summary>
-        const float TabY = -30f;
-        const float TabH = 34f;
-        const float TabW = 128f;
+        /// <summary>The manila shell showing round the sheet inside it.</summary>
+        const float PaperInset = 9f;
+
+        const float PaperW = BookW - PaperInset * 2f;
+        const float PaperH = BookH - PaperInset * 2f;
+
+        /// <summary>The divider tabs, on the folder's top edge.</summary>
+        const float TabH = 38f;
+        const float TabActiveH = 44f;
         const float TabGap = 6f;
+        const float TabInset = 26f;
+
+        /// <summary>The punched holes: a column of them this far in from each edge.</summary>
+        const float PunchCentre = 15f;
 
         // Paper-local layout every page shares.
-        const float PageLeft = 24f;
-        const float PageRight = PaperW - 24f;
+        const float PageLeft = 42f;
+        const float PageRight = PaperW - 42f;
         const float PageWidth = PageRight - PageLeft;
 
-        /// <summary>Content starts under the header's double rule.</summary>
-        const float PageTop = -78f;
+        // The masthead, the blotter and the telex row are shared chrome: every page
+        // starts under them, and the ticker closes the sheet under every page.
+        const float RuleY = -120f;
+        const float HudY = -134f;
+        const float HudH = 88f;
+        const float TelexY = -230f;
+        const float TelexH = 52f;
 
-        /// <summary>The last usable y on the paper.</summary>
-        const float PageBottom = -(PaperH - 16f);
+        /// <summary>Content starts under the telex slips.</summary>
+        const float PageTop = -288f;
+
+        /// <summary>The last usable y on the paper - the ticker owns what is below.</summary>
+        const float PageBottom = -(PaperH - 44f);
+
+        const float TickerY = -(PaperH - 30f);
 
         /// <summary>True while the book is open. Every world-input reader checks this -
         /// the keyboard half of the modal shield (the raycast-target desk is the pointer
@@ -83,10 +105,10 @@ namespace LivingCity.UI
         /// the close would otherwise act on the very press that closed the book.</summary>
         public static bool ClaimsEsc => IsOpen || Time.frameCount == lastCloseFrame;
 
-        /// <summary>True while the book stands open: the strategic map is docked into
-        /// the right half the whole time, live for panning, zooming, inspection and -
-        /// on the ORDERS page - target selection.</summary>
-        public static bool MapInteractive => IsOpen;
+        /// <summary>The book covers the screen now, so nothing behind it is live. The
+        /// war-room split - book left, strategic map docked right - is retired; the map
+        /// is its own screen again, and the two no longer share the glass.</summary>
+        public static bool MapInteractive => false;
 
         static int lastCloseFrame = -1;
 
@@ -116,12 +138,23 @@ namespace LivingCity.UI
         static readonly string[] TabNames =
             { "THE PAPER", "PERSONNEL", "FINANCES", "ARMORY", "FAMILIES" };
 
+        /// <summary>What a real file's tabs say: the sheet is one leaf of a numbered
+        /// file, and the ticker prints which one. Pure furniture, and the design's.</summary>
+        static readonly int[] TabFolios = { 1, 4, 7, 11, 15, 17 };
+        const int Folios = 18;
+
         Canvas canvas;
         GameObject page;
         RectTransform paper;
-        TMP_Text headerTitle;
-        TMP_Text headerDate;
         TMP_Text headerCount;
+        TMP_Text headerDate;
+        TMP_Text headerClock;
+        TMP_Text headerSafe;
+        TMP_Text tickerLeft;
+        TMP_Text tickerRight;
+        TMP_Text hudClock;
+        RectTransform hudRoot;
+        RectTransform telexRoot;
 
         LedgerPage currentPage = LedgerPage.Newspaper;
         readonly GameObject[] pageRoots = new GameObject[6];
@@ -132,6 +165,7 @@ namespace LivingCity.UI
         PersonnelDirector director;
         OutfitDirector outfit;
         PlayerMafioso player;
+        Ambient.CityClock cityClock;
 
         /// <summary>Scratch for Turf reads - refilled from the markers on use.</summary>
         readonly List<Outfit.Turf.Holding> holdings = new List<Outfit.Turf.Holding>();
@@ -150,6 +184,7 @@ namespace LivingCity.UI
                 ? OutfitDirector.Instance
                 : FindAnyObjectByType<OutfitDirector>();
             player = FindAnyObjectByType<PlayerMafioso>();
+            cityClock = FindAnyObjectByType<Ambient.CityClock>();
 
             if (!director)
             {
@@ -259,6 +294,7 @@ namespace LivingCity.UI
             }
 
             UpdateScroll();
+            RefreshClock();
 
             var outfitVersion = outfit ? outfit.Version : 0;
             if (dirty || paintedVersion != director.Version ||
@@ -274,8 +310,8 @@ namespace LivingCity.UI
         }
 
         /// <summary>Repaints the page that is showing. Each page owns its own rebuild;
-        /// the header line and filter tapes are re-read on every pass because they
-        /// are cheap and read the same state.</summary>
+        /// the masthead, the blotter, the telex row and the ticker are re-read on every
+        /// pass because they are cheap and read the same state.</summary>
         void Repaint()
         {
             switch (currentPage)
@@ -301,6 +337,9 @@ namespace LivingCity.UI
                     break;
             }
             RefreshHeader();
+            RefreshBlotter();
+            RefreshTelex();
+            RefreshTicker();
             RefreshFilterTapes();
         }
 
@@ -323,12 +362,12 @@ namespace LivingCity.UI
 
             page.SetActive(true);
             IsOpen = true;
-            // The war room assembles: the strategic map docks into the right half for
-            // as long as the book is open. No city yet = the map declines quietly and
-            // the right half just shows the world.
-            if (StrategicMapHud.Instance)
-                StrategicMapHud.Instance.OpenBeside();
-            // The folder always opens on the morning paper - the week's frame - and
+            // The file covers the glass, so nothing can be left live under it. The
+            // strategic map is a screen of its own again: if it was up, it comes down
+            // with the folder opening, and it does not come back by itself.
+            if (StrategicMapHud.Instance && StrategicMapHud.IsOpen)
+                StrategicMapHud.Instance.Close();
+            // The folder always opens on the morning paper - the day's frame - and
             // the working pages keep their state for when the boss turns to them.
             SetPage(LedgerPage.Newspaper);
         }
@@ -341,12 +380,7 @@ namespace LivingCity.UI
             if (StrategicMapHud.Targeting == (IMapTargetingConsumer)this)
                 StrategicMapHud.Targeting = null;
             if (StrategicMapHud.Instance)
-            {
                 StrategicMapHud.Instance.SetTargetHighlights(null, Color.clear);
-                // The map came up with the book; it goes down with it.
-                if (StrategicMapHud.IsOpen)
-                    StrategicMapHud.Instance.Close();
-            }
             lastCloseFrame = Time.frameCount;
             assignMode = false;
             pendingConfirm = Confirm.None;
@@ -369,8 +403,7 @@ namespace LivingCity.UI
                 if (pageRoots[i])
                     pageRoots[i].SetActive(i == (int)pageKind);
 
-            // The map stands open beside the book the whole time - ORDERS just arms
-            // targeting on it. Leaving the page clears its highlight layer.
+            // Leaving the orders page clears whatever it lit on the map.
             if (pageKind != LedgerPage.Orders && StrategicMapHud.Instance)
                 StrategicMapHud.Instance.SetTargetHighlights(null, Color.clear);
             RefreshTargeting();
@@ -419,8 +452,19 @@ namespace LivingCity.UI
             switch (currentPage)
             {
                 case LedgerPage.Personnel:
-                    viewport = listViewport;
-                    content = listContent;
+                    // Two regions on this page - the roll and the dossier - and
+                    // whichever the pointer sits over takes the wheel.
+                    if (cardViewport && RectTransformUtility
+                            .RectangleContainsScreenPoint(cardViewport, point))
+                    {
+                        viewport = cardViewport;
+                        content = cardContent;
+                    }
+                    else
+                    {
+                        viewport = listViewport;
+                        content = listContent;
+                    }
                     break;
                 case LedgerPage.Armory:
                     if (catalogueViewport && RectTransformUtility
@@ -464,6 +508,14 @@ namespace LivingCity.UI
                 if (listScroll > maxScroll)
                     listScroll = Mathf.Floor(maxScroll / RowHeight) * RowHeight;
                 content.anchoredPosition = new Vector2(0f, listScroll);
+            }
+            else if (viewport == cardViewport)
+            {
+                cardScroll = Mathf.Clamp(cardScroll - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, cardScroll);
+                // A note pinned to a row that just slid out from under the pointer
+                // would hang there - the note goes with the roll.
+                HideHoverNote();
             }
             else if (viewport == catalogueViewport)
             {
@@ -511,7 +563,9 @@ namespace LivingCity.UI
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             // Expand, NOT match-height: match-height clips the folder's sides on any
             // window narrower than 16:9. Expand guarantees the canvas is at least
-            // 1920x1080 in reference units both ways, so the fixed folder fits whole.
+            // 1920x1080 in reference units both ways, so the fixed folder fits whole -
+            // and on an ultrawide the extra reference width simply becomes more desk
+            // either side of a centred file.
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
 
             go.AddComponent<GraphicRaycaster>();
@@ -523,48 +577,69 @@ namespace LivingCity.UI
             page.transform.SetParent(canvas.transform, false);
             Stretch((RectTransform)page.transform);
 
-            // ---- the desk: the left half, edge to edge, and the modal shield ----
+            // ---- the desk: the whole screen, and the modal shield ----
             var desk = NewRect("Desk", page.transform);
-            desk.anchorMin = Vector2.zero;
-            desk.anchorMax = new Vector2(0.5f, 1f);
-            desk.offsetMin = desk.offsetMax = Vector2.zero;
+            Stretch(desk);
             var deskImage = desk.gameObject.AddComponent<Image>();
             deskImage.sprite = null;
-            deskImage.color = LedgerStyle.Desk;
+            deskImage.color = LedgerStyle.DeskDeep;
             deskImage.raycastTarget = true;
             desk.gameObject.AddComponent<RectMask2D>();
-            Grain(desk, HalfWidth, 1200f, 1.6f);
 
-            // The desk lamp, up and to the left of the folder - the one light source
-            // every shadow on the desk agrees with.
+            // Walnut at the top where the light is, near-black at the foot. The stripe
+            // over it is the grain: two per cent, and meant not to be seen.
+            var fall = NewRect("Fall", desk);
+            Stretch(fall);
+            Gradient(fall, LedgerStyle.DeskFall);
+            var stripe = NewRect("Grain", desk);
+            Stretch(stripe);
+            Texture(stripe, LedgerStyle.DeskStripe, new Color(1f, 1f, 1f, 0.35f),
+                2600f, 1200f, 32f);
+
+            // The light over the desk, above and behind the file - the one source
+            // every shadow on the sheet agrees with.
             var lamp = NewRect("Lamp", desk);
-            lamp.anchorMin = lamp.anchorMax = new Vector2(0f, 1f);
+            lamp.anchorMin = lamp.anchorMax = new Vector2(0.5f, 1f);
             lamp.pivot = new Vector2(0.5f, 0.5f);
-            lamp.anchoredPosition = new Vector2(180f, -40f);
-            lamp.sizeDelta = new Vector2(1500f, 1500f);
+            lamp.anchoredPosition = new Vector2(0f, 60f);
+            lamp.sizeDelta = new Vector2(2600f, 1500f);
             var lampImage = lamp.gameObject.AddComponent<RawImage>();
             lampImage.texture = LedgerStyle.RadialLight;
             lampImage.color = LedgerStyle.Lamp;
             lampImage.raycastTarget = false;
 
-            // ---- the folder: manila, a shade darker than its pages ----
+            // ---- the folder: manila, a shade darker than its pages, centred ----
             var folder = NewRect("Folder", desk);
-            PlaceTopLeft(folder, FolderX, FolderY, FolderW, FolderH);
-            Fill(folder, LedgerStyle.Manila);
-            Grain(folder, FolderW, FolderH, 1.2f);
-            ShadowUnder(folder, 14f);
-
-            BuildTabs(desk);
+            folder.anchorMin = folder.anchorMax = new Vector2(0.5f, 1f);
+            folder.pivot = new Vector2(0.5f, 1f);
+            folder.anchoredPosition = new Vector2(0f, BookTop);
+            folder.sizeDelta = new Vector2(BookW, BookH);
+            Stock(folder, LedgerStyle.Manila, LedgerStyle.ManilaLow);
+            Grain(folder, BookW, BookH, 1.2f);
+            ShadowUnder(folder, 26f, LedgerStyle.FolderShadow);
 
             // ---- the paper: the page itself; its mask clips anything laid past ----
-            paper = NewRect("Paper", desk);
-            PlaceTopLeft(paper, PaperX, PaperY, PaperW, PaperH);
-            Fill(paper, LedgerStyle.Paper);
+            paper = NewRect("Paper", folder);
+            PlaceTopLeft(paper, PaperInset, -PaperInset, PaperW, PaperH);
+            Gradient(paper, LedgerStyle.SheetFall);
             Grain(paper, PaperW, PaperH);
-            ShadowUnder(paper, 6f);
+            Frame(paper, 1f, new Color(120f / 255f, 95f / 255f, 55f / 255f, 0.35f));
             paper.gameObject.AddComponent<RectMask2D>();
 
+            // The sheet came out of a ring binder, and the coffee sat on the corner.
+            PunchStrip(paper, PunchCentre, 0f, PaperH);
+            PunchStrip(paper, PaperW - PunchCentre, 0f, PaperH);
+            CoffeeStain(paper, PaperW - 320f, -60f, 132f);
+
+            // The tabs come AFTER the sheet so the active one can be cut from the same
+            // stock and lap over the sheet's top edge - which is what makes a divider
+            // tab read as part of the page instead of a button above it.
+            BuildTabs(folder);
+
             BuildHeader(paper);
+            BuildBlotter(paper);
+            BuildTelex(paper);
+            BuildTicker(paper);
 
             // ---- the pages, in tab order; each is a full-paper root ----
             BuildNewspaperPage(paper);
@@ -573,9 +648,6 @@ namespace LivingCity.UI
             BuildArmoryPage(paper);
             BuildDiplomacyPage(paper);
             BuildOrdersPage(paper);
-
-            // The CLOSE tape on the desk, past the tab strip - the boss shuts the folder.
-            Tape(desk, "CLOSE", HalfWidth - 114f, TabY, 94f, 30f, Close, red: true);
 
             SetPage(LedgerPage.Newspaper);
 
@@ -592,16 +664,36 @@ namespace LivingCity.UI
             return root;
         }
 
+        /// <summary>The width a divider tab needs for its word - the design's 28 units
+        /// of padding either side over letter-spaced condensed caps.</summary>
+        static float TabWidthFor(string label) => 56f + label.Length * 8.2f;
+
         /// <summary>The folder's index tabs along its top edge. The active tab is cut
-        /// from the same stock as the page and joins it; the rest sit back in darker
-        /// manila - the way a real folder tells you where you are.</summary>
-        void BuildTabs(RectTransform desk)
+        /// from the same stock as the page, stands taller and reaches down INTO the
+        /// folder so the two fuse; the rest sit back in darker manila - the way a real
+        /// file tells you where you are. The file number and the CLOSE tab hold the
+        /// far end of the strip.</summary>
+        void BuildTabs(RectTransform folder)
         {
+            var strip = NewRect("Tabs", folder);
+            strip.anchorMin = new Vector2(0f, 1f);
+            strip.anchorMax = new Vector2(1f, 1f);
+            strip.pivot = new Vector2(0.5f, 0f);
+            strip.anchoredPosition = new Vector2(0f, 0f);
+            strip.sizeDelta = new Vector2(0f, TabActiveH);
+
+            var x = TabInset;
             for (var i = 0; i < TabNames.Length; i++)
             {
                 var kind = (LedgerPage)i;
-                var rect = NewRect("Tab " + TabNames[i], desk);
-                PlaceTopLeft(rect, PaperX + i * (TabW + TabGap), TabY, TabW, TabH + 8f);
+                var w = TabWidthFor(TabNames[i]);
+                var rect = NewRect("Tab " + TabNames[i], strip);
+                // Anchored to the strip's BOTTOM edge: a tab grows upward and its foot
+                // stays welded to the folder, whatever height it is drawn at.
+                rect.anchorMin = rect.anchorMax = new Vector2(0f, 0f);
+                rect.pivot = new Vector2(0f, 0f);
+                rect.anchoredPosition = new Vector2(x, 0f);
+                rect.sizeDelta = new Vector2(w, TabH);
                 tabRects[i] = rect;
 
                 var face = rect.gameObject.AddComponent<Image>();
@@ -615,16 +707,33 @@ namespace LivingCity.UI
                 button.transition = Selectable.Transition.None;
                 button.onClick.AddListener(() => SetPage(kind));
 
-                var label = Text("Label", rect, LedgerStyle.Type, 14f, LedgerStyle.Ink,
-                    TextAlignmentOptions.Center);
+                var label = Text("Label", rect, LedgerStyle.Condensed, 13f,
+                    new Color(76f / 255f, 60f / 255f, 38f / 255f), TextAlignmentOptions.Center);
                 Stretch(label.rectTransform);
-                label.rectTransform.offsetMin = new Vector2(0f, 8f);
-                label.characterSpacing = 2f;
+                label.characterSpacing = 4f;
                 label.text = TabNames[i];
 
                 tabFaces[i] = face;
                 tabLabels[i] = label;
+                x += w + TabGap;
             }
+
+            // The far end of the strip: what the file is called, and the way out.
+            var fileMark = Text("File", strip, LedgerStyle.Condensed, 11f,
+                new Color(0.78f, 0.70f, 0.56f), TextAlignmentOptions.MidlineRight);
+            fileMark.rectTransform.anchorMin = new Vector2(1f, 0f);
+            fileMark.rectTransform.anchorMax = new Vector2(1f, 0f);
+            fileMark.rectTransform.pivot = new Vector2(1f, 0f);
+            fileMark.rectTransform.anchoredPosition = new Vector2(-TabInset - 110f, 12f);
+            fileMark.rectTransform.sizeDelta = new Vector2(160f, 20f);
+            fileMark.characterSpacing = 4f;
+            fileMark.text = "FILE 04-B";
+
+            var close = Tape(strip, "CLOSE", 0f, 0f, 100f, TabH, Close, red: true, size: 13f);
+            var closeRect = (RectTransform)close.transform.parent;
+            closeRect.anchorMin = closeRect.anchorMax = new Vector2(1f, 0f);
+            closeRect.pivot = new Vector2(1f, 0f);
+            closeRect.anchoredPosition = new Vector2(-TabInset, 0f);
         }
 
         void RefreshTabs()
@@ -634,68 +743,432 @@ namespace LivingCity.UI
                 if (!tabFaces[i])
                     continue;
                 var active = i == (int)currentPage;
+                // The active tab is cut from the page's own stock; the rest are the
+                // folder's darker manila.
                 tabFaces[i].color = active ? LedgerStyle.Paper : LedgerStyle.ManilaDim;
-                tabLabels[i].color = active ? LedgerStyle.Ink : LedgerStyle.InkDim;
-                // The active tab is pulled forward: a touch taller, and drawn last so it
-                // overlaps its neighbours and the paper's top edge with no seam.
-                tabRects[i].sizeDelta = new Vector2(TabW, active ? TabH + 12f : TabH + 8f);
+                tabLabels[i].color = active
+                    ? LedgerStyle.Ink
+                    : new Color(76f / 255f, 60f / 255f, 38f / 255f);
+                // Taller, and pushed two units down into the folder so the seam closes.
+                tabRects[i].sizeDelta = new Vector2(tabRects[i].sizeDelta.x,
+                    active ? TabActiveH : TabH);
+                // The active tab reaches down through the manila margin and onto the
+                // sheet itself, so there is no seam between the word and the page.
                 tabRects[i].anchoredPosition = new Vector2(
-                    PaperX + i * (TabW + TabGap), active ? TabY : TabY - 4f);
+                    tabRects[i].anchoredPosition.x, active ? -(PaperInset + 3f) : 0f);
                 if (active)
                     tabRects[i].SetAsLastSibling();
             }
-            // The paper itself must draw over every tab but the active one - it comes
-            // last among the desk's children, then the active tab is raised past it,
-            // then the CLOSE tape. Cheap to reassert on every turn.
-            if (paper)
-            {
-                paper.SetAsLastSibling();
-                // A page can be tabless (ORDERS) - then there is nothing to raise.
-                var activeTab = tabRects[(int)currentPage];
-                if (activeTab)
-                    activeTab.SetAsLastSibling();
-                var close = paper.parent.Find("Tape CLOSE");
-                if (close)
-                    close.SetAsLastSibling();
-            }
         }
 
-        /// <summary>The typed header every ledger page shares: title, the campaign
-        /// date, the men-on-the-books count, a CONFIDENTIAL stamp, and the double
-        /// rule under it all. The paper's own page paints over it whole.</summary>
+        // -------------------------------------------------------------- the masthead
+
+        /// <summary>The head of every ledger sheet: what the file is, how many men are
+        /// on it, the stamp across the middle, and - held to the right margin - the
+        /// date, the running clock and what is actually in the safe. Closed with the
+        /// design's heavy rule over its own ghost.</summary>
         void BuildHeader(RectTransform sheet)
         {
-            headerTitle = Line(sheet, LedgerStyle.Type, 24f, LedgerStyle.Ink, PageLeft, -12f,
-                420f, 36f, "OUTFIT LEDGER");
-            headerTitle.characterSpacing = 5f;
+            var title = Line(sheet, LedgerStyle.Condensed, 40f, LedgerStyle.Ink,
+                PageLeft, -12f, 760f, 52f, "OUTFIT LEDGER");
+            title.characterSpacing = 3f;
 
-            headerCount = Line(sheet, LedgerStyle.Mono, 14f, LedgerStyle.InkDim, PageLeft,
-                -44f, 420f, 18f, "");
-            headerCount.characterSpacing = 1f;
+            headerCount = Caps(sheet, PageLeft, -66f, 760f, "", 11f, LedgerStyle.InkDim, 5f);
 
-            headerDate = Line(sheet, LedgerStyle.Mono, 14f, LedgerStyle.Ink, PageRight - 420f,
-                -16f, 420f, 20f, "", TextAlignmentOptions.MidlineRight);
-            var sub = Line(sheet, LedgerStyle.Mono, 12.5f, LedgerStyle.InkDim,
-                PageRight - 420f, -40f, 420f, 18f,
-                "PRIVATE ACCOUNT · NOT FOR THE BOOKS", TextAlignmentOptions.MidlineRight);
-            sub.characterSpacing = 1f;
+            // Struck across the middle of the head, clear of the title and the date.
+            Stamp(sheet, "CONFIDENTIAL", PageLeft + PageWidth * 0.5f - 128f, -38f, 256f, 54f,
+                tilt: -7f, size: 20f);
 
-            // Struck across the double rule, clear of the title and the date.
-            Stamp(sheet, "CONFIDENTIAL", 372f, -36f, 176f, 34f, tilt: -5f, size: 16f);
+            Caps(sheet, PageRight - 420f, -12f, 420f, "STRUCK AS THE BOOKS STAND",
+                11f, LedgerStyle.InkDim, 5f, TextAlignmentOptions.MidlineRight);
 
-            DoubleRule(sheet, PageLeft, -64f, PageWidth, LedgerStyle.Ink);
+            headerDate = Line(sheet, LedgerStyle.Mono, 14f, LedgerStyle.InkMid,
+                PageRight - 420f, -32f, 420f, 20f, "", TextAlignmentOptions.MidlineRight);
+            headerDate.characterSpacing = 2f;
+
+            headerClock = Line(sheet, LedgerStyle.Mono, 22f, LedgerStyle.RedPen,
+                PageRight - 420f, -54f, 420f, 28f, "--:--:--",
+                TextAlignmentOptions.MidlineRight);
+            headerClock.characterSpacing = 3f;
+
+            // What is in the safe, boxed - the one figure the boss looks for first.
+            var safeBox = NewRect("Safe", sheet);
+            PlaceTopLeft(safeBox, PageRight - 220f, -88f, 220f, 26f);
+            Fill(safeBox, new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.06f));
+            Frame(safeBox, 1f, LedgerStyle.InkFaint);
+            Caps(safeBox, 10f, -4f, 60f, "SAFE", 10f, LedgerStyle.InkLabel, 4f);
+            VRule(safeBox, 62f, 0f, 26f, LedgerStyle.InkFaint);
+            headerSafe = Line(safeBox, LedgerStyle.MonoBold, 14f, LedgerStyle.Ink,
+                70f, -3f, 140f, 20f, "", TextAlignmentOptions.MidlineRight);
+
+            DoubleRule(sheet, PageLeft, RuleY, PageWidth, LedgerStyle.Ink);
         }
 
         void RefreshHeader()
         {
-            var week = outfit ? outfit.Campaign.Week : 1;
-            var date = News.NewsDate.FromClockDay((week - 1) * 7);
+            var day = outfit ? outfit.Campaign.Day : 1;
+            var date = News.NewsDate.FromClockDay(day - 1);
             if (headerDate)
-                headerDate.text = "WEEK " + week + "  ·  " + date.Masthead();
+                headerDate.text = date.Stamped();
             if (headerCount)
-                headerCount.text = director.Roster != null
-                    ? LedgerText.MemberCount(director.Roster.Members.Count)
-                    : "";
+            {
+                var men = director.Roster != null ? director.Roster.Members.Count : 0;
+                headerCount.text = (men == 1 ? "1 MAN ON THE BOOKS" : men + " MEN ON THE BOOKS")
+                    + "   |   KEPT BY HAND · NOT FOR THE BOOKS";
+            }
+            if (headerSafe)
+                headerSafe.text = outfit ? LedgerText.Cash(outfit.Accounts.Safe) : "--";
+        }
+
+        /// <summary>The clock is the one thing on the sheet that moves by itself, so it
+        /// is written in place - two SetText calls a frame instead of a rebuild.</summary>
+        void RefreshClock()
+        {
+            if (!headerClock)
+                return;
+
+            if (cityClock)
+            {
+                var hour = cityClock.Hour;
+                var h = Mathf.FloorToInt(hour);
+                var m = Mathf.FloorToInt(hour % 1f * 60f);
+                var s = Mathf.FloorToInt(hour * 3600f % 60f);
+                headerClock.SetText("{0:00}:{1:00}:{2:00}", h, m, s);
+                if (hudClock)
+                    hudClock.SetText("{0:00}:{1:00}:{2:00}", h, m, s);
+                return;
+            }
+
+            // No city clock in the standalone ledger scene - the sheet says so rather
+            // than inventing a time.
+            headerClock.SetText("--:--:--");
+            if (hudClock)
+                hudClock.SetText("--:--:--");
+        }
+
+        // --------------------------------------------------------------- the blotter
+
+        /// <summary>How many readouts the blotter strip carries. The design's five.</summary>
+        const int BlotterCells = 5;
+
+        readonly TMP_Text[] hudValue = new TMP_Text[BlotterCells];
+        readonly TMP_Text[] hudNote = new TMP_Text[BlotterCells];
+        readonly RectTransform[] hudMeter = new RectTransform[BlotterCells];
+
+        static readonly string[] BlotterLabels =
+        {
+            "ON THE CLOCK", "POLICE HEAT", "RESPECT ON THE STREET",
+            "PAYROLL DUE", "IN THE SAFE",
+        };
+
+        /// <summary>
+        /// The blotter: a dark strip of five readouts under the masthead, the way a
+        /// desk pad shows through the sheet laid on it. Label, figure, a stepped meter
+        /// and a line of plain English under each - the last of which is the point,
+        /// because a number nobody can read is not a readout.
+        ///
+        /// The design's fourth cell is a TRIBUTE countdown. There is no tribute in the
+        /// sim and inventing one here would be a lie printed in the boss's own book, so
+        /// the slot carries the same shape of pressure the game actually has: what the
+        /// payroll comes to and how many days until it comes out of the safe.
+        /// </summary>
+        void BuildBlotter(RectTransform sheet)
+        {
+            hudRoot = NewRect("Blotter", sheet);
+            PlaceTopLeft(hudRoot, PageLeft, HudY, PageWidth, HudH);
+            Stock(hudRoot, LedgerStyle.Blotter, LedgerStyle.BlotterLow);
+
+            var cellW = PageWidth / BlotterCells;
+            for (var i = 0; i < BlotterCells; i++)
+            {
+                var cell = NewRect("Cell " + i, hudRoot);
+                PlaceTopLeft(cell, i * cellW, 0f, cellW, HudH);
+
+                if (i > 0)
+                    VRule(cell, 0f, 8f, HudH - 16f, LedgerStyle.BlotterRule);
+
+                Caps(cell, 16f, -8f, cellW - 26f, BlotterLabels[i], 9.5f,
+                    LedgerStyle.HudLabel, 5f);
+
+                hudValue[i] = Line(cell, LedgerStyle.Condensed, 21f, LedgerStyle.HudCream,
+                    16f, -22f, cellW - 26f, 28f, "");
+                hudValue[i].characterSpacing = 1f;
+
+                var meter = NewRect("Meter", cell);
+                PlaceTopLeft(meter, 16f, -52f, cellW - 26f, 12f);
+                hudMeter[i] = meter;
+
+                // Two lines of room: the design is explicit that the sub-note wraps and
+                // must never be clipped, and "nine days of payroll left at this rate"
+                // does not fit on one.
+                hudNote[i] = Paragraph(cell, LedgerStyle.Mono, 9.5f, LedgerStyle.HudNote,
+                    16f, -62f, cellW - 26f, 26f, "", lineSpacing: 0f);
+                hudNote[i].overflowMode = TextOverflowModes.Ellipsis;
+            }
+
+            hudClock = hudValue[0];
+        }
+
+        /// <summary>The heat scale, in the words a precinct would use.</summary>
+        static string HeatWord(int heat) =>
+            heat < 10 ? "LOW"
+            : heat < 25 ? "NOTICED"
+            : heat < 50 ? "WATCHED"
+            : heat < 80 ? "HOT"
+            : "HUNTED";
+
+        /// <summary>How much of the city's held property is the outfit's, as a word.</summary>
+        static string RespectWord(int steps) =>
+            steps <= 1 ? "THIN"
+            : steps <= 3 ? "SLIGHT"
+            : steps <= 5 ? "KNOWN"
+            : steps <= 7 ? "STRONG"
+            : "FEARED";
+
+        void RefreshBlotter()
+        {
+            if (hudRoot == null || !hudRoot.gameObject.activeSelf)
+                return;
+
+            var roster = director.Roster;
+            var weekly = Outfit.Wages.WeeklyPayroll(roster);
+            var perDay = Outfit.Wages.PerDay(weekly);
+
+            // ---- the clock. RefreshClock writes the figure; the note is the date.
+            var day = outfit ? outfit.Campaign.Day : 1;
+            var date = News.NewsDate.FromClockDay(day - 1);
+            SetMeter(0, 0, 0, LedgerStyle.HudCream);
+            hudNote[0].text = date.Stamped();
+
+            // ---- what the police think.
+            var heat = outfit ? outfit.Heat : 0;
+            var heatSteps = Mathf.Clamp(Mathf.CeilToInt(heat / 10f), 0, 10);
+            hudValue[1].text = HeatWord(heat);
+            hudValue[1].color = heat < 25 ? LedgerStyle.HudAmber : LedgerStyle.SoftRed;
+            SetMeter(1, heatSteps, 10, LedgerStyle.HudMeterWarm);
+            hudNote[1].text = heat == 0
+                ? "nobody downtown has your name yet"
+                : heat + " on the precinct's board";
+
+            // ---- what the street thinks: the outfit's share of the held city.
+            var mine = 0;
+            var all = 0;
+            if (outfit)
+            {
+                outfit.CollectHoldings(holdings);
+                mine = Outfit.Turf.CountOf(holdings, Gangs.GangCatalog.PlayerGangId);
+                all = holdings.Count;
+                holdings.Clear();
+            }
+            var respectSteps = all > 0 ? Mathf.Clamp(Mathf.RoundToInt(10f * mine / all), 0, 10) : 0;
+            hudValue[2].text = RespectWord(respectSteps);
+            hudValue[2].color = LedgerStyle.HudCream;
+            SetMeter(2, respectSteps, 10, LedgerStyle.HudAmber);
+            hudNote[2].text = all > 0
+                ? mine + " of " + all + " houses in the city are yours"
+                : "no business in the city answers to you";
+
+            // ---- when the books turn and the payroll comes out of the safe.
+            var into = (day - 1) % Outfit.Campaign.DaysPerWeek;
+            var left = Outfit.Campaign.DaysPerWeek - into;
+            hudValue[3].text = LedgerText.Cash(weekly);
+            hudValue[3].color = left <= 2 ? LedgerStyle.SoftRed : LedgerStyle.HudCream;
+            SetMeter(3, into, Outfit.Campaign.DaysPerWeek, LedgerStyle.HudAmber);
+            hudNote[3].text = left == 1 ? "payday tomorrow" : "payday in " + left + " days";
+
+            // ---- what is in the safe, and how long it lasts at this burn.
+            var safe = outfit ? outfit.Accounts.Safe : 0;
+            hudValue[4].text = LedgerText.Cash(safe);
+            hudValue[4].color = safe < weekly ? LedgerStyle.SoftRed : LedgerStyle.HudCream;
+            var runway = perDay > 0 ? safe / perDay : 0;
+            SetMeter(4, Mathf.Clamp(runway, 0, 10), 10, LedgerStyle.HudAmber);
+            hudNote[4].text = perDay > 0
+                ? "-" + LedgerText.Cash(perDay).Substring(1) + " a day · " +
+                  (runway >= 10 ? "ten days or better" : runway + " days of payroll left")
+                : "nobody is drawing pay";
+        }
+
+        /// <summary>Redraws one blotter meter. The strip is rebuilt rather than tinted
+        /// because the step COUNT moves, not just the colour. The figure's own colour is
+        /// each cell's business: a full bar is bad news on the heat and good news on the
+        /// runway, so nothing here may touch it.</summary>
+        void SetMeter(int index, int filled, int steps, Color colour)
+        {
+            var meter = hudMeter[index];
+            if (!meter)
+                return;
+            for (var i = meter.childCount - 1; i >= 0; i--)
+                Destroy(meter.GetChild(i).gameObject);
+            if (steps > 0)
+                StepBar(meter, 0f, -6f, steps, filled, colour, 5f, 10f, 7f);
+        }
+
+        // ----------------------------------------------------------- the telex slips
+
+        /// <summary>Three slips at most, the design's row.</summary>
+        const int TelexSlips = 3;
+
+        /// <summary>
+        /// What came in overnight, clipped under the blotter: the precinct's word, the
+        /// street's, and whatever was pushed under the door. Every line is derived from
+        /// live state - they are a READOUT written as intelligence, never an inbox, and
+        /// nothing on a slip can be pressed.
+        /// </summary>
+        void BuildTelex(RectTransform sheet)
+        {
+            telexRoot = NewRect("Telex", sheet);
+            PlaceTopLeft(telexRoot, PageLeft, TelexY, PageWidth, TelexH);
+        }
+
+        void RefreshTelex()
+        {
+            if (telexRoot == null || !telexRoot.gameObject.activeSelf)
+                return;
+
+            for (var i = telexRoot.childCount - 1; i >= 0; i--)
+                Destroy(telexRoot.GetChild(i).gameObject);
+
+            var roster = director.Roster;
+            var day = outfit ? outfit.Campaign.Day : 1;
+
+            // Composed first, laid out second: the slips SPAN the sheet whatever they
+            // come to. Sized to a fixed three, two slips would leave a third of the
+            // row bare and the row would read as a thing that had failed to load.
+            telexSlips.Clear();
+
+            // The precinct: what the heat actually means for the men on the street.
+            var heat = outfit ? outfit.Heat : 0;
+            telexSlips.Add(("TELEX · 4TH PRECINCT", Clockstamp(day),
+                heat == 0
+                    ? "No file downtown carries your name. Nothing has been asked about " +
+                      "anyone on this sheet."
+                    : "The precinct has " + heat + " against you. Expect to be looked at " +
+                      "on any job worked in daylight."));
+
+            // The street: the last thing a crew came back with.
+            if (outfit != null && outfit.Records.Count > 0)
+            {
+                var record = outfit.Records[outfit.Records.Count - 1];
+                telexSlips.Add(("WIRE · THE STREET", Clockstamp(record.Day),
+                    record.Lieutenant + "'s men worked " +
+                    LedgerText.OrderLabel(record.Type).ToLowerInvariant() + " at " +
+                    record.TargetSummary + ". " +
+                    LedgerText.OutcomeLabel(record.Outcome) + "."));
+            }
+
+            // Under the door: who is on the books earning nothing.
+            if (roster != null && telexSlips.Count < TelexSlips)
+            {
+                var idle = 0;
+                string firstIdle = null;
+                for (var i = 0; i < roster.Members.Count; i++)
+                {
+                    var member = roster.Members[i];
+                    if (member.Gone || member.Status != CharacterStatus.Active)
+                        continue;
+                    if (roster.AssignmentOf(member.Id).Kind != AssignmentKind.Pool)
+                        continue;
+                    idle++;
+                    firstIdle ??= member.FullName;
+                }
+                telexSlips.Add(("NOTE · UNDER THE DOOR", "-",
+                    idle == 0
+                        ? "Every man on the books is posted. Nobody is standing about on " +
+                          "the outfit's money."
+                        : (idle == 1
+                            ? firstIdle + " is standing idle and drawing pay. "
+                            : idle + " men are standing idle and drawing pay, " +
+                              firstIdle + " among them. ") +
+                          "Somewhere on the map there is work for them."));
+            }
+
+            const float gap = 12f;
+            var across = Mathf.Max(1, telexSlips.Count);
+            var w = (PageWidth - gap * (across - 1)) / across;
+            for (var i = 0; i < telexSlips.Count; i++)
+            {
+                var (source, time, body) = telexSlips[i];
+                Slip(telexRoot, i * (w + gap), 0f, w, TelexH, source, time, body);
+            }
+        }
+
+        /// <summary>Scratch for the night's slips - composed, then laid out to span.</summary>
+        readonly List<(string Source, string Time, string Body)> telexSlips =
+            new List<(string, string, string)>();
+
+        /// <summary>A telex machine stamps the hour it printed, not the date.</summary>
+        string Clockstamp(int day)
+        {
+            if (cityClock)
+                return Mathf.FloorToInt(cityClock.Hour).ToString("00") + ":" +
+                       Mathf.FloorToInt(cityClock.Hour % 1f * 60f).ToString("00");
+            return "DAY " + day;
+        }
+
+        // --------------------------------------------------------------- the ticker
+
+        /// <summary>The line along the foot of every sheet: what the book is doing on
+        /// the left, the keys and the folio on the right.</summary>
+        void BuildTicker(RectTransform sheet)
+        {
+            Rule(sheet, PageLeft, TickerY - 8f, PageWidth, LedgerStyle.InkFaint);
+            tickerLeft = Caps(sheet, PageLeft, TickerY, PageWidth * 0.55f, "", 11f,
+                LedgerStyle.InkPale, 5f);
+            tickerRight = Caps(sheet, PageRight - PageWidth * 0.45f, TickerY,
+                PageWidth * 0.45f, "", 11f, LedgerStyle.InkPale, 5f,
+                TextAlignmentOptions.MidlineRight);
+        }
+
+        void RefreshTicker()
+        {
+            if (!tickerLeft)
+                return;
+
+            tickerLeft.text = TickerLine().ToUpperInvariant();
+            tickerRight.text = "[ ] TURN THE PAGE   [ESC] SHUT THE FILE   |   PAGE " +
+                TabFolios[(int)currentPage].ToString("00") + " OF " + Folios;
+        }
+
+        /// <summary>
+        /// The live line along the foot. A refusal outranks everything - the book must
+        /// never swallow a NO - then whatever the page the boss is on has to say, then
+        /// the one figure that is always true.
+        /// </summary>
+        string TickerLine()
+        {
+            if (lastRefusal.Length > 0)
+                return lastRefusal;
+            if (currentPage == LedgerPage.Armory && armoryNote.Length > 0)
+                return armoryNote;
+            if (currentPage == LedgerPage.Newspaper && classifiedNote.Length > 0)
+                return classifiedNote;
+
+            var roster = director.Roster;
+            if (currentPage == LedgerPage.Personnel && roster != null && selectedId >= 0)
+            {
+                var member = roster.Find(selectedId);
+                if (member != null)
+                {
+                    var post = roster.AssignmentOf(member.Id);
+                    // AssignmentLine ANSWERS the crew's name for a crew posting, so it
+                    // has to be handed one - an empty string prints an empty middle.
+                    var crewName = "";
+                    if (post.Kind == AssignmentKind.Crew)
+                    {
+                        var crew = roster.FindCrew(post.CrewId);
+                        var lieutenant = crew != null ? roster.Find(crew.LieutenantId) : null;
+                        crewName = lieutenant != null
+                            ? LedgerText.CrewName(lieutenant.Surname) : "a crew";
+                    }
+                    return member.FullName + " · " +
+                           LedgerText.AssignmentLine(post, crewName) + " · " +
+                           LedgerText.Cash(Outfit.Wages.WageFor(member)) + " a week";
+                }
+            }
+
+            var weekly = Outfit.Wages.WeeklyPayroll(roster);
+            return "payroll running · " + LedgerText.Cash(Outfit.Wages.PerDay(weekly)) +
+                   " a day";
         }
     }
 }

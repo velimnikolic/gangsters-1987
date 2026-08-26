@@ -48,6 +48,58 @@ namespace RoadDemo
         public DriverProfile Profile = DriverProfile.Traffic;
         public LaneNet Net;
 
+        // ------------------------------------------------------------------ the machine
+
+        LivingCity.Gameplay.VehiclePerformance.Machine _machine;
+        bool _machineKnown;
+
+        /// <summary>What is under him, as against who he is. The DriverProfile says how
+        /// fast he MEANS to go and what he is willing to do about what is in his way;
+        /// this says what the body he is in can actually manage, as three multipliers on
+        /// those numbers (VehiclePerformance.Machine - the pace, the pull, the grip).
+        /// Every pace, every braking curve and every bend in this file reads through it.
+        ///
+        /// Nobody has to set it. Left alone it is read ONCE off the name of the body's
+        /// own transform, which is the pack prefab's name at every place in the game that
+        /// builds a vehicle - so a car gets its machine by being built, not by whoever
+        /// built it remembering to hand it one. The setter is for the two cases where the
+        /// transform was renamed for the hierarchy's sake and the prefab is still in the
+        /// builder's hand (DemoCrews.AddCar names one "Outfit Car").</summary>
+        public LivingCity.Gameplay.VehiclePerformance.Machine Machine
+        {
+            get
+            {
+                if (_machineKnown) return _machine;
+                // before there is a body there is nothing to read: answer plainly and
+                // do NOT remember the answer, or a car asked one frame too early would
+                // drive like a saloon for the rest of its life
+                if (Tf == null) return LivingCity.Gameplay.VehiclePerformance.Ordinary;
+                _machine = LivingCity.Gameplay.VehiclePerformance.For(Tf.name);
+                _machineKnown = true;
+                return _machine;
+            }
+            set { _machine = value; _machineKnown = true; }
+        }
+
+        /// <summary>The driver's numbers with the machine folded in: what the driving
+        /// actually uses. Nothing else in this file reads the profile's own Accel, Brake,
+        /// HardBrake, LateralG, TurnSpeed or Cruise any more - a lorry and a supercar
+        /// with the same commuter at the wheel used to pull away from a light together,
+        /// and that is the whole of what these six lines are for.
+        ///
+        /// Profile.UTurnSpeed is deliberately NOT among them and is still read raw. A
+        /// turn in the road is a manoeuvre a driver chooses to make at a walking pace,
+        /// not a limit the machine imposes; what the machine does say is how tight the
+        /// arc may be, and that comes through LateralG, which is scaled.</summary>
+        protected float Accel => Profile.Accel * Machine.Pull;
+        protected float Brake => Profile.Brake * Machine.Grip;
+        protected float HardBrake => Profile.HardBrake * Machine.Grip;
+        protected float LateralG => Profile.LateralG * Machine.Grip;
+        protected float JunctionSpeed => Profile.TurnSpeed * Machine.Grip;
+        /// <summary>The pace with no road under it - what a driver who keeps to no limit
+        /// would do. <see cref="Cruise"/> is the one to ask when there IS a road.</summary>
+        protected float TopSpeed => Profile.Cruise * Machine.Top;
+
         static int _ids;
         public readonly int Id = ++_ids;
 
@@ -350,9 +402,17 @@ namespace RoadDemo
         }
 
         /// <summary>What he means to be doing on the road he is on: the profile's pace
-        /// FOR THAT KIND OF ROAD, capped by the limit if he keeps to limits. A street
-        /// and a motorway deck are not the same road and were driven at the same ten
-        /// metres a second for as long as there were motorways in this city.</summary>
+        /// FOR THAT KIND OF ROAD, scaled by what the MACHINE will do, and capped by the
+        /// limit if he keeps to limits. A street and a motorway deck are not the same
+        /// road and were driven at the same ten metres a second for as long as there
+        /// were motorways in this city.
+        ///
+        /// The order matters and is the reason the quick end of VehiclePerformance is
+        /// carried by pull and grip rather than by top speed: the limit is applied LAST,
+        /// so a supercar on a nine metre street does nine, exactly as the saloon beside
+        /// it does. That is not the table failing - it is what keeping to a limit means.
+        /// Where the machine tells is the belt, a deck, a boulevard, and any hand that
+        /// does not keep to limits at all (Gangster, Hot, Getaway, Police).</summary>
         float Cruise()
         {
             // ... and while he is IN a junction he is on no road at all, so the road he
@@ -361,7 +421,7 @@ namespace RoadDemo
             // that he is on a high street - and stands on the brakes at every one of
             // them, at fifty miles an hour, with the traffic behind him doing the same.
             var road = Road ?? Via?.To?.Road ?? Via?.From?.Road;
-            float own = road != null ? Profile.CruiseOn(road.Class) : Profile.Cruise;
+            float own = road != null ? Profile.CruiseOn(road.Class) * Machine.Top : TopSpeed;
             return Profile.ObeysLimit && road != null ? Mathf.Min(own, road.SpeedLimit) : own;
         }
 
@@ -371,7 +431,7 @@ namespace RoadDemo
         float BendSpeed(float radius)
         {
             if (float.IsInfinity(radius) || radius > 2000f) return float.MaxValue;
-            return Mathf.Sqrt(Mathf.Max(0.5f, Profile.LateralG * 0.8f) * Mathf.Max(4f, radius));
+            return Mathf.Sqrt(Mathf.Max(0.5f, LateralG * 0.8f) * Mathf.Max(4f, radius));
         }
 
         protected static float Allowed(float endSpeed, float dist, float brake)
@@ -379,7 +439,7 @@ namespace RoadDemo
 
         /// <summary>The speed from which the profile's brake stops in this distance, or
         /// slows to endSpeed: the one curve every stop here is made on.</summary>
-        protected float Allowed(float endSpeed, float dist) => Allowed(endSpeed, dist, Profile.Brake);
+        protected float Allowed(float endSpeed, float dist) => Allowed(endSpeed, dist, Brake);
 
         /// <summary>The speed to hold behind something <paramref name="gap"/> metres
         /// ahead going <paramref name="vLead"/> our way: brake to its pace with the
@@ -399,7 +459,7 @@ namespace RoadDemo
             // WITH him instead of half a second after him. (A motorcycle five metres
             // behind a car that stopped dead at a junction line needed ninety metres a
             // second squared to stay off it; the belt refused the step.)
-            float b = Mathf.Max(1f, leadSlowing > 0.1f ? leadSlowing : Profile.Brake);
+            float b = Mathf.Max(1f, leadSlowing > 0.1f ? leadSlowing : Brake);
             float his = vLead * vLead * 0.5f / b;
             float v = Allowed(0f, room + his);
             float byTime = vLead + room / Mathf.Max(0.2f, Profile.TimeGap);
@@ -1133,13 +1193,13 @@ namespace RoadDemo
                 else
                 {
                     float turnV = _via != null && _via.UTurn ? Profile.UTurnSpeed
-                        : _turn == Turn.Straight ? Mathf.Min(Cruise(), Profile.ObeysLimit ? _next.SpeedLimit : Profile.Cruise) : TurnSpeed(_via);
+                        : _turn == Turn.Straight ? Mathf.Min(Cruise(), Profile.ObeysLimit ? _next.SpeedLimit : TopSpeed) : TurnSpeed(_via);
                     v = Mathf.Min(v, Allowed(turnV, toEnd));
                     if (!_committed)
                     {
                         // the decision is made where the car can still stop: from there on
                         // it is in the box's list, and everybody plans round it
-                        float commitAt = Mathf.Max(1.6f, Speed * Speed / (2f * Profile.Brake) + 1.0f);
+                        float commitAt = Mathf.Max(1.6f, Speed * Speed / (2f * Brake) + 1.0f);
                         bool may = CanEnter(node, stopDist);
                         if (!may)
                         {
@@ -1158,8 +1218,8 @@ namespace RoadDemo
                             else _fullFor = 0f;
                             // late: both feet on the brake; past the point of no return even
                             // so - in we go, and on the list, so everybody plans round us
-                            if (stopDist < Speed * Speed / (2f * Profile.Brake)) hard = true;
-                            if (stopDist < Speed * Speed / (2f * Profile.HardBrake) - 0.3f && Speed > 1f) EnterBox(node);
+                            if (stopDist < Speed * Speed / (2f * Brake)) hard = true;
+                            if (stopDist < Speed * Speed / (2f * HardBrake) - 0.3f && Speed > 1f) EnterBox(node);
                         }
                         else
                         {
@@ -1263,7 +1323,7 @@ namespace RoadDemo
             // gunfire
             if (!Fearless)
             {
-                float cap = _nerve.Limit(_pos, _fwd, Profile.Brake, out hard);
+                float cap = _nerve.Limit(_pos, _fwd, Brake, out hard);
                 v = Mathf.Min(v, cap);
             }
 
@@ -1294,8 +1354,8 @@ namespace RoadDemo
             if (_man == Manoeuvre.Reverse) { TickReverse(dt); Place(dt); return; }
             if (_man == Manoeuvre.UTurn) { TickArc(dt, v); Place(dt); return; }
 
-            float rate = v < Speed ? (hard || v <= 0.01f ? Profile.HardBrake : Profile.Brake) : Profile.Accel;
-            if (v < Speed && v > 0.01f && !hard) rate = Profile.Brake;
+            float rate = v < Speed ? (hard || v <= 0.01f ? HardBrake : Brake) : Accel;
+            if (v < Speed && v > 0.01f && !hard) rate = Brake;
             _want = v; _wantHard = hard;
             Speed = Mathf.MoveTowards(Speed, Mathf.Max(0f, v), rate * dt);
             float step = Speed * dt;
@@ -1552,13 +1612,13 @@ namespace RoadDemo
         float LateralCap(float len, float dd)
         {
             if (dd < 0.05f) return float.MaxValue;
-            return len * Mathf.Sqrt(Profile.LateralG / (6f * dd));
+            return len * Mathf.Sqrt(LateralG / (6f * dd));
         }
 
         // And the length that slide needs to be taken at this speed.
         float SlideLength(float dd, float speed)
         {
-            float len = speed * Mathf.Sqrt(6f * dd / Profile.LateralG);
+            float len = speed * Mathf.Sqrt(6f * dd / LateralG);
             // no shorter than the turning circle lets: peak curvature 6dd/L^2 <= 1/2.2
             float byCircle = Mathf.Sqrt(6f * 2.2f * dd);
             return Mathf.Clamp(len, Mathf.Max(3f, byCircle), 40f);
@@ -1796,7 +1856,7 @@ namespace RoadDemo
                 o.S1 = Mathf.Max(o.S1, Mathf.Max(S, slideEnd) + HalfLen);
             }
             o.Vel = Speed * Heading;
-            o.Slowing = _want < Speed - 0.05f ? (_wantHard ? Profile.HardBrake : Profile.Brake) : 0f;
+            o.Slowing = _want < Speed - 0.05f ? (_wantHard ? HardBrake : Brake) : 0f;
             o.StopAt = Parked || Derelict ? S : _stopAt;
             o.Heading = _man == Manoeuvre.UTurn ? 0 : Heading;
             // A car nobody is coming back for reads to the street as a PARKED one, which
@@ -1897,7 +1957,7 @@ namespace RoadDemo
             // behind something that is not moving (or, hot, crawling)
             float slowUnder = Profile.Patience <= 0f ? Cruise() * 0.6f : 2.5f;
             bool blocked = leader != null && !leader.Parked && vLead < slowUnder && leader.Vel * Heading > -0.5f &&
-                           (gap < Profile.FollowGap + Mathf.Abs(Speed) * Mathf.Abs(Speed) / (2f * Profile.Brake) + 6f ||
+                           (gap < Profile.FollowGap + Mathf.Abs(Speed) * Mathf.Abs(Speed) / (2f * Brake) + 6f ||
                             (_holdFor > 0f && gap < 16f));
             bool behindParked = leader != null && leader.Parked && gap < Profile.FollowGap + Mathf.Abs(Speed) * 1.5f + 8f;
             bool headOn = leader != null && leader.Vel * Heading < -0.5f && gap < 12f;
@@ -2293,7 +2353,7 @@ namespace RoadDemo
         /// <summary>How fast the arc itself may be taken - the profile's own figure, or
         /// as much as the radius will bear at its lateral limit, whichever is less.</summary>
         float UTurnArcSpeed() =>
-            Mathf.Min(Profile.UTurnSpeed, Mathf.Sqrt(Profile.LateralG * UTurnRadius()));
+            Mathf.Min(Profile.UTurnSpeed, Mathf.Sqrt(LateralG * UTurnRadius()));
 
         /// <summary>What the throttle is held to while the driver MEANS to turn round.
         ///
@@ -2422,10 +2482,10 @@ namespace RoadDemo
 
         void TickArc(float dt, float vCap)
         {
-            float v = Mathf.Min(vCap, Profile.UTurnSpeed, Mathf.Sqrt(Profile.LateralG * _arcR));
+            float v = Mathf.Min(vCap, Profile.UTurnSpeed, Mathf.Sqrt(LateralG * _arcR));
             // a man in the sweep, a car that rolled into it: the belt and the walkers already cap v
             _want = v; _wantHard = false;
-            Speed = Mathf.MoveTowards(Speed, v, (v < Speed ? Profile.Brake : Profile.Accel) * dt);
+            Speed = Mathf.MoveTowards(Speed, v, (v < Speed ? Brake : Accel) * dt);
             _arcAng += Speed * dt / _arcR;
             if (_arcAng >= Mathf.PI)
             {
@@ -2507,7 +2567,7 @@ namespace RoadDemo
             float step = 0f;
             if (room > 0.6f && _backLeft > 0.01f)
             {
-                Speed = Mathf.MoveTowards(Speed, -2.5f, Profile.Accel * dt);
+                Speed = Mathf.MoveTowards(Speed, -2.5f, Accel * dt);
                 step = Mathf.Min(-Speed * dt, Mathf.Min(_backLeft, room - 0.5f));
                 S -= Heading * step;
                 _backLeft -= step;
@@ -2741,7 +2801,7 @@ namespace RoadDemo
                 }
                 else if (yellow)
                 {
-                    if (stopDist > Speed * Speed / (2f * Profile.Brake) + 2f) { Why = "yellow"; return false; }
+                    if (stopDist > Speed * Speed / (2f * Brake) + 2f) { Why = "yellow"; return false; }
                 }
                 else
                 {
@@ -2814,8 +2874,8 @@ namespace RoadDemo
         // lets at the profile's lateral acceleration.
         float TurnSpeed(Connector via)
         {
-            float v = Profile.TurnSpeed;
-            if (via != null && via.MinRadius < 1000f) v = Mathf.Min(v, Mathf.Sqrt(Profile.LateralG * via.MinRadius));
+            float v = JunctionSpeed;
+            if (via != null && via.MinRadius < 1000f) v = Mathf.Min(v, Mathf.Sqrt(LateralG * via.MinRadius));
             return Mathf.Max(2.5f, v);
         }
 
@@ -3027,7 +3087,7 @@ namespace RoadDemo
             o.BodyD1 = _next.Offset + HalfWide;
             o.S0 = o.BodyS0; o.S1 = o.BodyS1; o.D0 = o.BodyD0; o.D1 = o.BodyD1;
             o.Vel = Mathf.Abs(Speed) * h;
-            o.Slowing = _want < Speed - 0.05f ? (_wantHard ? Profile.HardBrake : Profile.Brake) : 0f;
+            o.Slowing = _want < Speed - 0.05f ? (_wantHard ? HardBrake : Brake) : 0f;
             o.Heading = h;
             o.Parked = Parked || Derelict;
         }
@@ -3101,7 +3161,7 @@ namespace RoadDemo
             if (_inNode != null) _inNode.S = ViaS;
 
             float v = via.UTurn ? Profile.UTurnSpeed : _turn == Turn.Straight
-                ? Mathf.Min(Cruise(), Profile.ObeysLimit ? _next.SpeedLimit : Profile.Cruise) : TurnSpeed(via);
+                ? Mathf.Min(Cruise(), Profile.ObeysLimit ? _next.SpeedLimit : TopSpeed) : TurnSpeed(via);
             // the cars ahead of us through the box, and just out of it
             float vb = BoxFollow(via.Node, v);
             if (vb < v) { v = vb; if (v < 0.5f) Why = "box: following"; }
@@ -3144,12 +3204,12 @@ namespace RoadDemo
             v = Mathf.Min(v, WalkersAhead(StreetTraffic.Walkers));
             v = Mathf.Min(v, BodiesAhead(dt));
             bool hard = false;
-            if (!Fearless) v = Mathf.Min(v, _nerve.Limit(_pos, _fwd, Profile.Brake, out hard));
+            if (!Fearless) v = Mathf.Min(v, _nerve.Limit(_pos, _fwd, Brake, out hard));
             v = LimitTarget(v);
             if (_halted) { v = 0f; if (_haltHard) hard = true; }
             InQueue = v < 0.5f;
             _want = v; _wantHard = hard;
-            Speed = Mathf.MoveTowards(Speed, Mathf.Max(0f, v), (v < Speed ? (hard ? Profile.HardBrake : Profile.Brake) : Profile.Accel) * dt);
+            Speed = Mathf.MoveTowards(Speed, Mathf.Max(0f, v), (v < Speed ? (hard ? HardBrake : Brake) : Accel) * dt);
             ViaS += Speed * dt;
             if (ViaS >= via.Length)
             {
@@ -3312,7 +3372,7 @@ namespace RoadDemo
 
         void TickFree(float dt)
         {
-            if (!_freeGoal.HasValue || _halted) { Speed = Mathf.MoveTowards(Speed, 0f, (_haltHard ? Profile.HardBrake : Profile.Brake) * dt); }
+            if (!_freeGoal.HasValue || _halted) { Speed = Mathf.MoveTowards(Speed, 0f, (_haltHard ? HardBrake : Brake) * dt); }
             else
             {
                 var to = _freeGoal.Value - _pos;
@@ -3326,7 +3386,7 @@ namespace RoadDemo
                     float v = Mathf.Min(Cruise(), Allowed(0f, dist));
                     v = Mathf.Min(v, WalkersAhead(StreetTraffic.Walkers));
                     _want = v; _wantHard = false;
-            Speed = Mathf.MoveTowards(Speed, v, (v < Speed ? Profile.Brake : Profile.Accel) * dt);
+            Speed = Mathf.MoveTowards(Speed, v, (v < Speed ? Brake : Accel) * dt);
                 }
             }
             var next = _pos + _fwd * Speed * dt;
@@ -3481,12 +3541,12 @@ namespace RoadDemo
                 Fault("stall", $"still for {_quietFor:F1}s", acc, step, steer);
             }
             // braking harder than the profile is meant to allow
-            else if (acc < -Profile.HardBrake * 1.15f && dt > 1e-4f)
+            else if (acc < -HardBrake * 1.15f && dt > 1e-4f)
                 Fault("overbrake", $"{acc:F1} m/s2, hard={_wantHard}", acc, step, steer);
             // asked for a stop from cruising speed with nothing in front to explain it.
             // A throttle asked for nought brakes hard by design (TickRoad), so that is
             // not the fault being looked for here - an unexplained one is.
-            else if (acc < -Profile.Brake * 1.05f && !_wantHard && _want > 0.01f &&
+            else if (acc < -Brake * 1.05f && !_wantHard && _want > 0.01f &&
                      string.IsNullOrEmpty(Why) && Via == null)
                 Fault("brake", $"{acc:F1} m/s2 with no reason given", acc, step, steer);
             // faster than the driver is allowed to go

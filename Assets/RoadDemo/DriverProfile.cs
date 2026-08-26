@@ -13,6 +13,18 @@ namespace RoadDemo
     /// he goes through a red, whether he flinches at gunfire, who gives way to
     /// whom when two cars meet nose to nose. Nothing here lets anyone into road
     /// that is not free or claimed for him.
+    ///
+    /// WHAT HE IS DRIVING is the other half, and it is not here: a body's own pace,
+    /// pull and grip are three multipliers on the numbers below
+    /// (LivingCity.Gameplay.VehiclePerformance, applied in RoadCar.Accel / Brake /
+    /// HardBrake / LateralG / JunctionSpeed / TopSpeed). So every figure in this file
+    /// is what the man ASKS FOR, and what he gets is that figure through a lorry or
+    /// through a supercar. They were the same thing until the table was written, which
+    /// is why a delivery lorry and a supercar with the same commuter at the wheel used
+    /// to pull away from a light together.
+    ///
+    /// Tune here for a kind of driver and there for a kind of machine. A number moved
+    /// here moves every body that hand ever sits in.
     /// </summary>
     public sealed class DriverProfile
     {
@@ -163,6 +175,13 @@ namespace RoadDemo
         /// given the pace at all: sixteen metres a second on a car's seven-metre brake
         /// needs eighteen metres to stop in and is given fourteen; on eleven it needs
         /// twelve.
+        ///
+        /// That arithmetic survived the machine table, and was checked rather than
+        /// hoped for. Stopping room goes as the pace squared over the brake, so a body
+        /// scaled on both needs Top²/Grip of what was worked out here - and the
+        /// motorcycle's row is 1.12 and 1.25, which is 1.004. The machine that leaves a
+        /// drive-by now runs at eighteen metres a second on a fourteen-metre brake and
+        /// stops in the same eleven and a half metres it always did.
         ///
         /// Used for EVERY leg the machine drives, not only the way home. The pass ran on
         /// Hot until the lane work put the machine inside a car three times in nine

@@ -9,13 +9,17 @@ using static LivingCity.UI.LedgerKit;
 namespace LivingCity.UI
 {
     /// <summary>
-    /// The PERSONNEL page: the roll on ruled ledger paper down the left, one man's
-    /// index card on the right. Crews are typed groups with a blank rule between them,
-    /// the lieutenant in bold heading his men; the selected man is a highlighter
-    /// stroke; in assign mode every place he could go is a green stroke. The card is
-    /// a stapled Polaroid, the typed particulars, a loyalty bar, eleven rows of stars,
-    /// what he carries, and the tape verbs - PROMOTE, REASSIGN, DEMOTE - with any
-    /// refusal written under them in red pen.
+    /// The PERSONNEL page: the payroll printout down the left, one man's personal file
+    /// down the right, both on the same sheet of the folder.
+    ///
+    /// The printout is what a line printer put out this morning: a numbered column of
+    /// men under their crew's band, with what each carries, how he is, where he stands
+    /// and what he costs - and the day's payroll totalled at the foot. The personal
+    /// file is the dossier: a clipped mug shot, the particulars, the kit he has signed
+    /// for, the trades he is rated in, and the two verbs a boss actually has.
+    ///
+    /// Nothing here posts a man anywhere. Where a man IS is reported, never set - the
+    /// orders that move him are laid against the city on the map.
     /// </summary>
     public sealed partial class PersonnelAlmanac
     {
@@ -26,24 +30,56 @@ namespace LivingCity.UI
             Demote,
         }
 
-        const float FilterY = PageTop;
-        const float FilterH = 24f;
+        // ---- the two panes ----
+
+        const float PaneGap = 26f;
+        const float PaneW = (PageWidth - PaneGap) * 0.5f;
+        const float PaneH = -(PageBottom - PageTop);
 
         const float ListLeft = PageLeft;
-        const float ListTop = -114f;
-        const float ListWidth = 446f;
+        const float CardLeft = PageLeft + PaneW + PaneGap;
 
-        /// <summary>One ledger rule per row; section heads and the blank line between
-        /// crews are rows too, so every line of type sits on a rule.</summary>
-        const float RowHeight = 34f;
-        const int ListRows = 25;
-        const float ListHeight = RowHeight * ListRows;
-        const float HoodIndent = 24f;
+        // ---- inside the printout ----
 
-        const float CardLeft = 486f;
-        const float CardWidth = PageRight - CardLeft;
-        const float CardPad = 16f;
-        const float CardInner = CardWidth - CardPad * 2f;
+        const float PrintPad = 18f;
+        const float PrintInner = PaneW - PrintPad * 2f;
+
+        /// <summary>The printout's own body, inside its padding - every y below is
+        /// measured in it, so the payroll at the foot lands ON the sheet and not past
+        /// its bottom edge.</summary>
+        const float PrintBodyH = PaneH - PrintPad * 2f;
+
+        /// <summary>Where the numbered rows begin, under the column heads.</summary>
+        const float RollTop = -96f;
+
+        /// <summary>What the payroll total at the foot takes off the bottom.</summary>
+        const float RollFoot = 74f;
+
+        const float RowHeight = 28f;
+        const float ListHeight = PrintBodyH + RollTop - RollFoot;
+        const float HoodIndent = 18f;
+
+        // The printout's column grid, in printout-inner coordinates. CONDITION carries
+        // a word AND the aside that explains it ("HURT · back day 14"), so it is the
+        // widest of the scan columns - at 56 units the aside was ellipsed to "on his fe".
+        const float ColName = 0f;
+        const float ColCarrying = 236f;
+        const float ColCondition = 318f;
+        const float ColStanding = 460f;
+        const float ColValue = 540f;
+        const float ColWage = PrintInner - 112f;
+
+        // ---- inside the personal file ----
+
+        const float CardPad = 20f;
+        const float CardInner = PaneW - CardPad * 2f;
+
+        /// <summary>The fixed head band and the fixed foot; the dossier scrolls between
+        /// them, because eleven rated trades plus a kit list will not fit any card the
+        /// sheet has room for.</summary>
+        const float CardHead = 36f;
+        const float CardFoot = 62f;
+        const float CardBodyH = PaneH - CardHead - CardFoot;
 
         /// <summary>selectedId's sentinel for "the front is selected" - the boss's
         /// card rather than a member's. Never a real Character id (those are >= 0).</summary>
@@ -51,11 +87,16 @@ namespace LivingCity.UI
 
         RectTransform listViewport;
         RectTransform listContent;
+        RectTransform cardViewport;
         RectTransform cardContent;
+        RectTransform cardFoot;
+        TMP_Text cardFileNo;
         RectTransform hoverNote;
         TMP_Text hoverNoteText;
         GameObject sortMenu;
         TMP_Text sortTape, rankTape, postTape, showTape;
+        Image sortPill, rankPill, postPill, showPill;
+        TMP_Text payrollFigure;
 
         ViewOptions options;
         int selectedId = -1;
@@ -63,6 +104,7 @@ namespace LivingCity.UI
         Confirm pendingConfirm;
         string lastRefusal = "";
         float listScroll;
+        float cardScroll;
 
         readonly List<LedgerRow> rows = new List<LedgerRow>();
 
@@ -70,20 +112,45 @@ namespace LivingCity.UI
         {
             var root = NewPageRoot(sheet, LedgerPage.Personnel);
 
-            // The filter tapes across the top: SORT opens the little menu, the other
-            // three cycle their setting on click.
-            sortTape = Tape(root, "", ListLeft, FilterY, 232f, FilterH, ToggleSortMenu);
-            rankTape = Tape(root, "", ListLeft + 240f, FilterY, 176f, FilterH, CycleRank);
-            postTape = Tape(root, "", ListLeft + 424f, FilterY, 176f, FilterH, CyclePost);
-            showTape = Tape(root, "", ListLeft + 608f, FilterY, PageRight - ListLeft - 608f,
-                FilterH, CycleShow);
+            BuildPrintout(root);
+            BuildPersonalFile(root);
+            BuildSortMenu(root);
+        }
 
-            // The ruled ledger under the roll - fixed, the rows scroll over it a whole
-            // rule at a time so type never straddles a line.
-            RuledPaper(root, ListLeft, ListTop, ListWidth, ListHeight, RowHeight, 6f);
+        /// <summary>The left pane: line-printer stock, the filter pills, the column
+        /// heads, the scrolling roll, and the payroll struck across the foot.</summary>
+        void BuildPrintout(RectTransform root)
+        {
+            var sheet = Card("Printout", root, ListLeft, PageTop, PaneW, PaneH,
+                LedgerStyle.Printout, shadowSpread: 14f, low: LedgerStyle.PrintoutLow);
+            var body = NewRect("Body", sheet);
+            Stretch(body, PrintPad);
 
-            listViewport = NewRect("Roll", root);
-            PlaceTopLeft(listViewport, ListLeft, ListTop, ListWidth, ListHeight);
+            Caps(body, 0f, -10f, PrintInner, "PAYROLL PRINTOUT · LINE PRINTER 03", 13f,
+                LedgerStyle.InkMid, 4f);
+
+            // The four filters. A pill is dark when it is actually filtering something,
+            // so the printout says at a glance that it is not showing the whole roll.
+            sortTape = Pill(body, "", 0f, -38f, 232f, 24f, false, ToggleSortMenu);
+            rankTape = Pill(body, "", 238f, -38f, 150f, 24f, false, CycleRank);
+            postTape = Pill(body, "", 394f, -38f, 150f, 24f, false, CyclePost);
+            showTape = Pill(body, "", 550f, -38f, PrintInner - 550f, 24f, false, CycleShow);
+            sortPill = PillFace(sortTape);
+            rankPill = PillFace(rankTape);
+            postPill = PillFace(postTape);
+            showPill = PillFace(showTape);
+
+            // The column heads, and the rule the printer struck under them.
+            Caps(body, ColName, -70f, 200f, "NAME", 9.5f);
+            Caps(body, ColCarrying, -70f, 84f, "CARRYING", 9.5f);
+            Caps(body, ColCondition, -70f, 110f, "CONDITION", 9.5f);
+            Caps(body, ColStanding, -70f, 80f, "STANDING", 9.5f);
+            Caps(body, ColWage, -70f, 112f, "WAGE", 9.5f, null, 4f,
+                TextAlignmentOptions.MidlineRight);
+            Rule(body, ColName, -88f, PrintInner, LedgerStyle.InkFaint);
+
+            listViewport = NewRect("Roll", body);
+            PlaceTopLeft(listViewport, ColName, RollTop, PrintInner, ListHeight);
             listViewport.gameObject.AddComponent<RectMask2D>();
 
             listContent = NewRect("Rows", listViewport);
@@ -93,28 +160,63 @@ namespace LivingCity.UI
             listContent.anchoredPosition = Vector2.zero;
             listContent.sizeDelta = new Vector2(0f, ListHeight);
 
-            // The index card, laid a touch askew the way a card in a folder lies.
-            var card = Card("Card", root, CardLeft, ListTop, CardWidth, ListHeight,
-                LedgerStyle.Card);
-            cardContent = NewRect("CardContent", card);
-            Stretch(cardContent, CardPad);
-            // The content clips to the card; the sticky note beside it does not.
-            cardContent.gameObject.AddComponent<RectMask2D>();
+            // The foot: what the whole sheet costs a day, and why it costs it.
+            var footY = RollTop - ListHeight - 10f;
+            DoubleRule(body, ColName, footY, PrintInner, LedgerStyle.Ink);
+            Caps(body, ColName, footY - 12f, 300f, "PAYROLL · RUNNING", 13f,
+                LedgerStyle.InkMid, 4f);
+            payrollFigure = Line(body, LedgerStyle.Condensed, 19f, LedgerStyle.Ink,
+                PrintInner - 300f, footY - 14f, 300f, 24f, "",
+                TextAlignmentOptions.MidlineRight);
+            var note = Paragraph(body, LedgerStyle.MonoItalic, 11f, LedgerStyle.InkDim,
+                ColName, footY - 36f, PrintInner, 28f,
+                "pay falls due as it falls due · the jailed and the hurt keep drawing · " +
+                "only the dead come off", lineSpacing: 1f);
+            note.overflowMode = TextOverflowModes.Ellipsis;
+        }
+
+        static Image PillFace(TMP_Text pillLabel) =>
+            pillLabel.transform.parent.GetComponent<Image>();
+
+        /// <summary>The right pane: the personal file. A fixed head, a scrolling body,
+        /// and the verbs pinned to the foot where a hand would rest.</summary>
+        void BuildPersonalFile(RectTransform root)
+        {
+            var card = Card("File", root, CardLeft, PageTop, PaneW, PaneH,
+                LedgerStyle.Card, shadowSpread: 14f, low: LedgerStyle.CardLow);
+            Clip(card, PaneW * 0.5f, 0f);
+
+            Caps(card, CardPad, -10f, 300f, "PERSONAL FILE", 12f, LedgerStyle.InkMid, 5f);
+            cardFileNo = Caps(card, PaneW - CardPad - 200f, -10f, 200f, "", 11f,
+                LedgerStyle.InkLabel, 4f, TextAlignmentOptions.MidlineRight);
+            Rule(card, CardPad, -CardHead + 4f, CardInner, LedgerStyle.InkFaint);
+
+            cardViewport = NewRect("Body", card);
+            PlaceTopLeft(cardViewport, CardPad, -CardHead, CardInner, CardBodyH);
+            cardViewport.gameObject.AddComponent<RectMask2D>();
+
+            cardContent = NewRect("Content", cardViewport);
+            cardContent.anchorMin = new Vector2(0f, 1f);
+            cardContent.anchorMax = new Vector2(1f, 1f);
+            cardContent.pivot = new Vector2(0f, 1f);
+            cardContent.anchoredPosition = Vector2.zero;
+            cardContent.sizeDelta = new Vector2(0f, CardBodyH);
+
+            cardFoot = NewRect("Foot", card);
+            PlaceTopLeft(cardFoot, CardPad, -(CardHead + CardBodyH), CardInner, CardFoot);
 
             // The one shared hover note - a sticky note, child of the CARD, not the
             // content (which rebuilds under the pointer), raised to last sibling on
             // every show so it prints over whatever it covers.
-            hoverNote = StickyNote(card, CardInner - 40f, 60f);
-            hoverNoteText = Text("Text", hoverNote, LedgerStyle.Type, 14f, LedgerStyle.Ink,
+            hoverNote = StickyNote(card, CardInner - 60f, 60f);
+            hoverNoteText = Text("Text", hoverNote, LedgerStyle.Mono, 12.5f, LedgerStyle.Ink,
                 TextAlignmentOptions.TopLeft);
             Stretch(hoverNoteText.rectTransform, 10f);
             hoverNoteText.textWrappingMode = TextWrappingModes.Normal;
             hoverNote.gameObject.SetActive(false);
-
-            BuildSortMenu(root);
         }
 
-        // ---------------------------------------------------------- filter tapes
+        // ---------------------------------------------------------- filter pills
 
         void ToggleSortMenu()
         {
@@ -138,6 +240,16 @@ namespace LivingCity.UI
         {
             options.Availability = (AvailabilityFilter)(((int)options.Availability + 1) % 3);
             dirty = true;
+        }
+
+        /// <summary>A pill is INK when it is holding something back and a wash of ink
+        /// when it is not - so a short roll never looks like the whole outfit.</summary>
+        static void SetPill(Image face, TMP_Text label, bool filtering)
+        {
+            if (!face)
+                return;
+            face.color = filtering ? LedgerStyle.TapeBlack : LedgerStyle.TapeIdle;
+            label.color = filtering ? LedgerStyle.TapeText : LedgerStyle.InkMid;
         }
 
         void RefreshFilterTapes()
@@ -172,9 +284,20 @@ namespace LivingCity.UI
                 AvailabilityFilter.Unavailable => "SHOW: OUT OF ACTION",
                 _ => "SHOW: ALL",
             };
+
+            SetPill(sortPill, sortTape, options.Sort != SortKey.Roster);
+            SetPill(rankPill, rankTape, options.Rank != RankFilter.All);
+            SetPill(postPill, postTape, options.Assignment != AssignmentFilter.All);
+            SetPill(showPill, showTape, options.Availability != AvailabilityFilter.All);
+
+            if (payrollFigure)
+            {
+                var weekly = Outfit.Wages.WeeklyPayroll(director.Roster);
+                payrollFigure.text = LedgerText.Cash(Outfit.Wages.PerDay(weekly)) + " / day";
+            }
         }
 
-        /// <summary>A slip of card that drops from the SORT tape: thirteen typed
+        /// <summary>A slip of card that drops from the SORT pill: thirteen typed
         /// entries, the current one highlighted. Built once; it toggles rather than
         /// rebuilds because its contents never change. Built LAST under the page so
         /// hierarchy order draws it over the roll.</summary>
@@ -183,8 +306,8 @@ namespace LivingCity.UI
             const float rowH = 24f;
             var entries = 2 + AttributeScale.Count;
 
-            var slip = Card("SortMenu", root, ListLeft, FilterY - FilterH - 4f, 260f,
-                entries * rowH + 12f, LedgerStyle.Card);
+            var slip = Card("SortMenu", root, ListLeft + PrintPad, PageTop - 84f, 260f,
+                entries * rowH + 12f, LedgerStyle.Printout, low: LedgerStyle.PrintoutLow);
             sortMenu = slip.gameObject;
             // The slip's own body must swallow stray clicks.
             PaperOf(slip).raycastTarget = true;
@@ -220,10 +343,7 @@ namespace LivingCity.UI
                     dirty = true;
                 });
 
-                var text = Text("Label", row, LedgerStyle.Type, 14.5f, LedgerStyle.Ink,
-                    TextAlignmentOptions.MidlineLeft);
-                FillRow(text.rectTransform, 12f, 230f);
-                text.text = label;
+                Caps(row, 12f, -5f, 230f, label, 11f, LedgerStyle.InkSoft, 3f);
             }
 
             sortMenu.SetActive(false);
@@ -256,17 +376,18 @@ namespace LivingCity.UI
             var y = 0f;
             var indented = false;
             var first = true;
+            var index = 0;
             for (var i = 0; i < rows.Count; i++)
             {
                 var row = rows[i];
                 switch (row.Kind)
                 {
                     case RowKind.CrewHeader:
-                        // The crew band is gone at the user's word - the lieutenant's
-                        // row is the crew's handle. A blank rule separates crews.
                         indented = true;
                         if (!first)
-                            y -= RowHeight;
+                            y -= 8f;
+                        BuildCrewBand(roster, row.CrewId, y);
+                        y -= RowHeight;
                         break;
 
                     case RowKind.FrontHeader:
@@ -274,19 +395,19 @@ namespace LivingCity.UI
                     case RowKind.SpecialistHeader:
                         indented = true;
                         if (!first)
-                            y -= RowHeight;
-                        BuildSectionHeader(row.Kind, y);
+                            y -= 8f;
+                        BuildSectionHeader(roster, row.Kind, y);
                         y -= RowHeight;
                         break;
 
                     case RowKind.Lieutenant:
-                        BuildCharacterRow(roster, row.CharacterId, y, indent: false,
-                            lieutenantRow: true);
+                        BuildCharacterRow(roster, row.CharacterId, y, ++index,
+                            indent: false, lieutenantRow: true);
                         y -= RowHeight;
                         break;
 
                     default:
-                        BuildCharacterRow(roster, row.CharacterId, y, indented);
+                        BuildCharacterRow(roster, row.CharacterId, y, ++index, indented);
                         y -= RowHeight;
                         break;
                 }
@@ -300,10 +421,40 @@ namespace LivingCity.UI
             listContent.anchoredPosition = new Vector2(0f, listScroll);
         }
 
-        void BuildSectionHeader(RowKind kind, float y)
+        /// <summary>
+        /// A band across the roll naming a crew, with a dotted leader out to a note on
+        /// the right - the way a printout separates a run of lines that belong together.
+        /// The band is a LABEL: clicking it does nothing, because the lieutenant's own
+        /// row underneath is still the crew's handle (it selects him, and in assign mode
+        /// it takes the man into his crew).
+        /// </summary>
+        void BuildCrewBand(Roster roster, int crewId, float y)
+        {
+            var crew = roster.FindCrew(crewId);
+            var lieutenant = crew != null ? roster.Find(crew.LieutenantId) : null;
+            var name = lieutenant != null
+                ? LedgerText.CrewName(lieutenant.Surname).ToUpperInvariant()
+                : "A CREW";
+
+            var rect = NewRect("Crew Band", listContent);
+            PlaceTopLeft(rect, 0f, y, PrintInner, RowHeight);
+
+            var label = Caps(rect, 0f, -8f, 320f, name, 13f, LedgerStyle.Ink, 4f);
+            var men = crew != null ? crew.HoodIds.Count : 0;
+            var note = Caps(rect, PrintInner - 300f, -9f, 300f,
+                men == 1 ? "one man under him" : men + " men under him", 10f,
+                LedgerStyle.InkLabel, 2f, TextAlignmentOptions.MidlineRight);
+
+            var from = label.preferredWidth + 12f;
+            var to = PrintInner - note.preferredWidth - 12f;
+            if (to > from)
+                DottedRule(rect, from, -16f, to - from, LedgerStyle.InkDotted);
+        }
+
+        void BuildSectionHeader(Roster roster, RowKind kind, float y)
         {
             var rect = NewRect("Section", listContent);
-            PlaceTopLeft(rect, 0f, y, ListWidth, RowHeight);
+            PlaceTopLeft(rect, 0f, y, PrintInner, RowHeight);
 
             var isTarget = assignMode && selectedId >= 0 && kind != RowKind.SpecialistHeader;
             // The front's header is also the BOSS's row: clicking it opens the front
@@ -330,19 +481,36 @@ namespace LivingCity.UI
             else if (chosen)
                 Highlight(rect, LedgerStyle.Highlighter);
 
-            var label = Text("Label", rect, LedgerStyle.Type, 14f, LedgerStyle.Ink,
-                TextAlignmentOptions.MidlineLeft);
-            FillRow(label.rectTransform, 12f, 400f);
-            label.characterSpacing = 2f;
-            label.text = kind switch
+            var title = kind switch
             {
                 RowKind.FrontHeader => "THE FRONT",
                 RowKind.PoolHeader => "THE POOL",
                 _ => "SPECIALISTS",
             };
+            var aside = kind switch
+            {
+                RowKind.FrontHeader => FrontAside(roster),
+                RowKind.PoolHeader => "unassigned · earning nothing",
+                _ => "bought talent · not fighters",
+            };
+
+            var label = Caps(rect, 8f, -8f, 320f, title, 13f, LedgerStyle.Ink, 4f);
+            var note = Caps(rect, PrintInner - 320f, -9f, 320f, aside, 10f,
+                LedgerStyle.InkLabel, 2f, TextAlignmentOptions.MidlineRight);
+
+            var from = 8f + label.preferredWidth + 12f;
+            var to = PrintInner - note.preferredWidth - 12f;
+            if (to > from)
+                DottedRule(rect, from, -16f, to - from, LedgerStyle.InkDotted);
         }
 
-        void BuildCharacterRow(Roster roster, int id, float y, bool indent,
+        static string FrontAside(Roster roster)
+        {
+            var manager = roster.Find(roster.FrontId);
+            return manager != null ? manager.Surname + " runs the desk" : "nobody at the desk";
+        }
+
+        void BuildCharacterRow(Roster roster, int id, float y, int index, bool indent,
             bool lieutenantRow = false)
         {
             var member = roster.Find(id);
@@ -350,11 +518,11 @@ namespace LivingCity.UI
                 return;
 
             var rect = NewRect("Row", listContent);
-            PlaceTopLeft(rect, 0f, y, ListWidth, RowHeight);
+            PlaceTopLeft(rect, 0f, y, PrintInner, RowHeight);
 
             var chosen = id == selectedId && !assignMode;
             // A lieutenant's row is his crew's handle: in assign mode it lights as
-            // the drop target the crew band used to be.
+            // the drop target the crew band never became.
             var isCrewTarget = assignMode && lieutenantRow && selectedId >= 0;
             var surface = ClickSurface(rect);
 
@@ -383,27 +551,50 @@ namespace LivingCity.UI
                 Highlight(rect, LedgerStyle.HighlighterGreen);
             else if (chosen)
                 Highlight(rect, LedgerStyle.Highlighter);
+            else
+                Rule(rect, 0f, -RowHeight, PrintInner, LedgerStyle.InkHair);
 
-            var x = 12f + (indent ? HoodIndent : 0f);
             var dead = member.Gone; // struck through: dead or deserted
             var ink = dead ? LedgerStyle.InkDim : LedgerStyle.Ink;
 
+            var numberX = 8f + (indent ? HoodIndent : 0f);
+            var number = Line(rect, LedgerStyle.Mono, 10.5f, LedgerStyle.InkLabel,
+                numberX, 0f, 24f, RowHeight, index.ToString("00"));
+            FillRow(number.rectTransform, numberX, 24f);
+
+            var nameX = numberX + 28f;
             var name = Text("Name", rect, lieutenantRow ? LedgerStyle.MonoBold : LedgerStyle.Mono,
                 14.5f, ink, TextAlignmentOptions.MidlineLeft);
-            FillRow(name.rectTransform, x, GunColumn - 4f - x);
+            name.overflowMode = TextOverflowModes.Ellipsis;
+            FillRow(name.rectTransform, nameX, 150f);
             name.text = member.FullName;
 
+            // The rank tag rides after the name at a FIXED width, and the name's own
+            // cell is what gives: a tag that can be pushed off the row is a tag nobody
+            // can read on the one line where rank decides everything.
+            var tagX = nameX + name.preferredWidth + 10f;
+            var tagRoom = ColCarrying - 8f - tagX;
+            if (tagRoom > 40f)
+            {
+                var rank = Caps(rect, 0f, 0f, tagRoom,
+                    member.Specialty != Specialty.None
+                        ? LedgerText.SpecialtyLabel(member.Specialty)
+                        : LedgerText.RankLabel(member.Rank),
+                    9.5f, dead ? LedgerStyle.InkFaint : LedgerStyle.InkLabel, 3f);
+                FillRow(rank.rectTransform, tagX, tagRoom);
+            }
+
             BuildGunCell(roster, rect, member, dead);
-            BuildRowCells(rect, member, 236f, dead);
+            BuildRowCells(roster, rect, member, dead);
 
             // The dead are struck through in pen - the record keeps their line.
             if (dead)
-                Rule(rect, x - 2f, -RowHeight * 0.5f + 1f, 220f - x, LedgerStyle.RedPen, 1.5f);
+                Rule(rect, nameX - 2f, -RowHeight * 0.5f + 1f, ColCarrying - 12f - nameX,
+                    LedgerStyle.RedPen, 1.5f);
         }
 
-        /// <summary>Where the gun sits on a row - between the name and the rank tag.</summary>
-        const float GunColumn = 198f;
-        const float GunWidth = 34f, GunHeight = 16f;
+        /// <summary>How wide the gun's cut is in the CARRYING column.</summary>
+        const float GunWidth = 70f, GunHeight = 20f;
 
         /// <summary>The body of the gun a man carries: the first firearm on his line in
         /// the armory, else the .38 every man of the outfit carries in his coat - the
@@ -432,9 +623,9 @@ namespace LivingCity.UI
         /// <summary>The revolver every man carries by default - Gang Warfare's .38.</summary>
         const string DefaultSidearmModel = "SM_Wep_Pistol_Revolver_01";
 
-        /// <summary>A small newsprint of the man's gun beside his name - the armory
-        /// page's photograph, cut to the barrel band, so the roll reads who carries
-        /// what at a glance. Specialists carry nothing and show nothing.</summary>
+        /// <summary>The CARRYING column: a small newsprint of the man's gun, cut to the
+        /// barrel band, so the roll reads who carries what at a glance without a word
+        /// of type. Specialists carry nothing and show nothing.</summary>
         void BuildGunCell(Roster roster, RectTransform rect, Character member, bool dead)
         {
             if (member.Specialty != Specialty.None)
@@ -448,7 +639,7 @@ namespace LivingCity.UI
             cut.anchorMin = new Vector2(0f, 0.5f);
             cut.anchorMax = new Vector2(0f, 0.5f);
             cut.pivot = new Vector2(0f, 0.5f);
-            cut.anchoredPosition = new Vector2(GunColumn, 0f);
+            cut.anchoredPosition = new Vector2(ColCarrying, 0f);
             var raw = cut.gameObject.AddComponent<RawImage>();
             raw.raycastTarget = false;
             raw.enabled = false;
@@ -458,48 +649,68 @@ namespace LivingCity.UI
                 PortraitStudio.Treatment.Newsprint);
         }
 
-        /// <summary>The scan columns every man's row shares: rank tag, status stamp,
-        /// WANTED, and - under an attribute or loyalty sort - the sorted value itself,
-        /// right-aligned where a column of numbers can be read straight down. That
-        /// column is what makes sixty men scannable.</summary>
-        void BuildRowCells(RectTransform rect, Character member, float x, bool dead)
+        /// <summary>How a man is, in the word a clerk would type.</summary>
+        static string ConditionWord(CharacterStatus status) => status switch
         {
-            var rank = Text("Rank", rect, LedgerStyle.Type, 11.5f,
-                dead ? LedgerStyle.InkFaint : LedgerStyle.InkDim,
+            CharacterStatus.Active => "FIT",
+            CharacterStatus.Hospitalized => "HURT",
+            CharacterStatus.Jailed => "HELD",
+            CharacterStatus.Dead => "DEAD",
+            _ => "GONE",
+        };
+
+        /// <summary>
+        /// The scan columns: CONDITION, STANDING, the sorted value when a sort is on,
+        /// and the WAGE. Those four read straight down a column of sixty men, which is
+        /// what makes sixty men scannable - the wage most of all, because payroll is
+        /// the pressure the whole game turns on.
+        /// </summary>
+        void BuildRowCells(Roster roster, RectTransform rect, Character member, bool dead)
+        {
+            // ---- condition ----
+            var status = member.Status;
+            var condition = Caps(rect, 0f, 0f, 44f, ConditionWord(status), 11f,
+                status == CharacterStatus.Active ? LedgerStyle.GreenOk
+                : dead ? LedgerStyle.InkDim : LedgerStyle.RedPen, 2f);
+            FillRow(condition.rectTransform, ColCondition, 44f);
+
+            var aside = status == CharacterStatus.Active ? "on his feet"
+                : status == CharacterStatus.Dead ? "off the books"
+                : status == CharacterStatus.Deserted ? "ran"
+                : member.BackOnDay > 0 ? "back day " + member.BackOnDay
+                : "no date set";
+            var asideText = Text("Aside", rect, LedgerStyle.Mono, 10.5f, LedgerStyle.InkDim,
                 TextAlignmentOptions.MidlineLeft);
-            FillRow(rank.rectTransform, x, 84f);
-            rank.characterSpacing = 1f;
-            rank.text = (member.Specialty != Specialty.None
-                ? LedgerText.SpecialtyLabel(member.Specialty)
-                : LedgerText.RankLabel(member.Rank)).ToUpperInvariant();
+            asideText.overflowMode = TextOverflowModes.Ellipsis;
+            FillRow(asideText.rectTransform, ColCondition + 46f, ColStanding - ColCondition - 52f);
+            asideText.text = aside;
 
-            if (member.Status != CharacterStatus.Active)
-            {
-                var status = Text("Status", rect, LedgerStyle.Condensed, 11f,
-                    LedgerStyle.RedPen, TextAlignmentOptions.MidlineLeft);
-                FillRow(status.rectTransform, x + 88f, 74f);
-                status.characterSpacing = 2f;
-                status.text = LedgerText.StatusLabel(member.Status).ToUpperInvariant();
-            }
+            // ---- standing ----
+            var posted = roster.AssignmentOf(member.Id).Kind != AssignmentKind.Pool;
+            var standing = member.Wanted ? "WANTED" : dead ? "-" : posted ? "ACTIVE" : "IDLE";
+            var standingText = Caps(rect, 0f, 0f, 76f, standing, 11f,
+                member.Wanted ? LedgerStyle.RedPen
+                : dead ? LedgerStyle.InkFaint
+                : posted ? LedgerStyle.GreenOk : LedgerStyle.InkPale, 2f);
+            FillRow(standingText.rectTransform, ColStanding, 76f);
 
-            if (member.Wanted)
-            {
-                var wanted = Text("Wanted", rect, LedgerStyle.Condensed, 11f,
-                    LedgerStyle.RedPen, TextAlignmentOptions.MidlineLeft);
-                FillRow(wanted.rectTransform, x + 150f, 60f);
-                wanted.characterSpacing = 2f;
-                wanted.text = "WANTED";
-            }
-
+            // ---- the sorted value, when the roll is sorted by one ----
             if (options.Sort != SortKey.Roster && !assignMode)
             {
-                var value = Text("Value", rect, LedgerStyle.MonoBold, 14f, LedgerStyle.Ink,
+                var value = Text("Value", rect, LedgerStyle.MonoBold, 13f, LedgerStyle.Ink,
                     TextAlignmentOptions.MidlineRight);
-                FillRow(value.rectTransform, ListWidth - 62f, 52f);
+                FillRow(value.rectTransform, ColValue, ColWage - ColValue - 12f);
                 value.text = options.Sort == SortKey.Loyalty
                     ? member.Loyalty.ToString()
                     : LedgerText.Stars(member.GetHalfSteps(options.SortAttribute));
             }
+
+            // ---- what he costs ----
+            var wage = Text("Wage", rect, LedgerStyle.MonoBold, 14f,
+                dead ? LedgerStyle.InkFaint : LedgerStyle.Ink,
+                TextAlignmentOptions.MidlineRight);
+            FillRow(wage.rectTransform, ColWage, 112f);
+            wage.text = LedgerText.Cash(Outfit.Wages.WageFor(member));
         }
 
         void SelectMember(int id)
@@ -507,6 +718,7 @@ namespace LivingCity.UI
             selectedId = id;
             pendingConfirm = Confirm.None;
             lastRefusal = "";
+            cardScroll = 0f;
             dirty = true;
         }
 
@@ -517,7 +729,7 @@ namespace LivingCity.UI
             dirty = true;
         }
 
-        // ------------------------------------------------------------------ the card
+        // ------------------------------------------------------------ the personal file
 
         /// <summary>The face this member wears in his photograph and on the street - the
         /// same man in both, and never a body one of his own crewmates is wearing. The
@@ -542,8 +754,8 @@ namespace LivingCity.UI
         }
 
         /// <summary>Prints the sticky note just under the hovered row, sized to its
-        /// copy. Row coordinates are the card content's, inset by CardPad from the
-        /// card the note itself hangs on.</summary>
+        /// copy. Row coordinates are the card content's, which the note hangs beside on
+        /// the card itself - so the head band's offset has to be added back.</summary>
         void ShowHoverNote(string note, RectTransform row)
         {
             if (note.Length == 0 || hoverNote == null)
@@ -553,11 +765,12 @@ namespace LivingCity.UI
             hoverNote.gameObject.SetActive(true);
             hoverNote.SetAsLastSibling();
 
-            var width = CardInner - 40f;
+            var width = CardInner - 60f;
             var height = hoverNoteText.GetPreferredValues(note, width - 20f, 0f).y + 20f;
             hoverNote.sizeDelta = new Vector2(width, height);
-            hoverNote.anchoredPosition = new Vector2(CardPad + 20f,
-                row.anchoredPosition.y - row.sizeDelta.y - CardPad - 2f);
+            hoverNote.anchoredPosition = new Vector2(CardPad + 30f,
+                row.anchoredPosition.y + cardContent.anchoredPosition.y
+                - row.sizeDelta.y - CardHead - 2f);
         }
 
         void HideHoverNote()
@@ -589,35 +802,68 @@ namespace LivingCity.UI
 
             foreach (Transform old in cardContent)
                 Destroy(old.gameObject);
+            foreach (Transform old in cardFoot)
+                Destroy(old.gameObject);
 
             var roster = director.Roster;
             if (roster != null && selectedId == FrontSelection)
             {
-                BuildFrontDetail(roster);
+                if (cardFileNo)
+                    cardFileNo.text = "F-0001 · THE FRONT";
+                CloseCard(BuildFrontDetail(roster));
                 return;
             }
 
             var member = roster != null && selectedId >= 0 ? roster.Find(selectedId) : null;
             if (member == null)
             {
-                var hint = Text("Hint", cardContent, LedgerStyle.Type, 14f, LedgerStyle.InkDim,
+                if (cardFileNo)
+                    cardFileNo.text = "";
+                var hint = Caps(cardContent, 0f, -(CardBodyH * 0.5f), CardInner,
+                    "pick a man off the printout", 12f, LedgerStyle.InkLabel, 4f,
                     TextAlignmentOptions.Center);
-                Stretch(hint.rectTransform);
-                hint.text = "- pick a man off the roll -";
+                hint.text = "— PICK A MAN OFF THE PRINTOUT —";
+                CloseCard(-CardBodyH);
                 return;
             }
 
-            // The Polaroid, stapled top-left and a little crooked.
-            var raw = Polaroid(cardContent, 4f, -6f, 84f,
-                InitialsOf(member.FullName), -3.5f, out _);
+            if (cardFileNo)
+                cardFileNo.text = "P-" + (1100 + member.Id).ToString("0000");
+
+            var y = BuildDossier(roster, member);
+            CloseCard(y);
+            BuildActionStrip(roster, member);
+        }
+
+        /// <summary>Sizes and re-clamps the dossier's scroll to whatever was just laid
+        /// on it. Called with the y the last thing on the card ended at.</summary>
+        void CloseCard(float y)
+        {
+            cardContent.sizeDelta = new Vector2(0f, Mathf.Max(CardBodyH, -y + 16f));
+            var maxScroll = Mathf.Max(0f, cardContent.sizeDelta.y - CardBodyH);
+            cardScroll = Mathf.Clamp(cardScroll, 0f, maxScroll);
+            cardContent.anchoredPosition = new Vector2(0f, cardScroll);
+        }
+
+        /// <summary>The dossier proper. Returns the y it finished at.</summary>
+        float BuildDossier(Roster roster, Character member)
+        {
+            // ---- the mug shot, and the particulars beside it ----
+            const float plateW = 128f;
+            const float plateH = 156f;
+            var raw = Plate(cardContent, 0f, -8f, plateW, plateH, "MUG SHOT");
             PortraitStudio.Request(MemberModel(member), PortraitStudio.Framing.Bust, raw);
+            Caps(cardContent, 0f, -(plateH + 12f), plateW,
+                "P-" + (1100 + member.Id).ToString("0000") + " · 1987", 9f,
+                LedgerStyle.InkLabel, 2f);
 
-            var name = Line(cardContent, LedgerStyle.Type, 18f, LedgerStyle.Ink, 118f, -10f,
-                CardInner - 118f, 30f, member.FullName);
+            var textX = plateW + 22f;
+            var textW = CardInner - textX;
 
-            var rankLine = member.Specialty != Specialty.None
-                ? LedgerText.SpecialtyLabel(member.Specialty)
-                : LedgerText.RankLabel(member.Rank);
+            var name = Line(cardContent, LedgerStyle.Condensed, 26f, LedgerStyle.Ink,
+                textX, -6f, textW, 34f, member.FullName);
+            name.characterSpacing = 1f;
+
             var assignment = roster.AssignmentOf(member.Id);
             var crewName = "";
             if (assignment.Kind == AssignmentKind.Crew)
@@ -629,72 +875,290 @@ namespace LivingCity.UI
                     : "A crew";
             }
 
-            Line(cardContent, LedgerStyle.Mono, 14.5f, LedgerStyle.InkDim, 118f, -42f,
-                CardInner - 118f, 20f,
-                rankLine + "  ·  " + LedgerText.AssignmentLine(assignment, crewName));
+            var rankLine = member.Specialty != Specialty.None
+                ? LedgerText.SpecialtyLabel(member.Specialty)
+                : LedgerText.RankLabel(member.Rank);
+            Caps(cardContent, textX, -40f, textW,
+                rankLine + " · " + (crewName.Length > 0 ? crewName : "no crew"), 12f,
+                LedgerStyle.RedPen, 5f);
 
-            var active = member.Status == CharacterStatus.Active;
-            Line(cardContent, LedgerStyle.Mono, 14.5f,
-                active ? LedgerStyle.InkDim : LedgerStyle.RedPen, 118f, -64f,
-                CardInner - 118f, 20f,
-                "Status: " + LedgerText.StatusLabel(member.Status));
-            Rule(cardContent, 118f, -90f, CardInner - 118f, LedgerStyle.InkFaint);
+            var y = -70f;
+            y = Particular("POST", LedgerText.AssignmentLine(assignment, crewName), textX,
+                textW, y);
+            y = Particular("WAGE", LedgerText.Cash(Outfit.Wages.WageFor(member)) + " / week",
+                textX, textW, y);
+            y = Particular("CONDITION", LedgerText.StatusLabel(member.Status), textX, textW, y,
+                member.Status == CharacterStatus.Active ? LedgerStyle.Ink : LedgerStyle.RedPen);
+            y = Particular("LOYALTY", member.Loyalty + " of 100", textX, textW, y,
+                member.Loyalty < 35 ? LedgerStyle.RedPen : LedgerStyle.Ink);
 
             // The stamps: the law's word over the photograph, WANTED beside the name.
-            if (!active)
+            if (member.Status != CharacterStatus.Active)
                 Stamp(cardContent, member.Status switch
                 {
                     CharacterStatus.Dead => "DECEASED",
                     CharacterStatus.Deserted => "DESERTED",
                     CharacterStatus.Jailed => "IN CUSTODY",
                     _ => "IN HOSPITAL",
-                }, 0f, -56f, 124f, 30f, tilt: -14f, size: 15f);
+                }, 2f, -46f, 124f, 30f, tilt: -14f, size: 14f);
             if (member.Wanted)
-                Stamp(cardContent, "WANTED", CardInner - 92f, -4f, 88f, 26f, tilt: 8f,
+                Stamp(cardContent, "WANTED", CardInner - 110f, -2f, 104f, 28f, tilt: 8f,
                     size: 14f);
 
-            var y = -128f;
+            y = Mathf.Min(y, -(plateH + 30f)) - 10f;
 
-            y = BuildLoyaltyBar(member, y);
-            y -= 8f;
+            // ---- what he has signed for ----
+            y = BuildKitSlots(roster, member, y);
+            y -= 12f;
 
+            // ---- where he is, and how far along he is ----
+            y = BuildStandingBoxes(roster, member, assignment, crewName, y);
+            y -= 14f;
+
+            // ---- the trades ----
+            Caps(cardContent, 0f, y, CardInner, "TRAITS · AS TYPED", 11f,
+                LedgerStyle.InkMid, 5f);
+            y -= 22f;
             for (var a = 0; a < AttributeScale.Count; a++)
                 y = BuildAttributeRow(member, (CharacterAttribute)a, y);
             y -= 8f;
 
+            // ---- the gear the outfit keeps, and his crew's share of it ----
             y = BuildEquipmentSection(roster, member, y);
-            y -= 12f;
 
-            BuildActionStrip(roster, member, y);
+            if (lastRefusal.Length > 0)
+                y = MarginNote(lastRefusal, y - 10f);
+
+            return y;
+        }
+
+        /// <summary>One LABEL / value line of the particulars grid.</summary>
+        float Particular(string label, string value, float x, float w, float y, Color? ink = null)
+        {
+            Caps(cardContent, x, y, 96f, label, 9.5f, LedgerStyle.InkLabel, 3f);
+            var text = Line(cardContent, LedgerStyle.Mono, 13.5f, ink ?? LedgerStyle.Ink,
+                x + 100f, y, w - 100f, 20f, value);
+            text.overflowMode = TextOverflowModes.Ellipsis;
+            return y - 22f;
+        }
+
+        /// <summary>
+        /// The kit slots: GUN, MOTOR, VEST across the card. A slot he has something in
+        /// is a solid box with the thing named in it; a slot he has nothing in is a
+        /// DASHED box with a dash in it - the design's own way of saying that an empty
+        /// slot is a fact about the man and not an absence of interface.
+        ///
+        /// The dash is drawn as four hairline runs rather than a border style, because
+        /// UGUI has no dashed border and a texture for three boxes is not worth it.
+        /// </summary>
+        float BuildKitSlots(Roster roster, Character member, float y)
+        {
+            const float gap = 10f;
+            var slotW = (CardInner - gap * 2f) / 3f;
+            const float slotH = 52f;
+
+            var held = new List<RosterEquipment>();
+            roster.HeldBy(member.Id, held);
+
+            string gun = null, motor = null, vest = null;
+            for (var i = 0; i < held.Count; i++)
+            {
+                var item = held[i];
+                if (RosterOps.IsWeapon(item.Kind))
+                    gun ??= item.DisplayName;
+                else if (item.Kind == EquipmentKind.Vehicle || item.Kind == EquipmentKind.Motorcycle)
+                    motor ??= item.DisplayName;
+                else
+                    vest ??= item.DisplayName;
+            }
+
+            // Every man of the outfit carries the .38 in his coat whether the stock book
+            // knows it or not - it is what the roll draws beside his name, so the slot
+            // must say the same thing rather than a dash the printout contradicts.
+            var issued = gun != null;
+            if (gun == null && member.Specialty == Specialty.None)
+                gun = "Revolver, .38 — his own";
+            KitSlot("GUN", gun, 0f, y, slotW, slotH, filled: issued);
+            KitSlot("MOTOR", motor, slotW + gap, y, slotW, slotH);
+            KitSlot("VEST", vest, (slotW + gap) * 2f, y, slotW, slotH);
+            return y - slotH;
+        }
+
+        void KitSlot(string label, string item, float x, float y, float w, float h,
+            bool? filled = null)
+        {
+            var rect = NewRect("Kit " + label, cardContent);
+            PlaceTopLeft(rect, x, y, w, h);
+
+            var signedOut = filled ?? !string.IsNullOrEmpty(item);
+            if (signedOut)
+            {
+                Fill(rect, new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.06f));
+                Frame(rect, 1f, new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.5f));
+            }
+            else
+                DashedFrame(rect, w, h);
+
+            Caps(rect, 10f, -6f, w - 20f, label, 9f, LedgerStyle.InkLabel, 3f);
+            var text = Line(rect, LedgerStyle.Mono, 13f,
+                signedOut ? LedgerStyle.Ink : LedgerStyle.InkPale, 10f, -24f, w - 20f, 20f,
+                string.IsNullOrEmpty(item) ? "—" : item);
+            text.overflowMode = TextOverflowModes.Ellipsis;
+        }
+
+        /// <summary>A dashed hairline box - an empty slot on a form.</summary>
+        static void DashedFrame(RectTransform rect, float w, float h)
+        {
+            var ink = new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.42f);
+            DottedRule(rect, 0f, 0f, w, ink);
+            DottedRule(rect, 0f, -h + 1f, w, ink);
+            // The sides are the same dotted run stood on end.
+            for (var side = 0; side < 2; side++)
+            {
+                var edge = NewRect("Dash", rect);
+                PlaceTopLeft(edge, side == 0 ? 0f : w - 1f, 0f, h, 1f);
+                edge.pivot = new Vector2(0f, 1f);
+                edge.localRotation = Quaternion.Euler(0f, 0f, -90f);
+                var raw = edge.gameObject.AddComponent<RawImage>();
+                raw.texture = LedgerStyle.DotRule;
+                raw.color = ink;
+                raw.uvRect = new Rect(0f, 0f, h / 4f, 1f);
+                raw.raycastTarget = false;
+            }
+        }
+
+        /// <summary>
+        /// Two boxes side by side: where the map says he is, and how far along he is.
+        /// The left one is READ-ONLY on purpose and says so - a man is sent somewhere
+        /// from the map, and the file only reports it.
+        /// </summary>
+        float BuildStandingBoxes(Roster roster, Character member, Assignment assignment,
+            string crewName, float y)
+        {
+            const float gap = 12f;
+            const float boxH = 56f;
+            var boxW = (CardInner - gap) * 0.5f;
+
+            var where = NewRect("Where", cardContent);
+            PlaceTopLeft(where, 0f, y, boxW, boxH);
+            Fill(where, new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.05f));
+            Frame(where, 1f, LedgerStyle.InkFaint);
+            Caps(where, 10f, -6f, boxW - 20f, "WHERE HE IS · PER THE MAP", 9f,
+                LedgerStyle.InkLabel, 3f);
+            var line = Line(where, LedgerStyle.Mono, 13f, LedgerStyle.Ink, 10f, -26f,
+                boxW - 20f, 20f, LedgerText.AssignmentLine(assignment, crewName));
+            line.overflowMode = TextOverflowModes.Ellipsis;
+
+            // How practised he is overall - the sum of what he has banked, as a word
+            // and a run of ten. Derived, never stored: the roster has no XP.
+            var steps = member.TotalHalfSteps();
+            var floor = AttributeScale.Count * AttributeScale.MinHalfSteps;
+            var ceiling = AttributeScale.Count * AttributeScale.MaxHalfSteps;
+            var span = Mathf.Max(1, ceiling - floor);
+            var filled = Mathf.Clamp(Mathf.RoundToInt(10f * (steps - floor) / span), 0, 10);
+            var word = filled <= 3 ? "GREEN" : filled <= 6 ? "PROVEN" : "SEASONED";
+
+            var experience = NewRect("Experience", cardContent);
+            PlaceTopLeft(experience, boxW + gap, y, boxW, boxH);
+            Fill(experience, new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.05f));
+            Frame(experience, 1f, LedgerStyle.InkFaint);
+            Caps(experience, 10f, -6f, boxW - 20f, "EXPERIENCE · " + word, 9f,
+                LedgerStyle.InkLabel, 3f);
+            StepBar(experience, 10f, -34f, 10, filled, LedgerStyle.GreenOk, 6f, 12f, 9f);
+
+            return y - boxH;
+        }
+
+        /// <summary>How good a man is at one trade, in the design's stepped meter and
+        /// the word that goes with it - and, in pencil under the meter, how far along
+        /// he is toward the next half step.</summary>
+        float BuildAttributeRow(Character member, CharacterAttribute attribute, float y)
+        {
+            var label = Line(cardContent, LedgerStyle.Mono, 12.5f, LedgerStyle.InkSoft,
+                0f, y, 140f, 20f, LedgerText.AttributeLabel(attribute));
+            label.overflowMode = TextOverflowModes.Ellipsis;
+
+            var halfSteps = member.GetHalfSteps(attribute);
+            StepBar(cardContent, 150f, y - 10f, AttributeScale.MaxHalfSteps, halfSteps,
+                LedgerStyle.RedPen, 5f, 11f, 7f);
+
+            Line(cardContent, LedgerStyle.Mono, 11.5f, LedgerStyle.InkDim, CardInner - 130f,
+                y, 130f, 20f, AttributeWord(halfSteps), TextAlignmentOptions.MidlineRight);
+
+            // Nothing is drawn for a trade he has never practised or one he has already
+            // topped out at - an empty rule under every line would be eleven marks
+            // saying nothing.
+            var cost = Practice.NextCost(member, attribute);
+            var banked = member.GetPractice(attribute);
+            if (cost > 0 && banked > 0)
+                Bar(cardContent, 150f, y - 17f,
+                    StepBarWidth(AttributeScale.MaxHalfSteps, 5f, 7f), 3f,
+                    Mathf.Clamp01(banked / (float)cost), LedgerStyle.InkFaint);
+
+            // The whole line is a hover zone: rest the pointer on a trade and the
+            // sticky note under it says what the number is FOR.
+            var zone = NewRect("Hover", cardContent);
+            PlaceTopLeft(zone, 0f, y, CardInner, 20f);
+            ClickSurface(zone);
+            var hover = zone.gameObject.AddComponent<StatHoverZone>();
+            hover.almanac = this;
+            hover.note = LedgerText.AttributeNote(attribute);
+
+            return y - 21f;
+        }
+
+        /// <summary>A rating as a word - the design's wanting / middling / sound /
+        /// exceptional, laid over this roster's own ten-step scale.</summary>
+        static string AttributeWord(int halfSteps) =>
+            halfSteps <= 3 ? "wanting"
+            : halfSteps <= 5 ? "middling"
+            : halfSteps <= 8 ? "sound"
+            : "exceptional";
+
+        /// <summary>A line in blue ballpoint down a ruled margin - a refusal, a hand's
+        /// aside. The one voice on the sheet that is not typed.</summary>
+        float MarginNote(string text, float y)
+        {
+            var height = 44f;
+            var rect = NewRect("Margin", cardContent);
+            PlaceTopLeft(rect, 0f, y, CardInner, height);
+            Fill(rect, new Color(120f / 255f, 95f / 255f, 55f / 255f, 0.07f));
+            Block("Edge", rect, 0f, 0f, 3f, height,
+                new Color(47f / 255f, 74f / 255f, 122f / 255f, 0.55f));
+            var copy = Paragraph(rect, LedgerStyle.SerifItalic, 14f, LedgerStyle.Ballpoint,
+                14f, -8f, CardInner - 26f, 24f, text, lineSpacing: 1f);
+            copy.overflowMode = TextOverflowModes.Ellipsis;
+            Caps(rect, 14f, -30f, CardInner - 26f, "IN THE MARGIN · PEN", 8.5f,
+                LedgerStyle.InkLabel, 3f);
+            return y - height;
         }
 
         /// <summary>The front's card - the BOSS's card: his face and name up top, then
         /// the desk, the guards, what sits at the front, and the stock with GIVE
         /// straight into the headquarters locker.</summary>
-        void BuildFrontDetail(Roster roster)
+        float BuildFrontDetail(Roster roster)
         {
             var bossName = Gangs.GangCatalog.BossName;
-            var raw = Polaroid(cardContent, 4f, -6f, 84f, InitialsOf(bossName), -3.5f, out _);
+            var raw = Plate(cardContent, 0f, -8f, 128f, 156f, "THE BOSS");
             PortraitStudio.Request(
                 PortraitStudio.FindPeoplePrefab(Gangs.GangCatalog.BossModel),
                 PortraitStudio.Framing.Bust, raw);
 
-            Line(cardContent, LedgerStyle.Type, 18f, LedgerStyle.Ink, 118f, -10f,
-                CardInner - 118f, 30f, bossName);
-            Line(cardContent, LedgerStyle.Mono, 14.5f, LedgerStyle.InkDim, 118f, -42f,
-                CardInner - 118f, 20f,
-                "Boss  ·  " + Gangs.GangCatalog.Names[Gangs.GangCatalog.PlayerGangId]);
-            Rule(cardContent, 118f, -90f, CardInner - 118f, LedgerStyle.InkFaint);
+            var textX = 150f;
+            var textW = CardInner - textX;
+            var name = Line(cardContent, LedgerStyle.Condensed, 26f, LedgerStyle.Ink,
+                textX, -6f, textW, 34f, bossName);
+            name.characterSpacing = 1f;
+            Caps(cardContent, textX, -40f, textW,
+                "BOSS · " + Gangs.GangCatalog.Names[Gangs.GangCatalog.PlayerGangId], 12f,
+                LedgerStyle.RedPen, 5f);
 
-            var y = -128f;
-
-            // The desk and its guard.
             var manager = roster.Find(roster.FrontId);
-            y = CardHeading("The desk", y);
-            y = DetailLine(manager != null
-                    ? manager.FullName + " runs the desk."
-                    : "Nobody runs the desk.",
-                manager != null ? LedgerStyle.Ink : LedgerStyle.RedPen, y);
+            var y = -70f;
+            y = Particular("THE DESK", manager != null
+                ? manager.FullName + " runs it"
+                : "nobody runs the desk", textX, textW, y,
+                manager != null ? LedgerStyle.Ink : LedgerStyle.RedPen);
 
             var guards = 0;
             for (var i = 0; i < roster.Members.Count; i++)
@@ -705,13 +1169,16 @@ namespace LivingCity.UI
                     roster.AssignmentOf(member.Id).Kind == AssignmentKind.Pool)
                     guards++;
             }
-            y = DetailLine(guards == 1
-                    ? "1 hood on guard at the front."
-                    : guards + " hoods on guard at the front.",
-                guards > 0 ? LedgerStyle.Ink : LedgerStyle.InkDim, y);
+            y = Particular("ON GUARD", guards == 1 ? "1 hood at the front"
+                : guards + " hoods at the front", textX, textW, y,
+                guards > 0 ? LedgerStyle.Ink : LedgerStyle.InkDim);
+            y = Particular("IN THE SAFE",
+                outfit ? LedgerText.Cash(outfit.Accounts.Safe) : "--", textX, textW, y);
+
+            y = Mathf.Min(y, -186f) - 10f;
 
             // What the front holds - the locker and the guards' hands.
-            y = CardHeading("At the front", y - 6f);
+            y = CardHeading("AT THE FRONT", y);
             var anyHeld = false;
             for (var i = 0; i < roster.Equipment.Count; i++)
             {
@@ -721,26 +1188,24 @@ namespace LivingCity.UI
                 var holder = roster.Find(item.HolderId);
                 anyHeld = true;
 
-                y = DetailLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName) +
-                    "  —  " +
-                    (holder != null ? LedgerText.HeldByLine(holder.FullName)
-                        : "in the locker"),
-                    LedgerStyle.Ink, y + 2f);
+                y = ItemLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName),
+                    holder != null ? LedgerText.HeldByLine(holder.FullName) : "in the locker",
+                    LedgerStyle.Ink, y);
                 var itemId = item.Id;
-                Tape(cardContent, "RETURN", CardInner - 96f, y + 23f, 88f, 20f, () =>
+                Tape(cardContent, "RETURN", CardInner - 100f, y + 24f, 100f, 22f, () =>
                 {
                     lastRefusal = "";
                     var result = director.ReturnEquipment(itemId);
                     if (!result.Ok)
                         lastRefusal = result.Reason;
                     dirty = true;
-                }, size: 11f);
+                }, size: 10f, outline: true);
             }
             if (!anyHeld)
-                y = DetailLine("The locker is empty.", LedgerStyle.InkDim, y);
+                y = ItemLine("The locker is empty.", "", LedgerStyle.InkDim, y);
 
             // The stock: GIVE dumps gear at the front, the guards draw it at once.
-            y = CardHeading("Armory", y - 6f);
+            y = CardHeading("ARMORY", y - 8f);
             var anyStock = false;
             for (var i = 0; i < roster.Equipment.Count; i++)
             {
@@ -749,104 +1214,68 @@ namespace LivingCity.UI
                     continue;
                 anyStock = true;
 
-                y = DetailLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName),
-                    LedgerStyle.Ink, y + 2f);
+                y = ItemLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName), "",
+                    LedgerStyle.Ink, y);
                 var itemId = item.Id;
-                Tape(cardContent, "GIVE", CardInner - 96f, y + 23f, 88f, 20f, () =>
+                Tape(cardContent, "GIVE", CardInner - 100f, y + 24f, 100f, 22f, () =>
                 {
                     lastRefusal = "";
                     var result = director.GiveEquipmentToFront(itemId);
                     if (!result.Ok)
                         lastRefusal = result.Reason;
                     dirty = true;
-                }, size: 11f);
+                }, size: 10f);
             }
             if (!anyStock)
-                y = DetailLine("The stock is empty.", LedgerStyle.InkDim, y);
+                y = ItemLine("The stock is empty.", "", LedgerStyle.InkDim, y);
 
             if (lastRefusal.Length > 0)
-                DetailLine(lastRefusal, LedgerStyle.RedPen, y - 4f, LedgerStyle.MonoItalic);
+                y = MarginNote(lastRefusal, y - 10f);
+
+            return y;
         }
 
-        /// <summary>A typed sub-heading on the card, underlined.</summary>
+        /// <summary>A typed sub-heading on the card, with the design's hairline under.</summary>
         float CardHeading(string label, float y)
         {
-            var text = Line(cardContent, LedgerStyle.Type, 14f, LedgerStyle.Ink, 4f, y,
-                CardInner - 8f, 20f, label.ToUpperInvariant());
-            text.characterSpacing = 3f;
-            Rule(cardContent, 4f, y - 20f, CardInner - 8f, LedgerStyle.InkFaint);
+            Caps(cardContent, 0f, y, CardInner, label, 11f, LedgerStyle.InkMid, 5f);
+            Rule(cardContent, 0f, y - 18f, CardInner, LedgerStyle.InkFaint);
             return y - 26f;
         }
 
-        float DetailLine(string text, Color color, float y, TMP_FontAsset font = null)
+        /// <summary>One line of gear: what it is on the left, who has it on the right.</summary>
+        float ItemLine(string what, string who, Color ink, float y)
         {
-            Line(cardContent, font ? font : LedgerStyle.Mono, 14.5f, color, 4f, y,
-                CardInner - 8f, 22f, text);
-            return y - 23f;
-        }
-
-        float BuildLoyaltyBar(Character member, float y)
-        {
-            Line(cardContent, LedgerStyle.Type, 14.5f, LedgerStyle.Ink, 4f, y, 110f, 20f,
-                "Loyalty");
-            Bar(cardContent, 130f, y - 4f, 150f, 12f, member.Loyalty / 100f,
-                member.Loyalty < 35 ? LedgerStyle.RedPen : LedgerStyle.Ink);
-            Line(cardContent, LedgerStyle.MonoBold, 14f, LedgerStyle.Ink, CardInner - 64f, y,
-                60f, 20f, member.Loyalty.ToString(), TextAlignmentOptions.MidlineRight);
-            return y - 26f;
-        }
-
-        float BuildAttributeRow(Character member, CharacterAttribute attribute, float y)
-        {
-            Line(cardContent, LedgerStyle.Mono, 14.5f, LedgerStyle.Ink, 4f, y, 150f, 22f,
-                LedgerText.AttributeLabel(attribute));
-
-            var halfSteps = member.GetHalfSteps(attribute);
-            Stars(cardContent, 158f, y - 11f, halfSteps);
-
-            Line(cardContent, LedgerStyle.Mono, 14f, LedgerStyle.InkDim, CardInner - 64f, y,
-                60f, 22f, LedgerText.Stars(halfSteps), TextAlignmentOptions.MidlineRight);
-
-            // How far along he is toward the next half-star, in pencil under the stars:
-            // a thin bar of what he has banked against what it costs. Nothing is drawn
-            // for a trade he has never practised or one he has already topped out at -
-            // an empty rule under every line would be eleven marks saying nothing.
-            var cost = Practice.NextCost(member, attribute);
-            var banked = member.GetPractice(attribute);
-            if (cost > 0 && banked > 0)
-                Bar(cardContent, 158f, y - 19f, 90f, 3f,
-                    Mathf.Clamp01(banked / (float)cost), LedgerStyle.InkFaint);
-
-            // The whole line is a hover zone: rest the pointer on a stat and the
-            // sticky note under it says what the number is FOR.
-            var zone = NewRect("Hover", cardContent);
-            PlaceTopLeft(zone, 0f, y, CardInner, 24f);
-            ClickSurface(zone);
-            var hover = zone.gameObject.AddComponent<StatHoverZone>();
-            hover.almanac = this;
-            hover.note = LedgerText.AttributeNote(attribute);
-
+            var text = Line(cardContent, LedgerStyle.Mono, 13f, ink, 0f, y,
+                CardInner - 210f, 22f, what);
+            text.overflowMode = TextOverflowModes.Ellipsis;
+            if (who.Length > 0)
+            {
+                var holder = Line(cardContent, LedgerStyle.Mono, 12f, LedgerStyle.InkDim,
+                    CardInner - 320f, y, 210f, 22f, who, TextAlignmentOptions.MidlineRight);
+                holder.overflowMode = TextOverflowModes.Ellipsis;
+            }
             return y - 24f;
         }
 
         /// <summary>The gear half of a card - and a LIEUTENANT's card only. Gear issues
         /// to the head of a crew and is read back off the same card, so on a hood's or a
         /// specialist's card both listings are somebody else's book: what he carries is
-        /// already on his roster row, in the gun drawn beside his name.</summary>
+        /// already in his kit slots above and in the gun drawn beside his name.</summary>
         float BuildEquipmentSection(Roster roster, Character member, float y)
         {
             if (member.Rank != Rank.Lieutenant)
                 return y;
 
             y = BuildCrewDeck(roster, member, y);
-            return BuildArmoryStock(roster, member, y - 6f);
+            return BuildArmoryStock(roster, member, y - 8f);
         }
 
         /// <summary>What his crew owns. Read-only by design: gear dealt to a crew stays
         /// with it, so each line carries the word ASSIGNED where a verb would be.</summary>
         float BuildCrewDeck(Roster roster, Character member, float y)
         {
-            y = CardHeading("In hand", y);
+            y = CardHeading("IN HAND · HIS CREW'S", y);
 
             // His crew's DECK, not his own two hands: every item the crew owns, wherever
             // the deal has put it. NormalizeArms moves holders and never owners, so a
@@ -861,21 +1290,19 @@ namespace LivingCity.UI
                 anyHeld = true;
 
                 var holder = roster.Find(item.HolderId);
-                y = DetailLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName) +
-                    (holder != null && holder.Id != member.Id
-                        ? "  —  " + LedgerText.HeldByLine(holder.FullName)
-                        : ""),
-                    LedgerStyle.Ink, y + 2f);
+                y = ItemLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName),
+                    holder != null && holder.Id != member.Id
+                        ? LedgerText.HeldByLine(holder.FullName)
+                        : "",
+                    LedgerStyle.Ink, y);
 
-                // Dealt gear is dealt: no tape here, because there is no taking it back
-                // off a crew. The word is a state the boss reads, not a verb he presses.
-                var mark = Line(cardContent, LedgerStyle.Type, 11.5f, LedgerStyle.InkDim,
-                    CardInner - 100f, y + 23f, 92f, 20f, "ASSIGNED",
-                    TextAlignmentOptions.MidlineRight);
-                mark.characterSpacing = 2f;
+                // Dealt gear is dealt: no button here, because there is no taking it
+                // back off a crew. The word is a state the boss reads, not a verb.
+                Caps(cardContent, CardInner - 100f, y + 24f, 100f, "ASSIGNED", 9.5f,
+                    LedgerStyle.InkLabel, 3f, TextAlignmentOptions.MidlineRight);
             }
             if (!anyHeld)
-                y = DetailLine("Nothing signed out.", LedgerStyle.InkDim, y);
+                y = ItemLine("Nothing signed out.", "", LedgerStyle.InkDim, y);
 
             return y;
         }
@@ -884,7 +1311,7 @@ namespace LivingCity.UI
         /// with GIVE, and what another group already holds, muted and untakeable.</summary>
         float BuildArmoryStock(Roster roster, Character member, float y)
         {
-            y = CardHeading("Armory", y);
+            y = CardHeading("ARMORY · WHAT IS LEFT", y);
 
             var anyStock = false;
             for (var i = 0; i < roster.Equipment.Count; i++)
@@ -897,112 +1324,120 @@ namespace LivingCity.UI
 
                 if (item.OwnerId == RosterEquipment.Unheld)
                 {
-                    y = DetailLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName),
-                        LedgerStyle.Ink, y + 2f);
+                    y = ItemLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName), "",
+                        LedgerStyle.Ink, y);
                     if (!member.Gone)
-                        Tape(cardContent, "GIVE", CardInner - 96f, y + 23f, 88f, 20f, () =>
+                        Tape(cardContent, "GIVE", CardInner - 100f, y + 24f, 100f, 22f, () =>
                         {
                             lastRefusal = "";
                             var result = director.GiveEquipment(item.Id, member.Id);
                             if (!result.Ok)
                                 lastRefusal = result.Reason;
                             dirty = true;
-                        }, size: 11f);
+                        }, size: 10f);
                 }
                 else
                 {
                     // The finite pool made visible: an item another group owns shows
-                    // here, muted and with no tape. Nothing on this card can take it -
+                    // here, muted and with no verb. Nothing on this card can take it -
                     // a crew's gear stays with the crew, and only the front's locker
                     // gives anything back to the safe.
                     var holder = roster.Find(item.HolderId);
-                    y = DetailLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName) +
-                        "  —  " +
+                    y = ItemLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName),
                         LedgerText.HeldByLine(holder != null ? holder.FullName
                             : item.OwnerId == RosterEquipment.FrontArmory
                                 ? "the front" : "?"),
-                        LedgerStyle.InkDim, y + 2f);
+                        LedgerStyle.InkDim, y);
                 }
             }
 
             if (!anyStock)
-                y = DetailLine("The stock is empty.", LedgerStyle.InkDim, y);
+                y = ItemLine("The stock is empty.", "", LedgerStyle.InkDim, y);
 
             return y;
         }
 
         /// <summary>
-        /// The card's verbs, or - because there is no dialog system and never has been -
-        /// the inline confirm that replaces them: the warning in red pen plus PROMOTE
-        /// ANYWAY / CANCEL tapes in the same space the PROMOTE tape occupied.
+        /// The card's verbs, pinned to the foot of the file where the scroll cannot
+        /// take them away. Because there is no dialog system and never has been, a
+        /// confirm is the same strip with the warning typed across it and the two
+        /// answers in its place.
         /// </summary>
-        void BuildActionStrip(Roster roster, Character member, float y)
+        void BuildActionStrip(Roster roster, Character member)
         {
-            if (lastRefusal.Length > 0)
-                y = DetailLine(lastRefusal, LedgerStyle.RedPen, y, LedgerStyle.MonoItalic);
+            Rule(cardFoot, 0f, 0f, CardInner, LedgerStyle.InkFaint);
 
             if (member.Gone || member.Specialty != Specialty.None)
+            {
+                Caps(cardFoot, 0f, -20f, CardInner,
+                    member.Gone ? "off the books · nothing left to decide"
+                        : "bought talent · neither promoted nor posted",
+                    10f, LedgerStyle.InkLabel, 3f, TextAlignmentOptions.Center);
                 return;
+            }
+
+            const float buttonH = 34f;
+            var half = (CardInner - 12f) * 0.5f;
 
             if (pendingConfirm == Confirm.Promote)
             {
-                Paragraph(cardContent, LedgerStyle.MonoItalic, 14f, LedgerStyle.RedPen, 4f, y,
-                    CardInner - 8f, 44f, LedgerText.PromoteWarning(member.FullName));
-                y -= 48f;
-                Tape(cardContent, "PROMOTE ANYWAY", 4f, y, 160f, 26f,
+                Caps(cardFoot, 0f, -8f, CardInner,
+                    LedgerText.PromoteWarning(member.FullName), 9.5f, LedgerStyle.RedPen, 2f);
+                Tape(cardFoot, "PROMOTE ANYWAY", 0f, -22f, half, buttonH,
                     () => DoPromote(member.Id), red: true);
-                Tape(cardContent, "CANCEL", 172f, y, 96f, 26f, () =>
+                Tape(cardFoot, "NEVER MIND", half + 12f, -22f, half, buttonH, () =>
                 {
                     pendingConfirm = Confirm.None;
                     dirty = true;
-                });
+                }, outline: true);
                 return;
             }
 
             if (pendingConfirm == Confirm.Demote)
             {
                 var crew = roster.CrewOf(member.Id);
-                Paragraph(cardContent, LedgerStyle.MonoItalic, 14f, LedgerStyle.RedPen, 4f, y,
-                    CardInner - 8f, 44f, LedgerText.DemoteConfirm(member.FirstName,
-                        crew != null ? crew.HoodIds.Count : 0));
-                y -= 48f;
-                Tape(cardContent, "DISBAND", 4f, y, 120f, 26f, () =>
+                Caps(cardFoot, 0f, -8f, CardInner,
+                    LedgerText.DemoteConfirm(member.FirstName,
+                        crew != null ? crew.HoodIds.Count : 0), 9.5f, LedgerStyle.RedPen, 2f);
+                Tape(cardFoot, "DISBAND HIS CREW", 0f, -22f, half, buttonH, () =>
                 {
                     pendingConfirm = Confirm.None;
                     var result = director.Demote(member.Id);
                     lastRefusal = result.Ok ? "" : result.Reason;
                     dirty = true;
                 }, red: true);
-                Tape(cardContent, "CANCEL", 132f, y, 96f, 26f, () =>
+                Tape(cardFoot, "NEVER MIND", half + 12f, -22f, half, buttonH, () =>
                 {
                     pendingConfirm = Confirm.None;
                     dirty = true;
-                });
+                }, outline: true);
                 return;
             }
 
             if (assignMode)
             {
-                y = DetailLine("Pick a crew, the pool, or the front.", LedgerStyle.Ink, y);
-                Tape(cardContent, "CANCEL", 4f, y, 96f, 26f, () =>
+                Caps(cardFoot, 0f, -8f, CardInner,
+                    "pick a crew's lieutenant, the pool, or the front", 10f,
+                    LedgerStyle.InkMid, 3f);
+                Tape(cardFoot, "NEVER MIND", 0f, -22f, half, buttonH, () =>
                 {
                     assignMode = false;
                     dirty = true;
-                });
+                }, outline: true);
                 return;
             }
 
             if (member.Rank == Rank.Lieutenant)
             {
-                Tape(cardContent, "DEMOTE", 4f, y, 110f, 26f, () =>
+                Tape(cardFoot, "OFF THE BOOKS", 0f, -14f, half, buttonH, () =>
                 {
                     pendingConfirm = Confirm.Demote;
                     dirty = true;
-                }, red: true);
+                }, red: true, outline: true);
                 return;
             }
 
-            Tape(cardContent, "PROMOTE", 4f, y, 120f, 26f, () =>
+            Tape(cardFoot, "PROMOTE", 0f, -14f, half, buttonH, () =>
             {
                 var check = director.CheckPromote(member.Id);
                 if (!check.CanPromote)
@@ -1013,12 +1448,12 @@ namespace LivingCity.UI
                     DoPromote(member.Id);
                 dirty = true;
             });
-            Tape(cardContent, "REASSIGN", 132f, y, 120f, 26f, () =>
+            Tape(cardFoot, "REASSIGN", half + 12f, -14f, half, buttonH, () =>
             {
                 assignMode = true;
                 lastRefusal = "";
                 dirty = true;
-            });
+            }, outline: true);
         }
 
         void DoPromote(int id)

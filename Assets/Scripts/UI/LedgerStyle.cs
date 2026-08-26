@@ -5,10 +5,14 @@ using UnityEngine.TextCore.LowLevel;
 namespace LivingCity.UI
 {
     /// <summary>
-    /// The ledger's look, 1987: a real book on a real desk. Cream stock under a desk
-    /// lamp, typewriter and Courier for the words, blue ledger rules with a red margin,
-    /// yellow highlighter for the selection, Polaroids for the faces, red rubber stamps
-    /// for anything the law has an opinion about, and label-maker tape for the verbs.
+    /// The ledger's look, 1987: a manila file open on a walnut desk, not a UI panel.
+    /// Cream stock under a warm ceiling light, typewriter and fixed-pitch for the
+    /// words, a red rubber stamp for anything the law has an opinion about, punched
+    /// holes down both edges, a blotter strip of readouts, and telex slips clipped in
+    /// where the night's word came through.
+    ///
+    /// The values are the 1987 redesign's tokens, kept as hex the way the handoff
+    /// writes them so a colour can be checked against the sheet without arithmetic.
     ///
     /// Everything here is generated or loaded at runtime - fonts from Resources as
     /// dynamic TMP assets, sprites and textures drawn once into memory - so the book
@@ -20,93 +24,223 @@ namespace LivingCity.UI
     {
         // ------------------------------------------------------------------ colours
 
-        /// <summary>The desk under everything - dark walnut, seen only at the edges.</summary>
-        public static readonly Color Desk = new Color(0.16f, 0.11f, 0.08f);
+        /// <summary>0xRRGGBB the way the design handoff writes it.</summary>
+        static Color Rgb(uint hex) => new Color(
+            ((hex >> 16) & 0xFF) / 255f,
+            ((hex >> 8) & 0xFF) / 255f,
+            (hex & 0xFF) / 255f);
 
-        /// <summary>The desk lamp's pool of light, laid over the desk in the corner.</summary>
-        public static readonly Color Lamp = new Color(1f, 0.82f, 0.55f, 0.22f);
+        static Color Rgb(uint hex, float alpha)
+        {
+            var colour = Rgb(hex);
+            colour.a = alpha;
+            return colour;
+        }
 
-        /// <summary>The ledger's cream stock.</summary>
-        public static readonly Color Paper = new Color(0.93f, 0.89f, 0.77f);
+        // ---- the desk ----
 
-        /// <summary>The manila folder the pages sit in - the tab strip's colour.</summary>
-        public static readonly Color Manila = new Color(0.82f, 0.72f, 0.52f);
+        /// <summary>Dark walnut, the top of the desk's gradient.</summary>
+        public static readonly Color Desk = Rgb(0x2a1f14);
 
-        /// <summary>A manila tab not currently pulled forward.</summary>
-        public static readonly Color ManilaDim = new Color(0.66f, 0.57f, 0.40f);
+        /// <summary>Where the desk falls away from the light, 55% down.</summary>
+        public static readonly Color DeskMid = Rgb(0x16100a);
 
-        /// <summary>An index card laid on the page - one shade whiter than the stock.</summary>
-        public static readonly Color Card = new Color(0.97f, 0.95f, 0.88f);
+        /// <summary>The far edge of the desk, out of the lamp entirely.</summary>
+        public static readonly Color DeskDeep = Rgb(0x0d0906);
+
+        /// <summary>The warm glow off the ceiling fixture, laid over the desk's top.</summary>
+        public static readonly Color Lamp = new Color(226f / 255f, 187f / 255f, 120f / 255f, 0.20f);
+
+        // ---- stock ----
+
+        /// <summary>The ledger's aged cream sheet - the top of its gradient.</summary>
+        public static readonly Color Paper = Rgb(0xf0e6cd);
+        public static readonly Color PaperMid = Rgb(0xe7dabb);
+        public static readonly Color PaperDeep = Rgb(0xddcfae);
+
+        /// <summary>The manila shell the sheet sits in.</summary>
+        public static readonly Color Manila = Rgb(0xcdb387);
+        public static readonly Color ManilaLow = Rgb(0xc2a67a);
+
+        /// <summary>A divider tab nobody has pulled forward.</summary>
+        public static readonly Color ManilaDim = Rgb(0xb59c72);
+        public static readonly Color ManilaDimLow = Rgb(0xa68d64);
+
+        /// <summary>The dossier's stock - one shade whiter than the sheet.</summary>
+        public static readonly Color Card = Rgb(0xf7f2e2);
+        public static readonly Color CardLow = Rgb(0xefe6cf);
+
+        /// <summary>Line-printer paper: the payroll printout and the armory cards.</summary>
+        public static readonly Color Printout = Rgb(0xfbf6e6);
+        public static readonly Color PrintoutLow = Rgb(0xf3ecd6);
+
+        /// <summary>A rolodex card - the families.</summary>
+        public static readonly Color IndexCard = Rgb(0xfdf9ec);
+        public static readonly Color IndexCardLow = Rgb(0xf4eedb);
+
+        /// <summary>A telex slip, off the machine and still curling.</summary>
+        public static readonly Color Slip = Rgb(0xfdfaf0);
+        public static readonly Color SlipLow = Rgb(0xf2ebd8);
 
         /// <summary>The morning paper's newsprint - greyer and colder than the ledger.</summary>
-        public static readonly Color Newsprint = new Color(0.89f, 0.87f, 0.80f);
+        public static readonly Color Newsprint = Rgb(0xeee8d8);
+        public static readonly Color NewsprintLow = Rgb(0xe4dcc7);
 
-        /// <summary>Accountant's ledger stock - the pale green of a balance sheet.</summary>
-        public static readonly Color LedgerGreen = new Color(0.86f, 0.90f, 0.79f);
+        /// <summary>Accountant's greenbar - the pale green of a balance sheet.</summary>
+        public static readonly Color LedgerGreen = Rgb(0xe9eede);
+        public static readonly Color LedgerGreenLow = Rgb(0xdfe6d2);
+
+        /// <summary>The band a greenbar sheet prints every other line.</summary>
+        public static readonly Color GreenbarBand = new Color(146f / 255f, 176f / 255f,
+            140f / 255f, 0.42f);
+
+        /// <summary>The ink a balance sheet is set in - green-black, not black.</summary>
+        public static readonly Color GreenbarInk = Rgb(0x22301c);
+
+        /// <summary>A carbon copy: the stock book's pink second sheet.</summary>
+        public static readonly Color Carbon = Rgb(0xf6dfd9);
+        public static readonly Color CarbonLow = Rgb(0xeed3cb);
+
+        /// <summary>The ink a carbon copy comes out in - dull, bled, never black.</summary>
+        public static readonly Color CarbonInk = Rgb(0x6b2b23);
 
         /// <summary>A yellow sticky note - the hover notes.</summary>
         public static readonly Color StickyNote = new Color(1f, 0.93f, 0.50f);
 
+        // ---- ink ----
+
         /// <summary>Typewriter ribbon - every word that IS the record.</summary>
-        public static readonly Color Ink = new Color(0.09f, 0.08f, 0.07f);
+        public static readonly Color Ink = Rgb(0x241f1a);
 
-        /// <summary>A lighter strike - captions, tags, the second line.</summary>
-        public static readonly Color InkDim = new Color(0.36f, 0.32f, 0.29f);
+        /// <summary>A softer strike - body copy that is not a figure.</summary>
+        public static readonly Color InkSoft = Rgb(0x3b3226);
 
-        /// <summary>Barely there - empty rating boxes, ghosted rows.</summary>
-        public static readonly Color InkFaint = new Color(0.14f, 0.12f, 0.11f, 0.32f);
+        /// <summary>Mid ink - a second line, a note under a total.</summary>
+        public static readonly Color InkMid = Rgb(0x4a3f2c);
 
-        /// <summary>The red pen: corrections, refusals, anything the boss should worry
-        /// about. Handwriting's colour, so it never looks typed.</summary>
-        public static readonly Color RedPen = new Color(0.68f, 0.11f, 0.09f);
+        /// <summary>Muted - captions, sublines, the tag after a name.</summary>
+        public static readonly Color InkDim = Rgb(0x6d5c40);
 
-        /// <summary>The rubber stamp's ink - red, a little uneven, never quite opaque.</summary>
-        public static readonly Color StampRed = new Color(0.72f, 0.10f, 0.08f, 0.80f);
+        /// <summary>Faded - a footer ticker, an aside nobody has to read.</summary>
+        public static readonly Color InkPale = Rgb(0x7a684a);
+
+        /// <summary>The small-caps label over a value - the quietest type on the page.</summary>
+        public static readonly Color InkLabel = Rgb(0x8a7756);
+
+        /// <summary>The hairline a form is ruled with - barely a mark.</summary>
+        public static readonly Color InkFaint = new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.22f);
+
+        /// <summary>Fainter still - a row's bottom rule under a column of names.</summary>
+        public static readonly Color InkHair = new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.10f);
+
+        /// <summary>The dotted leader between a label and its figure. Stronger than a
+        /// hairline on purpose: half of a dotted rule is gaps, so at a hairline's alpha
+        /// it averages out to nothing at all.</summary>
+        public static readonly Color InkDotted = new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.40f);
+
+        // ---- red ----
+
+        /// <summary>The red pen and the alert figure: corrections, refusals, money
+        /// running the wrong way. Handwriting's colour, so it never looks typed.</summary>
+        public static readonly Color RedPen = Rgb(0x8f2119);
+
+        /// <summary>The rubber stamp's ink - never quite opaque, never quite square.</summary>
+        public static readonly Color StampRed = Rgb(0x96281f, 0.85f);
+
+        /// <summary>Bled red - a carbon's heading, a pink sheet's rule.</summary>
+        public static readonly Color DeepRed = Rgb(0x6b2b23);
+
+        /// <summary>Soft red - a countdown that has not run out yet.</summary>
+        public static readonly Color SoftRed = Rgb(0xe79a8c);
+
+        /// <summary>The green a form marks ACTIVE in.</summary>
+        public static readonly Color GreenOk = Rgb(0x3f6b3a);
+
+        /// <summary>Ballpoint blue - anything written by hand in the margin.</summary>
+        public static readonly Color Ballpoint = Rgb(0x2f4a7a);
+
+        // ---- the blotter strip ----
+
+        /// <summary>The desk blotter under the sheet's readouts - the top of it.</summary>
+        public static readonly Color Blotter = Rgb(0x221a11);
+        public static readonly Color BlotterLow = Rgb(0x171009);
+
+        /// <summary>The hairline between two blotter cells.</summary>
+        public static readonly Color BlotterRule = new Color(1f, 1f, 1f, 0.10f);
+
+        /// <summary>A blotter figure worth a second look.</summary>
+        public static readonly Color HudAmber = Rgb(0xe0b464);
+
+        /// <summary>An ordinary blotter figure.</summary>
+        public static readonly Color HudCream = Rgb(0xf0e3c2);
+
+        /// <summary>The small-caps label over a blotter figure.</summary>
+        public static readonly Color HudLabel = Rgb(0x9a8560);
+
+        /// <summary>The sub-note under a blotter meter.</summary>
+        public static readonly Color HudNote = Rgb(0x7c6a4a);
+
+        /// <summary>A meter running warm - the heat bar.</summary>
+        public static readonly Color HudMeterWarm = Rgb(0xc97a4a);
+
+        // ---- rules and marks ----
 
         /// <summary>The blue horizontal rules of ledger paper.</summary>
-        public static readonly Color RuleBlue = new Color(0.40f, 0.55f, 0.80f, 0.42f);
+        public static readonly Color RuleBlue = new Color(47f / 255f, 74f / 255f, 122f / 255f, 0.16f);
 
         /// <summary>The green rules of a balance sheet.</summary>
-        public static readonly Color RuleGreen = new Color(0.30f, 0.52f, 0.32f, 0.45f);
+        public static readonly Color RuleGreen = new Color(34f / 255f, 48f / 255f, 28f / 255f, 0.22f);
 
         /// <summary>The red margin line down the left of a ruled page.</summary>
-        public static readonly Color MarginRed = new Color(0.85f, 0.32f, 0.30f, 0.55f);
+        public static readonly Color MarginRed = new Color(143f / 255f, 33f / 255f, 25f / 255f, 0.35f);
 
         /// <summary>A yellow highlighter pass - the selected row.</summary>
-        public static readonly Color Highlighter = new Color(1f, 0.87f, 0.15f, 0.48f);
+        public static readonly Color Highlighter = new Color(143f / 255f, 33f / 255f, 25f / 255f, 0.09f);
 
         /// <summary>A green highlighter pass - a valid drop target in assign mode.</summary>
-        public static readonly Color HighlighterGreen = new Color(0.45f, 0.90f, 0.30f, 0.45f);
+        public static readonly Color HighlighterGreen = new Color(63f / 255f, 107f / 255f,
+            58f / 255f, 0.14f);
 
-        /// <summary>Label-maker tape, black - the ordinary verb.</summary>
-        public static readonly Color TapeBlack = new Color(0.11f, 0.11f, 0.11f);
+        /// <summary>The punched holes down both edges of the sheet.</summary>
+        public static readonly Color Punch = new Color(0.05f, 0.035f, 0.02f, 0.55f);
 
-        /// <summary>Label-maker tape, red - the verb that commits something.</summary>
-        public static readonly Color TapeRed = new Color(0.62f, 0.10f, 0.08f);
-
-        /// <summary>The embossed letters on the tape.</summary>
-        public static readonly Color TapeText = new Color(0.97f, 0.96f, 0.90f);
-
-        /// <summary>A tab nobody is reading: card stock a shade under the paper, so it
-        /// still takes INK caps. A tape faded toward the page instead would leave its
-        /// white letters on near-paper - the word disappears exactly when it is the
-        /// word you need to find.</summary>
-        public static readonly Color TapeIdle = new Color(0.76f, 0.72f, 0.61f);
+        /// <summary>The ring a coffee cup left on the top right of the file.</summary>
+        public static readonly Color CoffeeRing = new Color(120f / 255f, 78f / 255f, 32f / 255f, 0.16f);
 
         /// <summary>A Polaroid's white border.</summary>
         public static readonly Color PolaroidWhite = new Color(0.98f, 0.97f, 0.93f);
 
         /// <summary>The unexposed dark inside a Polaroid until the print lands.</summary>
-        public static readonly Color PolaroidDark = new Color(0.20f, 0.18f, 0.16f);
+        public static readonly Color PolaroidDark = Rgb(0xe3d8bd);
 
         /// <summary>The warm cast a 1987 colour print has after a decade in a drawer.</summary>
         public static readonly Color PhotoTint = new Color(1f, 0.94f, 0.82f);
 
+        /// <summary>The steel of the paperclip on the dossier's top edge.</summary>
+        public static readonly Color Paperclip = new Color(90f / 255f, 90f / 255f, 96f / 255f, 0.75f);
+
         /// <summary>The shadow under a card, a note, a Polaroid.</summary>
         public static readonly Color Shadow = new Color(0f, 0f, 0f, 0.38f);
 
-        /// <summary>Button tint states for a tape: the tint multiplies the tape, so
-        /// hover lifts and press sinks. Multipliers, not colours.</summary>
+        /// <summary>The shadow under the whole folder - deep, from one light above.</summary>
+        public static readonly Color FolderShadow = new Color(0f, 0f, 0f, 0.55f);
+
+        // ---- buttons ----
+
+        /// <summary>The dark action button: PROMOTE, ORDER, COMMIT.</summary>
+        public static readonly Color TapeBlack = Rgb(0x1d1812);
+
+        /// <summary>The red one - the verb that cannot be taken back.</summary>
+        public static readonly Color TapeRed = Rgb(0x8f2119);
+
+        /// <summary>The letters on a dark button.</summary>
+        public static readonly Color TapeText = Rgb(0xefe4c9);
+
+        /// <summary>A pill nobody has chosen: a wash of ink on the sheet.</summary>
+        public static readonly Color TapeIdle = new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.10f);
+
+        /// <summary>Button tint states: the tint multiplies the face, so hover lifts
+        /// and press sinks. Multipliers, not colours.</summary>
         public static readonly Color TapeNormal = new Color(0.90f, 0.90f, 0.90f);
         public static readonly Color TapeHover = Color.white;
         public static readonly Color TapePressed = new Color(0.62f, 0.62f, 0.62f);
@@ -134,14 +268,16 @@ namespace LivingCity.UI
         public static TMP_FontAsset MonoBold => Font(ref monoBold, "IBMPlexMono-Bold", 0f, 0.831f);
         public static TMP_FontAsset MonoItalic => Font(ref monoItalic, "IBMPlexMono-Italic", 0.05f, 0.831f);
 
-        /// <summary>The newspaper's face. PT Serif is cut for newsprint and for a screen,
-        /// so it holds its stems at the sizes the book actually prints at.</summary>
+        /// <summary>The newspaper's face, and the hand in the margin. PT Serif is cut
+        /// for newsprint and for a screen, so it holds its stems at the sizes the book
+        /// actually prints at.</summary>
         public static TMP_FontAsset Serif => Font(ref serif, "PTSerif-Regular", 0f, 1.017f);
         public static TMP_FontAsset SerifBold => Font(ref serifBold, "PTSerif-Bold", 0f, 1.017f);
         public static TMP_FontAsset SerifItalic => Font(ref serifItalic, "PTSerif-Italic", 0f, 1.017f);
 
-        /// <summary>Tabloid headlines, rubber stamps and label tape. Oswald is the
-        /// Alternate Gothic the period's headline decks were actually set in.</summary>
+        /// <summary>Stamped chrome: the masthead, the headline decks, the rubber stamps,
+        /// every small-caps label. Oswald is the Alternate Gothic the period's headline
+        /// decks were actually set in.</summary>
         public static TMP_FontAsset Condensed => Font(ref condensed, "Oswald-Bold", 0f, 0.864f);
 
         /// <summary>The same gothic at reading weight - the running text of the screens
@@ -226,24 +362,55 @@ namespace LivingCity.UI
 
         // ------------------------------------------------------------------ sprites
 
-        static Sprite rounded, softShadow, roundedSmall;
-        static Texture2D paperGrain, radialLight;
+        static Sprite rounded, softShadow, roundedSmall, disc, ring;
+        static Texture2D paperGrain, radialLight, hatch, deskFall, sheetFall, deskStripe;
+        static Texture2D dotRule, fadeUp;
 
-        /// <summary>A 9-sliced rounded rectangle, 6-unit corners - label tape.</summary>
+        /// <summary>A 9-sliced rounded rectangle, 6-unit corners - the folder's shell.</summary>
         public static Sprite Rounded => rounded ??= MakeRounded(24, 6f);
 
-        /// <summary>A tighter 3-unit corner - rating boxes, small chips.</summary>
+        /// <summary>A tighter 3-unit corner - the divider tabs. The design's radius
+        /// scale stops here: everything else on the sheet is square.</summary>
         public static Sprite RoundedSmall => roundedSmall ??= MakeRounded(12, 3f);
 
         /// <summary>A soft drop shadow, 9-sliced - lay it under a card 4 units off.</summary>
         public static Sprite SoftShadow => softShadow ??= MakeShadow();
 
+        /// <summary>A hard-edged filled circle - a punched hole, a torn perforation.</summary>
+        public static Sprite Disc => disc ??= MakeDisc();
+
+        /// <summary>A circle drawn as an outline - the coffee ring.</summary>
+        public static Sprite Ring => ring ??= MakeRing();
+
         /// <summary>Tileable paper grain: white with a speckled alpha - draw it as a
         /// dark tint over the stock and the page stops being a flat fill.</summary>
         public static Texture2D PaperGrain => paperGrain ??= MakeGrain();
 
-        /// <summary>A radial falloff - the desk lamp's pool.</summary>
+        /// <summary>A radial falloff - the ceiling light's pool over the desk.</summary>
         public static Texture2D RadialLight => radialLight ??= MakeRadial();
+
+        /// <summary>45 degree hatch, 3 on 7 - what stands in for art the game has not
+        /// photographed yet, and the fill inside a catalogue plate.</summary>
+        public static Texture2D Hatch => hatch ??= MakeHatch();
+
+        /// <summary>The desk's own vertical fall: walnut at the top, all but black at
+        /// the bottom edge. One column of pixels, stretched.</summary>
+        public static Texture2D DeskFall => deskFall ??= MakeFall(Desk, DeskMid, DeskDeep, 0.55f);
+
+        /// <summary>The sheet's fall - cream at the head, foxed toward the foot.</summary>
+        public static Texture2D SheetFall => sheetFall ??= MakeFall(Paper, PaperMid, PaperDeep, 0.60f);
+
+        /// <summary>The desk's grain, near-vertical, at the edge of visibility.</summary>
+        public static Texture2D DeskStripe => deskStripe ??= MakeStripe();
+
+        /// <summary>A dotted rule, four units to the dot - the leader between a label
+        /// and the figure it belongs to. Tiled along a 1-unit-tall rect.</summary>
+        public static Texture2D DotRule => dotRule ??= MakeDotRule();
+
+        /// <summary>Transparent at the head, opaque at the foot. Tint it with a stock's
+        /// darker stop and lay it over the flat fill: that is a two-stop gradient for
+        /// any pair of colours, at the cost of one shared 64-texel column.</summary>
+        public static Texture2D FadeUp => fadeUp ??= MakeFadeUp();
 
         // Static state outlives Play when domain reload is off - the runtime-made
         // assets do not, so a stale reference would be a destroyed object.
@@ -253,8 +420,9 @@ namespace LivingCity.UI
             type = mono = monoBold = monoItalic = null;
             serif = serifBold = serifItalic = condensed = condensedText = null;
             missing.Clear();
-            rounded = roundedSmall = softShadow = null;
-            paperGrain = radialLight = null;
+            rounded = roundedSmall = softShadow = disc = ring = null;
+            paperGrain = radialLight = hatch = deskFall = sheetFall = deskStripe = null;
+            dotRule = fadeUp = null;
         }
 
         static Sprite MakeRounded(int size, float radius)
@@ -316,6 +484,63 @@ namespace LivingCity.UI
             return sprite;
         }
 
+        static Sprite MakeDisc()
+        {
+            const int size = 32;
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.name = "Ledger Disc";
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
+            var pixels = new Color32[size * size];
+            var half = size * 0.5f;
+            for (var y = 0; y < size; y++)
+                for (var x = 0; x < size; x++)
+                {
+                    var d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f),
+                        new Vector2(half, half));
+                    // One pixel of anti-aliasing at the rim, none anywhere else.
+                    var a = Mathf.Clamp01(half - 0.5f - d);
+                    pixels[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+                }
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            // No 9-slice: a disc scaled by its borders stops being a disc.
+            var sprite = Sprite.Create(tex, new Rect(0, 0, size, size),
+                new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
+            sprite.name = tex.name;
+            return sprite;
+        }
+
+        static Sprite MakeRing()
+        {
+            const int size = 128;
+            // The cup's wall, as a fraction of the radius - a 9-unit border on a
+            // 132-unit ring is what the design draws.
+            const float wall = 9f / 66f;
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.name = "Ledger Ring";
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
+            var pixels = new Color32[size * size];
+            var half = size * 0.5f;
+            var outer = half - 1f;
+            var inner = outer * (1f - wall);
+            for (var y = 0; y < size; y++)
+                for (var x = 0; x < size; x++)
+                {
+                    var d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f),
+                        new Vector2(half, half));
+                    var a = Mathf.Clamp01(outer - d) * Mathf.Clamp01(d - inner);
+                    pixels[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+                }
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            var sprite = Sprite.Create(tex, new Rect(0, 0, size, size),
+                new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
+            sprite.name = tex.name;
+            return sprite;
+        }
+
         static Texture2D MakeGrain()
         {
             const int size = 256;
@@ -329,13 +554,14 @@ namespace LivingCity.UI
             for (var y = 0; y < size; y++)
                 for (var x = 0; x < size; x++)
                 {
-                    // Fine speckle plus a slow blotch - fibre and foxing. Perlin
-                    // tiles because the sample wraps at the texture's own period.
+                    // Fine speckle plus a slow blotch - fibre and foxing - over the
+                    // 4-unit horizontal ruling the design's stock is laid on.
                     var speck = (float)rng.NextDouble();
                     var u = x / (float)size;
                     var v = y / (float)size;
                     var blotch = Mathf.PerlinNoise(u * 6f + 11.3f, v * 6f + 4.7f);
-                    var a = speck * 0.11f + blotch * 0.08f;
+                    var ruling = y % 4 == 0 ? 0.05f : 0f;
+                    var a = speck * 0.09f + blotch * 0.07f + ruling;
                     pixels[y * size + x] = new Color32(0, 0, 0, (byte)(a * 255f));
                 }
             tex.SetPixels32(pixels);
@@ -359,6 +585,111 @@ namespace LivingCity.UI
                         new Vector2(half, half)) / half;
                     var a = 1f - Mathf.Clamp01(d);
                     a = a * a * (3f - 2f * a);
+                    pixels[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+                }
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        /// <summary>The 45 degree 3-on-7 hatch a printer's block-out is filled with.
+        /// The period is 10 units on the diagonal, which tiles exactly on a 20-unit
+        /// square - so the texture repeats with no seam at any size.</summary>
+        static Texture2D MakeHatch()
+        {
+            const int size = 20;
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.name = "Ledger Hatch";
+            tex.wrapMode = TextureWrapMode.Repeat;
+            tex.filterMode = FilterMode.Bilinear;
+            var pixels = new Color32[size * size];
+            for (var y = 0; y < size; y++)
+                for (var x = 0; x < size; x++)
+                {
+                    var phase = (x + y) % 10;
+                    pixels[y * size + x] = new Color32(0, 0, 0, (byte)(phase < 3 ? 46 : 0));
+                }
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        /// <summary>A three-stop vertical gradient, one pixel wide. Stretched over a
+        /// rect it IS the CSS gradient the design specifies, at a cost of 64 texels.
+        /// Row 0 is the BOTTOM in texture space, so the stops are laid in reverse.</summary>
+        static Texture2D MakeFall(Color top, Color mid, Color foot, float midStop)
+        {
+            const int size = 64;
+            var tex = new Texture2D(1, size, TextureFormat.RGBA32, false);
+            tex.name = "Ledger Fall";
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
+            var pixels = new Color32[size];
+            for (var y = 0; y < size; y++)
+            {
+                var down = 1f - (y + 0.5f) / size;
+                var colour = down <= midStop
+                    ? Color.Lerp(top, mid, down / midStop)
+                    : Color.Lerp(mid, foot, (down - midStop) / (1f - midStop));
+                pixels[y] = colour;
+            }
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        static Texture2D MakeFadeUp()
+        {
+            const int size = 64;
+            var tex = new Texture2D(1, size, TextureFormat.RGBA32, false);
+            tex.name = "Ledger Fade";
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
+            var pixels = new Color32[size];
+            for (var y = 0; y < size; y++)
+            {
+                // Row 0 is the foot of the rect in texture space.
+                var down = 1f - (y + 0.5f) / size;
+                pixels[y] = new Color32(255, 255, 255, (byte)(down * 255f));
+            }
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        static Texture2D MakeDotRule()
+        {
+            const int size = 4;
+            var tex = new Texture2D(size, 1, TextureFormat.RGBA32, false);
+            tex.name = "Ledger Dot Rule";
+            tex.wrapMode = TextureWrapMode.Repeat;
+            // Point, not bilinear: a two-on-two dot smeared by filtering is a grey line.
+            tex.filterMode = FilterMode.Point;
+            tex.SetPixels32(new[]
+            {
+                new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255),
+                new Color32(255, 255, 255, 0), new Color32(255, 255, 255, 0),
+            });
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        /// <summary>The desk's stripe: a near-vertical grain at 2% - the one texture on
+        /// the screen that is meant not to be noticed.</summary>
+        static Texture2D MakeStripe()
+        {
+            const int size = 32;
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.name = "Ledger Desk Stripe";
+            tex.wrapMode = TextureWrapMode.Repeat;
+            tex.filterMode = FilterMode.Bilinear;
+            var pixels = new Color32[size * size];
+            for (var y = 0; y < size; y++)
+                for (var x = 0; x < size; x++)
+                {
+                    // 96 degrees off horizontal: one unit of lean over ten of rise.
+                    var lean = x + y / 10;
+                    var a = lean % 6 < 2 ? 0.05f : 0f;
                     pixels[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255f));
                 }
             tex.SetPixels32(pixels);

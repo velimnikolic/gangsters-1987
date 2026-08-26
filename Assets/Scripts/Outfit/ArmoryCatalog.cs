@@ -157,6 +157,53 @@ namespace LivingCity.Outfit
                 "One pineapple - thrown at a man or a shopfront, or laid under a car."),
         };
 
+        /// <summary>The pack body that PLAYS a listing, by exact prefab name. One table,
+        /// and it used to live in PortraitStudio - which meant the only code that could
+        /// ask what a "Panel Van" actually is was code that could touch UnityEngine. The
+        /// catalogue's photograph (PortraitStudio), the body at the kerb
+        /// (CrewCars.BodyFor) and the campaign's own arithmetic (CrewKit.MachineOf, which
+        /// wants to know how fast the thing is) all read this, so it belongs beside the
+        /// prices rather than beside the camera.
+        ///
+        /// Three listings name a body this project MADE rather than one a pack ships -
+        /// the armoured wagon, the blacked tourer, the boxless moped - and the comments
+        /// on the arrays above say why for each.</summary>
+        public static string BodyFor(string displayName) => displayName switch
+        {
+            "Jalopy" => "SM_Veh_Pickup_01",
+            "Sedan" => "SM_Veh_Sedan_01",
+            "Panel Van" => "SM_Veh_Van_01",
+            // THE WAGON IS THE OUTFIT'S OWN BODY, like the tourer below: Palm City's SUV
+            // rebuilt by ArmouredSuvBuilder into Assets/Prefabs/Vehicles/
+            // SM_Veh_Suv_01_Armoured.prefab. No traffic bucket holds it (it is not in
+            // VehicleCatalog and never turns up in the city's own cars), so the ledger
+            // photographs it off LedgerModelSet.vehicles the way it photographs a bike.
+            "Armoured Wagon" => "SM_Veh_Suv_01_Armoured",
+            // The two-wheelers, Palm City's. Named exactly, and never by a substring:
+            // "Motorbike" also names the police pack's liveried tourer, and the outfit
+            // does not ride one of those.
+            "Motorbike" => "SM_Veh_Motorbike_01",
+            // THE TOURER IS NO PACK BODY AT ALL. The other machine big enough to carry
+            // two armed men is the police pack's, and it comes dressed as a patrol bike -
+            // panniers, top box, mast, chequer. GangBikeBaker cuts all that off and paints
+            // it black, and Assets/Prefabs/Vehicles/SM_Veh_Motorbike_Tourer_Black.prefab
+            // is what this listing sells. The law still rides the pack's own
+            // (VehicleCatalog.PoliceMotorcycles), untouched.
+            "Tourer" => "SM_Veh_Motorbike_Tourer_Black",
+            // THE OUTFIT'S MOPED IS THE BOXLESS ONE. The pack ships the moped with a
+            // delivery box bolted over its back third (SM_Veh_Moped_01_Box, 0.61 m of
+            // it centred 0.79 m behind the axle line) - which is exactly where a
+            // pillion sits, so a man on the back of the stock machine rides inside the
+            // luggage. Assets/Prefabs/Vehicles/SM_Veh_Moped_01_NoBox.prefab is a
+            // variant of the pack's with that box taken off, and it is what the
+            // counter sells and what CrewCars stands at the kerb. The traffic's
+            // delivery mopeds are untouched (VehicleCatalog.Motorcycles still names
+            // the stock body) - a delivery boy keeps his box.
+            "Moped" => "SM_Veh_Moped_01_NoBox",
+            "Scooter" => "SM_Veh_Scooter_01",
+            _ => "SM_Veh_Sedan_01",
+        };
+
         /// <summary>3.0 Firearms stars. Below this, handing a man the tommy gun earns
         /// the amber warning - and is allowed, because the mistake is the player's to
         /// make (the promotion rule's discipline).</summary>

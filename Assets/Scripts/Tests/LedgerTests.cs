@@ -309,6 +309,30 @@ namespace LivingCity.Tests
             if (OrderMath.TravelHours(5_000_000f, false, 6) != OrderMath.MaxTravelHours)
                 failures.Add("TravelIsHoursNotBudget: no ceiling on the journey.");
 
+            // THE MACHINE, and not only the man. A panel van and a sedan used to cross
+            // town in the same hours with the same wheelman in them, which made the
+            // counter's prices a matter of taste.
+            var van = LivingCity.Gameplay.VehiclePerformance
+                .For(ArmoryCatalog.BodyFor("Panel Van")).Top;
+            var sedan = LivingCity.Gameplay.VehiclePerformance
+                .For(ArmoryCatalog.BodyFor("Sedan")).Top;
+            var byVan = OrderMath.TravelHours(6_000f, true, 6, van);
+            var bySedan = OrderMath.TravelHours(6_000f, true, 6, sedan);
+            if (!(byVan > bySedan))
+                failures.Add($"TravelIsHoursNotBudget: the van ({byVan}h) is no slower than " +
+                             $"the sedan ({bySedan}h) - the machine buys nothing on the map.");
+
+            // and it must not buy anything to a crew that has no car at all
+            if (OrderMath.TravelHours(6_000f, false, 6, 1.25f) !=
+                OrderMath.TravelHours(6_000f, false, 6, 0.6f))
+                failures.Add("TravelIsHoursNotBudget: a machine changed the pace of men walking.");
+
+            // A listing nobody wrote a row for, and a nonsense scale, both drive the book
+            // speed - the arithmetic must never divide by what a caller left at zero.
+            if (OrderMath.TravelHours(6_000f, true, 6, 0f) !=
+                OrderMath.TravelHours(6_000f, true, 6, 1f))
+                failures.Add("TravelIsHoursNotBudget: a machine of nought was not read as ordinary.");
+
             // Men divide the work; the calendar is the price of sending too few.
             var extort = OrderTable.SpecOf(OrderType.Extort);
             var alone = OrderMath.WorkHours(extort, 4, 1);

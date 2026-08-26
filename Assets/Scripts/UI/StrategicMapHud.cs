@@ -252,9 +252,9 @@ namespace LivingCity.UI
                 return;
 
             // The personnel ledger is modal above everything - while it reads, M belongs
-            // to nobody, exactly as InteractionController stands down for it. The one
-            // exception is its Orders page, which works AGAINST the map: the ledger
-            // shrinks to a side panel and this map stays live under it.
+            // to nobody, exactly as InteractionController stands down for it. There is
+            // no exception any more: the war-room split that kept this map live beside
+            // the book is retired, and the file now covers the glass.
             if (PersonnelAlmanac.IsOpen && !PersonnelAlmanac.MapInteractive)
                 return;
 
@@ -448,9 +448,11 @@ namespace LivingCity.UI
 
         public void Open() => OpenAs(beside: false);
 
-        /// <summary>The ledger's war-room mode: the same live map, docked into the right
-        /// half of the screen while the book fills the left. Re-docks (or un-docks) an
-        /// already-open map instead of reopening it.</summary>
+        /// <summary>The old war-room mode: the same live map docked into the right half
+        /// of the screen while the book held the left. The ledger is a full-screen file
+        /// now and nothing calls this, but the docked viewport it drives is still the
+        /// only code path for a half-screen map - keep it for whatever wants one next.
+        /// </summary>
         public void OpenBeside() => OpenAs(beside: true);
 
         void OpenAs(bool beside)

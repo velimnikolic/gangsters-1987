@@ -1469,6 +1469,10 @@ namespace RoadDemo
             // the roads it drives: the scene's network (or the one the builder set as
             // active); off any road it stands on open ground
             var car = new CrewCar { RoadY = roadY, Net = Net ?? LaneNet.Active };
+            // and WHAT it is: everywhere else a car reads its own machine off the name of
+            // its body (RoadCar.Machine), but this one has just been renamed for the
+            // hierarchy's sake and the prefab is still in hand, so hand it over
+            car.Machine = LivingCity.Gameplay.VehiclePerformance.For(prefab.name);
             car.Attach(go.transform); // reads the body: seats, doors, wheels, size; onto the road under it
             StreetTraffic.Users.Add(car);
             Cars.Add(car);

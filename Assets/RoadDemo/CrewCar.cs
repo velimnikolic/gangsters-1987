@@ -250,7 +250,7 @@ namespace RoadDemo
             {
                 Road.Project(point, out float ps, out float pd);
                 float ahead = (ps - S) * Heading;
-                float room = Speed * Speed / (2f * Profile.Brake) + 8f;
+                float room = Speed * Speed / (2f * Brake) + 8f;
                 if (ahead > -4f && ahead < room) point = Road.Pose(S + Heading * room, pd) + Vector3.up * point.y;
             }
             if (!GoTo(point, park: true)) GoFree(new Vector3(point.x, RoadY, point.z));

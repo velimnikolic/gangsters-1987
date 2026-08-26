@@ -7,46 +7,61 @@ using static LivingCity.UI.LedgerKit;
 namespace LivingCity.UI
 {
     /// <summary>
-    /// THE PAPER: the morning tabloid, folded into the front of the ledger - the whole
-    /// sheet, header and all, is newsprint. Masthead, dateline, the lead in condensed
-    /// caps with a halftone cut beside it, then the rest of the front page in three
-    /// columns. Every headline comes off HeadlineGenerator for this campaign week -
-    /// the real 1987 pinned to its dates, the city's own families in the blotter -
-    /// and every picture is PortraitStudio's newsprint print of a model the player
-    /// can meet in the street.
+    /// THE PAPER: the morning tabloid, folded into the front of the ledger and laid on
+    /// the sheet under the file's own masthead. Its own flag, its own dateline band,
+    /// the lead in condensed caps with a press cut beside it and its copy set in two
+    /// columns, then a row of briefs across the foot. Every headline comes off
+    /// HeadlineGenerator for this campaign day - the real 1987 pinned to its dates, the
+    /// city's own families in the blotter - and every picture is PortraitStudio's
+    /// newsprint print of a model the player can meet in the street.
     /// </summary>
     public sealed partial class PersonnelAlmanac
     {
-        const float NewsLeft = 28f;
-        const float NewsRight = PaperW - 28f;
+        /// <summary>The newsprint is a sheet laid ON the ledger page, not the page
+        /// itself: the file's masthead, blotter and telex slips stay printed above it,
+        /// the way the design has the boss reading the paper on top of his own book.</summary>
+        const float NewsH = -(PageBottom - PageTop);
+        const float NewsPad = 24f;
+        const float NewsLeft = NewsPad;
+        const float NewsRight = PageWidth - NewsPad;
         const float NewsWidth = NewsRight - NewsLeft;
+
+        /// <summary>The briefs across the foot - the design's auto-fit at a 230-unit
+        /// minimum, which comes out at five columns on this sheet.</summary>
+        const int BriefColumns = 5;
+        const float BriefGap = 22f;
+        const float BriefW = (NewsWidth - BriefGap * (BriefColumns - 1)) / BriefColumns;
+        const float BriefTop = -420f;
+        const float BriefH = 194f;
+
+        /// <summary>The rule that closes the lead and opens the briefs.</summary>
+        const float LeadRuleY = -406f;
 
         RectTransform newsContent;
 
-        /// <summary>The week the sheet was set for - it is only re-set when the week
+        /// <summary>The day the sheet was set for - it is only re-set when the day
         /// turns, because staging two studio photographs per repaint would be waste.</summary>
-        int newsPaintedWeek = -1;
+        int newsPaintedDay = -1;
 
         void BuildNewspaperPage(RectTransform sheet)
         {
             var root = NewPageRoot(sheet, LedgerPage.Newspaper);
 
-            // The paper lies over the ledger page whole - its own stock, its own grain.
-            var stock = NewRect("Newsprint", root);
-            Stretch(stock);
-            Fill(stock, LedgerStyle.Newsprint);
-            Grain(stock, PaperW, PaperH, 1.3f);
+            // The paper as an object on the desk: greyer, colder stock than the ledger's,
+            // with its own shadow where it overhangs the file.
+            var stock = Card("Newsprint", root, PageLeft, PageTop, PageWidth, NewsH,
+                LedgerStyle.Newsprint, shadowSpread: 14f, low: LedgerStyle.NewsprintLow);
 
-            newsContent = NewRect("Edition", root);
+            newsContent = NewRect("Edition", stock);
             Stretch(newsContent);
 
-            // The other half of the paper - the same sheet of newsprint, turned over.
-            BuildClassifiedPage(root);
+            // The other half of the paper - the same sheet, turned over.
+            BuildClassifiedPage(stock);
         }
 
         void RebuildNewspaper()
         {
-            // Which side of the paper is up. Both roots live on the same page, so
+            // Which side of the paper is up. Both roots live on the same sheet, so
             // turning it over costs a SetActive and not a rebuild.
             newsContent.gameObject.SetActive(!classifiedOpen);
             classifiedContent.gameObject.SetActive(classifiedOpen);
@@ -56,19 +71,19 @@ namespace LivingCity.UI
                 return;
             }
 
-            var week = outfit ? outfit.Campaign.Week : 1;
-            if (week == newsPaintedWeek && newsContent.childCount > 0)
+            var day = outfit ? outfit.Campaign.Day : 1;
+            if (day == newsPaintedDay && newsContent.childCount > 0)
                 return;
-            newsPaintedWeek = week;
+            newsPaintedDay = day;
 
             foreach (Transform old in newsContent)
                 Destroy(old.gameObject);
 
-            var date = NewsDate.FromClockDay((week - 1) * 7);
+            var date = NewsDate.FromClockDay(day - 1);
             var seed = director ? director.Seed : 42;
             var stories = HeadlineGenerator.FrontPage(seed, date);
 
-            // ---- masthead ----
+            // ---- the flag ----
             var ear = NewRect("EarLeft", newsContent);
             PlaceTopLeft(ear, NewsLeft, -14f, 118f, 46f);
             Frame(ear, 1f, LedgerStyle.Ink);
@@ -79,158 +94,177 @@ namespace LivingCity.UI
             earText.text = "FINAL\nCITY EDITION";
 
             // The right ear is where a paper prints its pointer to the inside pages,
-            // and this one points at the men advertising for work. A label-maker tape
-            // because it is a VERB: every other one in the book is one too. The cover
-            // price it replaces moved into the dateline under the masthead.
+            // and this one points at the men advertising for work.
             var adsTape = Tape(newsContent, "ADS", NewsRight - 118f, -14f, 118f, 46f,
-                () => SetClassified(true), size: 20f);
+                () => SetClassified(true), size: 19f);
             adsTape.rectTransform.offsetMin = new Vector2(0f, 14f);
             var earNote = Text("Note", adsTape.transform.parent, LedgerStyle.Condensed,
                 10f, LedgerStyle.TapeText, TextAlignmentOptions.Center);
             PlaceTopLeft(earNote.rectTransform, 0f, -30f, 118f, 14f);
-            earNote.characterSpacing = 2f;
+            earNote.characterSpacing = 3f;
             earNote.text = "SITUATIONS WANTED";
 
-            var masthead = Line(newsContent, LedgerStyle.SerifBold, 54f, LedgerStyle.Ink,
-                NewsLeft, -6f, NewsWidth, 70f, "THE CITY WIRE", TextAlignmentOptions.Center);
+            var masthead = Line(newsContent, LedgerStyle.SerifBold, 48f, LedgerStyle.Ink,
+                NewsLeft, -8f, NewsWidth, 62f, "THE CITY WIRE", TextAlignmentOptions.Center);
             masthead.characterSpacing = 6f;
 
-            Rule(newsContent, NewsLeft, -82f, NewsWidth, LedgerStyle.Ink, 2f);
+            Rule(newsContent, NewsLeft, -74f, NewsWidth, LedgerStyle.Ink, 2f);
             var dateline = Line(newsContent, LedgerStyle.SerifItalic, 13f, LedgerStyle.Ink,
-                NewsLeft, -86f, NewsWidth, 22f,
-                date.Masthead() + "   ·   VOL. LXI, No. " + (week + 3) + "   ·   " +
-                "MORNING EDITION   ·   25 CENTS", TextAlignmentOptions.Center);
+                NewsLeft, -80f, NewsWidth, 20f,
+                date.Masthead() + "   ·   VOL. LXI, No. " + (Outfit.Campaign.WeekOf(day) + 3) +
+                "   ·   MORNING EDITION   ·   25 CENTS", TextAlignmentOptions.Center);
             dateline.characterSpacing = 1f;
-            Rule(newsContent, NewsLeft, -110f, NewsWidth, LedgerStyle.Ink, 3f);
+            Rule(newsContent, NewsLeft, -102f, NewsWidth, LedgerStyle.Ink, 3f);
 
             if (stories.Length == 0)
                 return;
 
-            // ---- the lead, with the cut beside it if the day has one ----
-            var lead = stories[0];
-            var leadPhoto = lead.Photo.HasPicture;
-            var leadWidth = leadPhoto ? 572f : NewsWidth;
+            BuildLead(stories[0], seed + date.DayOfYear);
 
+            Rule(newsContent, NewsLeft, LeadRuleY, NewsWidth, LedgerStyle.Ink, 2f);
+
+            // ---- the briefs, one row across the foot ----
+            var slot = 0;
+            for (var i = 1; i < stories.Length && slot < BriefColumns; i++, slot++)
+            {
+                var x = NewsLeft + slot * (BriefW + BriefGap);
+                NewsColumn(stories[i], x, BriefTop, BriefW, BriefH,
+                    seed + date.DayOfYear + i);
+                if (slot > 0)
+                    VRule(newsContent, x - BriefGap * 0.5f, BriefTop, BriefH,
+                        LedgerStyle.InkFaint);
+            }
+
+            // The paper's own furniture fills whatever the wire left empty - an
+            // advertisement, then the weather.
+            if (slot < BriefColumns)
+            {
+                var x = NewsLeft + slot * (BriefW + BriefGap);
+                if (slot > 0)
+                    VRule(newsContent, x - BriefGap * 0.5f, BriefTop, BriefH,
+                        LedgerStyle.InkFaint);
+                BuildAdvert(x, BriefTop, BriefW);
+                slot++;
+            }
+            if (slot < BriefColumns)
+            {
+                var x = NewsLeft + slot * (BriefW + BriefGap);
+                if (slot > 0)
+                    VRule(newsContent, x - BriefGap * 0.5f, BriefTop, BriefH,
+                        LedgerStyle.InkFaint);
+                Caps(newsContent, x, BriefTop, BriefW, "WEATHER", 11f,
+                    LedgerStyle.InkDim, 4f);
+                Rule(newsContent, x, BriefTop - 18f, BriefW, LedgerStyle.InkFaint);
+                Paragraph(newsContent, LedgerStyle.Serif, 13f, LedgerStyle.Ink, x,
+                    BriefTop - 26f, BriefW, BriefH - 30f, WeatherLine(date), lineSpacing: 3f);
+            }
+        }
+
+        /// <summary>The lead: the deck across five sevenths of the sheet with its copy
+        /// set in two columns under it, the press cut and its caption holding the rest.
+        /// The design's 1.55-to-1 split, which is what a front page does.</summary>
+        void BuildLead(Headline lead, int salt)
+        {
+            const float gap = 28f;
+            var leadW = Mathf.Round((NewsWidth - gap) * (1.55f / 2.55f));
+            var cutX = NewsLeft + leadW + gap;
+            var cutW = NewsRight - cutX;
+
+            const float headlineTop = -112f;
             var headline = Paragraph(newsContent, LedgerStyle.Condensed, 44f, LedgerStyle.Ink,
-                NewsLeft, -122f, leadWidth, 104f, lead.Text, lineSpacing: -8f);
+                NewsLeft, headlineTop, leadW, 100f, lead.Text, lineSpacing: -8f);
             headline.overflowMode = TextOverflowModes.Overflow;
+
+            // A one-line deck and a three-line deck are both ordinary; the byline follows
+            // whichever it turns out to be, or a short head leaves a hole under it.
+            var deck = Mathf.Max(46f, headline.preferredHeight);
+            var kickerY = headlineTop - deck - 10f;
 
             var kicker = lead.Historical
                 ? DeskName(lead.Desk) + "  ·  FROM THE WIRE"
                 : DeskName(lead.Desk) + "  ·  BY A STAFF CORRESPONDENT";
-            var kickerText = Line(newsContent, LedgerStyle.Condensed, 12f, LedgerStyle.InkDim,
-                NewsLeft, -230f, leadWidth, 18f, kicker);
-            kickerText.characterSpacing = 3f;
+            Caps(newsContent, NewsLeft, kickerY, leadW, kicker, 11f, LedgerStyle.InkDim, 4f);
 
+            // Two columns of copy, the way a lead is set. TMP wraps within one rect, so
+            // the columns are two rects with the same run split between them - which is
+            // also what a compositor does.
+            // y runs DOWN as a negative here, so the run's height is how far the body's
+            // top sits ABOVE the closing rule: bodyY - LeadRuleY, never the other way
+            // round - reversed it comes out negative and TMP prints nothing at all.
+            var bodyY = kickerY - 24f;
+            var bodyH = Mathf.Max(60f, bodyY - LeadRuleY - 10f);
+            var columnW = (leadW - 22f) * 0.5f;
+            Paragraph(newsContent, LedgerStyle.Serif, 15f, LedgerStyle.Ink, NewsLeft, bodyY,
+                columnW, bodyH, Blurb(lead.Desk, salt), lineSpacing: 5f);
             Paragraph(newsContent, LedgerStyle.Serif, 15f, LedgerStyle.Ink,
-                NewsLeft, -252f, leadWidth, 176f,
-                Blurb(lead.Desk, seed + date.DayOfYear) + "\n\n" +
-                Blurb(lead.Desk, seed + date.DayOfYear + 1) +
-                "  Continued on page 3.", lineSpacing: 6f);
+                NewsLeft + columnW + 22f, bodyY, columnW, bodyH,
+                Blurb(lead.Desk, salt + 1) + "  Continued on page 3.", lineSpacing: 5f);
 
-            if (leadPhoto)
-                NewsCut(lead, NewsRight - 268f, -122f, 268f, 250f);
-
-            Rule(newsContent, NewsLeft, -436f, NewsWidth, LedgerStyle.Ink);
-
-            // ---- the rest of the front page, three columns ----
-            const float gap = 24f;
-            var column = (NewsWidth - gap * 2f) / 3f;
-            for (var i = 1; i < stories.Length && i < 6; i++)
-            {
-                var slot = i - 1;
-                var col = slot % 3;
-                var row = slot / 3;
-                var x = NewsLeft + col * (column + gap);
-                var y = -448f - row * 262f;
-                NewsColumn(stories[i], x, y, column, 250f, seed + date.DayOfYear + i);
-                if (col > 0)
-                    VRule(newsContent, x - gap * 0.5f, y, 250f, LedgerStyle.InkFaint);
-            }
-
-            // The sixth cell: the paper's own furniture - an advertisement and the weather.
-            {
-                var x = NewsLeft + 2f * (column + gap);
-                var y = -448f - 262f;
-                VRule(newsContent, x - gap * 0.5f, y, 250f, LedgerStyle.InkFaint);
-                var ad = NewRect("Advert", newsContent);
-                PlaceTopLeft(ad, x, y, column, 150f);
-                Frame(ad, 2f, LedgerStyle.Ink);
-                var inner = NewRect("Inner", ad);
-                Stretch(inner, 4f);
-                Frame(inner, 1f, LedgerStyle.Ink);
-                var adHead = Line(ad, LedgerStyle.SerifBold, 17f, LedgerStyle.Ink, 10f, -14f,
-                    column - 20f, 26f, "MARLOWE'S", TextAlignmentOptions.Center);
-                adHead.characterSpacing = 4f;
-                Line(ad, LedgerStyle.Serif, 13f, LedgerStyle.Ink, 10f, -40f, column - 20f, 20f,
-                    "FINE TAILORING", TextAlignmentOptions.Center).characterSpacing = 3f;
-                Rule(ad, 30f, -64f, column - 60f, LedgerStyle.Ink);
-                var adBody = Paragraph(ad, LedgerStyle.SerifItalic, 12.5f, LedgerStyle.Ink,
-                    12f, -70f, column - 24f, 70f,
-                    "Suits cut for the discreet professional. Wide in the shoulder, " +
-                    "quiet in the cloth. Fittings by appointment only.", lineSpacing: 2f);
-                adBody.alignment = TextAlignmentOptions.Top;
-
-                var weatherHead = Line(newsContent, LedgerStyle.Condensed, 12f, LedgerStyle.InkDim,
-                    x, y - 164f, column, 18f, "WEATHER");
-                weatherHead.characterSpacing = 3f;
-                Rule(newsContent, x, y - 182f, column, LedgerStyle.InkFaint);
-                Paragraph(newsContent, LedgerStyle.Serif, 13f, LedgerStyle.Ink, x, y - 188f,
-                    column, 62f, WeatherLine(date), lineSpacing: 2f);
-            }
+            if (lead.Photo.HasPicture)
+                NewsCut(lead, cutX, -112f, cutW, 250f);
         }
 
-        /// <summary>One story in the grid: kicker, condensed headline, a rule, and
-        /// either its halftone cut or a few lines of copy under it.</summary>
+        /// <summary>The paper's own advertisement - furniture, and the one thing on the
+        /// front page that is not news.</summary>
+        void BuildAdvert(float x, float y, float w)
+        {
+            var ad = NewRect("Advert", newsContent);
+            PlaceTopLeft(ad, x, y, w, 150f);
+            Frame(ad, 2f, LedgerStyle.Ink);
+            var inner = NewRect("Inner", ad);
+            Stretch(inner, 4f);
+            Frame(inner, 1f, LedgerStyle.Ink);
+
+            var head = Line(ad, LedgerStyle.SerifBold, 17f, LedgerStyle.Ink, 10f, -14f,
+                w - 20f, 26f, "MARLOWE'S", TextAlignmentOptions.Center);
+            head.characterSpacing = 4f;
+            Caps(ad, 10f, -40f, w - 20f, "FINE TAILORING", 12f, LedgerStyle.Ink, 4f,
+                TextAlignmentOptions.Center);
+            Rule(ad, 30f, -64f, w - 60f, LedgerStyle.Ink);
+            var body = Paragraph(ad, LedgerStyle.SerifItalic, 12.5f, LedgerStyle.Ink, 12f,
+                -70f, w - 24f, 70f,
+                "Suits cut for the discreet professional. Wide in the shoulder, quiet " +
+                "in the cloth. Fittings by appointment only.", lineSpacing: 2f);
+            body.alignment = TextAlignmentOptions.Top;
+        }
+
+        /// <summary>One brief in the row: desk label, condensed head, a hairline, copy.</summary>
         void NewsColumn(Headline story, float x, float y, float w, float h, int salt)
         {
-            var kicker = Line(newsContent, LedgerStyle.Condensed, 11f, LedgerStyle.InkDim,
-                x, y, w, 16f, story.Historical
-                    ? DeskName(story.Desk) + "  ·  WIRE REPORT"
-                    : DeskName(story.Desk));
-            kicker.characterSpacing = 3f;
+            Caps(newsContent, x, y, w, story.Historical
+                ? DeskName(story.Desk) + "  ·  WIRE REPORT"
+                : DeskName(story.Desk), 10.5f, LedgerStyle.InkDim, 4f);
 
+            // Two lines of the condensed gothic, measured - at 52 units a two-line head
+            // could not fit its second line and TMP dropped BOTH, ellipsing mid-word.
             var head = Paragraph(newsContent, LedgerStyle.Condensed, 21f, LedgerStyle.Ink,
-                x, y - 18f, w, 66f, story.Text, lineSpacing: -4f);
-            head.overflowMode = TextOverflowModes.Overflow;
+                x, y - 18f, w, LineBox(21f, 2), story.Text, lineSpacing: -4f);
+            head.overflowMode = TextOverflowModes.Ellipsis;
 
-            Rule(newsContent, x, y - 88f, w, LedgerStyle.InkFaint);
+            Rule(newsContent, x, y - 90f, w, LedgerStyle.InkFaint);
 
-            var bodyTop = y - 94f;
-            var bodyHeight = h - 94f;
-            if (story.Photo.HasPicture)
+            var bodyTop = y - 98f;
+            var bodyHeight = h - 98f;
+            if (story.Photo.HasPicture && bodyHeight > 120f)
             {
-                NewsCut(story, x, bodyTop, w, 116f);
-                bodyTop -= 150f;
-                bodyHeight -= 150f;
+                NewsCut(story, x, bodyTop, w, 74f);
+                bodyTop -= 100f;
+                bodyHeight -= 100f;
             }
 
-            Paragraph(newsContent, LedgerStyle.Serif, 13.5f, LedgerStyle.Ink, x, bodyTop, w,
+            Paragraph(newsContent, LedgerStyle.Serif, 13f, LedgerStyle.Ink, x, bodyTop, w,
                 bodyHeight, Blurb(story.Desk, salt), lineSpacing: 3f);
         }
 
         /// <summary>A halftone cut in a hairline frame with its italic caption under.
         /// The print is the studio's newsprint treatment of the story's own model; until
-        /// it lands (or when no model resolves) the frame reads WIREPHOTO.</summary>
+        /// it lands (or when no model resolves) the hatched plate simply stays.</summary>
         void NewsCut(Headline story, float x, float y, float w, float h)
         {
-            var frame = NewRect("Cut", newsContent);
-            PlaceTopLeft(frame, x, y, w, h);
-            Fill(frame, new Color(LedgerStyle.Newsprint.r * 0.92f,
-                LedgerStyle.Newsprint.g * 0.92f, LedgerStyle.Newsprint.b * 0.92f));
-            Frame(frame, 1f, LedgerStyle.Ink);
+            var raw = Plate(newsContent, x, y, w, h, "PRESS PHOTO",
+                new Color(LedgerStyle.Newsprint.r * 0.94f, LedgerStyle.Newsprint.g * 0.94f,
+                    LedgerStyle.Newsprint.b * 0.94f));
 
-            var mark = Text("Mark", frame, LedgerStyle.Condensed, 14f, LedgerStyle.InkDim,
-                TextAlignmentOptions.Center);
-            Stretch(mark.rectTransform);
-            mark.characterSpacing = 8f;
-            mark.text = "WIREPHOTO";
-
-            var print = NewRect("Print", frame);
-            Stretch(print, 1f);
-            var raw = print.gameObject.AddComponent<RawImage>();
-            raw.raycastTarget = false;
-            raw.enabled = false;
             // A wide slot shows the middle band of the square print - the subject is
             // centred, so a landscape window keeps it whole.
             if (w > h * 1.3f)
@@ -249,8 +283,8 @@ namespace LivingCity.UI
                     : PortraitStudio.Framing.Bust,
                 raw, PortraitStudio.Treatment.Newsprint);
 
-            var caption = Paragraph(newsContent, LedgerStyle.SerifItalic, 12.5f, LedgerStyle.Ink,
-                x, y - h - 4f, w, 30f, photo.Caption, lineSpacing: 0f);
+            var caption = Paragraph(newsContent, LedgerStyle.SerifItalic, 12.5f,
+                LedgerStyle.Ink, x, y - h - 4f, w, 30f, photo.Caption, lineSpacing: 0f);
             caption.overflowMode = TextOverflowModes.Ellipsis;
         }
 

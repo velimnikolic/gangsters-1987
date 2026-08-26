@@ -842,7 +842,8 @@ namespace RoadDemo
         /// that then stopped inside it, at a range where nothing can be done about it.
         /// Nobody crosses a junction at fifty-eight kilometres an hour behind somebody
         /// else, and a machine that does is not reading as quick, it is reading as a bug.
-        /// Off the box it has its pace back inside a second (Accel 9).</summary>
+        /// Off the box it has its pace back inside a second (the profile asks 9, and the
+        /// machine under it pulls better than that - VehiclePerformance).</summary>
         public static float BoxSpeed = 9f;
 
         protected override float LimitTarget(float target)

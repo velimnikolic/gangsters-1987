@@ -64,11 +64,9 @@ namespace LivingCity.UI
 
         const float LieutenantPanelWidth = 220f;
 
-        /// <summary>The bar itself, so the readout can dodge: the open ledger owns the
-        /// left half of the screen (and draws over this canvas), so the strip re-centres
-        /// over the map half for as long as the book is up.</summary>
-        RectTransform barRect;
-        float barBaseX;
+        // The bar used to dodge to the right while the ledger held the left half of
+        // the screen. The ledger fills the screen now, so there is nowhere to dodge to
+        // and the strip simply stays where the scene put it.
 
         void Awake()
         {
@@ -78,12 +76,6 @@ namespace LivingCity.UI
             var bar = transform.Find("Bar");
             if (bar && bar.TryGetComponent(out Image barImage))
                 UiSkin.TryDress(barImage, UiSkin.PanelRaised);
-            if (bar)
-            {
-                barRect = (RectTransform)bar;
-                barBaseX = barRect.anchoredPosition.x;
-            }
-
             // Same reason the bar is skinned here, and not in the menu that baked it: the
             // readout deserialises with TMP's default face, an Arial clone that belongs to
             // no part of this book. The figures take the fixed-pitch face - a proportional
@@ -117,17 +109,6 @@ namespace LivingCity.UI
         // reading it late means the HUD and the sky are showing the same frame's hour.
         void LateUpdate()
         {
-            // Before the minute gate - the dodge tracks the book, not the clock.
-            if (barRect)
-            {
-                var wantX = barBaseX + (PersonnelAlmanac.IsOpen
-                    ? ((RectTransform)transform).rect.width * 0.25f
-                    : 0f);
-                if (!Mathf.Approximately(barRect.anchoredPosition.x, wantX))
-                    barRect.anchoredPosition =
-                        new Vector2(wantX, barRect.anchoredPosition.y);
-            }
-
             var hour = clock.Hour;
             var minute = Mathf.FloorToInt(hour * 60f);
 

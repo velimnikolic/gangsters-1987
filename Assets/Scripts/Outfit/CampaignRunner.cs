@@ -145,7 +145,8 @@ namespace LivingCity.Outfit
             job.TravelHoursLeft = OrderMath.TravelHours(
                 DistanceOf != null ? DistanceOf(job) : 0f,
                 CrewKit.HasVehicle(roster, crew),
-                CrewKit.BestAt(roster, crew, CharacterAttribute.Driving));
+                CrewKit.BestAt(roster, crew, CharacterAttribute.Driving),
+                CrewKit.MachineTopOf(roster, crew));
             job.WorkHoursLeft = OrderMath.WorkHours(spec, job.TargetCount, job.Men);
             job.Stage = JobStage.Travelling;
             return true;

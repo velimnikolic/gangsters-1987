@@ -43,12 +43,14 @@ namespace LivingCity.UI
         /// refusals can be the same length and different sentences.</summary>
         string classifiedPaintedNote = "\u0000";
 
-        // The column's furniture, in the paper's own page coordinates.
-        const float AdGap = 24f;
-        const float AdWidth = (NewsWidth - AdGap) * 0.5f;
-        const float AdHeight = 350f;
-        const float AdRowGap = 26f;
-        const float AdsTop = -166f;
+        // The column's furniture, in the newsprint sheet's own coordinates. Four
+        // boxes across one row: the sheet is wide and short now, so a column of ads
+        // two deep would run off the foot of the paper.
+        const int AdColumns = 4;
+        const float AdGap = 20f;
+        const float AdWidth = (NewsWidth - AdGap * (AdColumns - 1)) / AdColumns;
+        const float AdHeight = 430f;
+        const float AdsTop = -172f;
 
         void BuildClassifiedPage(RectTransform root)
         {
@@ -87,10 +89,10 @@ namespace LivingCity.UI
 
             // ---- the page's own head ----
             var flag = Line(classifiedContent, LedgerStyle.SerifBold, 26f, LedgerStyle.Ink,
-                NewsLeft, -14f, 420f, 40f, "THE CITY WIRE");
+                NewsLeft, -12f, 420f, 38f, "THE CITY WIRE");
             flag.characterSpacing = 2f;
 
-            Tape(classifiedContent, "FRONT PAGE", NewsRight - 160f, -16f, 160f, 34f,
+            Tape(classifiedContent, "FRONT PAGE", NewsRight - 160f, -14f, 160f, 32f,
                 () => SetClassified(false));
 
             Rule(classifiedContent, NewsLeft, -60f, NewsWidth, LedgerStyle.Ink, 2f);
@@ -127,13 +129,8 @@ namespace LivingCity.UI
                 return;
             }
 
-            for (var i = 0; i < ads.Count; i++)
-            {
-                var column = i % 2;
-                var row = i / 2;
-                BuildAd(ads[i], NewsLeft + column * (AdWidth + AdGap),
-                    AdsTop - row * (AdHeight + AdRowGap), safe);
-            }
+            for (var i = 0; i < ads.Count && i < AdColumns; i++)
+                BuildAd(ads[i], NewsLeft + i * (AdWidth + AdGap), AdsTop, safe);
         }
 
         /// <summary>One boxed advertisement. Everything on it is read off the ad at
@@ -150,50 +147,62 @@ namespace LivingCity.UI
             Stretch(inner, 4f);
             Frame(inner, 1f, LedgerStyle.Ink);
 
-            var trade = Line(box, LedgerStyle.Condensed, 22f, LedgerStyle.Ink, 12f, -12f,
-                AdWidth - 24f, 28f, HireMarket.TradeName(ad.Trade),
+            var trade = Line(box, LedgerStyle.Condensed, 20f, LedgerStyle.Ink, 12f, -12f,
+                AdWidth - 24f, 26f, HireMarket.TradeName(ad.Trade),
                 TextAlignmentOptions.Center);
             trade.characterSpacing = 5f;
-            Rule(box, 44f, -44f, AdWidth - 88f, LedgerStyle.Ink);
+            Rule(box, 34f, -40f, AdWidth - 68f, LedgerStyle.Ink);
 
-            AdCut(box, man, 14f, -54f, 124f, 140f);
+            const float cutW = 200f;
+            AdCut(box, man, (AdWidth - cutW) * 0.5f, -50f, cutW, 120f);
 
-            var name = Line(box, LedgerStyle.SerifBold, 19f, LedgerStyle.Ink, 150f, -54f,
-                AdWidth - 164f, 26f, man.FullName.ToUpperInvariant());
+            var name = Line(box, LedgerStyle.SerifBold, 17f, LedgerStyle.Ink, 12f, -176f,
+                AdWidth - 24f, 24f, man.FullName.ToUpperInvariant(),
+                TextAlignmentOptions.Center);
             name.characterSpacing = 1f;
+            name.overflowMode = TextOverflowModes.Ellipsis;
 
-            Line(box, LedgerStyle.SerifItalic, 12.5f, LedgerStyle.InkDim, 150f, -80f,
-                AdWidth - 164f, 18f, "Late of " + Titled(ad.From) + "  ·  " + ad.Box);
+            var late = Line(box, LedgerStyle.SerifItalic, 11.5f, LedgerStyle.InkDim, 12f,
+                -198f, AdWidth - 24f, 18f,
+                "Late of " + Titled(ad.From) + "  ·  " + ad.Box,
+                TextAlignmentOptions.Center);
+            late.overflowMode = TextOverflowModes.Ellipsis;
 
-            // His three best trades, in stars - the same currency the personnel card
+            // His three best trades, in stars - the same currency the personal file
             // uses, so a man in the paper reads against a man on the books at a glance.
-            var y0 = -104f;
+            var y0 = -222f;
             for (var slot = 0; slot < 3; slot++)
             {
                 var attribute = NthBest(man, slot);
-                Line(box, LedgerStyle.Serif, 13f, LedgerStyle.Ink, 150f, y0 - slot * 24f,
-                    100f, 20f, LedgerText.AttributeLabel(attribute));
-                Stars(box, 252f, y0 - slot * 24f - 10f, man.GetHalfSteps(attribute),
+                Line(box, LedgerStyle.Serif, 12.5f, LedgerStyle.Ink, 14f, y0 - slot * 22f,
+                    150f, 20f, LedgerText.AttributeLabel(attribute));
+                Stars(box, 172f, y0 - slot * 22f - 10f, man.GetHalfSteps(attribute),
                     15f, 16f);
             }
 
-            var copy = Paragraph(box, LedgerStyle.Serif, 13f, LedgerStyle.Ink, 14f, -200f,
-                AdWidth - 28f, 62f, "\"" + HireMarket.Pitch(ad.Trade) + "\"", lineSpacing: 3f);
+            var copy = Paragraph(box, LedgerStyle.Serif, 12.5f, LedgerStyle.Ink, 14f, -292f,
+                AdWidth - 28f, 52f, "\u201C" + HireMarket.Pitch(ad.Trade) + "\u201D",
+                lineSpacing: 3f);
             copy.alignment = TextAlignmentOptions.Top;
+            copy.overflowMode = TextOverflowModes.Ellipsis;
 
-            Rule(box, 14f, -266f, AdWidth - 28f, LedgerStyle.Ink);
-
-            // The price the column is read for: what he costs A DAY.
-            var price = Line(box, LedgerStyle.Condensed, 32f, LedgerStyle.Ink, 14f, -272f,
-                260f, 40f, LedgerText.Cash(ad.Daily) + " A DAY");
-            price.characterSpacing = 2f;
-
-            Line(box, LedgerStyle.Mono, 12f, LedgerStyle.InkDim, 14f, -312f, 270f, 18f,
-                LedgerText.Cash(ad.Weekly) + " the week  ·  " + LedgerText.Cash(ad.Down) +
+            // The terms sit ABOVE the price rule, not under the price: the box's own
+            // frame is drawn over its bottom edge, and a line laid against it is a line
+            // cut in half.
+            Line(box, LedgerStyle.Mono, 11f, LedgerStyle.InkDim, 14f, -350f,
+                AdWidth - 28f, 16f,
+                LedgerText.Cash(ad.Weekly) + " the week  \u00B7  " + LedgerText.Cash(ad.Down) +
                 " down");
 
+            Rule(box, 14f, -370f, AdWidth - 28f, LedgerStyle.Ink);
+
+            // The price the column is read for: what he costs A DAY.
+            var price = Line(box, LedgerStyle.Condensed, 24f, LedgerStyle.Ink, 14f, -374f,
+                AdWidth - 130f, LineBox(24f), LedgerText.Cash(ad.Daily) + " A DAY");
+            price.characterSpacing = 2f;
+
             var captured = ad;
-            var hire = Tape(box, "HIRE", AdWidth - 124f, -278f, 110f, 32f, () =>
+            var hire = Tape(box, "HIRE", AdWidth - 112f, -378f, 98f, 32f, () =>
             {
                 var result = director.HireFromAd(captured, out var newId);
                 if (result.Ok)
@@ -205,41 +214,28 @@ namespace LivingCity.UI
                 else
                     classifiedNote = result.Reason;
                 dirty = true;
-            }, size: 14f);
+            }, size: 13f);
 
             // Short money reads at a glance; the click still spells out how short.
             if (safe < ad.Down)
-                ButtonOf(hire).targetGraphic.color = new Color(1f, 1f, 1f, 0.45f);
+                ButtonOf(hire).targetGraphic.color = new Color(0.45f, 0.42f, 0.38f);
         }
 
         /// <summary>The ad's halftone: the studio's newsprint print of the very body
-        /// this man will wear in the street, in a hairline frame. Until it lands the
-        /// frame reads WIREPHOTO, the same as the front page's cuts.</summary>
+        /// this man will wear in the street, on the same hatched plate every other
+        /// picture in the book stands on until its print lands.</summary>
         void AdCut(RectTransform parent, Character man, float x, float y, float w, float h)
         {
-            var frame = NewRect("Cut", parent);
-            PlaceTopLeft(frame, x, y, w, h);
-            Fill(frame, new Color(LedgerStyle.Newsprint.r * 0.92f,
-                LedgerStyle.Newsprint.g * 0.92f, LedgerStyle.Newsprint.b * 0.92f));
-            Frame(frame, 1f, LedgerStyle.Ink);
+            var raw = Plate(parent, x, y, w, h, "PRESS PHOTO",
+                new Color(LedgerStyle.Newsprint.r * 0.94f, LedgerStyle.Newsprint.g * 0.94f,
+                    LedgerStyle.Newsprint.b * 0.94f));
 
-            var mark = Text("Mark", frame, LedgerStyle.Condensed, 11f, LedgerStyle.InkDim,
-                TextAlignmentOptions.Center);
-            Stretch(mark.rectTransform);
-            mark.characterSpacing = 4f;
-            mark.text = "WIREPHOTO";
-
-            var print = NewRect("Print", frame);
-            Stretch(print, 1f);
-            var raw = print.gameObject.AddComponent<RawImage>();
-            raw.raycastTarget = false;
-            raw.enabled = false;
-            // The studio's prints are square and this slot is taller than it is wide:
-            // show the middle band of the print rather than stretching the man in it.
-            if (h > w)
+            // The studio's prints are square and this slot is wider than it is tall:
+            // show the middle band rather than stretching the man in it.
+            if (w > h)
             {
-                var band = w / h;
-                raw.uvRect = new Rect((1f - band) * 0.5f, 0f, band, 1f);
+                var band = h / w;
+                raw.uvRect = new Rect(0f, (1f - band) * 0.5f, 1f, band);
             }
 
             PortraitStudio.Request(MemberModel(man), PortraitStudio.Framing.Bust, raw,

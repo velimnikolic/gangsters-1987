@@ -3780,8 +3780,8 @@ namespace RoadDemo
             for (int i = 0; i < policeCarCount; i++)
             {
                 var hi = homes[i];
-                var go = Instantiate(_policeCarPrefabs[i % _policeCarPrefabs.Count],
-                                     hi.stall, Quaternion.identity, parent);
+                var policePrefab = _policeCarPrefabs[i % _policeCarPrefabs.Count];
+                var go = Instantiate(policePrefab, hi.stall, Quaternion.identity, parent);
                 go.name = "Patrol Car " + (i + 1);
                 foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
                 foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
@@ -3798,6 +3798,9 @@ namespace RoadDemo
                     HalfLen = bounds.extents.z + 0.3f,
                     HalfWide = Mathf.Clamp(bounds.extents.x, 0.7f, 1.3f),
                     UnitNumber = i + 1,
+                    // the body is named for the fleet list and not for the pack, so the
+                    // machine is handed over rather than read off the transform
+                    Machine = LivingCity.Gameplay.VehiclePerformance.For(policePrefab.name),
                 };
                 // each car returns to its own kerb and patrols its own quarter
                 var carRouteHome = PolicePatrolCar.RouteToward(_edges, hi.home);
