@@ -16,5 +16,6 @@
     <Compile Include="..\..\Assets\RoadDemo\CoreRoads.cs" />
     <Compile Include="..\..\Assets\RoadDemo\IndustrialLayout.cs" />
     <Compile Include="..\..\Assets\RoadDemo\ParkWalk.cs" />
+    <Compile Include="..\..\Assets\RoadDemo\QuayWalk.cs" />
   </ItemGroup>
 </Project>

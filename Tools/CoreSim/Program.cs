@@ -20,7 +20,7 @@ static class Program
     {
         int seed = 1, count = 1;
         bool synty = false, map = false, rows = false, tiles = false, stats = false, industrial = false;
-        bool park = false, sweep = false;
+        bool park = false, sweep = false, quay = false;
         string size = "";
         int deal = -1;
         string file = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "blocks.txt");
@@ -33,6 +33,7 @@ static class Program
                 case "--synty": synty = true; break;
                 case "--industrial": industrial = true; break;
                 case "--park": park = true; break;
+                case "--quay": quay = true; break;
                 case "--size": size = args[++i]; break;
                 case "--sweep": sweep = true; break;
                 case "--map": map = true; break;
@@ -50,15 +51,15 @@ static class Program
 
         var blocks = ReadBlocks(file);
         Console.WriteLine($"{blocks.Count} blocks from {Path.GetFullPath(file)}");
+        if (quay) return Quays(blocks, seed, count, size, map, sweep);
 
         // one deal of one seed, drawn out, faults and all
         if (deal >= 0)
         {
             var plan = CoreLayout.Roll(blocks, unchecked(seed * 1000003 + deal * 7919));
-            var withParks = new List<CoreLayout.Block>(blocks);
-            withParks.AddRange(plan.Parks);
-            var raster = CoreRoads.Build(withParks, plan);
-            Console.WriteLine($"seed {seed} deal {deal + 1}: faults {raster.Faults}, {plan.Parks.Count} park(s)");
+            var raster = CoreRoads.Build(CoreLayout.WithGround(blocks, plan), plan);
+            Console.WriteLine($"seed {seed} deal {deal + 1}: faults {raster.Faults}, {plan.Parks.Count} park(s), " +
+                              $"{plan.Quays.Count} stretch(es) of promenade, {plan.Bridges.Count} bridge(s)");
             foreach (var row in plan.Rows) Console.WriteLine("   " + row);
             foreach (var line in raster.Report.Split('\n')) Console.WriteLine("   " + line.Trim());
             Console.WriteLine(raster.Map);
@@ -73,11 +74,10 @@ static class Program
                 for (int d = 0; d < CoreLayout.Deals; d++)
                 {
                     var plan = CoreLayout.Roll(blocks, unchecked((seed + n) * 1000003 + d * 7919));
-                    // the parks the deal made are blocks too - left out, they are holes the
-                    // verdict calls bare, and the tally measures a city nobody is building
-                    var withParks = new List<CoreLayout.Block>(blocks);
-                    withParks.AddRange(plan.Parks);
-                    var raster = CoreRoads.Build(withParks, plan);
+                    // the parks and the river's ground the deal made are blocks too - left
+                    // out, they are holes the verdict calls bare, and the tally measures a
+                    // city nobody is building
+                    var raster = CoreRoads.Build(CoreLayout.WithGround(blocks, plan), plan);
                     deals++;
                     if (raster.Faults == 0) { cleanDeals++; continue; }
                     foreach (var line in raster.Report.Split('\n'))
@@ -85,6 +85,9 @@ static class Program
                         string key = line.Contains("left bare") ? "left bare" + (line.Contains(" cells") ? " " + line.Trim().Split(' ')[2] + " cells" : "")
                                    : line.Contains("no road along") ? "no road along " + line.Trim().Substring(line.Trim().LastIndexOf("its ") + 4)
                                    : line.Contains("hemmed") ? "stub"
+                                   : line.Contains("bridge") ? "bridge broken"
+                                   : line.Contains("run together") ? "junctions run together"
+                                   : line.Contains("runs out") ? "alley trap"
                                    : line.Contains("claimed") ? "clash" : null;
                         if (key == null) continue;
                         kinds[key] = kinds.TryGetValue(key, out var k) ? k + 1 : 1;
@@ -109,7 +112,8 @@ static class Program
             string roads = raster.Report.Split('\n').FirstOrDefault(l => l.Contains(" roads:"))?.Trim() ?? "";
             Console.WriteLine($"{plan.Name,-18} deals {plan.Attempt + 1,2}  faults {raster.Faults,2}  " +
                               $"{raster.NX * 5}x{raster.NZ * 5} m  blocks {raster.BlockArea} road {raster.RoadArea} " +
-                              $"parking {raster.ParkingArea} spare {raster.SpareArea}  {roads}");
+                              $"parking {raster.ParkingArea} spare {raster.SpareArea} water {raster.WaterArea}  " +
+                              $"quay {plan.Quays.Count}/{plan.Bridges.Count}  {roads}");
             if (rows) foreach (var row in plan.Rows) Console.WriteLine("   " + row);
             if (raster.Faults > 0 || rows)
                 foreach (var line in raster.Report.Split('\n'))
@@ -263,6 +267,100 @@ static class Program
         }
         Console.WriteLine($"{count} parks: {good} clean");
         return good == count ? 0 : 1;
+    }
+
+    /// <summary>
+    /// The promenade. --sweep lays every depth the core deals against every length up to
+    /// the whole height of a core, with the streets arriving at random and every kind of
+    /// end, and asks the plan's own verdict of each - the park's lesson, that a generator
+    /// is only known to work on the sizes it was tried on. Without --sweep the core is
+    /// dealt for the seed and every stretch of its promenade is read off it and laid, the
+    /// way the district does it.
+    /// </summary>
+    static int Quays(List<CoreLayout.Block> blocks, int seed, int count, string size, bool map, bool sweep)
+    {
+        if (sweep)
+        {
+            int tried = 0, clean = 0, worst = 0;
+            var faulty = new Dictionary<string, int>();
+            var cast = new Dictionary<string, int>();
+            var ends = new[] { QuayWalk.End.Line, QuayWalk.End.Bridge, QuayWalk.End.Boulevard };
+            for (int depth = QuayWalk.DeepMin; depth <= 8; depth++)
+                for (int length = 1; length <= 160; length += length < 40 ? 1 : 3)
+                    for (int e = 0; e < 4; e++)
+                    {
+                        var dice = new Random(seed * 7919 + depth * 131 + length * 17 + e);
+                        // streets arrive where the rows' blocks put them: 7 to 20 cells apart,
+                        // each three wide
+                        var mouths = new List<QuayWalk.Mouth>();
+                        for (int z = dice.Next(3, 12); z + 3 <= length; z += 3 + dice.Next(7, 21))
+                            mouths.Add(new QuayWalk.Mouth(z, z + 3));
+                        // the wants are asked only of a strip long enough to hold them at
+                        // all (Report counts a want with no room as a fault); whether the
+                        // mouths leave a room for them is what the sweep then measures
+                        var wants = new QuayWalk.Wants
+                        {
+                            Fair = e % 2 == 0 && length >= 14, FairAtStart = e < 2,
+                            Landing = e != 1 && length >= 8, Diner = e != 2 && length >= 10,
+                            Terraces = dice.Next(0, 4),
+                        };
+                        var plan = QuayWalk.Lay(depth, length, mouths, ends[e % 3], ends[(e + 1) % 3], wants, dice);
+                        string said = QuayWalk.Report(plan, out int faults);
+                        tried++;
+                        foreach (var room in plan.Rooms)
+                        {
+                            string key = room.Programme.ToString();
+                            cast[key] = cast.TryGetValue(key, out var c) ? c + 1 : 1;
+                        }
+                        if (faults == 0) { clean++; continue; }
+                        worst = Math.Max(worst, faults);
+                        foreach (var part in said.Split(';'))
+                        {
+                            if (!part.Contains("WARNING")) continue;
+                            string key = part.Substring(part.IndexOf("WARNING") + 9).Trim();
+                            key = System.Text.RegularExpressions.Regex.Replace(key, @"[0-9]+", "N");
+                            faulty[key] = faulty.TryGetValue(key, out var k) ? k + 1 : 1;
+                            if (faulty[key] <= 2) Console.WriteLine($"   {depth * 5}x{length * 5} m ends {e}: {key}");
+                        }
+                    }
+            Console.WriteLine($"{tried} strips, {clean} clean ({100.0 * clean / tried:F0}%), worst {worst} faults");
+            Console.WriteLine("   cast: " + string.Join("  ", cast.OrderByDescending(p => p.Value).Select(p => $"{p.Key} {p.Value}")));
+            foreach (var pair in faulty.OrderByDescending(p => p.Value)) Console.WriteLine($"   {pair.Value,5}  {pair.Key}");
+            return clean == tried ? 0 : 1;
+        }
+
+        int good = 0, all = 0;
+        var castAll = new Dictionary<string, int>();
+        for (int n = 0; n < count; n++)
+        {
+            int s = seed + n;
+            var plan = CoreLayout.Arrange(blocks, s, out var raster);
+            var wants = QuayWalk.Cast(plan);
+            int stretches = 0, faultsAll = 0;
+            for (int q = 0; q < plan.Quays.Count; q++)
+            {
+                var box = plan.Quays[q].Box;
+                int dice = unchecked(s * 7919 + (int)Math.Round(box.xMin) * 104729 + (int)Math.Round(box.yMin) * 1299709);
+                var strip = QuayWalk.ForQuay(plan, plan.Quays[q], wants[q], new Random(dice));
+                string said = QuayWalk.Report(strip, out int faults);
+                faultsAll += faults;
+                stretches++;
+                foreach (var room in strip.Rooms)
+                {
+                    string key = room.Programme.ToString();
+                    castAll[key] = castAll.TryGetValue(key, out var c) ? c + 1 : 1;
+                }
+                if (count == 1 || faults > 0)
+                    Console.WriteLine($"   {plan.Quays[q].Name} ({strip.South}..{strip.North}): {said}");
+                if (map) Console.WriteLine(strip.Map);
+            }
+            all++;
+            if (faultsAll == 0 && raster.Faults == 0) good++;
+            Console.WriteLine($"{plan.Name,-18} core faults {raster.Faults}  promenade {stretches} stretch(es), {faultsAll} fault(s)");
+        }
+        Console.WriteLine($"{all} seeds: {good} clean");
+        Console.WriteLine("   cast: " + string.Join("  ", castAll.OrderByDescending(p => p.Value).Select(p => $"{p.Key} {p.Value}")));
+        return good == all ? 0 : 1;
     }
 
     /// <summary>The size to deal: a class name, an explicit WxD in cells, or anything at

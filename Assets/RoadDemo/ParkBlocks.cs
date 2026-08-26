@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using static RoadDemo.Composer;
 
 namespace RoadDemo
 {
@@ -31,6 +32,12 @@ namespace RoadDemo
     {
         public const float Cell = ParkWalk.Cell;
 
+        /// <summary>Prefabs the project has not got, met while composing - the composer's
+        /// shared list (<see cref="Composer.Missing"/>), kept here for the callers that ask
+        /// the park.</summary>
+        public static IReadOnlyList<string> Missing => Composer.Missing;
+        public static void ForgetMissing() => Composer.ForgetMissing();
+
         // ------------------------------------------------------------------- the pieces
 
         const string CityEnv = "Assets/Synty/PolygonCity/Prefabs/Environments/";
@@ -41,7 +48,7 @@ namespace RoadDemo
         const string PalmProps = "Assets/Synty/PolygonPalmCity/Prefabs/Props/";
         const string GenProps = "Assets/Synty/PolygonGeneric/Prefabs/Props/";
         const string KitBld = "Assets/CityKit/Buildings/";
-        const string FX = "Assets/Synty/PolygonParticleFX/Prefabs/";
+        const string FX = "Assets/Synty/PolygonPalmCity/Prefabs/FX/";
 
         // the ground - all of it the pack's 5 m module, one tile to a cell
         const string Grass = CityEnv + "SM_Env_Grass_01.prefab";
@@ -124,152 +131,6 @@ namespace RoadDemo
         const string WoodPost = TownEnv + "SM_Env_Fence_Wood_Post_01.prefab";
         const string WoodGate = TownEnv + "SM_Env_Fence_Wood_Gate_01.prefab";
 
-        // ------------------------------------------------------------------- the raiser
-
-        static Func<GameObject, Transform, GameObject> _raise;
-        static readonly Dictionary<string, Bounds> Measured = new Dictionary<string, Bounds>();
-        static readonly List<string> Absent = new List<string>();
-
-        /// <summary>Prefabs the project has not got, gathered while composing so a caller can
-        /// say so once rather than a hundred times.</summary>
-        public static IReadOnlyList<string> Missing => Absent;
-
-        public static void ForgetMissing() => Absent.Clear();
-
-        /// <summary>A prefab's own box, measured once through an INSTANCE and remembered - a
-        /// prefab asset reports its renderers in local space, and the root scaling every
-        /// Synty pack relies on is only applied once the thing is standing.</summary>
-        static Bounds Box(string path)
-        {
-            if (Measured.TryGetValue(path, out var known)) return known;
-
-            var box = new Bounds(Vector3.zero, Vector3.one);
-            var asset = DemoAssetLoad.Load<GameObject>(path);
-            if (asset == null)
-            {
-                if (!Absent.Contains(path)) Absent.Add(path);
-                return box;                                   // not remembered: an import may fix it
-            }
-
-            var go = _raise(asset, null);
-            if (go == null) { Measured[path] = box; return box; }
-            try
-            {
-                go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-                if (WorldBox(go, out var world)) box = world;
-            }
-            finally { UnityEngine.Object.DestroyImmediate(go); }
-
-            Measured[path] = box;
-            return box;
-        }
-
-        static bool WorldBox(GameObject go, out Bounds box)
-        {
-            box = default;
-            var renderers = go.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0) return false;
-            box = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++) box.Encapsulate(renderers[i].bounds);
-            return true;
-        }
-
-        static int Quarter(float yaw) => ((Mathf.RoundToInt(yaw / 90f) % 4) + 4) % 4;
-
-        static bool Turned(float yaw) => Quarter(yaw) % 2 == 1;
-
-        static Vector2 Foot(string path, float yaw)
-        {
-            var size = Box(path).size;
-            return Turned(yaw) ? new Vector2(size.z, size.x) : new Vector2(size.x, size.z);
-        }
-
-        static GameObject Raise(string path, Transform parent)
-        {
-            var asset = DemoAssetLoad.Load<GameObject>(path);
-            if (asset == null)
-            {
-                if (!Absent.Contains(path)) Absent.Add(path);
-                return null;
-            }
-            return _raise(asset, parent);
-        }
-
-        /// <summary>
-        /// Lays a piece so its footprint covers exactly the rectangle asked for.
-        ///
-        /// Placed by MEASURING the turned instance rather than by reasoning about its pivot:
-        /// these tiles pivot at a corner, the fence panels at one end, the props in the
-        /// middle, and which corner or which end changes with the turn.
-        /// </summary>
-        static GameObject Lay(string path, Transform parent, float minX, float minZ,
-                              float sizeX, float sizeZ, float yaw, float y = 0f)
-        {
-            var go = Raise(path, parent);
-            if (go == null) return null;
-
-            var own = Box(path).size;
-            if (own.x > 0.001f && own.z > 0.001f)
-            {
-                var factor = Turned(yaw)
-                    ? new Vector3(sizeZ / own.x, 1f, sizeX / own.z)
-                    : new Vector3(sizeX / own.x, 1f, sizeZ / own.z);
-                go.transform.localScale = Vector3.Scale(go.transform.localScale, Whole(factor));
-            }
-
-            go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.Euler(0f, yaw, 0f));
-            if (WorldBox(go, out var box))
-                go.transform.position = new Vector3(minX - box.min.x, y, minZ - box.min.z);
-            else
-                go.transform.position = new Vector3(minX, y, minZ);
-            return go;
-        }
-
-        static Vector3 Whole(Vector3 factor) => new Vector3(
-            Mathf.Abs(factor.x - 1f) < 0.005f ? 1f : factor.x,
-            Mathf.Abs(factor.y - 1f) < 0.005f ? 1f : factor.y,
-            Mathf.Abs(factor.z - 1f) < 0.005f ? 1f : factor.z);
-
-        /// <summary>A tile on its cell, at its own size and turned - no stretching, because
-        /// every one of these IS a cell.</summary>
-        static GameObject Tile(string path, Transform parent, int i, int j, float yaw) =>
-            Lay(path, parent, i * Cell, j * Cell, Cell, Cell, yaw);
-
-        /// <summary>Sits a prop on its own underside. Synty pivots furniture at its middle as
-        /// often as at its feet, so a bench dropped by its pivot is as likely to be buried to
-        /// the seat as standing on the grass.</summary>
-        static GameObject Sit(string path, Transform parent, float x, float z, float yaw,
-                              float y = 0f)
-        {
-            var go = Raise(path, parent);
-            if (go == null) return null;
-
-            go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.Euler(0f, yaw, 0f));
-            if (!WorldBox(go, out var box)) { go.transform.position = new Vector3(x, y, z); return go; }
-            go.transform.position = new Vector3(x - box.center.x, y - box.min.y, z - box.center.z);
-            return go;
-        }
-
-        /// <summary>Stands a piece that carries its own floor - the skatepark bowl, the
-        /// toilet block - keeping the level it was baked at.</summary>
-        static GameObject Stand(string path, Transform parent, float x, float z, float yaw)
-        {
-            var go = Raise(path, parent);
-            if (go == null) return null;
-
-            go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.Euler(0f, yaw, 0f));
-            if (!WorldBox(go, out var box)) { go.transform.position = new Vector3(x, 0f, z); return go; }
-            go.transform.position = new Vector3(x - box.center.x, 0f, z - box.center.z);
-            return go;
-        }
-
-        static string Any(string[] of, System.Random rng) => of[rng.Next(of.Length)];
-
-        static float Between(System.Random rng, float a, float b) =>
-            a + (float)rng.NextDouble() * (b - a);
-
-        static bool Chance(System.Random rng, double odds) => rng.NextDouble() < odds;
-
         // --------------------------------------------------------------------- the park
 
         /// <summary>One park, standing - and what the composer could see wrong with its own
@@ -304,38 +165,6 @@ namespace RoadDemo
             public string Refused = "";
         }
 
-        /// <summary>Ground already spoken for, so nothing is set down twice.</summary>
-        static readonly List<Rect> Taken = new List<Rect>();
-        static readonly Dictionary<string, int> Refused = new Dictionary<string, int>();
-
-        static bool Room(Rect want)
-        {
-            foreach (var taken in Taken) if (taken.Overlaps(want)) return false;
-            return true;
-        }
-
-        static void Claim(Rect what) => Taken.Add(what);
-
-        /// <summary>A prop, if there is room for it - refused rather than crammed in, and the
-        /// refusal counted. A park reads as a park because things are set down where they
-        /// fit.</summary>
-        static GameObject Prop(string path, Transform parent, float x, float z, float yaw,
-                               float room = 1f)
-        {
-            var foot = Foot(path, yaw);
-            var where = new Rect(x - foot.x * 0.5f * room, z - foot.y * 0.5f * room,
-                                 Mathf.Max(0.4f, foot.x * room), Mathf.Max(0.4f, foot.y * room));
-            if (!Room(where))
-            {
-                var name = System.IO.Path.GetFileNameWithoutExtension(path);
-                Refused[name] = Refused.TryGetValue(name, out var seen) ? seen + 1 : 1;
-                return null;
-            }
-            var go = Sit(path, parent, x, z, yaw);
-            if (go != null) Claim(where);
-            return go;
-        }
-
         /// <summary>
         /// Stands a whole park: the ground, the fence, the programmes, the planting and the
         /// furniture, in that order and no other.
@@ -349,9 +178,7 @@ namespace RoadDemo
         public static Stood Compose(ParkWalk.Plan plan, Transform root, System.Random rng,
                                     Func<GameObject, Transform, GameObject> raise)
         {
-            _raise = raise;
-            Taken.Clear();
-            Refused.Clear();
+            Begin(raise);
 
             var stood = new Stood { Plan = plan, Root = root };
 
@@ -457,15 +284,6 @@ namespace RoadDemo
                     if (way.Overlaps(stem)) { over++; break; }
             }
             return over;
-        }
-
-        static string Worst()
-        {
-            if (Refused.Count == 0) return "";
-            var worst = Refused.OrderByDescending(one => one.Value)
-                               .ThenBy(one => one.Key, StringComparer.Ordinal).Take(4)
-                               .Select(one => $"{one.Key} x{one.Value}");
-            return string.Join(", ", worst);
         }
 
         // ---------------------------------------------------------------------- the floor
@@ -1199,9 +1017,9 @@ namespace RoadDemo
                           "run at 2.2 to 2.4");
             if (!string.IsNullOrEmpty(stood.Refused))
                 sb.Append(Environment.NewLine).Append("   refused: ").Append(stood.Refused);
-            if (Absent.Count > 0)
+            if (Missing.Count > 0)
                 sb.Append(Environment.NewLine).Append("   WARNING: missing from the project: ")
-                  .Append(string.Join(", ", Absent));
+                  .Append(string.Join(", ", Missing));
             return sb.ToString();
         }
     }

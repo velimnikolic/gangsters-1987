@@ -522,11 +522,11 @@ namespace RoadDemo
         static bool IsWater(string name) => name == "Water" || name == "Sea";
 
         /// <summary>Under something that turns or is otherwise driven at runtime -
-        /// the fairground wheel; a merged piece cannot move.</summary>
+        /// the fairground wheel, the bridge that opens; a merged piece cannot move.</summary>
         public static bool Animated(Transform t)
         {
             for (var p = t; p != null; p = p.parent)
-                if (p.GetComponent<DemoFerrisWheel>() != null) return true;
+                if (p.GetComponent<DemoFerrisWheel>() != null || p.GetComponent<Bascule>() != null) return true;
             return false;
         }
 

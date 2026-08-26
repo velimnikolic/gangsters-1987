@@ -74,6 +74,11 @@ namespace RoadDemo
             BlvdEW, BlvdNS,           // the boulevard, 35 m
             Spare,                    // ground left over beside a road: left bare, for the user to say
             Parking, Block,
+            /// <summary>The river. Not ground: no road is read across it, nothing is stood
+            /// on it (the water is one plane beneath everything), and a block that faces it
+            /// wants no road along that side. A road the plan DECLARES across it is a
+            /// bridge - the same tiles as on land, dressed as a deck afterwards.</summary>
+            Water,
         }
 
         /// <summary>
@@ -106,7 +111,7 @@ namespace RoadDemo
             /// blocks with no road, stubs of road, cells two blocks claim. Zero is a
             /// drawing that reads; anything else and CoreLayout deals again.</summary>
             public int Faults;
-            public int BlockArea, RoadArea, ParkingArea, SpareArea;
+            public int BlockArea, RoadArea, ParkingArea, SpareArea, WaterArea;
             /// <summary>The junction boxes: the bare asphalt where roads cross.</summary>
             public List<Rect> Junctions = new List<Rect>();
             /// <summary>Every stretch of road between two of them.</summary>
@@ -160,15 +165,26 @@ namespace RoadDemo
                         else if (kinds[a, b] == Kind.Outside) kinds[a, b] = Kind.Yard;
                     }
             }
+            // the river, before any ground is read: water is neither the ring round a block
+            // nor the road between two, whatever lies either side of it
+            if (plan.Water.width > 0f && plan.Water.height > 0f)
+                for (int i = 0; i < w; i++)
+                    for (int j = 0; j < h; j++)
+                    {
+                        float cx = r.X(i) + Cell * 0.5f, cz = r.Z(j) + Cell * 0.5f;
+                        if (kinds[i, j] == Kind.Outside && plan.Water.Contains(new Vector2(cx, cz))) kinds[i, j] = Kind.Water;
+                    }
             // and the ground a block keeps beyond its box - the car park behind a block
             // shallower than its row - is its yard like any bay of its own, and is
             // remembered as a lot besides: no road is carved out of one
             var lot = new bool[w, h];
-            foreach (var block in blocks)
+            var lots = new List<Rect>(plan.Lots);
+            foreach (var block in blocks) lots.Add(block.Lot);
+            foreach (var ground in lots)
             {
-                if (block.Lot.width <= 0f || block.Lot.height <= 0f) continue;
-                int i0 = Mathf.RoundToInt((block.Lot.xMin - r.X0) / Cell), j0 = Mathf.RoundToInt((block.Lot.yMin - r.Z0) / Cell);
-                int i1 = Mathf.RoundToInt((block.Lot.xMax - r.X0) / Cell), j1 = Mathf.RoundToInt((block.Lot.yMax - r.Z0) / Cell);
+                if (ground.width <= 0f || ground.height <= 0f) continue;
+                int i0 = Mathf.RoundToInt((ground.xMin - r.X0) / Cell), j0 = Mathf.RoundToInt((ground.yMin - r.Z0) / Cell);
+                int i1 = Mathf.RoundToInt((ground.xMax - r.X0) / Cell), j1 = Mathf.RoundToInt((ground.yMax - r.Z0) / Cell);
                 for (int a = Mathf.Max(0, i0); a < Mathf.Min(w, i1); a++)
                     for (int b = Mathf.Max(0, j0); b < Mathf.Min(h, j1); b++)
                         if (kinds[a, b] == Kind.Outside) { kinds[a, b] = Kind.Yard; lot[a, b] = true; }
@@ -214,6 +230,16 @@ namespace RoadDemo
             for (int i = 0; i < w; i++)
                 for (int j = 0; j < h; j++)
                     if (kinds[i, j] == Kind.Outside && !outside[i, j]) kinds[i, j] = Kind.Bare;
+            // where the plan says the drawing ends, it ends: the ring a block grows there,
+            // and the boulevard's run to the edge, are taken back. Nothing is read off that
+            // ground and nothing is stood on it - the city goes on from there, not the core
+            foreach (var beyond in plan.Outside)
+                for (int i = 0; i < w; i++)
+                    for (int j = 0; j < h; j++)
+                    {
+                        float cx = r.X(i) + Cell * 0.5f, cz = r.Z(j) + Cell * 0.5f;
+                        if (kinds[i, j] == Kind.Bare && beyond.Contains(new Vector2(cx, cz))) kinds[i, j] = Kind.Outside;
+                    }
 
             // ------------------------------------------------------------- the roads
             // A road is NOT read off the gap it stands in. A gap changes width wherever a
@@ -244,6 +270,34 @@ namespace RoadDemo
                         if (carries[i, j] == null) carries[i, j] = road;
                         else junction[i, j] = true;
                     }
+            // AN ALLEY THAT RUNS OUT INTO A CAR PARK IS NOT A LANE BUT THE CAR PARK'S DRIVE.
+            // A one-way lane down it would end in a dead end no car can turn in, and the
+            // play harness found exactly that: seed 1987, car 5 stood 152 s at the end of
+            // the nested pair's alley, in the lot behind it. The demo's own block-12/10 pair
+            // has the same alley into the same bay. So an alley with either end on ground
+            // no road covers - a bay, a lot, a wall - is taken out of the roads: it stays
+            // asphalt, it serves the blocks beside it as a road does, and no lane is laid
+            var drive = new bool[w, h];
+            for (int n = roads.Count - 1; n >= 0; n--)
+            {
+                var alley = roads[n];
+                if (alley.W != 1 || alley.Declared) continue;
+                bool trapped = false;
+                foreach (int k in new[] { alley.From - 1, alley.To })
+                {
+                    int i = alley.Vertical ? alley.A : k, j = alley.Vertical ? k : alley.A;
+                    if (i < 0 || j < 0 || i >= w || j >= h) { trapped = true; break; }
+                    if (carries[i, j] == null) { trapped = true; break; }
+                }
+                if (!trapped) continue;
+                for (int k = alley.From; k < alley.To; k++)
+                {
+                    int i = alley.Vertical ? alley.A : k, j = alley.Vertical ? k : alley.A;
+                    if (carries[i, j] == alley) carries[i, j] = null;
+                    drive[i, j] = true;
+                }
+                roads.RemoveAt(n);
+            }
             // a ROAD that ends against ANOTHER road makes a junction there too, even though
             // it could not take that ground for itself. Two cases, and both are broken
             // without it:
@@ -350,12 +404,14 @@ namespace RoadDemo
                         r.Across[i, j] = (byte)t;
                     }
 
-            // what no road claimed: a block's bay is its car park, the rest is spare ground
+            // what no road claimed: a block's bay is its car park, a drive is asphalt, the
+            // rest is spare ground; the water is the water
             for (int i = 0; i < w; i++)
                 for (int j = 0; j < h; j++)
                 {
                     if (carries[i, j] != null) continue;
-                    if (kinds[i, j] == Kind.Yard) read[i, j] = Kind.Parking;
+                    if (drive[i, j]) read[i, j] = Kind.Bare;
+                    else if (kinds[i, j] == Kind.Yard) read[i, j] = Kind.Parking;
                     else if (kinds[i, j] == Kind.Bare) read[i, j] = Kind.Spare;
                 }
 
@@ -451,7 +507,7 @@ namespace RoadDemo
             r.Kinds = read;
             Count(r);
             r.Map = Draw(r);
-            r.Report = Oddities(r, blocks, roads, unmatched, unmatchedAt);
+            r.Report = Oddities(r, blocks, plan, roads, unmatched, unmatchedAt);
             return r;
         }
 
@@ -522,7 +578,12 @@ namespace RoadDemo
             var takenEW = new bool[w, h];
 
             bool Ours(int i, int j) => i >= 0 && j >= 0 && i < w && j < h;
-            bool Free(int i, int j) => Ours(i, j) && kinds[i, j] != Kind.Block && kinds[i, j] != Kind.Outside;
+            // ground a road may be READ off: not water - a street found along the river
+            // bank and out over it is a street into the river
+            bool Free(int i, int j) => Ours(i, j) && kinds[i, j] != Kind.Block && kinds[i, j] != Kind.Outside &&
+                                       kinds[i, j] != Kind.Water;
+            // ground a road may be DECLARED over: the water too, which is what a bridge is
+            bool Bridgeable(int i, int j) => Ours(i, j) && kinds[i, j] != Kind.Block && kinds[i, j] != Kind.Outside;
             bool Kerb(int i, int j) => Ours(i, j) && kinds[i, j] == Kind.Block;
             bool Yard(int i, int j) => Ours(i, j) && kinds[i, j] == Kind.Yard;
             bool Lot(int i, int j) => Ours(i, j) && lot[i, j];
@@ -567,7 +628,7 @@ namespace RoadDemo
                 for (int t = 0; t < width; t++)
                 {
                     Spot(vertical, a, t, k, out int i, out int j);
-                    if (!Free(i, j) || taken[i, j]) return false;
+                    if (!Bridgeable(i, j) || taken[i, j]) return false;
                 }
                 return true;
             }
@@ -635,11 +696,20 @@ namespace RoadDemo
             // the plan declares the same way: the widest first, so a street never takes
             // ground from under the boulevard
             var declared = new List<Rect>(bands);
-            declared.Sort((one, other) => other.height.CompareTo(one.height));
+            declared.Sort((one, other) => Mathf.Min(other.width, other.height).CompareTo(Mathf.Min(one.width, one.height)));
             foreach (var band in declared)
-                Declare(false, Mathf.RoundToInt((band.yMin - r.Z0) / Cell), Mathf.RoundToInt(band.height / Cell),
-                        Mathf.RoundToInt(Mathf.Max(band.xMin, r.X0) / Cell - r.X0 / Cell),
-                        Mathf.RoundToInt(Mathf.Min(band.xMax, r.X(w)) / Cell - r.X0 / Cell));
+            {
+                // a band taller than it is wide runs north-south: the quay street along the
+                // river, and the road along the far bank
+                if (band.height > band.width)
+                    Declare(true, Mathf.RoundToInt((band.xMin - r.X0) / Cell), Mathf.RoundToInt(band.width / Cell),
+                            Mathf.RoundToInt(Mathf.Max(band.yMin, r.Z0) / Cell - r.Z0 / Cell),
+                            Mathf.RoundToInt(Mathf.Min(band.yMax, r.Z(h)) / Cell - r.Z0 / Cell));
+                else
+                    Declare(false, Mathf.RoundToInt((band.yMin - r.Z0) / Cell), Mathf.RoundToInt(band.height / Cell),
+                            Mathf.RoundToInt(Mathf.Max(band.xMin, r.X0) / Cell - r.X0 / Cell),
+                            Mathf.RoundToInt(Mathf.Min(band.xMax, r.X(w)) / Cell - r.X0 / Cell));
+            }
             // and the rest, off the free ground. There is no boulevard among them: the
             // core has one, the main road, and it is declared. A gap wide enough for
             // another is a street with ground left over beside it
@@ -816,11 +886,11 @@ namespace RoadDemo
         /// <summary>Ground a road runs over. Left-over ground is not road: nothing is stood
         /// on it, so nothing opens onto it either - no zebra faces it, no kerb closes a car
         /// park off from it.</summary>
-        public static bool IsRoad(Kind k) => k != Kind.Outside && k != Kind.Block && k != Kind.Spare;
+        public static bool IsRoad(Kind k) => k != Kind.Outside && k != Kind.Block && k != Kind.Spare && k != Kind.Water;
 
         static void Count(Raster r)
         {
-            int blocks = 0, road = 0, parking = 0, spare = 0;
+            int blocks = 0, road = 0, parking = 0, spare = 0, water = 0;
             for (int i = 0; i < r.NX; i++)
                 for (int j = 0; j < r.NZ; j++)
                 {
@@ -828,6 +898,7 @@ namespace RoadDemo
                     if (k == Kind.Block) blocks++;
                     else if (k == Kind.Parking) parking++;
                     else if (k == Kind.Spare) spare++;
+                    else if (k == Kind.Water) water++;
                     else if (IsRoad(k)) road++;
                 }
             int cell = Mathf.RoundToInt(Cell * Cell);
@@ -835,6 +906,7 @@ namespace RoadDemo
             r.RoadArea = road * cell;
             r.ParkingArea = parking * cell;
             r.SpareArea = spare * cell;
+            r.WaterArea = water * cell;
         }
 
         static string Draw(Raster r)
@@ -855,7 +927,7 @@ namespace RoadDemo
                         Kind.Block => '#', Kind.Bare => '.', Kind.Yard => 'y', Kind.Parking => 'P', Kind.Spare => ':',
                         Kind.StreetEW => '-', Kind.StreetNS => '|', Kind.BlvdEW => '=', Kind.BlvdNS => 'H',
                         Kind.NarrowEW => '~', Kind.NarrowNS => '!', Kind.LaneEW => (r.Dir[i, j] > 0 ? '>' : '<'),
-                        Kind.LaneNS => (r.Dir[i, j] > 0 ? '^' : 'v'), _ => ' ',
+                        Kind.LaneNS => (r.Dir[i, j] > 0 ? '^' : 'v'), Kind.Water => 'w', _ => ' ',
                     });
                 }
                 map.Append((char)10);
@@ -867,7 +939,7 @@ namespace RoadDemo
         /// ground they left over and where it is, the 10 m roads where the city wants a
         /// street, and the alleys with no direction on record. This list is what the cuts
         /// in <see cref="CoreLayout"/> are argued about.</summary>
-        static string Oddities(Raster r, IReadOnlyList<CoreLayout.Block> blocks, List<Corridor> roads,
+        static string Oddities(Raster r, IReadOnlyList<CoreLayout.Block> blocks, CoreLayout.Plan plan, List<Corridor> roads,
                                int unmatchedLanes, List<string> unmatchedAt)
         {
             var sb = new StringBuilder();
@@ -881,6 +953,21 @@ namespace RoadDemo
                     sb.AppendLine($"   WARNING: {block.Name} has no road along its {string.Join(" or ", sides)} side" +
                                   (sides.Count > 1 ? "s" : ""));
                 }
+            }
+            // a bridge is road from the quay street to the far road, every cell of it, or it
+            // is a road into the river
+            foreach (var bridge in plan.Bridges)
+            {
+                int i0 = Mathf.RoundToInt((bridge.Band.xMin - r.X0) / Cell), i1 = Mathf.RoundToInt((bridge.Band.xMax - r.X0) / Cell);
+                int j0 = Mathf.RoundToInt((bridge.Band.yMin - r.Z0) / Cell), j1 = Mathf.RoundToInt((bridge.Band.yMax - r.Z0) / Cell);
+                int broken = 0;
+                for (int i = i0; i < i1; i++)
+                    for (int j = j0; j < j1; j++)
+                        if (!IsRoad(r.At(i, j))) broken++;
+                if (broken == 0) continue;
+                r.Faults++;
+                sb.AppendLine($"   WARNING: the bridge at z {bridge.Band.yMin:F0}..{bridge.Band.yMax:F0} is broken: " +
+                              $"{broken} cell(s) of it are not road");
             }
             int blvd = 0, street = 0, narrow = 0, alley = 0, declared = 0;
             foreach (var road in roads)
@@ -918,14 +1005,22 @@ namespace RoadDemo
             // street's three cells, a boulevard's seven, or one more where a 5 m length was
             // given to it. Wider than that it is two junctions run together, because two
             // roads meet the same road a few metres apart. The demo has three of these at
-            // its edges and drives them, so they are noted, not counted against the drawing;
-            // the layout keeps its rows' cross streets in line to make as few as it can
+            // its edges and drives them, so they are noted, not counted against the drawing.
+            // They were counted for an afternoon (2026-08-26): the play harness locks three
+            // cars in such a box every other run (seed 1987, cars 25, 27 and 40 at x -145..
+            // -120 z -55..-35; cars 26, 32 and 37 on the boulevard at x -40..-10), but with
+            // the rows' east ends fixed on the river only one deal in twenty-five has none,
+            // and thirty seeds could not all be dealt clean. The layout reorders each row's
+            // units to make as few as it can (CoreLayout.Order); the lock itself is the
+            // drivers' business, in the box
             foreach (var box in r.Junctions)
             {
                 int across = Mathf.RoundToInt(box.width / Cell), along = Mathf.RoundToInt(box.height / Cell);
                 bool fits = Fits(across) && Fits(along) && !(across >= BlvdCells && along >= BlvdCells);
                 if (fits) continue;
-                sb.AppendLine($"   a junction of {across} x {along} cells at x {box.xMin:F0}..{box.xMax:F0} " +
+                bool counted = WideBoxIsFault && plan.Seed != CoreLayout.SyntySeed;
+                if (counted) r.Faults++;
+                sb.AppendLine($"   {(counted ? "WARNING: " : "")}a junction of {across} x {along} cells at x {box.xMin:F0}..{box.xMax:F0} " +
                               $"z {box.yMin:F0}..{box.yMax:F0}: two crossings run together");
             }
 
@@ -935,6 +1030,14 @@ namespace RoadDemo
             {
                 r.Faults++;
                 sb.AppendLine($"   WARNING: {stub}");
+            }
+            // a one-way alley that runs out into a car park, a block or nothing is a trap:
+            // a car drives down it and can neither go on nor turn (the harness, seed 1987:
+            // car 5 stood 152 s at the end of the nested pair's alley, in its own lot)
+            foreach (var trap in Traps(r))
+            {
+                r.Faults++;
+                sb.AppendLine($"   WARNING: {trap}");
             }
             int narrowCells = 0;
             for (int i = 0; i < r.NX; i++)
@@ -956,6 +1059,10 @@ namespace RoadDemo
         /// <summary>How many patches of left-over ground the report names before it counts
         /// the rest.</summary>
         const int Listed = 20;
+
+        /// <summary>Whether two junctions run together count against a DEALT drawing (the
+        /// reference has three and drives them). See the note where they are found.</summary>
+        const bool WideBoxIsFault = true;
 
         /// <summary>Is this a road's width across a junction box, or one cell more?</summary>
         static bool Fits(int cells) =>
@@ -996,7 +1103,11 @@ namespace RoadDemo
                             var kind = r.At(i0 + i + step * di, j0 + j + step * dj);
                             // the block's own kerb-side parking may stand between its face
                             // and the street; ground left bare may not - that IS the fault
-                            if (kind == Kind.Block || kind == Kind.Spare || kind == Kind.Outside) break;
+                            if (kind == Kind.Block || kind == Kind.Spare) break;
+                            // a face on the river wants no street, and neither does one at
+                            // the edge of the drawing: the line goes on from there through
+                            // the city, and it is the city's to serve
+                            if (kind == Kind.Water || kind == Kind.Outside) { served = true; break; }
                             if (!IsRoad(kind)) continue;
                             served = true;
                             break;
@@ -1031,6 +1142,29 @@ namespace RoadDemo
                     if (i - di < 0 || j - dj < 0 || i + di >= r.NX || j + dj >= r.NZ) continue;
                     found.Add($"a {(ns ? "north-south" : "east-west")} road has one 5 m length of itself " +
                               $"at x {r.X(i):F0} z {r.Z(j):F0}, hemmed in at both ends");
+                }
+            return found;
+        }
+
+        /// <summary>One-way alleys whose far end, the way they run, is not road: the cell
+        /// beyond the last cell of the alley is a car park, a block, bare ground or the
+        /// end of the drawing.</summary>
+        static List<string> Traps(Raster r)
+        {
+            var found = new List<string>();
+            for (int i = 0; i < r.NX; i++)
+                for (int j = 0; j < r.NZ; j++)
+                {
+                    var kind = r.Kinds[i, j];
+                    bool ns = kind == Kind.LaneNS, ew = kind == Kind.LaneEW;
+                    if (!ns && !ew) continue;
+                    int dir = r.Dir[i, j];
+                    int di = ew ? dir : 0, dj = ns ? dir : 0;
+                    if (r.At(i + di, j + dj) == kind) continue;          // not the last cell
+                    var beyond = r.At(i + di, j + dj);
+                    if (IsRoad(beyond) && beyond != Kind.Parking) continue;
+                    found.Add($"a one-way alley runs out into {(beyond == Kind.Parking ? "a car park" : beyond == Kind.Block ? "a block" : "nothing")} " +
+                              $"at x {r.X(i):F0} z {r.Z(j):F0}");
                 }
             return found;
         }
@@ -1091,7 +1225,10 @@ namespace RoadDemo
         /// (<see cref="Raster.Across"/>); junctions and left-over ground are plain
         /// asphalt, car parks rows of painted bays.
         /// </summary>
-        public static void Lay(Raster r, Func<GameObject, Transform, GameObject> stand, Transform parent)
+        /// <param name="skip">Cells that get no tile although they are road: the channel a
+        /// bascule's leaves span carries the leaves' own deck, not the road's.</param>
+        public static void Lay(Raster r, Func<GameObject, Transform, GameObject> stand, Transform parent,
+                               Func<int, int, bool> skip = null)
         {
             int sc = StreetCells, bc = BlvdCells;
             var kinds = r.Kinds;
@@ -1122,6 +1259,7 @@ namespace RoadDemo
                 for (int j = 0; j < r.NZ; j++)
                 {
                     float mx = r.X(i), mz = r.Z(j);
+                    if (skip != null && skip(i, j)) continue;
                     switch (kinds[i, j])
                     {
                         case Kind.Bare:
@@ -1131,6 +1269,9 @@ namespace RoadDemo
 
                         case Kind.Spare:
                             break;      // left bare on purpose: the report says where it is
+
+                        case Kind.Water:
+                            break;      // one plane of water beneath everything, stood by the host
 
                         case Kind.LaneNS:
                         case Kind.LaneEW:

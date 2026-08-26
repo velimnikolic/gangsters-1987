@@ -85,8 +85,37 @@ namespace RoadDemo
             _plan = CoreLayout.Arrange(_blocks, seed, out _raster);
             foreach (var block in _blocks) CoreLayout.Place(block);
             StandParks();
+            StandQuays();
             _bounds = Rect.MinMaxRect(_raster.X0, _raster.Z0,
                                       _raster.X(_raster.NX), _raster.Z(_raster.NZ));
+        }
+
+        /// <summary>
+        /// The promenade, stretch by stretch - the river's ground the deal cut, composed to
+        /// its plan (<see cref="QuayWalk.ForQuay"/>) the way the parks are: at the origin,
+        /// then moved to the stretch's corner, under the same unplaced yard.
+        /// </summary>
+        void StandQuays()
+        {
+            if (_plan == null || _plan.Quays.Count == 0) return;
+            Composer.ForgetMissing();
+            var wants = QuayWalk.Cast(_plan);
+            for (int q = 0; q < _plan.Quays.Count; q++)
+            {
+                var block = _plan.Quays[q];
+                var root = new GameObject(block.Name).transform;
+                root.SetParent(_yard, false);
+                var box = block.Box;
+                int dice = unchecked(_seed * 7919 + Mathf.RoundToInt(box.xMin) * 104729 + Mathf.RoundToInt(box.yMin) * 1299709);
+                var walk = QuayWalk.ForQuay(_plan, block, wants[q], new System.Random(dice));
+                var stood = QuayBlocks.Compose(walk, root, new System.Random(dice),
+                    (prefab, parent) => Object.Instantiate(prefab, parent));
+                QuayBlocks.Pave(walk, root, out _, (prefab, parent) => Object.Instantiate(prefab, parent), dice);
+                CoreLayout.PlaceQuay(_plan, block, root);
+                if (stood.Gaps > 0 || stood.RailGap > 0.5f || stood.OnWalk > 0)
+                    Debug.LogWarning($"[Core] {block.Name}: {stood.Gaps} cell(s) with no floor, " +
+                                     $"{stood.RailGap:F1} m of railing missing, {stood.OnWalk} thing(s) in the way.");
+            }
         }
 
         /// <summary>
@@ -153,13 +182,24 @@ namespace RoadDemo
 
             var roads = new GameObject("Roads").transform;
             roads.SetParent(quarter, false);
-            CoreRoads.Lay(_raster, (prefab, parent) => Object.Instantiate(prefab, parent), roads);
+            // the road's tiles go down over the water too - the bridge's deck - but not over
+            // the channels the leaves span
+            CoreRoads.Lay(_raster, (prefab, parent) => Object.Instantiate(prefab, parent), roads,
+                          RiverBridge.Skip(_plan, _raster));
+            var river = new GameObject("River").transform;
+            river.SetParent(quarter, false);
+            RiverBridge.Dress(_plan, river, (prefab, parent) => Object.Instantiate(prefab, parent));
+            // the fairground's wheel turns, as the grid city's does
+            foreach (var t in _yard.GetComponentsInChildren<Transform>(true))
+                if (t.name.Contains("Ferris") && t.name.Contains("_Rotate") && t.GetComponent<DemoFerrisWheel>() == null)
+                    t.gameObject.AddComponent<DemoFerrisWheel>();
 
             // everything above was laid in the quarter's own coordinates; the frame is
             // where the city put it, and the lane graph below is built in world ones
             quarter.SetPositionAndRotation(Frame.origin, Frame.Rotation);
 
             BuildLaneGraph();
+            InstallBascules(host, river);
             SpawnCars(host.LiveRoot("Core Traffic"));
 
             host.RegisterRoads(_edges);
@@ -170,6 +210,72 @@ namespace RoadDemo
                       $"{_raster.Stretches.Count} stretches of road, {_edges.Count} lanes, " +
                       $"{_vehicles.Count} cars, {_raster.Faults} faults.{System.Environment.NewLine}" +
                       string.Join(System.Environment.NewLine, _plan.Rows) + System.Environment.NewLine + _raster.Report);
+        }
+
+        /// <summary>
+        /// The bridges open: every bridge's leaves, stood shut by <see cref="RiverBridge"/>,
+        /// get their <see cref="Bascule"/> on the carriageway the lane graph laid over the
+        /// channel, and one sailboat - the boat on the river no shut bridge can pass, its
+        /// mast is 13.7 m - sails the whole line (<see cref="RiverBoat"/>), calling each
+        /// bridge as it comes to it.
+        /// </summary>
+        void InstallBascules(IDistrictHost host, Transform river)
+        {
+            if (Net == null || _plan.Quays.Count == 0 || _plan.Bridges.Count == 0) return;
+            var line = _plan.River;
+            float mid = (line.Wall + line.FarWater) * 0.5f;
+            var from = Frame.ToWorld(new Vector3(mid, RiverBridge.WaterY, line.Z0 - RiverBridge.Reach + 10f));
+            var to = Frame.ToWorld(new Vector3(mid, RiverBridge.WaterY, line.Z1 + RiverBridge.Reach - 10f));
+            var axis = (to - from).normalized;
+
+            var bridges = new List<Bascule>();
+            var along = new List<float>();
+            foreach (var bridge in _plan.Bridges)
+            {
+                var deck = river.Find(RiverBridge.DeckName(bridge));
+                if (deck == null) continue;
+                var channel = RiverBridge.ChannelOf(_plan, bridge);
+                // the carriageway over the channel: the one the channel's middle lies on
+                var centre = Frame.ToWorld(new Vector3(channel.center.x, 0f, channel.center.y));
+                Carriageway best = null;
+                float bestOff = 3f, bestS = 0f;
+                foreach (var road in Net.Roads)
+                {
+                    float s = Vector3.Dot(centre - road.A, road.Axis);
+                    if (s < 0f || s > road.Length) continue;
+                    float off = Mathf.Abs(Vector3.Dot(centre - road.A, road.Right));
+                    if (off < bestOff) { bestOff = off; best = road; bestS = s; }
+                }
+                if (best == null)
+                {
+                    Debug.LogWarning($"[Core] no carriageway crosses the channel of {deck.name}; it stays shut.");
+                    continue;
+                }
+                var bascule = deck.gameObject.AddComponent<Bascule>();
+                bascule.Road = best;
+                bascule.S0 = bestS - RiverBridge.Channel * 0.5f;
+                bascule.S1 = bestS + RiverBridge.Channel * 0.5f;
+                foreach (Transform piece in deck)
+                    if (piece.name.Contains(" leaf")) bascule.Leaves.Add(piece);
+                bridges.Add(bascule);
+                along.Add(Vector3.Dot(centre - from, axis));
+            }
+            if (bridges.Count == 0) return;
+
+            var sail = DemoAssetLoad.Load<GameObject>("Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Sailboat_01.prefab");
+            if (sail == null)
+            {
+                Debug.LogWarning("[Core] the palm city's sailboat is missing; the bridges stay shut.");
+                return;
+            }
+            var boat = Object.Instantiate(sail, host.LiveRoot("Core River"));
+            boat.name = "Sailboat";
+            boat.transform.position = from;
+            var run = boat.AddComponent<RiverBoat>();
+            run.From = from;
+            run.To = to;
+            run.Bridges = bridges;
+            run.Along = along;
         }
 
         /// <summary>

@@ -65,12 +65,18 @@ namespace LivingCity.EditorTools
             var plan = CoreLayout.Arrange(blocks, seed, out var raster);
             foreach (var block in blocks) CoreLayout.Place(block);
             Parks(plan, city.transform, seed);
+            Quays(plan, city.transform, seed);
             LastMap = raster.Map;
             LastSeed = seed;
             var roads = new GameObject("roads");
             roads.transform.SetParent(city.transform, false);
+            // the road's tiles go down over the water too - that is the bridge's deck - but
+            // not over the channels the leaves span
             CoreRoads.Lay(raster, (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent),
-                          roads.transform);
+                          roads.transform, RiverBridge.Skip(plan, raster));
+            var river = new GameObject("river");
+            river.transform.SetParent(city.transform, false);
+            RiverBridge.Dress(plan, river.transform, (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent));
 
             var labels = new GameObject("labels");
             labels.transform.SetParent(city.transform, false);
@@ -157,6 +163,40 @@ namespace LivingCity.EditorTools
                 if (faults > 0 || stood.Gaps > 0 || stood.FenceGap > 0.5f)
                     Debug.LogWarning($"[CoreCity] {block.Name}: {faults} fault(s) in the plan, " +
                                      $"{stood.Gaps} cell(s) with no floor, {stood.FenceGap:F1} m of fence missing.");
+            }
+        }
+
+        /// <summary>
+        /// The promenade, stretch by stretch, composed on the spot like the parks: the plan
+        /// read off the core (which streets arrive, what each end meets, what the line asks
+        /// of it), composed at the origin and moved to the stretch's corner.
+        /// </summary>
+        static void Quays(CoreLayout.Plan plan, Transform city, int seed)
+        {
+            if (plan == null || plan.Quays.Count == 0) return;
+            var bank = new GameObject("quays").transform;
+            bank.SetParent(city, false);
+            Composer.ForgetMissing();
+            var wants = QuayWalk.Cast(plan);
+            for (int q = 0; q < plan.Quays.Count; q++)
+            {
+                var block = plan.Quays[q];
+                var root = new GameObject(block.Name).transform;
+                root.SetParent(bank, false);
+                var box = block.Box;
+                int dice = unchecked(seed * 7919 + Mathf.RoundToInt(box.xMin) * 104729 + Mathf.RoundToInt(box.yMin) * 1299709);
+                var walk = QuayWalk.ForQuay(plan, block, wants[q], new System.Random(dice));
+                var stood = QuayBlocks.Compose(walk, root, new System.Random(dice),
+                    (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent));
+                QuayBlocks.Pave(walk, root, out _,
+                    (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent), dice);
+                CoreLayout.PlaceQuay(plan, block, root);
+
+                QuayWalk.Report(walk, out int faults);
+                if (faults > 0 || stood.Gaps > 0 || stood.RailGap > 0.5f || stood.OnWalk > 0)
+                    Debug.LogWarning($"[CoreCity] {block.Name}: {faults} fault(s) in the plan, " +
+                                     $"{stood.Gaps} cell(s) with no floor, {stood.RailGap:F1} m of railing missing, " +
+                                     $"{stood.OnWalk} thing(s) in the way.");
             }
         }
 

@@ -410,6 +410,72 @@ namespace GangstersTools
             return new { clean, drawn, parks = results };
         }
 
+        // --------------------------------------------------------------------- the quay
+
+        [CliCommand("gangsters_quay",
+                    "Lay out a stretch of the river promenade from a seed, a depth and a length (in " +
+                    "5 m cells) and report the verdict: streets arriving, rooms, what they were cast " +
+                    "as, faults. --draw also stands the first one in the open scene.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters" })]
+        public static object Quays(
+            [CliArg("seed", "First seed.")] int seed = 1987,
+            [CliArg("count", "How many consecutive seeds to lay out.")] int count = 1,
+            [CliArg("depth", "The strip across, in cells (the core deals 7 or 8).")] int depth = 8,
+            [CliArg("length", "The strip along the river, in cells.")] int length = 32,
+            [CliArg("draw", "Stand the first one in the open scene, as Tools/City/River/Sketch The Quay would.")] bool draw = false,
+            [CliArg("map", "Include each stretch's map in the answer.")] bool map = false)
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("The editor is in play mode; leave it first.");
+
+            int rolls = Mathf.Clamp(count, 1, 200);
+            var results = new List<object>(rolls);
+            int clean = 0;
+            for (int i = 0; i < rolls; i++)
+            {
+                int s = seed + i;
+                var plan = LivingCity.EditorTools.QuaySketch.Plan(s, depth, length);
+                string report = QuayWalk.Report(plan, out int faults);
+                if (faults == 0) clean++;
+                var rooms = new List<string>();
+                foreach (var room in plan.Rooms) rooms.Add($"{room.Programme} {room.Length}");
+                results.Add(new
+                {
+                    seed = s,
+                    size = $"{plan.Depth * 5}x{plan.Length * 5}",
+                    faults,
+                    mouths = plan.Mouths.Count,
+                    rooms,
+                    report,
+                    map = map ? plan.Map : null,
+                });
+            }
+
+            object drawn = null;
+            if (draw)
+            {
+                var stood = LivingCity.EditorTools.QuaySketch.Draw(seed, depth, length, true);
+                drawn = stood == null ? null : new
+                {
+                    seed,
+                    gaps = stood.Gaps,
+                    railGap = stood.RailGap,
+                    onWalk = stood.OnWalk,
+                    lamps = stood.Lamps,
+                    benches = stood.Benches,
+                    tables = stood.Tables,
+                    kiosks = stood.Kiosks,
+                    trees = stood.TreeCount,
+                    boats = stood.BoatCount,
+                    wheel = stood.Wheel,
+                    programmes = stood.Programmes,
+                    refused = stood.Refused,
+                    missing = string.Join(", ", Composer.Missing),
+                };
+            }
+            return new { clean, drawn, quays = results };
+        }
+
         // ------------------------------------------------------------ the industrial quarter
 
         /// <summary>

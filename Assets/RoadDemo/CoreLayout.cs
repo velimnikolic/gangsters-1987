@@ -526,6 +526,212 @@ namespace RoadDemo
             }
         }
 
+        // -------------------------------------------------------------------- the river
+
+        /// <summary>What a stretch of the promenade is called, and the far bank's kerb. Like a
+        /// park, neither has a prefab: the deal cuts them to size and <c>QuayBlocks</c>
+        /// composes them on the spot.</summary>
+        public const string QuayPrefix = "quay-";
+        public const string ApronPrefix = "apron-";
+        public const string BankName = "bank";
+
+        public static bool IsQuay(Block block) => block != null && block.Name.StartsWith(QuayPrefix);
+        public static bool IsApron(Block block) => block != null && block.Name.StartsWith(ApronPrefix);
+        public static bool IsBank(Block block) => block != null && block.Name == BankName;
+
+        /// <summary>
+        /// THE CITY ENDS ON A STRAIGHT LINE (the user, 2026-08-26: "ceo city treba da se zavrsi
+        /// uz tu liniju"). The river lies along the east of the core, square to the boulevard -
+        /// the main street runs down to the water and over it, which is what an American
+        /// downtown of the period does (Jacksonville's Main Street, Detroit's Woodward). Every
+        /// row is stood with its east end on the same line, so the edge streets off the rows'
+        /// east ends fall into ONE street the whole height of the core, the quay street; the
+        /// rows' ragged ends go west, where the residential quarters will take them up.
+        ///
+        /// East of the quay street: the promenade, a strip of one depth (a promenade twenty
+        /// metres deep at one row and sixty at the next reads as ground left over, the same
+        /// lesson the belt taught); the quay wall; the water; the road along the far bank that
+        /// the bridges land on, so that the traffic over one bridge has somewhere to go and
+        /// comes back over another; and a kerb beyond it. Nothing else stands on the far
+        /// bank until a quarter is dealt there (Docs/river-plan.md).
+        /// </summary>
+        /// <summary>The promenade, in cells across: 35 or 40 m. The kerb takes one, the walk
+        /// along the wall two, and the rooms between want four for a fairground - the
+        /// demo's own yard is 30 m deep with the wheel in it. Synty's city meets its water
+        /// in 16-20 m, but that strip carries nothing; this one carries the cafes.</summary>
+        const int QuayDeepMin = 7, QuayDeepMax = 8;
+        /// <summary>The water, in cells: 70 m. A bascule's two leaves open a channel of 40 m
+        /// and the fixed approaches make up the rest; wider than this and every bridge is
+        /// mostly approach, narrower and the far bank is the near one's pavement.</summary>
+        public const int RiverCells = 14;
+        /// <summary>The far bank's apron, in cells, between the water and the far road: a
+        /// bridge's fixed approach is 15 m, and a queue at the far gate of an open bridge
+        /// stood in the far road's junction box (the harness: three cars scraping there in
+        /// one run of five); with the apron the queue has 30 m before the box.</summary>
+        public const int FarApron = 3;
+        /// <summary>Bridges besides the boulevard's, and how far apart they keep.</summary>
+        const int BridgesMin = 1, BridgesMax = 2;
+        const int BridgeApart = 12;
+        /// <summary>The shortest stretch of promenade left between a bridge and the end of
+        /// the line, in cells: room for a room.</summary>
+        const int QuayEndMin = 4;
+
+        /// <summary>
+        /// Where the river's lines lie, from the core out to the far bank, in the core's
+        /// metres. The river lies along the EAST or the WEST of the core as the seed says
+        /// (the user, 2026-08-26: "sve treba da se generise random gde ce bude reka"), so
+        /// the lines are named by what they are between, not by the compass: each is
+        /// <see cref="Dir"/> times its width beyond the last.
+        /// </summary>
+        public struct RiverLine
+        {
+            public bool East;                  // the river along the east of the core, else the west
+            public float QuayLand, QuayWater;  // the quay street, a street wide: its kerb on the core, its kerb on the promenade
+            public float Wall;                 // the promenade's far edge: the quay wall, the water beyond
+            public float FarWater;             // the far bank's wall, and its apron beyond
+            public float FarRoad, FarLand;     // the road along the far bank
+            public float BankEnd;              // the kerb beyond it, and the end of the drawing
+            public float Z0, Z1;               // how far the line runs
+            public int Depth;                  // the promenade, in cells
+            /// <summary>+1 toward the water for a river on the east, -1 for one on the west.</summary>
+            public int Dir => East ? 1 : -1;
+        }
+
+        /// <summary>Stands a stretch of promenade's root where the plan cut it: composed
+        /// at the origin with the kerb on its x = 0 and the wall on its far x, it is turned
+        /// about to face a river on the west.</summary>
+        public static void PlaceQuay(Plan plan, Block quay, Transform root)
+        {
+            var box = quay.Box;
+            if (plan.River.East) root.SetPositionAndRotation(new Vector3(box.xMin, 0f, box.yMin), Quaternion.identity);
+            else root.SetPositionAndRotation(new Vector3(box.xMax, 0f, box.yMax), Quaternion.Euler(0f, 180f, 0f));
+        }
+
+        /// <summary>A street that goes on over the water: which band of road, and whether
+        /// it is the boulevard's. Every bridge opens (the user's word, 2026-08-26): the
+        /// boulevard's with a leaf over each of its two carriageways.</summary>
+        public struct Bridge
+        {
+            public Rect Band;
+            public bool Boulevard;
+        }
+
+        /// <summary>A stretch of promenade, or the far bank's kerb: all cells filled, nothing
+        /// standing on it, measured from the origin like a park.</summary>
+        static Block Ground(string name, int cw, int cd)
+        {
+            var mask = new bool[cw, cd];
+            for (int i = 0; i < cw; i++)
+                for (int j = 0; j < cd; j++) mask[i, j] = true;
+            return Describe(name, Vector2.zero, cw, cd, mask);
+        }
+
+        /// <summary>
+        /// The river, laid along the east of the stood rows: the quay street off their ends
+        /// declared the whole height of the core, the promenade cut into stretches between
+        /// the bridges, the water, the far road and its kerb. Every street the rows declared
+        /// now stops at the quay street's far kerb - a T, not a stub into the promenade - and
+        /// the ones chosen as bridges go on over the water to the far road instead.
+        /// </summary>
+        static Rect Span(float a, float b, float z0, float z1) =>
+            Rect.MinMaxRect(Mathf.Min(a, b), z0, Mathf.Max(a, b), z1);
+
+        static void River(Plan plan, System.Random dice, bool east, int edge, float z0, float z1)
+        {
+            var line = new RiverLine { East = east, Depth = dice.Next(QuayDeepMin, QuayDeepMax + 1), Z0 = z0, Z1 = z1 };
+            int dir = line.Dir;
+            line.QuayLand = edge * Cell;
+            line.QuayWater = line.QuayLand + dir * StreetGap * Cell;
+            line.Wall = line.QuayWater + dir * line.Depth * Cell;
+            line.FarWater = line.Wall + dir * RiverCells * Cell;
+            line.FarRoad = line.FarWater + dir * FarApron * Cell;
+            line.FarLand = line.FarRoad + dir * StreetGap * Cell;
+            line.BankEnd = line.FarLand + dir * Cell;
+            plan.River = line;
+            plan.Water = Span(line.Wall, line.FarWater, z0, z1);
+            // the drawing ends at the far kerb, and at the promenade's two ends: the line
+            // goes on through the city from there, not through this core
+            float beyond = east ? Any : -Any;
+            plan.Outside.Add(Span(line.BankEnd, beyond, -Any, Any));
+            plan.Outside.Add(Span(line.QuayWater, beyond, -Any, z0));
+            plan.Outside.Add(Span(line.QuayWater, beyond, z1, Any));
+
+            // the bridges: the boulevard's always, and one or two streets kept well apart
+            // from it and from each other, and clear of the line's ends. All of them open
+            plan.Bridges.Clear();
+            plan.Bridges.Add(new Bridge
+            {
+                Band = Span(line.QuayWater, line.FarLand, plan.MainRoad.x, plan.MainRoad.y),
+                Boulevard = true,
+            });
+            var candidates = new List<int>();
+            for (int b = 1; b < plan.Bands.Count; b++)
+            {
+                var band = plan.Bands[b];
+                if (band.yMin - z0 < QuayEndMin * Cell || z1 - band.yMax < QuayEndMin * Cell) continue;
+                candidates.Add(b);
+            }
+            Shuffle(candidates, dice);
+            int wanted = dice.Next(BridgesMin, BridgesMax + 1);
+            var crossing = new HashSet<int>();
+            foreach (int b in candidates)
+            {
+                if (crossing.Count >= wanted) break;
+                var band = plan.Bands[b];
+                bool clear = true;
+                foreach (var other in plan.Bridges)
+                    if (band.yMax + BridgeApart * Cell > other.Band.yMin && band.yMin - BridgeApart * Cell < other.Band.yMax)
+                    { clear = false; break; }
+                if (!clear) continue;
+                crossing.Add(b);
+                plan.Bridges.Add(new Bridge { Band = Span(line.QuayWater, line.FarLand, band.yMin, band.yMax) });
+            }
+            // every street the rows declared runs a street's width past the edge street on
+            // the land side, a dead end the drivers know, and on the river side stops at the
+            // quay street's far kerb - or goes on over the water, if it is a bridge
+            for (int b = 1; b < plan.Bands.Count; b++)
+            {
+                var band = plan.Bands[b];
+                float land = east ? band.xMin - 2f * StreetGap * Cell : band.xMax + 2f * StreetGap * Cell;
+                float water = crossing.Contains(b) ? line.FarLand : line.QuayWater;
+                plan.Bands[b] = Span(land, water, band.yMin, band.yMax);
+            }
+            plan.Bands.Add(Span(line.QuayLand, line.QuayWater, z0 - 2f * StreetGap * Cell, z1 + 2f * StreetGap * Cell));
+            plan.Bands.Add(Span(line.FarRoad, line.FarLand, z0, z1));
+
+            // the promenade and the far bank's apron, a stretch of each between every pair
+            // of bridges; and the far kerb
+            plan.Bridges.Sort((one, other) => one.Band.yMin.CompareTo(other.Band.yMin));
+            plan.Quays.Clear();
+            plan.Aprons.Clear();
+            float from = z0;
+            for (int b = 0; b <= plan.Bridges.Count; b++)
+            {
+                float to = b < plan.Bridges.Count ? plan.Bridges[b].Band.yMin : z1;
+                int cells = Mathf.RoundToInt((to - from) / Cell);
+                if (cells > 0)
+                {
+                    var quay = Ground($"{QuayPrefix}{plan.Quays.Count + 1:00}", line.Depth, cells);
+                    quay.Pivot = new Vector2(Mathf.Min(line.QuayWater, line.Wall), from);
+                    plan.Quays.Add(quay);
+                    var apron = Ground($"{ApronPrefix}{plan.Aprons.Count + 1:00}", FarApron, cells);
+                    apron.Pivot = new Vector2(Mathf.Min(line.FarWater, line.FarRoad), from);
+                    plan.Aprons.Add(apron);
+                }
+                if (b < plan.Bridges.Count) from = plan.Bridges[b].Band.yMax;
+            }
+            plan.Bank = Ground(BankName, 1, Mathf.RoundToInt((z1 - z0) / Cell));
+            plan.Bank.Pivot = new Vector2(Mathf.Min(line.FarLand, line.BankEnd), z0);
+
+            var said = new System.Text.StringBuilder();
+            said.Append($"river on the {(east ? "east" : "west")}: quay street x {line.QuayLand:F0}..{line.QuayWater:F0}, " +
+                        $"promenade {line.Depth * Cell:F0} m to the wall at x {line.Wall:F0}, water to x {line.FarWater:F0}, " +
+                        $"apron to x {line.FarRoad:F0}, far road to x {line.FarLand:F0}; {plan.Quays.Count} stretches of promenade; bridges:");
+            foreach (var bridge in plan.Bridges)
+                said.Append($" z {bridge.Band.yMin:F0}..{bridge.Band.yMax:F0}{(bridge.Boulevard ? " (boulevard)" : "")}");
+            plan.Rows.Add(said.ToString());
+        }
+
         /// <summary>Stands the instance where the plan puts it, turned the way it says.</summary>
         public static void Place(Block block)
         {
@@ -630,6 +836,25 @@ namespace RoadDemo
             /// prefab to instantiate: it is composed on the spot from its final size.
             /// </summary>
             public readonly List<Block> Parks = new List<Block>();
+
+            /// <summary>The river along the east of the core (<see cref="River"/>): the
+            /// promenade in stretches between the bridges, the far bank's kerb, the water,
+            /// the bridges, and where the drawing ends. Composed on the spot like the parks;
+            /// a plan with no river (the Synty reference, the industrial quarter) has an
+            /// empty water box and no stretches.</summary>
+            public readonly List<Block> Quays = new List<Block>();
+            /// <summary>The far bank's apron, a stretch between each pair of bridges.</summary>
+            public readonly List<Block> Aprons = new List<Block>();
+            public Block Bank;
+            public Rect Water;
+            public RiverLine River;
+            public readonly List<Bridge> Bridges = new List<Bridge>();
+            /// <summary>Ground beyond the edge of the drawing: no road is read there and no
+            /// block wants one along it. The river line goes on through the city from here.</summary>
+            public readonly List<Rect> Outside = new List<Rect>();
+            /// <summary>Car parks that belong to no block: the ground at a short row's west
+            /// end, filled so that every row runs the same length (<see cref="Roll"/>).</summary>
+            public readonly List<Rect> Lots = new List<Rect>();
         }
 
         /// <summary>The seed that asks for the demo's own arrangement.</summary>
@@ -749,6 +974,9 @@ namespace RoadDemo
         /// <summary>How much shallower than its row a block may stand. The ground behind
         /// it is its car park; more than this and the car park is bigger than the block.</summary>
         const int MaxShallow = 4;
+        /// <summary>The widest car park a row's west end is made up with, in cells; a
+        /// bigger shortfall is a park.</summary>
+        const int LotMax = 12;
         /// <summary>A row is dealt until it is this long, in cells.</summary>
         const int RowMin = 40, RowMax = 60;
         /// <summary>How often two neighbours that could share an alley do.</summary>
@@ -760,9 +988,8 @@ namespace RoadDemo
         /// unit and then whatever fits it - the deepest turn of a unit no deeper than the row
         /// and no more than <see cref="MaxShallow"/> cells shallower - until it is long
         /// enough. Rows go north and south of the boulevard turn and turn about, each one a
-        /// street behind the last, and are stood roughly centred with a little jitter, so
-        /// the cross streets of one row seldom line up with the next: T-junctions, which is
-        /// what the demo has. A block shallower than its row keeps the ground behind it.
+        /// street behind the last, every one with its east end on the river
+        /// (<see cref="River"/>). A block shallower than its row keeps the ground behind it.
         /// </summary>
         public static Plan Roll(List<Block> blocks, int seed)
         {
@@ -910,42 +1137,66 @@ namespace RoadDemo
                     unit.Turn(unit.Yaw);
                 }
 
-            // the rows out from the boulevard, north and south turn and turn about
+            // the rows out from the boulevard, north and south turn and turn about, and
+            // EVERY ROW'S EAST END ON THE RIVER: the longest row centred, the rest stood
+            // flush with it. The rows used to be jittered about the centre so that their
+            // cross streets would either line up with the next row's or stand well clear -
+            // two streets meeting the same road a few metres apart run their junctions
+            // together into one wide box, and the play harness locks three cars in such a
+            // box (seed 1987, cars 25, 27 and 40 at x -145..-120 z -55..-35) - but the river
+            // takes that freedom: the line the city stops at has to be straight. So the
+            // row's UNITS are reordered instead (Order): the row keeps its length and its
+            // end, and its streets fall where they clash least
+            int span = 0;
+            foreach (var row in rows) span = Mathf.Max(span, row.Length);
+            // the core's two long edges, in cells, the longest row centred; the river is
+            // along one of them as the seed says, and every row's end on that edge is flush
+            int lo = -(span / 2), hi = lo + span;
+            bool riverEast = dice.Next(2) == 0;
             float southKerb = plan.MainRoad.x, northKerb = plan.MainRoad.y;
             float northNext = northKerb, southNext = southKerb;
             bool north = dice.Next(2) == 0;
             var northStreets = new List<int>();   // cross streets of the last row stood on each side, in cells
             var southStreets = new List<int>();
+            plan.Lots.Clear();
             foreach (var row in rows)
             {
-                int length = row.Length;
-                // the row's cross streets - the edge street at either end and every
-                // street between two units - must line up with the neighbouring row's
-                // across the street between them, or stand well clear of them: two
-                // streets meeting the same road a few metres apart merge into one wide
-                // junction box, and the lane graph cannot drive that. The neighbour is
-                // the last row stood on this side, or the other side's first row across
-                // the boulevard. The row is stood roughly centred, at whichever offset
-                // clashes least; ties fall to the dice
                 var facing = north ? (northStreets.Count > 0 ? northStreets : southStreets)
                                    : (southStreets.Count > 0 ? southStreets : northStreets);
-                int centre = Mathf.RoundToInt(-length * 0.5f);
-                int bestX = centre, bestClash = int.MaxValue;
-                foreach (int jitter in Jitters(dice))
-                {
-                    int clash = 0;
-                    foreach (int street in Streets(row, centre + jitter))
-                        foreach (int other in facing)
-                        {
-                            int apart = System.Math.Abs(street - other);
-                            if (apart > 0 && apart < StreetGap + StreetGap) clash++;
-                        }
-                    if (clash < bestClash) { bestClash = clash; bestX = centre + jitter; }
-                }
-                var streets = Streets(row, bestX);
-                if (north) { northStreets = streets; } else { southStreets = streets; }
-                float x = bestX * Cell;
+                Order(row, length => riverEast ? hi - length : lo, facing, dice);
+                int length = row.Length;
+                int x0Cell = riverEast ? hi - length : lo;
+                var streets = Streets(row, x0Cell);
+                if (north) northStreets = streets; else southStreets = streets;
+                float x = x0Cell * Cell;
                 float z0, z1;
+                // AND EVERY ROW RUNS THE SAME LENGTH, its west end made up with a car park.
+                // Rows of different lengths put their west edge streets a cell or two
+                // apart, and where two such streets meet the band between the rows the
+                // raster runs their junctions together into one wide box - which is the
+                // box the play harness locks three cars in, run after run (seed 1987, x
+                // -145..-120 z -55..-35). With the ends made up, the west edge streets
+                // fall into one street the whole height of the core, like the quay street
+                // on the east, and the box is gone. A surface car park at the edge of the
+                // downtown is the 1987 picture besides; a park takes the ground instead
+                // where the shortfall is more than a car park's width
+                int shortfall = span - length;
+                if (shortfall > 0)
+                {
+                    // the made-up ground lies on the land side, away from the river: a car
+                    // park facing the promenade is not what the promenade is for
+                    float padLo = riverEast ? lo * Cell : (lo + length) * Cell;
+                    float padHi = padLo + shortfall * Cell;
+                    float zLo = north ? northNext : southNext - row.Depth * Cell;
+                    if (shortfall <= LotMax)
+                        plan.Lots.Add(Rect.MinMaxRect(padLo, zLo, padHi, zLo + row.Depth * Cell));
+                    else
+                    {
+                        var park = Park(plan.Parks.Count + 1, shortfall - StreetGap, row.Depth);
+                        park.Pivot = new Vector2(riverEast ? padLo : padLo + StreetGap * Cell, zLo);
+                        plan.Parks.Add(park);
+                    }
+                }
                 // the street behind the row: as long as the row, and as long as the row
                 // that will stand behind it, which is not known yet - so it is written for
                 // this row now and widened when the next row on this side is stood
@@ -1001,14 +1252,11 @@ namespace RoadDemo
                 plan.Rows.Add(line.ToString());
                 north = !north;
             }
-            // every declared street runs past the edge streets at either end of the rows
-            // beside it: the edge street itself, and a dead end a street's width beyond
-            for (int b = 1; b < plan.Bands.Count; b++)
-            {
-                var band = plan.Bands[b];
-                plan.Bands[b] = Rect.MinMaxRect(band.xMin - 2f * StreetGap * Cell, band.yMin,
-                                                band.xMax + 2f * StreetGap * Cell, band.yMax);
-            }
+            // on the land side, every declared street runs past the edge streets of the
+            // rows beside it: the edge street itself, and a dead end a street's width
+            // beyond. On the river side the river takes them all: they end on the quay
+            // street, or go on over the water
+            River(plan, dice, riverEast, riverEast ? hi : lo, southNext, northNext);
             return plan;
         }
 
@@ -1046,14 +1294,73 @@ namespace RoadDemo
             return streets;
         }
 
-        /// <summary>The offsets a row may be stood at, either side of centre, in a random
-        /// order - so that among equally good ones the dice choose.</summary>
-        static int[] Jitters(System.Random dice)
+        /// <summary>How many orders of a row's units are tried for the one whose streets
+        /// clash least with the row it faces.</summary>
+        const int Orders = 120;
+
+        /// <summary>
+        /// Reorders the row's units so that its cross streets either line up with the
+        /// facing row's or stand a street's width clear of them - the jitter's job, done
+        /// without moving the row. <paramref name="x0Of"/> says where a row of a length
+        /// starts: flush with the river's edge, whichever side that is. The gaps are dealt again for each order, by the same
+        /// rule (an alley only between two walled neighbours as deep as the row, never
+        /// against a park), from dice of the row's own so every order is judged on the
+        /// same throws. The first order tried is the one the row was dealt in.
+        /// </summary>
+        static void Order(Row row, System.Func<int, int> x0Of, List<int> facing, System.Random dice)
         {
-            var jitters = new List<int>();
-            for (int j = -4; j <= 4; j++) jitters.Add(j);
-            Shuffle(jitters, dice);
-            return jitters.ToArray();
+            if (row.Units.Count < 2) return;
+            int throws = dice.Next();
+            var best = new List<Unit>(row.Units);
+            var bestGaps = new List<int>(row.Gaps);
+            int bestClash = int.MaxValue;
+            var order = new List<Unit>(row.Units);
+            for (int k = 0; k < Orders; k++)
+            {
+                if (k > 0) Shuffle(order, dice);
+                var gaps = Gaps(order, row.Depth, new System.Random(throws));
+                var trial = new Row { Depth = row.Depth };
+                trial.Units.AddRange(order);
+                trial.Gaps.AddRange(gaps);
+                // the row was dealt at a length and the line is drawn from it: an order
+                // whose gaps come out to another length would put the row's land end past
+                // the edge every other row is flush with
+                if (trial.Length != row.Length) continue;
+                int clash = 0;
+                foreach (int street in Streets(trial, x0Of(trial.Length)))
+                    foreach (int other in facing)
+                    {
+                        int apart = System.Math.Abs(street - other);
+                        if (apart > 0 && apart < StreetGap + StreetGap) clash++;
+                    }
+                if (clash >= bestClash) continue;
+                bestClash = clash;
+                best = new List<Unit>(order);
+                bestGaps = gaps;
+                if (clash == 0) break;
+            }
+            row.Units.Clear();
+            row.Units.AddRange(best);
+            row.Gaps.Clear();
+            row.Gaps.AddRange(bestGaps);
+        }
+
+        /// <summary>The gaps between neighbours in this order: a street, or an alley where
+        /// both are as deep as the row and walled the length of it and neither is a park.</summary>
+        static List<int> Gaps(List<Unit> units, int depth, System.Random dice)
+        {
+            var gaps = new List<int>();
+            for (int u = 1; u < units.Count; u++)
+            {
+                var last = units[u - 1];
+                var unit = units[u];
+                bool alley = last.D == depth && unit.D == depth &&
+                             last.Straight(false) && unit.Straight(true) &&
+                             !IsPark(last.Members[0]) && !IsPark(unit.Members[0]) &&
+                             dice.NextDouble() < AlleyOdds;
+                gaps.Add(alley ? AlleyGap : StreetGap);
+            }
+            return gaps;
         }
 
         static void Shuffle<T>(List<T> list, System.Random dice)
@@ -1076,7 +1383,7 @@ namespace RoadDemo
 
         /// <summary>How many deals of one seed are tried before the best of them is taken
         /// with its faults on record.</summary>
-        public const int Deals = 40;
+        public const int Deals = 80;
 
         /// <summary>
         /// The plan for a seed, with the roads drawn off it and the drawing judged:
@@ -1109,12 +1416,12 @@ namespace RoadDemo
                 plan.Seed = seed;
                 plan.Attempt = attempt;
                 plan.Name = $"seed {seed}" + (attempt > 0 ? $" (deal {attempt + 1})" : "");
-                // THE PARKS GO TO THE ROAD READER TOO. They are made by the deal rather than
-                // handed in, so the caller's list has none of them - and a park left out of
-                // the raster is a hole: the deal spaces the row for it, nothing fills the
-                // ground, and the verdict calls it bare. That alone took the share of clean
-                // deals from 72 % to 24 %.
-                var drawn = CoreRoads.Build(WithParks(blocks, plan), plan);
+                // THE PARKS GO TO THE ROAD READER TOO, and so does the river's ground. They
+                // are made by the deal rather than handed in, so the caller's list has none
+                // of them - and a park left out of the raster is a hole: the deal spaces the
+                // row for it, nothing fills the ground, and the verdict calls it bare. That
+                // alone took the share of clean deals from 72 % to 24 %.
+                var drawn = CoreRoads.Build(WithGround(blocks, plan), plan);
                 if (drawn.Faults == 0)
                 {
                     raster = drawn;
@@ -1133,17 +1440,21 @@ namespace RoadDemo
             again.Seed = best.Seed;
             again.Attempt = best.Attempt;
             again.Name = best.Name;
-            raster = CoreRoads.Build(WithParks(blocks, again), again);
+            raster = CoreRoads.Build(WithGround(blocks, again), again);
             return again;
         }
 
-        /// <summary>The caller's blocks and the deal's own parks, as one list for the road
-        /// reader. Neither list is touched.</summary>
-        static List<Block> WithParks(List<Block> blocks, Plan plan)
+        /// <summary>The caller's blocks and the ground the deal made itself - the parks, the
+        /// stretches of promenade, the far bank's kerb - as one list for the road reader.
+        /// Neither list is touched.</summary>
+        public static List<Block> WithGround(List<Block> blocks, Plan plan)
         {
-            if (plan.Parks.Count == 0) return blocks;
+            if (plan.Parks.Count == 0 && plan.Quays.Count == 0 && plan.Bank == null) return blocks;
             var all = new List<Block>(blocks);
             all.AddRange(plan.Parks);
+            all.AddRange(plan.Quays);
+            all.AddRange(plan.Aprons);
+            if (plan.Bank != null) all.Add(plan.Bank);
             return all;
         }
 
