@@ -26,8 +26,23 @@ namespace RoadDemo
     /// </summary>
     public sealed class MapRaster
     {
-        public const int W = 320;
-        public const int H = 200;
+        /// <summary>The AUTHORED space. Structure - roads, pads, district rects,
+        /// building footprints - is laid out in these units and multiplied by
+        /// <see cref="S"/> on its way into the buffer. All hit-testing is in them too:
+        /// a footprint is one or two authored units across and the tolerances that make
+        /// it clickable only mean anything at that size.</summary>
+        public const int AW = 320;
+        public const int AH = 200;
+
+        /// <summary>Real pixels to the authored unit.</summary>
+        public const int S = 3;
+
+        /// <summary>The real buffer. Structure stays chunky because it is authored
+        /// coarse and blown up; dither, kerbs, lane markings, windows and every sprite
+        /// are drawn at THIS resolution, which is what stops the map reading as mush.
+        /// That split is the whole trick and it is worth stating twice.</summary>
+        public const int W = AW * S;
+        public const int H = AH * S;
         public const int Count = W * H;
 
         readonly Color32[] _px = new Color32[Count];
@@ -228,6 +243,71 @@ namespace RoadDemo
                 (byte)Mathf.Clamp(Mathf.RoundToInt((over.g * an + under.g * keep) / total), 0, 255),
                 (byte)Mathf.Clamp(Mathf.RoundToInt((over.b * an + under.b * keep) / total), 0, 255),
                 (byte)Mathf.Clamp(Mathf.RoundToInt(total * 255f), 0, 255));
+        }
+
+        // -------------------------------------------------------------- additive
+
+        /// <summary>
+        /// Light ADDED to what is there: dst = min(255, dst + src * alpha). The crews'
+        /// bloom is made of these and nothing else - a stack of faint additive squares
+        /// that brightens whatever it is standing on rather than covering it, so a dot
+        /// over grass, concrete and asphalt reads the same on all three without being
+        /// ringed in black to make it.
+        /// </summary>
+        public void AddRect(int x, int y, int w, int h, Color32 colour, float alpha)
+        {
+            if (w <= 0 || h <= 0 || alpha <= 0f)
+                return;
+            var lit = Mathf.Clamp01(alpha);
+            var r = (int)(colour.r * lit);
+            var g = (int)(colour.g * lit);
+            var b = (int)(colour.b * lit);
+            if (r + g + b == 0)
+                return;
+
+            var x0 = Mathf.Max(0, x);
+            var y0 = Mathf.Max(0, y);
+            var x1 = Mathf.Min(W, x + w);
+            var y1 = Mathf.Min(H, y + h);
+            for (var py = y0; py < y1; py++)
+            {
+                var row = py * W;
+                for (var px = x0; px < x1; px++)
+                {
+                    var under = _px[row + px];
+                    _px[row + px] = new Color32(
+                        (byte)Mathf.Min(255, under.r + r),
+                        (byte)Mathf.Min(255, under.g + g),
+                        (byte)Mathf.Min(255, under.b + b),
+                        under.a);
+                }
+            }
+        }
+
+        // ------------------------------------------------------------- multiply
+
+        /// <summary>
+        /// A tint that darkens instead of greying: dst = dst * src / 255, per channel.
+        /// The turf overlay is this and nothing else - streets, buildings and terrain
+        /// stay fully legible underneath, exactly as a multiply layer leaves them,
+        /// where an alpha wash would wash them out toward its own colour.
+        /// </summary>
+        public void MultiplyRun(int x, int y, int length, Color32 colour)
+        {
+            if (length <= 0 || (uint)y >= H)
+                return;
+            var x0 = Mathf.Max(0, x);
+            var x1 = Mathf.Min(W, x + length);
+            var row = y * W;
+            for (var px = x0; px < x1; px++)
+            {
+                var under = _px[row + px];
+                _px[row + px] = new Color32(
+                    (byte)(under.r * colour.r / 255),
+                    (byte)(under.g * colour.g / 255),
+                    (byte)(under.b * colour.b / 255),
+                    under.a);
+            }
         }
 
         static Color32 Mix(Color32 under, Color32 over, byte alpha)

@@ -376,6 +376,156 @@ namespace RoadDemo
             return block;
         }
 
+        // -------------------------------------------------------------------- the parks
+
+        /// <summary>What a park block is called. The core has no prefab for one - it is
+        /// composed on the spot by <see cref="ParkWalk"/> and <c>ParkBlocks</c> - so the name
+        /// is how everything downstream tells it from a harvested block.</summary>
+        public const string ParkPrefix = "park-";
+
+        public static bool IsPark(Block block) => block != null && block.Name.StartsWith(ParkPrefix);
+
+        /// <summary>
+        /// How many parks a core gets, and how big.
+        ///
+        /// One or two. The artists' own demo has exactly one green block in sixteen, and a
+        /// core of two hundred and fifty metres with three parks in it is a garden suburb.
+        /// A pocket park is block-08's size; a square is the next size up and carries one
+        /// programme (2026-08-26, the user's call: "pojma nemam radi sta mislis").
+        /// </summary>
+        /// <remarks>
+        /// A park costs the deal nothing worth speaking of, ONCE IT IS IN THE RASTER: 30 of
+        /// 30 seeds clean, 21 of them on the first deal, mean 1.33 deals against the 1.60 the
+        /// core needed with no park at all.
+        ///
+        /// It was not always so, and the wrong lesson was nearly learnt here. With the parks
+        /// dealt but left out of the list handed to <see cref="CoreRoads.Build"/>, clean
+        /// deals fell from 72 % to 24 % - and the obvious reading, that a park is simply hard
+        /// to place, was wrong. The deal was spacing a row for a park and then nothing was
+        /// filling the ground, so the verdict rightly called it bare. Three plausible fixes
+        /// were measured against that phantom before the cause was found, and every one of
+        /// them made it worse: letting a park fit any row whatever its depth (14 %), dealing
+        /// its depth from the row range rather than its class (21 %), keeping a park from
+        /// being the unit that sets a row's depth (mean 5.5 deals). Tuning against a
+        /// misdiagnosis moves numbers and fixes nothing.
+        /// </remarks>
+        const int ParksMin = 1, ParksMax = 2;
+        const int PocketMin = 6, PocketMax = 7;
+        const int SquareMin = 8, SquareMax = 12;
+        const double PocketOdds = 0.7;
+
+        /// <summary>
+        /// A park block of a given size: all cells filled, nothing standing on it.
+        ///
+        /// Its ground is measured from the origin rather than centred, because a park has no
+        /// pivot of its own - it is composed into whatever rectangle the deal gives it, and
+        /// the deal works in cells from a corner.
+        /// </summary>
+        public static Block Park(int index, int cw, int cd)
+        {
+            var mask = new bool[cw, cd];
+            for (int i = 0; i < cw; i++)
+                for (int j = 0; j < cd; j++) mask[i, j] = true;
+            return Describe($"{ParkPrefix}{index:00}", Vector2.zero, cw, cd, mask);
+        }
+
+        /// <summary>
+        /// Re-cuts a park to a new size, keeping its corner.
+        ///
+        /// Only a park may do this, and it is the whole reason a park is dealt differently
+        /// from a block: a harvested block is a fixed thing measured off a prefab, but a park
+        /// is composed to fit. A park shallower than its row would otherwise be given the
+        /// ground behind it as a CAR PARK, which is what happens to a shallow block - and a
+        /// car park behind a park is nonsense. It grows to the row instead.
+        /// </summary>
+        public static void Reshape(Block block, int cw, int cd)
+        {
+            if (!IsPark(block) || cw < 1 || cd < 1) return;
+            var mask = new bool[cw, cd];
+            for (int i = 0; i < cw; i++)
+                for (int j = 0; j < cd; j++) mask[i, j] = true;
+            block.CW0 = cw;
+            block.CD0 = cd;
+            block.Mask0 = mask;
+            block.Ground0 = new Bounds(new Vector3(cw * Cell * 0.5f, 0f, cd * Cell * 0.5f),
+                                       new Vector3(cw * Cell, 0f, cd * Cell));
+            block.Turn(block.Yaw);
+        }
+
+        // --------------------------------------------------------------------- the belt
+
+        /// <summary>
+        /// How many sides of the core the belt of parks takes, and how deep.
+        ///
+        /// TWO, and the user's reason is the one that matters: the belt is the JOIN to the
+        /// residential quarters that come next, so it has to lie where they will ("msm da
+        /// treba da okruzimo centar s makar dve strane da bi bio laksi prelaz na
+        /// residential", 2026-08-26). One of the two is the city park proper - a hundred
+        /// metres deep, the one park in the city with room for everything - and the other is
+        /// an ordinary strip of green.
+        ///
+        /// A full ring was considered and is not what an American downtown of the period
+        /// looks like: a ring belongs to Vienna and Savannah. A big park on one side, a
+        /// parkway along another, and car parks on the rest, is the 1987 picture.
+        /// </summary>
+        const int BeltDeepMin = 6, BeltDeepMax = 8;
+        const int BeltBigMin = 15, BeltBigMax = 22;
+        /// <summary>
+        /// THE BELT IS ONE PARK TO A SIDE, unbroken.
+        ///
+        /// It was first dealt as three or four parks of 50-80 m with streets between them, on
+        /// the reasoning that a two hundred metre slab of grass is a thing nobody can cross.
+        /// The user looked at the drawing and asked for the opposite (2026-08-26: "moze li
+        /// ovo da je jedan neprekidan park sa strane umesto 3 4 mala"), and on the evidence
+        /// they are right: a run of small parks separated by streets reads as leftover ground
+        /// between blocks, while one unbroken green edge reads as the thing the city stops
+        /// at - which is what the belt is FOR. Crossing it is the walk's business, not the
+        /// street's, and the walk cuts a park of this size up on its own (ParkWalk.Cut).
+        /// </summary>
+        const int BeltParkMin = 10;
+
+        /// <summary>
+        /// The belt: a row of parks beyond the last row of blocks, on two sides.
+        ///
+        /// IT IS A ROW LIKE ANY OTHER, and that is the whole design. A belt built as its own
+        /// thing would need its own streets, its own declaration of the road behind it, its
+        /// own place in the raster and its own verdict; dealt as a row, it gets every one of
+        /// those from the machinery that already stands the core - a street between each pair
+        /// of parks, the street behind it declared the full width (which is the "park drive"
+        /// the residential rows will front on to), and the same road reader judging it.
+        ///
+        /// The rows are stood north and south of the boulevard turn and turn about, and these
+        /// two are added last, so they land on opposite sides and outermost - which is the
+        /// two sides the belt is meant to take.
+        /// </summary>
+        static void Belt(Plan plan, List<Row> rows, System.Random dice)
+        {
+            if (rows.Count == 0) return;
+
+            int span = 0;
+            foreach (var row in rows) span = Mathf.Max(span, row.Length);
+            if (span < BeltParkMin) return;
+
+            // the big side first or second, by the toss - it is the one that lands on
+            // whichever side the alternation gives it
+            bool bigFirst = dice.Next(2) == 0;
+            for (int k = 0; k < 2; k++)
+            {
+                bool big = k == 0 == bigFirst;
+                int depth = big ? dice.Next(BeltBigMin, BeltBigMax + 1)
+                                : dice.Next(BeltDeepMin, BeltDeepMax + 1);
+                var belt = new Row { Depth = depth };
+                var park = Park(plan.Parks.Count + 1, span, depth);
+                plan.Parks.Add(park);
+                var unit = new Unit();
+                unit.Members.Add(park);
+                unit.Offsets.Add(Vector2.zero);
+                unit.Turn(0);
+                belt.Units.Add(unit);
+                rows.Add(belt);
+            }
+        }
+
         /// <summary>Stands the instance where the plan puts it, turned the way it says.</summary>
         public static void Place(Block block)
         {
@@ -471,6 +621,15 @@ namespace RoadDemo
             public readonly List<Lane> Lanes = new List<Lane>();
             /// <summary>The rows the blocks were dealt into, for the log.</summary>
             public readonly List<string> Rows = new List<string>();
+
+            /// <summary>
+            /// The park blocks this deal made, in the order it made them.
+            ///
+            /// They are in the block list too - the deal treats them like any other unit -
+            /// but whoever stands the core needs to tell them apart, because a park has no
+            /// prefab to instantiate: it is composed on the spot from its final size.
+            /// </summary>
+            public readonly List<Block> Parks = new List<Block>();
         }
 
         /// <summary>The seed that asks for the demo's own arrangement.</summary>
@@ -637,6 +796,23 @@ namespace RoadDemo
                 unit.Members.Add(block); unit.Offsets.Add(Vector2.zero);
                 units.Add(unit);
             }
+
+            // the parks, dealt like any other unit and composed later. They are made here
+            // rather than handed in because nothing on disk describes them: a park is a size
+            // and a seed, and the recipe fills whatever rectangle it ends up with.
+            plan.Parks.Clear();
+            int wanted = dice.Next(ParksMin, ParksMax + 1);
+            for (int k = 0; k < wanted; k++)
+            {
+                bool pocket = dice.NextDouble() < PocketOdds;
+                int w = pocket ? dice.Next(PocketMin, PocketMax + 1) : dice.Next(SquareMin, SquareMax + 1);
+                int d = pocket ? dice.Next(PocketMin, PocketMax + 1) : dice.Next(SquareMin, SquareMax + 1);
+                var park = Park(k + 1, w, d);
+                plan.Parks.Add(park);
+                var unit = new Unit();
+                unit.Members.Add(park); unit.Offsets.Add(Vector2.zero);
+                units.Add(unit);
+            }
             Shuffle(units, dice);
 
             // the rows
@@ -655,6 +831,12 @@ namespace RoadDemo
                 {
                     var unit = pool[i];
                     int best = -1, bestDepth = -1;
+                    // A PARK FITS ANY ROW, because it is composed to the depth it is given
+                    // rather than measured off a prefab. Held to the same test as a block -
+                    // no deeper than the row, no more than MaxShallow shallower - a park of
+                    // six cells was refused by every row deeper than ten, went off to start
+                    // rows of its own, and the core needed four times as many deals to come
+                    // out clean.
                     foreach (int yaw in Quarters(dice))
                     {
                         var foot = unit.Footprint(yaw);
@@ -663,13 +845,20 @@ namespace RoadDemo
                         if (depth > bestDepth) { bestDepth = depth; best = yaw; }
                     }
                     if (best < 0) { i++; continue; }
+                    // two parks side by side read as one big park with a street through it,
+                    // which is not what either of them is
+                    var neighbour = row.Units[row.Units.Count - 1];
+                    if (IsPark(unit.Members[0]) && IsPark(neighbour.Members[0])) { i++; continue; }
                     unit.Turn(best);
                     pool.RemoveAt(i);
                     // a street between neighbours, or an alley where both are as deep as
-                    // the row and walled the length of it
+                    // the row and walled the length of it - and never against a park, whose
+                    // gates want a kerb and a crossing rather than a one-way slot between
+                    // two walls
                     var last = row.Units[row.Units.Count - 1];
                     bool alley = last.D == row.Depth && unit.D == row.Depth &&
                                  last.Straight(false) && unit.Straight(true) &&
+                                 !IsPark(last.Members[0]) && !IsPark(unit.Members[0]) &&
                                  dice.NextDouble() < AlleyOdds;
                     row.Gaps.Add(alley ? AlleyGap : StreetGap);
                     row.Units.Add(unit);
@@ -700,6 +889,26 @@ namespace RoadDemo
                 home.Units.Add(lone);
                 rows.RemoveAt(r);
             }
+
+            Belt(plan, rows, dice);
+
+            // A PARK GROWS TO ITS ROW. Every other unit shallower than its row keeps the
+            // ground behind it as a car park; a park cannot - a car park behind a park is
+            // nonsense, and it would put tarmac where the far fence should be. Since a park
+            // is composed rather than harvested, it simply re-cuts itself to the depth it
+            // was dealt, and the recipe fills the larger rectangle.
+            foreach (var row in rows)
+                foreach (var unit in row.Units)
+                {
+                    var block = unit.Members[0];
+                    if (!IsPark(block) || unit.D >= row.Depth) continue;
+                    bool sideways = unit.Yaw == 90 || unit.Yaw == 270;
+                    // re-cut in the block's OWN frame, which is the turned frame's other axis
+                    // when the unit stands at a quarter turn
+                    if (sideways) Reshape(block, row.Depth, block.CD0);
+                    else Reshape(block, block.CW0, row.Depth);
+                    unit.Turn(unit.Yaw);
+                }
 
             // the rows out from the boulevard, north and south turn and turn about
             float southKerb = plan.MainRoad.x, northKerb = plan.MainRoad.y;
@@ -900,7 +1109,12 @@ namespace RoadDemo
                 plan.Seed = seed;
                 plan.Attempt = attempt;
                 plan.Name = $"seed {seed}" + (attempt > 0 ? $" (deal {attempt + 1})" : "");
-                var drawn = CoreRoads.Build(blocks, plan);
+                // THE PARKS GO TO THE ROAD READER TOO. They are made by the deal rather than
+                // handed in, so the caller's list has none of them - and a park left out of
+                // the raster is a hole: the deal spaces the row for it, nothing fills the
+                // ground, and the verdict calls it bare. That alone took the share of clean
+                // deals from 72 % to 24 %.
+                var drawn = CoreRoads.Build(WithParks(blocks, plan), plan);
                 if (drawn.Faults == 0)
                 {
                     raster = drawn;
@@ -912,10 +1126,25 @@ namespace RoadDemo
                     bestRaster = drawn;
                 }
             }
-            // the blocks stand where the last deal left them: put them back on the best
-            Roll(blocks, unchecked(seed * 1000003 + best.Attempt * 7919));
-            raster = CoreRoads.Build(blocks, best);
-            return best;
+            // the blocks stand where the last deal left them: put them back on the best.
+            // The re-deal makes its own parks, so the plan handed back is the one to read
+            // them off - the earlier plan's are the wrong objects in the right places.
+            var again = Roll(blocks, unchecked(seed * 1000003 + best.Attempt * 7919));
+            again.Seed = best.Seed;
+            again.Attempt = best.Attempt;
+            again.Name = best.Name;
+            raster = CoreRoads.Build(WithParks(blocks, again), again);
+            return again;
+        }
+
+        /// <summary>The caller's blocks and the deal's own parks, as one list for the road
+        /// reader. Neither list is touched.</summary>
+        static List<Block> WithParks(List<Block> blocks, Plan plan)
+        {
+            if (plan.Parks.Count == 0) return blocks;
+            var all = new List<Block>(blocks);
+            all.AddRange(plan.Parks);
+            return all;
         }
 
         /// <summary>Of these blocks, the ones the demo itself stood - the only ones the

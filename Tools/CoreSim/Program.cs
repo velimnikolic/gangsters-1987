@@ -55,8 +55,10 @@ static class Program
         if (deal >= 0)
         {
             var plan = CoreLayout.Roll(blocks, unchecked(seed * 1000003 + deal * 7919));
-            var raster = CoreRoads.Build(blocks, plan);
-            Console.WriteLine($"seed {seed} deal {deal + 1}: faults {raster.Faults}");
+            var withParks = new List<CoreLayout.Block>(blocks);
+            withParks.AddRange(plan.Parks);
+            var raster = CoreRoads.Build(withParks, plan);
+            Console.WriteLine($"seed {seed} deal {deal + 1}: faults {raster.Faults}, {plan.Parks.Count} park(s)");
             foreach (var row in plan.Rows) Console.WriteLine("   " + row);
             foreach (var line in raster.Report.Split('\n')) Console.WriteLine("   " + line.Trim());
             Console.WriteLine(raster.Map);
@@ -71,7 +73,11 @@ static class Program
                 for (int d = 0; d < CoreLayout.Deals; d++)
                 {
                     var plan = CoreLayout.Roll(blocks, unchecked((seed + n) * 1000003 + d * 7919));
-                    var raster = CoreRoads.Build(blocks, plan);
+                    // the parks the deal made are blocks too - left out, they are holes the
+                    // verdict calls bare, and the tally measures a city nobody is building
+                    var withParks = new List<CoreLayout.Block>(blocks);
+                    withParks.AddRange(plan.Parks);
+                    var raster = CoreRoads.Build(withParks, plan);
                     deals++;
                     if (raster.Faults == 0) { cleanDeals++; continue; }
                     foreach (var line in raster.Report.Split('\n'))
@@ -215,8 +221,10 @@ static class Program
             int tried = 0, clean = 0, worst = 0;
             var faulty = new Dictionary<string, int>();
             var classes = new Dictionary<ParkWalk.Klass, int>();
-            for (int w = 5; w <= 30; w++)
-                for (int d = 5; d <= 30; d++)
+            // up to 60 cells - 300 m - because the belt round the core is one unbroken park
+            // the whole width of it, and that is bigger than anything the first sweep tried
+            for (int w = 5; w <= 60; w += w < 30 ? 1 : 3)
+                for (int d = 5; d <= 60; d += d < 30 ? 1 : 3)
                 {
                     var plan = ParkWalk.Lay(w, d, ParkWalk.Edge.Alone(), new Random(seed * 7919 + w * 131 + d));
                     string said = ParkWalk.Report(plan, out int faults);
@@ -224,8 +232,7 @@ static class Program
                     classes[plan.Klass] = classes.TryGetValue(plan.Klass, out var c) ? c + 1 : 1;
                     if (faults == 0) { clean++; continue; }
                     worst = Math.Max(worst, faults);
-                    foreach (var line in said.Split('
-'))
+                    foreach (var line in said.Split('\n'))
                     {
                         if (!line.Contains("WARNING")) continue;
                         string key = line.Substring(line.IndexOf("WARNING") + 9);

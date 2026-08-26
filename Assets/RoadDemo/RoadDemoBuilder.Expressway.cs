@@ -269,10 +269,40 @@ namespace RoadDemo
             };
         }
 
-        /// <summary>How far short of each end of the trunk the carriageways stop: the
-        /// gap the junction at that end reaches across. Short, because everything in it
-        /// is a car sitting inside a junction box.</summary>
+        /// <summary>What a carriageway is given at each end when there is no junction
+        /// there to measure against. Only a fallback: the road is normally run on to the
+        /// junction's own kerb (DeckMeets).</summary>
         const float EndMargin = 10f;
+
+        /// <summary>Where a carriageway stops at the junction it dies in: ON that
+        /// junction's kerb line, walked out of its box along the road's own line.
+        ///
+        /// A flat ten metres was the guess, and the note beside it said the junction
+        /// reached across them. It does not. A street junction of this grid is 7.5 m of
+        /// half width, and the trunk's own end stands a couple of metres OUTSIDE it - so
+        /// the road stopped twelve and a half metres short of the kerb and ended in the
+        /// grass, alongside the edge of the city's floor rather than on top of it. From
+        /// the air the motorway ran into the side of the town and disappeared under it.
+        /// </summary>
+        float DeckMeets(XwDeck deck, RoadNode node, int toward)
+        {
+            float len = deck.Line.Length;
+            float fallback = toward > 0 ? EndMargin : len - EndMargin;
+            if (node == null) return fallback;
+            deck.Line.Project(node.Centre, out float centre, out float off);
+            // the junction has to be the one this end of the road actually arrives at
+            if (off > 60f) return fallback;
+            if (toward > 0 ? centre > 80f : centre < len - 80f) return fallback;
+            for (float d = 0f; d <= 60f; d += 0.5f)
+            {
+                float at = Mathf.Clamp(centre + toward * d, 0f, len);
+                var p = deck.Line.PointAt(at);
+                if (p.x < node.XMin || p.x > node.XMax || p.z < node.ZMin || p.z > node.ZMax)
+                    return at;
+                if (at <= 0f || at >= len) return at;
+            }
+            return fallback;
+        }
 
         /// <summary>A seam box on a deck: small, square, and standing in the road.</summary>
         RoadNode XwSeam(RoadLine line, float s)
@@ -311,8 +341,10 @@ namespace RoadDemo
                 }
                 stations.Sort((a, b) => a.s.CompareTo(b.s));
 
-                // the ends: the last few metres are the junction the road dies in
-                float head = EndMargin, tail = deck.Line.Length - EndMargin;
+                // the ends: the road runs ON to the kerb line of the junction it
+                // dies in, found by walking out of that junction's own box
+                float head = DeckMeets(deck, TerminalNodeFor(deck, first: true), toward: +1);
+                float tail = DeckMeets(deck, TerminalNodeFor(deck, first: false), toward: -1);
                 var cuts = new List<(float s, int kind)> { (head, 0) };
                 foreach (var st in stations)
                     if (st.s > head + 20f && st.s < tail - 20f) cuts.Add(st);
@@ -368,7 +400,26 @@ namespace RoadDemo
         }
 
         /// <summary>The height of THIS deck's surface at a station of its own line.</summary>
-        float DeckSurfaceY(XwDeck deck, float s) => _xw.HeightAt(TrunkS(deck, s));
+        /// <summary>The surface of a carriageway at a station: the trunk's own profile,
+        /// eased down to the height of the CITY's asphalt over the last few metres at
+        /// each end. The motorway runs at a hand over the bed it is held flat to
+        /// (GradeY) and the town's road cell is a flat piece laid at nought, so a road
+        /// that arrives at its terminus on the motorway's own grade arrives over a kerb -
+        /// at the one junction where every car on the road is turning.</summary>
+        float DeckSurfaceY(XwDeck deck, float s)
+        {
+            float y = _xw.HeightAt(TrunkS(deck, s));
+            float len = deck.Line.Length;
+            float toEnd = Mathf.Min(s, len - s);
+            if (toEnd < DeckLanding)
+                y = Mathf.Lerp(ExpresswayLayout.StreetY, y, Mathf.Clamp01(toEnd / DeckLanding));
+            return y;
+        }
+
+        /// <summary>Over what length it comes down that last hand's breadth. Long enough
+        /// that the grade is nothing - twelve centimetres over twenty metres - and short
+        /// enough to be inside the junction's own approach.</summary>
+        const float DeckLanding = 20f;
 
         float TrunkS(XwDeck deck, float s)
         {

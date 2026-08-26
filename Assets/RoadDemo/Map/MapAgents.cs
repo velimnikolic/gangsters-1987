@@ -6,20 +6,26 @@ namespace RoadDemo
 {
     /// <summary>
     /// Everything on the map that moves, drawn straight into the screen buffer every
-    /// frame. This is the ONLY per-frame rasterising the map does - the ground, the
-    /// buildings and the turf wash are all cached buffers blitted underneath - and it is
-    /// cheap because a man is three pixels and a car is six.
+    /// frame at full raster resolution. This is the ONLY per-frame rasterising the map
+    /// does - the ground, the buildings and the turf tint are cached buffers blitted
+    /// underneath.
     ///
-    /// The sprites are the design sheet's, to the pixel. A person is 1x3 with the head
-    /// pixel in the family's BRIGHT cut, because at 1:1 that one pixel is the whole of
-    /// what the player reads: who that is. Everything else about a figure - selected,
-    /// inspected, on foot or in a car - is said in the pixels AROUND it, so the
-    /// affiliation pixel is never spent on anything else.
+    /// TWO SHAPES AND NO OUTLINES. A crew is a GLOWING DOT: a stack of faint additive
+    /// squares in the family's colour with a hard 3x3 core in its bright cut, breathing
+    /// on its own slow cycle, and a bloom that grows with the number of men in it - so
+    /// how big a crew is can be read from across the map without a number. A vehicle is
+    /// the opposite: a hard block, nine real pixels by four (thirteen for a lorry), with
+    /// a bright trim at the leading end and one pixel of shade down one side.
     ///
-    /// The crowd is budgeted. A city of ten thousand civilians would cost more to plot
-    /// than the map is worth, and a map that says where every pedestrian is says nothing
-    /// - so the crews and the law are drawn first and always, and the crowd fills
-    /// whatever is left of <see cref="CrowdBudget"/>.
+    /// Both wear their family's colour, and that is deliberate. Person against vehicle
+    /// is told apart by SHAPE - soft round glow against hard long block - and never by
+    /// colour, which is reserved for saying whose they are. An earlier revision made
+    /// vehicles grey to tell them apart and it cost the map the one thing it most needed
+    /// to show: that the car pulling up outside your front belongs to somebody.
+    ///
+    /// NOTHING here is outlined or haloed. The only shadow tone is
+    /// <see cref="MapPalette.Shadow"/>, one pixel, one side. An earlier revision ringed
+    /// every sprite in near-black and the map read as black mush at any distance.
     /// </summary>
     public sealed class MapAgents
     {
@@ -27,40 +33,45 @@ namespace RoadDemo
         /// grey wash of civilians with the news buried in it.</summary>
         public const int CrowdBudget = 900;
 
-        const int ManHeight = 3;
-        const int CarLength = 3;
-        const int TruckLength = 5;
+        /// <summary>A vehicle's body, in real pixels: long enough to read as a vehicle
+        /// at a glance, and clearly longer than it is thick.</summary>
+        const int CarLength = 9;
+        const int TruckLength = 13;
+        const int CarThick = 4;
+
+        /// <summary>The bloom's floor, before the crew's own size adds to it.</summary>
+        const int BloomBase = 2;
+        const int BloomPerMan = 1;
+        const int BloomMost = 5;
 
         readonly List<HarborBob> _vessels = new List<HarborBob>();
         float _vesselsDue;
 
-        // ------------------------------------------------------------------ people
+        // ------------------------------------------------------------------ crews
 
         /// <summary>
-        /// The crews first - the player's, the rivals', the law's - and then as much of
-        /// the crowd as the budget allows.
+        /// The crews - the player's, the rivals', the law's - each one dot, and then as
+        /// much of the crowd as the budget allows.
         /// </summary>
-        public void People(MapRaster into, MapSheet sheet, DemoCrews crews,
+        public void Crews(MapRaster into, MapSheet sheet, DemoCrews crews,
             List<CivilianAgent> crowd, List<PoliceFootPatrol> officers,
-            HashSet<int> selected, int inspectedCrew, bool plotCrowd)
+            HashSet<int> selected, int inspectedCrew, bool plotCrowd, float time)
         {
             if (crews != null)
             {
                 foreach (var unit in crews.Units)
                 {
-                    if (unit == null)
+                    if (unit == null || unit.Wiped)
                         continue;
-                    var lit = selected != null && selected.Contains(unit.CrewId);
-                    var read = unit.CrewId == inspectedCrew;
-                    var gang = unit.IsPolice ? -2 : unit.Faction;
-                    foreach (var man in unit.All())
-                    {
-                        if (man == null || man.Dead || man.Tf == null ||
-                            !man.Tf.gameObject.activeInHierarchy)
-                            continue;
-                        Man(into, sheet, man.Tf.position, gang,
-                            lit, read && man.IsLieutenant, man.IsLieutenant);
-                    }
+                    var boss = unit.Boss;
+                    if (boss == null || boss.Dead || boss.Tf == null)
+                        continue;
+
+                    Glow(into, sheet, boss.Tf.position,
+                        unit.IsPolice ? -2 : unit.Faction,
+                        unit.Standing(), unit.CrewId, time,
+                        selected != null && selected.Contains(unit.CrewId),
+                        unit.CrewId == inspectedCrew);
                 }
             }
 
@@ -70,7 +81,7 @@ namespace RoadDemo
                     if (officer == null || officer.Tf == null ||
                         !officer.Tf.gameObject.activeInHierarchy)
                         continue;
-                    Man(into, sheet, officer.Tf.position, -2, false, false, false);
+                    Pip(into, sheet, officer.Tf.position, MapPalette.White, MapPalette.Water);
                 }
 
             if (!plotCrowd || crowd == null)
@@ -85,64 +96,86 @@ namespace RoadDemo
                 if (civilian == null || civilian.Tf == null ||
                     !civilian.Tf.gameObject.activeInHierarchy)
                     continue;
-                Man(into, sheet, civilian.Tf.position, -1, false, false, false);
+                Pip(into, sheet, civilian.Tf.position, MapPalette.Unclaimed, default);
             }
         }
 
         /// <summary>
-        /// One figure. Gang -1 is a civilian, -2 the law, anything else a family.
+        /// One crew: a bloom whose radius grows with the men standing in it, a hard core
+        /// in the family's bright cut, and a slow breath keyed off the crew's own id so
+        /// no two pulse together.
         /// </summary>
-        void Man(MapRaster into, MapSheet sheet, Vector3 world, int gang,
-            bool selected, bool inspected, bool lieutenant)
+        void Glow(MapRaster into, MapSheet sheet, Vector3 world, int gang, int men,
+            int crewId, float time, bool selected, bool inspected)
         {
-            var at = sheet.ToPx(world);
-            var x = Mathf.FloorToInt(at.x);
-            var y = Mathf.FloorToInt(at.y);
-            if (x < -3 || y < -6 || x > MapRaster.W + 3 || y > MapRaster.H + 6)
+            var at = sheet.ToReal(world);
+            var x = Mathf.RoundToInt(at.x);
+            var y = Mathf.RoundToInt(at.y);
+
+            var reach = BloomBase + Mathf.Min(BloomMost, men * BloomPerMan);
+            if (x < -reach - 6 || y < -reach - 6 ||
+                x > MapRaster.W + reach + 6 || y > MapRaster.H + reach + 6)
                 return;
 
-            Color32 body, head;
+            Color32 body, core;
             if (gang == -2)
             {
-                // The law is not a family and must never wear one's colour: white body,
-                // and the head pixel the blue of a light bar.
-                body = MapPalette.White;
-                head = MapPalette.Water;
+                // The law is not a family and must never wear one's colour.
+                body = MapPalette.Water;
+                core = MapPalette.White;
             }
             else if (gang < 0)
             {
                 body = MapPalette.Unclaimed;
-                head = MapPalette.Hex(0xb8bdb4);
+                core = MapPalette.Hex(0xb8bdb4);
             }
             else
             {
                 body = MapPalette.Gang(gang);
-                head = MapPalette.Tag(gang);
+                core = MapPalette.Tag(gang);
             }
 
-            into.Fill(x + 1, y + 1, 1, ManHeight, MapPalette.Ink);
-            into.Fill(x, y + 1, 1, ManHeight - 1, body);
-            into.Fill(x, y, 1, 1, head);
+            var pulse = 0.7f + 0.3f * Mathf.Sin(time * 2.63f + crewId);
+            var span = reach * 2 + 1;
 
-            // A lieutenant is the man the player is looking for on a street of his own
-            // colour: one pixel wider at the shoulders, and nothing else.
-            if (lieutenant)
-                into.Fill(x - 1, y + 1, 1, 1, head);
+            into.AddRect(x - reach, y - reach, span, span, body, 0.13f * pulse);
+            into.AddRect(x - 1, y - reach, 3, span, body, 0.30f * pulse);
+            into.AddRect(x - reach, y - 1, span, 3, body, 0.30f * pulse);
+            into.AddRect(x - 2, y - 2, 5, 5, body, 0.75f);
+            into.Fill(x - 1, y - 1, 3, 3, core);
 
             if (selected)
             {
-                into.Fill(x - 2, y - 2, 1, 1, MapPalette.White);
-                into.Fill(x + 2, y - 2, 1, 1, MapPalette.White);
-                into.Fill(x - 2, y + 4, 1, 1, MapPalette.White);
-                into.Fill(x + 2, y + 4, 1, 1, MapPalette.White);
-                into.Fill(x - 1, y + 5, 3, 1, (Color32)MapPalette.PlayerAccent);
+                var tick = reach + 3;
+                into.Fill(x, y - tick, 1, 2, MapPalette.White);
+                into.Fill(x, y + tick, 1, 2, MapPalette.White);
+                into.Fill(x - tick, y, 2, 1, MapPalette.White);
+                into.Fill(x + tick, y, 2, 1, MapPalette.White);
             }
 
             if (inspected)
-                into.Fill(x - 1, y - 4, 3, 1, MapPalette.Yellow);
+                into.Fill(x - 1, y - reach - 4, 3, 1, MapPalette.Yellow);
         }
 
-        // ---------------------------------------------------------------- vehicles
+        /// <summary>One of the crowd, or one officer on foot: small, flat, and NOT a
+        /// glow - the glow means a crew, and a street of pedestrians lighting up like
+        /// crews would drown the only thing on this map worth looking for.</summary>
+        static void Pip(MapRaster into, MapSheet sheet, Vector3 world, Color32 colour,
+            Color32 mark)
+        {
+            var at = sheet.ToReal(world);
+            var x = Mathf.RoundToInt(at.x);
+            var y = Mathf.RoundToInt(at.y);
+            if (x < -2 || y < -3 || x > MapRaster.W + 2 || y > MapRaster.H + 3)
+                return;
+
+            into.Fill(x + 1, y + 1, 2, 2, MapPalette.Shadow);
+            into.Fill(x, y, 2, 2, colour);
+            if (mark.a != 0)
+                into.Fill(x, y, 1, 1, mark);
+        }
+
+        // --------------------------------------------------------------- vehicles
 
         public void Vehicles(MapRaster into, MapSheet sheet, List<DemoVehicle> traffic,
             List<PolicePatrolCar> patrols, DemoCrews crews)
@@ -152,8 +185,8 @@ namespace RoadDemo
                 {
                     if (car == null || car.Tf == null || !car.Tf.gameObject.activeInHierarchy)
                         continue;
-                    var tf = car.Tf;
-                    Car(into, sheet, tf, Paint(tf.GetHashCode()), CarLength);
+                    var paint = Civilian(car.Tf.GetHashCode());
+                    Block(into, sheet, car.Tf, paint, Lighter(paint), CarLength);
                 }
 
             if (patrols != null)
@@ -161,12 +194,7 @@ namespace RoadDemo
                 {
                     if (car == null || car.Tf == null || !car.Tf.gameObject.activeInHierarchy)
                         continue;
-                    var tf = car.Tf;
-                    Car(into, sheet, tf, MapPalette.White, CarLength);
-                    // The light bar: one red pixel, which is all a squad car needs to
-                    // read as one at this size.
-                    var light = sheet.ToPx(tf.position);
-                    into.Fill(Mathf.FloorToInt(light.x), Mathf.FloorToInt(light.y), 1, 1, MapPalette.Red);
+                    Block(into, sheet, car.Tf, MapPalette.White, MapPalette.Water, CarLength);
                 }
 
             if (crews == null)
@@ -179,46 +207,56 @@ namespace RoadDemo
                 var car = crews.CarOf(unit);
                 if (car == null || car.Tf == null || !car.Tf.gameObject.activeInHierarchy)
                     continue;
-                Car(into, sheet, car.Tf,
-                    unit.IsPolice ? MapPalette.White : MapPalette.Gang(unit.Faction),
-                    TruckLength);
+                // A family's car wears the family's colour. Shape says it is a car;
+                // colour says whose.
+                var paint = unit.IsPolice ? MapPalette.White : MapPalette.Gang(unit.Faction);
+                var trim = unit.IsPolice ? MapPalette.Water : MapPalette.Tag(unit.Faction);
+                Block(into, sheet, car.Tf, paint, trim, TruckLength);
             }
         }
 
-        /// <summary>A car: three pixels by two, laid along whichever axis it is
-        /// pointing down, with its shadow under it.</summary>
-        static void Car(MapRaster into, MapSheet sheet, Transform tf, Color32 colour, int length)
+        /// <summary>
+        /// A vehicle: a hard block laid along whichever axis it is pointing down, one
+        /// pixel of shade down a single side, and a two-pixel bright trim at the leading
+        /// end so which way it is going can be read without an arrow.
+        /// </summary>
+        static void Block(MapRaster into, MapSheet sheet, Transform tf, Color32 colour,
+            Color32 trim, int length)
         {
-            var at = sheet.ToPx(tf.position);
-            var x = Mathf.FloorToInt(at.x);
-            var y = Mathf.FloorToInt(at.y);
-            if (x < -8 || y < -8 || x > MapRaster.W + 8 || y > MapRaster.H + 8)
+            var at = sheet.ToReal(tf.position);
+            var x = Mathf.RoundToInt(at.x);
+            var y = Mathf.RoundToInt(at.y);
+            if (x < -20 || y < -20 || x > MapRaster.W + 20 || y > MapRaster.H + 20)
                 return;
 
             var forward = tf.forward;
-            var vertical = Mathf.Abs(forward.z) > Mathf.Abs(forward.x);
-            if (vertical)
+            if (Mathf.Abs(forward.z) > Mathf.Abs(forward.x))
             {
-                into.Fill(x, y, 2, length, MapPalette.Ink);
-                into.Fill(x, y, 2, length - 1, colour);
+                into.Fill(x + CarThick, y + 1, 1, length, MapPalette.Shadow);
+                into.Fill(x, y, CarThick, length, colour);
+                into.Fill(x, forward.z > 0f ? y : y + length - 2, CarThick, 2, trim);
             }
             else
             {
-                into.Fill(x, y, length, 2, MapPalette.Ink);
-                into.Fill(x, y, length - 1, 2, colour);
+                into.Fill(x + 1, y + CarThick, length, 1, MapPalette.Shadow);
+                into.Fill(x, y, length, CarThick, colour);
+                into.Fill(forward.x > 0f ? x + length - 2 : x, y, 2, CarThick, trim);
             }
         }
 
-        static readonly Color32[] CarPaints =
+        static readonly Color32[] Metal =
         {
-            MapPalette.Red, MapPalette.White, MapPalette.Steel,
-            MapPalette.Yellow, MapPalette.BldgB, MapPalette.BldgC,
+            MapPalette.Line, MapPalette.Concrete, MapPalette.Steel, MapPalette.BldgA,
         };
 
-        /// <summary>A car's colour, fixed to the car and not to the frame - hashed off
-        /// its instance so it does not change colour as it drives.</summary>
-        static Color32 Paint(int id) =>
-            CarPaints[(id & 0x7fffffff) % CarPaints.Length];
+        /// <summary>Ordinary traffic is not anybody's, so it is painted in metal rather
+        /// than in a colour that would claim it for a family. Fixed to the car and not
+        /// to the frame, so it does not change colour as it drives.</summary>
+        static Color32 Civilian(int id) => Metal[(id & 0x7fffffff) % Metal.Length];
+
+        static Color32 Lighter(Color32 c) => new Color32(
+            (byte)Mathf.Min(255, c.r + 40), (byte)Mathf.Min(255, c.g + 40),
+            (byte)Mathf.Min(255, c.b + 40), 255);
 
         // ------------------------------------------------------------------- water
 
@@ -243,35 +281,35 @@ namespace RoadDemo
                 if (vessel == null)
                     continue;
 
-                var tf = vessel.transform;
-                var renderer = tf.GetComponentInChildren<Renderer>();
+                var renderer = vessel.GetComponentInChildren<Renderer>();
                 if (renderer == null)
                     continue;
 
                 var bounds = renderer.bounds;
-                var at = sheet.ToPx(bounds.center);
-                var x = Mathf.FloorToInt(at.x);
-                var y = Mathf.FloorToInt(at.y);
-                if (x < -40 || y < -20 || x > MapRaster.W + 40 || y > MapRaster.H + 20)
+                var at = sheet.ToReal(bounds.center);
+                var x = Mathf.RoundToInt(at.x);
+                var y = Mathf.RoundToInt(at.y);
+                if (x < -60 || y < -40 || x > MapRaster.W + 60 || y > MapRaster.H + 40)
                     continue;
 
+                var perMetre = sheet.RealPerMetre;
                 var alongX = bounds.size.x >= bounds.size.z;
-                var length = Mathf.Max(4, Mathf.RoundToInt(
-                    (alongX ? bounds.size.x : bounds.size.z) * sheet.PixelsPerMetre));
-                var beam = Mathf.Max(2, Mathf.RoundToInt(
-                    (alongX ? bounds.size.z : bounds.size.x) * sheet.PixelsPerMetre));
+                var length = Mathf.Max(6, Mathf.RoundToInt(
+                    (alongX ? bounds.size.x : bounds.size.z) * perMetre));
+                var beam = Mathf.Max(3, Mathf.RoundToInt(
+                    (alongX ? bounds.size.z : bounds.size.x) * perMetre));
 
                 if (alongX)
                 {
-                    into.Fill(x - length / 2, y - beam / 2, length, beam + 1, MapPalette.Ink);
-                    into.Fill(x - length / 2, y - beam / 2, length - 1, beam, MapPalette.Steel);
-                    into.Fill(x - length / 2 + 2, y - beam / 2 - 1, 3, 2, MapPalette.Red);
+                    into.Fill(x - length / 2 + 1, y + beam / 2, length, 1, MapPalette.Shadow);
+                    into.Fill(x - length / 2, y - beam / 2, length, beam, MapPalette.Steel);
+                    into.Fill(x - length / 2 + 2, y - beam / 2 - 2, 3, 2, MapPalette.Red);
                 }
                 else
                 {
-                    into.Fill(x - beam / 2, y - length / 2, beam + 1, length, MapPalette.Ink);
-                    into.Fill(x - beam / 2, y - length / 2, beam, length - 1, MapPalette.Steel);
-                    into.Fill(x - beam / 2 - 1, y - length / 2 + 2, 2, 3, MapPalette.Red);
+                    into.Fill(x + beam / 2, y - length / 2 + 1, 1, length, MapPalette.Shadow);
+                    into.Fill(x - beam / 2, y - length / 2, beam, length, MapPalette.Steel);
+                    into.Fill(x - beam / 2 - 2, y - length / 2 + 2, 2, 3, MapPalette.Red);
                 }
             }
         }
@@ -292,42 +330,43 @@ namespace RoadDemo
                     markers.RemoveAt(i);
                     continue;
                 }
-                var at = sheet.ToPx(marker.World);
-                var x = Mathf.FloorToInt(at.x);
-                var y = Mathf.FloorToInt(at.y);
-                var reach = MapOrders.MarkerRadius(marker);
+                var at = sheet.ToReal(marker.World);
+                var x = Mathf.RoundToInt(at.x);
+                var y = Mathf.RoundToInt(at.y);
+                var reach = MapOrders.MarkerRadius(marker) * MapRaster.S;
                 var colour = MapOrders.MarkerColour(marker.Kind);
                 into.Fill(x - reach, y, reach * 2, 1, colour);
                 into.Fill(x, y - reach, 1, reach * 2, colour);
             }
         }
 
-        /// <summary>The drag box, marching a pixel on and a pixel off.</summary>
+        /// <summary>The drag box, marching two real pixels on and one off. Given in
+        /// AUTHORED coordinates, because that is the space the drag itself lives in.</summary>
         public static void SelectionBox(MapRaster into, Vector2 from, Vector2 to)
         {
-            var x0 = Mathf.FloorToInt(Mathf.Min(from.x, to.x));
-            var y0 = Mathf.FloorToInt(Mathf.Min(from.y, to.y));
-            var w = Mathf.FloorToInt(Mathf.Abs(to.x - from.x));
-            var h = Mathf.FloorToInt(Mathf.Abs(to.y - from.y));
+            var x0 = Mathf.RoundToInt(Mathf.Min(from.x, to.x) * MapRaster.S);
+            var y0 = Mathf.RoundToInt(Mathf.Min(from.y, to.y) * MapRaster.S);
+            var w = Mathf.RoundToInt(Mathf.Abs(to.x - from.x) * MapRaster.S);
+            var h = Mathf.RoundToInt(Mathf.Abs(to.y - from.y) * MapRaster.S);
             var colour = (Color32)MapPalette.PlayerAccent;
-            for (var x = 0; x <= w; x += 2)
+            for (var x = 0; x <= w; x += 3)
             {
-                into.Fill(x0 + x, y0, 1, 1, colour);
-                into.Fill(x0 + x, y0 + h, 1, 1, colour);
+                into.Fill(x0 + x, y0, 2, 1, colour);
+                into.Fill(x0 + x, y0 + h, 2, 1, colour);
             }
-            for (var y = 0; y <= h; y += 2)
+            for (var y = 0; y <= h; y += 3)
             {
-                into.Fill(x0, y0 + y, 1, 1, colour);
-                into.Fill(x0 + w, y0 + y, 1, 1, colour);
+                into.Fill(x0, y0 + y, 1, 2, colour);
+                into.Fill(x0 + w, y0 + y, 1, 2, colour);
             }
         }
 
         /// <summary>The frame round the building the card is open on, blinking between
-        /// bone and gold on the sheet's own 600 ms cycle.</summary>
-        public static void Blink(MapRaster into, RectInt box, float time)
+        /// bone and gold on the sheet's own 600 ms cycle. Real pixels.</summary>
+        public static void Blink(MapRaster into, RectInt real, float time)
         {
             var colour = time * 1000f % 600f < 300f ? MapPalette.White : MapPalette.Yellow;
-            into.Frame(box.xMin - 2, box.yMin - 2, box.width + 4, box.height + 4, 1, colour);
+            into.Frame(real.xMin - 2, real.yMin - 2, real.width + 4, real.height + 4, 1, colour);
         }
     }
 }

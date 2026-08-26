@@ -64,6 +64,7 @@ namespace LivingCity.EditorTools
 
             var plan = CoreLayout.Arrange(blocks, seed, out var raster);
             foreach (var block in blocks) CoreLayout.Place(block);
+            Parks(plan, city.transform, seed);
             LastMap = raster.Map;
             LastSeed = seed;
             var roads = new GameObject("roads");
@@ -112,6 +113,51 @@ namespace LivingCity.EditorTools
             if (raster.Faults > 0) Debug.LogWarning(log.ToString());
             else Debug.Log(log.ToString());
             return plan;
+        }
+
+        /// <summary>
+        /// The deal's parks, composed on the spot.
+        ///
+        /// A park has no prefab to instantiate - that is the whole of what makes it different
+        /// from the other blocks - so it is built to the rectangle the deal gave it, by the
+        /// same code the park lab draws with. Composed at the ORIGIN and moved afterwards,
+        /// because every piece is placed by measuring where it lands in world space; given
+        /// its place first, a park builds itself around the world origin.
+        /// </summary>
+        static void Parks(CoreLayout.Plan plan, Transform city, int seed)
+        {
+            if (plan == null || plan.Parks.Count == 0) return;
+
+            var green = new GameObject("parks").transform;
+            green.SetParent(city, false);
+            ParkBlocks.ForgetMissing();
+
+            foreach (var block in plan.Parks)
+            {
+                var root = new GameObject(block.Name).transform;
+                root.SetParent(green, false);
+
+                // the park is dealt in the core's metres; the recipe works in its own, from a
+                // corner, so the size goes in and the corner is applied afterwards
+                var box = block.Box;
+                int nx = Mathf.Max(3, Mathf.RoundToInt(box.width / CoreLayout.Cell));
+                int nz = Mathf.Max(3, Mathf.RoundToInt(box.height / CoreLayout.Cell));
+                int dice = unchecked(seed * 7919 + Mathf.RoundToInt(box.xMin) * 104729 +
+                                     Mathf.RoundToInt(box.yMin) * 1299709);
+
+                var walk = ParkWalk.Lay(nx, nz, ParkWalk.Edge.Alone(), new System.Random(dice));
+                var stood = ParkBlocks.Compose(walk, root, new System.Random(dice),
+                    (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent));
+                ParkBlocks.Pave(walk, root, out _,
+                    (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent), dice);
+
+                root.position = new Vector3(box.xMin, 0f, box.yMin);
+
+                ParkWalk.Report(walk, out int faults);
+                if (faults > 0 || stood.Gaps > 0 || stood.FenceGap > 0.5f)
+                    Debug.LogWarning($"[CoreCity] {block.Name}: {faults} fault(s) in the plan, " +
+                                     $"{stood.Gaps} cell(s) with no floor, {stood.FenceGap:F1} m of fence missing.");
+            }
         }
 
         /// <summary>Every block prefab stood at the origin under the parent and measured,

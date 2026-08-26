@@ -55,20 +55,9 @@ namespace RoadDemo
         /// keeps a door in the quarter at all. The figure the map has always used.</summary>
         public const float Reach = 240f;
 
-        const float WashAlpha = 0.30f;
-        const float StripeAlpha = 0.55f;
-        const float ContestedWashAlpha = 0.20f;
-        const float ContestedStripeAlpha = 0.50f;
-
-        /// <summary>Stripe pitch, in pixels, exactly as the sheet draws it.</summary>
-        const int StripePitch = 6;
-
         readonly List<MapDistrict> _all = new List<MapDistrict>();
-        readonly MapRaster _layer = new MapRaster();
         readonly Dictionary<int, int> _tally = new Dictionary<int, int>();
 
-        MapSheet _baked;
-        bool _dirty = true;
         int _stamp = int.MinValue;
 
         public IReadOnlyList<MapDistrict> All => _all;
@@ -102,7 +91,7 @@ namespace RoadDemo
                     Kind = district.Kind,
                 });
 
-            _dirty = true;
+            Version++;
         }
 
         static string Named(string name) =>
@@ -200,113 +189,76 @@ namespace RoadDemo
                 district.Contested = tied;
             }
 
-            _dirty = true;
+            Version++;
             return true;
         }
 
-        public void Invalidate() => _dirty = true;
+        public void Invalidate() => Version++;
 
-        // --------------------------------------------------------------------- bake
+        // -------------------------------------------------------------------- tint
 
-        /// <summary>The wash, striped and tagged, ready to be laid over the base.</summary>
-        public MapRaster Layer(MapSheet sheet)
+        /// <summary>
+        /// The whole overlay: one flat rectangle of the family's colour per district,
+        /// MULTIPLIED into the map. Nothing else.
+        ///
+        /// An earlier revision striped it, cross-hatched it, ran marching ants round it
+        /// and put a corner tag in it. Over a raster this dense that read as noise laid
+        /// on noise, and none of it is coming back. Multiply is what makes the flat
+        /// version work: streets, buildings and terrain stay completely legible
+        /// underneath, merely tinted - an alpha wash would grey the map out toward the
+        /// colour instead of tinting what is there.
+        ///
+        /// And it stops at the water. The tint is laid scanline by scanline, skipping
+        /// every pixel the map classified as water (<see cref="MapBase.IsWaterAt"/>),
+        /// because a port district tinting its own harbour turns the one part of the map
+        /// with a distinct colour into a coloured puddle - and a riverside district
+        /// paints straight over the river.
+        ///
+        /// Unclaimed ground is not tinted at all. Nobody holds it, so nothing is said.
+        /// </summary>
+        public void Tint(MapRaster into, MapSheet sheet)
         {
-            if (!_dirty && _baked.Matches(sheet))
-                return _layer;
-
-            _dirty = false;
-            _baked = sheet;
-            _layer.Clear(new Color32(0, 0, 0, 0));
-
             foreach (var district in _all)
             {
+                if (!district.Contested && district.Gang < 0)
+                    continue;   // unclaimed: draw nothing
                 if (!sheet.Sees(district.World))
                     continue;
-                var box = sheet.Box(district.World);
-                if (box.width < 3 || box.height < 3)
-                    continue;
 
-                var contested = district.Contested;
-                var wash = contested ? MapPalette.ContestedWash : MapPalette.Gang(district.Gang);
-                var stripe = contested ? MapPalette.Contested : MapPalette.Gang(district.Gang);
+                var colour = district.Contested
+                    ? MapPalette.ContestedTint
+                    : MapPalette.Gang(district.Gang);
 
-                _layer.LayerWash(box.xMin, box.yMin, box.width, box.height, wash,
-                    contested ? ContestedWashAlpha : WashAlpha);
+                var box = sheet.RealBox(district.World);
+                var x0 = Mathf.Max(0, box.xMin);
+                var x1 = Mathf.Min(MapRaster.W, box.xMax);
+                var y0 = Mathf.Max(0, box.yMin);
+                var y1 = Mathf.Min(MapRaster.H, box.yMax);
 
-                var strength = contested ? ContestedStripeAlpha : StripeAlpha;
-                Stripes(box, stripe, strength, contested ? 1 : MapPalette.StripeLean(district.Gang));
-                if (contested)
-                    Stripes(box, stripe, strength, -1);
-
-                Tag(box, contested ? MapPalette.Contested : MapPalette.Gang(district.Gang));
-            }
-
-            return _layer;
-        }
-
-        /// <summary>Diagonals a pixel wide every six, leaning the way the family leans.
-        /// Two families whose colours sit near each other on the wheel still read apart
-        /// because their ground is combed in opposite directions.</summary>
-        void Stripes(RectInt box, Color32 colour, float alpha, int lean)
-        {
-            for (var i = -box.height; i < box.width + box.height; i += StripePitch)
-            {
-                for (var s = 0; s < box.height; s++)
+                for (var y = y0; y < y1; y++)
                 {
-                    var x = box.xMin + i + (lean > 0 ? s : box.height - s);
-                    if (x < box.xMin || x >= box.xMax)
-                        continue;
-                    _layer.LayerPx(x, box.yMin + s, colour, alpha);
+                    var ay = y / MapRaster.S;
+                    var run = -1;
+                    for (var x = x0; x <= x1; x++)
+                    {
+                        var wet = x == x1 || MapBase.IsWaterAt(x / MapRaster.S, ay);
+                        if (!wet)
+                        {
+                            if (run < 0)
+                                run = x;
+                            continue;
+                        }
+                        if (run < 0)
+                            continue;
+                        into.MultiplyRun(run, y, x - run, colour);
+                        run = -1;
+                    }
                 }
             }
         }
 
-        /// <summary>The ownership tag in the district's top-left corner: a black chip
-        /// with the family's colour inside it, so a district that is mostly under
-        /// buildings still says whose it is.</summary>
-        void Tag(RectInt box, Color32 colour)
-        {
-            if (box.width < 12 || box.height < 10)
-                return;
-            _layer.LayerFill(box.xMin + 2, box.yMin + 2, 7, 5, MapPalette.Hex(0x0b0d0c));
-            _layer.LayerFill(box.xMin + 3, box.yMin + 3, 5, 3, colour);
-        }
-
-        // ------------------------------------------------------------------ borders
-
-        /// <summary>
-        /// The hard border, drawn live over everything the turf layer put down.
-        ///
-        /// The design sheet crawls a contested border - marching ants, the dash phase
-        /// pushed round with the clock. It was built that way and it was wrong at this
-        /// size: the sheet is blown up six times over a map that is itself the screen,
-        /// and four pixels of dash travelling round a district becomes a band of
-        /// glitter that drags the eye off everything else on the map. Contested ground
-        /// is already saying so - it is the only ground cross-hatched in both
-        /// directions, in bone white, with a bone-white tag.
-        ///
-        /// So nothing marches. A held border is a solid rule in the family's colour; a
-        /// contested one is a solid rule that BREATHES, brightening and dimming on a
-        /// slow cycle. It reads as unsettled from across the room and it does not
-        /// shimmer when you look at it.
-        /// </summary>
-        public void DrawBorders(MapRaster into, MapSheet sheet, float time)
-        {
-            // A slow swell, not a blink: about a second and a half, eased, so the eye
-            // registers it as movement without ever catching a frame of it.
-            var breath = (Mathf.Sin(time * 4.2f) + 1f) * 0.5f;
-            var pulse = Color32.Lerp(MapPalette.ContestedWash, MapPalette.Contested, breath);
-
-            foreach (var district in _all)
-            {
-                if (!sheet.Sees(district.World))
-                    continue;
-                var box = sheet.Box(district.World);
-                if (box.width < 6 || box.height < 6)
-                    continue;
-                var colour = district.Contested ? pulse : MapPalette.Gang(district.Gang);
-                into.Frame(box.xMin, box.yMin, box.width, box.height, 2, colour);
-            }
-        }
+        /// <summary>Bumped whenever the tint would come out different, so the map knows
+        /// when to re-lay the ground it is multiplied into.</summary>
+        public int Version { get; private set; }
     }
 }

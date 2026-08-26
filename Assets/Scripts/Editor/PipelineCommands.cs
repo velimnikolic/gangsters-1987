@@ -331,6 +331,85 @@ namespace GangstersTools
             };
         }
 
+        // ------------------------------------------------------------------------ the parks
+
+        /// <summary>
+        /// Lays out a park from a seed and a size, and reports the verdict on it.
+        ///
+        /// Two verdicts again, and both have to be nought: the plan's - is the walk one
+        /// piece, does every gate reach it, is any ground stranded more than twenty-five
+        /// metres from a path - and, when it is actually stood, the composer's: is every cell
+        /// floored, is the fence whole, is anything standing on the walk.
+        ///
+        /// Without --draw nothing is stood: the plan is pure arithmetic, so a hundred sizes
+        /// cost no more than reading them. That is the point of the sweep - a park generator
+        /// that works on the sizes it was written against and falls over on 25 x 150 m is one
+        /// that will fall over the first time a quarter deals it an awkward rectangle.
+        /// </summary>
+        [CliCommand("gangsters_park",
+                    "Lay out a park from a seed and a size (pocket|square|park|strip|WxD in cells) and " +
+                    "report the verdict: ways in, rooms, what they were cast as, faults. --draw also " +
+                    "stands the first one in the open scene.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters" })]
+        public static object Parks(
+            [CliArg("seed", "First seed.")] int seed = 1987,
+            [CliArg("count", "How many consecutive seeds to lay out.")] int count = 1,
+            [CliArg("size", "pocket, square, park, strip, or WxD in 5 m cells (e.g. 12x9).")] string size = "",
+            [CliArg("draw", "Stand the first one in the open scene, as Tools/City/Park/Sketch A Park would.")] bool draw = false,
+            [CliArg("map", "Include each park's map in the answer.")] bool map = false)
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("The editor is in play mode; leave it first.");
+
+            int rolls = Mathf.Clamp(count, 1, 200);
+            var results = new List<object>(rolls);
+            int clean = 0;
+            for (int i = 0; i < rolls; i++)
+            {
+                int s = seed + i;
+                LivingCity.EditorTools.ParkSketch.Measure(size, new System.Random(s), out int nx, out int nz);
+                var plan = ParkWalk.Lay(nx, nz, ParkWalk.Edge.Alone(), new System.Random(s));
+                string report = ParkWalk.Report(plan, out int faults);
+                if (faults == 0) clean++;
+                results.Add(new
+                {
+                    seed = s,
+                    plan = plan.Name,
+                    size = $"{plan.Wide:F0}x{plan.Deep:F0}",
+                    klass = plan.Klass.ToString(),
+                    faults,
+                    mouths = plan.Mouths.Count,
+                    rooms = plan.Rooms.Count,
+                    cast = ParkWalk.Cast(plan),
+                    report = report.Split('\n').Select(line => line.Trim()).ToArray(),
+                    map = map ? plan.Map : null,
+                });
+            }
+
+            object drawn = null;
+            if (draw)
+            {
+                var stood = LivingCity.EditorTools.ParkSketch.Draw(seed, size, true);
+                drawn = stood == null ? null : new
+                {
+                    seed,
+                    plan = stood.Plan.Name,
+                    gaps = stood.Gaps,
+                    fenceGap = stood.FenceGap,
+                    onWalk = stood.OnWalk,
+                    trees = stood.TreeCount,
+                    density = stood.Density,
+                    benches = stood.Benches,
+                    lamps = stood.Lamps,
+                    tables = stood.Tables,
+                    flowers = stood.Flowers,
+                    programmes = stood.Programmes,
+                    refused = stood.Refused,
+                };
+            }
+            return new { clean, drawn, parks = results };
+        }
+
         // ------------------------------------------------------------ the industrial quarter
 
         /// <summary>

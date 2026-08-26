@@ -48,6 +48,11 @@ namespace RoadDemo
         /// </summary>
         public const int RoomMax = 10;
 
+        /// <summary>The furthest a person standing on the grass may be from a path, in cells.
+        /// Twenty-five metres: past that the ground stops reading as part of the park and
+        /// starts reading as ground the park happens to own.</summary>
+        public const int ReachMax = 5;
+
         /// <summary>How thick the pavement ring is, in cells. One, which is what every
         /// pavement in the pack's own demo is (Docs/synty-demo-anatomy.md).</summary>
         public const int Band = 1;
@@ -144,6 +149,29 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>
+        /// The letter a programme takes on the map.
+        ///
+        /// Spelled out rather than taken from the first letter of its name, which is how the
+        /// playground and the pavilion both came out as 'p' and a map of a park with one of
+        /// each could not be read at all.
+        /// </summary>
+        public static char Mark(Programme what)
+        {
+            switch (what)
+            {
+                case Programme.Grove: return 'g';
+                case Programme.Fountain: return 'f';
+                case Programme.Playground: return 'P';
+                case Programme.Courts: return 'c';
+                case Programme.Pavilion: return 'v';
+                case Programme.Statue: return 'm';
+                case Programme.Skatepark: return 'k';
+                case Programme.Toilet: return 't';
+                default: return '.';
+            }
+        }
+
         /// <summary>What a programme is called on a card, in words rather than in the enum's
         /// shorthand.</summary>
         public static string Words(Programme what)
@@ -212,7 +240,60 @@ namespace RoadDemo
             /// <summary>Does it touch the fence? A toilet block wants to, a fountain does
             /// not.</summary>
             public bool OnFence;
+            /// <summary>The walk was asked to cut this room in two and could not. Kept so the
+            /// search moves on - and so the verdict still sees the room at its real size,
+            /// which quietly shrinking it did not.</summary>
+            public bool Uncut;
             public int Area => Cells.Count;
+
+            /// <summary>How far the furthest corner of this room is from the nearest walk, in
+            /// cells. Set when the rooms are found.</summary>
+            public int Reach;
+
+            /// <summary>
+            /// The biggest rectangle of cells lying WHOLLY inside the room, and where it sits.
+            ///
+            /// This, and not <see cref="W"/> x <see cref="D"/>, is what a programme has to
+            /// fit in - and the difference is the whole game on a park with a loop round it.
+            /// The grass between the loop and the fence is one ring-shaped room; its bounding
+            /// rectangle is the entire park, so judged by that it looked big enough for a
+            /// fountain, a playground and a set of courts. It is two cells wide everywhere.
+            /// Cast that way, every programme was handed the ring, every one of them was
+            /// quietly refused when it came to stand, and an 80 x 70 m park came out with
+            /// seven named rooms and nothing whatever in it.
+            /// </summary>
+            public int InnerI, InnerJ, InnerW, InnerD;
+
+            /// <summary>
+            /// Too big to read as one place?
+            ///
+            /// NOT the size of its rectangle, which was the first answer and the wrong one: a
+            /// park with a loop round it has one ring-shaped room of grass between the loop
+            /// and the fence, and that ring's bounding rectangle is the whole park. Judged by
+            /// the rectangle, every park with a loop failed - though nowhere in that ring is
+            /// more than ten metres from a path.
+            ///
+            /// What actually matters is how far you have to walk over grass to reach a path.
+            /// Twenty-five metres is the limit here, which is a lawn you cross rather than a
+            /// field you set out over - and it makes the belt of trees legal (two cells) while
+            /// still cutting up the middle of a big park.
+            /// </summary>
+            public bool TooBig => !Uncut && (Reach > ReachMax || Corridor);
+
+            /// <summary>
+            /// Twice as long as it is wide, and wide enough to matter - a corridor of grass
+            /// rather than a room.
+            ///
+            /// Worth cutting on its own account, because a programme does not stretch: the
+            /// playground is fifteen metres square whatever it is put in, and dropped in a
+            /// room of 30 x 60 m it sits in one end with half a tennis court of empty grass
+            /// behind it. The industrial quarter learnt the same thing the same way - the
+            /// answer to an empty yard is a smaller yard, not more barrels.
+            ///
+            /// A band of two cells or less is exempt: that is the belt against the fence,
+            /// where the trees go, and it is meant to run.
+            /// </summary>
+            public bool Corridor => Mathf.Min(W, D) > 2 && Mathf.Max(W, D) >= 2 * Mathf.Min(W, D);
             public Rect Box => new Rect(I0 * Cell, J0 * Cell, W * Cell, D * Cell);
             public Spot Middle => new Spot(I0 + W / 2, J0 + D / 2);
         }
@@ -264,8 +345,7 @@ namespace RoadDemo
                     var programme = new Dictionary<Spot, char>();
                     foreach (var room in Rooms)
                     {
-                        char mark = room.Programme == Programme.Lawn ? '.' :
-                                    Words(room.Programme)[0];
+                        char mark = Mark(room.Programme);
                         foreach (var cell in room.Cells) programme[cell] = mark;
                     }
                     for (int j = NZ - 1; j >= 0; j--)
@@ -328,10 +408,12 @@ namespace RoadDemo
 
             plan.Klass = Classify(plan.W, plan.D);
             Mouths(plan, rng);
+            Loop(plan, rng);
             Spine(plan, rng);
             Rooms(plan);
             Cut(plan, rng);
             Cast(plan, rng);
+            Plaza(plan, rng);
             return plan;
         }
 
@@ -373,11 +455,12 @@ namespace RoadDemo
 
             int want = Wanted(plan, rng);
             Shuffle(open, rng);
-            // a strip is entered along its length rather than at its ends, so the long sides
-            // go first - a hundred metre park with both its gates on the short ends is a
-            // corridor, not a park
+            // a strip takes its first two gates at the ENDS, because the walk between them is
+            // what runs the length of it. Given the long sides first, a two hundred metre
+            // strip was joined gate to gate across the middle and the far half of it never
+            // saw a path.
             if (plan.Klass == Klass.Strip)
-                open.Sort((one, other) => Along(plan, other).CompareTo(Along(plan, one)));
+                open.Sort((one, other) => Along(plan, one).CompareTo(Along(plan, other)));
 
             for (int k = 0; k < open.Count && plan.Mouths.Count < want; k++)
             {
@@ -438,6 +521,58 @@ namespace RoadDemo
             return Mathf.Clamp(mid + jitter, lo, hi);
         }
 
+        // --------------------------------------------------------------------- the loop
+
+        /// <summary>How far inside the fence the perimeter walk runs, in cells. One or two -
+        /// a belt of trees five metres deep or ten, chosen per side so the loop is not the
+        /// same rectangle in every park.</summary>
+        const int LoopIn = 1, LoopOut = 2;
+
+        /// <summary>The smallest park that gets a loop, in cells inside the fence. Under this
+        /// the loop and the belt would eat the whole park and leave nothing to walk to.</summary>
+        const int LoopLeast = 9;
+
+        /// <summary>
+        /// The walk round the park, a cell or two inside the fence.
+        ///
+        /// THE ONE THING THAT MAKES A BIG PARK WORK, and it took a sweep to see why. A walk
+        /// that is a tree - mouths joined to each other and nothing more - leaves rooms that
+        /// touch the fence on one side, and a room against the fence cannot be cut in two:
+        /// every line through it runs into the railings at one end, and a path that stops at
+        /// a railing is a path nobody would have built. So a 110 x 90 m park came out with one
+        /// walk across it and fifty-five by eighty metres of nothing beside it.
+        ///
+        /// A loop closes that. Every room is then bounded by walk on the outside as well as
+        /// the inside, so <see cref="Cut"/> can always halve it, and the ground left between
+        /// the loop and the fence is the belt the trees stand in - which is where the pack's
+        /// own parks put them. It is also simply what a city park of the period IS: a
+        /// perimeter path with the ground inside given over to things.
+        /// </summary>
+        static void Loop(Plan plan, System.Random rng)
+        {
+            if (plan.Klass != Klass.Park && plan.Klass != Klass.Strip) return;
+            if (Mathf.Min(plan.W, plan.D) < LoopLeast) return;
+
+            // an inset per side, so the loop is a rectangle of its own rather than the fence
+            // line moved in by a fixed amount
+            int west = plan.I0 + rng.Next(LoopIn, LoopOut + 1);
+            int east = plan.I1 - rng.Next(LoopIn, LoopOut + 1);
+            int south = plan.J0 + rng.Next(LoopIn, LoopOut + 1);
+            int north = plan.J1 - rng.Next(LoopIn, LoopOut + 1);
+            if (east - west < 2 || north - south < 2) return;
+
+            for (int i = west; i <= east; i++)
+            {
+                Walk(plan, new Spot(i, south));
+                Walk(plan, new Spot(i, north));
+            }
+            for (int j = south; j <= north; j++)
+            {
+                Walk(plan, new Spot(west, j));
+                Walk(plan, new Spot(east, j));
+            }
+        }
+
         // -------------------------------------------------------------------- the spine
 
         /// <summary>
@@ -452,6 +587,20 @@ namespace RoadDemo
         static void Spine(Plan plan, System.Random rng)
         {
             if (plan.Mouths.Count == 0) return;
+
+            // where a loop is already round the park every gate simply joins it, and the
+            // ground inside is cut up afterwards. Without one the first two gates are joined
+            // to each other and become the spine everything else hangs off.
+            if (Laid(plan))
+            {
+                foreach (var mouth in plan.Mouths)
+                {
+                    Walk(plan, mouth.At);
+                    var onto = Nearest(plan, mouth.At, true);
+                    if (onto.HasValue) Join(plan, mouth.At, onto.Value, rng);
+                }
+                return;
+            }
 
             Walk(plan, plan.Mouths[0].At);
             if (plan.Mouths.Count == 1)
@@ -474,16 +623,33 @@ namespace RoadDemo
             }
         }
 
-        /// <summary>The walk cell already laid that is closest to here, by the way a person
-        /// would walk it rather than as the crow flies.</summary>
-        static Spot? Nearest(Plan plan, Spot from)
+        /// <summary>Is any walk down yet?</summary>
+        static bool Laid(Plan plan)
+        {
+            for (int i = plan.I0; i <= plan.I1; i++)
+                for (int j = plan.J0; j <= plan.J1; j++)
+                    if (plan.Cells[i, j] == Ground.Walk) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// The walk cell already laid that is closest to here, by the way a person would walk
+        /// it rather than as the crow flies.
+        ///
+        /// <paramref name="paths"/> asks for a cell of WALK and not of paved apron, which
+        /// matters more than it sounds: an apron counts as walkable, so a fountain looking for
+        /// the way to the nearest walk found the paving under its own feet, joined itself to
+        /// itself, and left the apron an island the walk never reached (346 of 676 sizes in the
+        /// first sweep).
+        /// </summary>
+        static Spot? Nearest(Plan plan, Spot from, bool paths = false)
         {
             Spot best = default;
             int least = int.MaxValue;
             for (int i = plan.I0; i <= plan.I1; i++)
                 for (int j = plan.J0; j <= plan.J1; j++)
                 {
-                    if (!plan.Walked(i, j)) continue;
+                    if (paths ? plan.Cells[i, j] != Ground.Walk : !plan.Walked(i, j)) continue;
                     if (i == from.I && j == from.J) continue;
                     int span = Mathf.Abs(i - from.I) + Mathf.Abs(j - from.J);
                     if (span >= least) continue;
@@ -607,6 +773,7 @@ namespace RoadDemo
         static void Rooms(Plan plan)
         {
             plan.Rooms.Clear();
+            var far = Reaches(plan);
             var seen = new bool[plan.NX, plan.NZ];
             for (int i = plan.I0; i <= plan.I1; i++)
                 for (int j = plan.J0; j <= plan.J1; j++)
@@ -622,6 +789,8 @@ namespace RoadDemo
                         var at = queue.Dequeue();
                         room.Cells.Add(at);
                         if (plan.OnFence(at.I, at.J)) room.OnFence = true;
+                        int reach = far[at.I, at.J];
+                        room.Reach = reach < 0 ? int.MaxValue / 2 : Mathf.Max(room.Reach, reach);
                         iMin = Mathf.Min(iMin, at.I); iMax = Mathf.Max(iMax, at.I);
                         jMin = Mathf.Min(jMin, at.J); jMax = Mathf.Max(jMax, at.J);
                         foreach (var step in Steps)
@@ -635,8 +804,84 @@ namespace RoadDemo
                     }
                     room.I0 = iMin; room.J0 = jMin;
                     room.W = iMax - iMin + 1; room.D = jMax - jMin + 1;
+                    Inner(room);
                     plan.Rooms.Add(room);
                 }
+        }
+
+        /// <summary>
+        /// The biggest rectangle of cells lying wholly inside a room.
+        ///
+        /// The standard histogram sweep: for each row, how many cells of the room stand
+        /// unbroken above each column, then the largest rectangle under that skyline. Rooms
+        /// here are a few hundred cells at most, so the cost of it does not signify - and
+        /// nothing cheaper is honest about a ring or an L.
+        /// </summary>
+        static void Inner(Room room)
+        {
+            var has = new bool[room.W, room.D];
+            foreach (var cell in room.Cells) has[cell.I - room.I0, cell.J - room.J0] = true;
+
+            var high = new int[room.W];
+            int best = 0;
+            for (int j = 0; j < room.D; j++)
+            {
+                for (int i = 0; i < room.W; i++) high[i] = has[i, j] ? high[i] + 1 : 0;
+
+                // the largest rectangle under this row's skyline, by the usual stack sweep
+                var stack = new Stack<int>();
+                for (int i = 0; i <= room.W; i++)
+                {
+                    int tall = i == room.W ? 0 : high[i];
+                    while (stack.Count > 0 && high[stack.Peek()] >= tall)
+                    {
+                        int top = stack.Pop();
+                        int from = stack.Count == 0 ? 0 : stack.Peek() + 1;
+                        int wide = i - from, deep = high[top];
+                        if (wide * deep <= best) continue;
+                        best = wide * deep;
+                        room.InnerI = room.I0 + from;
+                        room.InnerJ = room.J0 + j - deep + 1;
+                        room.InnerW = wide;
+                        room.InnerD = deep;
+                    }
+                    stack.Push(i);
+                }
+            }
+        }
+
+        /// <summary>
+        /// How far every cell of grass is from the nearest walk, in cells - one sweep over
+        /// the whole park, so a room only has to read off its own worst.
+        ///
+        /// -1 where no walk can be reached at all, which is a park with no path in it.
+        /// </summary>
+        static int[,] Reaches(Plan plan)
+        {
+            var far = new int[plan.NX, plan.NZ];
+            for (int i = 0; i < plan.NX; i++)
+                for (int j = 0; j < plan.NZ; j++) far[i, j] = -1;
+
+            var queue = new Queue<Spot>();
+            for (int i = plan.I0; i <= plan.I1; i++)
+                for (int j = plan.J0; j <= plan.J1; j++)
+                {
+                    if (!plan.Walked(i, j)) continue;
+                    far[i, j] = 0;
+                    queue.Enqueue(new Spot(i, j));
+                }
+            while (queue.Count > 0)
+            {
+                var at = queue.Dequeue();
+                foreach (var step in Steps)
+                {
+                    var next = Step(at, step);
+                    if (!plan.Inside(next) || far[next.I, next.J] >= 0) continue;
+                    far[next.I, next.J] = far[at.I, at.J] + 1;
+                    queue.Enqueue(next);
+                }
+            }
+            return far;
         }
 
         /// <summary>
@@ -651,12 +896,17 @@ namespace RoadDemo
         /// </summary>
         static void Cut(Plan plan, System.Random rng)
         {
-            for (int guard = 0; guard < 40; guard++)
+            // as many cuts as the ground can want, not a flat forty: a park of 270 m comes out
+            // as forty-odd rooms and spent the whole allowance before it reached the last two,
+            // which then failed the verdict for being uncut. One cut can only ever make one
+            // more room, so the ground's own cell count is the honest ceiling.
+            int allowed = Mathf.Max(40, plan.W * plan.D / 8);
+            for (int guard = 0; guard < allowed; guard++)
             {
                 Room worst = null;
                 foreach (var room in plan.Rooms)
                 {
-                    if (Mathf.Max(room.W, room.D) <= RoomMax) continue;
+                    if (!room.TooBig) continue;
                     if (worst == null || room.Area > worst.Area) worst = room;
                 }
                 if (worst == null) return;
@@ -664,12 +914,21 @@ namespace RoadDemo
                 {
                     plan.Notes.Add($"a room of {worst.W * 5} x {worst.D * 5} m could not be cut " +
                                    "in two: no line through it reaches the walk at both ends");
-                    // marked so the search moves on rather than trying it again for ever
-                    worst.W = Mathf.Min(worst.W, RoomMax);
-                    worst.D = Mathf.Min(worst.D, RoomMax);
+                    // marked so the search moves on rather than trying it for ever - and the
+                    // mark is a flag rather than a smaller size, so the verdict still sees
+                    // the room for what it is
+                    worst.Uncut = true;
                     continue;
                 }
+                var uncut = new List<Room>();
+                foreach (var room in plan.Rooms) if (room.Uncut) uncut.Add(room);
                 Rooms(plan);
+                // a room already given up on keeps its mark through the re-reckoning: the
+                // cells are the same ground, so the same piece is found again
+                foreach (var room in plan.Rooms)
+                    foreach (var older in uncut)
+                        if (room.Cells.Count == older.Cells.Count && room.I0 == older.I0 &&
+                            room.J0 == older.J0) room.Uncut = true;
             }
         }
 
@@ -688,9 +947,13 @@ namespace RoadDemo
                     {
                         int line = way == 0 ? mid - step : mid + step;
                         if (line <= lo || line >= hi) continue;
-                        var cut = Slice(plan, room, line, across);
+                        var cut = Slice(plan, room, line, across, out var gates);
                         if (cut == null) continue;
                         foreach (var cell in cut) Walk(plan, cell);
+                        // the gates go in only now the whole cut is going down. Opened as
+                        // each end was worked out, a cut whose FAR end then failed left a
+                        // gate behind with one cell of walk at it and nothing joined to it
+                        foreach (var gate in gates) { plan.Mouths.Add(gate); Walk(plan, gate.At); }
                         return true;
                     }
             }
@@ -701,8 +964,9 @@ namespace RoadDemo
         /// One line through a room, grown outwards from the room until it meets walk on both
         /// sides. Null if either end runs into the fence instead.
         /// </summary>
-        static List<Spot> Slice(Plan plan, Room room, int line, bool across)
+        static List<Spot> Slice(Plan plan, Room room, int line, bool across, out List<Mouth> gates)
         {
+            gates = new List<Mouth>();
             var cells = new List<Spot>();
             int from = across ? room.J0 : room.I0;
             int to = across ? room.J0 + room.D - 1 : room.I0 + room.W - 1;
@@ -720,19 +984,77 @@ namespace RoadDemo
             for (int way = 0; way < 2; way++)
             {
                 int step = way == 0 ? -1 : 1;
-                var at = across ? new Spot(line, way == 0 ? from - 1 : to + 1)
-                                : new Spot(way == 0 ? from - 1 : to + 1, line);
+                // the walk out of the room starts at the room's own last cell, not past it:
+                // a room that already reaches the fence has nowhere to step to, and reading
+                // the gate off the cell OUTSIDE the park refused every one of them
+                var at = across ? new Spot(line, way == 0 ? from : to)
+                                : new Spot(way == 0 ? from : to, line);
                 bool met = false;
+                Spot last = at;
                 for (int guard = 0; guard < 64; guard++)
                 {
                     if (!plan.Inside(at)) break;                  // ran into the fence
                     if (plan.Walked(at)) { met = true; break; }
-                    cells.Add(at);
+                    if (!cells.Contains(at)) cells.Add(at);
+                    last = at;
                     at = across ? new Spot(line, at.J + step) : new Spot(at.I + step, line);
+                }
+                // A CUT THAT RUNS INTO THE FENCE MAY PUT A GATE THERE, which is how a real
+                // park solves the same problem: a lawn against the railings gets its own way
+                // in rather than being left as ground nobody crosses. Without this, every
+                // room with its back to the fence was uncuttable and 68 of 676 sizes came out
+                // with an empty quarter.
+                // ONE new gate to a cut, and no more. A cut that opened a gate at BOTH ends
+                // is a perfectly good path from one street to another - and it never touches
+                // the rest of the walk, so the park comes out with two separate paths in it
+                // that a person can only get between by leaving. The far end has to reach
+                // walk that is already there, which is what keeps the whole thing one piece.
+                if (!met && gates.Count == 0)
+                {
+                    var gate = Gate(plan, last, across ? (step < 0 ? Side.South : Side.North)
+                                                       : (step < 0 ? Side.West : Side.East), gates);
+                    if (gate != null) { gates.Add(gate); met = true; }
                 }
                 if (!met) return null;
             }
             return cells;
+        }
+
+        /// <summary>How far apart two gates on the same side have to be, in cells. Block-08
+        /// has one to a side, but block-08 is thirty metres square; a park of a hundred and
+        /// fifty metres with one gate a side is a park people walk round rather than
+        /// through.</summary>
+        const int GateApart = 4;
+
+        /// <summary>
+        /// The gate a cut could open at this end of the fence, or null: it has to be a side
+        /// with a street outside it, off the corner, and clear of the gates already there -
+        /// the ones the park has and the ones this same cut is opening at its other end.
+        ///
+        /// It only WORKS OUT the gate. Opening it is the caller's, once the whole cut is
+        /// known to be going down.
+        /// </summary>
+        static Mouth Gate(Plan plan, Spot at, Side side, List<Mouth> pending)
+        {
+            if (!plan.Inside(at) || !plan.OnFence(at.I, at.J)) return null;
+            if (plan.Sides[(int)side].Rim != Rim.Kerb) return null;
+
+            // it has to be ON that side, not merely near it - a cut running south ends on the
+            // south fence, and nowhere else
+            var mine = Face(plan, side, side == Side.South || side == Side.North ? at.I : at.J);
+            if (!mine.Equals(at)) return null;
+
+            int along = side == Side.South || side == Side.North ? at.I : at.J;
+            if (along <= Low(plan, side) || along >= High(plan, side)) return null;   // the corner
+
+            for (int k = 0; k < plan.Mouths.Count + pending.Count; k++)
+            {
+                var mouth = k < plan.Mouths.Count ? plan.Mouths[k] : pending[k - plan.Mouths.Count];
+                if (mouth.Side != side) continue;
+                int other = side == Side.South || side == Side.North ? mouth.At.I : mouth.At.J;
+                if (Mathf.Abs(other - along) < GateApart) return null;
+            }
+            return new Mouth { Side = side, At = at, OnCrossing = false };
         }
 
         // ------------------------------------------------------------------- the casting
@@ -777,25 +1099,48 @@ namespace RoadDemo
                 wanted.Add(Programme.Toilet);
             }
 
-            int at = first;
+            // THE LAWN IS WHAT IS LEFT OVER, not what is dealt first. Giving it the biggest
+            // room up front sounded right and was not: on an 80 x 70 m park the biggest room
+            // is the only one a fountain or a set of courts would fit in, so the park came
+            // out with a pavilion, a monument, a toilet block and four lawns. A park's open
+            // grass is its belt and its corners, which no programme wants anyway - and one
+            // room is always held back below, so there is never a park without any.
+            var spent = new HashSet<Room>();
+
             foreach (var want in wanted)
             {
-                if (at >= rooms.Count) break;
+                // one room always stays grass, however many programmes are queued
+                if (spent.Count >= rooms.Count - 1) break;
                 Smallest(want, out int w, out int d);
-                // sideways as well: a room is a piece of ground, not a plan facing one way
-                bool fits = (rooms[at].W >= w && rooms[at].D >= d) ||
-                            (rooms[at].W >= d && rooms[at].D >= w);
-                if (!fits)
+                // THE SMALLEST ROOM IT FITS IN, not the next one down the list. Handed the
+                // rooms in order of size, a toilet block 10 x 5 m took a room of 10 x 75 m
+                // and the courts had nowhere left to go; a programme wants the ground it
+                // needs and the big rooms want to stay big, for the lawns and the groves.
+                Room best = null;
+                foreach (var room in rooms)
                 {
-                    plan.Notes.Add($"no room for the {Words(want)}: the biggest left is " +
-                                   $"{rooms[at].W * 5} x {rooms[at].D * 5} m");
+                    if (spent.Contains(room)) continue;
+                    // measured against the ground the room actually OFFERS - the biggest
+                    // rectangle inside it - and sideways as well, because a room is a piece
+                    // of ground and not a plan facing one way
+                    bool fits = (room.InnerW >= w && room.InnerD >= d) ||
+                                (room.InnerW >= d && room.InnerD >= w);
+                    if (!fits) continue;
+                    if (best == null || room.Area < best.Area) best = room;
+                }
+                if (best == null)
+                {
+                    // a park with every room already spoken for is a FULL park, not a park
+                    // that refused something - only a park with ground going spare and
+                    // nothing that fits it is worth saying out loud
+                    if (spent.Count < rooms.Count)
+                        plan.Notes.Add($"no room for the {Words(want)}: the ground left over " +
+                                       "is the wrong shape for it");
                     continue;
                 }
-                rooms[at].Programme = want;
-                at++;
+                best.Programme = want;
+                spent.Add(best);
             }
-
-            Plaza(plan);
         }
 
         /// <summary>
@@ -805,14 +1150,18 @@ namespace RoadDemo
         /// touch the walk a few cells of walk are laid to it - a fountain you cannot get to
         /// dry-shod is an ornament in a field.
         /// </summary>
-        static void Plaza(Plan plan)
+        static void Plaza(Plan plan, System.Random rng)
         {
             foreach (var room in plan.Rooms)
             {
                 if (room.Programme != Programme.Fountain && room.Programme != Programme.Statue) continue;
 
                 var middle = room.Middle;
-                int half = 1;
+                var reach = Nearest(plan, middle, true);
+                // the fountain is nearly five metres across and wants a 15 m apron with room
+                // to sit round it; a monument is one metre and would stand in the middle of a
+                // stone square three times its own height across
+                int half = room.Programme == Programme.Fountain ? 1 : 0;
                 var paved = new List<Spot>();
                 for (int i = middle.I - half; i <= middle.I + half; i++)
                     for (int j = middle.J - half; j <= middle.J + half; j++)
@@ -824,12 +1173,11 @@ namespace RoadDemo
                 if (paved.Count == 0) continue;
                 foreach (var cell in paved) plan.Cells[cell.I, cell.J] = Ground.Plaza;
 
-                // and a way to it, if the apron does not already touch the walk
-                if (Touches(plan, paved)) continue;
-                var near = Nearest(plan, middle);
-                if (!near.HasValue) continue;
-                foreach (var cell in Elbow(middle, near.Value, true))
-                    if (plan.Cells[cell.I, cell.J] == Ground.Grass) Walk(plan, cell);
+                // and a way to it, if the apron does not already touch the walk. The walk it
+                // is joined to is the one found BEFORE the apron went down - paving counts as
+                // walkable, so afterwards the nearest walk to a fountain is the fountain
+                if (Touches(plan, paved) || !reach.HasValue) continue;
+                Join(plan, middle, reach.Value, rng);
             }
         }
 
@@ -855,7 +1203,7 @@ namespace RoadDemo
         ///   * a mouth the walk never reached;
         ///   * a dead end that is not a mouth (the pocket park's single stub excepted);
         ///   * walk standing against the fence anywhere but at a mouth;
-        ///   * a room bigger than <see cref="RoomMax"/> that was never cut.
+        ///   * a room the walk never got near enough to, or never cut in two.
         /// </summary>
         public static string Report(Plan plan, out int faults)
         {
@@ -895,6 +1243,10 @@ namespace RoadDemo
             int stubs = 0, onFence = 0;
             foreach (var cell in walk)
             {
+                // AN APRON IS A DESTINATION, not a dead end. A path that runs to a monument
+                // and stops there is a path that arrived; counted as a stub, a one-cell apron
+                // failed 128 of 676 sizes for doing exactly what it is for.
+                if (plan.Cells[cell.I, cell.J] == Ground.Plaza) continue;
                 int neighbours = 0;
                 foreach (var step in Steps) if (plan.Walked(Step(cell, step))) neighbours++;
                 if (neighbours <= 1 && !mouths.Contains(cell)) stubs++;
@@ -915,10 +1267,11 @@ namespace RoadDemo
 
             int big = 0;
             foreach (var room in plan.Rooms)
-                if (Mathf.Max(room.W, room.D) > RoomMax) big++;
+                if (room.TooBig || room.Uncut) big++;
             if (big > 0)
             {
-                trouble.Add($"{big} room(s) bigger than {RoomMax * 5} m across were never cut");
+                trouble.Add($"{big} room(s) with ground more than {ReachMax * 5} m from a path, " +
+                            "or twice as long as they are wide, were never cut");
                 faults += big;
             }
 
@@ -1011,6 +1364,28 @@ namespace RoadDemo
             piece = Piece.Straight;
             yaw = north || south ? 0 : 90;
         }
+
+        /// <summary>
+        /// Which ways the walk leaves a cell - what the tile is chosen from, and what anything
+        /// wanting to keep OFF the path has to know.
+        ///
+        /// The cell is five metres and the path through it is not: the pack's tile is grass
+        /// with a made way up the middle of it, which is why block-08 has a lamp and a dozen
+        /// flowers standing on cells that are walk. Whoever is booking ground reads the arms
+        /// and books the way, not the cell.
+        /// </summary>
+        public static void Arms(Plan plan, Spot at, out bool north, out bool south,
+                                out bool east, out bool west)
+        {
+            north = Linked(plan, at, 0, 1);
+            south = Linked(plan, at, 0, -1);
+            east = Linked(plan, at, 1, 0);
+            west = Linked(plan, at, -1, 0);
+        }
+
+        /// <summary>How wide the made way is through a cell of walk, in metres - measured off
+        /// the pack's own path tile.</summary>
+        public const float WalkWide = 2.6f;
 
         /// <summary>Does the walk carry on this way - into another cell of walk, or out
         /// through a gate?</summary>

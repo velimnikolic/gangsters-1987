@@ -11,36 +11,36 @@ namespace RoadDemo
     /// It is rasterised into a buffer of its own and then blitted, which is the design
     /// sheet's first performance rule and the reason a frame of this map costs almost
     /// nothing. What makes the bake happen at all is the framing changing - the map
-    /// rides the camera, so a pan or a turn of the wheel is what puts it out of date,
-    /// and <see cref="MapSheet.Matches"/> is what decides.
+    /// rides the camera, so a pan or a turn of the wheel is what puts it out of date.
     ///
-    /// Two things are worth knowing about how it draws.
+    /// THE AUTHORED / REAL SPLIT. Structure is laid out in authored units (320x200) and
+    /// multiplied up; dither, kerbs, lane markings and the shoreline are drawn at the
+    /// full 960x600. That is what keeps the city's blocking chunky while its detail
+    /// stays fine, and it is why the terrain is CLASSIFIED coarse and PAINTED fine: the
+    /// heightfield is sampled once per two authored units - sixteen thousand samples, as
+    /// before - and the dither that textures it is laid a real pixel at a time over the
+    /// top. The expensive half did not get nine times more expensive; only the cheap
+    /// half did.
     ///
-    /// The terrain is classified at HALF resolution and painted in 2x2 blocks. The
-    /// island is a heightfield and sampling it is the one expensive thing on this map -
-    /// sixty-four thousand samples a bake, on every frame of a zoom, is a stutter you
-    /// can feel. At half resolution it is sixteen thousand, and nothing is lost:
-    /// the land is a one-pixel dither over the top of it, so the block is invisible,
-    /// and the shoreline is traced afterwards on the FULL resolution classification, so
-    /// the coast still comes out a single pixel wide.
-    ///
-    /// The markings are gated on how wide their road actually comes out. A yellow line
-    /// down a street that is one pixel across is not a marking, it is the street being
-    /// painted yellow - so the paint only goes on once there is a road under it wide
-    /// enough to carry it, which happens naturally as the wheel comes in.
+    /// The classification survives the bake on purpose. <see cref="IsWaterAt"/> is how
+    /// the turf overlay knows to leave the harbour and the river alone, and it has to be
+    /// the same answer the map was drawn from, not a second guess at it.
     /// </summary>
     public static class MapBase
     {
-        /// <summary>How wide a road has to come out before it is worth painting a line
-        /// down the middle of it.</summary>
-        const float PaintablePx = 5f;
+        /// <summary>How wide a road has to come out, in real pixels, before it is worth
+        /// painting a line down the middle of it.</summary>
+        const float PaintablePx = 7f;
 
-        /// <summary>Trees are scattered on a fixed grid IN THE WORLD and not on the
-        /// sheet, so a wood stays where it is while the map is panned over it.</summary>
-        const float TreePitch = 26f;
-        const float WavePitch = 90f;
+        /// <summary>Trees and waves are scattered on a fixed grid IN THE WORLD and not
+        /// on the sheet, so a wood stays where it is while the map is panned over it.
+        /// Finer than the old sheet's: the detail passes carry about two and a half
+        /// times the density now that there are real pixels to put it in.</summary>
+        const float TreePitch = 16f;
+        const float WavePitch = 60f;
 
-        static readonly byte[] Kind = new byte[MapRaster.W * MapRaster.H];
+        /// <summary>The terrain classification, one byte per AUTHORED unit.</summary>
+        static readonly byte[] Kind = new byte[MapRaster.AW * MapRaster.AH];
 
         const byte Sea = 0, Beach = 1, Land = 2, Town = 3;
 
@@ -51,30 +51,38 @@ namespace RoadDemo
             if (builder == null)
                 return;
 
-            Terrain(into, sheet, builder, grid);
-            Shore(into, sheet);
-            Scatter(into, sheet);
+            Classify(sheet, builder, grid);
+            Paint(into);
             Ground(into, sheet, builder, grid);
+            Scatter(into, sheet);
             Roads(into, sheet, builder);
             Airfield(into, sheet);
         }
 
+        /// <summary>
+        /// Whether an authored unit of the sheet is water, as the map itself decided.
+        /// The turf overlay asks this per pixel so a district's tint stops at the water
+        /// line - without it a port district turns the harbour into a coloured puddle
+        /// and a riverside one paints straight over the river.
+        /// </summary>
+        public static bool IsWaterAt(int authoredX, int authoredY) =>
+            (uint)authoredX < MapRaster.AW && (uint)authoredY < MapRaster.AH &&
+            Kind[authoredY * MapRaster.AW + authoredX] == Sea;
+
         // ----------------------------------------------------------------- terrain
 
-        static void Terrain(MapRaster into, MapSheet sheet, RoadDemoBuilder builder,
-            Rect grid)
+        static void Classify(MapSheet sheet, RoadDemoBuilder builder, Rect grid)
         {
             var island = builder.IslandArea;
             var hasIsland = island.width > 1f && island.height > 1f;
             var sea = RoadDemoBuilder.WaterY;
             var beach = RoadDemoBuilder.BeachLine;
-            var pixels = into.Pixels;
 
-            for (var hy = 0; hy < MapRaster.H; hy += 2)
+            for (var ay = 0; ay < MapRaster.AH; ay += 2)
             {
-                for (var hx = 0; hx < MapRaster.W; hx += 2)
+                for (var ax = 0; ax < MapRaster.AW; ax += 2)
                 {
-                    var world = sheet.ToWorld(new Vector2(hx + 1f, hy + 1f));
+                    var world = sheet.ToWorld(new Vector2(ax + 1f, ay + 1f));
 
                     byte kind;
                     if (grid.Contains(world))
@@ -93,133 +101,75 @@ namespace RoadDemo
                         kind = height < sea ? Sea : height < beach ? Beach : Land;
                     }
 
-                    for (var dy = 0; dy < 2; dy++)
-                    {
-                        var py = hy + dy;
-                        if (py >= MapRaster.H)
-                            break;
-                        var row = py * MapRaster.W;
-                        for (var dx = 0; dx < 2; dx++)
-                        {
-                            var px = hx + dx;
-                            if (px >= MapRaster.W)
-                                break;
-                            Kind[row + px] = kind;
-                            pixels[row + px] = Paint(kind, px, py);
-                        }
-                    }
+                    for (var dy = 0; dy < 2 && ay + dy < MapRaster.AH; dy++)
+                        for (var dx = 0; dx < 2 && ax + dx < MapRaster.AW; dx++)
+                            Kind[(ay + dy) * MapRaster.AW + ax + dx] = kind;
                 }
             }
         }
 
-        /// <summary>The dither the whole map is textured with - never a gradient, and
-        /// the same test the design sheet names.</summary>
-        static Color32 Paint(byte kind, int x, int y)
-        {
-            var checkers = (x >> 1) + (y >> 1);
-            switch (kind)
-            {
-                case Sea: return checkers % 5 == 0 ? MapPalette.WaterDeep : MapPalette.Water;
-                case Beach: return MapPalette.Sand;
-                default: return checkers % 4 == 0 ? MapPalette.Grass2 : MapPalette.Grass;
-            }
-        }
-
-        /// <summary>One pixel of sand wherever the land meets the water. Traced on the
-        /// full-resolution classification, so the coast is a line and not a stair.</summary>
-        static void Shore(MapRaster into, MapSheet sheet)
+        /// <summary>
+        /// The classification blown up into real pixels, dithered a real pixel at a
+        /// time, with the shoreline traced in the same sweep - one pass over the buffer
+        /// rather than three.
+        /// </summary>
+        static void Paint(MapRaster into)
         {
             var pixels = into.Pixels;
             for (var y = 0; y < MapRaster.H; y++)
             {
                 var row = y * MapRaster.W;
+                var ay = y / MapRaster.S;
+                var authored = ay * MapRaster.AW;
                 for (var x = 0; x < MapRaster.W; x++)
                 {
-                    if (Kind[row + x] == Sea)
-                        continue;
-                    if (!Wet(x - 1, y) && !Wet(x + 1, y) && !Wet(x, y - 1) && !Wet(x, y + 1))
-                        continue;
-                    pixels[row + x] = MapPalette.Sand;
-                }
-            }
-        }
+                    var kind = Kind[authored + x / MapRaster.S];
 
-        static bool Wet(int x, int y) =>
-            (uint)x < MapRaster.W && (uint)y < MapRaster.H &&
-            Kind[y * MapRaster.W + x] == Sea;
-
-        /// <summary>Trees on the land, wave ticks on the water. Both are hashed off a
-        /// fixed world grid, never off the pixel, so they do not crawl under a pan.</summary>
-        static void Scatter(MapRaster into, MapSheet sheet)
-        {
-            var window = sheet.Margin(4f);
-
-            var x0 = Mathf.FloorToInt(window.xMin / TreePitch);
-            var x1 = Mathf.CeilToInt(window.xMax / TreePitch);
-            var z0 = Mathf.FloorToInt(window.yMin / TreePitch);
-            var z1 = Mathf.CeilToInt(window.yMax / TreePitch);
-
-            // A pixel of tree per twenty-six metres of country would be a forest at one
-            // metre to the pixel and a smear at eleven. So the wood thins out as the map
-            // is walked into: what is drawn is a stand of trees, not every trunk.
-            var step = Mathf.Max(1, Mathf.RoundToInt(3f / Mathf.Max(0.3f, sheet.Metres)));
-
-            if ((long)(x1 - x0) * (z1 - z0) < 400000L)
-            {
-                for (var iz = z0; iz <= z1; iz += step)
-                {
-                    for (var ix = x0; ix <= x1; ix += step)
+                    // Land against water is a single real pixel of sand: the coast is
+                    // the one edge on this map worth drawing at full resolution.
+                    if (kind != Sea && (Wet(x - 1, y) || Wet(x + 1, y) ||
+                                        Wet(x, y - 1) || Wet(x, y + 1)))
                     {
-                        if (Hash(ix, iz, 7919) % 5 != 0)
-                            continue;
-                        var world = new Vector2(
-                            ix * TreePitch + Hash(ix, iz, 104729) % 17,
-                            iz * TreePitch + Hash(ix, iz, 15485863) % 17);
-                        var at = sheet.ToPx(world);
-                        var px = Mathf.FloorToInt(at.x);
-                        var py = Mathf.FloorToInt(at.y);
-                        if ((uint)px >= MapRaster.W || (uint)py >= MapRaster.H)
-                            continue;
-                        if (Kind[py * MapRaster.W + px] != Land)
-                            continue;
-                        into.Fill(px, py, 2, 2, MapPalette.Tree);
+                        pixels[row + x] = MapPalette.Sand;
+                        continue;
+                    }
+
+                    var checkers = (x >> 1) + (y >> 1);
+                    switch (kind)
+                    {
+                        case Sea:
+                            pixels[row + x] = checkers % 5 == 0
+                                ? MapPalette.WaterDeep : MapPalette.Water;
+                            break;
+                        case Beach:
+                            pixels[row + x] = MapPalette.Sand;
+                            break;
+                        default:
+                            pixels[row + x] = checkers % 4 == 0
+                                ? MapPalette.Grass2 : MapPalette.Grass;
+                            break;
                     }
                 }
             }
-
-            var wx0 = Mathf.FloorToInt(window.xMin / WavePitch);
-            var wx1 = Mathf.CeilToInt(window.xMax / WavePitch);
-            var wz0 = Mathf.FloorToInt(window.yMin / WavePitch);
-            var wz1 = Mathf.CeilToInt(window.yMax / WavePitch);
-            if ((long)(wx1 - wx0) * (wz1 - wz0) >= 400000L)
-                return;
-
-            for (var iz = wz0; iz <= wz1; iz++)
-            {
-                for (var ix = wx0; ix <= wx1; ix++)
-                {
-                    if (Hash(ix, iz, 6151) % 3 != 0)
-                        continue;
-                    var at = sheet.ToPx(new Vector2(ix * WavePitch, iz * WavePitch));
-                    var px = Mathf.FloorToInt(at.x);
-                    var py = Mathf.FloorToInt(at.y);
-                    if ((uint)px >= MapRaster.W || (uint)py >= MapRaster.H)
-                        continue;
-                    if (Kind[py * MapRaster.W + px] != Sea || !Wet(px + 1, py))
-                        continue;
-                    into.Fill(px, py, 2, 1, MapPalette.Wave);
-                }
-            }
         }
 
-        static int Hash(int x, int y, int salt)
+        /// <summary>Whether the authored cell under a REAL pixel is water.</summary>
+        static bool Wet(int x, int y) =>
+            (uint)x < MapRaster.W && (uint)y < MapRaster.H &&
+            Kind[y / MapRaster.S * MapRaster.AW + x / MapRaster.S] == Sea;
+
+        static void Wettest(RectInt real)
         {
-            unchecked
-            {
-                var h = x * 374761393 + y * 668265263 + salt;
-                h = (h ^ (h >> 13)) * 1274126177;
-                return (h ^ (h >> 16)) & 0x7fffffff;
-            }
+            // Mark real-pixel water back into the authored classification, so the turf
+            // overlay leaves it alone. A river inside the town and a harbour basin are
+            // both drawn AFTER the coast is classified and neither is on the coast.
+            var x0 = Mathf.Max(0, real.xMin / MapRaster.S);
+            var y0 = Mathf.Max(0, real.yMin / MapRaster.S);
+            var x1 = Mathf.Min(MapRaster.AW, (real.xMax + MapRaster.S - 1) / MapRaster.S);
+            var y1 = Mathf.Min(MapRaster.AH, (real.yMax + MapRaster.S - 1) / MapRaster.S);
+            for (var y = y0; y < y1; y++)
+                for (var x = x0; x < x1; x++)
+                    Kind[y * MapRaster.AW + x] = Sea;
         }
 
         // ------------------------------------------------------------------ ground
@@ -231,17 +181,18 @@ namespace RoadDemo
             // and what is left between them IS the road network, which is how the plan
             // gets every alley without having to enumerate one.
             if (sheet.Sees(grid))
-                into.Fill(sheet.Box(grid), MapPalette.Road);
+                into.Fill(sheet.RealBox(grid), MapPalette.Road);
 
             foreach (var seam in builder.SeamPlans)
             {
                 if (!sheet.Sees(seam.Area))
                     continue;
-                var box = sheet.Box(seam.Area);
+                var box = sheet.RealBox(seam.Area);
                 switch (seam.Kind)
                 {
                     case SeamKind.River:
                         Dither(into, box, MapPalette.Water, MapPalette.WaterDeep, 5);
+                        Wettest(box);
                         break;
                     case SeamKind.Highway:
                         into.Fill(box, MapPalette.RoadDark);
@@ -258,16 +209,13 @@ namespace RoadDemo
             var reserved = builder.Reservations;
             if (reserved != null)
             {
-                // The speckle is hashed off the pixel's place IN THE WORLD, like the
-                // trees and the wave ticks: hashed off the sheet it would crawl over the
-                // ground every time the map was panned.
-                var driftX = Mathf.RoundToInt(sheet.Centre.x / sheet.Metres);
-                var driftY = Mathf.RoundToInt(sheet.Centre.y / sheet.Metres);
+                var driftX = Mathf.RoundToInt(sheet.Centre.x * sheet.RealPerMetre);
+                var driftY = Mathf.RoundToInt(sheet.Centre.y * sheet.RealPerMetre);
                 foreach (var paved in reserved.Paved)
                 {
                     if (!sheet.Sees(paved))
                         continue;
-                    var box = sheet.Box(paved);
+                    var box = sheet.RealBox(paved);
                     into.Fill(box, MapPalette.Concrete);
                     Speckle(into, box, MapPalette.Concrete2, driftX, driftY);
                 }
@@ -275,13 +223,15 @@ namespace RoadDemo
                 {
                     if (!sheet.Sees(water))
                         continue;
-                    Dither(into, sheet.Box(water), MapPalette.Water, MapPalette.WaterDeep, 5);
+                    var box = sheet.RealBox(water);
+                    Dither(into, box, MapPalette.Water, MapPalette.WaterDeep, 5);
+                    Wettest(box);
                 }
             }
 
             foreach (var yard in builder.MergedYards)
                 if (sheet.Sees(yard))
-                    into.Fill(sheet.Box(yard), MapPalette.Concrete);
+                    into.Fill(sheet.RealBox(yard), MapPalette.Concrete);
 
             foreach (var lot in builder.LotPlans)
             {
@@ -289,14 +239,14 @@ namespace RoadDemo
                     continue;
                 if (lot.Green)
                 {
-                    Dither(into, sheet.Box(lot.Slab), MapPalette.Grass, MapPalette.Grass2, 4);
+                    Dither(into, sheet.RealBox(lot.Slab), MapPalette.Grass, MapPalette.Grass2, 4);
                     continue;
                 }
                 // The kerb ring the eye reads as the edge of a block, and the yard
                 // inside it a shade down - the two together are what makes a city of
                 // blocks read as blocks and not as one grey field.
-                into.Fill(sheet.Box(lot.Slab), MapPalette.Concrete);
-                into.Fill(sheet.Box(lot.Interior), MapPalette.Concrete2);
+                into.Fill(sheet.RealBox(lot.Slab), MapPalette.Concrete);
+                into.Fill(sheet.RealBox(lot.Interior), MapPalette.Concrete2);
             }
         }
 
@@ -315,8 +265,8 @@ namespace RoadDemo
             }
         }
 
-        /// <summary>Concrete's own texture: a sparse speckle, on the same fixed pattern
-        /// so a pad does not shimmer when the map moves.</summary>
+        /// <summary>Concrete's own texture: a sparse speckle hashed off the pixel's
+        /// place IN THE WORLD, so a pad does not crawl when the map is panned.</summary>
         static void Speckle(MapRaster into, RectInt box, Color32 colour, int driftX, int driftY)
         {
             var x0 = Mathf.Max(0, box.xMin);
@@ -328,19 +278,91 @@ namespace RoadDemo
             {
                 var row = y * MapRaster.W;
                 for (var x = x0; x < x1; x++)
-                    if (Hash(x + driftX, y - driftY, 20261) % 9 == 0)
+                    if (Hash(x + driftX, y - driftY, 20261) % 11 == 0)
                         pixels[row + x] = colour;
+            }
+        }
+
+        // ---------------------------------------------------------------- scatter
+
+        static void Scatter(MapRaster into, MapSheet sheet)
+        {
+            var window = sheet.Margin(4f);
+
+            var x0 = Mathf.FloorToInt(window.xMin / TreePitch);
+            var x1 = Mathf.CeilToInt(window.xMax / TreePitch);
+            var z0 = Mathf.FloorToInt(window.yMin / TreePitch);
+            var z1 = Mathf.CeilToInt(window.yMax / TreePitch);
+
+            // The wood thins out as the map is walked into: what is drawn is a stand of
+            // trees, not every trunk.
+            var step = Mathf.Max(1, Mathf.RoundToInt(2f / Mathf.Max(0.3f, sheet.Metres)));
+
+            if ((long)(x1 - x0) * (z1 - z0) < 900000L)
+            {
+                for (var iz = z0; iz <= z1; iz += step)
+                {
+                    for (var ix = x0; ix <= x1; ix += step)
+                    {
+                        if (Hash(ix, iz, 7919) % 5 != 0)
+                            continue;
+                        var world = new Vector2(
+                            ix * TreePitch + Hash(ix, iz, 104729) % 11,
+                            iz * TreePitch + Hash(ix, iz, 15485863) % 11);
+                        var at = sheet.ToReal(world);
+                        var px = Mathf.FloorToInt(at.x);
+                        var py = Mathf.FloorToInt(at.y);
+                        if ((uint)px >= MapRaster.W || (uint)py >= MapRaster.H)
+                            continue;
+                        if (Kind[py / MapRaster.S * MapRaster.AW + px / MapRaster.S] != Land)
+                            continue;
+                        into.Fill(px, py, 2, 2, MapPalette.Tree);
+                    }
+                }
+            }
+
+            var wx0 = Mathf.FloorToInt(window.xMin / WavePitch);
+            var wx1 = Mathf.CeilToInt(window.xMax / WavePitch);
+            var wz0 = Mathf.FloorToInt(window.yMin / WavePitch);
+            var wz1 = Mathf.CeilToInt(window.yMax / WavePitch);
+            if ((long)(wx1 - wx0) * (wz1 - wz0) >= 900000L)
+                return;
+
+            for (var iz = wz0; iz <= wz1; iz++)
+            {
+                for (var ix = wx0; ix <= wx1; ix++)
+                {
+                    if (Hash(ix, iz, 6151) % 3 != 0)
+                        continue;
+                    var at = sheet.ToReal(new Vector2(ix * WavePitch, iz * WavePitch));
+                    var px = Mathf.FloorToInt(at.x);
+                    var py = Mathf.FloorToInt(at.y);
+                    if ((uint)px >= MapRaster.W || (uint)py >= MapRaster.H)
+                        continue;
+                    if (!Wet(px, py) || !Wet(px + 2, py))
+                        continue;
+                    into.Fill(px, py, 3, 1, MapPalette.Wave);
+                }
+            }
+        }
+
+        static int Hash(int x, int y, int salt)
+        {
+            unchecked
+            {
+                var h = x * 374761393 + y * 668265263 + salt;
+                h = (h ^ (h >> 13)) * 1274126177;
+                return (h ^ (h >> 16)) & 0x7fffffff;
             }
         }
 
         // ------------------------------------------------------------------- roads
 
-        static readonly List<(Vector2 a, Vector2 b)> Chords =
-            new List<(Vector2, Vector2)>();
+        static readonly List<(Vector2 a, Vector2 b)> Chords = new List<(Vector2, Vector2)>();
 
         static void Roads(MapRaster into, MapSheet sheet, RoadDemoBuilder builder)
         {
-            var perMetre = sheet.PixelsPerMetre;
+            var perMetre = sheet.RealPerMetre;
             var net = builder.Net;
             if (net != null)
             {
@@ -353,8 +375,8 @@ namespace RoadDemo
                     Split(road, deck ? 3f : 0f);
                     foreach (var (a, b) in Chords)
                     {
-                        var pa = sheet.ToPx(a);
-                        var pb = sheet.ToPx(b);
+                        var pa = sheet.ToReal(a);
+                        var pb = sheet.ToReal(b);
                         if (Offsheet(pa, pb, half))
                             continue;
                         into.Strip(pa, pb, half, deck ? MapPalette.RoadDark : MapPalette.Road);
@@ -367,8 +389,8 @@ namespace RoadDemo
 
             foreach (var (a, b, half) in builder.QuarterRoads)
             {
-                var pa = sheet.ToPx(a);
-                var pb = sheet.ToPx(b);
+                var pa = sheet.ToReal(a);
+                var pb = sheet.ToReal(b);
                 var wide = Mathf.Max(3f, half) * perMetre;
                 if (Offsheet(pa, pb, wide))
                     continue;
@@ -385,7 +407,7 @@ namespace RoadDemo
                    (a.y < -pad && b.y < -pad) || (a.y > MapRaster.H + pad && b.y > MapRaster.H + pad);
         }
 
-        /// <summary>A carriageway as straight chords. The motorway is laid in stretches
+        /// <summary>A carriageway as straight chords. The motorway is cut into stretches
         /// with a few metres of junction between each pair that no carriageway covers,
         /// so its chords are run on at both ends and the seam closes.</summary>
         static void Split(Carriageway road, float pad)
@@ -418,7 +440,6 @@ namespace RoadDemo
 
         // ---------------------------------------------------------------- the field
 
-        /// <summary>The airfield's own pavement, once it has been found.</summary>
         static readonly List<(Rect world, Color32 fill, Color32 line)> Aprons =
             new List<(Rect, Color32, Color32)>();
 
@@ -427,14 +448,10 @@ namespace RoadDemo
         /// <summary>
         /// A runway is the most legible thing in a city seen from the air and the only
         /// piece of a quarter's own geometry this map draws by hand. Nothing reports it:
-        /// the airfield paves nothing (it only asks the island to hold its ground level)
-        /// so it is absent from the reservations, and it carries no collider so it is
-        /// absent from the buildings.
-        ///
-        /// So it is found the way runtime block identity has always been found in this
-        /// project - by the name the thing was built under - and measured off its own
-        /// renderer. Found once; if the field is not in this city, or its pieces were
-        /// merged away under other names, nothing is drawn and nothing is guessed.
+        /// the airfield paves nothing - it only asks the island to hold its ground level
+        /// - so it is absent from the reservations, and it carries no collider so it is
+        /// absent from the buildings. So it is found the way runtime identity has always
+        /// been found in this project, by the name the thing was built under.
         /// </summary>
         public static void Look()
         {
@@ -469,7 +486,7 @@ namespace RoadDemo
             {
                 if (!sheet.Sees(world))
                     continue;
-                var box = sheet.Box(world);
+                var box = sheet.RealBox(world);
                 into.Fill(box, fill);
                 Centreline(into, box, line);
             }
@@ -481,13 +498,13 @@ namespace RoadDemo
         {
             if (box.width >= box.height)
             {
-                if (box.height < 3)
+                if (box.height < 5)
                     return;
                 into.HDash(box.xMin, box.yMin + box.height / 2, box.width, 2, 5, colour);
             }
             else
             {
-                if (box.width < 3)
+                if (box.width < 5)
                     return;
                 into.VDash(box.xMin + box.width / 2, box.yMin, box.height, 2, 5, colour);
             }

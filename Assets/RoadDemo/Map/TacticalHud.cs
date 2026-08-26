@@ -56,7 +56,7 @@ namespace RoadDemo
         const float StatGap = 6f;
 
         const float GangRowHeight = 16f;
-        const float CrewRowHeight = 22f;
+        const float CrewRowHeight = 34f;
         const float MenuRowHeight = 30f;
         const float MenuTitleHeight = 22f;
         const float LogRowHeight = 15f;
@@ -94,6 +94,7 @@ namespace RoadDemo
 
         TMP_Text _cityName;
         TMP_Text _crewValue;
+        TMP_Text _manpowerValue;
         TMP_Text _selectedValue;
         TMP_Text _heldValue;
         TMP_Text _clockValue;
@@ -194,12 +195,14 @@ namespace RoadDemo
             Stretch(subtitle.rectTransform, 0f, 0f, 59f, 13f);
 
             _crewValue = Stat(header, "YOUR CREW", 0);
-            _selectedValue = Stat(header, "SELECTED", 1);
-            _heldValue = Stat(header, "BLOCKS HELD", 2);
-            _clockValue = Stat(header, "CLOCK", 3);
+            _manpowerValue = Stat(header, "MANPOWER", 1);
+            _selectedValue = Stat(header, "SELECTED", 2);
+            _heldValue = Stat(header, "BLOCKS HELD", 3);
+            _clockValue = Stat(header, "CLOCK", 4);
 
             var mine = MapPalette.Gang(LivingCity.Gangs.GangCatalog.PlayerGangId);
             _crewValue.color = mine;
+            _manpowerValue.color = mine;
             _heldValue.color = mine;
             _clockValue.color = MapPalette.Heading;
 
@@ -216,7 +219,7 @@ namespace RoadDemo
         TMP_Text Stat(RectTransform header, string caption, int slot)
         {
             var box = New("Stat " + caption, header);
-            Pin(box, TopRight, new Vector2(-(3 - slot) * (StatWidth + StatGap), -4f),
+            Pin(box, TopRight, new Vector2(-(4 - slot) * (StatWidth + StatGap), -4f),
                 new Vector2(StatWidth, StatHeight));
             var face = box.gameObject.AddComponent<Image>();
             face.color = Scrim;
@@ -416,7 +419,7 @@ namespace RoadDemo
             _panels = new[] { gangs, roster, inspector, log };
             // The gang list takes whatever the other three leave, so a city of
             // twenty-one families still fits beside a map.
-            _panelHeights = new[] { 0f, 250f, 200f, 112f };
+            _panelHeights = new[] { 0f, 250f, 330f, 112f };
         }
 
         void BuildAllButton(RectTransform roster)
@@ -645,11 +648,21 @@ namespace RoadDemo
                 _cityName.text = string.IsNullOrEmpty(name) ? "THE CITY" : name.ToUpperInvariant();
         }
 
-        public void SetStats(string crew, int selected, int heldPercent, string clock)
+        /// <summary>
+        /// The readouts. Every one of these is a figure somebody counted this half
+        /// second - none is a constant - and SELECTED says both what was picked and how
+        /// many men that came to, because three markers and eleven men are different
+        /// facts and the player is planning with the second one.
+        /// </summary>
+        public void SetStats(string crew, int manpower, int crews, int men,
+            int heldPercent, string clock)
         {
-            if (_crewValue != null) _crewValue.text = crew.ToUpperInvariant();
+            if (_crewValue != null)
+                _crewValue.text = string.IsNullOrEmpty(crew) ? "-" : crew.ToUpperInvariant();
+            if (_manpowerValue != null)
+                _manpowerValue.text = manpower + " MEN";
             if (_selectedValue != null)
-                _selectedValue.text = selected + (selected == 1 ? " CREW" : " CREWS");
+                _selectedValue.text = crews == 0 ? "NONE" : crews + " / " + men + " MEN";
             if (_heldValue != null) _heldValue.text = heldPercent + "%";
             if (_clockValue != null) _clockValue.text = clock;
         }
@@ -736,8 +749,20 @@ namespace RoadDemo
         public struct CrewRow
         {
             public int CrewId;
+
+            /// <summary>The lieutenant's own name - a crew IS its leader here.</summary>
             public string Name;
+
+            public string Rank;
+            public string Alias;
+            public int Men;
+            public string Weapon;
             public string Order;
+
+            /// <summary>The prefab the leader was cast from. It keys his portrait
+            /// through PortraitStudio's cache - the same print the inspector shows
+            /// larger, so a face learned in the list is the face on the card.</summary>
+            public GameObject Mug;
 
             /// <summary>Nought to one, the whole crew's health against its whole
             /// strength - one bar for the men, not one per man.</summary>
@@ -757,13 +782,18 @@ namespace RoadDemo
                     continue;
 
                 var data = rows[i];
-                Stretch(row, 0f, 0f, i * CrewRowHeight, 20f);
+                Stretch(row, 0f, 0f, i * CrewRowHeight, 32f);
                 row.Find("Name").GetComponent<TMP_Text>().text =
                     (data.Name ?? "-").ToUpperInvariant();
+                row.Find("Rank").GetComponent<TMP_Text>().text = data.Rank ?? string.Empty;
+                row.Find("Under").GetComponent<TMP_Text>().text =
+                    (data.Alias ?? "-") + "  x" + data.Men + " MEN  " + (data.Weapon ?? "-");
                 row.Find("Order").GetComponent<TMP_Text>().text = data.Order;
 
+                Face((RawImage)row.Find("Mug").GetComponent<RawImage>(), data.Mug);
+
                 var fill = (RectTransform)row.Find("Bar/Fill");
-                fill.sizeDelta = new Vector2(Mathf.Round(24f * Mathf.Clamp01(data.Condition)), 4f);
+                fill.sizeDelta = new Vector2(Mathf.Round(30f * Mathf.Clamp01(data.Condition)), 4f);
                 fill.GetComponent<Image>().color = data.Condition > 0.6f ? MapPalette.HpGood
                     : data.Condition > 0.3f ? MapPalette.HpFair : MapPalette.HpPoor;
 
@@ -799,19 +829,37 @@ namespace RoadDemo
             button.transition = Selectable.Transition.None;
             row.gameObject.AddComponent<RowClick>();
 
+            // His face, 22x26, at the head of his own row.
+            var mug = New("Mug", row);
+            Pin(mug, MiddleLeft, new Vector2(4f, 0f), new Vector2(22f, 26f));
+            var shot = mug.gameObject.AddComponent<RawImage>();
+            shot.raycastTarget = false;
+            shot.enabled = false;
+            shot.uvRect = Bust(22f, 26f);
+
             var name = Label(row, "Name", string.Empty, 11f, MapPalette.Body, 0.06f);
-            Fill(name.rectTransform, 5f, 118f, 0f, 0f);
+            Stretch(name.rectTransform, 30f, 96f, 3f, 12f);
             name.alignment = TextAlignmentOptions.Left;
 
-            var order = Label(row, "Order", string.Empty, 10f, MapPalette.UnclaimedChrome, 0.06f);
-            Pin(order.rectTransform, MiddleRight, new Vector2(-32f, 0f), new Vector2(80f, 12f));
+            var rank = Label(row, "Rank", string.Empty, 9f, MapPalette.Heading, 0.10f);
+            Pin(rank.rectTransform, TopRight, new Vector2(-4f, -3f), new Vector2(92f, 12f));
+            rank.alignment = TextAlignmentOptions.Right;
+
+            var under = Label(row, "Under", string.Empty, 9f, MapPalette.UnclaimedChrome, 0.04f);
+            Stretch(under.rectTransform, 30f, 4f, 15f, 11f);
+            under.alignment = TextAlignmentOptions.Left;
+
+            var order = Label(row, "Order", string.Empty, 9f, MapPalette.Muted, 0.06f);
+            Pin(order.rectTransform, new Vector2(1f, 0f), new Vector2(-36f, 3f),
+                new Vector2(90f, 11f));
             order.alignment = TextAlignmentOptions.Right;
 
             var bar = Paint(New("Bar", row), MapPalette.Rule);
-            Pin(bar.rectTransform, MiddleRight, new Vector2(-5f, 0f), new Vector2(24f, 4f));
+            Pin(bar.rectTransform, new Vector2(1f, 0f), new Vector2(-4f, 5f),
+                new Vector2(30f, 4f));
 
             var fill = Paint(New("Fill", bar.rectTransform), MapPalette.HpGood);
-            Pin(fill.rectTransform, MiddleLeft, Vector2.zero, new Vector2(24f, 4f));
+            Pin(fill.rectTransform, MiddleLeft, Vector2.zero, new Vector2(30f, 4f));
             return row;
         }
 
@@ -820,8 +868,22 @@ namespace RoadDemo
         public void SetInspector(string head, string body, List<string> actions)
         {
             if (_inspectHead != null) _inspectHead.text = head ?? string.Empty;
-            if (_inspectBody != null) _inspectBody.text = body;
+            if (_inspectBody != null)
+            {
+                _inspectBody.gameObject.SetActive(true);
+                _inspectBody.text = body;
+            }
+            if (_crewCard != null)
+                _crewCard.gameObject.SetActive(false);
 
+            LayoutActions(actions, 100f);
+        }
+
+        /// <summary>The row of verbs under whatever the card is showing. Laid at a given
+        /// height because a crew card is taller than a building's paragraph.</summary>
+        void LayoutActions(List<string> actions, float top)
+        {
+            Stretch(_actionRow, 0f, 0f, top, 44f);
             var count = actions?.Count ?? 0;
             Grow(_actionPool, _actionRow, count, ActionFactory);
 
@@ -878,6 +940,189 @@ namespace RoadDemo
 
             public void OnPointerClick(PointerEventData eventData) =>
                 Clicked?.Invoke(eventData.button);
+        }
+
+        // ----------------------------------------------------------- the crew card
+
+        RectTransform _crewCard;
+        RawImage _crewFace;
+        TMP_Text _crewCaption;
+        TMP_Text _crewFacts;
+        RectTransform _crewBook;
+        readonly List<RectTransform> _bookPool = new List<RectTransform>();
+
+        /// <summary>
+        /// The crew card: his face and his name on the left, the crew's figures on the
+        /// right, and under both the men on the book - one row each, with what he is
+        /// carrying and how he is holding up.
+        ///
+        /// The portrait is the same print as the roster row's, at 66x80 instead of
+        /// 22x26, which is the whole reason the leader's prefab is carried around as a
+        /// key: one face, learned in the list, recognised on the card.
+        /// </summary>
+        public void SetCrewCard(MapCrew crew, string outfit, string order, List<string> actions)
+        {
+            BuildCrewCard();
+
+            _inspectBody.gameObject.SetActive(false);
+            _crewCard.gameObject.SetActive(true);
+            if (_inspectHead != null)
+                _inspectHead.text = (crew.Name ?? "-").ToUpperInvariant();
+
+            Face(_crewFace, crew.Mug);
+            _crewCaption.text = "LT. " + (crew.Surname ?? "-").ToUpperInvariant();
+
+            _facts.Clear();
+            Fact("OUTFIT", outfit);
+            Fact("CREW", crew.Alias);
+            Fact("STRENGTH", "x" + crew.Strength + " MEN");
+            Fact("CONDITION", Mathf.RoundToInt(crew.Condition * 100f) + "%");
+            Fact("ORDER", order);
+            Fact("RIDE", crew.Ride);
+            Fact("HEAT", crew.Heat > 0 ? crew.Heat + " WANTED" : "CLEAN");
+            Fact("LOYALTY", crew.Loyalty + "%");
+            // WAGE and not TAKE: this project has no per-crew income, and printing a
+            // cost under a heading that says "take" would be a lie with a real number
+            // attached. See MapCrews.
+            Fact("WEEKLY WAGE", "$" + crew.Wage);
+            Fact("POSITION", Mathf.RoundToInt(crew.Position.x) + ", " +
+                             Mathf.RoundToInt(crew.Position.z));
+            _crewFacts.text = _facts.ToString();
+
+            var colour = MapPalette.Gang(crew.Gang);
+            Grow(_bookPool, _crewBook, crew.Men.Count, BookRowFactory);
+            for (var i = 0; i < _bookPool.Count; i++)
+            {
+                var row = _bookPool[i];
+                var on = i < crew.Men.Count;
+                if (row.gameObject.activeSelf != on)
+                    row.gameObject.SetActive(on);
+                if (!on)
+                    continue;
+
+                var man = crew.Men[i];
+                Stretch(row, 0f, 0f, i * 13f, 12f);
+                row.Find("Dot").GetComponent<Image>().color = colour;
+                row.Find("Name").GetComponent<TMP_Text>().text =
+                    (man.Name ?? "-").ToUpperInvariant();
+                row.Find("Role").GetComponent<TMP_Text>().text = man.Role ?? "-";
+                row.Find("Arm").GetComponent<TMP_Text>().text = man.Weapon ?? "-";
+                var fill = (RectTransform)row.Find("Bar/Fill");
+                fill.sizeDelta = new Vector2(Mathf.Round(22f * Mathf.Clamp01(man.Condition)), 3f);
+                fill.GetComponent<Image>().color = man.Condition > 0.6f ? MapPalette.HpGood
+                    : man.Condition > 0.3f ? MapPalette.HpFair : MapPalette.HpPoor;
+            }
+
+            LayoutActions(actions, 228f);
+        }
+
+        readonly System.Text.StringBuilder _facts = new System.Text.StringBuilder(320);
+
+        void Fact(string key, string value)
+        {
+            _facts.Append(key).Append(": ").Append(string.IsNullOrEmpty(value) ? "-" : value);
+            _facts.Append('\n');
+        }
+
+        void BuildCrewCard()
+        {
+            if (_crewCard != null)
+                return;
+
+            var body = (RectTransform)_inspectBody.rectTransform.parent;
+            _crewCard = New("Crew", body);
+            Stretch(_crewCard, 0f, 0f, 0f, 224f);
+            _crewCard.SetSiblingIndex(0);
+
+            var mug = New("Mug", _crewCard);
+            Pin(mug, TopLeft, Vector2.zero, new Vector2(66f, 80f));
+            _crewFace = mug.gameObject.AddComponent<RawImage>();
+            _crewFace.raycastTarget = false;
+            _crewFace.enabled = false;
+            _crewFace.uvRect = Bust(66f, 80f);
+            Outline(mug, MapPalette.Rule);
+
+            _crewCaption = Label(_crewCard, "Caption", "LT.", 10f, MapPalette.Strong, 0.08f);
+            Pin(_crewCaption.rectTransform, TopLeft, new Vector2(0f, -83f),
+                new Vector2(66f, 12f));
+            _crewCaption.alignment = TextAlignmentOptions.Center;
+
+            // Ten lines at twelve units each, and the box says so. It was set at a
+            // hundred and the tenth line - POSITION - was printing straight through the
+            // heading under it, because a rect that is too short does not clip, it just
+            // lets the text out of the bottom.
+            _crewFacts = Label(_crewCard, "Facts", string.Empty, 10f, MapPalette.Body, 0.04f);
+            Stretch(_crewFacts.rectTransform, 74f, 0f, 0f, 132f);
+            _crewFacts.alignment = TextAlignmentOptions.TopLeft;
+            _crewFacts.lineSpacing = 12f;
+
+            var heading = Label(_crewCard, "Book", "MEN ON THE BOOK", 10f,
+                MapPalette.Heading, 0.14f, true);
+            Stretch(heading.rectTransform, 0f, 0f, 138f, 12f);
+
+            // Five men at thirteen units - the roster's own ceiling is a lieutenant and
+            // four hoods, so the book never needs a sixth row.
+            _crewBook = New("Men", _crewCard);
+            Stretch(_crewBook, 0f, 0f, 152f, 68f);
+        }
+
+        RectTransform BookRowFactory(RectTransform parent, int index)
+        {
+            var row = New("Man " + index, parent);
+            Stretch(row, 0f, 0f, 0f, 12f);
+
+            var dot = Paint(New("Dot", row), Color.white);
+            Pin(dot.rectTransform, MiddleLeft, new Vector2(1f, 0f), new Vector2(4f, 4f));
+
+            var name = Label(row, "Name", string.Empty, 9f, MapPalette.Body, 0.04f);
+            Stretch(name.rectTransform, 9f, 132f, 0f, 11f);
+            name.alignment = TextAlignmentOptions.Left;
+
+            var role = Label(row, "Role", string.Empty, 8f, MapPalette.Muted, 0.04f);
+            Pin(role.rectTransform, MiddleRight, new Vector2(-96f, 0f), new Vector2(56f, 11f));
+            role.alignment = TextAlignmentOptions.Left;
+
+            var arm = Label(row, "Arm", string.Empty, 8f, MapPalette.UnclaimedChrome, 0.04f);
+            Pin(arm.rectTransform, MiddleRight, new Vector2(-28f, 0f), new Vector2(74f, 11f));
+            arm.alignment = TextAlignmentOptions.Right;
+
+            var bar = Paint(New("Bar", row), MapPalette.Rule);
+            Pin(bar.rectTransform, MiddleRight, new Vector2(-2f, 0f), new Vector2(22f, 3f));
+            var fill = Paint(New("Fill", bar.rectTransform), MapPalette.HpGood);
+            Pin(fill.rectTransform, MiddleLeft, Vector2.zero, new Vector2(22f, 3f));
+            return row;
+        }
+
+        /// <summary>Ask the studio for a face. The image stays dark until the print
+        /// lands, which is one frame for a face nobody has asked for before and instant
+        /// for every one after - the studio caches by prefab, which is exactly the
+        /// stable key the design sheet's `mug` slug is.</summary>
+        static void Face(RawImage into, GameObject mug)
+        {
+            if (into == null)
+                return;
+            if (mug == null)
+            {
+                into.enabled = false;
+                into.texture = null;
+                return;
+            }
+            LivingCity.UI.PortraitStudio.Request(mug,
+                LivingCity.UI.PortraitStudio.Framing.Bust, into);
+        }
+
+        /// <summary>A square print cropped to a taller window, held at the head line so
+        /// the crop takes the shoulders rather than the face.</summary>
+        static Rect Bust(float width, float height)
+        {
+            if (width >= height)
+            {
+                var h = height / Mathf.Max(width, 1f);
+                var y = Mathf.Clamp(0.70f - h * 0.5f, 0f, 1f - h);
+                return new Rect(0f, y, 1f, h);
+            }
+            var w = width / Mathf.Max(height, 1f);
+            return new Rect((1f - w) * 0.5f, 0f, w, 1f);
         }
 
         // ------------------------------------------------------------------ the log

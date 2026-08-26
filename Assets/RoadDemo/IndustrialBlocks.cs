@@ -79,7 +79,6 @@ namespace RoadDemo
         const string ShedSmall = KitBld + "building-warehouse-small.prefab";
         const string DepotGarage = KitBld + "building-depot-garage.prefab";
         const string YardShed = KitBld + "building-yard-shed.prefab";
-        const string Diner = KitBld + "building-diner.prefab";
 
         // the perimeter
         const string BrickPanel = GangBld + "SM_Bld_Fence_Brick_01.prefab";

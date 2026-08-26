@@ -28,6 +28,46 @@ obsolete-as-error rules, all of it. The offline Roslyn build in
 [the memory notes] is still faster for a quick syntax check, but it is a hand-built
 reference set that has been silently wrong before; this cannot be.
 
+**When the editor cannot answer**, there is a middle road, and it sits much closer to the editor
+than the hand-built set does: Unity's OWN generated project, built by dotnet.
+
+    dotnet build Assembly-CSharp.csproj -t:Rebuild          # runtime
+    dotnet build Assembly-CSharp-Editor.csproj -t:Rebuild   # editor
+
+Unity's reference assemblies, Unity's analyzers, and `-t:Rebuild` so every file is really
+compiled instead of skipped as up to date. **But check the project file first, or the verdict is
+worthless:**
+
+    ls -la Assembly-CSharp.csproj                        # newer than your edits?
+    grep -c 'YourFile.cs"' Assembly-CSharp.csproj        # is your file even in it?
+
+Grep the BARE FILENAME, never the path. The project lists files Windows-style
+(`Assets\RoadDemo\Map\MapBuildings.cs`), and a grep carrying those backslashes comes back 0
+through this shell whether the file is listed or not - which reads exactly like "my file is not
+in the build" and is the same trap one paragraph down, sprung on the check meant to catch it.
+If you want the path as well, do it from python, where the backslashes survive.
+
+And the rule that would have caught it without luck, because neither of the two people who hit
+it that day caught it by being careful: **when a search is your evidence of ABSENCE, put
+something you know is PRESENT in the same search.** A count of zero cannot tell you whether the
+thing is missing or the search is broken; a zero beside a one can. One session was saved only by
+having a file in the list it happened to know had been there for months - checking just the
+eleven new files would have given eleven honest zeros and nothing to weigh them against.
+
+Unity regenerates these on import, so an editor that is wedged - or has simply not refreshed -
+leaves a project file that predates the work. A green build then means "the old shape of the code
+compiles", which is a true answer to a question nobody asked.
+
+On 2026-08-26 the Editor project was seven hours stale and reported two CS0234s for a type that
+existed perfectly well: it had compiled the caller without the callee, because the callee was
+written after the project file. Nothing was broken and nothing needed fixing. The same day, the
+runtime project happened to be current and did contain every changed file, so its clean build was
+worth something - and only the timestamp and the grep told the two cases apart.
+
+Neither build reproduces a domain reload, and the Editor project goes stale first because Editor
+files are added less often. For runtime code with the inclusion check done, this settles the
+question; for anything else, wait for the editor.
+
 `unity command console --json` reads the console the same way, so a run's errors come back
 without grepping `Logs/Editor.log` — which, with two editors on one project, is not ground truth
 anyway.

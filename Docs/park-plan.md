@@ -152,7 +152,13 @@ je svaka 4-povezana staza polagana bez izuzetaka.
   lom, jedna kratka slepa grana (block-08 ima jednu). `square`: kičma obilazi centralnu
   sobu (prsten od `Path` platoa oko fontane, ili obilazak igrališta). `park`: kičma +
   sekundarne staze između soba.
-- **Plato**: ćelije oko fontane/spomenika su `SM_Env_Path_*` (popločano), 3×3 ili 5×5.
+- **Obodna petlja** (dodato 2026-08-26 posle sweep-a, v. §5.1): `park` i `strip` klasa dobijaju
+  stazu koja obilazi park **1–2 ćelije od ograde** (inset po strani iz seeda). Bez nje je staza
+  DRVO, pa soba koja leđima naleže na ogradu ne može da se preseče — svaka linija kroz nju
+  udara u ogradu, a staza koja staje na ogradi je slepi kraj. Petlja to zatvara: svaka soba je
+  omeđena stazom i spolja, a pojas između petlje i ograde je baš onaj u kom stoji drveće.
+- **Plato**: ćelije oko fontane/spomenika su popločane (`SM_Env_Sidewalk_01` — Syntyjeve
+  `Path_*` pločice su **2.5 m široke**, dakle baštenska staza, ne plato).
 - **Invarijante** (`ParkWalk.Check`): graf povezan (svako ušće stiže do svakog); nijedan
   kraj koji nije ušće osim jedne dozvoljene slepe grane u `pocket`; staza ne dodiruje
   ogradu osim na ušću; staza ne seče sobu-program.
@@ -162,22 +168,31 @@ je svaka 4-povezana staza polagana bez izuzetaka.
 Unutrašnjost se **deli kičmom i sekundarnim stazama na sobe** ≤ 10×10 ćelija. Svaka soba
 dobija tačno jedan program iz tabele, po pravilu a ne kocki:
 
-| program | mera sobe | šta | koliko po parku |
-|---|---|---|---|
-| `lawn` | bilo koja | prazna trava, po ivici 2–4 stabla | ≥ 1 obavezno |
-| `grove` | ≥ 4×4 | 6–10 stabala na 4–6 m, klupa ispod | ≤ 2 |
-| `fountain` | ≥ 5×5 | plato 3×3 `Path`, fontana + FX, 4 klupe ka fontani, lampe na ćoškovima platoa | ≤ 1 |
-| `playground` | ≥ 5×5 | pesak `Sandpit`, fort/tobogan/ljuljaška/vrteška, drvena ograda sa kapijom ka stazi, klupe spolja | ≤ 1 |
-| `courts` | ≥ 5×9 | tenis ×2 na 10 m ili košarka ×1, ograda oko | ≤ 1 |
-| `pavilion` | ≥ 4×4 | `Pavilion_01` na travi, klupe u krug | ≤ 1 (`park` klasa) |
-| `statue` | 3×3 | plato + `Statue_0x`, cveće u prstenu | ≤ 1 |
-| `skatepark` | ≥ 6×6 | `building-skatepark` | ≤ 1 po gradu |
-| `toilet` | 2×2 uz ogradu | `building-park-toilet` sa leđima na ogradu | ≤ 1 (`park` klasa) |
+Mere su **izmerene u živom editoru** (`gangsters_measure`, 2026-08-26), ne pogođene:
 
-`square` = jedna soba = jedan program (nikad `lawn` sam). Redosled dodele: prvo `lawn`
-(najveća soba), pa jedan „glasni" program (`fountain`/`playground`/`courts`) u sobu uz
-najprometnije ušće, pa ostatak. Program koji **ne staje se izostavlja i prijavljuje** —
-soba ostaje `lawn` (ne pogađa se manja verzija).
+| program | soba (ćelija) | mera komada | šta |
+|---|---|---|---|
+| `lawn` | bilo koja | — | prazna trava, po ivici 2–4 stabla; **≥ 1 obavezno** |
+| `grove` | 4×4 | stablo 1.9–2.2 m | 6–10 stabala na 4–6 m |
+| `fountain` | 4×4 | fontana **4.77 m** | plato 3×3, fontana + `FX_Fountain_Water`, 4 klupe okrenute ka vodi |
+| `playground` | 4×4 | pesak 2.7, ljuljaška 3.1, fort 2×3 | 15 m dvorište, 5 komada oko peska, **drvena ograda sa kapijom** |
+| `courts` | 5×4 | tenis **7.5 × 12.5** | tenis ×2 na 10 m razmaka (kao PalmCity demo) ili košarka **7.5 × 15** sa dva koša |
+| `pavilion` | 3×3 | **9.49 × 8.39** | paviljon + 4 klupe u krug |
+| `statue` | 3×3 | statua 1.09 × 0.63 | plato + spomenik + cveće u prstenu |
+| `skatepark` | **9×7** | **40.5 × 31.5** | `building-skatepark`; prvi plan je rekao 6×6 — to bi ga postavilo na ogradu |
+| `toilet` | **3×2** | **10.57 × 5.49** | `building-park-toilet`, leđima na ogradu |
+
+`square` = jedna soba = jedan program (nikad `lawn` sam). Redosled dodele: prvo `lawn` uzme
+**najveću** sobu, pa svaki program bira **NAJMANJU sobu u koju staje** — ne sledeću po redu.
+(Prva verzija je delila redom po veličini pa je toalet od 10 × 5 m dobio sobu od 10 × 75 m,
+a terenima nije ostalo ništa.) Program koji ne staje se **izostavlja i prijavljuje**; park
+kome su sve sobe već podeljene je **pun**, ne odbijen, i o tome ne javlja ništa.
+
+**Soba je „prevelika" po DOMETU, ne po pravougaoniku** (§5.1): prevelika je ako je neka njena
+tačka dalje od **25 m od staze**, ili ako je **dvaput duža nego šira** (a nije pojas od ≤ 2
+ćelije). Prvi kriterijum je bio veličina pravougaonika i bio je pogrešan — park sa petljom ima
+jednu prstenastu sobu trave čiji je pravougaonik ceo park, a nigde u njoj nije više od 10 m
+do staze.
 
 ### 2.4 Drveće, nameštaj, cveće (izmereno, ne ugođeno)
 
@@ -291,21 +306,145 @@ pre stajanja; svaki park-blok svoju presudu kompozera.
 
 ## 5. Alati i redosled rada
 
-| # | korak | dokaz |
-|---|---|---|
-| 1 | `ParkWalk` (čist C#) + `CoreSim --park --size WxD --count 30`: ušća, kičma, sobe, invarijante | 30/30 bez `Unreached`, sve klase, i „ružne" mere (5×5, 5×30, 13×28) |
-| 2 | `ParkBlocks.Compose` + `ParkLab.unity` + `Tools/City/Park/Sketch A Park` (jedan park zadate mere na nuli, natpis: klasa, mera, programi, gustina) + `gangsters_park --draw` | crtež `pocket` 6×6 **pored** `block-08` pločicu po pločicu: isti tipovi pločica, ograda, ritam nameštaja u ±1 komad |
-| 3 | `square` i `park` crteži, sobe i programi; korisnik gleda i doteruje (kao industrija „preveliku su") | snimci plan + kos |
-| 4 | jedinica `Park` u `CoreLayout.Roll`, stajanje u `CoreDistrict`, `--synty` netaknut | `CoreSim --seed 1 --count 30` 30/30; `gangsters_core --draw` sa parkom |
-| 5 | harness `CoreDemo` 40 kola 180 s ×5 | PASSED kao pre (park ne menja puteve, ali menja raspored — nov raspored, nova mera) |
-| 6 | `ParkBelt` (§4) tek posle odluke o v3 | `CoreSim --belt`, crtež jezgro + okvir |
+| # | korak | dokaz | stanje |
+|---|---|---|---|
+| 1 | `ParkWalk` (čist C#) + `CoreSim --park --sweep` | **8 seedova × 676 mera (25–150 m) = 5408, sve čisto** | **urađeno** |
+| 2 | `ParkBlocks.Compose` + `ParkSketch` meni + `gangsters_park` | kompajlira (runtime + editor zajedno); crtež čeka editor | **napisano, neviđeno** |
+| 3 | `square` i `park` crteži, sobe i programi doterani sa korisnikom | snimci plan + kos | čeka |
+| 4 | jedinica `Park` u `CoreLayout.Roll`, stajanje u `CoreDistrict` i crtežu | **60 seedova 60/60 čisto, prosek 1.33–1.73 deljenja** (bez parka je bio 1.60), `--synty` netaknut 0 grešaka / 21 ulica; crtež jezgra sa 2 parka, 0 grešaka iz prvog deljenja | **urađeno** |
+| 5 | harness `CoreDemo` 40 kola 180 s ×5 | PASSED | čeka |
+| — | ušća parka **preko puta zebre** u jezgru (`Edge.Crossing` se u jezgru još ne prosleđuje) | ušće na raskrsnici | čeka |
+| 6 | pojas parkova oko jezgra | **30 seedova 30/30 čisto**, prosek 4.43 deljenja; `--synty` netaknut | **urađeno** |
 
-Regresija: `block-08` ostaje u `blocks.txt` i u referenci; nijedna promena u `CoreRoads`
-(park ne treba ništa novo od rastera — to je uslov dizajna, kao za industriju).
+### 5.1 Šta je sweep pokazao (i šta je zbog toga promenjeno)
 
-Pregled koda pre svakog testa (`code-review-unity`, hook), eval/menu tek posle.
+Sweep je **cela poenta** ovog koraka: generator koji radi na merama za koje je pisan, a pada na
+25 × 150 m, pao bi prvi put kad mu kvart doda nezgodan pravougaonik — a pojas oko jezgra
+(§4) se **od takvih i sastoji**. Prvi prolaz: **330 od 676 čisto (49 %)**. Redom kako se lomilo:
 
----
+1. **Plato fontane se spajao sam sa sobom.** Popločana ćelija se broji kao „prohodna", pa je
+   fontana tražeći najbližu stazu našla pločnik pod sopstvenim nogama, spojila se sa sobom, i
+   plato je ostao ostrvo do kog staza nikad ne stigne. **346 od 676 mera.** Sada se veza traži
+   **pre** nego što se plato položi, i traži se ćelija STAZE, ne bilo šta prohodno.
+2. **Presuda je lagala.** Soba koja se nije mogla preseći „rešavana" je tako što joj se W/D
+   smanji na prag — pa je izveštaj javljao 0 grešaka nad parkom koji ima 55 × 80 m praznog
+   polja. Zamenjeno zastavicom `Uncut`: mera ostaje prava, greška se vidi.
+3. **Staza je bila drvo** → soba uz ogradu se ne može preseći (v. petlja, §2.2).
+4. **Pravougaonik je bio pogrešna mera** za „prevelika soba" → domet do staze (§2.3).
+5. **Rez nije umeo da otvori kapiju**, jer je gledao ćeliju IZA ivice — a soba koja već dodiruje
+   ogradu nema kuda da zakorači. Sada rez sme da završi na ogradi **novom kapijom** (≥ 20 m od
+   postojeće), što je i ono što pravi park radi sa travnjakom uz rešetke.
+6. **Kapija se otvarala i kad rez padne.** `Gate` je menjao plan čim izračuna jedan kraj; ako bi
+   drugi kraj pao, ostajala je kapija sa jednom ćelijom staze koju ništa ne dodiruje. Kapije se
+   sada otvaraju tek kad se ceo rez polaže.
+7. **Rez je smeo da otvori kapije na OBA kraja** — savršeno ispravna staza od ulice do ulice
+   koja ne dodiruje ostatak parka. Sada najviše jedna po rezu: drugi kraj mora stići do
+   postojeće staze, i time je staza uvek jedan komad.
+8. **Strip se ulazio sa dugih strana** pa je 200 m parka dobijalo stazu preko sredine i praznu
+   polovinu. Sada prve dve kapije stripa idu na **krajeve**.
+
+Posle svih osam: **676/676 čisto na svakom probanom seedu.**
+
+### 5.2 Šta je prvi CRTEŽ pokazao (2026-08-26)
+
+Crtež je stao tek pošto je sweep bio čist — i pokazao tri stvari koje sweep po definiciji ne
+može da vidi, jer sweep sudi planu, a ovo su greške u **komadima**:
+
+1. **Palme su bile u parku.** Palma je 8–10 m široka prema gradskom stablu od 2 m; tri u parku
+   od 30 m su pojele pola placa (klupe i stolovi su odbijani jer nije bilo mesta) i dve su
+   visile preko ograde. **Provera na Syntyju**: block-08 ima dve palme i **obe su na
+   trotoaru**, izvan ograde, gde ih `CorePavement` ionako sadi. Unutar ograde je City
+   `Tree_01/02/03` i ništa drugo. Palme izbačene iz `ParkBlocks`.
+2. **Staza nije bila zauzeto tlo**, pa je jedno stablo stalo na nju. Sada se rezerviše — ali
+   **STAZA, NE ĆELIJA**: pločica je 5 m, a napravljen put kroz nju je ~2.6 m, i baš na uglove
+   te pločice Synty stavlja lampu i cveće. Rezerviše se kvadrat u sredini + krak ka svakoj
+   strani na koju se staza nastavlja; ostatak ćelije je trava. (Prvo je rezervisana cela
+   ćelija — i park je ostao bez ijedne lampe, sve odbijene.)
+3. **Soba nije svoj pravougaonik.** Park sa obodnom petljom ima jednu **prstenastu** sobu
+   trave: njen bounding box je ceo park, a široka je dve ćelije svuda. Program se dodeljivao
+   po bounding boxu, pa su fontana, igralište i tereni redom dobijali prsten i redom bili
+   **tiho odbijeni** kad dođu da stanu — park od 80 × 70 m je izašao sa sedam imenovanih soba
+   i **nijednim programom u sebi**. Sada se meri **najveći upisani pravougaonik** (histogram
+   sweep), i to isto meri i kompozer kad postavlja.
+4. **Travnjak je uzimao najveću sobu** pa glasnim programima nije ostajalo mesta (na 80 × 70 m
+   nije bilo fontane). Obrnuto: **programi biraju, travnjak je ostatak** — a ostatak je uvek
+   pojas i ćoškovi, koje ionako nijedan program ne traži. Jedna soba se uvek zadrži.
+
+5. **Plato je bio rezervisan pre nego što fontana i spomenik stignu da stanu na njega.** Staza
+   se rezerviše da niko ne stane na nju — ali plato je tlo koje se pravi ZA fontanu, pa je
+   fontana bila odbijena na sopstvenom pločniku, bez reči. Park od 80 × 70 m je izašao sa
+   golim kvadratom kamena od 15 m u sredini. Plato se sada rezerviše **posle** programa.
+6. **Plato se brojao kao slepi kraj staze.** Nije — plato je **odredište**: staza koja vodi do
+   spomenika i tu se završava je stigla. Kao slepi kraj obarao je 128 od 676 mera radeći baš
+   ono zbog čega postoji.
+7. **Spomenik od 1 m je stajao nasred kamenog kvadrata od 15 m.** Plato se sada meri prema
+   onome što na njemu stoji: 3×3 ćelije za fontanu (4.77 m + klupe okolo), 1 za spomenik.
+
+Ostalo doterano po meri sa Syntyja: gustina drveća (bila 3.9/100 m², cilj 2.2), klupe (17 na
+80 m parka → jedna na 5 ćelija staze), cveće (387 komada → kapirano), stolovi (1 na 125 m²).
+
+### 5.3 Šta je review našao u kompozeru (pre nego što je išta stajalo)
+
+- **`OnWalk` se nikad nije postavljalo** — presuda je uvek javljala „0 stabala na stazi" jer to
+  polje niko nije punio. Isti greh kao (2) gore. Sada se broji **po onome što je stvarno stalo**:
+  prođe se kroz posađena stabla i meri se da li im stablo (ne krošnja — pod krošnjom se prolazi)
+  pada na ćeliju staze.
+- **Cveće je niklo u pesku igrališta i u fontani**: cveće ne zauzima tlo (namerno — klupa pored
+  cveća je i dalje klupa), ali mora da **poštuje** tlo koje neko drugi drži.
+- **Ograda je stajala 22 cm unutar linije** — panel je polagan od linije, a Syntyjev je
+  **centriran na njoj**.
+
+### 5.4 Park u jezgru: greška koja je zamalo naučila pogrešnu lekciju
+
+Kad su parkovi ušli u deljenje jezgra, čistih deljenja je palo sa **72 % na 24 %**. Očigledno
+čitanje — „park je prosto teško smestiti" — bilo je **pogrešno**, i pre nego što je uzrok nađen
+izmerene su tri uverljive popravke, svaka gora od prethodne:
+
+| pokušaj | rezultat |
+|---|---|
+| park staje u bilo koji red bez obzira na dubinu | 14 % |
+| dubina parka iz opsega redova umesto iz klase | 21 % |
+| park ne sme biti jedinica koja određuje dubinu reda | prosek 5.5 deljenja |
+
+Pravi uzrok: **parkovi su ulazili u raspored ali ne i u listu koju raster crta.** Deljenje bi
+napravilo mesta za park u redu, ništa ne bi popunilo to tlo, i presuda bi ga s pravom prijavila
+kao prazno. Kad parkovi odu i rasteru (`CoreLayout.WithParks`): **60/60 seedova čisto, prosek
+1.33 deljenja** — bolje nego jezgro bez parkova (1.60).
+
+Pouka je zapisana u kodu: *doterivanje protiv pogrešne dijagnoze pomera brojeve i ne popravlja
+ništa.*
+
+### 5.5 Pojas nije zaseban mehanizam — pojas je RED PARKOVA
+
+Korisnik 2026-08-26: *„hocu da kad otvorim coredemo da mi se iscrta kore i park oko njega"*.
+
+Prvi nacrt (§4) je pojas zamišljao kao svoju mašineriju: `ParkBelt` koji čita raster jezgra,
+nalazi gde ulice izlaze, seče pojas na komade i deklariše park drive. Sve to je **već
+napisano** — u `CoreLayout.Roll`, za redove blokova. Pojas je zato **red kao svaki drugi**,
+samo što su mu sve jedinice parkovi:
+
+- ulica između svaka dva parka — mašinerija reda je stavlja sama;
+- ulica **iza** reda deklarisana preko cele širine (`Plan.Bands`) — to JE „park drive", i to je
+  linija na koju će rezidencijalni redovi pinovati pročelje;
+- raster ga sudi kao i sve ostalo, bez ijedne izmene u `CoreRoads`.
+
+Dva reda se dodaju **poslednja**, pa ih naizmenično slaganje sever/jug postavi na **suprotne
+strane i najdalje od bulevara** — što su tačno dve strane koje je korisnik tražio. Jedan je
+**veliki** (15–22 ćelije = 75–110 m: gradski park sa svim programima), drugi obična traka
+(6–8 ćelija = 30–40 m).
+
+**JEDAN NEPREKIDAN PARK PO STRANI** (ispravka 2026-08-26). Prvo je pojas deljen na 3–4 parka
+od 50–80 m sa ulicama između — po rezonu da je ploča trave od 200 m nešto što se ne može
+preći. Korisnik je pogledao crtež i tražio suprotno (*„moze li ovo da je jedan neprekidan park
+sa strane umesto 3 4 mala"*), i po slici je u pravu: niz malih parkova razdvojenih ulicama
+čita se kao **preostalo tlo između blokova**, dok se jedna neprekidna zelena ivica čita kao
+**ono na čemu grad prestaje** — a to pojas i jeste. Prelazi se **stazom**, ne ulicom, a park te
+veličine `ParkWalk.Cut` ionako sam iseče na sobe.
+
+Mera: **30/30 seedova čisto**, prosek 3.57 deljenja, max 15 od 40. Synty referenca netaknuta.
+Sweep proširen na **300 × 300 m** (1296 mera po seedu) jer je pojas veći od svega što je prva
+verzija probala: **3888/3888 čisto** — uz jednu popravku koju je to otkrilo, `Cut` je stajao
+posle 40 rezova, a park od 270 m ih traži četrdesetak samo za sobe.
 
 ## 6. Život u parku (faza 2, posle pešaka jezgra)
 

@@ -249,6 +249,10 @@ namespace RoadDemo
         /// <summary>The building under a raster pixel, with the sheet's own half-pixel
         /// slack so a one-pixel shed can still be hit. Walked backwards: small
         /// footprints are on top.</summary>
+        /// <summary>The building under an AUTHORED point, with the sheet's own
+        /// half-unit slack. Authored and not real on purpose: a shed is one authored
+        /// unit across however many real pixels it is drawn in, and the tolerance that
+        /// makes it clickable is a property of the layout, not of the resolution.</summary>
         public MapBuilding At(Vector2 px, MapSheet sheet)
         {
             for (var i = _all.Count - 1; i >= 0; i--)
@@ -289,25 +293,34 @@ namespace RoadDemo
             {
                 if (!sheet.Sees(building.World))
                     continue;
-                var box = sheet.Box(building.World);
+                var box = sheet.RealBox(building.World);
                 _layer.LayerFill(box.xMin + 1, box.yMin + 1, box.width, box.height,
-                    MapPalette.Ink);
+                    MapPalette.Shadow);
             }
 
             foreach (var building in _all)
             {
                 if (!sheet.Sees(building.World))
                     continue;
-                Draw(_layer, sheet.Box(building.World), building,
+                Draw(_layer, sheet.RealBox(building.World), building,
                     GangOf(building, turf, owned));
             }
 
             return _layer;
         }
 
-        /// <summary>One building: the fake-height copy up and left if it is tall enough
-        /// to earn one, its fill, a sparse roof speckle, and the owner's stripe along the
-        /// top row. Its shadow was laid in the pass before this one.</summary>
+        /// <summary>
+        /// One building, at full raster resolution: the fake-height copy up and left if
+        /// it is tall enough to earn one, its fill, a WINDOW GRID, and the owner's
+        /// stripe along the top row. Its shadow was laid in the pass before this one.
+        ///
+        /// The windows are the point of the higher resolution. A roof used to carry a
+        /// sparse random speckle because at three pixels across there was nowhere to put
+        /// anything else; at nine there is room for a regular grid, and a regular grid is
+        /// what reads as a BUILDING rather than as a coloured rectangle with dirt on it.
+        /// It is drawn in real pixels, on a three-pixel pitch, and it is the single
+        /// biggest reason the city stopped looking mushy.
+        /// </summary>
         static void Draw(MapRaster into, RectInt box, MapBuilding building, int gang)
         {
             var fill = Fill(building.Kind);
@@ -318,25 +331,20 @@ namespace RoadDemo
 
             if (building.Floors >= TallFloors && w > 1 && h > 1)
             {
-                into.LayerFill(x - 1, y - 1, w, h, MapPalette.Ink);
+                into.LayerFill(x - 1, y - 1, w, h, MapPalette.Shadow);
                 into.LayerFill(x - 1, y - 1, w - 1, h - 1, fill);
             }
 
             into.LayerFill(x, y, w, h, fill);
 
-            var speckle = Mathf.Max(1, w * h / 16);
-            var spanX = Mathf.Max(1, w - 2);
-            var spanY = Mathf.Max(1, h - 2);
-            for (var i = 0; i < speckle; i++)
-                into.LayerFill(x + 1 + i * 7 % spanX, y + 1 + i * 5 % spanY, 1, 1, MapPalette.Roof);
+            for (var wy = y + 1; wy < y + h - 1; wy += 3)
+                for (var wx = x + 1; wx < x + w - 1; wx += 3)
+                    into.LayerFill(wx, wy, 2, 1, MapPalette.Roof);
 
             if (gang < 0)
                 return;
 
-            var colour = MapPalette.Gang(gang);
-            into.LayerFill(x, y, w, 1, colour);
-            if (w > 3)
-                into.LayerFill(x, y + h - 1, 1, 1, colour);
+            into.LayerFill(x, y, w, 1, MapPalette.Gang(gang));
         }
 
         public static Color32 Fill(MapBuildingKind kind)
@@ -385,10 +393,25 @@ namespace RoadDemo
         public static MapBuildingKind KindOf(string name, string bake, Rect world,
             int floors)
         {
-            // The piece's own name first, then the bake it came out of: a Synty city
-            // cluster names its pieces "City_07_I" and says nothing, while the block
-            // they were baked into is called "warehouse-block" and says everything.
-            if (Named(name, out var kind) || Named(bake, out kind))
+            // Three sources, in the order of how much they know about THIS building.
+            //
+            // The piece's own name first - and only the piece, cut off at its bracket.
+            // A district reports its buildings as "building-factory (works-02)", piece
+            // and parcel in one string, and the parcel is a place name that can carry a
+            // word this table reads: a factory standing on a parcel called "depot-03"
+            // must not come out a warehouse because of the ground it is on.
+            //
+            // Then the whole string, so the parcel gets its say when the piece had
+            // nothing to offer. Then the bake it came out of, because a Synty city
+            // cluster names its pieces "City_07_I" and says nothing at all while the
+            // block they were baked into is called "warehouse-block" and says
+            // everything. Then, failing all three, the shape it actually has.
+            var piece = name;
+            var bracket = piece != null ? piece.IndexOf('(') : -1;
+            if (bracket > 0)
+                piece = piece.Substring(0, bracket);
+
+            if (Named(piece, out var kind) || Named(name, out kind) || Named(bake, out kind))
                 return kind;
             return Measured(world, floors);
         }
@@ -425,11 +448,16 @@ namespace RoadDemo
             if (Has(n, "terminal")) { kind = MapBuildingKind.Terminal; return true; }
 
             if (Has(n, "warehouse") || Has(n, "depot") || Has(n, "shed") ||
-                Has(n, "storage") || Has(n, "workshop") || Has(n, "silo"))
+                Has(n, "storage") || Has(n, "silo"))
             { kind = MapBuildingKind.Warehouse; return true; }
 
+            // A workshop is a place where work is DONE and not where goods are kept,
+            // so it wears the factory's roof rather than the warehouse's steel. It sat
+            // under warehouse for the obvious reason - it is a shed-shaped building -
+            // and that is the wrong half of the word to have read.
             if (Has(n, "factory") || Has(n, "foundry") || Has(n, "works") ||
-                Has(n, "plant") || Has(n, "refinery") || Has(n, "industrial"))
+                Has(n, "plant") || Has(n, "refinery") || Has(n, "workshop") ||
+                Has(n, "industrial"))
             { kind = MapBuildingKind.Factory; return true; }
 
             if (Has(n, "hospital") || Has(n, "policestation") || Has(n, "police") ||

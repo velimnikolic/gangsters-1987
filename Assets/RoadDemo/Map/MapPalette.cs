@@ -29,6 +29,16 @@ namespace RoadDemo
     {
         // ------------------------------------------------------------- the raster
 
+        /// <summary>
+        /// THE shadow, and the only one. One pixel, one side, never an outline and never
+        /// a halo. An earlier revision ringed every sprite and every building in near
+        /// black (#141614) and the map read as black mush at any distance; this is that
+        /// tone lifted until it reads as shade rather than as ink.
+        /// </summary>
+        public static readonly Color32 Shadow = Hex(0x2b302c);
+
+        /// <summary>Kept for the few places that want true ink and are not a sprite
+        /// outline - the corner chip behind a district tag, and nothing else.</summary>
         public static readonly Color32 Ink = Hex(0x141614);
         public static readonly Color32 White = Hex(0xe8e4d4);
         public static readonly Color32 Line = Hex(0xdedacc);
@@ -89,6 +99,10 @@ namespace RoadDemo
         /// directions so it reads as an argument rather than as a family.</summary>
         public static readonly Color32 Contested = Hex(0xf4f0e0);
         public static readonly Color32 ContestedWash = Hex(0xd8d0c0);
+
+        /// <summary>What contested ground is tinted with: a neutral desaturating grey,
+        /// multiplied over the map. Not a family's colour, because it is nobody's.</summary>
+        public static readonly Color32 ContestedTint = Hex(0xc3c9c3);
 
         public static readonly Color32 Unclaimed = Hex(0x8b9189);
         public static readonly Color UnclaimedChrome = HexF(0x8b9189);

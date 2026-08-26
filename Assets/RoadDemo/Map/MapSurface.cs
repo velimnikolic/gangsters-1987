@@ -55,7 +55,10 @@ namespace RoadDemo
 
             var u = (local.x - _rect.rect.xMin) / size.x;
             var v = (local.y - _rect.rect.yMin) / size.y;
-            raster = new Vector2(u * MapRaster.W, (1f - v) * MapRaster.H);
+            // AUTHORED units, not real pixels. A footprint is one or two authored
+            // units across and the tolerances that make it clickable are properties of
+            // the layout, not of how many real pixels it happens to be drawn in.
+            raster = new Vector2(u * MapRaster.AW, (1f - v) * MapRaster.AH);
             return true;
         }
 

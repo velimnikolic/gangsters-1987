@@ -91,8 +91,10 @@ namespace RoadDemo
 
         // The corner panel is the raster at 1:1 in the terminal's own units, so its
         // pixels are square and exactly one unit each.
-        const float CornerWidth = MapRaster.W;
-        const float CornerHeight = MapRaster.H;
+        // The postcard is sized in AUTHORED units, so it stays the same size on screen
+        // whatever resolution the raster inside it is drawn at.
+        const float CornerWidth = MapRaster.AW;
+        const float CornerHeight = MapRaster.AH;
         const float CornerInset = 12f;
 
         // The docked panel's inset inside the right half.
@@ -149,16 +151,26 @@ namespace RoadDemo
 
         readonly MapRaster _screen = new MapRaster();
         readonly MapRaster _ground = new MapRaster();
+
+        /// <summary>The ground with the turf tint multiplied into it. The overlay is a
+        /// multiply against the BASE and nothing else, so it can be baked once into a
+        /// second copy rather than re-multiplied over half a million pixels every frame;
+        /// a frame with the overlay on then costs the same blit as one with it off.</summary>
+        readonly MapRaster _tinted = new MapRaster();
         readonly MapBuildings _buildings = new MapBuildings();
         readonly MapTurf _turf = new MapTurf();
         readonly MapOwnership _owned = new MapOwnership();
         readonly MapAgents _agents = new MapAgents();
+        readonly MapCrews _book = new MapCrews();
         readonly TacticalHud _hud = new TacticalHud();
 
         MapSheet _sheet;
         bool _framed;
         MapSheet _groundBaked;
         bool _groundReady;
+        MapSheet _tintedFor;
+        int _tintedTurf = -1;
+        bool _tintedReady;
 
         // ------------------------------------------------------------------- the HUD
 
@@ -250,7 +262,7 @@ namespace RoadDemo
             if (_rig != null)
             {
                 var wants = Mathf.Max(_reach.height,
-                    _reach.width / ((float)MapRaster.W / MapRaster.H));
+                    _reach.width / ((float)MapRaster.AW / MapRaster.AH));
                 _rig.mapCeiling = Mathf.Clamp(wants * CityFrame / BoomToMetres, 260f, 6000f);
             }
 
@@ -611,15 +623,19 @@ namespace RoadDemo
         /// and the whole city when it is docked beside the book.</summary>
         MapSheet Framing()
         {
+            // AUTHORED units, not real pixels. MapSheet.Metres is metres to an authored
+            // unit and the sheet is still 320x200 of those however many real pixels it
+            // is rasterised into - divide by the real height instead and the whole map
+            // comes up three times too close, which is exactly what it did.
             if (_mode == Mode.Full && _rig != null)
                 return new MapSheet(new Vector2(_rig.pivot.x, _rig.pivot.z),
-                    Mathf.Max(40f, _rig.distance * BoomToMetres) / MapRaster.H);
+                    Mathf.Max(40f, _rig.distance * BoomToMetres) / MapRaster.AH);
 
             if (_mode == Mode.Corner && _rig != null)
                 return new MapSheet(new Vector2(_rig.pivot.x, _rig.pivot.z),
-                    CornerMetres / MapRaster.H);
+                    CornerMetres / MapRaster.AH);
 
-            var fit = Mathf.Max(_reach.width / MapRaster.W, _reach.height / MapRaster.H);
+            var fit = Mathf.Max(_reach.width / MapRaster.AW, _reach.height / MapRaster.AH);
             return new MapSheet(_reach.center, fit * 1.02f);
         }
 
@@ -667,9 +683,8 @@ namespace RoadDemo
                 MapBase.Bake(_ground, _sheet, _builder, _world);
                 _groundBaked = _sheet;
                 _groundReady = true;
+                _tintedReady = false;
             }
-
-            _screen.Blit(_ground);
 
             // Asked on its own timer and not the rail's, and asked whether the overlay
             // is showing or not: a building wears its district's colour even with the
@@ -680,15 +695,25 @@ namespace RoadDemo
                 _turfDue = Time.unscaledTime + TurfInterval;
                 if (_turf.Resolve(_owned))
                     _buildings.Invalidate();
+                _book.Collect(_crews, _turf);
             }
 
             if (_turfOn)
             {
-                _screen.Over(_turf.Layer(_sheet));
-                // The border is the one part of the wash that cannot be cached: a
-                // contested one crawls, which is what says the ground is being argued
-                // over rather than held.
-                _turf.DrawBorders(_screen, _sheet, Time.unscaledTime);
+                if (!_tintedReady || _tintedTurf != _turf.Version ||
+                    !_tintedFor.Matches(_sheet))
+                {
+                    _tinted.Blit(_ground);
+                    _turf.Tint(_tinted, _sheet);
+                    _tintedFor = _sheet;
+                    _tintedTurf = _turf.Version;
+                    _tintedReady = true;
+                }
+                _screen.Blit(_tinted);
+            }
+            else
+            {
+                _screen.Blit(_ground);
             }
 
             _screen.Over(_buildings.Layer(_sheet, _turf, _owned));
@@ -697,13 +722,13 @@ namespace RoadDemo
             {
                 var building = _buildings.Get(_lookAt);
                 if (building != null && _sheet.Sees(building.World))
-                    MapAgents.Blink(_screen, _sheet.Box(building.World), Time.unscaledTime);
+                    MapAgents.Blink(_screen, _sheet.RealBox(building.World), Time.unscaledTime);
             }
 
             _agents.Vehicles(_screen, _sheet, _cars, _policeCars, _crews);
-            _agents.People(_screen, _sheet, _crews, _civilians, _officers,
+            _agents.Crews(_screen, _sheet, _crews, _civilians, _officers,
                 _selected, _look == Look.Crew ? _lookAt : int.MinValue,
-                _mode != Mode.Corner);
+                _mode != Mode.Corner, Time.unscaledTime);
             _agents.Ships(_screen, _sheet);
 
             MapAgents.Markers(_screen, _sheet, _markers);
@@ -715,9 +740,11 @@ namespace RoadDemo
         void AnchorZoom(Vector2 raster)
         {
             var under = _sheet.ToWorld(raster);
-            var grown = Mathf.Max(40f, _rig.distance * BoomToMetres) / MapRaster.H;
-            var offset = new Vector2(raster.x - MapRaster.W * 0.5f,
-                                     MapRaster.H * 0.5f - raster.y) * grown;
+            // Authored throughout: the pointer arrives in authored units and the
+            // anchor has to be worked out in the same space the sheet is framed in.
+            var grown = Mathf.Max(40f, _rig.distance * BoomToMetres) / MapRaster.AH;
+            var offset = new Vector2(raster.x - MapRaster.AW * 0.5f,
+                                     MapRaster.AH * 0.5f - raster.y) * grown;
             var centre = under - offset;
             _rig.pivot = new Vector3(centre.x, _rig.pivot.y, centre.y);
         }
@@ -1099,7 +1126,7 @@ namespace RoadDemo
         }
 
         Vector2 Fraction(Vector2 raster) =>
-            new Vector2(raster.x / MapRaster.W, raster.y / MapRaster.H);
+            new Vector2(raster.x / MapRaster.AW, raster.y / MapRaster.AH);
 
         void Mark(Vector2 world, MapOrders.Kind kind)
         {
@@ -1201,9 +1228,19 @@ namespace RoadDemo
             _heldBy.TryGetValue(player, out var mine);
             var total = Mathf.Max(1, _buildings.Count);
 
-            _hud.SetStats(LivingCity.Gangs.GangRegistry.NameOf(player), _selected.Count,
+            // Selected counts BOTH: a player who has boxed three crews wants to know he
+            // has eleven men, not three markers.
+            var chosen = 0;
+            foreach (var crew in _book.All)
+                if (_selected.Contains(crew.Id))
+                    chosen += crew.Strength;
+
+            _hud.SetStats(LivingCity.Gangs.GangRegistry.NameOf(player), _book.Manpower,
+                _selected.Count, chosen,
                 Mathf.RoundToInt(mine * 100f / total), Clock());
-            _hud.SetCount(_buildings.Count, _sheet.Metres);
+            // THE scale, and the only one anyone is shown: metres to a REAL pixel,
+            // which is what the inspector's footprints are measured in too.
+            _hud.SetCount(_buildings.Count, _sheet.RealMetres);
             _hud.SetGangs(_gangRows);
             _hud.SetRoster(_crewRows);
             _hud.SetLog(_log);
@@ -1231,30 +1268,36 @@ namespace RoadDemo
                 _heldBy[gang] = held + 1;
             }
 
+            // Every figure below is COUNTED, never assumed: the men per family are
+            // summed off the crews themselves, so a family that loses four men loses
+            // them on this panel in the same half-second.
             _crewRows.Clear();
-            if (_crews != null)
+            foreach (var crew in _book.All)
             {
-                foreach (var unit in _crews.Units)
+                if (crew.Gang == -2)
+                    continue;
+                if (crew.Strength > 0)
                 {
-                    if (unit == null || unit.IsPolice)
-                        continue;
-                    var standing = unit.Standing();
-                    if (standing > 0)
-                    {
-                        _menBy.TryGetValue(unit.Faction, out var men);
-                        _menBy[unit.Faction] = men + standing;
-                    }
-                    if (unit.Faction != 0 || unit.Wiped)
-                        continue;
-                    _crewRows.Add(new TacticalHud.CrewRow
-                    {
-                        CrewId = unit.CrewId,
-                        Name = Crewname(unit),
-                        Order = MapOrders.StateOf(unit),
-                        Condition = Condition(unit),
-                        Selected = _selected.Contains(unit.CrewId),
-                    });
+                    _menBy.TryGetValue(crew.Gang, out var men);
+                    _menBy[crew.Gang] = men + crew.Strength;
                 }
+                if (crew.Gang != 0)
+                    continue;
+
+                var leader = crew.Men.Count > 0 ? crew.Men[0] : default;
+                _crewRows.Add(new TacticalHud.CrewRow
+                {
+                    CrewId = crew.Id,
+                    Name = crew.Name,
+                    Rank = crew.Rank,
+                    Alias = crew.Alias,
+                    Men = crew.Strength,
+                    Weapon = leader.Weapon,
+                    Mug = crew.Mug,
+                    Order = MapOrders.StateOf(crew.Unit),
+                    Condition = crew.Condition,
+                    Selected = _selected.Contains(crew.Id),
+                });
             }
 
             _gangRows.Clear();
@@ -1430,9 +1473,13 @@ namespace RoadDemo
                         ? "UNCLAIMED"
                         : Caps(LivingCity.Gangs.GangRegistry.NameOf(gang))).Append('\n');
                     _text.Append("DISTRICT: ").Append(building.District.ToUpperInvariant()).Append('\n');
+                    // Real pixels AND metres, on the one scale the footer prints.
+                    var shot = _sheet.RealBox(building.World);
                     _text.Append("FOOTPRINT: ")
-                        .Append(Mathf.RoundToInt(building.World.width)).Append(" X ")
-                        .Append(Mathf.RoundToInt(building.World.height)).Append(" M\n");
+                        .Append(shot.width).Append(" X ").Append(shot.height)
+                        .Append(" PX  (").Append(Mathf.RoundToInt(building.World.width))
+                        .Append(" X ").Append(Mathf.RoundToInt(building.World.height))
+                        .Append(" M)").Append('\n');
                     _text.Append("FLOORS: ~").Append(building.Floors)
                         .Append("  (").Append(Mathf.RoundToInt(building.Height)).Append(" M)\n");
                     if (building.Staff >= 0)
@@ -1452,30 +1499,22 @@ namespace RoadDemo
 
                 case Look.Crew:
                 {
-                    var unit = UnitOf(_lookAt);
-                    if (unit == null)
+                    var crew = _book.Get(_lookAt);
+                    if (crew == null)
                         break;
-                    var mine = unit.Faction == 0 && !unit.IsPolice;
-                    head = Crewname(unit);
-                    _text.Append("AFFILIATION: ")
-                        .Append(unit.IsPolice ? "CITY POLICE"
-                            : Caps(LivingCity.Gangs.GangRegistry.NameOf(unit.Faction)))
-                        .Append('\n');
-                    _text.Append("DOING: ").Append(MapOrders.StateOf(unit)).Append('\n');
-                    _text.Append("STANDING: ").Append(unit.Standing())
-                        .Append(" OF ").Append(unit.Size()).Append('\n');
-                    _text.Append("CONDITION: ")
-                        .Append(Mathf.RoundToInt(Condition(unit) * 100f)).Append("%\n");
-
-                    if (mine)
-                    {
+                    _actions.Clear();
+                    if (crew.Gang == 0)
                         _actions.Add("TO THE DOOR");
-                    }
                     else
-                    {
                         _actions.Add("MARK TARGET");
-                    }
-                    break;
+
+                    // The crew card is not a paragraph: it is a face, a column of
+                    // figures and the men on the book, so it has its own builder.
+                    _hud.SetCrewCard(crew,
+                        crew.Gang == -2 ? "CITY POLICE"
+                            : Caps(LivingCity.Gangs.GangRegistry.NameOf(crew.Gang)),
+                        MapOrders.StateOf(crew.Unit), _actions);
+                    return;
                 }
 
                 case Look.District:
@@ -1630,8 +1669,8 @@ namespace RoadDemo
                     continue;   // no room to print a name in
 
                 var middle = new Vector2(
-                    (box.xMin + box.width * 0.5f) / MapRaster.W,
-                    (box.yMin + box.height * 0.5f) / MapRaster.H);
+                    (box.xMin + box.width * 0.5f) / MapRaster.AW,
+                    (box.yMin + box.height * 0.5f) / MapRaster.AH);
                 if (middle.x < 0.02f || middle.x > 0.98f || middle.y < 0.02f || middle.y > 0.98f)
                     continue;
 

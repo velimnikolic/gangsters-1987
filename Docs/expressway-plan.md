@@ -938,6 +938,60 @@ Provereno slikama iz otvorenog editora (dva kotrljanja grada, drugi raspored sva
 put): jedan asfalt bez šava, zaobljenja u sva četiri ugla, 4 naplatne na ulaznim
 rampama uz plazu na ogranku, rampa gore sa stubom na mestu.
 
+### 15.10 Kraj debla nije stizao do grada (2026-08-26)
+
+*„put i dalje ide ispod poda i autoput se nije lepo konektovao na blok."*
+
+Izmereno u Play-u, nad terminusom u gradu:
+
+| šta | mera |
+|---|---|
+| kraj debla | `(1780, 88)` |
+| gradska raskrsnica koju terminus koristi (`_xwTownNode`, `_nodes[15,1]`) | centar `(1770, 88)`, poluširina **7.5** po X → istočna ivica na **1777.5** |
+| gde kolovoz zaista prestaje | **x = 1790** |
+| **rupa** | **12.5 m trave između asfalta i ivičnjaka** |
+
+`EndMargin` je bila ravna desetka, a komentar uz nju je tvrdio da je *„razmak koji
+raskrsnica na tom kraju premošćuje"*. Ne premošćuje: raskrsnica ulice u ovom gridu ima
+7.5 m poluširine, a sam kraj trase stoji još 2.5 m **izvan** njene kutije. Zato je put
+stajao 12.5 m pre ivičnjaka, u travi, **uz bok gradskog poda umesto na njemu** — odatle
+i „ide ispod poda".
+
+Sada `DeckMeets(deck, node, toward)`: stanica se nalazi tako što se linija puta
+**prošeta iz kutije te raskrsnice**, pa kolovoz staje tačno na njenom ivičnjaku i
+gradsko popločavanje preuzima dalje. `EndMargin` ostaje samo kao rezerva kad na tom
+kraju nema raskrsnice.
+
+Uz to `DeckSurfaceY` sada **spušta poslednjih 20 m** sa autoputske kote (`GradeY` 0.12)
+na gradsku (`StreetY` 0) — 12 cm na 20 m, dakle ništa u nagibu, a kola više ne ulaze u
+terminus preko ivičnjaka. Isto pravilo kao za rampe (§15.6).
+
+**Neprovereno u Play-u**: editor je tokom ovog kruga četiri puta prešao na scene druge
+sesije (`IndustrialDemo`, `BlockDemo`, `CoreDemo`), pa je mera gore snimljena PRE
+popravke, a posle nje nije bilo prilike.
+
+### 15.11 Performanse: šta scena zaista nosi (2026-08-26)
+
+*„performanse su kurac."* Brojke iz merge loga jednog runa:
+
+| | |
+|---|---|
+| Geometry | 10 888 renderera, **509k temena** |
+| **Blocks** | 3 293 renderera, **6 050k temena** |
+| spojeno | 14 181 komada (6 559k temena) → **544 mreže** |
+| vertex baferi | 340 MB → **200 MB** (140 MB mrtvih kanala odbačeno) |
+| **nije moglo da se spoji** | **92 vrste mreže** — import zabranjuje čitanje; ostaju sopstveni rendereri (spisak u `Logs/unreadable-me…`) |
+
+Merge radi svoj posao — 14 181 komada u 544 grupe crtanja. Teret nisu pozivi crtanja
+nego **6.5 miliona temena, od čega su blokovi 92 %**. Tri poteza, po redu isplativosti:
+
+1. **92 vrste mreže koje se ne spajaju** — uključiti Read/Write na tim modelima; svaka
+   je danas sopstveni renderer.
+2. **LOD na sadržaju bloka** — blokovi nose 6 M temena, a od 100 m se ne vidi razlika.
+3. **Manje/prostiji props po bloku** — najskuplji, najmanje reverzibilan.
+
+Nijedan nije urađen; ovo je merenje, ne popravka.
+
 ### 15.9 Gde barijera zaista pripada (2026-08-26)
 
 *„jel treba i tu naplatna rampa? aj logicki razmisli gde sve treba rampa i ispravi to."*

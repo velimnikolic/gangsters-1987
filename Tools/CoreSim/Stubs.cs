@@ -25,6 +25,10 @@ namespace UnityEngine
         public Vector3(float x, float y, float z) { this.x = x; this.y = y; this.z = z; }
         public static Vector3 zero => new Vector3(0f, 0f, 0f);
         public static Vector3 one => new Vector3(1f, 1f, 1f);
+        public static Vector3 forward => new Vector3(0f, 0f, 1f);
+        public static Vector3 right => new Vector3(1f, 0f, 0f);
+        public static Vector3 up => new Vector3(0f, 1f, 0f);
+        public static float Dot(Vector3 a, Vector3 b) => a.x * b.x + a.y * b.y + a.z * b.z;
         public float sqrMagnitude => x * x + y * y + z * z;
         public static Vector3 operator +(Vector3 a, Vector3 b) => new Vector3(a.x + b.x, a.y + b.y, a.z + b.z);
         public static Vector3 operator -(Vector3 a, Vector3 b) => new Vector3(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -45,6 +49,14 @@ namespace UnityEngine
         public float yaw;
         public static Quaternion identity => new Quaternion();
         public static Quaternion Euler(float x, float y, float z) => new Quaternion { yaw = y };
+
+        /// <summary>A turn about Y and nothing else, which is every turn this city makes.</summary>
+        public static Vector3 operator *(Quaternion turn, Vector3 by)
+        {
+            double rad = turn.yaw * Math.PI / 180.0;
+            float cos = (float)Math.Cos(rad), sin = (float)Math.Sin(rad);
+            return new Vector3(by.x * cos + by.z * sin, by.y, -by.x * sin + by.z * cos);
+        }
     }
 
     public struct Rect
@@ -85,6 +97,7 @@ namespace UnityEngine
         public static int Min(int a, int b) => Math.Min(a, b);
         public static int Max(int a, int b) => Math.Max(a, b);
         public static float Abs(float a) => Math.Abs(a);
+        public static int Abs(int a) => Math.Abs(a);
         public static float Floor(float a) => (float)Math.Floor(a);
         public static float Round(float a) => (float)Math.Round(a, MidpointRounding.ToEven);
         public static int RoundToInt(float a) => (int)Math.Round(a, MidpointRounding.ToEven);

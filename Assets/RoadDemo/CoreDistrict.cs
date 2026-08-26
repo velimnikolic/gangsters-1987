@@ -84,8 +84,48 @@ namespace RoadDemo
             // Synty seed asks for the demo's own arrangement instead
             _plan = CoreLayout.Arrange(_blocks, seed, out _raster);
             foreach (var block in _blocks) CoreLayout.Place(block);
+            StandParks();
             _bounds = Rect.MinMaxRect(_raster.X0, _raster.Z0,
                                       _raster.X(_raster.NX), _raster.Z(_raster.NZ));
+        }
+
+        /// <summary>
+        /// The deal's parks, composed into the rectangles it gave them.
+        ///
+        /// A park is the one block in the core with no prefab behind it: the deal decides how
+        /// big it is and the recipe fills that. Built under the same unplaced yard as the
+        /// blocks, so <see cref="Build"/> carries the whole quarter into the world in one
+        /// move - and composed at the ORIGIN before being moved, because every piece is
+        /// placed by measuring where it lands.
+        /// </summary>
+        void StandParks()
+        {
+            if (_plan == null || _plan.Parks.Count == 0) return;
+            ParkBlocks.ForgetMissing();
+
+            foreach (var block in _plan.Parks)
+            {
+                var root = new GameObject(block.Name).transform;
+                root.SetParent(_yard, false);
+
+                var box = block.Box;
+                int nx = Mathf.Max(3, Mathf.RoundToInt(box.width / CoreLayout.Cell));
+                int nz = Mathf.Max(3, Mathf.RoundToInt(box.height / CoreLayout.Cell));
+                int dice = unchecked(_seed * 7919 + Mathf.RoundToInt(box.xMin) * 104729 +
+                                     Mathf.RoundToInt(box.yMin) * 1299709);
+
+                var walk = ParkWalk.Lay(nx, nz, ParkWalk.Edge.Alone(), new System.Random(dice));
+                var stood = ParkBlocks.Compose(walk, root, new System.Random(dice),
+                    (prefab, parent) => Object.Instantiate(prefab, parent));
+                ParkBlocks.Pave(walk, root, out _,
+                    (prefab, parent) => Object.Instantiate(prefab, parent), dice);
+
+                root.position = new Vector3(box.xMin, 0f, box.yMin);
+
+                if (stood.Gaps > 0 || stood.FenceGap > 0.5f)
+                    Debug.LogWarning($"[Core] {block.Name}: {stood.Gaps} cell(s) with no floor, " +
+                                     $"{stood.FenceGap:F1} m of fence missing.");
+            }
         }
 
         /// <summary>The plan the quarter was dealt: which seed, which deal of it, and the
