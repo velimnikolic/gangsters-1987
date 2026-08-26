@@ -68,6 +68,17 @@ namespace RoadDemo
         /// men who walk away while the question stands have answered it.</summary>
         const float WalksOff = 22f;
 
+        /// <summary>Something is over the street: the book, the wheel's plan or the
+        /// strategic map. The same three every keyboard reader in the scene holds off
+        /// for (DemoCamera's BookOpen, TurfMinimap's stand-down, CityOverlayHud's
+        /// InputBlocked) - and the arrest owes it more than most of them, because the
+        /// only two keys it reads are letters a page behind is just as entitled to.
+        /// </summary>
+        static bool Blocked =>
+            LivingCity.UI.PersonnelAlmanac.IsOpen ||
+            TurfMapHud.IsOpen ||
+            LivingCity.UI.StrategicMapHud.InputBlocked;
+
         Collar _collar = Collar.None;
         PoliceFootPatrol _arrestOfficer;
         DemoCrews.Unit _arrestCrew;
@@ -95,6 +106,19 @@ namespace RoadDemo
                 case Collar.Asking:
                 {
                     if (ArrestOff()) return;
+                    // A SCREEN OVER THE STREET STOPS THE CLOCK. The question is put with
+                    // an overlay line and answered with two letters, and both of those
+                    // are behind the book, the plan or the strategic map while one of
+                    // them is up: the player would neither see that he was being asked
+                    // nor mean the N he typed at a page. So the ask WAITS - the seconds
+                    // are handed back rather than run down, because a man who opened his
+                    // ledger has not refused anything.
+                    if (Blocked)
+                    {
+                        _askUntil += dt;
+                        _sayAgainAt = 0f;   // said again the moment the screen clears
+                        return;
+                    }
                     if (Time.time >= _sayAgainAt)
                     {
                         _sayAgainAt = Time.time + AskAgain;

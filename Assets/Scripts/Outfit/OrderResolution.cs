@@ -300,12 +300,6 @@ namespace LivingCity.Outfit
         static readonly List<int> Scratch = new List<int>();
 
         /// <summary>
-        /// Avalanches (seed, day, job) before it reaches System.Random, whose nearby
-        /// seeds produce visibly correlated first draws - without it, two jobs issued
-        /// the same day would tend to answer the same way. Fingerprint mix from xxHash,
-        /// the same one the newspaper's editions are dealt through.
-        /// </summary>
-        /// <summary>
         /// What the clerk writes under HURT on the roll. Dealt from the job's own rng so
         /// the same night always produces the same note - a wound that re-rolled every
         /// repaint would be a man whose ribs healed and broke as the page redrew.
@@ -334,6 +328,12 @@ namespace LivingCity.Outfit
             "a doctor who asks nothing",
         };
 
+        /// <summary>
+        /// Avalanches (seed, day, job) before it reaches System.Random, whose nearby
+        /// seeds produce visibly correlated first draws - without it, two jobs issued
+        /// the same day would tend to answer the same way. Fingerprint mix from xxHash,
+        /// the same one the newspaper's editions are dealt through.
+        /// </summary>
         public static int Mix(int seed, int day, int jobId)
         {
             unchecked

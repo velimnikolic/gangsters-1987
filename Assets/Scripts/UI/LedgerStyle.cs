@@ -547,6 +547,10 @@ namespace LivingCity.UI
         {
             type = mono = monoBold = monoItalic = null;
             serif = serifBold = serifItalic = condensed = condensedText = null;
+            // the pixel faces are made the same way and die the same death - a runtime
+            // TMP_FontAsset does not survive leaving Play, and with domain reload off
+            // the static that held it does
+            pixel = pixelBold = null;
             missing.Clear();
             rounded = roundedSmall = softShadow = disc = ring = null;
             paperGrain = radialLight = hatch = deskFall = sheetFall = deskStripe = null;
