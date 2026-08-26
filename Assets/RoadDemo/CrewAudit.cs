@@ -79,13 +79,20 @@ namespace RoadDemo
         /// one man squeezing a car's flank both pass well inside the grace.</summary>
         const float SkatePace = 1.8f, SkateAfter = 1.5f;
 
+        /// <summary>Seconds a man may stand on the pavement, with no order and nothing
+        /// to shoot at, while HIS OWN CREW rides past in a car. A crew that drives off
+        /// without one of its men (a job clicked while they were still climbing in) used
+        /// to leave him there for the rest of the run: his walk to the door called off,
+        /// his unit counted as riding, so no fight, no tether, no order of any kind.</summary>
+        const float LeftBehindAfter = 10f;
+
         // -------------------------------------------------------------- the ledger
 
         class Watch
         {
             public Vector3 Last;
             public bool Seen, WasCarried;
-            public float OffFor, StrayFor, LightFor, ZebraFor, ChaseFor, SkateFor;
+            public float OffFor, StrayFor, LightFor, ZebraFor, ChaseFor, SkateFor, LeftFor;
             public float PrevGap = float.MaxValue;
             public bool SaidOff;
         }
@@ -116,6 +123,7 @@ namespace RoadDemo
             {
                 TickMen(arena, unit, dt);
                 TickStray(arena, unit, dt);
+                TickLeftBehind(arena, unit, dt);
                 TickFile(unit, dt);
             }
             if ((_sweepIn -= dt) <= 0f) { _sweepIn = 5f; SweepGone(); }
@@ -354,6 +362,32 @@ namespace RoadDemo
                     }
                 }
                 else if (d <= StrayGap) w.StrayFor = 0f;
+            }
+        }
+
+        // A crew that is RIDING and has men on the pavement: each of them wants an
+        // order of his own - a fight, a walk, a seat still to reach. Standing there
+        // with none is the fault this watches for.
+        static void TickLeftBehind(DemoCrews arena, DemoCrews.Unit unit, float dt)
+        {
+            // the law rides to its own orders - a dismounted officer is PoliceDispatch's
+            if (unit.Wiped || unit.IsPolice) return;
+            foreach (var man in unit.All())
+            {
+                if (man == null || man.Dead || man.Tf == null) continue;
+                if (!Men.TryGetValue(man, out var w)) continue;   // TickMen has not met him yet
+                bool adrift = unit.Car != null && unit.Boarding == null &&
+                              !arena.IsAboard(man) && !man.Riding &&
+                              !man.Panicked && !man.Retreating &&
+                              !man.HasOrder && man.Target == null;
+                if (!adrift) { w.LeftFor = 0f; continue; }
+                w.LeftFor += dt;
+                if (w.LeftFor > LeftBehindAfter)
+                {
+                    Fault(man, "leftbehind",
+                        $"stood on the pavement for {w.LeftFor:F0}s while his crew rides ({man.State})");
+                    w.LeftFor = -20f;
+                }
             }
         }
 

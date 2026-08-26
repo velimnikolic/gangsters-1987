@@ -115,6 +115,15 @@ namespace RoadDemo
             /// on the kerb by a click that came a second early.</summary>
             public Vector3? PendingDrive;
 
+            /// <summary>A KILL ordered while the crew was still climbing in: the drive-by
+            /// starts the moment the last man is in, not before. The same rule as
+            /// <see cref="PendingDrive"/>, and for the same reason - the first man into
+            /// his seat is what puts a car under the crew, so a kill clicked a second
+            /// early used to pull the car away from the two who were still walking to
+            /// their doors and leave them standing in the road with nothing to do
+            /// (their walk called off, their unit riding, so no fight of their own).</summary>
+            public Unit PendingAttack;
+
             /// <summary>Told to get out - waiting on the car to pull in and the doors to open.</summary>
             public bool Leaving;
 
@@ -1132,6 +1141,20 @@ namespace RoadDemo
         public bool OrderAttack(Unit target)
         {
             if (Selected == null || target == null || target == Selected || target.Wiped) return false;
+
+            // half in the car - the first men in their seats, the rest still walking to
+            // their doors: the job waits for them, exactly as a drive order does. The
+            // order is kept and the drive-by goes the moment the last man is in
+            // (TickCars). The fight itself is NOT set here: a crew with a target breaks
+            // off what it is doing and shoots, and what it is doing is getting into a car.
+            if (Selected.Boarding != null && Selected.Car == Selected.Boarding && StillBoarding(Selected))
+            {
+                Selected.PendingAttack = target;
+                Selected.PendingDrive = null;
+                Selected.OrderedAt = Time.time;
+                return true;
+            }
+
             Unboard(Selected, "an attack order");
             // in the car: a drive-by - passes down the street past them, guns out the windows
             // (no driver: out, and at them on foot)
@@ -1486,6 +1509,24 @@ namespace RoadDemo
             return false;
         }
 
+        /// <summary>A man on his way to a car door he has been given a seat at - his
+        /// order is the handle, and nothing else may be laid over it.</summary>
+        static bool WalkingToDoor(Unit unit, CrewWalker man) =>
+            unit != null && unit.Boarding != null && man != null &&
+            unit.Boarding.SeatOf.ContainsKey(man);
+
+        /// <summary>Is any man of this crew ON THE PAVEMENT - up, out of the car, and not
+        /// walking to a door of it? What tells a crew that is riding from one that has
+        /// left men behind.</summary>
+        bool AnyOnFoot(Unit unit)
+        {
+            if (unit == null) return false;
+            foreach (var man in unit.All())
+                if (man != null && !man.Dead && man.Tf != null &&
+                    !IsAboard(man) && !man.Riding && !WalkingToDoor(unit, man)) return true;
+            return false;
+        }
+
         /// <summary>Why the last car order was refused, or null - the overlay's line.</summary>
         public string CarRefusal { get; private set; }
 
@@ -1613,6 +1654,9 @@ namespace RoadDemo
                 DriveTrace.Row("crewcar", sb.ToString());
             }
             unit.Boarding = null;
+            // and with it whatever was deferred against the walk: a drive-by that was
+            // to start when the last man was in has no last man now
+            unit.PendingAttack = null;
         }
 
         /// <summary>Send a man to the door of his seat.
@@ -1663,6 +1707,7 @@ namespace RoadDemo
                 DriveTrace.Row("crewcar", sb.ToString());
             }
             unit.TargetUnit = null;
+            unit.PendingAttack = null;
             unit.OrderedAt = Time.time;
             unit.Boarding = car;
             unit.Leaving = false;
@@ -1922,6 +1967,7 @@ namespace RoadDemo
                         }
                         if (!anyOut)
                         {
+                            var mark = unit.PendingAttack;   // Unboard clears it
                             Unboard(unit, "everybody in");
                             // everybody in: the drive the player ordered while they were
                             // still climbing aboard goes now
@@ -1931,6 +1977,20 @@ namespace RoadDemo
                                 car.DriveTo(unit.PendingDrive.Value);
                             }
                             unit.PendingDrive = null;
+
+                            // and the KILL ordered while they were climbing aboard: the
+                            // drive-by starts now, with the whole crew in it. A mark that
+                            // died in the meantime is no job at all; no driver, and the
+                            // job is done on foot, which is what an attack order does to
+                            // a crew whose man at the wheel is dead.
+                            if (mark != null && !mark.Wiped && unit.Car == car)
+                            {
+                                unit.TargetUnit = mark;
+                                unit.OrderedFight = true;
+                                unit.SawEnemyAt = Time.time;
+                                if (DriverDead(car)) Disembark(unit);
+                                else { unit.Leaving = false; car.DriveBy(mark); }
+                            }
                         }
                     }
                 }
@@ -2264,7 +2324,7 @@ namespace RoadDemo
             car.Occupant = null;
             foreach (var unit in Units)
             {
-                if (unit.Car == car) { unit.Car = null; unit.PendingDrive = null; }
+                if (unit.Car == car) { unit.Car = null; unit.PendingDrive = null; unit.PendingAttack = null; }
                 if (unit.Boarding == car) Unboard(unit, "the car was taken off the street");
             }
             car.Despawn();
@@ -2474,7 +2534,15 @@ namespace RoadDemo
                 }
 
                 if (unit.TargetUnit == null) continue;
-                if (unit.Car != null) continue; // riders fire from the windows, not on foot
+                // Riders fire from the windows, not on foot - and they are skipped man
+                // by man below. The UNIT is only stood down when there is nobody of it
+                // left on the pavement: a crew whose car pulled away with one or two men
+                // still outside it is not a carload, and skipping it whole left those
+                // men standing in the street for the rest of the run with no fight, no
+                // walk and no tether (the tether lets a crew with a target alone). Men
+                // still walking to their doors are not "on foot" for this - their order
+                // is the door, and a fight would pull them off it.
+                if (unit.Car != null && !AnyOnFoot(unit)) continue;
 
                 // Each man goes for the nearest of them HE CAN SEE. Nobody in sight is
                 // not the same as nobody left: the crew holds its ground with its guns
@@ -2558,6 +2626,7 @@ namespace RoadDemo
                     continue;
                 }
 
+                if (unit.Car != null) continue;   // a crew in a car does not chase, and does not lose the job
                 StartChase(unit);
                 if (unit.OrderedFight) continue;   // a job stands until it is done
                 if (Time.time - unit.SawEnemyAt < LoseSight) continue;
