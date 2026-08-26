@@ -807,6 +807,16 @@ namespace LivingCity.UI
             Line(cardContent, LedgerStyle.Mono, 14f, LedgerStyle.InkDim, CardInner - 64f, y,
                 60f, 22f, LedgerText.Stars(halfSteps), TextAlignmentOptions.MidlineRight);
 
+            // How far along he is toward the next half-star, in pencil under the stars:
+            // a thin bar of what he has banked against what it costs. Nothing is drawn
+            // for a trade he has never practised or one he has already topped out at -
+            // an empty rule under every line would be eleven marks saying nothing.
+            var cost = Practice.NextCost(member, attribute);
+            var banked = member.GetPractice(attribute);
+            if (cost > 0 && banked > 0)
+                Bar(cardContent, 158f, y - 19f, 90f, 3f,
+                    Mathf.Clamp01(banked / (float)cost), LedgerStyle.InkFaint);
+
             // The whole line is a hover zone: rest the pointer on a stat and the
             // sticky note under it says what the number is FOR.
             var zone = NewRect("Hover", cardContent);

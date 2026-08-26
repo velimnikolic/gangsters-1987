@@ -232,12 +232,7 @@ namespace LivingCity.UI
             if (keyboard.escapeKey.wasPressedThisFrame)
             {
                 // Innermost state first - each Esc peels one layer, closing last.
-                if (pendingCommit)
-                {
-                    pendingCommit = false;
-                    dirty = true;
-                }
-                else if (pendingConfirm != Confirm.None)
+                if (pendingConfirm != Confirm.None)
                 {
                     pendingConfirm = Confirm.None;
                     dirty = true;
@@ -376,12 +371,8 @@ namespace LivingCity.UI
 
             // The map stands open beside the book the whole time - ORDERS just arms
             // targeting on it. Leaving the page clears its highlight layer.
-            if (pageKind != LedgerPage.Orders)
-            {
-                pendingCommit = false;
-                if (StrategicMapHud.Instance)
-                    StrategicMapHud.Instance.SetTargetHighlights(null, Color.clear);
-            }
+            if (pageKind != LedgerPage.Orders && StrategicMapHud.Instance)
+                StrategicMapHud.Instance.SetTargetHighlights(null, Color.clear);
             RefreshTargeting();
 
             if (pageKind != LedgerPage.Personnel)

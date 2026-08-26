@@ -195,6 +195,16 @@ namespace LivingCity.Generation
         /// one gang later can never reshuffle another.
         /// </summary>
         public const int Gangs = 30_000;
+
+        /// <summary>
+        /// Read by OrderResolution for the outfit's job rolls. Its own offset for the
+        /// list's standing reason, and one that bites harder here than anywhere above:
+        /// the strategy layer draws on the SAME city seed the streets were laid from,
+        /// so a roll that shared a stream with generation would mean the outcome of
+        /// tonight's shakedown depended on how many buildings the city happened to
+        /// have. Each job then mixes (seed, day, job id) - see OrderResolution.Mix.
+        /// </summary>
+        public const int Orders = 31_000;
     }
 
     /// <summary>

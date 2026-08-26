@@ -10,7 +10,7 @@ namespace LivingCity.Ambient
     /// that have no interest in lighting: shops that shut, patrols that change over, whatever
     /// wants to behave differently at two in the morning. One authority on what time it is.
     /// </summary>
-    public sealed class CityClock : MonoBehaviour
+    public sealed class CityClock : MonoBehaviour, IDayClock
     {
         public const float HoursPerDay = 24f;
 
@@ -35,7 +35,8 @@ namespace LivingCity.Ambient
         /// <summary>Hour of the day in [0, 24). Fractional: 8.5 is half past eight.</summary>
         public float Hour { get; private set; }
 
-        /// <summary>Whole days elapsed since the clock started. Nothing reads it yet; cheap to keep.</summary>
+        /// <summary>Whole days elapsed since the clock started - the campaign calendar
+        /// walks on this number (OutfitDirector), so a day here is a day in the books.</summary>
         public int Day { get; private set; }
 
         public bool Running
@@ -101,6 +102,9 @@ namespace LivingCity.Ambient
             }
 
             Hour = Mathf.Repeat(config ? config.startHour : startHour, HoursPerDay);
+
+            // The campaign calendar walks on whichever clock a scene runs.
+            DayClock.Register(this);
         }
 
         void Update()
@@ -124,6 +128,8 @@ namespace LivingCity.Ambient
 
         void OnDestroy()
         {
+            DayClock.Unregister(this);
+
             // In the Editor, Time.timeScale SURVIVES leaving Play mode - a city paused at
             // stop would leave the next Play session frozen with no button on screen yet.
             Time.timeScale = 1f;

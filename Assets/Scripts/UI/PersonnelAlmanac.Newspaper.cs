@@ -39,10 +39,23 @@ namespace LivingCity.UI
 
             newsContent = NewRect("Edition", root);
             Stretch(newsContent);
+
+            // The other half of the paper - the same sheet of newsprint, turned over.
+            BuildClassifiedPage(root);
         }
 
         void RebuildNewspaper()
         {
+            // Which side of the paper is up. Both roots live on the same page, so
+            // turning it over costs a SetActive and not a rebuild.
+            newsContent.gameObject.SetActive(!classifiedOpen);
+            classifiedContent.gameObject.SetActive(classifiedOpen);
+            if (classifiedOpen)
+            {
+                RebuildClassified();
+                return;
+            }
+
             var week = outfit ? outfit.Campaign.Week : 1;
             if (week == newsPaintedWeek && newsContent.childCount > 0)
                 return;
@@ -65,14 +78,18 @@ namespace LivingCity.UI
             earText.textWrappingMode = TextWrappingModes.Normal;
             earText.text = "FINAL\nCITY EDITION";
 
-            var ear2 = NewRect("EarRight", newsContent);
-            PlaceTopLeft(ear2, NewsRight - 118f, -14f, 118f, 46f);
-            Frame(ear2, 1f, LedgerStyle.Ink);
-            var ear2Text = Text("Text", ear2, LedgerStyle.Serif, 10.5f, LedgerStyle.Ink,
-                TextAlignmentOptions.Center);
-            Stretch(ear2Text.rectTransform, 4f);
-            ear2Text.textWrappingMode = TextWrappingModes.Normal;
-            ear2Text.text = "25 CENTS\nBEYOND THE RIVER 30";
+            // The right ear is where a paper prints its pointer to the inside pages,
+            // and this one points at the men advertising for work. A label-maker tape
+            // because it is a VERB: every other one in the book is one too. The cover
+            // price it replaces moved into the dateline under the masthead.
+            var adsTape = Tape(newsContent, "ADS", NewsRight - 118f, -14f, 118f, 46f,
+                () => SetClassified(true), size: 20f);
+            adsTape.rectTransform.offsetMin = new Vector2(0f, 14f);
+            var earNote = Text("Note", adsTape.transform.parent, LedgerStyle.Condensed,
+                10f, LedgerStyle.TapeText, TextAlignmentOptions.Center);
+            PlaceTopLeft(earNote.rectTransform, 0f, -30f, 118f, 14f);
+            earNote.characterSpacing = 2f;
+            earNote.text = "SITUATIONS WANTED";
 
             var masthead = Line(newsContent, LedgerStyle.SerifBold, 54f, LedgerStyle.Ink,
                 NewsLeft, -6f, NewsWidth, 70f, "THE CITY WIRE", TextAlignmentOptions.Center);
@@ -82,7 +99,7 @@ namespace LivingCity.UI
             var dateline = Line(newsContent, LedgerStyle.SerifItalic, 13f, LedgerStyle.Ink,
                 NewsLeft, -86f, NewsWidth, 22f,
                 date.Masthead() + "   ·   VOL. LXI, No. " + (week + 3) + "   ·   " +
-                "MORNING EDITION", TextAlignmentOptions.Center);
+                "MORNING EDITION   ·   25 CENTS", TextAlignmentOptions.Center);
             dateline.characterSpacing = 1f;
             Rule(newsContent, NewsLeft, -110f, NewsWidth, LedgerStyle.Ink, 3f);
 

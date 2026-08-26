@@ -893,6 +893,10 @@ namespace RoadDemo
 
             float dt = Time.deltaTime;
             ReportDeaths();
+            // BEFORE the fight: the ledger's orders are what put a crew somewhere and
+            // what sets it on somebody, so a job that starts this frame must have its
+            // march and its mark in hand before TickCombat reads either.
+            CrewJobs.Tick(this);
             TickCombat();
             // AFTER the fight is settled for the frame: TickCombat is what starts a
             // chase and what ends one by seeing the man again, so asking this first
@@ -3377,7 +3381,13 @@ namespace RoadDemo
             // shotgun in a man's face very nearly is
             float reach = Mathf.Max(stats.Range, 1f);
             float falloff = dist <= reach * 0.5f ? 1f : Mathf.Lerp(1f, 0.5f, (dist / reach - 0.5f) / 0.5f);
-            float p = stats.Accuracy * falloff;
+            // THE MAN BEHIND THE GUN. Until the ledger's Firearms stat reached this
+            // line a five-star shot and a man who had never held a pistol put the same
+            // rounds into the same door, and the whole attribute sheet decided nothing
+            // but a warning on a job card. 0.82 of the gun's own accuracy at one star,
+            // 1.30 at five - wide enough to feel, narrow enough that a shotgun in a
+            // man's face is still a shotgun in a man's face.
+            float p = stats.Accuracy * falloff * CrewSkill.Aim(shooter.FirearmsHalfSteps);
             if (shooter.IsLieutenant) p += 0.08f;
             // a man in a car has the door and the sill between him and the round; a man
             // crouched behind one has its flank
@@ -3455,6 +3465,9 @@ namespace RoadDemo
                 return;
             }
             target.TakeHit(stats.Damage, shooter);
+            // A round that found its mark is the only shooting practice the game
+            // recognises - firing off a magazine into a wall teaches nobody anything.
+            CrewSkill.Landed(shooter.CharacterId, CharacterAttribute.Firearms);
             if (DriveTrace.On)
                 DriveTrace.Event("hit", shooter.DisplayName, target.DisplayName,
                     $"\"dist\":{dist:F1},\"dead\":{(target.Dead ? "true" : "false")}");
@@ -4135,7 +4148,8 @@ namespace RoadDemo
             if (prefab == null) return null;
             var go = Body(prefab, member.FullName);
             var man = new CrewWalker
-                { Speed = pace, CharacterId = member.Id, SourcePrefab = prefab };
+                { Speed = pace, CharacterId = member.Id, SourcePrefab = prefab,
+                  FirearmsHalfSteps = member.GetHalfSteps(CharacterAttribute.Firearms) };
             man.Init(go.transform, CrewKit.Draw(_clips, _variety), link, Mathf.Clamp(t, 0.3f, link.Length - 0.3f));
             man.Fired = OnFired;
             man.RangeFactor = Random.Range(0.55f, 0.85f);
@@ -4149,7 +4163,8 @@ namespace RoadDemo
             if (prefab == null) return null;
             var go = Body(prefab, member.FullName);
             var man = new CrewWalker
-                { Speed = pace, CharacterId = member.Id, SourcePrefab = prefab };
+                { Speed = pace, CharacterId = member.Id, SourcePrefab = prefab,
+                  FirearmsHalfSteps = member.GetHalfSteps(CharacterAttribute.Firearms) };
             man.InitAt(go.transform, CrewKit.Draw(_clips, _variety), Clear(pos, member.FullName), rot);
             man.Fired = OnFired;
             man.RangeFactor = Random.Range(0.55f, 0.85f);

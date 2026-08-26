@@ -9,12 +9,16 @@ using static LivingCity.UI.LedgerKit;
 namespace LivingCity.UI
 {
     /// <summary>
-    /// ORDERS: the week's work, typed up as a memo. The lieutenants and how much of
-    /// each crew's week is already spoken for; THE JOB - the order being drafted for
-    /// the chosen crew, its target picked on the strategic map standing open to the
-    /// right; the queue for the week; last week's record; and the red COMMIT tape
-    /// that ends planning. This page is the map's IMapTargetingConsumer while a crew
-    /// is chosen: area orders drag a box, point orders click a door.
+    /// ORDERS: the outfit's work in hand, typed up as a memo. The lieutenants and what
+    /// each crew is doing this minute; THE JOB - the order being drafted for the chosen
+    /// crew, its target picked on the strategic map standing open to the right; the
+    /// open book; and the record of what has come back. This page is the map's
+    /// IMapTargetingConsumer while a crew is chosen: area orders drag a box, point
+    /// orders click a door.
+    ///
+    /// There is no commit tape. The game runs in real time: an order is issued and the
+    /// crew leaves, and the page redraws under the player as they travel, work and
+    /// report - which is why every line here is derived at repaint and none is stored.
     /// </summary>
     public sealed partial class PersonnelAlmanac
     {
@@ -37,9 +41,7 @@ namespace LivingCity.UI
         int draftMen = 1;
         string ordersNote = "";
         int selectedOrderId = -1;
-        bool pendingCommit;
         readonly List<Rect> highlightRects = new List<Rect>();
-        readonly List<int> scratchPast = new List<int>();
 
         void BuildOrdersPage(RectTransform sheet)
         {
@@ -144,6 +146,29 @@ namespace LivingCity.UI
                 {
                     skipped++;
                     firstReason ??= reason;
+                }
+            }
+
+            // The blocks' centre IS the area order's place: the crew has to travel to
+            // somewhere, and a box of blocks travels to the middle of itself. Without
+            // it an area job would read as having no coordinates and its men would
+            // arrive instantly however far across town the box was dragged.
+            if (draftBlocks.Count > 0)
+            {
+                var sum = Vector2.zero;
+                var counted = 0;
+                foreach (var id in draftBlocks)
+                {
+                    var block = CityBlocks.Get(id);
+                    if (block == null)
+                        continue;
+                    sum += block.Center;
+                    counted++;
+                }
+                if (counted > 0)
+                {
+                    draftX = sum.x / counted;
+                    draftZ = sum.y / counted;
                 }
             }
 
@@ -256,34 +281,18 @@ namespace LivingCity.UI
             return false;
         }
 
+        /// <summary>Metres from headquarters to the draft's place - the same figure the
+        /// director charges the crew when the job starts, quoted before the player
+        /// commits to it. Both read draftX/draftZ, which CaptureArea and CapturePoint
+        /// are the only writers of.</summary>
         float DraftDistance()
         {
-            if (!outfit || !outfit.TryGetHeadquarters(out var hq, out _))
+            if (!outfit || (draftBlocks.Count == 0 && draftLabel.Length == 0))
+                return 0f;
+            if (!outfit.TryGetHeadquarters(out var hq, out _))
                 return 0f;
 
-            Vector2 target;
-            if (draftBlocks.Count > 0)
-            {
-                var sum = Vector2.zero;
-                var counted = 0;
-                foreach (var id in draftBlocks)
-                {
-                    var block = CityBlocks.Get(id);
-                    if (block == null)
-                        continue;
-                    sum += block.Center;
-                    counted++;
-                }
-                if (counted == 0)
-                    return 0f;
-                target = sum / counted;
-            }
-            else if (draftLabel.Length > 0)
-                target = new Vector2(draftX, draftZ);
-            else
-                return 0f;
-
-            return Vector2.Distance(new Vector2(hq.x, hq.z), target);
+            return Vector2.Distance(new Vector2(hq.x, hq.z), new Vector2(draftX, draftZ));
         }
 
         void PushHighlights()
@@ -297,12 +306,12 @@ namespace LivingCity.UI
             // must never look alike.
             var color = new Color(1f, 0.85f, 0.15f, 0.32f);
 
-            var plan = outfit ? outfit.Plan : null;
-            Outfit.PlannedOrder selected = null;
-            if (plan != null && selectedOrderId >= 0)
-                foreach (var order in plan.Confirmed)
-                    if (order.Id == selectedOrderId)
-                        selected = order;
+            var book = outfit ? outfit.Book : null;
+            Outfit.Job selected = null;
+            if (book != null && selectedOrderId >= 0)
+                foreach (var job in book.Jobs)
+                    if (job.Id == selectedOrderId)
+                        selected = job;
 
             if (selected != null)
             {
@@ -341,10 +350,12 @@ namespace LivingCity.UI
                 return;
 
             if (ordersWeek)
+            {
+                var date = outfit.Campaign.DayName + " · WEEK " + outfit.Campaign.Week;
                 ordersWeek.text = outfit.TryGetHeadquarters(out _, out var hqBlock)
-                    ? "WEEK " + outfit.Campaign.Week + "  ·  HQ at block #" + hqBlock
-                    : "WEEK " + outfit.Campaign.Week +
-                      "  ·  the families are still settling in";
+                    ? date + "  ·  HQ at block #" + hqBlock
+                    : date + "  ·  the families are still settling in";
+            }
 
             var y = -6f;
 
@@ -358,9 +369,9 @@ namespace LivingCity.UI
             y = OrdersCrewList(roster, y);
             if (ordersCrewId >= 0)
                 y = OrdersJobCard(roster, y);
-            y = OrdersThisWeek(roster, y);
-            y = OrdersLastWeek(y);
-            y = OrdersCommit(y);
+            y = OrdersInHand(roster, y);
+            y = OrdersRises(y);
+            y = OrdersRecord(y);
 
             ordersContent.sizeDelta = new Vector2(0f, Mathf.Max(400f, -y + 20f));
             var maxScroll = Mathf.Max(0f,
@@ -385,12 +396,13 @@ namespace LivingCity.UI
                 return y - 28f;
             }
 
-            var plan = outfit.Plan;
+            var book = outfit.Book;
             foreach (var crew in roster.Crews)
             {
                 var lieutenant = roster.Find(crew.LieutenantId);
                 var men = Outfit.CrewKit.MenOf(crew);
-                var committed = plan.CommittedMen(crew.Id);
+                var menOut = book.MenOut(crew.Id);
+                var current = book.CurrentFor(crew.Id);
                 var hasVehicle = Outfit.CrewKit.HasVehicle(roster, crew);
                 var chosen = crew.Id == ordersCrewId;
                 var crewId = crew.Id;
@@ -421,19 +433,24 @@ namespace LivingCity.UI
                 FillRow(kit.rectTransform, 280f, 300f);
                 kit.text = men + " men  ·  " + (hasVehicle ? "by car" : "on foot");
 
-                var over = committed > men;
-                var committedText = Text("Committed", row, LedgerStyle.Mono, 14f,
-                    over ? LedgerStyle.RedPen : LedgerStyle.InkDim,
+                var busy = Text("Out", row, LedgerStyle.Mono, 14f, LedgerStyle.InkDim,
                     TextAlignmentOptions.MidlineRight);
-                FillRow(committedText.rectTransform, OrdersInner - 260f, 252f);
-                committedText.text = LedgerText.CommittedLine(committed, men);
+                FillRow(busy.rectTransform, OrdersInner - 260f, 252f);
+                busy.text = LedgerText.MenOutLine(menOut, men);
                 y -= 28f;
 
-                // The week's labour, spent left to right - a pen bar.
-                var fraction = men > 0 ? Mathf.Min(1f, committed / (float)men) : 0f;
-                Bar(ordersContent, 12f, y, OrdersInner - 16f, 8f, fraction,
-                    over ? LedgerStyle.RedPen : LedgerStyle.Ink);
-                y -= 18f;
+                // What they are doing this minute, in the lieutenant's own words - the
+                // page redraws under the player as the hours run down.
+                var doing = current == null
+                    ? "idle at the front"
+                    : LedgerText.OrderLabel(current.Type) + " - " +
+                      LedgerText.StageLine(current);
+                var queued = book.LiveCount(crew.Id) - (current != null ? 1 : 0);
+                Line(ordersContent, LedgerStyle.MonoItalic, 13.5f,
+                    current == null ? LedgerStyle.InkDim : LedgerStyle.Ink, 12f, y,
+                    OrdersInner - 16f, 18f,
+                    doing + (queued > 0 ? "   (" + queued + " more waiting)" : ""));
+                y -= 22f;
             }
 
             return y - 4f;
@@ -545,23 +562,55 @@ namespace LivingCity.UI
 
             if (targetCount > 0)
             {
+                var available = Outfit.CrewKit.MenOf(crew);
+                if (draftMen > available)
+                    draftMen = available < 1 ? 1 : available;
+
                 var hasVehicle = Outfit.CrewKit.HasVehicle(roster, crew);
                 var distance = DraftDistance();
-                var travel = Outfit.OrderMath.TravelFraction(distance, hasVehicle);
-                var needed = Outfit.OrderMath.MenNeeded(spec, targetCount, travel);
+                var driving = Outfit.CrewKit.BestAt(roster, crew, CharacterAttribute.Driving);
+                var travel = Outfit.OrderMath.TravelHours(distance, hasVehicle, driving);
+                var work = Outfit.OrderMath.WorkHours(spec, targetCount, draftMen);
+                var standing = spec.Resolution == Outfit.JobResolution.Standing;
 
                 Line(ordersContent, LedgerStyle.Mono, 14f,
-                    travel > 0.5f ? LedgerStyle.RedPen : LedgerStyle.InkDim, 4f, y,
+                    travel > 8f ? LedgerStyle.RedPen : LedgerStyle.InkDim, 4f, y,
                     OrdersInner, 18f,
                     "Travel: " + Mathf.RoundToInt(distance) + "m from HQ " +
-                    (hasVehicle ? "by car" : "ON FOOT") + " - eats " +
-                    Mathf.RoundToInt(travel * 100f) + "% of each man's week.");
+                    (hasVehicle ? "by car" : "ON FOOT") + " - " + LedgerText.Hours(travel) +
+                    " each way.");
                 y -= 20f;
 
                 Line(ordersContent, LedgerStyle.Mono, 14f, LedgerStyle.InkDim, 4f, y, OrdersInner,
-                    18f, "Needs about " + needed + " man-week" + (needed == 1 ? "" : "s") +
-                         " to finish.");
-                y -= 24f;
+                    18f, standing
+                        ? "A standing watch - they hold it until you call them off."
+                        : "The work itself: " + LedgerText.Hours(work) + " with " +
+                          draftMen + (draftMen == 1 ? " man." : " men."));
+                y -= 20f;
+
+                if (!standing)
+                {
+                    var best = Outfit.CrewKit.BestAt(roster, crew, spec.PrimaryAttribute);
+                    var organization = Outfit.CrewKit.BestAt(roster, crew,
+                        CharacterAttribute.Organization);
+                    // The other work the lieutenant is carrying - the same quantity
+                    // OutfitDirector freezes onto a job as it starts (LiveCount less
+                    // the job itself). Quoted for a job STARTED NOW: one sent to the
+                    // back of a long queue may come up to a book that has emptied and
+                    // do better than this line promised, which is the right way round
+                    // for a quote to be wrong.
+                    var depth = outfit.Book.LiveCount(crew.Id);
+                    var chance = Outfit.OrderResolution.ChanceFor(spec, best, depth,
+                        organization);
+                    Line(ordersContent, LedgerStyle.Mono, 14f,
+                        chance < 0.4f ? LedgerStyle.RedPen : LedgerStyle.InkDim, 4f, y,
+                        OrdersInner, 18f,
+                        spec.Resolution == Outfit.JobResolution.Street
+                            ? "The street will decide this one."
+                            : "Coming off: " + LedgerText.OddsLine(chance) + ".");
+                    y -= 20f;
+                }
+                y -= 4f;
 
                 Tape(ordersContent, "-", 4f, y, 26f, 24f, () =>
                 {
@@ -579,34 +628,34 @@ namespace LivingCity.UI
                     dirty = true;
                 });
 
-                if (Outfit.OrderMath.Undermanned(spec, targetCount, travel, draftMen))
-                    Line(ordersContent, LedgerStyle.MonoItalic, 14f, LedgerStyle.RedPen, 190f, y,
-                        OrdersInner - 190f, 24f, "Won't finish this week.");
+                if (draftMen >= available)
+                    Line(ordersContent, LedgerStyle.MonoItalic, 14f, LedgerStyle.InkDim, 190f, y,
+                        OrdersInner - 190f, 24f, "That is the whole crew.");
                 y -= 32f;
 
                 var crewId = crew.Id;
-                var confirmSpec = spec;
-                Tape(ordersContent, "CONFIRM ORDER", 4f, y, 200f, 28f, () =>
+                var issueSpec = spec;
+                Tape(ordersContent, "SEND THEM", 4f, y, 200f, 28f, () =>
                 {
-                    var order = new Outfit.PlannedOrder
+                    var job = new Outfit.Job
                     {
                         CrewId = crewId,
-                        Type = confirmSpec.Type,
+                        Type = issueSpec.Type,
                         Men = draftMen,
                         TargetBlockId = draftBlockId,
                         TargetX = draftX,
                         TargetZ = draftZ,
                         TargetLabel = draftLabel,
                     };
-                    order.BlockTargets.AddRange(draftBlocks);
+                    job.BlockTargets.AddRange(draftBlocks);
 
-                    var result = outfit.ConfirmOrder(order);
+                    var result = outfit.IssueOrder(job);
                     if (result.Ok)
                     {
                         draftBlocks.Clear();
                         draftLabel = "";
                         draftMen = 1;
-                        ordersNote = "Order confirmed - it is in the queue now.";
+                        ordersNote = "Issued. They go as soon as they are free.";
                     }
                     else
                         ordersNote = result.Reason;
@@ -618,66 +667,61 @@ namespace LivingCity.UI
             return y - 4f;
         }
 
-        float OrdersThisWeek(Roster roster, float y)
+        float OrdersInHand(Roster roster, float y)
         {
-            y = OrdersHeader("This week", y);
-            var plan = outfit.Plan;
+            y = OrdersHeader("In hand", y);
+            var book = outfit.Book;
 
-            if (plan.Confirmed.Count == 0)
+            if (book.Jobs.Count == 0)
             {
                 Line(ordersContent, LedgerStyle.MonoItalic, 14.5f, LedgerStyle.InkDim, 4f, y,
-                    OrdersInner, 18f, "No orders in the queue.");
+                    OrdersInner, 18f, "Nobody is out. The city is somebody else's tonight.");
                 return y - 26f;
             }
 
-            // The line each crew crosses, computed once for the whole list.
-            var pastAll = new HashSet<int>();
-            foreach (var crew in roster.Crews)
+            foreach (var job in book.Jobs)
             {
-                Outfit.OrderMath.PastTheLine(plan, crew.Id,
-                    Outfit.CrewKit.MenOf(crew), scratchPast);
-                foreach (var id in scratchPast)
-                    pastAll.Add(id);
-            }
-
-            foreach (var order in plan.Confirmed)
-            {
-                var crew = roster.FindCrew(order.CrewId);
+                var crew = roster.FindCrew(job.CrewId);
                 var lieutenant = crew != null ? roster.Find(crew.LieutenantId) : null;
-                var past = pastAll.Contains(order.Id);
-                var chosen = order.Id == selectedOrderId;
-                var orderId = order.Id;
+                var underway = job.Stage != Outfit.JobStage.Queued;
+                var chosen = job.Id == selectedOrderId;
+                var jobId = job.Id;
 
-                var row = NewRect("Order", ordersContent);
+                var row = NewRect("Job", ordersContent);
                 PlaceTopLeft(row, 4f, y, OrdersInner - 100f, 24f);
                 var surface = ClickSurface(row);
                 RowButton(row, surface, () =>
                 {
-                    selectedOrderId = chosen ? -1 : orderId;
+                    selectedOrderId = chosen ? -1 : jobId;
                     dirty = true;
                 });
                 if (chosen)
                     Highlight(row, LedgerStyle.Highlighter, inset: 2f);
 
                 var text = Text("Line", row, LedgerStyle.Mono, 14.5f,
-                    past ? LedgerStyle.RedPen : LedgerStyle.Ink, TextAlignmentOptions.MidlineLeft);
+                    underway ? LedgerStyle.Ink : LedgerStyle.InkDim,
+                    TextAlignmentOptions.MidlineLeft);
                 FillRow(text.rectTransform, 8f, OrdersInner - 116f);
                 text.text = (lieutenant != null ? lieutenant.Surname : "?") +
-                    "  ·  " + LedgerText.OrderLabel(order.Type) + "  ·  " +
-                    (order.BlockTargets.Count > 0
-                        ? order.BlockTargets.Count + " blk"
-                        : order.TargetLabel) +
-                    "  ·  " + order.Men + " men" +
-                    (past ? "  — PAST THE LINE" : "");
+                    "  ·  " + LedgerText.OrderLabel(job.Type) + "  ·  " +
+                    (job.BlockTargets.Count > 0
+                        ? job.BlockTargets.Count + " blk"
+                        : job.TargetLabel) +
+                    "  ·  " + job.Men + " men  —  " + LedgerText.StageLine(job);
 
-                Tape(ordersContent, "^", 4f + OrdersInner - 92f, y, 26f, 22f,
-                    () => { outfit.MoveOrder(orderId, -1); dirty = true; }, size: 11f);
-                Tape(ordersContent, "v", 4f + OrdersInner - 62f, y, 26f, 22f,
-                    () => { outfit.MoveOrder(orderId, 1); dirty = true; }, size: 11f);
+                // A job the crew is already out on cannot be reordered - they are
+                // there - so the arrows only appear on work still waiting its turn.
+                if (!underway)
+                {
+                    Tape(ordersContent, "^", 4f + OrdersInner - 92f, y, 26f, 22f,
+                        () => { outfit.MoveOrder(jobId, -1); dirty = true; }, size: 11f);
+                    Tape(ordersContent, "v", 4f + OrdersInner - 62f, y, 26f, 22f,
+                        () => { outfit.MoveOrder(jobId, 1); dirty = true; }, size: 11f);
+                }
                 Tape(ordersContent, "X", 4f + OrdersInner - 32f, y, 26f, 22f, () =>
                 {
-                    outfit.RemoveOrder(orderId);
-                    if (selectedOrderId == orderId)
+                    outfit.CancelOrder(jobId);
+                    if (selectedOrderId == jobId)
                         selectedOrderId = -1;
                     dirty = true;
                 }, red: true, size: 11f);
@@ -687,18 +731,38 @@ namespace LivingCity.UI
             return y - 4f;
         }
 
-        float OrdersLastWeek(float y)
+        /// <summary>Who got better overnight. Only ever today's - the almanac's
+        /// PERSONNEL page is where a man's whole sheet is read.</summary>
+        float OrdersRises(float y)
         {
-            y = OrdersHeader("Last week", y);
+            if (outfit.Rises.Count == 0)
+                return y;
 
-            if (outfit.LastWeek.Count == 0)
+            y = OrdersHeader("Come along", y);
+            foreach (var rise in outfit.Rises)
+            {
+                Line(ordersContent, LedgerStyle.Mono, 14f, LedgerStyle.Ink, 4f, y,
+                    OrdersInner, 18f,
+                    rise.Name + " - " + LedgerText.AttributeLabel(rise.Attribute) +
+                    " now " + LedgerText.Stars(rise.HalfSteps) + ".");
+                y -= 20f;
+            }
+
+            return y - 4f;
+        }
+
+        float OrdersRecord(float y)
+        {
+            y = OrdersHeader("The record", y);
+
+            if (outfit.Records.Count == 0)
             {
                 Line(ordersContent, LedgerStyle.MonoItalic, 14.5f, LedgerStyle.InkDim, 4f, y,
-                    OrdersInner, 18f, "No record yet - the first week is still open.");
+                    OrdersInner, 18f, "Nothing has come back yet.");
                 return y - 26f;
             }
 
-            foreach (var record in outfit.LastWeek)
+            foreach (var record in outfit.Records)
             {
                 var color = record.Outcome switch
                 {
@@ -707,48 +771,14 @@ namespace LivingCity.UI
                     _ => LedgerStyle.InkDim,
                 };
                 Line(ordersContent, LedgerStyle.Mono, 14f, color, 4f, y, OrdersInner, 18f,
-                    record.Lieutenant + "  ·  " + LedgerText.OrderLabel(record.Type) +
-                    "  ·  " + record.TargetSummary + "  ·  " + record.Men + " men  —  " +
-                    LedgerText.OutcomeLabel(record.Outcome).ToUpperInvariant());
+                    "D" + record.Day + "  ·  " + record.Lieutenant + "  ·  " +
+                    LedgerText.OrderLabel(record.Type) + "  ·  " + record.TargetSummary +
+                    "  —  " + LedgerText.OutcomeLabel(record.Outcome).ToUpperInvariant() +
+                    (record.Money != 0 ? "  " + LedgerText.Cash(record.Money) : ""));
                 y -= 22f;
             }
 
             return y - 4f;
-        }
-
-        float OrdersCommit(float y)
-        {
-            y -= 10f;
-            if (pendingCommit)
-            {
-                Paragraph(ordersContent, LedgerStyle.MonoItalic, 14.5f, LedgerStyle.RedPen, 4f, y,
-                    OrdersInner, 40f,
-                    "End planning? Wages fall due, stances turn, and the week runs as ordered.",
-                    lineSpacing: 0f);
-                y -= 44f;
-
-                Tape(ordersContent, "COMMIT", 4f, y, 160f, 28f, () =>
-                {
-                    pendingCommit = false;
-                    selectedOrderId = -1;
-                    outfit.CommitWeek();
-                    ordersNote = "The week is committed.";
-                    dirty = true;
-                }, red: true);
-                Tape(ordersContent, "CANCEL", 172f, y, 120f, 28f, () =>
-                {
-                    pendingCommit = false;
-                    dirty = true;
-                });
-            }
-            else
-                Tape(ordersContent, "COMMIT THE WEEK", 4f, y, OrdersInner, 30f, () =>
-                {
-                    pendingCommit = true;
-                    dirty = true;
-                }, red: true, size: 13f);
-
-            return y - 40f;
         }
     }
 }

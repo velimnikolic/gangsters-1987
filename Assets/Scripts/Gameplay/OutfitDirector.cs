@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using LivingCity.Outfit;
 using LivingCity.Personnel;
@@ -5,24 +6,43 @@ using LivingCity.Personnel;
 namespace LivingCity.Gameplay
 {
     /// <summary>
-    /// The scene's one owner of the outfit's strategic state - today the campaign
-    /// calendar, and as the ledger's pages land, the safe, the weekly books, stances and
-    /// the order queues. Same contract as PersonnelDirector: the UI reads through this
-    /// class and mutates through its wrappers, which bump <see cref="Version"/> - the
-    /// dirty key the ledger repaints on. A mutation that skipped the director would
-    /// change the books without moving Version and the page would sit stale.
+    /// The scene's one owner of the outfit's strategic state. Since the game went
+    /// realtime the RULES of that state live in <see cref="CampaignRunner"/>, which is
+    /// pure and headlessly testable like everything else in the Outfit namespace; what
+    /// is left here is the four things only a scene can answer: what time it is, where
+    /// the headquarters stands, what to write in the console, and when the ledger must
+    /// repaint.
+    ///
+    /// Same contract as PersonnelDirector: the UI reads through this class and mutates
+    /// through its wrappers, which bump <see cref="Version"/> - the dirty key the ledger
+    /// repaints on. A mutation that skipped the director would change the books without
+    /// moving Version and the page would sit stale.
+    ///
+    /// There is no commit button and no turn. A player who issues nothing still watches
+    /// his wages fall due, which is the pressure the whole design runs on.
     /// </summary>
     public sealed class OutfitDirector : MonoBehaviour
     {
         public static OutfitDirector Instance { get; private set; }
 
-        public Campaign Campaign { get; private set; } = new Campaign();
+        /// <summary>The campaign itself. Public so the headless suite and the ledger
+        /// read the same object the director drives.</summary>
+        public CampaignRunner Runner { get; } = new CampaignRunner();
 
-        public Accounts Accounts { get; private set; } = new Accounts();
-
-        public GangRelations Relations { get; } = new GangRelations();
+        public Campaign Campaign => Runner.Campaign;
+        public Accounts Accounts => Runner.Accounts;
+        public GangRelations Relations => Runner.Relations;
+        public OrderBook Book => Runner.Book;
+        public List<OrderRecord> Records => Runner.Records;
+        public List<Improvement> Rises => Runner.Rises;
+        public int Heat => Runner.Heat;
 
         public int Version { get; private set; }
+
+        /// <summary>Game-hours the clock read last frame, as one number (day × 24 +
+        /// hour) so a day rollover is not a special case in the subtraction.</summary>
+        float lastClockHours;
+        bool clockRead;
 
         /// <summary>
         /// The live holdings, one entry per gang-held BUILDING, read straight off the
@@ -31,19 +51,13 @@ namespace LivingCity.Gameplay
         /// every call: nothing seeds and no cache can go stale when the takeover layer
         /// starts flipping GangId building by building.
         /// </summary>
-        public void CollectHoldings(System.Collections.Generic.List<Turf.Holding> into)
+        public void CollectHoldings(List<Turf.Holding> into)
         {
             into.Clear();
             foreach (var business in PropertyRegistry.Businesses)
                 if (business && business.GangId >= 0)
                     into.Add(new Turf.Holding(business.GangId, business.BlockId));
         }
-
-        public WeekPlan Plan { get; private set; } = new WeekPlan();
-
-        /// <summary>Last week's record rows - snapshots, read-only by construction.</summary>
-        public readonly System.Collections.Generic.List<OrderRecord> LastWeek =
-            new System.Collections.Generic.List<OrderRecord>();
 
         /// <summary>The outfit's front - its headquarters. False until the gang layer
         /// has seated the families.</summary>
@@ -59,114 +73,108 @@ namespace LivingCity.Gameplay
             return true;
         }
 
-        /// <summary>Step 5 of the flow - only here does the order exist: it enters the
-        /// queue and the budget fills. Everything before this call is a draft on the
-        /// job card with no effect on anything.</summary>
-        public OpResult ConfirmOrder(PlannedOrder order)
+        /// <summary>Metres from headquarters to a job's door - the one worldly fact the
+        /// campaign cannot work out for itself, handed to it as a function.</summary>
+        float DistanceFromHeadquarters(Job job)
         {
-            if (order == null || order.TargetCount == 0)
-                return OpResult.Fail(UI.LedgerText.ReasonNoTargets);
-            if (order.Men < 1)
-                order.Men = 1;
-
-            order.Id = Plan.NextOrderId();
-            Plan.Confirmed.Add(order);
-            Version++;
-            return OpResult.Success;
+            if (job == null || !job.HasPlace || !TryGetHeadquarters(out var hq, out _))
+                return 0f;
+            var dx = job.TargetX - hq.x;
+            var dz = job.TargetZ - hq.z;
+            return Mathf.Sqrt(dx * dx + dz * dz);
         }
 
-        /// <summary>Removing returns the order's cost - the men come free again.</summary>
-        public OpResult RemoveOrder(int orderId)
+        // ------------------------------------------------------------------- issuing
+
+        public OpResult IssueOrder(Job job) => Commit(Runner.Issue(RosterOrNull(), job));
+
+        public OpResult CancelOrder(int jobId) => Commit(Runner.Cancel(RosterOrNull(), jobId));
+
+        public OpResult MoveOrder(int jobId, int direction) =>
+            Commit(Runner.Move(jobId, direction));
+
+        public void ReportStreetOutcome(int jobId, OrderOutcome outcome) =>
+            Runner.ReportStreetOutcome(jobId, outcome);
+
+        OpResult Commit(OpResult result)
         {
-            for (var i = 0; i < Plan.Confirmed.Count; i++)
-                if (Plan.Confirmed[i].Id == orderId)
-                {
-                    Plan.Confirmed.RemoveAt(i);
-                    Version++;
-                    return OpResult.Success;
-                }
-            return OpResult.Fail(UI.LedgerText.ReasonNoSuchOrder);
+            if (result.Ok)
+                Version++;
+            return result;
         }
 
-        /// <summary>List order IS execution priority - moving a row moves the line
-        /// the never-reached mark falls on.</summary>
-        public OpResult MoveOrder(int orderId, int direction)
-        {
-            for (var i = 0; i < Plan.Confirmed.Count; i++)
-                if (Plan.Confirmed[i].Id == orderId)
-                {
-                    var to = i + (direction < 0 ? -1 : 1);
-                    if (to < 0 || to >= Plan.Confirmed.Count)
-                        return OpResult.Fail(UI.LedgerText.ReasonNoSuchOrder);
-                    (Plan.Confirmed[i], Plan.Confirmed[to]) =
-                        (Plan.Confirmed[to], Plan.Confirmed[i]);
-                    Version++;
-                    return OpResult.Success;
-                }
-            return OpResult.Fail(UI.LedgerText.ReasonNoSuchOrder);
-        }
+        static Roster RosterOrNull() =>
+            PersonnelDirector.Instance ? PersonnelDirector.Instance.Roster : null;
+
+        bool seedTaken;
 
         /// <summary>
-        /// The commit boundary - where the working-week simulation will attach. Today
-        /// it does everything EXCEPT execute: freezes the open sheet (wages actually
-        /// paid, out of the safe), stamps last week's record (reached orders stubbed
-        /// Completed; orders past a crew's labour line marked NeverReached - running
-        /// out of week is a different problem from failing, and the rows say which),
-        /// applies pending stances, turns the calendar, opens a fresh sheet and an
-        /// empty plan.
+        /// Takes the city seed the rolls are dealt from - once, and NOT in Start. Both
+        /// directors are seated by the same installer, so which Start runs first is
+        /// undefined; reading the seed in ours could catch PersonnelDirector's fallback
+        /// 42 instead of the city's own number, and every campaign on every seed would
+        /// then have rolled the same way. A dealt roster is the proof its Start has run.
         /// </summary>
-        public void CommitWeek()
+        void TakeSeed()
         {
-            var roster = PersonnelDirector.Instance ? PersonnelDirector.Instance.Roster : null;
-
-            var sheet = Accounts.Current;
-            if (sheet != null && !sheet.Closed)
-            {
-                sheet.WagesPaid = Wages.WeeklyPayroll(roster);
-                Accounts.Safe -= sheet.WagesPaid;
-                Accounts.RiskyMoney += sheet.IllegalIncome;
-                sheet.Closed = true;
-            }
-
-            LastWeek.Clear();
-            var past = new System.Collections.Generic.List<int>();
-            var pastAll = new System.Collections.Generic.HashSet<int>();
-            if (roster != null)
-                foreach (var crew in roster.Crews)
-                {
-                    OrderMath.PastTheLine(Plan, crew.Id, CrewKit.MenOf(crew), past);
-                    foreach (var id in past)
-                        pastAll.Add(id);
-                }
-
-            foreach (var order in Plan.Confirmed)
-            {
-                var crew = roster?.FindCrew(order.CrewId);
-                var lieutenant = crew != null ? roster.Find(crew.LieutenantId) : null;
-                LastWeek.Add(new OrderRecord
-                {
-                    Lieutenant = lieutenant != null ? lieutenant.FullName : "?",
-                    Type = order.Type,
-                    TargetSummary = order.BlockTargets.Count > 0
-                        ? order.BlockTargets.Count + " blocks"
-                        : order.TargetLabel,
-                    Men = order.Men,
-                    Outcome = pastAll.Contains(order.Id)
-                        ? OrderOutcome.NeverReached
-                        : OrderOutcome.Completed,
-                });
-            }
-
-            Relations.ApplyPending();
-            Campaign.Week++;
-            Accounts.Sheets.Add(new WeekSheet { Week = Campaign.Week });
-            Plan = new WeekPlan();
-            Version++;
-            Debug.Log("[Outfit] Week committed - week " + Campaign.Week + " opens.");
+            if (seedTaken || !PersonnelDirector.Instance ||
+                PersonnelDirector.Instance.Roster == null)
+                return;
+            Runner.Seed = PersonnelDirector.Instance.Seed;
+            seedTaken = true;
         }
 
-        /// <summary>Stores the change as pending - stances turn over at the week
-        /// commit, never mid-plan.</summary>
+        // --------------------------------------------------------------------- clock
+
+        void Update()
+        {
+            var clock = Ambient.DayClock.Current;
+            if (clock == null)
+                return;
+
+            var now = clock.Day * Campaign.HoursPerDay + clock.Hour;
+            if (!clockRead)
+            {
+                lastClockHours = now;
+                clockRead = true;
+                return;
+            }
+
+            var elapsed = now - lastClockHours;
+            lastClockHours = now;
+            // A clock that went backwards was reset, not rewound - the demo rebuilds
+            // its day/night stack on a rebuild. Swallow the step rather than paying a
+            // negative hour into every job in the book.
+            if (elapsed <= 0f)
+                return;
+
+            var roster = RosterOrNull();
+            TakeSeed();
+            if (Runner.AdvanceHours(roster, elapsed))
+                Version++;
+
+            // Clock days are 0-based and the campaign's are 1-based; a while rather
+            // than an if so a frame that swallowed several days (a rebuild, a long
+            // editor stall) still runs every day's books instead of skipping them.
+            var today = clock.Day + 1;
+            while (Campaign.Day < today)
+            {
+                var paid = Runner.DayTick(roster);
+                Version++;
+
+                if (paid > 0)
+                    Debug.Log("[Outfit] Payday - week " + Campaign.Week + " opens, " +
+                              UI.LedgerText.Cash(paid) + " out of the safe.");
+                if (Rises.Count > 0)
+                    Debug.Log("[Outfit] Day " + Campaign.Day + " - " + Rises.Count +
+                              " rise(s) on the books.");
+            }
+        }
+
+        // ------------------------------------------------------------------- the rest
+
+        /// <summary>Stores the change as pending - stances turn over at midnight, never
+        /// under a plan the player is still reading.</summary>
         public OpResult SetStance(int gangId, Stance stance)
         {
             if (gangId == Gangs.GangCatalog.PlayerGangId)
@@ -179,8 +187,13 @@ namespace LivingCity.Gameplay
 
         void Start()
         {
-            if (Accounts.Sheets.Count == 0)
-                Accounts.Sheets.Add(new WeekSheet { Week = Campaign.Week });
+            Runner.DistanceOf = DistanceFromHeadquarters;
+            Runner.RosterMoved = () =>
+            {
+                if (PersonnelDirector.Instance)
+                    PersonnelDirector.Instance.Touch();
+            };
+            Runner.OpenFirstSheet();
             Version++;
         }
 

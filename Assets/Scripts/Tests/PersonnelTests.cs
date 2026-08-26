@@ -49,8 +49,143 @@ namespace LivingCity.Tests
             LargeRosterShape(failures);
             LedgerTextIsExhaustive(failures);
             LabelsFitTheLedgerColumns(failures);
+            PracticeCostsRiseWithTheStars(failures);
+            PracticeOnlyBuysItsOwnTrade(failures);
+            PracticeStopsAtFiveStars(failures);
+            PracticeCarriesTwoStepsAtOnce(failures);
+            RisingWagesFollowTheStars(failures);
+            TheLaidUpStandUpOnTheirDay(failures);
 
             return failures;
+        }
+
+        // -------------------------------------------------------------- improvement
+
+        static void PracticeCostsRiseWithTheStars(List<string> failures)
+        {
+            // To reach half-step n costs 2n: the first half-star is a fortnight of
+            // work, the last is a career.
+            if (Practice.CostOf(5) != 10 || Practice.CostOf(10) != 20)
+                failures.Add("PracticeCostsRiseWithTheStars: the cost curve moved.");
+
+            var roster = new Roster();
+            var man = Make(roster, "Sal", "Renna");
+            var at = man.GetHalfSteps(CharacterAttribute.Firearms);
+            if (Practice.NextCost(man, CharacterAttribute.Firearms) != Practice.CostOf(at + 1))
+                failures.Add("PracticeCostsRiseWithTheStars: the next step is mispriced.");
+
+            // One point short buys nothing; the point that completes it buys the step.
+            man.AddPractice(CharacterAttribute.Firearms, Practice.CostOf(at + 1) - 1);
+            Practice.Convert(roster, null);
+            if (man.GetHalfSteps(CharacterAttribute.Firearms) != at)
+                failures.Add("PracticeCostsRiseWithTheStars: a short bank still bought a star.");
+
+            var rises = new List<Improvement>();
+            man.AddPractice(CharacterAttribute.Firearms, 1);
+            Practice.Convert(roster, rises);
+            if (man.GetHalfSteps(CharacterAttribute.Firearms) != at + 1)
+                failures.Add("PracticeCostsRiseWithTheStars: a full bank bought nothing.");
+            if (rises.Count != 1 || rises[0].CharacterId != man.Id ||
+                rises[0].Attribute != CharacterAttribute.Firearms ||
+                rises[0].HalfSteps != at + 1)
+                failures.Add("PracticeCostsRiseWithTheStars: the rise was not recorded.");
+
+            // The bank is spent, not merely read - a second midnight must buy nothing.
+            if (man.GetPractice(CharacterAttribute.Firearms) != 0)
+                failures.Add("PracticeCostsRiseWithTheStars: the points were not spent.");
+        }
+
+        static void PracticeOnlyBuysItsOwnTrade(List<string> failures)
+        {
+            var roster = new Roster();
+            var man = Make(roster, "Vito", "Carre");
+            var driving = man.GetHalfSteps(CharacterAttribute.Driving);
+
+            man.AddPractice(CharacterAttribute.Intimidation, 400);
+            Practice.Convert(roster, null);
+
+            if (man.GetHalfSteps(CharacterAttribute.Driving) != driving)
+                failures.Add("PracticeOnlyBuysItsOwnTrade: leaning on shopkeepers " +
+                             "taught him to drive.");
+            if (man.GetHalfSteps(CharacterAttribute.Intimidation) !=
+                AttributeScale.MaxHalfSteps)
+                failures.Add("PracticeOnlyBuysItsOwnTrade: the trade he practised " +
+                             "did not top out.");
+        }
+
+        static void PracticeStopsAtFiveStars(List<string> failures)
+        {
+            var roster = new Roster();
+            var man = Make(roster, "Nick", "Pasca");
+            man.SetHalfSteps(CharacterAttribute.Fists, AttributeScale.MaxHalfSteps);
+
+            if (Practice.NextCost(man, CharacterAttribute.Fists) != 0)
+                failures.Add("PracticeStopsAtFiveStars: a five-star man still has a price.");
+
+            man.AddPractice(CharacterAttribute.Fists, 1_000);
+            var rises = new List<Improvement>();
+            Practice.Convert(roster, rises);
+            if (man.GetHalfSteps(CharacterAttribute.Fists) != AttributeScale.MaxHalfSteps ||
+                rises.Count != 0)
+                failures.Add("PracticeStopsAtFiveStars: the scale went past five stars.");
+        }
+
+        static void PracticeCarriesTwoStepsAtOnce(List<string> failures)
+        {
+            var roster = new Roster();
+            var man = Make(roster, "Enzo", "Bardi");
+            man.SetHalfSteps(CharacterAttribute.Arson, AttributeScale.MinHalfSteps);
+
+            // Enough for both the third and the fourth half-step, banked in one go.
+            man.AddPractice(CharacterAttribute.Arson,
+                Practice.CostOf(3) + Practice.CostOf(4));
+            var rises = new List<Improvement>();
+            Practice.Convert(roster, rises);
+
+            if (man.GetHalfSteps(CharacterAttribute.Arson) != 4 || rises.Count != 2)
+                failures.Add("PracticeCarriesTwoStepsAtOnce: a big job was worth one step.");
+        }
+
+        static void RisingWagesFollowTheStars(List<string> failures)
+        {
+            var roster = new Roster();
+            var man = Make(roster, "Gino", "Rossi");
+            var before = Wages.WageFor(man);
+
+            man.AddPractice(CharacterAttribute.Stealth, Practice.CostOf(
+                man.GetHalfSteps(CharacterAttribute.Stealth) + 1));
+            Practice.Convert(roster, null);
+
+            // Training men IS raising the payroll - the tension comes free from Wages
+            // deriving at read, and this is the assertion that keeps it that way.
+            if (Wages.WageFor(man) != before + Wages.HoodPerHalfStep)
+                failures.Add("RisingWagesFollowTheStars: the wage did not follow the star.");
+        }
+
+        static void TheLaidUpStandUpOnTheirDay(List<string> failures)
+        {
+            var roster = new Roster();
+            var man = Make(roster, "Rocco", "Vale");
+
+            RosterOps.Hospitalize(roster, man.Id, backOnDay: 10);
+            if (man.Status != CharacterStatus.Hospitalized || man.Gone)
+                failures.Add("TheLaidUpStandUpOnTheirDay: a bed is not a grave.");
+
+            if (RosterOps.Discharge(roster, 9) != 0 ||
+                man.Status != CharacterStatus.Hospitalized)
+                failures.Add("TheLaidUpStandUpOnTheirDay: discharged a day early.");
+
+            if (RosterOps.Discharge(roster, 10) != 1 ||
+                man.Status != CharacterStatus.Active || man.BackOnDay != 0)
+                failures.Add("TheLaidUpStandUpOnTheirDay: he never got up.");
+
+            // A man held at somebody else's pleasure has no date, and day one must not
+            // read that as "due out" and empty every cell in the city.
+            var held = Make(roster, "Aldo", "Riva");
+            held.Status = CharacterStatus.Jailed;
+            if (RosterOps.Discharge(roster, 1) != 0 ||
+                held.Status != CharacterStatus.Jailed)
+                failures.Add("TheLaidUpStandUpOnTheirDay: a dateless man walked out.");
         }
 
         // ------------------------------------------------------------------ fixtures

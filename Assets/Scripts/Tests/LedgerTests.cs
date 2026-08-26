@@ -31,15 +31,230 @@ namespace LivingCity.Tests
             MotorcyclesAreOnTheCounter(failures);
             CarsAreOnTheCounter(failures);
             NewStockEntersThePoolUnheld(failures);
-            StancesTurnOverAtCommit(failures);
+            StancesTurnOverAtMidnight(failures);
             TurfIsHeldPerBuilding(failures);
             StanceWordingIsExhaustive(failures);
             OrderTableCoversEveryType(failures);
-            TravelDrivesTheCapacity(failures);
-            PastTheLineFallsInListOrder(failures);
+            TravelIsHoursNotBudget(failures);
+            TheBookRunsOneJobPerCrew(failures);
+            OddsFollowTheStars(failures);
+            MoneyMovesEitherWay(failures);
+            QuietMenDrawNoHeat(failures);
+            RecruitFloorsAgree(failures);
             CrewKitReadsVehiclesAndSkill(failures);
+            AJobRunsItsCourse(failures);
+            AStandingWatchPaysDaily(failures);
+            PaydayFallsEverySeventhDay(failures);
+            AScriptedMonthIsRepeatable(failures);
 
             return failures;
+        }
+
+        // ------------------------------------------------------- the campaign running
+
+        /// <summary>A runner over the day-one roster, with the job door a fixed
+        /// distance away so travel is a known quantity rather than a scene's.</summary>
+        static CampaignRunner Runner(out Roster roster, float metres = 800f)
+        {
+            roster = RosterSeeder.Generate(42);
+            RosterOps.NormalizeArms(roster);
+            var runner = new CampaignRunner { Seed = 42, DistanceOf = _ => metres };
+            runner.OpenFirstSheet();
+            return runner;
+        }
+
+        static Job JobFor(Roster roster, OrderType type, int men = 2)
+        {
+            var job = new Job
+            {
+                CrewId = roster.Crews[0].Id,
+                Type = type,
+                Men = men,
+                TargetBlockId = 3,
+                TargetLabel = "a door on Kirby Street",
+            };
+            return job;
+        }
+
+        static void AJobRunsItsCourse(List<string> failures)
+        {
+            var runner = Runner(out var roster);
+            var job = JobFor(roster, OrderType.Donate);
+            if (!runner.Issue(roster, job).Ok)
+                failures.Add("AJobRunsItsCourse: the job would not issue.");
+
+            if (job.Stage != JobStage.Queued || runner.Records.Count != 0)
+                failures.Add("AJobRunsItsCourse: a job existed before anybody moved.");
+
+            // An hour in, they are on the road and no answer has been written.
+            runner.AdvanceHours(roster, 1f);
+            if (job.Stage == JobStage.Queued)
+                failures.Add("AJobRunsItsCourse: nobody left the front.");
+            if (runner.Records.Count != 0)
+                failures.Add("AJobRunsItsCourse: the record was written before the work.");
+
+            // Enough hours for any journey and any donation.
+            runner.AdvanceHours(roster, 200f);
+            if (job.Live || runner.Records.Count != 1)
+                failures.Add("AJobRunsItsCourse: the job never came back.");
+            if (runner.Book.Jobs.Count != 0)
+                failures.Add("AJobRunsItsCourse: the finished job stayed on the book.");
+
+            var record = runner.Records[0];
+            if (record.Type != OrderType.Donate || record.Men != 2 || record.Day != 1)
+                failures.Add("AJobRunsItsCourse: the record misdescribes the job.");
+            if (record.Outcome == OrderOutcome.CalledOff)
+                failures.Add("AJobRunsItsCourse: nobody called it off.");
+
+            // A donation costs money whichever way it went, and the safe agrees with
+            // the line the sheet booked it on.
+            var donate = OrderTable.SpecOf(OrderType.Donate);
+            if (runner.Accounts.Safe >= Accounts.StartingSafe)
+                failures.Add("AJobRunsItsCourse: the donation cost nothing.");
+            if (runner.Accounts.Current.Bribes <= 0)
+                failures.Add("AJobRunsItsCourse: the money went on no line.");
+            if (Accounts.StartingSafe - runner.Accounts.Safe !=
+                runner.Accounts.Current.Bribes)
+                failures.Add("AJobRunsItsCourse: the safe and the sheet disagree.");
+
+            // And the men who did it learned the trade the job was made of.
+            var lieutenant = roster.Find(roster.Crews[0].LieutenantId);
+            if (lieutenant.GetPractice(donate.PrimaryAttribute) <= 0)
+                failures.Add("AJobRunsItsCourse: nobody learned anything.");
+        }
+
+        static void AStandingWatchPaysDaily(List<string> failures)
+        {
+            var runner = Runner(out var roster);
+            var job = JobFor(roster, OrderType.RunBusiness);
+            runner.Issue(roster, job);
+            runner.AdvanceHours(roster, 100f);
+
+            if (job.Stage != JobStage.Working)
+                failures.Add("AStandingWatchPaysDaily: they never got to work.");
+
+            var before = runner.Accounts.Safe;
+            var lieutenant = roster.Find(roster.Crews[0].LieutenantId);
+            var learned = lieutenant.GetPractice(CharacterAttribute.Business);
+
+            runner.DayTick(roster);
+
+            if (job.DaysStood != 1 || !job.Live)
+                failures.Add("AStandingWatchPaysDaily: the watch did not stand a day.");
+            if (runner.Accounts.Safe <= before)
+                failures.Add("AStandingWatchPaysDaily: a business that earns nothing.");
+            if (runner.Accounts.Current.LegalIncome <= 0)
+                failures.Add("AStandingWatchPaysDaily: the takings went on the wrong line.");
+            if (lieutenant.GetPractice(CharacterAttribute.Business) <= learned)
+                failures.Add("AStandingWatchPaysDaily: a day's work taught nobody.");
+
+            // Days later it is still standing - a watch is never finished, only called
+            // off, and calling it off is the only thing that writes its line.
+            for (var day = 0; day < 5; day++)
+                runner.DayTick(roster);
+            if (!job.Live || runner.Records.Count != 0)
+                failures.Add("AStandingWatchPaysDaily: the watch resolved itself.");
+
+            runner.Cancel(roster, job.Id);
+            if (runner.Records.Count != 1 ||
+                runner.Records[0].Outcome != OrderOutcome.CalledOff)
+                failures.Add("AStandingWatchPaysDaily: calling it off wrote no line.");
+        }
+
+        static void PaydayFallsEverySeventhDay(List<string> failures)
+        {
+            var runner = Runner(out var roster);
+            var payroll = Wages.WeeklyPayroll(roster);
+
+            var paydays = 0;
+            var paid = 0;
+            for (var day = 0; day < Campaign.DaysPerWeek * 2; day++)
+            {
+                var wages = runner.DayTick(roster);
+                if (wages <= 0)
+                    continue;
+                paydays++;
+                paid += wages;
+                if (runner.Campaign.DayOfWeek != 0)
+                    failures.Add("PaydayFallsEverySeventhDay: paid mid-week.");
+            }
+
+            if (paydays != 2)
+                failures.Add($"PaydayFallsEverySeventhDay: {paydays} paydays in a fortnight.");
+            if (paid != payroll * 2)
+                failures.Add("PaydayFallsEverySeventhDay: the envelope is the wrong size.");
+            if (Accounts.StartingSafe - runner.Accounts.Safe != paid)
+                failures.Add("PaydayFallsEverySeventhDay: the safe did not pay them.");
+
+            // Each week gets its own sheet and the closed ones keep what was paid.
+            if (runner.Accounts.Sheets.Count != 3)
+                failures.Add("PaydayFallsEverySeventhDay: the books did not turn over.");
+            if (!runner.Accounts.Sheets[0].Closed || runner.Accounts.Current.Closed)
+                failures.Add("PaydayFallsEverySeventhDay: the wrong sheet is open.");
+        }
+
+        /// <summary>
+        /// The determinism claim, end to end: a scripted month at a known seed answers
+        /// the same way twice, down to the safe and every man's practice. This is the
+        /// assertion that makes the whole realtime layer debuggable - a campaign that
+        /// drifted could only ever be argued about.
+        /// </summary>
+        static void AScriptedMonthIsRepeatable(List<string> failures)
+        {
+            string Play()
+            {
+                var runner = Runner(out var roster);
+                var types = new[]
+                {
+                    OrderType.Extort, OrderType.Bribe, OrderType.Recruit,
+                    OrderType.Torch, OrderType.Audit, OrderType.CollectProtection,
+                };
+
+                for (var day = 0; day < 28; day++)
+                {
+                    // One job a day into the same crew's book, so the queue genuinely
+                    // backs up and the Organization penalty gets exercised.
+                    var job = JobFor(roster, types[day % types.Length]);
+                    job.BlockTargets.Add(day);
+                    runner.Issue(roster, job);
+
+                    // The day in four steps, so arrival and work land mid-day rather
+                    // than always on a tick boundary.
+                    for (var quarter = 0; quarter < 4; quarter++)
+                        runner.AdvanceHours(roster, 6f);
+                    runner.DayTick(roster);
+                }
+
+                var state = new System.Text.StringBuilder();
+                state.Append(runner.Accounts.Safe).Append('|')
+                     .Append(runner.Accounts.RiskyMoney).Append('|')
+                     .Append(runner.Heat).Append('|')
+                     .Append(runner.Records.Count).Append('|')
+                     .Append(roster.Members.Count);
+                foreach (var member in roster.Members)
+                {
+                    state.Append('|').Append(member.FullName).Append(':')
+                         .Append(member.TotalHalfSteps()).Append(':')
+                         .Append((int)member.Status);
+                    for (var a = 0; a < AttributeScale.Count; a++)
+                        state.Append(',').Append(member.GetPractice((CharacterAttribute)a));
+                }
+                foreach (var record in runner.Records)
+                    state.Append('|').Append(record.Day).Append(record.Type)
+                         .Append(record.Outcome).Append(record.Money);
+                return state.ToString();
+            }
+
+            var first = Play();
+            var second = Play();
+            if (first != second)
+                failures.Add("AScriptedMonthIsRepeatable: the same month played twice " +
+                             "came out differently.");
+
+            // And it must actually have DONE something - a month that quietly did
+            // nothing would match itself perfectly.
+            if (!first.Contains("Completed") && !first.Contains("Failed"))
+                failures.Add("AScriptedMonthIsRepeatable: nothing was ever resolved.");
         }
 
         static void OrderTableCoversEveryType(List<string> failures)
@@ -51,70 +266,220 @@ namespace LivingCity.Tests
                     failures.Add($"OrderTableCoversEveryType: {type} has no spec row.");
                 if (LedgerText.OrderLabel(type).Length == 0)
                     failures.Add($"OrderTableCoversEveryType: {type} has no label.");
-                if (spec.Mode == TargetMode.Area && spec.BlocksPerManWeek <= 0f)
-                    failures.Add($"OrderTableCoversEveryType: {type} area with no throughput.");
-                if (spec.Mode == TargetMode.Point && spec.PointCost <= 0f)
-                    failures.Add($"OrderTableCoversEveryType: {type} point with no cost.");
+                if (spec.HoursPerTarget <= 0f)
+                    failures.Add($"OrderTableCoversEveryType: {type} takes no time at all.");
             }
 
-            // The reference throughputs: extortion 2-3 blocks/man/week, collection ~8.
-            var extort = OrderTable.SpecOf(OrderType.Extort);
-            if (extort.BlocksPerManWeek < 2f || extort.BlocksPerManWeek > 3f)
-                failures.Add("OrderTableCoversEveryType: extortion throughput off the sheet.");
-            if (OrderTable.SpecOf(OrderType.CollectProtection).BlocksPerManWeek != 8f)
-                failures.Add("OrderTableCoversEveryType: collection throughput off the sheet.");
+            // Every violent order is the street's to answer - an abstract roll deciding
+            // a killing while the crew stands in the road is the bug this asserts away.
+            foreach (var spec in OrderTable.Specs)
+                if (spec.Category == OrderCategory.Violence &&
+                    spec.Resolution != JobResolution.Street)
+                    failures.Add($"OrderTableCoversEveryType: {spec.Type} is violence " +
+                                 "settled off-screen.");
+
+            // A watch is stood, never finished, so its hours must not be owed as work.
+            var guard = OrderTable.SpecOf(OrderType.Guard);
+            if (OrderMath.WorkHours(guard, 1, 1) != 0f)
+                failures.Add("OrderTableCoversEveryType: a standing watch owes hours.");
         }
 
-        static void TravelDrivesTheCapacity(List<string> failures)
+        static void TravelIsHoursNotBudget(List<string> failures)
         {
-            // The same distance costs a foot crew five times what it costs a car.
-            var foot = OrderMath.TravelFraction(600f, hasVehicle: false);
-            var car = OrderMath.TravelFraction(600f, hasVehicle: true);
-            if (foot != 0.5f || car != 0.1f)
-                failures.Add($"TravelDrivesTheCapacity: foot {foot} / car {car}.");
+            // 2,000m: a working morning on foot, an hour in a car.
+            var foot = OrderMath.TravelHours(2_000f, hasVehicle: false, drivingHalfSteps: 6);
+            var car = OrderMath.TravelHours(2_000f, hasVehicle: true, drivingHalfSteps: 6);
+            if (foot != 5f)
+                failures.Add($"TravelIsHoursNotBudget: on foot {foot}h, expected 5.");
+            if (car >= foot * 0.3f)
+                failures.Add("TravelIsHoursNotBudget: the car did not shrink the city.");
 
-            // Far on foot saturates at the cap - the crew spends the week walking.
-            if (OrderMath.TravelFraction(50_000f, false) != OrderMath.MaxTravelFraction)
-                failures.Add("TravelDrivesTheCapacity: no travel cap.");
+            // A wheelman is worth real minutes, and only with a car under him.
+            var slow = OrderMath.TravelHours(6_000f, true, AttributeScale.MinHalfSteps);
+            var fast = OrderMath.TravelHours(6_000f, true, AttributeScale.MaxHalfSteps);
+            if (!(fast < slow))
+                failures.Add("TravelIsHoursNotBudget: Driving buys nothing on the road.");
+            if (OrderMath.TravelHours(6_000f, false, AttributeScale.MaxHalfSteps) !=
+                OrderMath.TravelHours(6_000f, false, AttributeScale.MinHalfSteps))
+                failures.Add("TravelIsHoursNotBudget: a fast driver walked faster.");
 
+            // Nobody is anywhere instantly, and nothing takes forever.
+            if (OrderMath.TravelHours(0f, false, 6) != OrderMath.MinTravelHours)
+                failures.Add("TravelIsHoursNotBudget: no floor on the journey.");
+            if (OrderMath.TravelHours(5_000_000f, false, 6) != OrderMath.MaxTravelHours)
+                failures.Add("TravelIsHoursNotBudget: no ceiling on the journey.");
+
+            // Men divide the work; the calendar is the price of sending too few.
             var extort = OrderTable.SpecOf(OrderType.Extort);
-            // 5 blocks at 2.5/man-week = 2 man-weeks of work, travel-free: 2 men.
-            if (OrderMath.MenNeeded(extort, 5, 0f) != 2)
-                failures.Add("TravelDrivesTheCapacity: clean work costed wrong.");
-            // Same job at 50% travel: each man delivers half a week - 4 men.
-            if (OrderMath.MenNeeded(extort, 5, 0.5f) != 4)
-                failures.Add("TravelDrivesTheCapacity: travel did not raise the crew.");
-
-            if (!OrderMath.Undermanned(extort, 5, 0.5f, 2))
-                failures.Add("TravelDrivesTheCapacity: an undermanned job read as fine.");
-            if (OrderMath.Undermanned(extort, 5, 0.5f, 4))
-                failures.Add("TravelDrivesTheCapacity: a manned job read as short.");
+            var alone = OrderMath.WorkHours(extort, 4, 1);
+            if (OrderMath.WorkHours(extort, 4, 2) != alone / 2f)
+                failures.Add("TravelIsHoursNotBudget: a second man did not halve the job.");
         }
 
-        static void PastTheLineFallsInListOrder(List<string> failures)
+        static void TheBookRunsOneJobPerCrew(List<string> failures)
         {
-            var plan = new WeekPlan();
+            var book = new OrderBook();
             for (var i = 0; i < 3; i++)
             {
-                var order = new PlannedOrder { CrewId = 7, Men = 2, Type = OrderType.Patrol };
-                order.Id = plan.NextOrderId();
-                plan.Confirmed.Add(order);
+                var job = new Job { CrewId = 7, Men = 2, Type = OrderType.Extort };
+                job.Id = book.NextJobId();
+                book.Jobs.Add(job);
             }
 
-            if (plan.CommittedMen(7) != 6)
-                failures.Add("PastTheLineFallsInListOrder: committed men miscounted.");
+            if (book.LiveCount(7) != 3)
+                failures.Add("TheBookRunsOneJobPerCrew: live jobs miscounted.");
+            if (book.CurrentFor(7) != book.Jobs[0])
+                failures.Add("TheBookRunsOneJobPerCrew: the crew is not on its first job.");
 
-            // A crew of four: orders 0 and 1 fit (2+2); order 2 crosses the line.
-            var past = new List<int>();
-            OrderMath.PastTheLine(plan, 7, crewSize: 4, past);
-            if (past.Count != 1 || past[0] != plan.Confirmed[2].Id)
-                failures.Add("PastTheLineFallsInListOrder: the line fell on the wrong row.");
+            // Queued men are still at the front - only a job under way holds anyone.
+            if (book.MenOut(7) != 0)
+                failures.Add("TheBookRunsOneJobPerCrew: a queued job took men out.");
+            book.Jobs[0].Stage = JobStage.Working;
+            if (book.MenOut(7) != 2)
+                failures.Add("TheBookRunsOneJobPerCrew: men out miscounted.");
 
-            // Reordering moves the line - priority is the list, nothing else.
-            (plan.Confirmed[0], plan.Confirmed[2]) = (plan.Confirmed[2], plan.Confirmed[0]);
-            OrderMath.PastTheLine(plan, 7, 4, past);
-            if (past.Count != 1 || past[0] != plan.Confirmed[2].Id)
-                failures.Add("PastTheLineFallsInListOrder: reordering did not move the line.");
+            if (book.DepthOf(book.Jobs[2]) != 2)
+                failures.Add("TheBookRunsOneJobPerCrew: depth misread.");
+
+            // A finished job hands the crew on and leaves the book on the next pass.
+            book.Jobs[0].Stage = JobStage.Finished;
+            if (book.CurrentFor(7) != book.Jobs[1])
+                failures.Add("TheBookRunsOneJobPerCrew: the crew did not move on.");
+            book.DropFinished();
+            if (book.Jobs.Count != 2)
+                failures.Add("TheBookRunsOneJobPerCrew: the finished job stayed on the book.");
+        }
+
+        static void OddsFollowTheStars(List<string> failures)
+        {
+            var extort = OrderTable.SpecOf(OrderType.Extort);
+            var floor = OrderResolution.FloorOf(extort);
+
+            var atFloor = OrderResolution.ChanceFor(extort, floor, 0, 10);
+            if (System.Math.Abs(atFloor - OrderResolution.BaseChance) > 0.0001f)
+                failures.Add($"OddsFollowTheStars: at the floor it reads {atFloor}.");
+
+            // One full star over the floor is two half-steps: 0.35 + 0.20.
+            var starOver = OrderResolution.ChanceFor(extort, floor + 2, 0, 10);
+            if (System.Math.Abs(starOver - 0.55f) > 0.0001f)
+                failures.Add($"OddsFollowTheStars: a star over reads {starOver}.");
+
+            // A stated floor of zero still resolves against two stars, not against
+            // nothing - a hopeless man is never as good as a capable one.
+            var collect = OrderTable.SpecOf(OrderType.CollectProtection);
+            if (OrderResolution.FloorOf(collect) != OrderResolution.ImplicitFloorHalfSteps)
+                failures.Add("OddsFollowTheStars: a floorless order has no implicit floor.");
+
+            // A scattered lieutenant botches the tail of his list.
+            var deep = OrderResolution.ChanceFor(extort, floor + 2, depth: 12,
+                organizationHalfSteps: 10);
+            if (System.Math.Abs(starOver - deep - 2f * OrderResolution.DepthPenalty) > 0.0001f)
+                failures.Add("OddsFollowTheStars: queue depth cost nothing.");
+
+            // Nothing is certain and nothing is hopeless.
+            if (OrderResolution.ChanceFor(extort, AttributeScale.MaxHalfSteps, 0, 10) >
+                OrderResolution.MaxChance ||
+                OrderResolution.ChanceFor(extort, 0, 40, 2) < OrderResolution.MinChance)
+                failures.Add("OddsFollowTheStars: the clamps do not hold.");
+        }
+
+        static void MoneyMovesEitherWay(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(42);
+            var crew = roster.Crews[0];
+            var bribe = OrderTable.SpecOf(OrderType.Bribe);
+
+            var job = new Job { CrewId = crew.Id, Type = OrderType.Bribe, Men = 1 };
+            job.TargetLabel = "a sergeant";
+
+            // The same seed answers the same way twice - the whole determinism claim.
+            var seed = OrderResolution.Mix(42, day: 3, jobId: 1);
+            var first = OrderResolution.Resolve(bribe, job, roster, crew,
+                new System.Random(seed));
+            var again = OrderResolution.Resolve(bribe, job, roster, crew,
+                new System.Random(seed));
+            if (first.Outcome != again.Outcome || first.Money != again.Money)
+                failures.Add("MoneyMovesEitherWay: the same seed answered twice.");
+
+            // A bribe that bought nothing is still a bribe that was paid.
+            if (first.Cost <= 0)
+                failures.Add("MoneyMovesEitherWay: the attempt cost nothing.");
+            if (first.Outcome == OrderOutcome.Failed && first.Payout != 0)
+                failures.Add("MoneyMovesEitherWay: a failure paid out.");
+
+            // A clever man buys the same policeman cheaper - and never for free.
+            var dear = OrderResolution.CostFor(bribe, 1, OrderResolution.FloorOf(bribe));
+            var cheap = OrderResolution.CostFor(bribe, 1, AttributeScale.MaxHalfSteps);
+            if (!(cheap < dear) || cheap < bribe.Cost / 4)
+                failures.Add($"MoneyMovesEitherWay: bribe {dear} down to {cheap}.");
+
+            // The take scales with the man who did the leaning, both ways off the book.
+            var extort = OrderTable.SpecOf(OrderType.Extort);
+            var poor = OrderResolution.PayoutFor(extort, 4, AttributeScale.MinHalfSteps);
+            var rich = OrderResolution.PayoutFor(extort, 4, AttributeScale.MaxHalfSteps);
+            if (poor >= extort.Payout * 4 || rich <= extort.Payout * 4)
+                failures.Add($"MoneyMovesEitherWay: the yield band is wrong ({poor}/{rich}).");
+        }
+
+        /// <summary>
+        /// RosterSeeder names the Recruit order's floor as a private const so the
+        /// Personnel core stays free of the Outfit layer. Two numbers that must agree
+        /// and cannot see each other are a drift waiting to happen; this is the
+        /// assertion its comment promises.
+        /// </summary>
+        static void RecruitFloorsAgree(List<string> failures)
+        {
+            var order = OrderTable.SpecOf(OrderType.Recruit);
+
+            // A walk-in gets no bonus rolls at all, and a recruiter exactly at the
+            // order's floor gets none either - the bonus is for being BETTER than the
+            // job asks. One half-step over buys exactly one extra look.
+            var walkIn = Deal(0);
+            var atFloor = Deal(order.PrimaryFloorHalfSteps);
+            if (walkIn != atFloor)
+                failures.Add("RecruitFloorsAgree: the seeder's floor is not the order's.");
+
+            var better = Deal(order.PrimaryFloorHalfSteps + 4);
+            if (better <= atFloor)
+                failures.Add("RecruitFloorsAgree: a sharp recruiter found no better man.");
+
+            // And a raw recruit stays under his ceiling however the rolls fall.
+            var roster = new Roster();
+            var rng = new System.Random(7);
+            for (var i = 0; i < 40; i++)
+            {
+                var member = RosterSeeder.Recruit(roster, rng);
+                for (var a = 0; a < AttributeScale.Count; a++)
+                    if (member.GetHalfSteps((CharacterAttribute)a) >
+                        RosterSeeder.RecruitCeilingHalfSteps)
+                        failures.Add("RecruitFloorsAgree: a corner boy came in over " +
+                                     "the ceiling.");
+            }
+
+            // The same stream and the same recruiter must deal the same man, so the
+            // comparison above is of the bonus and nothing else.
+            int Deal(int recruiter) =>
+                RosterSeeder.Recruit(new Roster(), new System.Random(99), recruiter)
+                    .TotalHalfSteps();
+        }
+
+        static void QuietMenDrawNoHeat(List<string> failures)
+        {
+            var kill = OrderTable.SpecOf(OrderType.Kill);
+            var loud = OrderResolution.HeatFor(kill, 1, stealthHalfSteps: 2, knivesHalfSteps: 2);
+            if (loud != kill.Heat)
+                failures.Add("QuietMenDrawNoHeat: a loud killing did not draw its heat.");
+
+            // A careful crew works at half the noise.
+            var careful = OrderResolution.HeatFor(OrderTable.SpecOf(OrderType.Torch), 1,
+                OrderResolution.QuietHalfSteps, 2);
+            if (careful != OrderTable.SpecOf(OrderType.Torch).Heat / 2)
+                failures.Add("QuietMenDrawNoHeat: Stealth did not halve the noise.");
+
+            // Knife and shadows together: nobody heard a shot, because there was none.
+            if (OrderResolution.HeatFor(kill, 1, OrderResolution.QuietHalfSteps,
+                    OrderResolution.QuietHalfSteps) != 0)
+                failures.Add("QuietMenDrawNoHeat: the quiet kill was still heard.");
         }
 
         static void CrewKitReadsVehiclesAndSkill(List<string> failures)
@@ -153,29 +518,29 @@ namespace LivingCity.Tests
                 failures.Add("CrewKitReadsVehiclesAndSkill: BestAt disagrees with the sum.");
         }
 
-        static void StancesTurnOverAtCommit(List<string> failures)
+        static void StancesTurnOverAtMidnight(List<string> failures)
         {
             var relations = new GangRelations();
 
             if (relations.StanceWith(1) != Stance.Peace)
-                failures.Add("StancesTurnOverAtCommit: the outfit does not arrive quietly.");
+                failures.Add("StancesTurnOverAtMidnight: the outfit does not arrive quietly.");
 
             relations.SetPending(1, Stance.War);
             if (relations.StanceWith(1) != Stance.Peace)
-                failures.Add("StancesTurnOverAtCommit: war landed mid-week.");
+                failures.Add("StancesTurnOverAtMidnight: war landed mid-week.");
             if (!relations.TryGetPending(1, out var pending) || pending != Stance.War)
-                failures.Add("StancesTurnOverAtCommit: the pending change vanished.");
+                failures.Add("StancesTurnOverAtMidnight: the pending change vanished.");
 
             // "Never mind" - setting back to the current stance withdraws the change.
             relations.SetPending(1, Stance.Peace);
             if (relations.TryGetPending(1, out _))
-                failures.Add("StancesTurnOverAtCommit: a withdrawn change survived.");
+                failures.Add("StancesTurnOverAtMidnight: a withdrawn change survived.");
 
             relations.SetPending(1, Stance.Truce);
             relations.ApplyPending();
             if (relations.StanceWith(1) != Stance.Truce ||
                 relations.TryGetPending(1, out _))
-                failures.Add("StancesTurnOverAtCommit: the commit did not turn the stance.");
+                failures.Add("StancesTurnOverAtMidnight: the commit did not turn the stance.");
         }
 
         static void TurfIsHeldPerBuilding(List<string> failures)
@@ -413,17 +778,37 @@ namespace LivingCity.Tests
 
         static void CalendarDerivesYear(List<string> failures)
         {
-            var campaign = new Campaign { Week = 1 };
-            if (campaign.Year != Campaign.StartYear || campaign.WeekOfYear != 1)
-                failures.Add("CalendarDerivesYear: week 1 misreads.");
+            // The day is the counter now; every coarser figure hangs off it.
+            var campaign = new Campaign { Day = 1 };
+            if (campaign.Year != Campaign.StartYear || campaign.WeekOfYear != 1 ||
+                campaign.Week != 1 || campaign.DayOfWeek != 0)
+                failures.Add("CalendarDerivesYear: day 1 misreads.");
 
-            campaign.Week = 52;
+            campaign.Day = 7;
+            if (campaign.Week != 1 || campaign.DayOfWeek != 6)
+                failures.Add("CalendarDerivesYear: the week turns a day early.");
+
+            campaign.Day = 8;
+            if (campaign.Week != 2 || campaign.DayOfWeek != 0)
+                failures.Add("CalendarDerivesYear: the week does not turn on the eighth.");
+
+            campaign.Day = Campaign.DaysPerYear;
             if (campaign.Year != Campaign.StartYear || campaign.WeekOfYear != 52)
-                failures.Add("CalendarDerivesYear: week 52 misreads.");
+                failures.Add("CalendarDerivesYear: the last day of the year misreads.");
 
-            campaign.Week = 53;
+            campaign.Day = Campaign.DaysPerYear + 1;
             if (campaign.Year != Campaign.StartYear + 1 || campaign.WeekOfYear != 1)
-                failures.Add("CalendarDerivesYear: the year does not roll at 53.");
+                failures.Add("CalendarDerivesYear: the year does not roll.");
+
+            // Payday falls when a week opens, and never on the first morning - an
+            // outfit does not pay wages before anybody has worked.
+            if (Campaign.OpensWeek(1) || Campaign.OpensWeek(7) || !Campaign.OpensWeek(8))
+                failures.Add("CalendarDerivesYear: payday falls on the wrong day.");
+
+            // A day the field should never hold must still not throw a name.
+            campaign.Day = 0;
+            if (campaign.DayName.Length == 0)
+                failures.Add("CalendarDerivesYear: day zero has no name.");
         }
 
         static void WagesDeriveFromTheRoster(List<string> failures)

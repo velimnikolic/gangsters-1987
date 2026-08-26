@@ -266,16 +266,53 @@ namespace LivingCity.UI
         {
             Outfit.OrderOutcome.Completed => "Completed",
             Outfit.OrderOutcome.Failed => "Failed",
-            Outfit.OrderOutcome.NeverReached => "Never reached",
+            Outfit.OrderOutcome.CalledOff => "Called off",
             _ => "",
         };
 
-        public static string CommittedLine(int committed, int available) =>
-            committed + " of " + available + " men committed";
+        /// <summary>What a crew is doing right now, in the words a lieutenant would
+        /// use. The hours are rounded to whole ones on purpose - nobody reports back
+        /// in decimals.</summary>
+        public static string StageLine(Outfit.Job job)
+        {
+            if (job == null)
+                return "";
+            return job.Stage switch
+            {
+                Outfit.JobStage.Queued => "waiting their turn",
+                Outfit.JobStage.Travelling => "on their way - " + Hours(job.TravelHoursLeft),
+                Outfit.JobStage.Working =>
+                    Outfit.OrderTable.SpecOf(job.Type).Resolution == Outfit.JobResolution.Standing
+                        ? "standing it - day " + (job.DaysStood + 1)
+                        : "at it - " + Hours(job.WorkHoursLeft) + " left",
+                _ => "done",
+            };
+        }
+
+        public static string Hours(float hours)
+        {
+            var whole = hours < 1f ? 1 : (int)(hours + 0.5f);
+            return whole + (whole == 1 ? " hour" : " hours");
+        }
+
+        /// <summary>The odds the job card quotes. Words rather than a percentage: the
+        /// ledger is a typed memo, and "about three in four" is what a man writes.</summary>
+        public static string OddsLine(float chance) =>
+            chance >= 0.85f ? "near certain"
+            : chance >= 0.7f ? "about three in four"
+            : chance >= 0.55f ? "rather better than even"
+            : chance >= 0.45f ? "about even"
+            : chance >= 0.3f ? "about one in three"
+            : chance >= 0.15f ? "about one in five"
+            : "a long shot";
+
+        public static string MenOutLine(int menOut, int available) =>
+            menOut + " of " + available + " men out";
 
         public const string ReasonNoTargets = "No targets picked.";
         public const string ReasonNoSuchOrder = "No such order in the queue.";
         public const string ReasonNoCrewSelected = "Pick a lieutenant first.";
+        public const string ReasonJobUnderway = "They are already out on it.";
 
         public static string DemoteConfirm(string name, int hoodCount) => hoodCount switch
         {

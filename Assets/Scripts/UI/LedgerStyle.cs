@@ -120,31 +120,36 @@ namespace LivingCity.UI
 
         /// <summary>The typewriter - headings, names, typed labels. Lekton is drawn off
         /// the Olivetti office machines, and unlike a one-cut distressed face it ships a
-        /// real bold, so a heading is set in the weight instead of smeared into it.</summary>
-        public static TMP_FontAsset Type => Font(ref type, "Lekton-Bold", 0f, 0.53f);
+        /// real bold, so a heading is set in the weight instead of smeared into it.
+        ///
+        /// Its optical figure is the one measured, not the one assumed: Special Elite's
+        /// caps do not fill 0.35 of its em - the H glyph measures 51.0 units on a 72
+        /// em, 0.709 - against Lekton's 47.2, 0.655. The ratio is 1.082, and the 0.53
+        /// this carried before printed every typed word in the book at half height.</summary>
+        public static TMP_FontAsset Type => Font(ref type, "Lekton-Bold", 0f, 1.082f);
 
         /// <summary>The ledger's figures and body copy. Fixed pitch is the point - a
         /// column of money only lines up if every digit takes the same width.</summary>
-        public static TMP_FontAsset Mono => Font(ref mono, "IBMPlexMono-Regular", 0.05f, 0.85f);
-        public static TMP_FontAsset MonoBold => Font(ref monoBold, "IBMPlexMono-Bold", 0f, 0.85f);
-        public static TMP_FontAsset MonoItalic => Font(ref monoItalic, "IBMPlexMono-Italic", 0.05f, 0.85f);
+        public static TMP_FontAsset Mono => Font(ref mono, "IBMPlexMono-Regular", 0.05f, 0.831f);
+        public static TMP_FontAsset MonoBold => Font(ref monoBold, "IBMPlexMono-Bold", 0f, 0.831f);
+        public static TMP_FontAsset MonoItalic => Font(ref monoItalic, "IBMPlexMono-Italic", 0.05f, 0.831f);
 
         /// <summary>The newspaper's face. PT Serif is cut for newsprint and for a screen,
         /// so it holds its stems at the sizes the book actually prints at.</summary>
-        public static TMP_FontAsset Serif => Font(ref serif, "PTSerif-Regular", 0f);
-        public static TMP_FontAsset SerifBold => Font(ref serifBold, "PTSerif-Bold", 0f);
-        public static TMP_FontAsset SerifItalic => Font(ref serifItalic, "PTSerif-Italic", 0f);
+        public static TMP_FontAsset Serif => Font(ref serif, "PTSerif-Regular", 0f, 1.017f);
+        public static TMP_FontAsset SerifBold => Font(ref serifBold, "PTSerif-Bold", 0f, 1.017f);
+        public static TMP_FontAsset SerifItalic => Font(ref serifItalic, "PTSerif-Italic", 0f, 1.017f);
 
         /// <summary>Tabloid headlines, rubber stamps and label tape. Oswald is the
         /// Alternate Gothic the period's headline decks were actually set in.</summary>
-        public static TMP_FontAsset Condensed => Font(ref condensed, "Oswald-Bold", 0f, 0.86f);
+        public static TMP_FontAsset Condensed => Font(ref condensed, "Oswald-Bold", 0f, 0.864f);
 
         /// <summary>The same gothic at reading weight - the running text of the screens
         /// the city itself wears: map marks, block tags, a popup's line. A deck and its
         /// copy set in one family is what a printed page of the period looked like.
         /// </summary>
         public static TMP_FontAsset CondensedText =>
-            Font(ref condensedText, "Oswald-Regular", 0.04f, 0.87f);
+            Font(ref condensedText, "Oswald-Regular", 0.04f, 0.864f);
 
         /// <summary>Loads and caches one face. dilate is the SDF face dilation - a face
         /// cut thin needs a hair of it to print like a fresh ribbon at ledger sizes
@@ -155,6 +160,29 @@ namespace LivingCity.UI
         /// small inside its em, a headline gothic fills it. Every size in this book was
         /// written against the old faces, so each new one is scaled back to the cap
         /// height it replaces and the numbers on the page keep meaning what they meant.
+        ///
+        /// The figure is a measurement, taken off the H glyph of both faces at the same
+        /// em - cap height as a fraction of the em, old over new:
+        ///
+        ///   Special Elite 0.709 / Lekton      0.655 = 1.082   Type
+        ///   Courier Prime 0.580 / IBM Plex    0.698 = 0.831   Mono
+        ///   Old Standard  0.712 / PT Serif    0.700 = 1.017   Serif
+        ///   Barlow Cond.  0.700 / Oswald      0.810 = 0.864   Condensed
+        ///
+        /// It scales the set width with the height, so whether a column still fits is
+        /// a second question, answered by how wide the new face is FOR its cap height -
+        /// H's advance over H's ink height, old against new:
+        ///
+        ///   Special Elite 0.921 -> Lekton     0.763   narrower, room to spare
+        ///   Courier Prime 1.035 -> IBM Plex   0.860   narrower
+        ///   Old Standard  1.106 -> PT Serif   1.039   narrower
+        ///   Barlow Cond.  0.686 -> Oswald     0.753   WIDER by a tenth
+        ///
+        /// Oswald is the one face that can burst a rect Barlow fitted. Per letter, not
+        /// per line: set an actual tape and the letterspacing swallows the difference -
+        /// "SORT: ROSTER ORDER" measures 121.0 in Barlow and 122.5 in Oswald. So the
+        /// tapes clear their rects, and only a long unspaced Condensed line is worth
+        /// measuring before it is placed. The other three faces cannot overrun at all.
         /// </summary>
         static TMP_FontAsset Font(ref TMP_FontAsset slot, string name, float dilate,
             float optical = 1f)
@@ -223,7 +251,7 @@ namespace LivingCity.UI
         static void ResetForPlay()
         {
             type = mono = monoBold = monoItalic = null;
-            serif = serifBold = serifItalic = condensed = null;
+            serif = serifBold = serifItalic = condensed = condensedText = null;
             missing.Clear();
             rounded = roundedSmall = softShadow = null;
             paperGrain = radialLight = null;

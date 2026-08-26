@@ -118,6 +118,91 @@ namespace LivingCity.Gameplay
             return Commit(RosterOps.AssignToCrew(Roster, member.Id, crewId), "recruited", member.Id);
         }
 
+        // ------------------------------------------------------------ the classified
+
+        readonly Outfit.HireMarket market = new Outfit.HireMarket();
+
+        /// <summary>
+        /// This morning's classified column, set for the campaign day the outfit is
+        /// standing in. A METHOD and not a property because it does work the first time
+        /// it is asked each day: the paper only has to exist when somebody opens it, and
+        /// dealing it costs a name draw and eleven rolls per ad that no frame should pay
+        /// for a page nobody turned to.
+        /// </summary>
+        public Outfit.HireMarket ColumnToday()
+        {
+            var day = OutfitDirector.Instance != null
+                ? OutfitDirector.Instance.Campaign.Day
+                : 1;
+            market.EnsureDealt(Roster, seed, day);
+            return market;
+        }
+
+        /// <summary>
+        /// Signs a man out of the newspaper: his signing money out of the safe through
+        /// the outfit's one purchase gate, then onto the books with a crew of his own -
+        /// the column advertises lieutenants, and a lieutenant is a man with a crew.
+        ///
+        /// The ad comes off the column BEFORE the money moves and goes back on if the
+        /// safe refuses: <see cref="Outfit.HireMarket.Take"/> answers false for an ad
+        /// already gone, which is what keeps a double click from paying twice for one
+        /// man - and a refused purchase from quietly losing him off the page.
+        /// </summary>
+        public OpResult HireFromAd(Outfit.HireAd ad, out int newId)
+        {
+            newId = -1;
+            if (Roster == null || ad == null || ad.Man == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+
+            // Off the column before a dollar moves - and if he is already gone, nothing
+            // was paid and nothing is refunded.
+            var price = ad.Down;
+            if (!market.Take(ad))
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+
+            var outfit = OutfitDirector.Instance;
+            if (outfit != null)
+            {
+                var paid = outfit.Purchase(price, "a man out of the paper");
+                if (!paid.Ok)
+                {
+                    // The money was refused, so the ad was never taken: put it back in
+                    // the column rather than quietly losing the man off the page.
+                    market.Restore(ad);
+                    return paid;
+                }
+            }
+
+            // He comes on as a hood for exactly as long as it takes to promote him:
+            // RosterOps.Promote is the ONE door a crew forms through, and a crew that
+            // formed any other way would be a crew the roster's rules never saw.
+            var man = ad.Man;
+            man.Id = Roster.NextCharacterId();
+            man.Rank = Rank.Hood;
+            Roster.Members.Add(man);
+
+            var result = RosterOps.Promote(Roster, man.Id, out _);
+            if (!result.Ok)
+            {
+                Roster.Members.Remove(man);
+                man.Id = -1;
+                market.Restore(ad);
+                return result;
+            }
+
+            newId = man.Id;
+            return Commit(result, "signed out of the paper", man.Id);
+        }
+
+        /// <summary>
+        /// Marks the roster changed by a hand that is not one of the wrappers below -
+        /// the day tick's rises and discharges, which are the outfit's business and not
+        /// a click. The alternative is routing every strategic mutation through this
+        /// class as a wrapper of its own, which would put the campaign calendar's
+        /// vocabulary into the personnel director for no gain.
+        /// </summary>
+        public void Touch() => Version++;
+
         public PromoteCheck CheckPromote(int id) =>
             Roster == null
                 ? new PromoteCheck(false, false, LivingCity.UI.LedgerText.ReasonNoSuchMember)

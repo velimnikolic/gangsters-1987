@@ -127,19 +127,83 @@ namespace LivingCity.Personnel
             return roster;
         }
 
-        /// <summary>One more man off the corner, dealt the way the starting six were -
-        /// a name nobody on the books has, eleven rolled attributes, middling loyalty -
-        /// and put on the books unassigned. The recruiting door: the street bar's
-        /// empty chip, later the ledger's own hire page.</summary>
-        public static Character Recruit(Roster roster, System.Random rng)
+        /// <summary>A raw recruit's ceiling - three stars, and most of them well under
+        /// it. The founding six keep their generous rolls; everybody hired after them
+        /// is a corner boy who has to be BUILT, which is what makes the improvement
+        /// system the point of the roster rather than a decoration on it.</summary>
+        public const int RecruitCeilingHalfSteps = 6;
+
+        /// <summary>Extra rolls a good recruiter buys, per half-step of Intelligence
+        /// over the Recruit order's own floor. A sharp man knows a promising one when
+        /// he sees him; each bonus re-rolls a random trade and keeps the better.</summary>
+        public const int RecruitBonusPerHalfStep = 1;
+
+        /// <summary>One more man off the corner: a name nobody on the books has, eleven
+        /// rolled attributes, middling loyalty, and put on the books unassigned. The
+        /// recruiting door - the street bar's empty chip and the Recruit order both.
+        ///
+        /// recruiterHalfSteps is the Intelligence of whoever went looking; pass 0 for a
+        /// walk-in, which is what the street bar's chip is.
+        /// </summary>
+        public static Character Recruit(Roster roster, System.Random rng,
+            int recruiterHalfSteps = 0)
         {
             var member = new Character { Id = roster.NextCharacterId() };
             DrawName(rng, roster, member);
             for (var a = 0; a < AttributeScale.Count; a++)
                 member.SetHalfSteps((CharacterAttribute)a,
-                    rng.Next(AttributeScale.MinHalfSteps, AttributeScale.MaxHalfSteps + 1));
+                    rng.Next(AttributeScale.MinHalfSteps, RecruitCeilingHalfSteps + 1));
+
+            // What the recruiter's eye is worth: a handful of second looks at random
+            // trades, each kept only if it is better. Never a floor raise - he finds a
+            // better man, he does not train the one he found.
+            var floor = OrderResolutionRecruitFloor;
+            var bonus = (recruiterHalfSteps - floor) * RecruitBonusPerHalfStep;
+            for (var i = 0; i < bonus; i++)
+            {
+                var attribute = (CharacterAttribute)rng.Next(AttributeScale.Count);
+                var roll = rng.Next(AttributeScale.MinHalfSteps,
+                    AttributeScale.MaxHalfSteps + 1);
+                if (roll > member.GetHalfSteps(attribute))
+                    member.SetHalfSteps(attribute, roll);
+            }
+
             member.Loyalty = rng.Next(35, 86);
             roster.Members.Add(member);
+            return member;
+        }
+
+        /// <summary>The Recruit order's stated floor, 3.5 stars. Named here rather than
+        /// read from OrderTable so the Personnel core stays free of the Outfit layer -
+        /// the two must agree, and LedgerTests asserts that they do.</summary>
+        const int OrderResolutionRecruitFloor = 7;
+
+        /// <summary>
+        /// A man dealt but NOT put on the books - the newspaper's classified column,
+        /// where a few of them advertise every morning and most are never hired
+        /// (Outfit.HireMarket). He carries id -1 until somebody signs him, because ids
+        /// come off the roster's own counter and the paper is set long before the
+        /// outfit knows whether it will take anybody on.
+        ///
+        /// ceilingHalfSteps is the band he rolls in - a corner recruit's ceiling is
+        /// <see cref="RecruitCeilingHalfSteps"/>; a man who advertises rolls higher,
+        /// and charges for it. His name is still drawn against the roster, so the
+        /// column never offers the outfit a man it already employs.
+        /// </summary>
+        public static Character Deal(Roster roster, System.Random rng,
+            int ceilingHalfSteps)
+        {
+            if (ceilingHalfSteps < AttributeScale.MinHalfSteps)
+                ceilingHalfSteps = AttributeScale.MinHalfSteps;
+            if (ceilingHalfSteps > AttributeScale.MaxHalfSteps)
+                ceilingHalfSteps = AttributeScale.MaxHalfSteps;
+
+            var member = new Character { Id = -1 };
+            DrawName(rng, roster, member);
+            for (var a = 0; a < AttributeScale.Count; a++)
+                member.SetHalfSteps((CharacterAttribute)a,
+                    rng.Next(AttributeScale.MinHalfSteps, ceilingHalfSteps + 1));
+            member.Loyalty = rng.Next(35, 86);
             return member;
         }
 

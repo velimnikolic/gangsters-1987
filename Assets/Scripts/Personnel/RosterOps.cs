@@ -519,6 +519,54 @@ namespace LivingCity.Personnel
         /// </summary>
         public static OpResult Desert(Roster roster, int id) => StrikeOff(roster, id, CharacterStatus.Deserted);
 
+        /// <summary>
+        /// A man laid up - his own charge went off early, or the other side got the
+        /// better of it. Unlike the dead he keeps his post, his crew and his gun: he is
+        /// coming back, and the outfit pays him while he is in there (see Wages). The
+        /// day he is back on is stored, not counted down, so nothing drifts.
+        /// </summary>
+        public static OpResult Hospitalize(Roster roster, int id, int backOnDay)
+        {
+            var member = roster.Find(id);
+            if (member == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            if (member.Gone)
+                return OpResult.Fail(GoneReason(member));
+
+            member.Status = CharacterStatus.Hospitalized;
+            member.BackOnDay = backOnDay;
+            return OpResult.Success;
+        }
+
+        /// <summary>
+        /// Puts back to work everyone whose day has come. Returns how many stood up, so
+        /// the caller can decide whether the page needs repainting. The dead are not
+        /// checked - nothing brings them back.
+        /// </summary>
+        public static int Discharge(Roster roster, int day)
+        {
+            if (roster == null)
+                return 0;
+
+            var back = 0;
+            for (var i = 0; i < roster.Members.Count; i++)
+            {
+                var member = roster.Members[i];
+                if (member.Gone || member.Status == CharacterStatus.Active)
+                    continue;
+                // No date means no release: a man held at somebody else's pleasure
+                // stays held until whatever put him there lets him out. Only a stated
+                // day discharges him, or day one would empty every cell in the city.
+                if (member.BackOnDay <= 0 || member.BackOnDay > day)
+                    continue;
+
+                member.Status = CharacterStatus.Active;
+                member.BackOnDay = 0;
+                back++;
+            }
+            return back;
+        }
+
         static OpResult StrikeOff(Roster roster, int id, CharacterStatus status)
         {
             var member = roster.Find(id);

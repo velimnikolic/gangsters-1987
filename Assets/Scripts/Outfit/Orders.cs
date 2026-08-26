@@ -57,99 +57,149 @@ namespace LivingCity.Outfit
         Donate,
     }
 
-    /// <summary>One order type's fixed facts: how it targets, what it costs in labour,
-    /// and the attribute the job card checks (warn-but-permit, the house rule).</summary>
+    /// <summary>How a job is decided when the crew has done the hours.</summary>
+    public enum JobResolution
+    {
+        /// <summary>A seeded roll against the crew's best man at the job's trade -
+        /// there is no scene to play out, so the arithmetic IS the event.</summary>
+        Roll,
+
+        /// <summary>The street decides. The crew goes there and the sim plays it out;
+        /// what the record says is what actually happened on the road.</summary>
+        Street,
+
+        /// <summary>It never finishes. The men stand it until they are called off,
+        /// earning their practice a day at a time.</summary>
+        Standing,
+    }
+
+    /// <summary>One order type's fixed facts: how it targets, how long it takes a man,
+    /// what it pays and costs, and the attribute the job lives by.</summary>
     public readonly struct OrderSpec
     {
         public readonly OrderType Type;
         public readonly OrderCategory Category;
         public readonly TargetMode Mode;
 
-        /// <summary>Area orders: blocks one man covers in a travel-free week.</summary>
-        public readonly float BlocksPerManWeek;
+        /// <summary>Game-hours of work ONE man owes per target, travel excluded. Two
+        /// men on it halve the hours; a standing order ignores the figure.</summary>
+        public readonly float HoursPerTarget;
 
-        /// <summary>Point orders: man-weeks of work at the door.</summary>
-        public readonly float PointCost;
+        public readonly JobResolution Resolution;
 
-        /// <summary>The stat the job lives by; floor 0 = no requirement.</summary>
+        /// <summary>The stat the job lives by; floor 0 = no stated requirement, which
+        /// still resolves against <see cref="OrderResolution.ImplicitFloorHalfSteps"/>
+        /// so stars never stop mattering.</summary>
         public readonly CharacterAttribute PrimaryAttribute;
         public readonly int PrimaryFloorHalfSteps;
 
+        /// <summary>Money the job pays per target when it comes off, before the
+        /// attribute scaling in <see cref="OrderResolution"/>.</summary>
+        public readonly int Payout;
+
+        /// <summary>Money the attempt costs per target - paid whether or not it comes
+        /// off, because a bribe that bought nothing is still a bribe that was paid.</summary>
+        public readonly int Cost;
+
+        /// <summary>Police attention one target generates. Nothing consumes it yet -
+        /// the record carries it so the police layer can read the past when it lands.</summary>
+        public readonly int Heat;
+
         public OrderSpec(OrderType type, OrderCategory category, TargetMode mode,
-            float blocksPerManWeek, float pointCost,
-            CharacterAttribute primaryAttribute, int primaryFloorHalfSteps)
+            float hoursPerTarget, JobResolution resolution,
+            CharacterAttribute primaryAttribute, int primaryFloorHalfSteps,
+            int payout = 0, int cost = 0, int heat = 0)
         {
             Type = type;
             Category = category;
             Mode = mode;
-            BlocksPerManWeek = blocksPerManWeek;
-            PointCost = pointCost;
+            HoursPerTarget = hoursPerTarget;
+            Resolution = resolution;
             PrimaryAttribute = primaryAttribute;
             PrimaryFloorHalfSteps = primaryFloorHalfSteps;
+            Payout = payout;
+            Cost = cost;
+            Heat = heat;
         }
     }
 
-    /// <summary>The full order table from the reference sheet, grouped by category.
-    /// Floors are in half-steps (6 = 3.0 stars, 7 = 3.5).</summary>
+    /// <summary>
+    /// The full order table, grouped by category. Floors are in half-steps (6 = 3.0
+    /// stars, 7 = 3.5).
+    ///
+    /// The hours are the game's pacing dial and are written as hours ON PURPOSE rather
+    /// than derived from an abstract work unit: a player watching his men cross town
+    /// reads the clock, so the number that decides how long he waits should be the
+    /// number a designer edits. At the city clock's default speed a game hour is a
+    /// handful of real seconds, so a 16-hour shakedown is a coffee break and a 40-hour
+    /// premises fit-out is an evening's play.
+    /// </summary>
     public static class OrderTable
     {
         public static readonly OrderSpec[] Specs =
         {
             // Extortion & Territory
             new OrderSpec(OrderType.Extort, OrderCategory.Extortion, TargetMode.Area,
-                2.5f, 0f, CharacterAttribute.Intimidation, 6),
+                16f, JobResolution.Roll, CharacterAttribute.Intimidation, 6,
+                payout: 120, heat: 2),
             new OrderSpec(OrderType.Intimidate, OrderCategory.Extortion, TargetMode.Point,
-                0f, 0.4f, CharacterAttribute.Intimidation, 7),
+                16f, JobResolution.Roll, CharacterAttribute.Intimidation, 7, heat: 2),
             new OrderSpec(OrderType.CollectProtection, OrderCategory.Extortion,
-                TargetMode.Area, 8f, 0f, CharacterAttribute.Intelligence, 0),
+                TargetMode.Area, 5f, JobResolution.Roll, CharacterAttribute.Intelligence, 0,
+                payout: 60, heat: 1),
             new OrderSpec(OrderType.AdjustProtection, OrderCategory.Extortion,
-                TargetMode.Point, 0f, 0.3f, CharacterAttribute.Intimidation, 0),
+                TargetMode.Point, 4f, JobResolution.Roll, CharacterAttribute.Intimidation, 0),
 
-            // Violence
+            // Violence - the street decides these; the hours are getting there and
+            // waiting for the mark, not the seconds the thing itself takes.
             new OrderSpec(OrderType.Assault, OrderCategory.Violence, TargetMode.Point,
-                0f, 0.5f, CharacterAttribute.Fists, 7),
+                8f, JobResolution.Street, CharacterAttribute.Fists, 7, heat: 4),
             new OrderSpec(OrderType.SmashUp, OrderCategory.Violence, TargetMode.Point,
-                0f, 0.5f, CharacterAttribute.Fists, 6),
+                8f, JobResolution.Street, CharacterAttribute.Fists, 6, heat: 5),
             new OrderSpec(OrderType.Raid, OrderCategory.Violence, TargetMode.Point,
-                0f, 0.7f, CharacterAttribute.Firearms, 6),
+                10f, JobResolution.Street, CharacterAttribute.Firearms, 6,
+                payout: 300, heat: 8),
             new OrderSpec(OrderType.Torch, OrderCategory.Violence, TargetMode.Point,
-                0f, 0.6f, CharacterAttribute.Arson, 6),
+                10f, JobResolution.Street, CharacterAttribute.Arson, 6, heat: 10),
             new OrderSpec(OrderType.Bomb, OrderCategory.Violence, TargetMode.Point,
-                0f, 0.8f, CharacterAttribute.Explosives, 6),
+                12f, JobResolution.Street, CharacterAttribute.Explosives, 6, heat: 14),
             new OrderSpec(OrderType.Kill, OrderCategory.Violence, TargetMode.Point,
-                0f, 0.7f, CharacterAttribute.Firearms, 6),
+                12f, JobResolution.Street, CharacterAttribute.Firearms, 6, heat: 12),
             new OrderSpec(OrderType.Kidnap, OrderCategory.Violence, TargetMode.Point,
-                0f, 0.8f, CharacterAttribute.Fists, 6),
+                14f, JobResolution.Street, CharacterAttribute.Fists, 6,
+                payout: 800, heat: 9),
 
-            // Defense & Reconnaissance
+            // Defense & Reconnaissance - a watch is stood, never finished.
             new OrderSpec(OrderType.Patrol, OrderCategory.Defense, TargetMode.Area,
-                4f, 0f, CharacterAttribute.Firearms, 6),
+                10f, JobResolution.Standing, CharacterAttribute.Firearms, 6),
             new OrderSpec(OrderType.Guard, OrderCategory.Defense, TargetMode.Point,
-                0f, 1f, CharacterAttribute.Firearms, 6),
+                24f, JobResolution.Standing, CharacterAttribute.Firearms, 6),
             new OrderSpec(OrderType.Ambush, OrderCategory.Defense, TargetMode.Area,
-                3f, 0f, CharacterAttribute.Firearms, 7),
+                12f, JobResolution.Standing, CharacterAttribute.Firearms, 7),
             new OrderSpec(OrderType.Explore, OrderCategory.Defense, TargetMode.Area,
-                6f, 0f, CharacterAttribute.Stealth, 0),
+                7f, JobResolution.Roll, CharacterAttribute.Stealth, 0),
 
             // Business
             new OrderSpec(OrderType.BuyPremises, OrderCategory.Business, TargetMode.Point,
-                0f, 0.3f, CharacterAttribute.Business, 0),
+                6f, JobResolution.Roll, CharacterAttribute.Business, 0, cost: 2_500),
             new OrderSpec(OrderType.SetUpBusiness, OrderCategory.Business, TargetMode.Point,
-                0f, 1f, CharacterAttribute.Business, 6),
+                40f, JobResolution.Roll, CharacterAttribute.Business, 6, cost: 1_200),
             new OrderSpec(OrderType.RunBusiness, OrderCategory.Business, TargetMode.Point,
-                0f, 1f, CharacterAttribute.Business, 6),
+                24f, JobResolution.Standing, CharacterAttribute.Business, 6, payout: 90),
             new OrderSpec(OrderType.Audit, OrderCategory.Business, TargetMode.Point,
-                0f, 0.5f, CharacterAttribute.Intelligence, 6),
+                12f, JobResolution.Roll, CharacterAttribute.Intelligence, 6),
 
             // Personnel & Influence
+            // The signing money is the order's cost, so the one gate that moves money
+            // moves it here too - the street bar's chip pays its own way separately.
             new OrderSpec(OrderType.Recruit, OrderCategory.Influence, TargetMode.Point,
-                0f, 0.5f, CharacterAttribute.Intelligence, 7),
+                12f, JobResolution.Roll, CharacterAttribute.Intelligence, 7, cost: 500),
             new OrderSpec(OrderType.Bribe, OrderCategory.Influence, TargetMode.Point,
-                0f, 0.3f, CharacterAttribute.Intelligence, 6),
+                8f, JobResolution.Roll, CharacterAttribute.Intelligence, 6, cost: 400),
             new OrderSpec(OrderType.EmployPolice, OrderCategory.Influence, TargetMode.Point,
-                0f, 0.4f, CharacterAttribute.Intelligence, 6),
+                10f, JobResolution.Roll, CharacterAttribute.Intelligence, 6, cost: 600),
             new OrderSpec(OrderType.Donate, OrderCategory.Influence, TargetMode.Point,
-                0f, 0.2f, CharacterAttribute.Business, 0),
+                4f, JobResolution.Roll, CharacterAttribute.Business, 0, cost: 500),
         };
 
         public static OrderSpec SpecOf(OrderType type)
@@ -161,10 +211,31 @@ namespace LivingCity.Outfit
         }
     }
 
-    /// <summary>A confirmed order in a lieutenant's queue. Draft orders never become
-    /// one of these - the unconfirmed state lives only on the job card, which is the
-    /// whole point of the confirm step.</summary>
-    public sealed class PlannedOrder
+    /// <summary>Where a job has got to. A crew works its queue one job at a time, so
+    /// exactly one of a crew's jobs is ever past <see cref="Queued"/>.</summary>
+    public enum JobStage
+    {
+        /// <summary>In the lieutenant's book, not yet started - the crew is busy.</summary>
+        Queued,
+
+        /// <summary>The men are on their way there.</summary>
+        Travelling,
+
+        /// <summary>The men are at the door, doing it.</summary>
+        Working,
+
+        /// <summary>Resolved and written into the record; dropped from the book on the
+        /// next pass.</summary>
+        Finished,
+    }
+
+    /// <summary>
+    /// A job in a lieutenant's book. Issued from the ledger at any moment - there is no
+    /// turn to submit it to - and worked in the running city: the men travel, they put
+    /// in the hours, and the job resolves when the hours are done. Draft orders never
+    /// become one of these; the unconfirmed state lives only on the job card.
+    /// </summary>
+    public sealed class Job
     {
         public int Id;
         public int CrewId;
@@ -181,25 +252,106 @@ namespace LivingCity.Outfit
 
         public int Men = 1;
 
+        /// <summary>The campaign day it was issued - the record prints it and the roll
+        /// is seeded off it, so the same day at the same seed decides the same way.</summary>
+        public int IssuedDay = 1;
+
+        public JobStage Stage = JobStage.Queued;
+
+        /// <summary>Game-hours still to walk or drive before work can start.</summary>
+        public float TravelHoursLeft;
+
+        /// <summary>Game-hours of work still owed. A standing job holds its men and
+        /// never counts down.</summary>
+        public float WorkHoursLeft;
+
+        /// <summary>Whole days the men have stood a standing job - what its practice
+        /// is paid against.</summary>
+        public int DaysStood;
+
+        /// <summary>How many open jobs the lieutenant was carrying when this one came
+        /// up. Frozen at that moment rather than read at resolution: the penalty is for
+        /// the attention he had to spare while the work was being done, and a book that
+        /// emptied afterwards does not retrospectively make the job go better.</summary>
+        public int BookDepth;
+
+        /// <summary>How the street answered a Violence job, once it has. Null until
+        /// the sim reports, and the roll stands in for it if nothing ever does - a
+        /// scene with no crew simulation still has to be able to play the game.</summary>
+        public OrderOutcome? StreetOutcome;
+
+        public bool Live => Stage != JobStage.Finished;
+
+        /// <summary>Whether the target coordinates mean anything. A job issued from the
+        /// map always carries them - the area orders take their blocks' centre - but a
+        /// job built in a test does not, and a bare (0,0) would otherwise read as a
+        /// point at the world origin and charge the crew a journey across the city.</summary>
+        public bool HasPlace => TargetBlockId >= 0 || BlockTargets.Count > 0 ||
+                                TargetLabel.Length > 0;
+
         public int TargetCount => BlockTargets.Count > 0 ? BlockTargets.Count : 1;
     }
 
-    /// <summary>This week's confirmed orders, in execution priority order.</summary>
-    public sealed class WeekPlan
+    /// <summary>The outfit's open jobs, in the order the lieutenants took them.</summary>
+    public sealed class OrderBook
     {
-        public readonly List<PlannedOrder> Confirmed = new List<PlannedOrder>();
+        public readonly List<Job> Jobs = new List<Job>();
 
-        int nextOrderId;
+        int nextJobId;
 
-        public int NextOrderId() => nextOrderId++;
+        public int NextJobId() => nextJobId++;
 
-        public int CommittedMen(int crewId)
+        /// <summary>The job a crew is actually on: the first of its jobs that is not
+        /// finished. List order IS queue order, so moving a row moves the work.</summary>
+        public Job CurrentFor(int crewId)
         {
-            var total = 0;
-            for (var i = 0; i < Confirmed.Count; i++)
-                if (Confirmed[i].CrewId == crewId)
-                    total += Confirmed[i].Men;
-            return total;
+            for (var i = 0; i < Jobs.Count; i++)
+                if (Jobs[i].CrewId == crewId && Jobs[i].Live)
+                    return Jobs[i];
+            return null;
+        }
+
+        /// <summary>How many live jobs a crew is carrying, the one in hand included -
+        /// the depth Organization is measured against.</summary>
+        public int LiveCount(int crewId)
+        {
+            var count = 0;
+            for (var i = 0; i < Jobs.Count; i++)
+                if (Jobs[i].CrewId == crewId && Jobs[i].Live)
+                    count++;
+            return count;
+        }
+
+        /// <summary>Men a crew has out on the job right now - a queued job holds
+        /// nobody, because nobody has left the front for it yet.</summary>
+        public int MenOut(int crewId)
+        {
+            var current = CurrentFor(crewId);
+            return current != null && current.Stage != JobStage.Queued ? current.Men : 0;
+        }
+
+        /// <summary>How far down the crew's book this job sits; 0 is the one in hand.</summary>
+        public int DepthOf(Job job)
+        {
+            if (job == null)
+                return 0;
+            var depth = 0;
+            for (var i = 0; i < Jobs.Count; i++)
+            {
+                var other = Jobs[i];
+                if (other == job)
+                    return depth;
+                if (other.CrewId == job.CrewId && other.Live)
+                    depth++;
+            }
+            return depth;
+        }
+
+        public void DropFinished()
+        {
+            for (var i = Jobs.Count - 1; i >= 0; i--)
+                if (!Jobs[i].Live)
+                    Jobs.RemoveAt(i);
         }
     }
 
@@ -207,91 +359,98 @@ namespace LivingCity.Outfit
     {
         Completed,
         Failed,
-        NeverReached,
+
+        /// <summary>Called off before it was done - the one way a live job leaves the
+        /// book without an answer.</summary>
+        CalledOff,
     }
 
-    /// <summary>Last week's record - a snapshot, because it is a RECORD: the fact of
-    /// what was ordered and what came of it, never re-derived. Failure rows carry no
-    /// reason on purpose; running out of week is labelled apart from failing.</summary>
+    /// <summary>Last few days' record - a snapshot, because it is a RECORD: the fact of
+    /// what was ordered and what came of it, never re-derived.</summary>
     public sealed class OrderRecord
     {
+        public int Day;
         public string Lieutenant = "";
         public OrderType Type;
         public string TargetSummary = "";
         public int Men;
         public OrderOutcome Outcome;
+
+        /// <summary>Money that moved on this job: payout less what the attempt cost.</summary>
+        public int Money;
+
+        public int Heat;
     }
 
     /// <summary>
-    /// The capacity arithmetic - the game's central tension, and deliberately NOT a
-    /// flat cap. A crew's week is its men; travel eats a fraction of every assigned
-    /// man's week before work starts, so distance and the vehicle genuinely drive what
-    /// a crew can take on. All floats derived at read, displayed rounded.
+    /// The realtime arithmetic: how long a job takes and how long getting there takes.
+    /// The old man-week budget is gone with the weekly turn - what limits a crew now is
+    /// that its men are genuinely somewhere, for as long as the work takes. Fewer men
+    /// on a job does not make it impossible; it makes it slower, and the calendar is
+    /// the price.
     /// </summary>
     public static class OrderMath
     {
-        /// <summary>Metres of round-trip reach a man on foot spends a whole week on -
-        /// on foot the outfit works its own neighbourhood, which is the design.</summary>
-        public const float FootWeekRange = 1200f;
+        /// <summary>Metres a crew on foot covers in a game hour. Not a walking pace -
+        /// it is a working pace, with the going there, the standing about and the
+        /// coming back folded in. On foot the outfit works its own neighbourhood,
+        /// which is the design.</summary>
+        public const float FootMetresPerHour = 400f;
 
         /// <summary>A car makes the whole city a neighbourhood - the first vehicle is
         /// the purchase that changes the game's shape.</summary>
-        public const float VehicleWeekRange = 6000f;
+        public const float VehicleMetresPerHour = 2_000f;
 
-        public const float MaxTravelFraction = 0.9f;
+        /// <summary>Nobody crosses town instantly, however good the driver.</summary>
+        public const float MinTravelHours = 0.25f;
 
-        public static float TravelFraction(float distanceMeters, bool hasVehicle)
+        public const float MaxTravelHours = 72f;
+
+        /// <summary>A wheelman's stat on the road: 0.90 of the book speed at one star,
+        /// 1.15 at five. Only a crew with a car gets it - a fast driver on foot is
+        /// just a man walking.</summary>
+        public static float DrivingScale(int halfSteps)
         {
-            var range = hasVehicle ? VehicleWeekRange : FootWeekRange;
-            var fraction = distanceMeters / range;
-            return fraction > MaxTravelFraction ? MaxTravelFraction
-                : fraction < 0f ? 0f
-                : fraction;
+            var t = (AttributeScale.Clamp(halfSteps) - AttributeScale.MinHalfSteps) /
+                    (float)(AttributeScale.MaxHalfSteps - AttributeScale.MinHalfSteps);
+            return 0.90f + 0.25f * t;
         }
 
-        /// <summary>Man-weeks the job itself needs, before anyone walks anywhere.</summary>
-        public static float WorkRequired(in OrderSpec spec, int targetCount) =>
-            spec.Mode == TargetMode.Area
-                ? targetCount / (spec.BlocksPerManWeek > 0f ? spec.BlocksPerManWeek : 1f)
-                : spec.PointCost;
-
-        /// <summary>How many men finish the job within the week, travel included.</summary>
-        public static int MenNeeded(in OrderSpec spec, int targetCount,
-            float travelFraction)
+        /// <summary>Game-hours to reach the job and be in a state to work.</summary>
+        public static float TravelHours(float distanceMeters, bool hasVehicle,
+            int drivingHalfSteps)
         {
-            var perMan = 1f - travelFraction;
-            if (perMan < 0.1f)
-                perMan = 0.1f;
-            var men = (int)System.Math.Ceiling(WorkRequired(spec, targetCount) / perMan);
-            return men < 1 ? 1 : men;
+            if (distanceMeters < 0f)
+                distanceMeters = 0f;
+
+            var speed = hasVehicle
+                ? VehicleMetresPerHour * DrivingScale(drivingHalfSteps)
+                : FootMetresPerHour;
+            var hours = distanceMeters / speed;
+
+            if (hours < MinTravelHours)
+                return MinTravelHours;
+            return hours > MaxTravelHours ? MaxTravelHours : hours;
         }
 
-        /// <summary>True when the assigned men cannot finish inside the week.</summary>
-        public static bool Undermanned(in OrderSpec spec, int targetCount,
-            float travelFraction, int men) =>
-            men * (1f - travelFraction) + 0.0001f < WorkRequired(spec, targetCount);
-
-        /// <summary>
-        /// Which confirmed orders a crew never reaches: walking the queue in priority
-        /// order, every order whose running men total exceeds the crew's size is past
-        /// the line. Over-assignment is allowed - this is the line the player crossed,
-        /// marked, never enforced.
-        /// </summary>
-        public static void PastTheLine(WeekPlan plan, int crewId, int crewSize,
-            List<int> pastOrderIds)
+        /// <summary>Game-hours of work the job itself owes, split across the men on it.
+        /// A standing job returns 0 - it is never owed, only stood.</summary>
+        public static float WorkHours(in OrderSpec spec, int targetCount, int men)
         {
-            pastOrderIds.Clear();
-            var running = 0;
-            for (var i = 0; i < plan.Confirmed.Count; i++)
-            {
-                var order = plan.Confirmed[i];
-                if (order.CrewId != crewId)
-                    continue;
-                running += order.Men;
-                if (running > crewSize)
-                    pastOrderIds.Add(order.Id);
-            }
+            if (spec.Resolution == JobResolution.Standing)
+                return 0f;
+            if (targetCount < 1)
+                targetCount = 1;
+            if (men < 1)
+                men = 1;
+            return spec.HoursPerTarget * targetCount / men;
         }
+
+        /// <summary>What the job card quotes before the player confirms.</summary>
+        public static float TotalHours(in OrderSpec spec, int targetCount, int men,
+            float distanceMeters, bool hasVehicle, int drivingHalfSteps) =>
+            TravelHours(distanceMeters, hasVehicle, drivingHalfSteps) +
+            WorkHours(spec, targetCount, men);
     }
 
     /// <summary>Crew-side lookups the job card needs, kept pure.</summary>
@@ -342,6 +501,29 @@ namespace LivingCity.Outfit
             foreach (var id in crew.HoodIds)
                 Consider(id);
             return best;
+        }
+
+        /// <summary>Fills the buffer with the ids of the men who go on a job: the
+        /// lieutenant first, then his hoods in list order, up to the job's headcount.
+        /// The dead and the deserted are skipped, so a job never books a ghost.</summary>
+        public static void MenOnJob(Roster roster, Crew crew, int men, List<int> into)
+        {
+            into.Clear();
+            if (roster == null || crew == null || men < 1)
+                return;
+
+            void Take(int id)
+            {
+                if (into.Count >= men)
+                    return;
+                var member = roster.Find(id);
+                if (member != null && !member.Gone)
+                    into.Add(id);
+            }
+
+            Take(crew.LieutenantId);
+            foreach (var id in crew.HoodIds)
+                Take(id);
         }
     }
 }

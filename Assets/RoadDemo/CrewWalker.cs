@@ -27,6 +27,14 @@ namespace RoadDemo
         /// <summary>The roster id of the man this figure stands for (rivals carry
         /// their own negative ids - they are on nobody's books).</summary>
         public int CharacterId;
+
+        /// <summary>His Firearms, in half-steps, cached off the ledger when the crews
+        /// were dealt. Cached rather than looked up per shot because Resolve runs on
+        /// every round of every fight in the city; it cannot go stale, because a man
+        /// only ever improves at the day tick and that bumps the personnel version the
+        /// re-deal watches (DemoCrews.Update). A rival, who is on nobody's books,
+        /// keeps the middling default.</summary>
+        public int FirearmsHalfSteps = 6;
         public string DisplayName = "";
         public bool IsLieutenant;
 

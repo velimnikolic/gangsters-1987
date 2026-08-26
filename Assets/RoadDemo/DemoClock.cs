@@ -9,7 +9,7 @@ namespace RoadDemo
     // Pause and speed go through Time.timeScale so the WHOLE demo freezes and
     // accelerates with the clock - traffic, pedestrians, signals. The camera pans
     // on unscaled time (DemoCamera), so a paused demo can still be looked around.
-    public class DemoClock : MonoBehaviour
+    public class DemoClock : MonoBehaviour, LivingCity.Ambient.IDayClock
     {
         public const float HoursPerDay = 24f;
 
@@ -67,7 +67,13 @@ namespace RoadDemo
         // Awake AND Start: Awake so anything reading the clock on the build frame
         // sees an hour instead of midnight, Start because the builder assigns
         // startHour right after AddComponent - which is after Awake already ran.
-        void Awake() => Hour = Mathf.Repeat(startHour, HoursPerDay);
+        void Awake()
+        {
+            Hour = Mathf.Repeat(startHour, HoursPerDay);
+            // The campaign calendar walks on whichever clock a scene runs, and this is
+            // the one the shipping scene builds.
+            LivingCity.Ambient.DayClock.Register(this);
+        }
 
         void Start()
         {
@@ -92,6 +98,8 @@ namespace RoadDemo
 
         void OnDestroy()
         {
+            LivingCity.Ambient.DayClock.Unregister(this);
+
             // In the Editor Time.timeScale survives leaving Play mode - a demo
             // stopped while paused would leave the next session frozen.
             Time.timeScale = 1f;

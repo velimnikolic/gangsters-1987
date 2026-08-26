@@ -72,11 +72,49 @@
         /// displays it; the police layer will own setting it.</summary>
         public bool Wanted;
 
+        /// <summary>What he signed for, a week - 0 when he is paid the house scale.
+        /// Only a man taken on out of the newspaper's classified column carries one
+        /// (see Outfit.HireMarket): he named his price in print, and the outfit agreed
+        /// to it. Kept on the man rather than derived from his stats because it is a
+        /// BARGAIN, not a rate - training him up must not quietly raise it.</summary>
+        public int WageAsked;
+
+        /// <summary>The campaign day he is back on his feet. Meaningful only while he
+        /// is Jailed or Hospitalized; the day tick reads it and puts him back to work.
+        /// A day rather than a countdown so the figure survives a save and cannot drift
+        /// with however many ticks happened to run.</summary>
+        public int BackOnDay;
+
         readonly int[] halfSteps = new int[AttributeScale.Count];
+
+        /// <summary>Points banked toward the NEXT half-step of each attribute - what a
+        /// man has learned on the job and not yet grown into. Parallel to
+        /// <see cref="halfSteps"/> and never converted here: accumulation and promotion
+        /// are separate on purpose, so a stat can only ever rise at the day tick
+        /// (Practice.Convert) and never in the middle of the job that earned it.</summary>
+        readonly int[] practice = new int[AttributeScale.Count];
 
         public string FullName => FirstName + " " + Surname;
 
         public int GetHalfSteps(CharacterAttribute attribute) => halfSteps[(int)attribute];
+
+        public int GetPractice(CharacterAttribute attribute) => practice[(int)attribute];
+
+        /// <summary>Banks work done. Negative points are ignored rather than clamped
+        /// away silently - nothing in the design takes practice back.</summary>
+        public void AddPractice(CharacterAttribute attribute, int points)
+        {
+            if (points <= 0)
+                return;
+            practice[(int)attribute] += points;
+        }
+
+        /// <summary>Spends banked practice. Only <see cref="Practice"/> calls this.</summary>
+        public void SpendPractice(CharacterAttribute attribute, int points)
+        {
+            var left = practice[(int)attribute] - points;
+            practice[(int)attribute] = left > 0 ? left : 0;
+        }
 
         /// <summary>Sum across all eleven attributes - the wage table's talent measure.</summary>
         public int TotalHalfSteps()
