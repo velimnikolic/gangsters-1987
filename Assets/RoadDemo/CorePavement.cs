@@ -68,6 +68,12 @@ namespace RoadDemo
         const string InnerCorner = "SM_Env_Sidewalk_Corner_02";
         const string Drain = "SM_Env_Sidewalk_Gutter_01";
 
+        /// <summary>The dropped kerb a vehicle way crosses the pavement on, and the asphalt
+        /// it runs over between the kerb and the yard. Both are 5 m and both take their
+        /// pivot at a corner, the same as every other tile here.</summary>
+        const string Dip = "SM_Env_Sidewalk_Dip_01";
+        const string Road = "SM_Env_Road_Bare_01";
+
         const string PropsDir = "Assets/Synty/PolygonCity/Prefabs/Props/";
 
         /// <summary>The street lamp: mast and cantilever arm in one piece, 6.5 m tall, the
@@ -78,6 +84,23 @@ namespace RoadDemo
         /// <summary>A row of bollards, 3.2 m of them - one piece, laid along the kerb.</summary>
         const string Bollards = "SM_Prop_SidewalkPoles_01";
 
+        /// <summary>
+        /// The palm and the basket at its foot, from the palm city rather than this pack -
+        /// the pair the game's own kerbs have always carried (SidewalkDressing.Tree).
+        ///
+        /// Both stand on the SAME spot: the grate is the ground the palm grows out of, so
+        /// it is laid first and the palm inside it. Six palms to choose from and two
+        /// grates, and the palm is turned to any angle at all rather than to a quarter -
+        /// a tree has no facing.
+        /// </summary>
+        const string PalmDir = "Assets/Synty/PolygonPalmCity/Prefabs/Environment/";
+        const string Basket = "SM_Env_Plant_Grate_0";
+        const string Palm = "SM_Env_Tree_Palm_0";
+        const int Baskets = 2, PalmKinds = 6;
+
+        /// <summary>Kerb tiles per palm - a few of them, not an avenue.</summary>
+        const int PalmEvery = 10;
+
         /// <summary>Cells between lamps along one run of kerb, and how far in from its end
         /// the first one stands. Twenty metres is their commonest gap by a wide margin,
         /// and a lamp is a cell in from the corner, never on it.</summary>
@@ -86,6 +109,12 @@ namespace RoadDemo
         /// <summary>The two lanes the furniture stands in, metres in from the kerb line.
         /// Nothing of theirs stands between them.</summary>
         const float LampLane = 1f, KerbLane = 1.5f, WallLane = 4f;
+
+        /// <summary>Where a palm stands: a metre further in than the rest of the kerbside
+        /// furniture (2026-08-25, "palme mogu po metra ka unutrasnjosti"). It earns the
+        /// room - a palm's head is wide, and at the kerb line it hangs over the
+        /// carriageway rather than over the pavement it is planted in.</summary>
+        const float PalmLane = KerbLane + 1f;
 
         /// <summary>One piece of street furniture and how thickly it is spread.</summary>
         readonly struct Furniture
@@ -135,9 +164,44 @@ namespace RoadDemo
         /// shape nobody has thought of.</summary>
         const int Passes = 8;
 
+        /// <summary>
+        /// How many bites a block may have out of it, and how small a bite is allowed to
+        /// be (cells each way).
+        ///
+        /// A block is a RECTANGLE with a notch or two out of it - an L, or a rectangle with
+        /// a yard bitten into one side. It is never a cross. Grown straight off whatever
+        /// buildings are dropped on a tray the outline is a ragged star, so it is taken
+        /// back to its own bounding rectangle and only the biggest two notches are kept,
+        /// each squared off flush against the side it is bitten out of. Everything else
+        /// fills in - ground inside a block is a yard, and their blocks are full of yards.
+        ///
+        /// Two is the user's figure (2026-08-25): "max 2 ubacene strane". It squares off a
+        /// little harder than the artists did in one or two places - their block-12 is a
+        /// staircase of four steps - and that is the trade taken deliberately.
+        /// </summary>
+        const int MostNotches = 2, SmallestNotch = 2;
+
         /// <summary>A raster bigger than this is not a block - it is a rectangle laid over
         /// half the city, and paving it would stand tens of thousands of tiles.</summary>
         const int MostCells = 40000;
+
+        /// <summary>
+        /// How far under the ground a thing has to reach before the ground is understood to
+        /// be OPEN there - a sunken entrance stair, a basement door, a subway mouth - and
+        /// the floor is not laid over it.
+        ///
+        /// The figure is read off the pack rather than guessed, and the gap it sits in is
+        /// wide: a kerb tile's own skirt stops at -0.23 m and a tree's roots at -0.50, while
+        /// every real hole in their city is a metre or more (an apartment's entrance stair
+        /// -1.50, a subway entrance -4.15, the deepest -6.43). Sixty centimetres separates
+        /// the two with room to spare.
+        ///
+        /// This is the city's own rule, the same one the block prefabs are laid by: a unit
+        /// stands at y = 0 as the pack authored it, and nothing draws a floor under the part
+        /// of it that goes below. Their own block-07 - all sunken stoops - carries no floor
+        /// inside its kerb at all.
+        /// </summary>
+        public const float Underground = -0.6f;
 
         /// <summary>The ground of one block, on the 5 m raster: what the buildings cover,
         /// and what the pavement round them comes to.</summary>
@@ -153,7 +217,24 @@ namespace RoadDemo
             /// <summary>The cells the buildings stand on.</summary>
             public bool[,] Built;
 
-            public int Cells, BuiltCells;
+            /// <summary>The cells the block DROPS THROUGH: a sunken entrance stair, a
+            /// basement door, a subway mouth. They get no floor - see <see cref="Sinks"/>.</summary>
+            public bool[,] Sunken;
+
+            /// <summary>The cells a BUILDING stands over. Not the same as <see cref="Built"/>,
+            /// which is a bounding box: a yard cut into a building is built and not roofed,
+            /// which is the whole difference a way out is found by.</summary>
+            public bool[,] Roofed;
+
+            /// <summary>The cells a vehicle way runs over, from an open yard out to the
+            /// street. Road, not pavement - see <see cref="Ways"/>.</summary>
+            public bool[,] Drive;
+
+            /// <summary>The cells a DECLARED gate stands in: a way into a walled yard that
+            /// no mesh can be read for, because a shut gate is a wall.</summary>
+            public bool[,] Gate;
+
+            public int Cells, BuiltCells, SunkenCells, DriveCells;
 
             public bool Any => Cells > 0;
 
@@ -195,14 +276,17 @@ namespace RoadDemo
         /// through), and any dent with three of its four sides already in joins it too, so
         /// the kerb runs straight instead of stepping in and out round every bay window.
         /// </summary>
-        public static Plan Around(IEnumerable<Bounds> buildings, int band = 1)
+        public static Plan Around(IEnumerable<Bounds> buildings, int band = 1,
+                                  IEnumerable<Bounds> sinks = null,
+                                  IEnumerable<Bounds> roofs = null,
+                                  IEnumerable<Bounds> gates = null)
         {
             var boxes = new List<Bounds>();
             if (buildings != null)
                 foreach (var box in buildings)
                     if (box.size.x > 0f || box.size.z > 0f) boxes.Add(box);
 
-            var plan = new Plan { Ground = new bool[0, 0], Built = new bool[0, 0] };
+            var plan = Empty();
             if (boxes.Count == 0) return plan;
 
             var world = boxes[0];
@@ -217,10 +301,153 @@ namespace RoadDemo
             {
                 Debug.LogWarning($"[CorePavement] {plan.NX} x {plan.NZ} cells is not a block - " +
                                  "nothing was paved.");
-                return new Plan { Ground = new bool[0, 0], Built = new bool[0, 0] };
+                return Empty();
             }
 
             plan.Built = new bool[plan.NX, plan.NZ];
+            plan.Sunken = new bool[plan.NX, plan.NZ];
+            plan.Roofed = new bool[plan.NX, plan.NZ];
+            plan.Drive = new bool[plan.NX, plan.NZ];
+            plan.Gate = new bool[plan.NX, plan.NZ];
+            Claim(plan, boxes, plan.Built);
+            if (sinks != null) Claim(plan, sinks, plan.Sunken);
+            if (roofs != null) Claim(plan, roofs, plan.Roofed);
+            if (gates != null) Claim(plan, gates, plan.Gate);
+
+            var ground = (bool[,])plan.Built.Clone();
+            for (int step = 0; step < band; step++) ground = Grown(ground, plan.NX, plan.NZ);
+            Enclose(ground, plan.NX, plan.NZ);
+            Square(ground, plan.NX, plan.NZ);
+            Straighten(ground, plan.NX, plan.NZ);
+            plan.Ground = ground;
+            Ways(plan);
+
+            for (int i = 0; i < plan.NX; i++)
+                for (int j = 0; j < plan.NZ; j++)
+                {
+                    if (ground[i, j]) plan.Cells++;
+                    if (plan.Built[i, j]) plan.BuiltCells++;
+                    if (ground[i, j] && plan.Sunken[i, j]) plan.SunkenCells++;
+                    if (plan.Drive[i, j]) plan.DriveCells++;
+                }
+            return plan;
+        }
+
+        static Plan Empty() => new Plan
+        {
+            Ground = new bool[0, 0], Built = new bool[0, 0], Sunken = new bool[0, 0],
+            Roofed = new bool[0, 0], Drive = new bool[0, 0], Gate = new bool[0, 0],
+        };
+
+        /// <summary>How wide a hole has to be, across the way it faces, before it is taken
+        /// for a gate a vehicle uses rather than a stair somebody walks down. Two cells is
+        /// ten metres: a car needs it and a basement stair never has it.</summary>
+        const int GateWide = 2;
+
+        /// <summary>
+        /// The way out of every open yard: a run of road from the yard to the street, so a
+        /// car can reach the ramp it is plainly meant to reach.
+        ///
+        /// The direction is READ, not declared. A yard is cut into a building and open on
+        /// one side; out of the four, a side counts where <see cref="GateWide"/> of the
+        /// yard's cells can each drive straight out to the block's edge crossing nothing
+        /// roofed and nothing else open - you cannot drive through the station. A single
+        /// column stopped by a corner of the building only narrows the gate. Of the sides that qualify the shortest wins, and a tie goes to the wider
+        /// mouth. A yard with no side that qualifies gets no way out and stays a hole,
+        /// which is the honest answer for a light well.
+        /// </summary>
+        static void Ways(Plan plan)
+        {
+            Mouths(plan, plan.Sunken, GateWide);   // a hole wide enough to be a gate
+            Mouths(plan, plan.Gate, 1);            // and a gate somebody wrote down
+        }
+
+        /// <summary>One pass of <see cref="Ways"/> over one kind of mouth. A declared gate
+        /// needs no width test - saying it is a gate is the test.</summary>
+        static void Mouths(Plan plan, bool[,] mouth, int least)
+        {
+            var seen = new bool[plan.NX, plan.NZ];
+            var yard = new List<Vector2Int>();
+            var edge = new List<Vector2Int>();
+            var lane = new List<Vector2Int>();
+
+            for (int i = 0; i < plan.NX; i++)
+                for (int j = 0; j < plan.NZ; j++)
+                {
+                    if (seen[i, j] || !plan.Ground[i, j] || !mouth[i, j]) continue;
+
+                    // the yard this cell belongs to, four-connected
+                    yard.Clear();
+                    yard.Add(new Vector2Int(i, j));
+                    seen[i, j] = true;
+                    for (int at = 0; at < yard.Count; at++)
+                        foreach (var step in Steps)
+                        {
+                            var next = yard[at] + step;
+                            if (next.x < 0 || next.y < 0 || next.x >= plan.NX || next.y >= plan.NZ) continue;
+                            if (seen[next.x, next.y] || !plan.Ground[next.x, next.y] ||
+                                !mouth[next.x, next.y]) continue;
+                            seen[next.x, next.y] = true;
+                            yard.Add(next);
+                        }
+
+                    var held = new HashSet<Vector2Int>(yard);
+                    int bestLong = int.MaxValue, bestWide = 0;
+                    var best = new List<Vector2Int>();
+
+                    foreach (var step in Steps)
+                    {
+                        edge.Clear();
+                        lane.Clear();
+                        int longest = 0, wide = 0;
+
+                        foreach (var cell in yard)
+                        {
+                            // only the cells at the yard's face on this side open onto it
+                            if (held.Contains(cell + step)) continue;
+
+                            // a lane of its own: one column blocked by the building's corner
+                            // does not shut the gate, it only makes it narrower
+                            lane.Clear();
+                            bool blocked = false;
+                            var walk = cell + step;
+                            while (walk.x >= 0 && walk.y >= 0 && walk.x < plan.NX && walk.y < plan.NZ &&
+                                   plan.Ground[walk.x, walk.y])
+                            {
+                                if (plan.Roofed[walk.x, walk.y] || plan.Sunken[walk.x, walk.y] ||
+                                    plan.Drive[walk.x, walk.y])
+                                { blocked = true; break; }
+                                lane.Add(walk);
+                                walk += step;
+                            }
+                            if (blocked) continue;
+                            longest = Mathf.Max(longest, lane.Count);
+                            edge.AddRange(lane);
+                            wide++;
+                        }
+
+                        if (wide < least) continue;
+                        if (longest > bestLong || (longest == bestLong && wide <= bestWide)) continue;
+                        bestLong = longest;
+                        bestWide = wide;
+                        best.Clear();
+                        best.AddRange(edge);
+                    }
+
+                    foreach (var cell in best) plan.Drive[cell.x, cell.y] = true;
+                }
+        }
+
+        static readonly Vector2Int[] Steps =
+        {
+            new Vector2Int(1, 0), new Vector2Int(-1, 0),
+            new Vector2Int(0, 1), new Vector2Int(0, -1),
+        };
+
+        /// <summary>Marks every cell a box takes more than <see cref="Covers"/> of. A thing
+        /// overlapping a cell by a hand's breadth has not taken it.</summary>
+        static void Claim(Plan plan, IEnumerable<Bounds> boxes, bool[,] held)
+        {
             float takes = Covers * Cell * Cell;
             foreach (var box in boxes)
             {
@@ -231,27 +458,13 @@ namespace RoadDemo
                 for (int i = i0; i <= i1; i++)
                     for (int j = j0; j <= j1; j++)
                     {
-                        if (plan.Built[i, j]) continue;
+                        if (held[i, j]) continue;
                         float x = plan.X0 + i * Cell, z = plan.Z0 + j * Cell;
                         float ox = Overlap(box.min.x, box.max.x, x, x + Cell);
                         float oz = Overlap(box.min.z, box.max.z, z, z + Cell);
-                        if (ox * oz >= takes) plan.Built[i, j] = true;
+                        if (ox * oz >= takes) held[i, j] = true;
                     }
             }
-
-            var ground = (bool[,])plan.Built.Clone();
-            for (int step = 0; step < band; step++) ground = Grown(ground, plan.NX, plan.NZ);
-            Enclose(ground, plan.NX, plan.NZ);
-            Straighten(ground, plan.NX, plan.NZ);
-            plan.Ground = ground;
-
-            for (int i = 0; i < plan.NX; i++)
-                for (int j = 0; j < plan.NZ; j++)
-                {
-                    if (ground[i, j]) plan.Cells++;
-                    if (plan.Built[i, j]) plan.BuiltCells++;
-                }
-            return plan;
         }
 
         /// <summary>
@@ -279,7 +492,7 @@ namespace RoadDemo
             if (plan == null || !plan.Any) return 0;
 
             var pieces = new List<Laid>(plan.Cells);
-            int kerbs = 0, corners = 0, notches = 0, floor = 0, odd = 0;
+            int kerbs = 0, corners = 0, notches = 0, floor = 0, odd = 0, sunken = 0, drive = 0;
 
             for (int i = 0; i < plan.NX; i++)
                 for (int j = 0; j < plan.NZ; j++)
@@ -297,6 +510,14 @@ namespace RoadDemo
                         else if (!plan.In(i + 1, j - 1)) { pieces.Add(new Laid(i, j, InnerCorner, Quadrant(false, true))); notches++; }
                         else if (!plan.In(i - 1, j - 1)) { pieces.Add(new Laid(i, j, InnerCorner, Quadrant(false, false))); notches++; }
                         else if (!plan.In(i - 1, j + 1)) { pieces.Add(new Laid(i, j, InnerCorner, Quadrant(true, false))); notches++; }
+                        // the ground is OPEN here - a sunken stair, a basement door, a
+                        // subway mouth - and a flat tile at nought would cut straight
+                        // through it. The unit brings its own floor down there
+                        else if (plan.Sunken[i, j]) sunken++;
+                        // the yard's way out is road, not pavement: the run has to read as
+                        // one surface from the street to the ramp, not as paving with a
+                        // gap cut in it
+                        else if (plan.Drive[i, j]) { pieces.Add(new Laid(i, j, Road, 0)); drive++; }
                         else if (under || !plan.Built[i, j]) { pieces.Add(new Laid(i, j, Flat, 0)); floor++; }
                         continue;
                     }
@@ -314,7 +535,14 @@ namespace RoadDemo
                     // block is only one tile thick at, which cannot happen while the band
                     // is a tile or more. Kerb it towards the open side and say so.
                     if (open != 1) odd++;
-                    pieces.Add(new Laid(i, j, Kerb, !north ? 0 : !east ? 90 : !south ? 180 : 270));
+                    int face = !north ? 0 : !east ? 90 : !south ? 180 : 270;
+
+                    // where the way out meets the street the kerb DROPS. Nothing else about
+                    // the tile changes - the dip is the same 5 m piece turned the same way -
+                    // so the run carries on over the kerb line instead of stopping at it
+                    if (plan.Drive[i, j]) { pieces.Add(new Laid(i, j, Dip, face)); drive++; continue; }
+
+                    pieces.Add(new Laid(i, j, Kerb, face));
                     kerbs++;
                 }
 
@@ -367,6 +595,8 @@ namespace RoadDemo
             said = $"{area.width:F0} x {area.height:F0} m, {tiles} tile(s): {kerbs - drains} kerb, " +
                    $"{corners} corner(s), {notches} inner corner(s), {drains} drain(s), " +
                    $"{floor} square(s); the buildings cover {plan.BuiltCells} of {plan.Cells} cell(s)" +
+                   (sunken > 0 ? $"; {sunken} cell(s) left open where the block drops below ground" : "") +
+                   (drive > 0 ? $"; {drive} cell(s) of vehicle way out to the street" : "") +
                    (furniture.Length > 0 ? "; on the pavement " + furniture : "") +
                    (odd > 0
                        ? $"; {odd} cell(s) carry kerb on more than one side - the block is a tile " +
@@ -460,6 +690,22 @@ namespace RoadDemo
             var tally = new List<string>();
             if (lamps > 0) tally.Add($"{lamps} lamp(s)");
             if (rows > 0) tally.Add($"{rows} row(s) of bollards");
+
+            // the palms, before the small furniture, so a bin never lands where a tree is
+            int palms = 0, want = Mathf.RoundToInt(kerbs.Count / (float)PalmEvery);
+            for (int i = 0; i < free.Count && palms < want; i++)
+            {
+                if (spent[i]) continue;
+                var at = free[i];
+                float along = 1.5f + (float)dice.NextDouble() * (Cell - 3f);
+                var spot = Where(plan, at, PalmLane, along, y);
+                if (!stand(Basket + (dice.Next(Baskets) + 1), PalmDir, spot, at.Yaw + 90 * dice.Next(4)))
+                    break;
+                stand(Palm + (dice.Next(PalmKinds) + 1), PalmDir, spot, (float)dice.NextDouble() * 360f);
+                spent[i] = true;
+                palms++;
+            }
+            if (palms > 0) tally.Add($"{palms} palm(s)");
 
             foreach (var kind in Kerbside)
             {
@@ -592,6 +838,143 @@ namespace RoadDemo
             for (int i = 0; i < nx; i++)
                 for (int j = 0; j < nz; j++)
                     if (!outside[i, j]) held[i, j] = true;
+        }
+
+        /// <summary>
+        /// Squares the block off: its own bounding rectangle, less at most
+        /// <see cref="MostNotches"/> bites - see there for why.
+        ///
+        /// A bite is looked for flush against a SIDE, because that is the only kind a
+        /// rectangle can have: for each of the four sides, the largest rectangle of missing
+        /// ground standing on it, and the biggest of those four is the notch. Then again
+        /// for the second one, with the first taken out of play so the two cannot overlap.
+        /// Whatever ground is still missing after that is not a notch, it is raggedness,
+        /// and it fills in.
+        /// </summary>
+        static void Square(bool[,] held, int nx, int nz)
+        {
+            int i0 = nx, j0 = nz, i1 = -1, j1 = -1;
+            for (int i = 0; i < nx; i++)
+                for (int j = 0; j < nz; j++)
+                {
+                    if (!held[i, j]) continue;
+                    if (i < i0) i0 = i;
+                    if (j < j0) j0 = j;
+                    if (i > i1) i1 = i;
+                    if (j > j1) j1 = j;
+                }
+            if (i1 < 0) return;
+
+            var missing = new bool[nx, nz];
+            for (int i = i0; i <= i1; i++)
+                for (int j = j0; j <= j1; j++)
+                    missing[i, j] = !held[i, j];
+
+            for (int notch = 0; notch < MostNotches; notch++)
+            {
+                if (!Bite(missing, i0, i1, j0, j1, out int ai, out int bi, out int aj, out int bj))
+                    break;
+                // kept: taken out of play, so the next bite cannot overlap it and the fill
+                // below leaves it alone
+                for (int i = ai; i <= bi; i++)
+                    for (int j = aj; j <= bj; j++)
+                        missing[i, j] = false;
+                for (int i = ai; i <= bi; i++)
+                    for (int j = aj; j <= bj; j++)
+                        held[i, j] = false;
+            }
+
+            for (int i = i0; i <= i1; i++)
+                for (int j = j0; j <= j1; j++)
+                    if (missing[i, j]) held[i, j] = true;
+        }
+
+        /// <summary>The biggest rectangle of missing ground standing flush on one of the
+        /// four sides of the block's box. Returns it in cells, both ends inclusive.</summary>
+        static bool Bite(bool[,] missing, int i0, int i1, int j0, int j1,
+                         out int ai, out int bi, out int aj, out int bj)
+        {
+            ai = bi = aj = bj = 0;
+            int best = 0;
+            int wide = i1 - i0 + 1, tall = j1 - j0 + 1;
+            var depth = new int[Mathf.Max(wide, tall)];
+
+            // north and south: a column of missing cells hanging off the top or the bottom
+            for (int side = 0; side < 2; side++)
+            {
+                for (int i = i0; i <= i1; i++)
+                {
+                    int deep = 0;
+                    for (int k = 0; k < tall; k++)
+                    {
+                        int j = side == 0 ? j1 - k : j0 + k;
+                        if (!missing[i, j]) break;
+                        deep++;
+                    }
+                    depth[i - i0] = deep;
+                }
+                if (!Widest(depth, wide, out int a, out int b, out int deepest)) continue;
+                int area = (b - a + 1) * deepest;
+                if (area <= best) continue;
+                best = area;
+                ai = i0 + a;
+                bi = i0 + b;
+                aj = side == 0 ? j1 - deepest + 1 : j0;
+                bj = side == 0 ? j1 : j0 + deepest - 1;
+            }
+
+            // east and west: a row of missing cells running in from one end
+            for (int side = 0; side < 2; side++)
+            {
+                for (int j = j0; j <= j1; j++)
+                {
+                    int deep = 0;
+                    for (int k = 0; k < wide; k++)
+                    {
+                        int i = side == 0 ? i1 - k : i0 + k;
+                        if (!missing[i, j]) break;
+                        deep++;
+                    }
+                    depth[j - j0] = deep;
+                }
+                if (!Widest(depth, tall, out int a, out int b, out int deepest)) continue;
+                int area = (b - a + 1) * deepest;
+                if (area <= best) continue;
+                best = area;
+                aj = j0 + a;
+                bj = j0 + b;
+                ai = side == 0 ? i1 - deepest + 1 : i0;
+                bi = side == 0 ? i1 : i0 + deepest - 1;
+            }
+
+            return best > 0;
+        }
+
+        /// <summary>The widest span of a depth reading that is worth calling a notch, by
+        /// area. Both ends inclusive; false when nothing reaches
+        /// <see cref="SmallestNotch"/> either way.</summary>
+        static bool Widest(int[] depth, int count, out int a, out int b, out int deepest)
+        {
+            a = b = deepest = 0;
+            int best = 0;
+            for (int start = 0; start < count; start++)
+            {
+                int floor = int.MaxValue;
+                for (int end = start; end < count; end++)
+                {
+                    floor = Mathf.Min(floor, depth[end]);
+                    if (floor < SmallestNotch) break;
+                    int span = end - start + 1;
+                    if (span < SmallestNotch) continue;
+                    int area = span * floor;
+                    if (area <= best) continue;
+                    best = area;
+                    a = start;
+                    b = end;
+                    deepest = floor;
+                }
+            }
+            return best > 0;
         }
 
         /// <summary>Fills the one-cell dents, so the kerb runs straight past a bay window

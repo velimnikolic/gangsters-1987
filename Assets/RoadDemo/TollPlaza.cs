@@ -28,7 +28,12 @@ namespace RoadDemo
         /// car that crossed the line with the arm down.</summary>
         public RoadNode Node;
 
-        internal TollArm Arm;
+        /// <summary>The booms this gate lifts: one over every lane of the road it
+        /// stands across, all of them going up together, because the gate lets ONE car
+        /// through at a time whichever lane he is in. A single arm here meant that on a
+        /// plaza with more than one lane every boom but the last stayed down for good,
+        /// with the traffic driving through it.</summary>
+        internal readonly List<TollArm> Arms = new List<TollArm>();
 
         RoadCar _at;              // whoever is at the window
         float _asked = -1f;       // when he last asked
@@ -118,7 +123,8 @@ namespace RoadDemo
         /// that is in the box without having paid is reported.</summary>
         internal void Tick(float dt)
         {
-            Arm?.Toward(Open ? 1f : 0f, dt);
+            float want = Open ? 1f : 0f;
+            for (int a = 0; a < Arms.Count; a++) Arms[a].Toward(want, dt);
             if (Node == null) return;
             float now = Time.time;
             for (int i = 0; i < Node.Inside.Count; i++)

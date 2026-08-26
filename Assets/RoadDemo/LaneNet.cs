@@ -21,6 +21,20 @@ namespace RoadDemo
     // is out the far side, and nobody enters on a connector that crosses one that
     // is occupied. That, with the signals, is the whole of the junction discipline.
 
+    /// <summary>What kind of road a carriageway is. A driver cruises at a different
+    /// speed on each of them, and a limit is not enough to say it: the city's traffic
+    /// obeys a 25 m/s deck by driving down it at ten, because ten is all the profile
+    /// ever wanted. What a road IS has to be part of the road.</summary>
+    public enum RoadClass
+    {
+        Street,
+        Boulevard,
+        /// <summary>A slip road: one lane, tight curves, a posted 25-40 mph.</summary>
+        Ramp,
+        /// <summary>A motorway carriageway - grade separated, no junctions on it.</summary>
+        Freeway,
+    }
+
     /// <summary>Anything on the road other cars must reckon with: where it is, which
     /// way it points, how fast it goes, how big it is. Every car answers it, and so
     /// does a parked prop; the men on foot (WalkObstacles) and the belt (RoadSpace)
@@ -146,6 +160,22 @@ namespace RoadDemo
         public float Length;
         public float HalfRoad;
         public float SpeedLimit;
+        /// <summary>What kind of road this is: what a driver cruises at on it.</summary>
+        public RoadClass Class = RoadClass.Street;
+        /// <summary>The line the road actually follows, when it is not a straight one
+        /// (an expressway's corner, a slip road's curve down to its terminal). Null on
+        /// a street, which is every road the city had before there were motorways: then
+        /// Axis and Right answer, as they always did, and nothing costs anything.
+        ///
+        /// s is metres ALONG this line and d metres to the right OF IT, so every band,
+        /// gap and claim in the driving is unchanged - only the frame bends.</summary>
+        public RoadLine Path;
+        /// <summary>How far the asphalt reaches either side of the axis, when it is not
+        /// the same both ways (a deck with an auxiliary lane down one side is wider on
+        /// that side and nowhere else). NaN: HalfRoad, symmetrically.</summary>
+        public float HalfMinus = float.NaN, HalfPlus = float.NaN;
+        public float EdgeLo => float.IsNaN(HalfMinus) ? -HalfRoad : -HalfMinus;
+        public float EdgeHi => float.IsNaN(HalfPlus) ? HalfRoad : HalfPlus;
         public RoadNode NodeA, NodeB;          // the junctions at either end (null: open end)
         public float MedianHalf;               // |d| under this is a median, not road (boulevards)
         /// <summary>The road surface's height over the city's road level: a car on it
@@ -173,10 +203,19 @@ namespace RoadDemo
         /// <summary>The network this road belongs to.</summary>
         public LaneNet Net;
 
-        public Vector3 Pose(float s, float d) => A + Axis * s + Right * d;
+        public Vector3 Pose(float s, float d)
+            => Path != null ? Path.Pose(s, d) : A + Axis * s + Right * d;
+
+        /// <summary>Which way the road runs at s (its axis on a straight one).</summary>
+        public Vector3 DirAt(float s) => Path != null ? Path.DirAt(s) : Axis;
+        /// <summary>And across it, to the right.</summary>
+        public Vector3 RightAt(float s) => Path != null ? Path.RightAt(s) : Right;
+        /// <summary>The turn radius under s; a straight answers float.MaxValue.</summary>
+        public float RadiusAt(float s) => Path != null ? Path.RadiusAt(s) : float.MaxValue;
 
         public void Project(Vector3 p, out float s, out float d)
         {
+            if (Path != null) { Path.Project(p, out s, out d); return; }
             var v = p - A;
             v.y = 0f;
             s = Vector3.Dot(v, Axis);
@@ -200,10 +239,7 @@ namespace RoadDemo
 
         /// <summary>Inside the carriageway for a body reaching this far across it.</summary>
         public float ClampD(float d, float lateralExtent)
-        {
-            float edge = HalfRoad - lateralExtent + 0.45f;
-            return Mathf.Clamp(d, -edge, edge);
-        }
+            => Mathf.Clamp(d, EdgeLo + lateralExtent - 0.45f, EdgeHi - lateralExtent + 0.45f);
 
         /// <summary>The nearest lane heading this way to lateral d (null: none that way).</summary>
         public RoadEdge LaneFor(int heading, float d)
@@ -216,6 +252,26 @@ namespace RoadDemo
                 if (l.Heading != heading) continue;
                 float dist = Mathf.Abs(l.Offset - d);
                 if (dist < bestDist) { bestDist = dist; best = l; }
+            }
+            return best;
+        }
+
+        /// <summary>The next lane over from this one, on the side <paramref name="toward"/>
+        /// points (+1: to the right of travel, -1: to the left) - what a car changing
+        /// lane moves into. Null when there is nothing that way.</summary>
+        public RoadEdge Beside(RoadEdge lane, int toward)
+        {
+            if (lane == null) return null;
+            RoadEdge best = null;
+            float bestGap = float.MaxValue;
+            float want = lane.Heading * toward;          // in road-d terms
+            for (int i = 0; i < Lanes.Count; i++)
+            {
+                var l = Lanes[i];
+                if (l == lane || l.Heading != lane.Heading) continue;
+                float gap = (l.Offset - lane.Offset) * want;
+                if (gap <= 0.2f) continue;
+                if (gap < bestGap) { bestGap = gap; best = l; }
             }
             return best;
         }
@@ -241,7 +297,7 @@ namespace RoadDemo
         /// <summary>Can a car stand at lateral d without being on a median or over a kerb?</summary>
         public bool Drivable(float d, float halfWidth)
         {
-            if (Mathf.Abs(d) + halfWidth > HalfRoad + 0.45f) return false;
+            if (d - halfWidth < EdgeLo - 0.45f || d + halfWidth > EdgeHi + 0.45f) return false;
             if (MedianHalf > 0f && Mathf.Abs(d) - halfWidth < MedianHalf) return false;
             return true;
         }
@@ -460,16 +516,51 @@ namespace RoadDemo
             return road;
         }
 
+        /// <summary>A carriageway that BENDS: the same road as AddRoad or AddOneWay,
+        /// laid along a line instead of between two points. Its s runs along that line
+        /// and its d across it, so a bend costs the driving nothing.</summary>
+        public Carriageway AddCurve(RoadLine path, float halfRoad, float[] laneOffsets, float speedLimit,
+            RoadNode nodeA, RoadNode nodeB, bool oneWay, RoadClass cls = RoadClass.Street, float medianHalf = 0f)
+        {
+            var a = path.Start; var b = path.End;
+            var road = new Carriageway
+            {
+                A = a, B = b, Axis = path.StartDir, Right = new Vector3(path.StartDir.z, 0f, -path.StartDir.x),
+                Length = path.Length, Path = path,
+                HalfRoad = halfRoad, SpeedLimit = speedLimit, NodeA = nodeA, NodeB = nodeB,
+                MedianHalf = medianHalf, Index = Roads.Count, Net = this, Class = cls,
+                ParkingA = !oneWay, ParkingB = !oneWay,
+            };
+            Roads.Add(road);
+            bool northSouth = Mathf.Abs(path.StartDir.z) >= Mathf.Abs(path.StartDir.x);
+            foreach (float off in laneOffsets)
+            {
+                AddLane(road, +1, off, nodeA, nodeB, northSouth, speedLimit);
+                if (!oneWay) AddLane(road, -1, -off, nodeB, nodeA, northSouth, speedLimit);
+            }
+            road.Lanes.Sort((x, y) => x.Offset.CompareTo(y.Offset));
+            return road;
+        }
+
         /// <summary>One lane on a road, heading with (+1) or against (-1) its axis.</summary>
         public RoadEdge AddLane(Carriageway road, int heading, float offset, RoadNode from, RoadNode to, bool northSouth, float speedLimit)
         {
-            var start = road.Pose(heading > 0 ? 0f : road.Length, offset);
-            var end = road.Pose(heading > 0 ? road.Length : 0f, offset);
+            float sStart = heading > 0 ? 0f : road.Length;
+            float sEnd = heading > 0 ? road.Length : 0f;
+            var start = road.Pose(sStart, offset);
+            var end = road.Pose(sEnd, offset);
+            // a lane on a bend leaves its road pointing one way and arrives pointing
+            // another: the junction at each end is built off the direction AT THAT END,
+            // and Dir stays the chord, which is what everything else means by it
+            var chord = end - start; chord.y = 0f;
             var e = new RoadEdge
             {
                 From = from, To = to, Start = start, End = end,
-                Dir = road.Axis * heading, Length = road.Length, NorthSouth = northSouth, SpeedLimit = speedLimit,
-                Road = road, Offset = offset, Heading = heading, S0 = heading > 0 ? 0f : road.Length,
+                Dir = chord.sqrMagnitude > 1e-6f ? chord.normalized : road.Axis * heading,
+                DirOut = road.DirAt(sStart) * heading,
+                DirIn = road.DirAt(sEnd) * heading,
+                Length = road.Length, NorthSouth = northSouth, SpeedLimit = speedLimit,
+                Road = road, Offset = offset, Heading = heading, S0 = sStart,
             };
             from?.Outgoing.Add(e);
             to?.Incoming.Add(e);
@@ -520,12 +611,13 @@ namespace RoadDemo
             foreach (var e in n.Incoming) if (e.Road == null) Adopt(e);
             foreach (var e in n.Outgoing) if (e.Road == null) Adopt(e);
             if (!Nodes.Contains(n)) Nodes.Add(n);
+            if (n.Seam) { PrepareSeam(n); return; }
             foreach (var a in n.Incoming)
             {
                 bool anyOn = false;
                 foreach (var b in n.Outgoing)
                 {
-                    if (Vector3.Dot(a.Dir, b.Dir) < -0.5f) continue;
+                    if (Vector3.Dot(Arriving(a), Leaving(b)) < -0.5f) continue;
                     AddConnector(n, a, b);
                     anyOn = true;
                 }
@@ -536,6 +628,96 @@ namespace RoadDemo
                 }
             }
             BuildConflicts(n);
+        }
+
+        /// <summary>Which way a lane runs where it ARRIVES at its node, and where it
+        /// LEAVES one. On a bend those are not the same and not the chord either; on
+        /// everything else, and on any edge built without a carriageway, they are the
+        /// lane's one direction - which is what they answer when nobody set them.</summary>
+        static Vector3 Arriving(RoadEdge e) => e.DirIn.sqrMagnitude > 0.1f ? e.DirIn : e.Dir;
+        static Vector3 Leaving(RoadEdge e) => e.DirOut.sqrMagnitude > 0.1f ? e.DirOut : e.Dir;
+
+        /// <summary>Lanes that line up across a seam count as the same lane: within
+        /// this far sideways, the one carries on into the other.</summary>
+        const float SeamReach = 2.5f;
+        /// <summary>And how far over a lane that ends may look for one to merge into.</summary>
+        const float MergeReach = 6f;
+
+        /// <summary>A SEAM: where one road hands over to the next and nothing turns.
+        /// A motorway gains a lane for its exit, drops it again past the entrance, and
+        /// gives a lane away to a slip road - and each of those is a place two
+        /// carriageways meet, not a crossing. Every incoming lane is matched to the ONE
+        /// outgoing lane that carries straight on from it, no two to the same, and
+        /// nothing conflicts with anything: the through traffic never stops for a ramp,
+        /// which is the whole difference between a motorway and the ring the city used
+        /// to roll.
+        ///
+        /// A lane with no match is a lane that ENDS here (the far end of an acceleration
+        /// lane). Its cars have to be somewhere else by the time they reach it, and the
+        /// driver knows it (RoadCar's lane changing); a car that failed stands at the
+        /// line and waits for its gap, which is what a real one does.</summary>
+        void PrepareSeam(RoadNode n)
+        {
+            var taken = new HashSet<RoadEdge>();
+            // the best matches first, so a lane that lines up exactly is never robbed
+            // of its continuation by one that merely points the same way
+            var pairs = new List<(float cost, RoadEdge a, RoadEdge b)>();
+            foreach (var a in n.Incoming)
+                foreach (var b in n.Outgoing)
+                {
+                    var dir = Arriving(a);
+                    if (Vector3.Dot(dir, Leaving(b)) < 0.6f) continue;
+                    var v = b.Start - a.End; v.y = 0f;
+                    float along = Vector3.Dot(v, dir);
+                    if (along < -3f) continue;
+                    float across = (v - dir * along).magnitude;
+                    if (across > SeamReach) continue;
+                    pairs.Add((across + Mathf.Abs(along) * 0.02f, a, b));
+                }
+            pairs.Sort((x, y) => x.cost.CompareTo(y.cost));
+            var used = new HashSet<RoadEdge>();
+            foreach (var pr in pairs)
+            {
+                if (taken.Contains(pr.a) || used.Contains(pr.b)) continue;
+                taken.Add(pr.a); used.Add(pr.b);
+                AddConnector(n, pr.a, pr.b);
+            }
+            // A lane that lines up with nothing of its own ENDS here - the far end of an
+            // acceleration lane, where the road goes back to being two lanes wide. It is
+            // still given a way on: the nearest lane beside it, which some other lane is
+            // already carrying on into. That is a MERGE, and the one thing at a seam that
+            // does conflict: the car coming off the ramp waits for a gap in the lane it is
+            // joining. Without it the lane simply stopped, and a car that had not got
+            // itself over in time stood at the line for the rest of the run with nowhere
+            // to go at all - it cannot change lane from a standstill, a slide is metres
+            // travelled.
+            foreach (var a in n.Incoming)
+            {
+                if (taken.Contains(a)) continue;
+                RoadEdge best = null; float bestCost = float.MaxValue;
+                var arriving = Arriving(a);
+                foreach (var b in n.Outgoing)
+                {
+                    if (Vector3.Dot(arriving, Leaving(b)) < 0.6f) continue;
+                    var v = b.Start - a.End; v.y = 0f;
+                    float along = Vector3.Dot(v, arriving);
+                    if (along < -3f) continue;
+                    float across = (v - arriving * along).magnitude;
+                    if (across > MergeReach) continue;
+                    if (across < bestCost) { bestCost = across; best = b; }
+                }
+                if (best != null) AddConnector(n, a, best);
+            }
+            // and what crosses what: at a seam, only two ways into the same lane.
+            int k = n.Connectors.Count;
+            foreach (var c in n.Connectors) c.Conflicts = new bool[k];
+            for (int i = 0; i < k; i++)
+                for (int j = i + 1; j < k; j++)
+                {
+                    bool clash = n.Connectors[i].To == n.Connectors[j].To;
+                    n.Connectors[i].Conflicts[j] = clash;
+                    n.Connectors[j].Conflicts[i] = clash;
+                }
         }
 
         /// <summary>A node's connectors laid afresh (a road added to it after Finish).</summary>
@@ -819,8 +1001,36 @@ namespace RoadDemo
         /// progress.</summary>
         public static Dictionary<RoadEdge, RoadEdge> RouteToward(
             List<RoadEdge> edges, RoadEdge target, out Dictionary<RoadEdge, float> dist)
+            => RouteToward(edges, target, out dist, null);
+
+        /// <summary>The speed a route is costed at on a road with no lower limit, and
+        /// the street speed the cost is expressed in. A lane's weight is its length
+        /// scaled by how much SLOWER than a street it is - so a street still weighs its
+        /// own metres (every number tuned against this search still means what it did)
+        /// and a motorway deck weighs four tenths of them. That, and nothing else, is
+        /// what makes a driver take the long way round on the fast road: measured in
+        /// metres the freeway was always the longer way and nobody ever chose it.</summary>
+        const float RouteRefSpeed = 10f, RouteSpeedCap = 25f;
+
+        static float RouteWeight(RoadEdge e)
+            => e.Length * (RouteRefSpeed / Mathf.Clamp(e.SpeedLimit, 3f, RouteSpeedCap));
+
+        /// <summary>What changing lane costs the search: a couple of seconds' worth of
+        /// street, so a route that needs one is taken when it is plainly better and not
+        /// for a metre.</summary>
+        const float LaneShiftCost = 25f;
+
+        /// <summary>The routes, and - where the way on is in ANOTHER LANE of the road
+        /// the car is already on - which lane it has to be in. A motorway exit is not
+        /// reached from the through lane at all: it is taken from the deceleration lane,
+        /// and a driver who does not move over never leaves the deck. The search knows
+        /// that because a lane change is one of its own edges.</summary>
+        public static Dictionary<RoadEdge, RoadEdge> RouteToward(
+            List<RoadEdge> edges, RoadEdge target, out Dictionary<RoadEdge, float> dist,
+            Dictionary<RoadEdge, RoadEdge> shift)
         {
             dist = new Dictionary<RoadEdge, float> { [target] = 0f };
+            shift?.Clear();
             var open = new List<RoadEdge> { target };
             // Dijkstra backwards over the turn graph; small graphs, a list will do
             while (open.Count > 0)
@@ -829,13 +1039,28 @@ namespace RoadDemo
                 for (int i = 1; i < open.Count; i++) if (dist[open[i]] < dist[open[bi]]) bi = i;
                 var f = open[bi];
                 open.RemoveAt(bi);
+                float df = dist[f];
+                // the lane beside it: a car in that one reaches this one by moving over
+                var road = f.Road;
+                if (road != null)
+                    for (int i = 0; i < road.Lanes.Count; i++)
+                    {
+                        var sib = road.Lanes[i];
+                        if (sib == f || sib.Heading != f.Heading) continue;
+                        float nd = df + LaneShiftCost;
+                        if (dist.TryGetValue(sib, out float had) && had <= nd) continue;
+                        dist[sib] = nd;
+                        if (shift != null) shift[sib] = f;
+                        if (!open.Contains(sib)) open.Add(sib);
+                    }
                 if (f.From == null) continue;
                 foreach (var e in f.From.Incoming)
                 {
                     if (f.From.ConnectorFor(e, f) == null) continue;
-                    float nd = dist[f] + e.Length;
+                    float nd = df + RouteWeight(e);
                     if (dist.TryGetValue(e, out float old) && old <= nd) continue;
                     dist[e] = nd;
+                    shift?.Remove(e);          // it is reached by driving on, not by moving over
                     if (!open.Contains(e)) open.Add(e);
                 }
             }
@@ -858,7 +1083,12 @@ namespace RoadDemo
         public Dictionary<RoadEdge, RoadEdge> RouteToward(RoadEdge target) => RouteToward(Edges, target);
 
         public Dictionary<RoadEdge, RoadEdge> RouteToward(RoadEdge target, out Dictionary<RoadEdge, float> dist) =>
-            RouteToward(Edges, target, out dist);
+            RouteToward(Edges, target, out dist, null);
+
+        /// <summary>The routes to a lane and, for each lane, which lane of its own road
+        /// a car has to move into to follow them.</summary>
+        public Dictionary<RoadEdge, RoadEdge> RouteToward(RoadEdge target, Dictionary<RoadEdge, RoadEdge> shift) =>
+            RouteToward(Edges, target, out _, shift);
 
         // ------------------------------------------------------------ statics
 

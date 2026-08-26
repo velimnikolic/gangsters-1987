@@ -14,5 +14,6 @@
     <Compile Include="Program.cs" />
     <Compile Include="..\..\Assets\RoadDemo\CoreLayout.cs" />
     <Compile Include="..\..\Assets\RoadDemo\CoreRoads.cs" />
+    <Compile Include="..\..\Assets\RoadDemo\IndustrialLayout.cs" />
   </ItemGroup>
 </Project>

@@ -39,11 +39,21 @@ namespace RoadDemo
 
         /// <summary>Do these two boxes on the ground share any ground - and if they do,
         /// the shortest shove that takes the first clear of the second.</summary>
+        /// <summary>Two roads this far apart in height pass OVER one another and share
+        /// no ground at all. Without it the belt is a plan view: a slip road running
+        /// under a viaduct is in the same square metre as the deck seven metres above
+        /// it, every car on each refuses to move for a car on the other, and the pair
+        /// stand there for the rest of the run. It cost ten thousand refused steps in
+        /// one run of the expressway demo, all of them at the two places where a ramp
+        /// crosses beneath the road it came off.</summary>
+        public const float Storey = 3.2f;
+
         public static bool Overlap(Vector3 aP, Vector3 aF, float aHL, float aHW,
                                    Vector3 bP, Vector3 bF, float bHL, float bHW,
                                    float pad, out Vector3 push)
         {
             push = Vector3.zero;
+            if (Mathf.Abs(aP.y - bP.y) > Storey) return false;
             Vector2 ac = new Vector2(aP.x, aP.z), bc = new Vector2(bP.x, bP.z);
             Vector2 af = Flat(aF), ar = new Vector2(-af.y, af.x);
             Vector2 bf = Flat(bF), br = new Vector2(-bf.y, bf.x);

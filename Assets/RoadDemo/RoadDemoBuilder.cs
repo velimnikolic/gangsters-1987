@@ -554,8 +554,15 @@ namespace RoadDemo
             // junctions, before the graph, which welds them to the grid
             // (RoadDemoBuilder.Freeway.cs)
             Pass("BuildFreeway", BuildFreeway);
+            // and the expressway: its line, its decks on their piers, its ramps and the
+            // streets its interchanges need (RoadDemoBuilder.Expressway.cs)
+            Pass("BuildExpressway", BuildExpressway);
             Pass("BuildGraph", BuildGraph);
             Pass("BuildSignals", BuildSignals);
+            // the ramp terminals and the gates the branches die on are junctions like
+            // any other, and they are not in the grid's own array
+            Pass("SignalExpressway", SignalExpressway);
+            Pass("DressExpressway", DressExpressway);
             Pass("BuildPedGraph", BuildPedGraph);
             Pass("BuildWalkClearance", BuildWalkClearance);
             // the belt freeway round the city: into the lane graph before the quarters'
@@ -2895,6 +2902,8 @@ namespace RoadDemo
             // and the elevated freeway between two quarters, whose decks, ramps and link
             // roads are the same graph as the streets they come down to
             WireFreeway(net);
+            // and the expressway, off the same nodes its geometry was laid on
+            WireExpressway(net);
             net.Finish();
             _edges.Clear();
             _edges.AddRange(net.Edges);
@@ -3590,10 +3599,29 @@ namespace RoadDemo
         void SpawnCars()
         {
             int placed = 0;
+            // Every lane in turn, in a shuffled order. Walking _edges as it was built
+            // gave the city's cars to the first few hundred lanes of the grid and left
+            // whatever was wired last - a district's streets, a motorway's decks - with
+            // none at all: the road existed and nothing was ever on it.
+            var lanes = new List<RoadEdge>(_edges.Count);
+            foreach (var e in _edges)
+            {
+                // never on an auxiliary lane: it begins or ends in the middle of a
+                // motorway, and a car put there at build time has nowhere to go but
+                // sideways before it has moved at all
+                if (e.Auxiliary) continue;
+                lanes.Add(e);
+            }
+            var shuffle = new System.Random(spacingSeed * 977 + 13);
+            for (int i = lanes.Count - 1; i > 0; i--)
+            {
+                int j = shuffle.Next(i + 1);
+                (lanes[i], lanes[j]) = (lanes[j], lanes[i]);
+            }
             for (int round = 0; placed < carCount && round < 40; round++)
             {
                 bool any = false;
-                foreach (var e in _edges)
+                foreach (var e in lanes)
                 {
                     if (placed >= carCount) break;
                     float s = 6f + round * 18f;

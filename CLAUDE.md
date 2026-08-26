@@ -14,7 +14,8 @@ server that Unity's CLI talks to. Prefer it over anything that needs the editor 
 
 This project's own commands: `gangsters_layout` (district roll for a seed), `gangsters_measure`
 (what a prefab really measures), `gangsters_play` (a harness run inside the open editor, no
-lockfile). They live in `Assets/Scripts/Editor/PipelineCommands.cs`.
+lockfile), `gangsters_core` and `gangsters_industry` (a quarter dealt from a seed and judged;
+`--draw` stands it up). They live in `Assets/Scripts/Editor/PipelineCommands.cs`.
 
 **Read `Docs/unity-cli.md` before reaching for a batch run or a hand-built offline compiler.**
 

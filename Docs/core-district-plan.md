@@ -46,9 +46,24 @@ mreža sa parcelama) dala su praznine ili nečitljive puteve. Odluka: **Synty ra
          drugi put pravi raskrsnicu" prošireno sa POPREČNOG na **bilo koji drugi put**;
       3. deonica kraća od kola sa slobodnim krajem (bulevar od 5 m na ivici) — ne dobija trake.
 - [x] **`CorePavement`** (2026-08-25): trotoar bloka po Synty receptu — footprint zgrada na
-      rasteru od 5 m, narastao za **jednu pločicu** (to je njihova mera: 275 od 350 ivičnjaka
-      ima pročelje tačno 5 m unutra), pa ivičnjak okrenut napolje, ugao po kvadrantu,
+      rasteru od 5 m, narastao za pojas (njihova mera je **jedna pločica**: 275 od 350
+      ivičnjaka ima pročelje tačno 5 m unutra; **naš default je 2 = 10 m**, traženo
+      2026-08-25 „slobodno moze i siri malo", polje `pavementTiles` na trayu, 1–4),
+      pa ivičnjak okrenut napolje, ugao po kvadrantu,
       unutrašnji ugao po dijagonali koja fali, ravna ploča unutra, slivnik svakih 12.
+      **BLOK JE PRAVOUGAONIK SA NAJVIŠE 2 ZAGRIZA** (`Square()`, traženo 2026-08-25 „max 2
+      ubacene strane"): obris se vrati na sopstveni bounding pravougaonik, pa se zadrže samo
+      dva najveća ureza — svaki kao pravougaonik **priljubljen uz svoju stranu** (traži se
+      najveći pravougaonik praznog tla uz svaku od 4 strane, uzme najbolji, pa opet bez
+      preklapanja); minimalan urez 2×2 ćelije. Ostatak raggedness-a se popuni — tlo unutar
+      bloka je dvorište. Mera na svih 16 blokova: **9 čistih pravougaonika, 6 sa 1 urezom,
+      block-12 sa 2**. Kvadratije je od njihovog block-12 (koji je stepenište od 4 stepenika)
+      i to je svesna zamena.
+      **RUPE U TLU** (traženo 2026-08-25): ćelija kroz koju blok propada ispod tla — upušteno
+      ulazno stepenište (−1.50 m), ulaz u metro (−4.15 do −6.43) — **ne dobija ravnu ploču**
+      (ivičnjak i uglovi ostaju, prsten se ne kida). Granica je **−0.60 m**, pročitana iz
+      paketa: skirt ivičnjaka ide do −0.23, koren drveta do −0.50, prva prava rupa na −1.13.
+      Provereno: 0 ploča preko rupe na block-07/12/05, block-13 (bez rupa) netaknut.
       Pravila i brojevi: `Docs/synty-demo-anatomy.md §2.1`.
       Tray to sada radi sam: `Tools/City/Core/Pave The Trays`, i bake pre pečenja popločava
       svaki tray koji drži zgrade a nema trotoar (drugi put nikad — ručna izmena preživi).
@@ -66,6 +81,10 @@ mreža sa parcelama) dala su praznine ili nečitljive puteve. Odluka: **Synty ra
       1.0 m lampa (okrenuta napolje, krak nad kolovozom), 1.5 m bolardi/kanta/hidrant/
       sanduče, 4.0–4.5 m klupa/novine uz zid. Lampa svakih 20 m, prva ćeliju od ćoška.
       Zidni props (žardinjere, antene, kamere) je zgrada, ne trotoar — ne dodaje se.
+      **PALME** (traženo 2026-08-25): `SM_Env_Plant_Grate_01/02` (korpa) + `SM_Env_Tree_Palm_01..06`
+      iz PolygonPalmCity, oboje na istoj tački — korpa je tlo iz kog palma raste, isto kao
+      `SidewalkDressing.Tree` u staroj Game sceni. Jedna na 10 ivičnjak-pločica, korpa
+      okrenuta na četvrtinu, palma na bilo koji ugao.
       Sve seedovano imenom traya. Izmereno na generisanom: trake tačne, razmak lampi 20 m
       u 44 od 51, kanta 1/15 (njihovo 1/16), bolardi 1/13 (1/17), hidrant i sanduče 1/45
       (1/46). Tabela: `Docs/synty-demo-anatomy.md §2.1`.
@@ -279,6 +298,38 @@ broj ulica u referenci pao sa 24 na 21 jer se ulica više ne završava u useku):
 **Alati**: `Tools/CoreSim` (dotnet, bez editora; `--stats`, `--deal`, `--trace`, `--synty`; maske blokova u
 `blocks.txt`), `unity command gangsters_core` (isto u editoru, `--draw` crta). `CoreRoads.Trace` je kuka
 za simulaciju („zašto ova traka nije put").
+
+### 2.8 Blokovi od kataloških zgrada (`CoreBuildingBlocks`, 2026-08-26)
+
+Zgrada koja je sama po sebi blok stoji na trayu sama, trotoar se **generiše** oko nje
+(`CorePavement`, isti kerb kao svuda) i peče se kroz `CoreBlockTray` kao i svaki drugi blok.
+Tri takva: `warehouse-block` (95×85 m), `police-station-block` (80×65 m),
+`nightclub-block` (50×75 m). Ništa se ne komponuje — dobija samo pod.
+
+- **Zgrada se prvo KOPIRA u `Assets/CityKit/Buildings` pod imenom `building-*`.** Dva razloga:
+  (1) `Assets/CityKit/Catalog` se pregrađuje **brisanjem cele fascikle**
+  (`SyntyBuildingCatalog`), pa se svi guid-ovi u njoj menjaju — blok koji bi pokazivao unutra
+  ostao bi da pokazuje u prazno, a core blok se ručno pravi i nikad se ne peče ponovo;
+  (2) ime na `building-` je ono što mašinerija bloka čita kao zgradu (`CoreLayout.Measure`,
+  `CoreBlockTray.Walls`). Kopira se i meš (`Buildings/Meshes`), ne samo prefab.
+- **Referenca ostaje samo Syntyjeva.** `Stand.Demo` = false za blok koji demo nikad nije stajao;
+  `Arrange(SyntySeed)` ga izostavi iz plana i iz rastera i ostavi ga u redu južno od crteža
+  (`Aside`, z −300). Provereno: referenca i dalje 0 grešaka, 21 ulica.
+- **Ćelije kroz koje zgrada propada ispod −0.60 m ne dobijaju ploču** — warehouse
+  (−3.00) i police station (−4.25) nose svoje tlo, pa su otvorene ćelije tačno one koje zgrada
+  pokriva. Nema rupe.
+- **Trotoar se ne polaže dvaput**: tray koji već nosi ivičnjak (blok povučen pravo iz demoa,
+  ili industrijski blok koji svoj prsten donosi sam) se automatski ne popločava
+  (`CoreBlockTray.Kerbed`); gola biblioteka zato i skida trotoar.
+- Manje zgrade su **štof**, ne blokovi: `building-diner`, `building-restaurant-02`,
+  `building-parking-garage-a/-b`, `building-skatepark`, `building-coffeeshop` stoje u redu
+  `CORE BUILDINGS (stock)` pored trayeva (`Tools/City/Core/Buildings/Show The Building Stock`),
+  izuzete iz sweep-a dok se ne prevuku na tray.
+- Komanda: `unity command gangsters_coreblocks --what copy|bake|stock|all [--force]`. Meniji
+  završavaju dijalogom pa se **iz komande ne zovu**.
+
+Mera posle dodavanja (19 blokova): `Tools/CoreSim --seed 1 --count 30` → 30/30 čisto,
+22 iz prvog deljenja, prosek 1,60 deljenja; `--synty` → 0 grešaka.
 
 Dump maski za `Tools/CoreSim/blocks.txt` (eval u živom editoru, bez `using`, puna imena):
 

@@ -19,7 +19,7 @@ static class Program
     static int Main(string[] args)
     {
         int seed = 1, count = 1;
-        bool synty = false, map = false, rows = false, tiles = false, stats = false;
+        bool synty = false, map = false, rows = false, tiles = false, stats = false, industrial = false;
         int deal = -1;
         string file = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "blocks.txt");
         for (int i = 0; i < args.Length; i++)
@@ -29,6 +29,7 @@ static class Program
                 case "--seed": seed = int.Parse(args[++i]); break;
                 case "--count": count = int.Parse(args[++i]); break;
                 case "--synty": synty = true; break;
+                case "--industrial": industrial = true; break;
                 case "--map": map = true; break;
                 case "--rows": rows = true; break;
                 case "--tiles": tiles = true; break;
@@ -39,6 +40,8 @@ static class Program
                 default: Console.WriteLine("unknown " + args[i]); return 2;
             }
         }
+        if (industrial) return Industry(seed, count, deal, map, rows, stats);
+
         var blocks = ReadBlocks(file);
         Console.WriteLine($"{blocks.Count} blocks from {Path.GetFullPath(file)}");
 
@@ -112,6 +115,82 @@ static class Program
             Console.WriteLine($"{count} seeds: {clean} clean, {firstDeal} on the first deal, " +
                               $"deals needed max {dealsNeeded.Max()} mean {dealsNeeded.Average():F2}, worst faults {worst}");
         return clean == (synty ? 1 : count) ? 0 : 1;
+    }
+
+    /// <summary>
+    /// The industrial quarter, dealt the same way and judged by the same reader. Nothing
+    /// is read off disk: its parcels are dealt from the seed, not harvested, so the whole
+    /// verdict is in the code.
+    /// </summary>
+    static int Industry(int seed, int count, int deal, bool map, bool rows, bool stats)
+    {
+        if (deal >= 0)
+        {
+            var one = IndustrialLayout.Roll(unchecked(seed * 1000003 + deal * 7919));
+            var drawn = CoreRoads.Build(IndustrialLayout.Blocks(one), one.Roads);
+            Console.WriteLine($"industrial seed {seed} deal {deal + 1}: faults {drawn.Faults}, " +
+                              $"{one.Islands.Count} islands, {one.Parcels.Count} parcels");
+            foreach (var row in one.Rows) Console.WriteLine("   " + row);
+            foreach (var line in drawn.Report.Split('\n')) Console.WriteLine("   " + line.Trim());
+            if (map) Console.WriteLine(drawn.Map);
+            return drawn.Faults == 0 ? 0 : 1;
+        }
+        if (stats)
+        {
+            var kinds = new Dictionary<string, int>();
+            int deals = 0, cleanDeals = 0;
+            for (int n = 0; n < count; n++)
+                for (int d = 0; d < IndustrialLayout.Deals; d++)
+                {
+                    var one = IndustrialLayout.Roll(unchecked((seed + n) * 1000003 + d * 7919));
+                    var drawn = CoreRoads.Build(IndustrialLayout.Blocks(one), one.Roads);
+                    deals++;
+                    if (drawn.Faults == 0) { cleanDeals++; continue; }
+                    foreach (var line in drawn.Report.Split('\n'))
+                    {
+                        string key = line.Contains("left bare") ? "left bare"
+                                   : line.Contains("no road along") ? "no road along " + line.Trim().Substring(line.Trim().LastIndexOf("its ") + 4)
+                                   : line.Contains("hemmed") ? "stub"
+                                   : line.Contains("run together") ? "junctions run together"
+                                   : line.Contains("claimed") ? "clash" : null;
+                        if (key == null) continue;
+                        kinds[key] = kinds.TryGetValue(key, out var k) ? k + 1 : 1;
+                    }
+                }
+            Console.WriteLine($"{deals} deals, {cleanDeals} clean ({100.0 * cleanDeals / deals:F0}%)");
+            foreach (var pair in kinds.OrderByDescending(p => p.Value)) Console.WriteLine($"   {pair.Value,5}  {pair.Key}");
+            return 0;
+        }
+
+        int clean = 0, firstDeal = 0, worst = 0;
+        var needed = new List<int>();
+        var cast = new Dictionary<string, int>();
+        for (int n = 0; n < count; n++)
+        {
+            var plan = IndustrialLayout.Arrange(seed + n, out var raster);
+            if (raster.Faults == 0) clean++;
+            if (plan.Attempt == 0) firstDeal++;
+            needed.Add(plan.Attempt + 1);
+            worst = Math.Max(worst, raster.Faults);
+            foreach (var parcel in plan.Parcels)
+            {
+                string key = parcel.Recipe.ToString();
+                cast[key] = cast.TryGetValue(key, out var c) ? c + 1 : 1;
+            }
+            string roads = raster.Report.Split('\n').FirstOrDefault(l => l.Contains(" roads:"))?.Trim() ?? "";
+            Console.WriteLine($"{plan.Name,-18} deals {plan.Attempt + 1,2}  faults {raster.Faults,2}  " +
+                              $"{raster.NX * 5}x{raster.NZ * 5} m  islands {plan.Islands.Count,2} parcels {plan.Parcels.Count,2}  " +
+                              $"blocks {raster.BlockArea} road {raster.RoadArea} spare {raster.SpareArea}  {roads}");
+            if (rows) foreach (var row in plan.Rows) Console.WriteLine("   " + row);
+            if (raster.Faults > 0 || rows)
+                foreach (var line in raster.Report.Split('\n'))
+                    if (!line.Contains(" roads:")) Console.WriteLine("   " + line.Trim());
+            if (map) Console.WriteLine(raster.Map);
+        }
+        Console.WriteLine($"{count} seeds: {clean} clean, {firstDeal} on the first deal, " +
+                          $"deals needed max {needed.Max()} mean {needed.Average():F2}, worst faults {worst}");
+        Console.WriteLine("   cast: " + string.Join("  ", cast.OrderByDescending(p => p.Value).Select(p => $"{p.Key} {p.Value}")));
+        return clean == count ? 0 : 1;
     }
 
     /// <summary>blocks.txt: a header line "name pivotX pivotZ groundMinX groundMinZ cw cd maxH"

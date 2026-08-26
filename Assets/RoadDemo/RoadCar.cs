@@ -31,7 +31,7 @@ namespace RoadDemo
     /// </summary>
     public class RoadCar : IRoadUser
     {
-        public enum Manoeuvre { None, Pass, Crown, UTurn, PullIn, PullOut, Reverse, Aside }
+        public enum Manoeuvre { None, Pass, Crown, UTurn, PullIn, PullOut, Reverse, Aside, LaneChange }
 
         // ------------------------------------------------------------------ body
 
@@ -131,7 +131,10 @@ namespace RoadDemo
         public RoadEdge CurrentEdge => Lane;
 
         Vector3 _pos, _fwd = Vector3.forward;
-        public Vector3 RoadPosition => _pos;
+        /// <summary>Where the car is, WITH the height of the road it is on: what the
+        /// belt needs to tell a deck from the slip road passing under it. Everything
+        /// else that reads this works flat and ignores y.</summary>
+        public Vector3 RoadPosition => new Vector3(_pos.x, SurfaceLift(), _pos.z);
         public Vector3 RoadForward => _fwd;
         public float RoadSpeed => Mathf.Abs(Speed);
         public float HalfLength => HalfLen;
@@ -346,7 +349,30 @@ namespace RoadDemo
             _occNext = null;
         }
 
-        float Cruise() => Profile.ObeysLimit && Road != null ? Mathf.Min(Profile.Cruise, Road.SpeedLimit) : Profile.Cruise;
+        /// <summary>What he means to be doing on the road he is on: the profile's pace
+        /// FOR THAT KIND OF ROAD, capped by the limit if he keeps to limits. A street
+        /// and a motorway deck are not the same road and were driven at the same ten
+        /// metres a second for as long as there were motorways in this city.</summary>
+        float Cruise()
+        {
+            // ... and while he is IN a junction he is on no road at all, so the road he
+            // is joining answers for it. Without that a car crossing the seam where a
+            // motorway hands one carriageway to the next is told, for those two metres,
+            // that he is on a high street - and stands on the brakes at every one of
+            // them, at fifty miles an hour, with the traffic behind him doing the same.
+            var road = Road ?? Via?.To?.Road ?? Via?.From?.Road;
+            float own = road != null ? Profile.CruiseOn(road.Class) : Profile.Cruise;
+            return Profile.ObeysLimit && road != null ? Mathf.Min(own, road.SpeedLimit) : own;
+        }
+
+        /// <summary>The most a bend of this radius may be taken at: v² = a·R, with the
+        /// profile's own lateral acceleration - and a little in hand, because the line
+        /// the car follows is not exactly the line the road was drawn on.</summary>
+        float BendSpeed(float radius)
+        {
+            if (float.IsInfinity(radius) || radius > 2000f) return float.MaxValue;
+            return Mathf.Sqrt(Mathf.Max(0.5f, Profile.LateralG * 0.8f) * Mathf.Max(4f, radius));
+        }
 
         protected static float Allowed(float endSpeed, float dist, float brake)
             => Mathf.Sqrt(endSpeed * endSpeed + 2f * brake * Mathf.Max(0f, dist));
@@ -665,7 +691,8 @@ namespace RoadDemo
             // road is the way back when the driver may make one - the route round the
             // block is only for failing that (TickRoad gives up on the turn near the junction)
             if (!NoTurnBack && Road == _goalRoad && Road.TwoWay && Profile.UTurnsInRoad && Road.MedianHalf <= 0f && _turnBackFor < TurnBackPatience) return;
-            Route = Net.RouteToward(_goalLane, out var dist);
+            RouteShift ??= new Dictionary<RoadEdge, RoadEdge>();
+            Route = LaneNet.RouteToward(Net.Edges, _goalLane, out var dist, RouteShift);
 
             // THE MARK BEHIND HIM ON A STREET HE IS NOT GOING TO END ON. The table is a
             // graph of one-way lanes and knows no turn in the middle of a street, so the
@@ -905,6 +932,14 @@ namespace RoadDemo
 
             // ---- the throttle
             float v = Cruise();
+            // the bend under him, and the one he is about to be in: a motorway corner is
+            // taken at what it is signed at, not at what the straight before it allowed
+            if (road.Path != null)
+            {
+                float look = Mathf.Max(20f, Mathf.Abs(Speed) * 2.5f);
+                float tightest = Mathf.Min(road.RadiusAt(S), road.RadiusAt(S + Heading * look));
+                v = Mathf.Min(v, BendSpeed(tightest));
+            }
             // BOLTING FROM GUNFIRE lifts the CEILING, and nothing else. A frightened
             // driver drives faster than he otherwise would - past the limit, over the
             // cruise - but he does not drive into the back of the car in front, and this
@@ -1248,6 +1283,9 @@ namespace RoadDemo
 
             v = LimitTarget(v);
 
+            // ---- which lane he means to be in, and the move over into it
+            TickLaneChange(dt, toEnd);
+
             // ---- the driver's tactics: round what is stopped, the crown, the turn, the reverse
             Decide(dt, leader, gap, vLead, node, toEnd);
             if (Road == null) return; // the decision took us off the road (should not)
@@ -1335,7 +1373,7 @@ namespace RoadDemo
                         if (_beltFor > 1f && Road != null && Mathf.Abs(_shoved) < 0.8f)
                         {
                             RoadSpace.Inside(this, _pos, fwd, HalfLen, HalfWide, out var shove);
-                            float across = Vector3.Dot(shove, Road.Right);
+                            float across = Vector3.Dot(shove, Road.RightAt(S));
                             if (Mathf.Abs(across) > 0.001f)
                             {
                                 float step = Mathf.Clamp(across, -1f, 1f) * dt;
@@ -1431,14 +1469,15 @@ namespace RoadDemo
                 if (angBack >= 0f)
                 {
                     axle = Road.Pose(_arcS0 + _arcHeading0 * _arcR * Mathf.Sin(angBack), _arcSide * _arcR * Mathf.Cos(angBack));
-                    var tan = Road.Axis * (_arcHeading0 * Mathf.Cos(angBack)) + Road.Right * (-_arcSide * Mathf.Sin(angBack));
+                    var tan = Road.DirAt(_arcS0) * (_arcHeading0 * Mathf.Cos(angBack)) +
+                              Road.RightAt(_arcS0) * (-_arcSide * Mathf.Sin(angBack));
                     fwd = tan.normalized;
                 }
                 else
                 {
                     // not yet into the arc: the axle on the straight behind its start
                     axle = Road.Pose(_arcS0 + _arcHeading0 * _arcR * angBack, _arcSide * _arcR);
-                    fwd = Road.Axis * _arcHeading0;
+                    fwd = Road.DirAt(_arcS0) * _arcHeading0;
                 }
                 pos = axle + fwd * a;
                 return;
@@ -1460,9 +1499,10 @@ namespace RoadDemo
                 }
                 float da = LateralValue(sa);
                 // the lateral slope is per metre travelled; the heading turns toward the
-                // side the line moves to, whichever way the road's axis runs
+                // side the line moves to, whichever way the road's axis runs - and on a
+                // road that bends, "the road's axis" is the way it runs AT THE AXLE
                 float slope = Sliding ? LateralSlope(sa) : 0f;
-                var f = Road.Axis * Heading + Road.Right * slope;
+                var f = Road.DirAt(sa) * Heading + Road.RightAt(sa) * slope;
                 fwd = f.normalized;
                 pos = Road.Pose(sa, da) + fwd * a;
             }
@@ -1525,6 +1565,167 @@ namespace RoadDemo
         }
 
         float PullInLength() => Mathf.Clamp(Mathf.Abs(Speed) * 1.6f + 8f, 10f, 26f);
+
+        // ------------------------------------------------------------- changing lane
+
+        /// <summary>Where the way on is another LANE of the road he is already on
+        /// (LaneNet's route search knows a lane change as one of its own edges): a
+        /// motorway exit is not reached from the through lane at all.</summary>
+        public Dictionary<RoadEdge, RoadEdge> RouteShift;
+
+        /// <summary>How many lane changes anybody has made: a black-box counter.</summary>
+        public static int LaneChanges;
+
+        /// <summary>How often a wanderer who meets an exit takes it. Nothing else puts
+        /// ordinary traffic on and off a motorway: a routed car has a reason to be
+        /// there, and a car with no reason at all would ride the deck for ever.</summary>
+        const float ExitChance = 0.35f;
+        /// <summary>Metres before an auxiliary lane runs out that leaving it stops being
+        /// a good idea and becomes the plan. An acceleration lane is 180 m long; this is
+        /// most of it, which is what it is for.</summary>
+        const float AuxLeaveBy = 150f;
+        /// <summary>Seconds behind something slower before he thinks about going round
+        /// it on a motorway, and how much slower it has to be.</summary>
+        const float OvertakeAfter = 2.5f, OvertakeBy = 3f;
+
+        Carriageway _rolledOn;
+        bool _wantsExit;
+        float _slowSince, _innerSince;
+
+        /// <summary>The lane he means to be in on this road, and the move over into it
+        /// when there is room for it. Four reasons, in this order: the lane he is in is
+        /// about to run out; the route says the way on is beside him; he means to take
+        /// the exit; the man in front is slower than he wants to be.</summary>
+        void TickLaneChange(float dt, float toEnd)
+        {
+            if (_man == Manoeuvre.LaneChange && !Sliding) { _man = Manoeuvre.None; ClearClaim(); }
+            var road = Road;
+            var lane = Lane;
+            if (road == null || lane == null || Parked || _halted || Derelict) return;
+
+            // once for each road he joins: does this one take the exit off it?
+            if (!ReferenceEquals(_rolledOn, road))
+            {
+                _rolledOn = road;
+                var ex = ExitLaneOn(road, lane);
+                _wantsExit = ex != null && Route == null && Profile.Wanders && Random.value < ExitChance;
+            }
+
+            var want = WantedLane(dt, road, lane, toEnd);
+            if (want == null || want == lane) return;
+            if (_man != Manoeuvre.None || Sliding) return;
+            // a slide is metres TRAVELLED: a car standing still cannot change lane, and
+            // asking it to would only claim road it never crosses
+            if (Mathf.Abs(Speed) < 1.5f) return;
+            // and NOT across a junction. A car that is still moving over when it reaches
+            // the box carries the offset into it, and the box squeezes it out over the
+            // length of a connector - which at a motorway seam is a few metres. That is
+            // a lurch sideways: three tenths of a metre in a frame at two metres a
+            // second, which is the black box's "jump", and a wheel wound over with it.
+            // one lane at a time, whatever the plan is
+            int toward = (want.Offset - lane.Offset) * Heading > 0f ? +1 : -1;
+            var step = road.Beside(lane, toward) ?? want;
+            if (toEnd < SlideLength(Mathf.Abs(step.Offset - D), Mathf.Abs(Speed)) + 15f) return;
+            if (!GapForLane(step)) return;
+            BeginLaneChange(step);
+        }
+
+        /// <summary>The exit lane of this road, if it has one and he is not in it.</summary>
+        static RoadEdge ExitLaneOn(Carriageway road, RoadEdge lane)
+        {
+            for (int i = 0; i < road.Lanes.Count; i++)
+            {
+                var l = road.Lanes[i];
+                if (l.Exit && l.Heading == lane.Heading && l != lane) return l;
+            }
+            return null;
+        }
+
+        RoadEdge WantedLane(float dt, Carriageway road, RoadEdge lane, float toEnd)
+        {
+            // 1. this lane ends: an acceleration lane goes back to being shoulder, and
+            //    what is at the end of it is a merge he would rather not have to make
+            if (lane.Auxiliary && !lane.Exit && toEnd < AuxLeaveBy)
+            {
+                var inward = road.Beside(lane, -1);
+                if (inward != null) return inward;
+            }
+            // 2. the route says so
+            if (RouteShift != null && RouteShift.TryGetValue(lane, out var byRoute) && byRoute != null &&
+                byRoute.Road == road && byRoute.Heading == lane.Heading) return byRoute;
+            // 3. the exit he means to take
+            if (_wantsExit)
+            {
+                var ex = ExitLaneOn(road, lane);
+                if (ex != null) return ex;
+            }
+            // 4. the man in front is slower than the road allows, and the lane inside is
+            //    open; and when nothing is holding him up, back over to the outside -
+            //    without which every car in the city ends its life in the fast lane
+            if (road.Class != RoadClass.Freeway || lane.Auxiliary) return null;
+            var blocker = _blocker;
+            bool slow = blocker != null && blocker.Car != null &&
+                        Mathf.Max(0f, blocker.Vel * Heading) < Mathf.Abs(Speed) - OvertakeBy;
+            _slowSince = slow ? _slowSince + dt : 0f;
+            if (_slowSince > OvertakeAfter)
+            {
+                var inner = road.Beside(lane, -1);
+                if (inner != null && !inner.Auxiliary) { _innerSince = 0f; return inner; }
+            }
+            var outer = road.Beside(lane, +1);
+            if (outer != null && !outer.Auxiliary && !slow)
+            {
+                _innerSince += dt;
+                if (_innerSince > 8f) { _innerSince = 0f; return outer; }
+            }
+            else _innerSince = 0f;
+            return null;
+        }
+
+        /// <summary>Room to move over: the band between here and there clear ahead for a
+        /// following gap and a bit, and whoever is coming up behind in the lane he is
+        /// taking far enough back that he does not have to stand on the brakes.</summary>
+        bool GapForLane(RoadEdge target)
+        {
+            var road = Road;
+            float noseS = S + Heading * HalfLen, tailS = S - Heading * HalfLen;
+            float lo = Mathf.Min(D, target.Offset) - HalfWide - SideAir;
+            float hi = Mathf.Max(D, target.Offset) + HalfWide + SideAir;
+            float need = Mathf.Abs(Speed) * Profile.TimeGap + Profile.FollowGap + 2f;
+            if (road.FreeAhead(_occ, Heading, noseS, tailS, lo, hi, need + 6f) < need) return false;
+            var back = road.Behind(_occ, Heading, tailS,
+                                   target.Offset - HalfWide - SideAir, target.Offset + HalfWide + SideAir,
+                                   out float bgap);
+            if (back != null)
+            {
+                float vb = Mathf.Max(0f, back.Vel * Heading);
+                if (bgap < vb * 1.2f + 5f) return false;
+            }
+            return true;
+        }
+
+        void BeginLaneChange(RoadEdge target)
+        {
+            float dd = Mathf.Abs(target.Offset - D);
+            if (dd < 0.2f) { SetLane(target); _laneD = target.Offset; return; }
+            _man = Manoeuvre.LaneChange;
+            Slide(target.Offset, SlideLength(dd, Mathf.Abs(Speed)));
+            SetLane(target);
+            _laneD = target.Offset;
+            DropNext();
+            _next = null; _via = null; _committed = false;
+            LaneChanges++;
+            if (DriveTrace.On)
+            {
+                var sb = DriveTrace.Take();
+                DriveTrace.Int(sb, "id", Id);
+                DriveTrace.Str(sb, "why", target.Exit ? "exit" : target.Auxiliary ? "merge" : "over");
+                DriveTrace.Num(sb, "v", Speed);
+                DriveTrace.Num(sb, "d", target.Offset);
+                DriveTrace.Vec(sb, "p", _pos);
+                DriveTrace.Row("lanechange", sb.ToString());
+            }
+        }
 
         // the band the car's body covers, and the band it covers together with its plan
         float BodyLo() => D - HalfWide;
@@ -2427,7 +2628,10 @@ namespace RoadDemo
             // within forty metres of where it had been sent. Off the table, the table is
             // drawn again from where the car actually is.
             if (_hasGoal && Route != null && _goalLane != null && Net != null && !Route.ContainsKey(lane))
-                Route = Net.RouteToward(_goalLane);
+            {
+                RouteShift ??= new Dictionary<RoadEdge, RoadEdge>();
+                Route = LaneNet.RouteToward(Net.Edges, _goalLane, out _, RouteShift);
+            }
 
             RoadEdge next = null;
             if (Route != null && Route.TryGetValue(lane, out var toward) && toward != null && node.ConnectorFor(lane, toward) != null) next = toward;

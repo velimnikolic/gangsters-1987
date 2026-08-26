@@ -277,7 +277,8 @@ namespace LivingCity.EditorTools
             bool any = false;
             foreach (var root in scene.GetRootGameObjects())
             {
-                if (root.name == ReviewRoot || root.name == MapRoot || root.name == BareRoot) continue;
+                if (root.name == ReviewRoot || root.name == MapRoot || root.name == BareRoot ||
+                    root.name == CoreBuildingBlocks.StockRoot) continue;
                 foreach (var r in root.GetComponentsInChildren<Renderer>(true))
                 {
                     // the painted skyline and the skydome are the horizon, not ground a
@@ -371,7 +372,7 @@ namespace LivingCity.EditorTools
             if (!TryRect(tray, out var rect)) return false;
 
             var already = tray.Find(PavingName);
-            if (already && !force) return false;
+            if (!force && (already || Kerbed(tray, rect, pieces))) return false;
 
             // the buildings alone say where the block is. A lamp's box hangs out over the
             // road it lights and a parked car covers most of a cell, and either of them
@@ -390,20 +391,32 @@ namespace LivingCity.EditorTools
             int seed = 17;
             foreach (char letter in tray.name) seed = seed * 31 + letter;
 
-            var plan = RoadDemo.CorePavement.Around(walls);
+            var panel = tray.GetComponent<RoadDemo.CoreTray>();
+            int band = panel ? Mathf.Clamp(panel.pavementTiles, 1, 4) : 2;
+            Ground(tray, rect, already, pieces, out var open, out var roofed, out var gates);
+            var plan = RoadDemo.CorePavement.Around(walls, band, open, roofed, gates);
             int laid = RoadDemo.CorePavement.Lay(
                 plan, (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent),
-                group.transform, out said, y: tray.position.y, seed: seed);
+                group.transform, out said, y: tray.position.y, seed: seed,
+                under: !(panel && panel.ownGround));
 
             if (laid != 0) return true;
             Undo.DestroyObjectImmediate(group);
             return false;
         }
 
+        /// <summary>What the kit's own building bakes are called - the catalog's buildings
+        /// as this project files them (Assets/CityKit/Buildings), and what
+        /// <see cref="RoadDemo.CoreLayout.Measure"/> reads as a building too.</summary>
+        const string KitBuilding = "building-";
+
         /// <summary>The buildings standing on one tray - what its block is measured from.
-        /// Only the pack's own, only the ones with their feet on the ground and tall enough
-        /// to be a wall: the fire escapes and roof housings it also calls buildings are up
-        /// in the air, and a block is not as wide as its roofline.</summary>
+        /// The pack's own and the kit's, only the ones with their feet on the ground; and
+        /// of the pack's, only the ones tall enough to be a wall, because the fire escapes
+        /// and roof housings it also calls buildings are up in the air and a block is not
+        /// as wide as its roofline. A kit bake is a whole building in one piece by
+        /// construction, so nothing of it is up in the air and the height is no test - a
+        /// skatepark is barely knee high and is still the ground a block is made of.</summary>
         static List<Bounds> Walls(Transform tray, Rect rect, Transform paving, List<Piece> pieces)
         {
             var walls = new List<Bounds>();
@@ -415,19 +428,176 @@ namespace LivingCity.EditorTools
                 if (piece.Owner != tray && (piece.Owner != null || !Holds(rect, piece.Box.center)))
                     continue;
                 if (paving && piece.Go.transform.parent == paving) continue;
-                if (!Named(piece.Go, "SM_Bld_")) continue;
-                if (piece.Box.min.y > 1f || piece.Box.max.y < 2f) continue;
+                bool kit = Named(piece.Go, KitBuilding);
+                if (!kit && !Named(piece.Go, "SM_Bld_")) continue;
+                if (piece.Box.min.y > 1f || (!kit && piece.Box.max.y < 2f)) continue;
                 walls.Add(piece.Box);
             }
             return walls;
         }
 
-        /// <summary>Gives a tray its buttons if it has none - an old tray, laid before there
-        /// were any. Adding a component dirties the scene, so this only ever runs where the
-        /// scene is being written to anyway.</summary>
+        /// <summary>
+        /// Does the block on this tray already carry a kerb of its own?
+        ///
+        /// A block dragged straight off the demo brings one, and so does a block composed
+        /// with its own - the industrial forge lays its ring before it hands the block to
+        /// the tray. Laying the generated pavement over either is two kerbs in the same
+        /// place. The bare library exists to take the first one off
+        /// (<see cref="ShowBare"/>), and a block that still has it is not asking for
+        /// another; <c>force</c> is how somebody says otherwise.
+        /// </summary>
+        static bool Kerbed(Transform tray, Rect rect, List<Piece> pieces)
+        {
+            foreach (var piece in pieces)
+            {
+                if (!piece.Go) continue;
+                if (piece.Owner != tray && (piece.Owner != null || !Holds(rect, piece.Box.center)))
+                    continue;
+                if (Named(piece.Go, KerbTiles)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// What on this tray leaves the ground OPEN: a sunken entrance stair, a basement
+        /// door, a subway mouth, a vehicle yard cut into the block. Those cells are floored
+        /// over at nought by nothing, which is the city's own rule for a unit that goes
+        /// under - and the reason the pack's own block-07, all sunken stoops, carries no
+        /// floor inside its kerb.
+        ///
+        /// Not only the buildings: whatever it is that goes down there, the ground is open
+        /// over it. But going down is not enough on its own - see
+        /// <see cref="Scan"/>, which is where the question is actually settled.
+        /// </summary>
+        static void Ground(Transform tray, Rect rect, Transform paving, List<Piece> pieces,
+                           out List<Bounds> open, out List<Bounds> roofed, out List<Bounds> gates)
+        {
+            open = new List<Bounds>();
+            roofed = new List<Bounds>();
+            gates = new List<Bounds>();
+
+            foreach (var piece in pieces)
+            {
+                if (!piece.Go) continue;
+                if (piece.Owner != tray && (piece.Owner != null || !Holds(rect, piece.Box.center)))
+                    continue;
+                if (paving && piece.Go.transform.parent == paving) continue;
+
+                // a walled yard's way in cannot be read off the mesh - see GateOf
+                if (CoreBuildingBlocks.GateOf(piece.Go, out var gate)) gates.Add(gate);
+
+                bool dips = piece.Box.min.y <= RoadDemo.CorePavement.Underground;
+
+                // only a BUILDING roofs ground. A lamp is three times head room tall and a
+                // palm taller still, and counting either would wall a yard in with the very
+                // furniture the pavement stood there
+                bool stands = piece.Box.max.y >= HeadRoom &&
+                              (Named(piece.Go, KitBuilding) || Named(piece.Go, "SM_Bld_"));
+                if (!dips && !stands) continue;
+
+                if (Scan(piece.Go, dips ? open : null, stands ? roofed : null)) continue;
+
+                // nothing legible to read: the box stands in for whichever mask asked, which
+                // errs the safe way twice over - open ground stays open, roofed ground stays
+                // shut, and a way out is refused rather than driven through a wall
+                if (dips) open.Add(piece.Box);
+                if (stands) roofed.Add(piece.Box);
+            }
+        }
+
+        /// <summary>How much of a thing has to stand over a cell before the ground under it
+        /// is understood to be COVERED rather than open.
+        ///
+        /// Read off the police station, which is what forced the question: every cell its
+        /// walls stand on tops out at 6 m or more, and every cell of its sunken vehicle yard
+        /// at 2 m or less - the parapet round the drop. Three metres sits in the middle of
+        /// that gap, above any railing and below any storey.</summary>
+        const float HeadRoom = 3f;
+
+        /// <summary>
+        /// What one piece leaves OPEN and what it ROOFS, cell by cell off its mesh rather
+        /// than off its bounding box.
+        ///
+        /// The box was the old test and it was wrong for anything with a basement: the
+        /// police station reaches -4.25 m under its own walls, so its box read as one 60 x
+        /// 40 m hole and the block was baked with the city showing through the middle of it.
+        /// What makes a hole is not depth, it is depth with NOTHING STANDING OVER IT - a
+        /// sunken entrance stair, a basement door, a subway mouth, this station's vehicle
+        /// yard. A slab laid at nought under a building's own floor is never seen.
+        ///
+        /// Cells are snapped to the world 5 m beat, which is the beat
+        /// <see cref="RoadDemo.CorePavement.Around"/> lays its raster on, so a box handed
+        /// back here covers exactly one cell of it. A cell with head room standing over it
+        /// is roofed and never open, whatever it does underneath.
+        ///
+        /// Returns false when the piece cannot be read whole - no MeshFilter at all, or one
+        /// of its meshes imported without Read/Write - and nothing is written to either list.
+        ///
+        /// Either list may be null: a prop that dips is asked only what it leaves open, and
+        /// a building with no basement only what it stands on.
+        /// </summary>
+        static bool Scan(GameObject go, List<Bounds> open, List<Bounds> roofed)
+        {
+            const float cell = RoadDemo.CorePavement.Cell;
+            var spans = new Dictionary<Vector2Int, Vector2>();   // cell -> (lowest y, highest y)
+            bool read = false;
+
+            foreach (var filter in go.GetComponentsInChildren<MeshFilter>())
+            {
+                var mesh = filter.sharedMesh;
+                if (mesh == null) continue;
+                if (!mesh.isReadable) return false;
+                read = true;
+                var toWorld = filter.transform.localToWorldMatrix;
+                foreach (var vertex in mesh.vertices)
+                {
+                    var at = toWorld.MultiplyPoint3x4(vertex);
+                    var key = new Vector2Int(Mathf.FloorToInt(at.x / cell), Mathf.FloorToInt(at.z / cell));
+                    if (spans.TryGetValue(key, out var span))
+                        spans[key] = new Vector2(Mathf.Min(span.x, at.y), Mathf.Max(span.y, at.y));
+                    else
+                        spans[key] = new Vector2(at.y, at.y);
+                }
+            }
+            if (!read) return false;
+
+            // the order cells come out of the table in does not matter: each one is claimed
+            // on its own and claiming is idempotent
+            foreach (var pair in spans)
+            {
+                float low = pair.Value.x, high = pair.Value.y;
+                var box = new Bounds(new Vector3((pair.Key.x + 0.5f) * cell, (low + high) * 0.5f,
+                                                 (pair.Key.y + 0.5f) * cell),
+                                     new Vector3(cell, Mathf.Max(0.1f, high - low), cell));
+                if (high >= HeadRoom) roofed?.Add(box);
+                else if (low <= RoadDemo.CorePavement.Underground) open?.Add(box);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Gives a tray its buttons if it has none - an old tray, laid before there were
+        /// any. Adding a component dirties the scene, so this only ever runs where the
+        /// scene is being written to anyway.
+        ///
+        /// On the PAD as well as on the tray, because clicking the blue rectangle in the
+        /// scene selects the pad, and clicking the blue rectangle is what anybody does.
+        /// </summary>
         static void Buttons(Transform tray)
         {
             if (!tray.GetComponent<RoadDemo.CoreTray>()) tray.gameObject.AddComponent<RoadDemo.CoreTray>();
+            var pad = tray.Find(PadName);
+            if (pad && !pad.GetComponent<RoadDemo.CoreTray>()) pad.gameObject.AddComponent<RoadDemo.CoreTray>();
+        }
+
+        /// <summary>The tray something belongs to: itself if it is one, its parent if what
+        /// was clicked is the pad. A tray is the thing with a pad under it.</summary>
+        internal static Transform TrayOf(Transform thing)
+        {
+            if (!thing) return null;
+            if (thing.Find(PadName)) return thing;
+            if (thing.parent && thing.parent.Find(PadName)) return thing.parent;
+            return null;
         }
 
         // ------------------------------------------------------ what the buttons ask for
@@ -799,7 +969,8 @@ namespace LivingCity.EditorTools
             bool any = false;
             foreach (var root in scene.GetRootGameObjects())
             {
-                if (root.name == ReviewRoot || root.name == BareRoot) continue;
+                if (root.name == ReviewRoot || root.name == BareRoot ||
+                    root.name == CoreBuildingBlocks.StockRoot) continue;
                 foreach (var r in root.GetComponentsInChildren<Renderer>(true))
                 {
                     if (r.bounds.size.x > 400f || r.bounds.size.z > 400f) continue;
@@ -2447,12 +2618,13 @@ namespace LivingCity.EditorTools
                 if (root.name == ReviewRoot || root.name == MapRoot ||
                     root.name == IndustrialBlockForge.CandidatesRoot) continue;
 
-                // the bare library is STOCK, and stock is invisible until it is put on the
-                // counter. A block of it slid onto a rectangle is being used and is swept
-                // like anything else; the rest of the row is not there at all - which is
-                // what stops a harvest from filing the whole library back over the very
-                // prefabs it was made from, while it stands within arm's reach by design
-                bool stock = root.name == BareRoot;
+                // the bare library and the row of loose buildings beside it are STOCK, and
+                // stock is invisible until it is put on the counter. A block of it slid
+                // onto a rectangle is being used and is swept like anything else; the rest
+                // of the row is not there at all - which is what stops a harvest from
+                // filing the whole library back over the very prefabs it was made from,
+                // while it stands within arm's reach by design
+                bool stock = root.name == BareRoot || root.name == CoreBuildingBlocks.StockRoot;
                 foreach (var r in root.GetComponentsInChildren<Renderer>(true))
                 {
                     var go = PrefabUtility.GetNearestPrefabInstanceRoot(r.gameObject);

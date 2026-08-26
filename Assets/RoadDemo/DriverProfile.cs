@@ -20,7 +20,32 @@ namespace RoadDemo
 
         // the pace
         public float Cruise = 10f;          // m/s at most (a lane's limit still applies to traffic)
+        /// <summary>What he drives at on a MOTORWAY, and on a slip road off one. A
+        /// commuter who cruises a street at ten does not crawl down a deck at ten: he
+        /// drives it at fifty-odd miles an hour, because that is what the road is for.
+        /// The old model had one Cruise for every road in the city, so a 25 m/s deck
+        /// was driven at the speed of a high street and the freeway carried nobody
+        /// faster than the traffic it was meant to be quicker than.
+        ///
+        /// Left at NaN, both are worked out of Cruise (a deck at two and a bit times
+        /// the street pace, a ramp a shade over it), so a profile nobody has thought
+        /// about still behaves.</summary>
+        public float CruiseFreeway = float.NaN, CruiseRamp = float.NaN;
         public bool ObeysLimit = true;      // the lane's own limit caps him
+
+        /// <summary>What he means to drive at on this kind of road.</summary>
+        public float CruiseOn(RoadClass cls)
+        {
+            switch (cls)
+            {
+                case RoadClass.Freeway:
+                    return float.IsNaN(CruiseFreeway) ? Cruise * 2.3f : CruiseFreeway;
+                case RoadClass.Ramp:
+                    return float.IsNaN(CruiseRamp) ? Cruise * 1.2f : CruiseRamp;
+                default:
+                    return Cruise;
+            }
+        }
         public float Accel = 3.5f;
         public float Brake = 6.5f;
         public float HardBrake = 11f;
@@ -73,14 +98,14 @@ namespace RoadDemo
         /// uses the far lane or turns round.</summary>
         public static readonly DriverProfile Traffic = new DriverProfile
         {
-            Name = "Traffic",
+            Name = "Traffic", CruiseRamp = 12f, CruiseFreeway = 23f,
         };
 
         /// <summary>The outfit's driver on an errand: quicker, less patient, the far
         /// lane when it is clear, a turn in the road when the spot is behind him.</summary>
         public static readonly DriverProfile Gangster = new DriverProfile
         {
-            Name = "Gangster", Cruise = 14f, ObeysLimit = false, Accel = 6f, Brake = 7f, LateralG = 3f,
+            Name = "Gangster", Cruise = 14f, CruiseRamp = 15f, CruiseFreeway = 27f, ObeysLimit = false, Accel = 6f, Brake = 7f, LateralG = 3f,
             TurnSpeed = 7f, UTurnSpeed = 3.5f, FollowGap = 3f, TimeGap = 0.7f, Patience = 0.8f,
             UsesCrown = true, UsesOpposite = true, OncomingMargin = 2f, UTurnsInRoad = true,
             Priority = 1, StandoffPatience = 1.2f,
@@ -92,7 +117,7 @@ namespace RoadDemo
         /// somebody else has.</summary>
         public static readonly DriverProfile Hot = new DriverProfile
         {
-            Name = "Hot", Cruise = 18f, ObeysLimit = false, Accel = 9f, Brake = 7f, LateralG = 4.5f,
+            Name = "Hot", Cruise = 18f, CruiseRamp = 18f, CruiseFreeway = 31f, ObeysLimit = false, Accel = 9f, Brake = 7f, LateralG = 4.5f,
             TurnSpeed = 8f, UTurnSpeed = 4f, FollowGap = 3f, TimeGap = 0.5f, Patience = 0f,
             UsesCrown = true, UsesOpposite = true, OncomingMargin = 1.2f, UTurnsInRoad = true,
             RunsRed = true, Fearless = true, Priority = 2, StandoffPatience = 0.5f,
@@ -144,7 +169,7 @@ namespace RoadDemo
         /// runs, one of them five metres in before anybody noticed.</summary>
         public static readonly DriverProfile Getaway = new DriverProfile
         {
-            Name = "Getaway", Cruise = 16f, ObeysLimit = false, Accel = 9f, Brake = 11f,
+            Name = "Getaway", Cruise = 16f, CruiseRamp = 18f, CruiseFreeway = 30f, ObeysLimit = false, Accel = 9f, Brake = 11f,
             LateralG = 4f, TurnSpeed = 8f, UTurnSpeed = 4f, FollowGap = 3.5f, TimeGap = 0.9f,
             Patience = 0.4f, UsesCrown = false, UsesOpposite = false, UTurnsInRoad = true,
             RunsRed = true, Fearless = true, Priority = 2, StandoffPatience = 0.5f,
@@ -154,7 +179,7 @@ namespace RoadDemo
         /// lights on, a red when the box is clear; everybody else gives way to it.</summary>
         public static readonly DriverProfile Police = new DriverProfile
         {
-            Name = "Police", Cruise = 14f, ObeysLimit = false, Accel = 5f, Brake = 7f, LateralG = 3f,
+            Name = "Police", Cruise = 14f, CruiseRamp = 15f, CruiseFreeway = 29f, ObeysLimit = false, Accel = 5f, Brake = 7f, LateralG = 3f,
             TurnSpeed = 7f, FollowGap = 3f, TimeGap = 0.8f, Patience = 1f,
             UsesCrown = true, UsesOpposite = true, OncomingMargin = 2f, UTurnsInRoad = true,
             RunsRed = true, Fearless = true, Priority = 3, StandoffPatience = 0.6f,
@@ -164,13 +189,13 @@ namespace RoadDemo
         /// traffic, only without the nerves.</summary>
         public static readonly DriverProfile Patrol = new DriverProfile
         {
-            Name = "Patrol", Fearless = true, Priority = 1,
+            Name = "Patrol", CruiseRamp = 13f, CruiseFreeway = 25f, Fearless = true, Priority = 1,
         };
 
         /// <summary>Something long: slower, wider berths, never the crown.</summary>
         public static readonly DriverProfile Lorry = new DriverProfile
         {
-            Name = "Lorry", Cruise = 8f, Accel = 2f, Brake = 5f, LateralG = 1.8f, TurnSpeed = 4f,
+            Name = "Lorry", Cruise = 8f, CruiseRamp = 10f, CruiseFreeway = 20f, Accel = 2f, Brake = 5f, LateralG = 1.8f, TurnSpeed = 4f,
             FollowGap = 3f, TimeGap = 1.4f, Patience = 8f, PassesAtKerb = true, OverCrown = 0.5f,
             Reverses = false,
         };

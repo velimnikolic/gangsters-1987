@@ -141,80 +141,14 @@ namespace RoadDemo
         /// </summary>
         void BuildLaneGraph()
         {
-            var net = new LaneNet();
-            var nodes = new RoadNode[_raster.Junctions.Count];
-            for (int i = 0; i < nodes.Length; i++)
-            {
-                var box = Frame.ToWorldRect(_raster.Junctions[i]);
-                nodes[i] = net.AddNode(box.center.x, box.center.y, box.width * 0.5f, box.height * 0.5f);
-            }
-
-            // a road that simply STOPS - at the edge of the quarter, or against a block's
-            // face - still needs a node there. Without one its lane ends in mid air: a car
-            // that reaches the end has no connector to take, so it stands where it stopped
-            // for the rest of the run, and everything behind it stands too. A small box a
-            // hair past the tarmac is what the other demos give a dead end, and LaneNet
-            // builds the turn-round across it like any other way through a box.
-            RoadNode End(Vector3 at) => net.AddNode(at.x, at.z, 0.5f, 0.5f, stopSetback: 0.5f);
-
-            foreach (var reach in _raster.Stretches)
-            {
-                // a stretch shorter than a car, hanging off the edge of the quarter with a
-                // junction at its other end, carries no lanes. There is no room on it to
-                // stop, let alone to turn round, and a car standing on one sticks out of
-                // both ends into the boxes either side, where the junction cannot reason
-                // about it - which is a pair of cars overlapping. The suburb leaves its own
-                // flat-capped ends bare for the same reason; the tarmac stays, the traffic
-                // simply turns round at the junction instead
-                bool loose = reach.NodeA < 0 || reach.NodeB < 0;
-                if (loose && reach.To - reach.From < ShortestLane) continue;
-
-                var a = Frame.ToWorld(Along(reach, reach.From));
-                var b = Frame.ToWorld(Along(reach, reach.To));
-                var along = (b - a).normalized;
-                if (reach.NodeA < 0) a += along * DeadEnd;
-                if (reach.NodeB < 0) b -= along * DeadEnd;
-                var nodeA = reach.NodeA >= 0 ? nodes[reach.NodeA] : End(a - along * DeadEnd * 0.5f);
-                var nodeB = reach.NodeB >= 0 ? nodes[reach.NodeB] : End(b + along * DeadEnd * 0.5f);
-                // the quarter may be turned a quarter circle; a north-south road in its own
-                // coordinates is an east-west one in the city's
-                bool northSouth = Mathf.Abs(b.z - a.z) > Mathf.Abs(b.x - a.x);
-                float half = reach.Width * CoreRoads.Cell * 0.5f;
-
-                if (reach.Width == 1)
-                {
-                    // one way, and the way is the alley's own: against it, the carriageway
-                    // is laid the other way round so its single lane runs where it should
-                    if (reach.Direction < 0) net.AddOneWay(b, a, half, Alley, alleySpeed, nodeB, nodeA, northSouth);
-                    else net.AddOneWay(a, b, half, Alley, alleySpeed, nodeA, nodeB, northSouth);
-                    continue;
-                }
-                bool boulevard = reach.Width >= 7;
-                net.AddRoad(a, b, half, boulevard ? Boulevard : Street,
-                            boulevard ? boulevardSpeed : streetSpeed,
-                            nodeA, nodeB, northSouth, boulevard ? 5f : 0f);
-            }
-
-            net.Finish();
-            Net = net;
+            // the graph itself is RasterGraph's: the industrial quarter reads the same
+            // raster and wants the same graph off it, and the three faults the harness
+            // found in this one (a lane ending in mid air, two dead ends facing each other,
+            // a stretch too short to stand a car on) are not worth learning twice
+            Net = RasterGraph.Build(_raster, Frame, streetSpeed, boulevardSpeed, alleySpeed);
             _edges.Clear();
-            _edges.AddRange(net.Edges);
+            _edges.AddRange(Net.Edges);
         }
-
-        /// <summary>How far short of the tarmac's end a dead end's node stands.</summary>
-        const float DeadEnd = 1f;
-
-        /// <summary>The shortest stretch worth laying lanes down when one end of it is
-        /// loose: a car and the room it stops in.</summary>
-        const float ShortestLane = 12f;
-
-        static readonly float[] Street = { 2.5f };
-        static readonly float[] Boulevard = { 7.5f, 12.5f };
-        static readonly float[] Alley = { 0f };
-
-        /// <summary>A point this far along a stretch of road, on its crown.</summary>
-        static Vector3 Along(CoreRoads.Stretch reach, float along)
-            => reach.Vertical ? new Vector3(reach.Crown, 0f, along) : new Vector3(along, 0f, reach.Crown);
 
         // ------------------------------------------------------------------ cars
 

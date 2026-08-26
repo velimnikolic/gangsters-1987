@@ -330,5 +330,125 @@ namespace GangstersTools
                 seeds = results,
             };
         }
+
+        // ------------------------------------------------------------ the industrial quarter
+
+        /// <summary>
+        /// Deals a whole industrial quarter from a seed and reports the verdict on it.
+        ///
+        /// Two verdicts, and both have to be nought: the raster's, on whether the roads
+        /// between the parcels make a place a lorry can drive through, and the composer's,
+        /// on whether the parcels themselves came out whole - no cell without a floor, no
+        /// hole in a fence, no fence standing inside a building. They catch different
+        /// things, which is why both are here.
+        ///
+        /// Without --draw nothing is stood at all: the deal and its verdict are pure
+        /// arithmetic, so a hundred seeds cost no more than reading them. --draw stands the
+        /// first one in the open scene, which is the slow part and the point of the thing.
+        /// </summary>
+        [CliCommand("gangsters_industry",
+                    "Deal an industrial quarter from a seed (or a run of seeds) and report the verdict " +
+                    "on each: deals needed, faults, parcels and what they were cast as. --draw also " +
+                    "draws the first one in the open scene.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters" })]
+        public static object Industry(
+            [CliArg("seed", "First seed.")] int seed = 1987,
+            [CliArg("count", "How many consecutive seeds to deal.")] int count = 1,
+            [CliArg("draw", "Draw the first seed in the open scene, as Tools/City/Industrial/Sketch The Industrial Quarter would.")] bool draw = false,
+            [CliArg("map", "Include each seed's raster map in the answer.")] bool map = false)
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("The editor is in play mode; leave it first.");
+
+            int rolls = Mathf.Clamp(count, 1, 200);
+            var results = new List<object>(rolls);
+            int clean = 0, firstDeal = 0;
+            for (int i = 0; i < rolls; i++)
+            {
+                int s = seed + i;
+                var plan = IndustrialLayout.Arrange(s, out var raster);
+                if (plan == null || raster == null)
+                    throw new InvalidOperationException($"Seed {s} dealt no quarter at all.");
+                if (raster.Faults == 0) clean++;
+                if (plan.Attempt == 0) firstDeal++;
+                results.Add(new
+                {
+                    seed = s,
+                    plan = plan.Name,
+                    deals = plan.Attempt + 1,
+                    faults = raster.Faults,
+                    islands = plan.Islands.Count,
+                    parcels = plan.Parcels.Count,
+                    cast = IndustrialQuarter.Cast(plan),
+                    blocksM2 = raster.BlockArea,
+                    roadM2 = raster.RoadArea,
+                    spareM2 = raster.SpareArea,
+                    size = $"{raster.NX * 5}x{raster.NZ * 5}",
+                    rows = plan.Rows.ToArray(),
+                    report = raster.Report.Split('\n').Select(line => line.Trim()).ToArray(),
+                    map = map ? raster.Map : null,
+                });
+            }
+
+            object drawn = null;
+            if (draw)
+            {
+                var stoodPlan = LivingCity.EditorTools.IndustrialSketch.Draw(seed, true);
+                drawn = stoodPlan == null ? null : new { seed, plan = stoodPlan.Name, parcels = stoodPlan.Parcels.Count };
+            }
+            return new
+            {
+                dealsPerSeed = IndustrialLayout.Deals,
+                clean,
+                firstDeal,
+                drawn,
+                seeds = results,
+            };
+        }
+
+        // ------------------------------------------------------- the catalog's buildings
+
+        /// <summary>
+        /// The catalog's buildings brought into the core: copied into the kit, baked into
+        /// the blocks that are one building each, stood in the stock row.
+        ///
+        /// It exists because the menu items for the same three jobs all end in a dialog,
+        /// which is right for a mouse and disastrous from here - a modal stops the editor's
+        /// main thread dead waiting for a hand that is not there, and every call after it
+        /// times out. <see cref="CoreBuildingBlocks"/> does the work; this only chooses
+        /// which part of it and says what happened.
+        /// </summary>
+        [CliCommand("gangsters_coreblocks",
+                    "Bring the catalog's buildings into the city core: copy them into the kit under " +
+                    "the kit's names, bake the ones big enough to be a block on their own, and stand " +
+                    "the rest in the stock row beside the trays.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters" })]
+        public static object CoreBuildings(
+            [CliArg("what", "copy (into the kit), bake (the blocks), stock (the row), or all.")] string what = "all",
+            [CliArg("force", "Bake a block again even when one of that name is already on disk.")] bool force = false)
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("The editor is in play mode; leave it first.");
+
+            string job = (what ?? "all").Trim().ToLowerInvariant();
+            if (job != "copy" && job != "bake" && job != "stock" && job != "all")
+                throw new ArgumentException("--what is copy, bake, stock or all.");
+
+            object[] copied = null, baked = null;
+            int stood = 0;
+            if (job == "copy" || job == "all") copied = CoreBuildingBlocks.CopyBuildings();
+            if (job == "bake" || job == "all") baked = CoreBuildingBlocks.BakeBlocks(force);
+            if (job == "stock" || job == "all")
+                stood = CoreBuildingBlocks.StandStock(EditorSceneManager.GetActiveScene());
+
+            return new
+            {
+                what = job,
+                copied,
+                baked,
+                stockStanding = stood,
+                scene = EditorSceneManager.GetActiveScene().path,
+            };
+        }
     }
 }

@@ -1098,18 +1098,31 @@ namespace RoadDemo
             // station's apron - and not only the ones the plan could infer from the road
             // lines. A map with a road missing is a map that cannot be trusted.
             var tarmac = new List<(Vector2 a, Vector2 b, float half)>();
+            // the motorway is drawn on its own, in the colour of a deck: it is not a
+            // street and a map that draws it as one is a map you cannot navigate by
+            var deckway = new List<(Vector2 a, Vector2 b, float half)>();
+            var pieces = new List<(Vector2 a, Vector2 b)>();
             var net = _builder.Net;
             if (net != null)
                 foreach (var road in net.Roads)
                 {
                     if (road == null) continue;
-                    tarmac.Add((new Vector2(road.A.x, road.A.z), new Vector2(road.B.x, road.B.z),
-                        Mathf.Max(3f, road.HalfRoad)));
+                    bool motorway = road.Class == RoadClass.Freeway || road.Class == RoadClass.Ramp;
+                    var into = motorway ? deckway : tarmac;
+                    float half = Mathf.Max(3f, road.HalfRoad);
+                    // The motorway is cut into stretches with a SEAM between each pair -
+                    // four metres of junction that carries no carriageway and so is drawn
+                    // by nothing. Every stretch is run on a few metres at each end, which
+                    // closes the seam under a road of the same colour.
+                    Chords(road, pieces, motorway ? DeckJoin : 0f);
+                    foreach (var (a, b) in pieces) into.Add((a, b, half));
                 }
             foreach (var one in _builder.QuarterRoads)
                 tarmac.Add(one);
             if (tarmac.Count > 0)
                 SpillStrips(DemoUi.NewRect("Carriageways", washes), tarmac, Asphalt);
+            if (deckway.Count > 0)
+                SpillStrips(DemoUi.NewRect("Expressway", washes), deckway, Deck);
             Debug.Log($"[RoadDemo] map roads: {(net != null ? net.Roads.Count : 0)} on the " +
                       $"network, {_builder.QuarterRoads.Count} laid by or out to the quarters, " +
                       $"{_builder.QuarterRoofs.Count} quarter buildings");
@@ -1333,30 +1346,57 @@ namespace RoadDemo
 
             var middle = new List<(Vector2 a, Vector2 b, float half)>();
             var lanes = new List<(Vector2 a, Vector2 b, float half)>();
+            var pieces = new List<(Vector2 a, Vector2 b)>();
+            var offs = new List<float>();
+            var phase = new List<float>();
             foreach (var road in net.Roads)
             {
                 if (road == null)
                     continue;
-                var a = new Vector2(road.A.x, road.A.z);
-                var b = new Vector2(road.B.x, road.B.z);
-                var span = b - a;
-                float len = span.magnitude;
-                if (len < DashOn + DashOff * 2f)
-                    continue;
-                var dir = span / len;
-                var side = new Vector2(-dir.y, dir.x);
+                bool motorway = road.Class == RoadClass.Freeway || road.Class == RoadClass.Ramp;
 
-                if (road.HalfRoad <= BoulevardHalf)
-                    Dashes(a, dir, len, Vector2.zero, middle);
-
-                // one white line per lane boundary, walked out from the middle: the
-                // outermost is the edge of the strip a car is left standing on, which
-                // is where the world paints its own outside line
-                for (float off = road.HalfRoad - StreetKit.ParkLane;
-                     off > StreetKit.RoadHalf * 0.5f; off -= StreetKit.RoadHalf)
+                offs.Clear();
+                if (motorway)
                 {
-                    Dashes(a, dir, len, side * off, lanes);
-                    Dashes(a, dir, len, side * -off, lanes);
+                    // between every pair of the road's OWN lanes. A motorway carriageway
+                    // is one way, so what runs down the middle of it is a lane line and
+                    // not a centre line - and a street's parking-strip arithmetic, walked
+                    // out from a middle it does not have, puts its white anywhere.
+                    for (int i = 0; i + 1 < road.Lanes.Count; i++)
+                        offs.Add((road.Lanes[i].Offset + road.Lanes[i + 1].Offset) * 0.5f);
+                }
+                else
+                {
+                    // one white line per lane boundary, walked out from the middle: the
+                    // outermost is the edge of the strip a car is left standing on, which
+                    // is where the world paints its own outside line
+                    for (float off = road.HalfRoad - StreetKit.ParkLane;
+                         off > StreetKit.RoadHalf * 0.5f; off -= StreetKit.RoadHalf)
+                    {
+                        offs.Add(off);
+                        offs.Add(-off);
+                    }
+                }
+                bool yellow = !motorway && road.HalfRoad <= BoulevardHalf;
+
+                phase.Clear();
+                for (int i = 0; i <= offs.Count; i++) phase.Add(DashOff);
+
+                Chords(road, pieces, 0f);
+                foreach (var (a, b) in pieces)
+                {
+                    var span = b - a;
+                    float len = span.magnitude;
+                    if (len < 0.5f) continue;
+                    var dir = span / len;
+                    // the road's RIGHT, the way a lane offset is measured (RoadEdge.Offset):
+                    // in the plan's (x, z) that is (dir.z, -dir.x). It used to be the left,
+                    // which nothing noticed while every offset came in a symmetrical pair -
+                    // and a motorway's do not.
+                    var side = new Vector2(dir.y, -dir.x);
+                    if (yellow) phase[0] = Dashes(a, dir, len, Vector2.zero, middle, phase[0]);
+                    for (int i = 0; i < offs.Count; i++)
+                        phase[i + 1] = Dashes(a, dir, len, side * offs[i], lanes, phase[i + 1]);
                 }
             }
 
@@ -1368,13 +1408,56 @@ namespace RoadDemo
                       $"{lanes.Count} lane dashes");
         }
 
-        /// <summary>One broken line down a carriageway, offset from its centre.</summary>
-        static void Dashes(Vector2 from, Vector2 dir, float len, Vector2 offset,
-            List<(Vector2 a, Vector2 b, float half)> into)
+        /// <summary>How far a stretch of motorway is run on past each of its ends, to
+        /// close the seam junction between it and the next.</summary>
+        const float DeckJoin = 3f;
+
+        /// <summary>The straight pieces a road is drawn in: its own line where it bends,
+        /// one chord where it does not. A road that bends drawn from end to end cuts
+        /// every corner it has - which on a motorway means the paint runs off the deck
+        /// and away across the field the road is turning round.</summary>
+        static void Chords(Carriageway road, List<(Vector2 a, Vector2 b)> into, float pad)
+        {
+            into.Clear();
+            if (road.Path != null && road.Path.Pts.Length > 2)
+            {
+                var pts = road.Path.Pts;
+                var from = pts[0];
+                for (int i = 1; i < pts.Length; i++)
+                {
+                    // twenty metres a piece: a chord that long stands a hand's breadth
+                    // off the tightest bend this road has
+                    if (i < pts.Length - 1 && (pts[i] - from).sqrMagnitude < 400f) continue;
+                    into.Add((new Vector2(from.x, from.z), new Vector2(pts[i].x, pts[i].z)));
+                    from = pts[i];
+                }
+            }
+            if (into.Count == 0)
+                into.Add((new Vector2(road.A.x, road.A.z), new Vector2(road.B.x, road.B.z)));
+            if (pad <= 0f) return;
+            var head = into[0];
+            var d0 = (head.b - head.a).normalized;
+            into[0] = (head.a - d0 * pad, head.b);
+            var tail = into[into.Count - 1];
+            var d1 = (tail.b - tail.a).normalized;
+            into[into.Count - 1] = (tail.a, tail.b + d1 * pad);
+        }
+
+        /// <summary>One broken line down a carriageway, offset from its centre and
+        /// picking up the rhythm where the last piece of the same line left off: a road
+        /// that bends is drawn in pieces, and dashes that start afresh at every piece
+        /// bunch up on the corners.</summary>
+        static float Dashes(Vector2 from, Vector2 dir, float len, Vector2 offset,
+            List<(Vector2 a, Vector2 b, float half)> into, float phase)
         {
             var start = from + offset;
-            for (float t = DashOff; t + DashOn < len - DashOff; t += DashOn + DashOff)
+            float t = phase;
+            while (t + DashOn < len)
+            {
                 into.Add((start + dir * t, start + dir * (t + DashOn), DashHalf));
+                t += DashOn + DashOff;
+            }
+            return Mathf.Max(0f, t - len);
         }
 
         /// <summary>

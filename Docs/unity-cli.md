@@ -54,12 +54,18 @@ editor through Roslyn, which answers most one-off questions without a file being
 | `gangsters_measure` | what a prefab actually measures, from the imported asset |
 | `gangsters_play` | a harness run **inside the open editor** |
 | `gangsters_core` | the city core dealt from a seed (or a run of seeds), judged: deals needed, faults, areas, roads; `--draw` draws the first in the open scene |
+| `gangsters_coreblocks` | the catalog's buildings brought into the core: copied into the kit, baked into blocks, stood in the stock row |
+| `gangsters_industrial` | four industrial block candidates on the lab bench, and the bake of the ones worth keeping |
+| `gangsters_industry` | a whole industrial QUARTER dealt from a seed and judged; `--draw` draws the first in the open scene |
 
     unity command gangsters_layout --scene Assets/Scenes/Game.unity --seed 7 --json
     unity command gangsters_layout --seed 1 --count 20 --json     # sweep seeds
     unity command gangsters_measure --name building-bank --json
     unity command gangsters_core --seed 1 --count 30 --json      # thirty seeds: is every one clean?
+    unity command gangsters_industry --seed 1987 --count 30 --json   # the same question of the industrial quarter
+    unity command gangsters_industry --seed 1987 --draw              # and stand that one up to look at
     unity command gangsters_core --seed 4 --draw                 # draw seed 4 where the Sketch menu would
+    unity command gangsters_coreblocks --what all --json         # copy, bake and stand the core's buildings
     unity command gangsters_play --scene Assets/Scenes/BlockDemo.unity --seconds 90 \
         --step 0.05 --out Temp/play/cli --sets "BlockDemoBuilder.rivalCrews=2"
     python Tools/play/analyze.py Temp/play/cli --verdict

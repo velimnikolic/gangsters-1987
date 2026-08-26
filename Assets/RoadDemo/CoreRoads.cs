@@ -1270,10 +1270,15 @@ namespace RoadDemo
         /// The car parks, lot by lot. A lot is rows of bays with aisles between them: the
         /// kit's row of three bays is one cell deep and two wide, its bays open at the
         /// edge the pivot sits on, so a row faces its aisle by the way it is turned. Rows
-        /// run the lot's long way; the row nearest the street is bays facing the street
-        /// (the kerb-side parking of a strip a cell deep), then aisle, then bays facing
-        /// back to it, bays facing the next aisle, and so on. Stood any other way the
+        /// run the lot's long way; the row nearest the street is the FRONTAGE AISLE - a
+        /// lot is entered along its front, not parked along it - then bays facing that
+        /// aisle, bays facing the next one, aisle, and so on. Stood any other way the
         /// rows' dividing lines join up into stripes the length of the lot.
+        ///
+        /// A row of bays hard against the street was tried and thrown out (2026-08-26):
+        /// read from the pavement it is a second rank of cars crowding the kerb, and the
+        /// lot stops looking like a lot. A strip one row deep is still kerb-side parking,
+        /// which is a different thing - that is the street's own bays, not a lot's.
         /// </summary>
         static void LayCarParks(Raster r, Kit kit)
         {
@@ -1304,12 +1309,12 @@ namespace RoadDemo
             var laid = new HashSet<Vector2Int>();
             var cells = new HashSet<Vector2Int>(lot);
 
-            // the rows, from the street inward: a row of bays backing onto the street and
-            // facing the aisle behind it, the aisle, a row facing that aisle; then again.
-            // A last row that would face nothing is an aisle. A lot one row deep is
-            // kerb-side parking, its bays opening onto the street
-            bool Aisle(int k) => depth > 1 && (k % 3 == 1 || (k % 3 == 0 && k == depth - 1));
-            bool OpensInward(int k) => depth > 1 && k % 3 == 0;   // towards the higher row, away from the street
+            // the rows, from the street inward: the frontage aisle, a row facing back out
+            // to it, a row facing the next aisle, that aisle; then again. A last row that
+            // would face nothing is an aisle. A lot one row deep is kerb-side parking,
+            // its bays opening onto the street
+            bool Aisle(int k) => depth > 1 && (k % 3 == 0 || (k % 3 == 2 && k == depth - 1));
+            bool OpensInward(int k) => depth > 1 && k % 3 == 2;   // towards the higher row, away from the street
 
             // the drives: the columns at either end of the lot, street to the last aisle,
             // which is how a car gets in and out

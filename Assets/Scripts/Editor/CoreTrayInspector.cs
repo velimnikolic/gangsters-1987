@@ -29,16 +29,32 @@ namespace LivingCity.EditorTools
 
         void OnDisable() => EditorApplication.hierarchyChanged -= Read;
 
+        /// <summary>The tray this panel is for. The component sits on the pad as well as
+        /// on the tray, because the pad is the blue rectangle and the blue rectangle is what
+        /// gets clicked; either way the panel answers for the tray itself.</summary>
+        Transform Tray()
+        {
+            var mine = (RoadDemo.CoreTray)target;
+            return mine ? CoreBlockTray.TrayOf(mine.transform) : null;
+        }
+
         void Read()
         {
-            var tray = ((RoadDemo.CoreTray)target)?.transform;
+            var tray = Tray();
             if (!tray) return;
             CoreBlockTray.Holding(tray, out _pieces, out _buildings, out _paved, out _size);
         }
 
         public override void OnInspectorGUI()
         {
-            var tray = ((RoadDemo.CoreTray)target).transform;
+            var tray = Tray();
+            if (!tray)
+            {
+                EditorGUILayout.HelpBox(
+                    "This is not a block tray - a tray is an object with a \"pad\" under it. " +
+                    "Lay one down with Tools/City/Core/Add Block Tray.", MessageType.Warning);
+                return;
+            }
 
             // the name IS the prefab's name, and two trays called the same thing write over
             // each other - worth having under the hand rather than up in the hierarchy
@@ -52,6 +68,23 @@ namespace LivingCity.EditorTools
             }
             EditorGUILayout.LabelField(" ", $"bakes to {CoreBlockTray.PrefabPath(tray)}",
                                        EditorStyles.miniLabel);
+
+            // the setting lives on the TRAY even when the pad is what was clicked, so there
+            // is one of it and not two
+            var panel = tray.GetComponent<RoadDemo.CoreTray>();
+            if (panel)
+            {
+                EditorGUI.BeginChangeCheck();
+                int tiles = EditorGUILayout.IntSlider("Pavement tiles", panel.pavementTiles, 1, 4);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    Undo.RecordObject(panel, "Pavement width");
+                    panel.pavementTiles = tiles;
+                    EditorUtility.SetDirty(panel);
+                }
+                EditorGUILayout.LabelField(" ", $"{panel.pavementTiles * 5} m round the buildings " +
+                                                "(the pack's own blocks use 5)", EditorStyles.miniLabel);
+            }
 
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(

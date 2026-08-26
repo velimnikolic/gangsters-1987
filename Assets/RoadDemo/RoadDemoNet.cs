@@ -32,6 +32,13 @@ namespace RoadDemo
         /// band and a little air in the city; next to nothing on a plain corner).</summary>
         public float StopSetback = 5.7f;
 
+        /// <summary>A SEAM, not a crossing: a place one carriageway hands over to the
+        /// next and nothing turns - a motorway gaining a lane, dropping one, or giving
+        /// one away to a slip road. Every lane carries straight on into the lane that
+        /// lines up with it, and no two ways through it conflict, so a car on the deck
+        /// is never stopped by one on a ramp. See LaneNet.PrepareSeam.</summary>
+        public bool Seam;
+
         public Vector3 Centre => new Vector3(X, 0f, Z);
 
         /// <summary>The connector from this incoming lane to that outgoing one, or null.</summary>
@@ -53,7 +60,14 @@ namespace RoadDemo
     {
         public RoadNode From, To;
         public Vector3 Start, End;
+        /// <summary>The lane's chord: Start to End. On a straight road it is the way the
+        /// lane runs everywhere; on a bend it is only the average of it.</summary>
         public Vector3 Dir;
+        /// <summary>The way the lane runs where it LEAVES its node, and where it arrives
+        /// at the next one. On a straight lane both are Dir; on a bend they are what the
+        /// junctions at either end have to be built from, or a connector meets the road
+        /// at an angle to it. Set by LaneNet.AddLane.</summary>
+        public Vector3 DirIn, DirOut;
         public float Length;
         public bool NorthSouth;
         public float SpeedLimit;
@@ -66,6 +80,17 @@ namespace RoadDemo
         public int Heading = 1;
         /// <summary>Road-s of this lane's Start.</summary>
         public float S0;
+
+        /// <summary>An AUXILIARY lane: one that begins or ends in the middle of a
+        /// motorway rather than running its whole length - a deceleration lane into an
+        /// exit, an acceleration lane out of an entrance. Nothing is spawned on one (a
+        /// car put there at build time has nowhere to go but sideways), and a driver in
+        /// one knows he has to be out of it before it runs out.</summary>
+        public bool Auxiliary;
+
+        /// <summary>This lane leaves the motorway: it is the one an exit is taken
+        /// from. A wanderer takes it now and then; everyone else keeps to the deck.</summary>
+        public bool Exit;
 
         /// <summary>Progress along this lane to road-s.</summary>
         public float RoadS(float progress) => S0 + Heading * progress;

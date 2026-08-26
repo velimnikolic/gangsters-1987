@@ -44,11 +44,25 @@ namespace RoadDemo
         {
             public string Prefab;
             public float X, Z;
-            public Stand(string prefab, float x, float z) { Prefab = prefab; X = x; Z = z; }
+
+            /// <summary>Did the demo stand this block? The sixteen the harvest took did.
+            /// A block made since - one of the catalog's own buildings with the pavement
+            /// grown round it - never stood anywhere, so it has no place in the demo's
+            /// arrangement and <see cref="Arrange"/> leaves it out of that one plan. It
+            /// deals with the rest under every other seed.</summary>
+            public bool Demo;
+
+            public Stand(string prefab, float x, float z) { Prefab = prefab; X = x; Z = z; Demo = true; }
+
+            /// <summary>A block the demo never stood, and so has no position in it.</summary>
+            public Stand(string prefab) { Prefab = prefab; X = 0f; Z = 0f; Demo = false; }
         }
 
-        /// <summary>The blocks, in the demo's arrangement. city-hall-block is left out: it
-        /// is the tray-baked copy of the same block as block-03, with fewer pieces.</summary>
+        /// <summary>The blocks the city deals from. The first sixteen are the demo's own,
+        /// with the pivot each stood at; city-hall-block is left out, being the tray-baked
+        /// copy of the same block as block-03 with fewer pieces. The ones after them were
+        /// made later out of the catalog's buildings and have no demo position - see
+        /// <see cref="Stand.Demo"/>.</summary>
         public static readonly Stand[] Blocks =
         {
             new Stand("block-01", -90f, -55f),
@@ -67,6 +81,14 @@ namespace RoadDemo
             new Stand("block-14", 115f, -20f),
             new Stand("block-15", 120f, 125f),
             new Stand("block-16", 120f, 55f),
+
+            // One building each, with the pavement grown round it - the catalog's warehouse
+            // yard, police station and nightclub, baked through the trays by
+            // CoreBuildingBlocks (Tools/City/Core/Buildings/...). Big enough to be a block
+            // on their own, and no arrangement of the demo's to stand in.
+            new Stand("warehouse-block"),
+            new Stand("police-station-block"),
+            new Stand("nightclub-block"),
         };
 
         /// <summary>
@@ -860,8 +882,14 @@ namespace RoadDemo
         {
             if (seed == SyntySeed)
             {
-                var synty = Synty(blocks);
-                raster = CoreRoads.Build(blocks, synty);
+                // the reference is the demo's arrangement and nothing else. A block made
+                // since the harvest never stood there, and inventing a place for it would
+                // change the one thing the reference is kept for - so it is stood aside,
+                // out of the plan and out of the raster, and deals under every other seed.
+                var stood = Stood(blocks);
+                var synty = Synty(stood);
+                Aside(blocks, stood);
+                raster = CoreRoads.Build(stood, synty);
                 return synty;
             }
             Plan best = null;
@@ -888,6 +916,44 @@ namespace RoadDemo
             Roll(blocks, unchecked(seed * 1000003 + best.Attempt * 7919));
             raster = CoreRoads.Build(blocks, best);
             return best;
+        }
+
+        /// <summary>Of these blocks, the ones the demo itself stood - the only ones the
+        /// reference arrangement knows a place for.</summary>
+        static List<Block> Stood(List<Block> blocks)
+        {
+            var stood = new List<Block>();
+            foreach (var block in blocks)
+                foreach (var stand in Blocks)
+                    if (stand.Demo && stand.Prefab == block.Name) { stood.Add(block); break; }
+            return stood;
+        }
+
+        /// <summary>How far south of the demo's own ground a block the reference has no
+        /// place for is stood. Their southernmost lane runs at z -145, so this is clear
+        /// of everything the arrangement draws.</summary>
+        const float AsideAt = -300f;
+
+        /// <summary>
+        /// Stands the blocks the reference left out in a row of their own, well clear of it.
+        ///
+        /// They have to be stood SOMEWHERE: a caller places every block it loaded, and one
+        /// left where the last deal happened to put it would sit in the middle of the
+        /// drawing - on the boulevard, through a block - looking for all the world like
+        /// part of the reference.
+        /// </summary>
+        static void Aside(List<Block> all, List<Block> stood)
+        {
+            float x = 0f;
+            foreach (var block in all)
+            {
+                if (stood.Contains(block)) continue;
+                block.Turn(0);
+                block.Shift = Vector2.zero;
+                block.Lot = Rect.zero;
+                block.Pivot = new Vector2(x - block.Ground0.min.x, AsideAt - block.Ground0.min.z);
+                x += (block.CW + 3) * Cell;
+            }
         }
     }
 }
