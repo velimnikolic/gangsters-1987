@@ -102,11 +102,17 @@ namespace LivingCity.EditorTools
             /// <see cref="RoadDemo.CoreTray.ownGround"/>.</summary>
             public readonly bool OwnGround;
 
-            public Recipe(string block, string building, bool ownGround = false)
+            /// <summary>How wide the pavement runs round it, in tiles - see
+            /// <see cref="RoadDemo.CoreTray.pavementTiles"/>. Two unless the block needs the
+            /// room for something.</summary>
+            public readonly int Band;
+
+            public Recipe(string block, string building, bool ownGround = false, int band = 2)
             {
                 Block = block;
                 Building = building;
                 OwnGround = ownGround;
+                Band = band;
             }
         }
 
@@ -115,7 +121,11 @@ namespace LivingCity.EditorTools
             // the warehouse is a walled yard the pack drew whole, gate and markings and
             // all: the pavement rings it and keeps out
             new Recipe("warehouse-block", "building-warehouse", ownGround: true),
-            new Recipe("police-station-block", "building-policestation"),
+            // three tiles of band on the station, not two: its car park wants a row of bays
+            // AND a lane to get out along, and ten metres will not hold both (2026-08-26,
+            // the user: "parking spoljasnji mora ima prolaz da prodju ova kola policijska").
+            // Fifteen holds bays, lane and kerb, and the ramp gets a gentler grade with it
+            new Recipe("police-station-block", "building-policestation", band: 3),
             new Recipe("nightclub-block", "building-nightclub"),
         };
 
@@ -140,6 +150,56 @@ namespace LivingCity.EditorTools
             {
                 ["building-warehouse"] = (new Vector3(4f, 0f, 28.5f), 8f),
             };
+
+        /// <summary>
+        /// Where a building's own CAR PARK is cut out of the block's pavement, in the
+        /// building's own metres: the middle of it, how big it is, which way a car parked
+        /// in it faces, and what stands in it.
+        ///
+        /// Declared, like the gate, and for a plainer reason: nothing on a building says
+        /// where the cars belonging to it should stand. What CAN be read is where there is
+        /// room, and the police station has exactly one such place - the strip of band
+        /// between its north wall and the kerb, east of the yard ramp, twenty metres of it
+        /// (2026-08-26, the user: "mozemo malo da usecemo pavement i da imamo parking za
+        /// police kola"). Cars nose in off the street facing the building, which is what
+        /// the kerb is dropped in front of the lot for.
+        ///
+        /// The fleet is the city's own (<see cref="LivingCity.Gameplay.VehicleCatalog"/>),
+        /// not a prefab picked by hand, so the cars standing outside the station are the
+        /// cars its patrols drive.
+        /// </summary>
+        static readonly Dictionary<string, (Vector3 At, Vector2 Size, int Yaw, string[] Fleet)> Parks =
+            new Dictionary<string, (Vector3, Vector2, int, string[])>
+            {
+                // TWO rows: the bays against the north wall and the lane in front of them,
+                // with the block's own kerb still outside that. x 0..20 leaves the yard ramp
+                // its own fifteen metres to the west
+                ["building-policestation"] = (new Vector3(10f, 0f, 25f), new Vector2(20f, 10f),
+                                              180, LivingCity.Gameplay.VehicleCatalog.PoliceCars),
+            };
+
+        /// <summary>The car park one piece on a tray brings with it, in world metres, or
+        /// false if that building has none. Keyed off the source prefab's name, the same
+        /// identity <see cref="GateOf"/> reads.</summary>
+        internal static bool ParkOf(GameObject piece, out Bounds park, out int yaw,
+                                    out string[] fleet)
+        {
+            park = new Bounds();
+            yaw = 0;
+            fleet = null;
+            if (piece == null) return false;
+
+            var source = PrefabUtility.GetCorrespondingObjectFromSource(piece);
+            string name = source != null ? source.name : piece.name;
+            if (!Parks.TryGetValue(name, out var told)) return false;
+
+            var at = piece.transform.TransformPoint(told.At);
+            var across = piece.transform.TransformVector(new Vector3(told.Size.x, 0f, told.Size.y));
+            park = new Bounds(at, new Vector3(Mathf.Abs(across.x), 1f, Mathf.Abs(across.z)));
+            yaw = Mathf.RoundToInt(piece.transform.eulerAngles.y) + told.Yaw;
+            fleet = told.Fleet;
+            return true;
+        }
 
         /// <summary>
         /// The gate on one piece standing on a tray, in world metres, or false if that
@@ -332,10 +392,14 @@ namespace LivingCity.EditorTools
                 go.transform.position = new Vector3(centre.x - box.center.x, 0f, centre.z - box.center.z);
 
                 var tray = CoreBlockTray.MakeTray(scene, recipe.Block, centre,
-                                                  Up(box.size.x) + 4f * Cell,
-                                                  Up(box.size.z) + 4f * Cell);
+                                                  Up(box.size.x) + 2f * recipe.Band * Cell,
+                                                  Up(box.size.z) + 2f * recipe.Band * Cell);
                 var panel = tray.GetComponent<RoadDemo.CoreTray>();
-                if (panel) panel.ownGround = recipe.OwnGround;
+                if (panel)
+                {
+                    panel.ownGround = recipe.OwnGround;
+                    panel.pavementTiles = recipe.Band;
+                }
                 go.transform.SetParent(tray, true);
 
                 trays.Add(tray);

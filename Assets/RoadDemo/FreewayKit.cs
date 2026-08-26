@@ -43,6 +43,33 @@ namespace RoadDemo
 
         static readonly Dictionary<GameObject, Bounds> Measured = new Dictionary<GameObject, Bounds>();
 
+        /// <summary>The part of a barrier that actually lifts. The pack builds a gate
+        /// as a POST with the arm hung off it as a child (SM_Prop_Barrier_Gate_01, arm
+        /// 4.3 m long on a hinge 0.89 m up), and turning the whole prefab turns the post
+        /// with it: the thing screws its own foundation out of the ground and the arm
+        /// sweeps a cone round the road instead of hinging over it. Only the arm turns.
+        ///
+        /// Told by measurement rather than by name: the arm is the longest piece in the
+        /// gate by a factor of ten, and it is never the root.</summary>
+        public static Transform BoomOf(Transform gate)
+        {
+            if (gate == null) return null;
+            Transform best = null;
+            float longest = 0f;
+            foreach (var t in gate.GetComponentsInChildren<Transform>(true))
+            {
+                if (t == gate) continue;
+                var filter = t.GetComponent<MeshFilter>();
+                if (filter == null || filter.sharedMesh == null) continue;
+                var size = filter.sharedMesh.bounds.size;
+                float span = Mathf.Max(size.x, size.z);
+                if (span <= longest) continue;
+                longest = span;
+                best = t;
+            }
+            return best;
+        }
+
         /// <summary>A prefab's local-space bounds, measured once off its renderers and
         /// kept. Local, not world: the caller turns it itself.</summary>
         public static Bounds Measure(GameObject prefab)

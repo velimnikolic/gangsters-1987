@@ -142,6 +142,14 @@ namespace LivingCity.CameraRig
                 return;
             }
 
+            // What a card says is the BUILDER's to decide where a builder has said so.
+            // The picker can read a name and measure a box, which is the whole truth about
+            // a catalog bake on a shelf and almost none of it about anything composed: a
+            // click on an industrial parcel should answer "stockyard, two sheds, three
+            // ranks of containers", and not one word of that survives in the transform.
+            var facts = root.GetComponentInParent<RoadDemo.CardFacts>();
+            if (facts != null) root = facts.transform;
+
             var bounds = new Bounds(root.position, Vector3.zero);
             var first = true;
             foreach (var renderer in root.GetComponentsInChildren<Renderer>())
@@ -149,14 +157,20 @@ namespace LivingCity.CameraRig
                 if (first) { bounds = renderer.bounds; first = false; }
                 else bounds.Encapsulate(renderer.bounds);
             }
+            // and a box taken at build time beats one measured now, because the host's perf
+            // pass merges a district's renderers away into a root of its own: by the time
+            // anybody clicks, the parcel may own no renderer to measure
+            if (facts != null && facts.HasBox) bounds = facts.WorldBox();
 
             CloseCard();
             Highlight(root);
-            cardTitle = root.name;
-            cardBody = new StringBuilder()
-                .AppendLine($"footprint  {bounds.size.x:F0} x {bounds.size.z:F0} m")
-                .Append($"height  {bounds.size.y:F0} m")
-                .ToString();
+            cardTitle = facts != null && !string.IsNullOrEmpty(facts.Title) ? facts.Title : root.name;
+            cardBody = facts != null && !string.IsNullOrEmpty(facts.Body)
+                ? facts.Body
+                : new StringBuilder()
+                    .AppendLine($"footprint  {bounds.size.x:F0} x {bounds.size.z:F0} m")
+                    .Append($"height  {bounds.size.y:F0} m")
+                    .ToString();
             cardAnchor = new Vector3(bounds.center.x, bounds.max.y, bounds.center.z);
         }
 
@@ -179,7 +193,12 @@ namespace LivingCity.CameraRig
             if (sp.z < 0f)
                 return;
 
-            const float width = 250f, height = 100f, tail = 22f, gap = 4f;
+            // the panel is as tall as its text. Fixed at a hundred pixels it fitted the
+            // picker's own two lines and silently clipped anything a builder wrote
+            int lines = 1;
+            for (int k = 0; k < cardBody.Length; k++) if (cardBody[k] == '\n') lines++;
+            const float width = 250f, tail = 22f, gap = 4f;
+            float height = 52f + 18f * lines;
             var x = Mathf.Clamp(sp.x - width / 2f, 8f, Screen.width - width - 8f);
             var anchorGuiY = Screen.height - sp.y;
             var y = Mathf.Clamp(anchorGuiY - gap - tail - height, 32f, Screen.height - height - 8f);
@@ -208,7 +227,7 @@ namespace LivingCity.CameraRig
             }
 
             GUI.Label(new Rect(rect.x + 18f, rect.y + 14f, rect.width - 36f, 26f), cardTitle, titleStyle);
-            GUI.Label(new Rect(rect.x + 18f, rect.y + 42f, rect.width - 36f, 48f), cardBody, bodyStyle);
+            GUI.Label(new Rect(rect.x + 18f, rect.y + 42f, rect.width - 36f, height - 50f), cardBody, bodyStyle);
         }
 
         /// <summary>

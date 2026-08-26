@@ -894,9 +894,120 @@ Pravi put menja površinu **na upornjaku** i nigde drugde. Sada isto:
 - `PierWorth = 3.5 m` (bila gola trojka u petlji) sada ima ime, jer je čita i objašnjenje
   upornjaka.
 
-Ostaje neprovereno u Play-u: editor je za vreme rada dvaput prešao na tuđu scenu, pa
-je ovo jedini krug čije brojke stoje samo iz atlasa i računice (obris raskrsnice,
-taper grla, visine, boje), a ne sa slike.
+**Jedan asfalt, ne dva.** Podela rampe na most/put (gore) je i dalje ostavljala šav
+u boji četrdesetak metara od raskrsnice, na putu koji tu izgleda ravan. Pravo rešenje
+je da se **kolovoz i konstrukcija razdvoje**, ne rampa na dva komada:
+`DeckMesh.Skin.Surfaced()` daje profilu drugi materijal za samu voznu površ, a
+`DeckMesh.Build` je crta kao **drugi podmesh** (`carriageway[]` pamti koje su ivice
+preseka kolovoz). Otud: parapet, ivičnjak, ivična greda i donja ploča ostaju paketov
+beton, a kolovoz je gradski asfalt — na rampi, na deck-u, svuda. To je i ono što
+vijadukt jeste: betonska konstrukcija sa asfaltom na sebi. Podela na dva poteza je
+izbačena, rampa je opet jedan komad.
+
+### 15.7 Naplatne rampe i daska koja se diže (2026-08-26)
+
+*„toll booth treba da stoje između svakog uključenja na put iz smera grada i kad se
+diže rampa treba se diže samo ova daska ne cela rampa da se rotira."*
+
+> **Prekidač se zove `expressway.tollRoad` i uključen je — v. §15.9** za razlog i za
+> drugu polovinu posla (barijere na oba kraja debla). Mere ispod važe.
+
+**Naplatna na svakom ulazu.** Plan je imao jednu plazu, na pola ogranka, i ništa na
+četiri rampe priključka — grad sa dijamantom je bio grad u kom je autoput besplatan
+iz svih pravaca osim jednog. Sada `PlanRampTolls()`: svaka rampa **na** autoput
+(`!Falling`) dobija `TollGate` sa svojom kutijom u grafu, a `WireExpressway` deli tu
+rampu na **dva luka** oko kutije (kapija je čvor, a čvor mora da ima put sa obe
+strane). Kutija stoji na `max(12 m, Abutment(1 m)/2)` — dovoljno daleko od zaobljenja
+raskrsnice, dovoljno nisko da je još na ravnom (izmereno: kućica na `y = 0.26 m`).
+Ostrvo je **levo**, jer je tamo vozačev prozor i jer je tamo već i višak širine koji
+grlo otvara; obeleženo je punom linijom i linijom na kojoj se plaća.
+
+**Diže se samo daska.** `TollArm` je rotirao **koren** prefaba — dakle i stub: stvar
+je odvrtala sopstveni temelj iz zemlje, a ruka je opisivala konus oko puta umesto da
+se zaokrene nad njim. `FreewayKit.BoomOf()` nalazi deo koji se stvarno diže (merenjem,
+ne po imenu: ruka je deset puta duža od svega ostalog i nikad nije koren), a osa se
+prebaci u njegov sopstveni okvir. Provereno u Play-u: rotira se
+`SM_Prop_Barrier_Gate_01_Arm_01`, dete objekta `Toll boom`, na `(0, 0, 285)` — stub
+se ne pomera. Isto popravljeno i u `RoadDemoBuilder.Freeway.cs` (belt), koji je imao
+istu grešku sa istim prefabom.
+
+Uz to: `DeckMesh.Paint` je crtao najkraće jedan metar, pa je stop-linija ispadala
+bela ploča preko puta; sada `StopLine = 0.6 m`.
+
+Provereno slikama iz otvorenog editora (dva kotrljanja grada, drugi raspored svaki
+put): jedan asfalt bez šava, zaobljenja u sva četiri ugla, 4 naplatne na ulaznim
+rampama uz plazu na ogranku, rampa gore sa stubom na mestu.
+
+### 15.9 Gde barijera zaista pripada (2026-08-26)
+
+*„jel treba i tu naplatna rampa? aj logicki razmisli gde sve treba rampa i ispravi to."*
+
+**Pravilo.** Naplatna radi samo tamo gde je put **presek**: svako ko koristi ono što se
+naplaćuje prođe kroz nju tačno jednom, i niko drugi ne prođe uopšte.
+
+| deo puta | je li presek | zaključak |
+|---|---|---|
+| **grana** (krak ka luci / kopnu) | **jeste** — jedan ulaz, jedan izlaz | barijera na pola, već je tu (`PlanDiamond`); naplaćuje svaki auto koji pređe i nijedan drugi u gradu. To su i causeway-i po kojima je grad crtan naplaćivali 1987. |
+| **deblo** | nije — svaki priključak je i ulaz i izlaz | barijera preko kolovoza naplatila bi samo one koji baš tuda prolaze, a svi između dva priključka voze besplatno. **I nema gde**: priključci su na 800 m, pomoćne trake uzmu 340 m pre nosa i 400 m posle ulaza → **4 m** slobodnog debla, a plaza traži 200 (plan, §14.2/3) |
+| **rampe na autoput** | svaka jeste presek za „ulazak baš tu" | radi kao sistem — ravna tarifa, plaćena jednom, od svakog ko se uključi — **ali samo ako je svaki ulaz naplaćen**, a dva kraja debla su gradske raskrsnice koje ništa ne naplaćuju (`TerminalNodeFor`). Kako je bilo napravljeno: naplatna sa slobodnim vratima pored, plus stajanje na svakom ulasku |
+
+**Ispravka, isti krug:** *„da al mogu uđem u jedan blok i izađem u drugi blok a da ne
+platim ništa."* Tačno — i to je rupa koju „samo na grani" ostavlja: **sam autoput se
+tada ne naplaćuje uopšte**. Uđeš na jednom priključku, izađeš na sledećem, ne platiš
+ništa. Ako put treba da se plaća, jedini presek koji postoji je **svaki ulaz na njega**,
+a to su:
+
+1. **svaka rampa gore** sa arterije priključka i grane (`PlanRampTolls`);
+2. **oba kraja debla** — svaki kolovoz počinje na gradskoj raskrsnici i auto koji se tu
+   uključi nije prošao nijednu rampu. To je bila slobodna vrata pored naplatne.
+   Sada `PlanDeckTolls()`: jedna barijera po kolovozu, na **njegovom ušću** (kraju na
+   kom počinje). Dva kolovoza voze u suprotnim smerovima pa su im ušća na suprotnim
+   krajevima puta i par ih zatvara oba. Stoji na pola dužine koju deblo još vozi u
+   nivou, da plaza bude na ravnom a ne na usponu (`DeckFlatRun`).
+
+Deblo se za plazu **otvara** — ista mehanika kojom se otvara pomoćna traka
+(`DeckWidth` → `AuxHalf`), jer na kolovozu od 11.4 m nema gde da stane zgrada. Kućica se
+postavlja mereći sam komad (`FreewayKit.Measure`) uz ivicu aprona, a ruka ide **po jedna
+na traku**, sa stubom na daljoj ivici te trake: postavljena na bližu, ruka od 4.3 m
+pokrije svoju traku i stane na pola sledeće.
+
+Time se plaća **jednom, pri uključenju**, i niko ne može da pređe deonicu besplatno.
+Grana i dalje ima svoju barijeru povrh toga — to su dva objekta i dve naplate, kako i
+jeste (platiš autoput, pa platiš prelaz). `expressway.tollRoad` (bivši `rampTolls`) je
+**uključeno**; isključi ga i put je besplatan a naplaćuje se samo grana.
+
+### 15.8 Ulaz u grad: put se sužavao na poslednjoj raskrsnici (2026-08-26)
+
+*„uključenje u grad je isprekidano i glupo, povezuju se dve trake u jednu traku puta."*
+
+Uzrok se čita iz mera, bez slike:
+
+| šta | mera |
+|---|---|
+| gradska ulica (`StreetKit.LayAlongZ`) | kolovoz 10 m **+ traka 2.5 m sa svake strane** = `StreetHalf` 7.5 → **15 m** |
+| arterija priključka (`LayRoadAlongZ`) | **samo kolovoz** → **10 m** |
+| razlika | **2.5 m stepenice sa svake strane**, na poslednjoj raskrsnici pred izlazak iz grada |
+
+`LayRoadAlongX/Z` je kolovoz SAM — put u krugu fabrike, gde je tlo pored njega
+dvorišno. Ulica koja izlazi iz grada nije to. Zato nove `LayShouldersAlongX/Z`
+(iste `_roadBare` pločice koje i grad polaže) i arterija se polaže kolovoz + trake.
+
+**I bulevar je bio pomeren.** Kad je linija grida bulevar, arterija je polagala dva
+kolovoza na **±12.5**, a `LaneOffsets(true)` daje trake na **7.5 i 12.5** — kolovoz
+centriran na 10, ne na 12.5. Unutrašnja traka je vozila **sa jednim točkom preko
+ivice** asfalta. Sada se osa kolovoza računa kao **sredina traka koje nosi**, iz istog
+`LaneOffsets` iz kog se gradi i graf, pa asfalt i trake ne mogu da se raziđu. Trake za
+zaustavljanje se na podeljenom putu polažu samo sa **spoljne** strane, da ne uđu u
+razdelno ostrvo.
+
+Uz to je i `HalfRoad` arterije u grafu bio `StreetKit.RoadHalf` (5) umesto gradskog
+`StreetHalf` (7.5), a raskrsnica priključka se crtala po istom pogrešnom broju —
+oboje ispravljeno, pa je i zaobljena raskrsnica sada široka koliko i put.
+
+Provereno slikom za slučaj **ulice** (put izlazi iz grada u punoj širini, bez
+stepenice, ivice arterije se poklapaju sa ivicama gradske raskrsnice). Slučaj
+**bulevara** je uhvaćen na slici odozgo i poklapa se, ali merenje je sa slike a ne
+instrumentisano: editor je usred provere preuzela druga sesija.
 
 Provereno u otvorenom editoru (`open_scene` → `editor_play` → `capture_game_view`), ne
 računicom: znak „EXIT 1 / PORT / 1/2 MILE“ se čita sa kolovoza, lampe i konzole stoje na

@@ -307,6 +307,41 @@ namespace RoadDemo
         /// of the pavement either side of the square on that flank - the splayed kerb
         /// a lorry's turn needs; the street is laid without its pavement there
         /// (LayAlongX's southWalk/northWalk).</summary>
+        /// <summary>The strip either side of a carriageway, laid on its own: the same
+        /// bare asphalt a street in the town keeps its parked cars on, and out of town
+        /// the shoulder a car pulls off on to. Two and a half metres, which is what
+        /// takes a ten-metre carriageway out to the fifteen a street in this city is.
+        ///
+        /// Separate from LayRoadAlongX/Z because those are the carriageway ALONE - a
+        /// road in a yard, where the ground either side is the yard's own. A street that
+        /// carries on out of the town is not that: laid without its strips it stands
+        /// five metres narrower than the street it is welded to, and the road steps in
+        /// by a lane on each side at the junction.</summary>
+        public bool LayShouldersAlongX(float cz, float xFrom, float xTo, bool south = true, bool north = true)
+        {
+            if (!_loaded && !Load()) return false;
+            for (float mx = xFrom; mx < xTo - 0.1f; mx += Cell)
+            {
+                float len = Mathf.Min(Cell, xTo - mx);
+                if (south) PlaceTile(_roadBare, mx, cz - StreetHalf, 90, len, ParkLane);
+                if (north) PlaceTile(_roadBare, mx, cz + RoadHalf, 90, len, ParkLane);
+            }
+            return true;
+        }
+
+        /// <summary>The same, either side of a carriageway running along Z.</summary>
+        public bool LayShouldersAlongZ(float cx, float zFrom, float zTo, bool west = true, bool east = true)
+        {
+            if (!_loaded && !Load()) return false;
+            for (float mz = zFrom; mz < zTo - 0.1f; mz += Cell)
+            {
+                float len = Mathf.Min(Cell, zTo - mz);
+                if (west) PlaceTile(_roadBare, cx - StreetHalf, mz, 0, ParkLane, len);
+                if (east) PlaceTile(_roadBare, cx + RoadHalf, mz, 0, ParkLane, len);
+            }
+            return true;
+        }
+
         public bool LayJunction(float cx, float cz, bool capNorth = false, bool capSouth = false, bool capEast = false, bool capWest = false,
                                 int splaySouth = 0, int splayNorth = 0, float half = StreetHalf)
         {

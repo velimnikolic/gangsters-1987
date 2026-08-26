@@ -236,6 +236,186 @@ Dalje, redom kako se videlo:
   sve učitane scene i preskače particle sisteme (dimnjak koji ne svira prijavljuje prazne granice
   u koordinatnom početku i odvukao bi meru preko cele mape).
 
+### Druga runda: blokovi su bili preveliki (2026-08-26)
+
+Korisnik, pošto je video crtež: *„preveliku su, necu tolka prazna dvorista no kao velicina
+blockova sto je bila u industrial demo. ocu vise detalja."*
+
+**Mera je pala na meru klupe.** Parcela je bila 75–105 × 60–75 m, ostrvo do 3 parcele, svaki
+drugi red leđa uz leđa — što daje zidani kompaund od 315 × 150 m, kome se druga ograda ne vidi.
+Recept namesti ono što dobije, pa se gusto dvorište ne dobija sa više buradi nego sa **manjim
+dvorištem**. Sada:
+
+| | bilo | sada |
+|---|---|---|
+| parcela | 75–105 × 60–75 m | **60–85 × 55–70 m** |
+| parcela po ostrvu | 1–3 | **1–2** (deljena ograda 35 %) |
+| leđa uz leđa | svaki drugi red (50 %) | **25 %** |
+| dužina reda | 200–300 m | **150–230 m** |
+| kvart (seed 1987) | 505 × 485 m, 7 ostrva | **315 × 400 m, 7 ostrva, 13 parcela** |
+
+`Smallest` je pritom prepravljen da bude **mereno pročelje recepta + povlačenja**, ne
+zaokruženo naviše: radionica je FactoryOld (22.5) + kapija + Factory (24.4) = 55 m ulice, plus
+13.2 m povlačenja = 70 m. Prva tabela je sve zaokružila naviše „za svaki slučaj" i time
+proizvela baš ono što pod treba da spreči.
+
+**Uz to je zatvorena rupa u deljenju:** širina ostrva i podela reda kotrljale su se **odvojeno**
+(širina je zbir izvlačenja parcela, podela je zaseban novčić), pa je ostrvo od dva izvlačenja
+umelo da se vrati kao **jedna parcela od 140 m** — dvostruko preko onoga za šta je ijedan recept
+meren. `Split` sada ima i plafon, ne samo pod.
+
+**Detalj (krovovi, zidovi, korov, đubre) nije rađen ovde** — stigao je commit-om `66806ed9`
+(„A works wears its roof and its walls, the yard is weathered under the plant") i spojen je u
+`IndustrialBlocks.cs` prilikom rebase-a. Snimci iz prve runde su stariji od njega.
+
+### Treća runda: pumpe napolje (2026-08-26)
+
+Korisnik, gledajući crtež: *„sta ce pumpa ovde"* — pa, kad je ponuđeno da parcela postane
+transportno dvorište: *„pa ja sam za b al ne moze da izgleda kao komercijalna pumpa."*
+
+Recept `stop` (drumski servis) **izbačen je i zamenjen receptom `haulage`** (transportno
+dvorište). Šta je bilo pogrešno sa `stop`-om, tri stvari a korisnik je imenovao prvu:
+
+1. **Izgledao je kao maloprodajna pumpa** — jer je to i bio: `FuelStation.Stand` diže ceo
+   Townov klaster, nadstrešnicu, totem sa cenama i `SM_Bld_Shop_01` sa prodavnicom unutra
+   (slushie mašina, zamrzivač za sladoled, grejač za hot-dog).
+2. **Bio je duplikat.** Isti taj klaster grad već diže na putevima **između** kvartova
+   (`RoadDemoBuilder.Wayside`) — i tamo mu je mesto.
+3. **Bio je jedina neograđena i jedina šarena parcela** u kvartu koji je inače zidan, siv i
+   nizak, pa je oko prvo odlazilo na nju.
+
+`haulage` je ono što radna zona stvarno ima, i svaka razlika od benzinske je namerna:
+
+- **ostrvo sa dve pumpe i ništa iznad njih** — bez nadstrešnice;
+- **rezervoar u sopstvenom bundu iza ostrva**, odakle dizel i dolazi; to je komad koji kaže
+  „ovo se ne prodaje";
+- **bez prodavnice, bez table sa cenama, bez totema**;
+- **žičana ograda sa kapijom** oko svega, kao svako drugo dvorište ovde;
+- pročelje: garaža za flotu (`building-depot-garage`) + radionica (`building-workshop`), kapija
+  u procepu; unutra boksovi sa kamionima, pranje sa crevom uz garažu, portirnica.
+
+**Kantina je probana i izbačena.** Transportni bife na kapiji jeste stvarna stvar, ali prefab
+za njega je hromirani drumski **diner** — i među ciglanim radionicama postao je najglasnija
+stvar na parceli, isti prigovor koji je izbacio nadstrešnicu, jednu zgradu dalje.
+
+Enum je preimenovan `Recipe.Stop` → `Recipe.Haulage`; klupa i dalje prima `--recipe stop` kao
+sinonim.
+
+**Dvorište je JEDNO, a ne dva.** Prvo su obe zgrade stajale sa strane centralne kapije, pa je
+prilaz — koji ide od puta do zadnje ograde i **zauzima tlo dok prolazi** — presekao dvorište na
+pojas od 24 m i pojas od 12 m. Boks je 10 m: širi pojas primi dve kolone, uži jednu, i cela
+parcela je ispala sa **tri boksa**. Sa obe zgrade uz zapad i kapijom na istočnom kraju pročelja,
+parking je jedan pravougaonik i primi četiri puta više.
+
+**Pumpe su odbijale sopstvena ostrva.** `Prop` traži mesto, a ostrvna baza je to mesto već
+zauzela — svaka pumpa je bila odbijena baš onim čemu pripada, pa je dvorište dobilo golo ostrvo
+bez pumpi. Pumpe sada idu kroz `Atop`, koji ne knjiži tlo, jer i stoje NA ostrvu.
+
+**Saobraćaj se sada računa iz dužine puteva.** Fiksnih 18 vozila je mereno na kvartu od
+505 × 485 m i prošlo pet runova bez ijednog odbijanja; istih 18 na kvartu od 315 × 400 m dalo je
+**48 odbijanja pojasa** — nije greška u putevima nego previše saobraćaja na premalo njih.
+`IndustrialDistrict.carCount = 0` znači „izračunaj sam": jedno vozilo na **4200 m²** puta, 6–24.
+
+Broj je prvo bio 3400, očitan sa **jednog** runa koji je prošao — a jedan run nije očitavanje.
+Na pet runova ta gustina je dala četiri čista i jedan sa **605 odbijanja pojasa**, koja rastu od
+nule na 95. sekundi do 605 na 180. Niko nije bio zaključan (najduže stajanje 23 s), dakle
+zagušenje koje se nakuplja, što je tačno ono kako previše vozila na premalo raskrsnica izgleda
+kako run odmiče. 4200 je isto očitavanje sa rezervom koju je prvi broj trebalo da ima: mali kvart
+ide sa dvanaest vozila na deset, veliki ostaju gde su bili (ionako su ograničeni na 24).
+Posle toga: seed 1987 diže **10 vozila**, i **5/5 PASSED, 0 odbijanja**, najduže stajanje 12–20 s.
+
+**Merenje u deljenom editoru — dve zamke koje su nas obe koštale runova** (2026-08-26, dve sesije
+u istom checkout-u):
+
+1. `gangsters_play` puca na „already in play mode" kad Play vidi — ali ako Play krene *trenutak
+   posle* njega, harness mirno trasira šta god da se vrti. Jedan run je prijavio **20.086
+   odbijanja pojasa**, a `play.log` je nabrajao „Airport Airside / Harbor Quay / Suburb Lots":
+   to je bio `Game.unity` druge sesije, ne ovaj kvart. **Presudu uvek proveri protiv `play.log`
+   pre nego što je poveruješ.**
+2. **Recompile dok Play traje ne radi domain reload** dok se Play ne zaustavi, pa `eval` posle
+   njega gleda scenu čiji objekti prethode izmeni. `editor_stop` → potvrdi `playMode: stopped`
+   → pa tek onda meri.
+
+### Četvrta runda: pločnik pod zgradom i unutrašnji ivičnjak (2026-08-26)
+
+Korisnik: *„pavement mora da bude ispod i oko svake zgrade, ne sme zgrada da stoji na pola
+pavementa a na pola da je put. takodje unutrasnji pavement bi valjalo da ima ivicnjak isto i da
+prati uglove."*
+
+**Prvo je bila prava greška, i to dvostruka.** `Claim` postavlja `_laid` samo za ćelije koje
+otisak pokriva **celu** — što je tačan test za polaganje poda (ćelija zagrabljena do pola i dalje
+hoće svoju pločicu), ali pogrešan za sve ostalo. Prilaz (`Corridor`) i kapija (`Gateway`) su
+čitali baš `_laid`, pa su oboje slobodno provlačili put kroz polovinu ćelije na kojoj zgrada
+stoji. `Gateway` je uz to ćeliju **prvo pretvarao u asfalt pa tek onda primetio zgradu na njoj**:
+
+```
+_floor[At(i, j)] = Surface.Asphalt;
+if (_laid[At(i, j)]) break;          // a building: done  ← prekasno
+```
+
+Sada postoji `Block.Apron(i, j)` — tlo koje zgrada dodiruje, cele i polovične ćelije jednako — i
+ni prilaz ni kapija ga ne uzimaju. Uz to `Surfaces` na kraju **izričito** prebaci svaku
+apron-ćeliju na pločnik: zgrada stoji na jednoj površini, i ta površina je ova.
+
+**Mera, da se ne oslanja na oko:** `Block.Straddles()` broji zgrade koje stoje na više od jedne
+površine. Ide u isti izveštaj uz rupe u podu i ograde, i **mora biti 0**.
+
+**Drugo je nova stvar.** Unutrašnji pločnik sada nosi isti ivičnjak kao ulični, sa uglovima:
+`Block.Inside()` prolazi rub popločanog dela prema **sopstvenom dvorištu** i polaže
+`Sidewalk_Straight` / `Sidewalk_Corner` istim pravilom okretanja. Dva ograničenja:
+
+- **samo tamo gde zgrada ne stoji**, pa ivičnjak opasuje apron spolja umesto da prolazi ispod
+  hale na njemu;
+- **samo prema sopstvenom radnom tlu**, nikad prema deljenoj ogradi — s one strane je komšija,
+  ne put.
+
+Pravilo okretanja je izvučeno u `Block.LayKerb`, pa spoljni prsten i unutrašnja ivica postavljaju
+isto pitanje na istom mestu.
+
+Provereno: seed 1987, 13 parcela → **0 rupa u podu, 0 m ograde koja fali, 0 komada ograde u
+zgradi, 0 zgrada na dve površine**; harness 3/3 PASSED, 0 odbijanja pojasa.
+
+### Peta runda: blok se klikne i kaže šta je (2026-08-26)
+
+Korisnik: *„svaki od ovih blokova mora da je klikable kao u game sceni gde mogu da vidim sta je."*
+
+Sistem je već postojao i nije pravljen nov: `BuildingCardPicker` (`Assets/Scripts/Camera`) je
+ista klik-kartica koju vozi grad, a `StandaloneDistrictHost` je već kači na kameru svakog demoa
+sa `pickRoot`. Falila su parcelama dva komada: **kolajder na koji se klikne** i **tekst koji ima
+šta da kaže**.
+
+- **`RoadDemo.CardFacts`** (novo): naslov, telo i kutija koju je ostavio onaj ko je stvar
+  *sagradio*. Picker ume da pročita ime transforma i izmeri granice — tačan odgovor za pečenu
+  zgradu na polici, i skoro nikakav za nešto komponovano: klik na industrijsku parcelu treba da
+  odgovori „stovarište, dve hale, tri reda kontejnera", a nijedna od tih reči ne preživi u
+  transformu. Ko nema `CardFacts`, ponaša se tačno kao pre.
+- **Kutija je LOKALNA, ne svetska.** Kvart se diže u koordinatnom početku i tek onda pomeri, pa
+  je svetska kutija uzeta pri gradnji kutija za mesto gde je kvart tada stajao. `WorldBox()`
+  prevodi osam ćoškova u trenutku pitanja.
+- **Kutija se uzima pri gradnji, ne pri kliku**, jer perf-prolaz domaćina spoji rendere i odnese
+  ih iz parcele: dok neko klikne, parcela često nema nijedan render da se izmeri.
+- **Jedna kutija po PARCELI, ne po zgradi.** Pitanje je „šta je ovo", a odgovor nije ime prefaba
+  hale koja se zatekla pod kursorom.
+- **Kutija je TRIGGER.** Puna, ona je blok od tla do krova preko cele parcele — što bi u gradu
+  gutalo svaki metak i svakog pešaka koji pređe preko njega. Trigger i dalje odgovara na
+  `Physics.RaycastAll` (`queriesHitTriggers` je podrazumevano uključen, picker se na to oslanja)
+  a ne zaustavlja ništa.
+- **Kartica broji ono što je STALO, ne što je recept tražio.** Recept odbija ono što ne stane, pa
+  to nisu iste stvari, a vredi čitati onu koja se vidi.
+- Panel sada raste sa tekstom; bio je fiksiran na 100 px, što je odgovaralo pickerovim
+  sopstvenim dvema linijama i tiho seklo sve preko toga.
+
+Izgleda ovako: *Works — 80 x 55 m, fronts south — 4 buildings, 1 chimney — 1 vehicle*, uz blok
+pozlaćen kao u gradu. Provereno u Play-u pravim klikom; harness 3/3 PASSED, 0 odbijanja.
+
+**Imenovanje zgrada za grad** (`IndustrialDistrict.BlockTheBuildings`): svaka zgrada se prijavljuje
+kroz `IDistrictHost.Blocked` pod **svojim** imenom sa parcelom u zagradi —
+`building-factory (works-02)`. Prvo je slala ime PARCELE svakoj zgradi u njoj, prepisano iz
+jezgra — a jezgro je jedino od četiri kvarta koje to radi: luka, predgrađe i aerodrom svi šalju
+`t.name` pojedinačnog komada. Parcela ostaje u nizu jer ono što ovo čita razvrstava po imenu, pa
+je „works" ili „plant" u njemu ono što kaže *fabrička hala*; „building-factory" samo za sebe toj
+proveri ne znači ništa i pada na pogađanje po otisku.
+
 **Odstupanja od plana, sa razlogom:**
 
 - **arterija je 35 m, ne 15 m.** Sa svim putevima od 15 m kvart je odozgo rešetka jednakih ulica

@@ -55,7 +55,6 @@ namespace RoadDemo
         const string GangProps = "Assets/Synty/PolygonGangWarfare/Prefabs/Props/";
         const string GangVeh = "Assets/Synty/PolygonGangWarfare/Prefabs/Vehicles/";
         const string PalmProps = "Assets/Synty/PolygonPalmCity/Prefabs/Props/";
-        const string PalmSigns = "Assets/Synty/PolygonPalmCity/Prefabs/Signs/";
         const string GenProps = "Assets/Synty/PolygonGeneric/Prefabs/Props/";
         const string GenEnv = "Assets/Synty/PolygonGeneric/Prefabs/Environment/";
         const string GenBase = "Assets/Synty/PolygonGeneric/Prefabs/Base/";
@@ -130,7 +129,7 @@ namespace RoadDemo
         const string PowerLine = PalmProps + "SM_Prop_Powerline_01.prefab";
         const string Hydrant = PalmProps + "SM_Prop_Fire_Hydrant_01.prefab";
         const string GasPumpBase = TownProps + "SM_Prop_Gaspump_Base_01.prefab";
-        const string FuelSign = PalmSigns + "SM_Sign_Fuel_01.prefab";
+        const string HoseReel = TownProps + "SM_Prop_HoseReel_01.prefab";
 
         static readonly string[] Chemicals =
         {
@@ -573,6 +572,39 @@ namespace RoadDemo
                 return false;
             }
 
+            /// <summary>
+            /// Ground a building stands on, whole cells and part cells alike.
+            ///
+            /// This is the difference between the rule and the bug. <c>_laid</c> is set by
+            /// <see cref="Claim"/> only for cells a footprint covers ENTIRELY, because that
+            /// is the right test for flooring - a cell lapped halfway still wants its tile.
+            /// It is the wrong test for everything else: the drive and the gateway both read
+            /// it, so both were free to run road straight through the half of a cell a
+            /// building was standing on, and the building came out with its front on
+            /// pavement and its flank on tarmac.
+            /// </summary>
+            bool Apron(int i, int j)
+            {
+                var cell = new Rect(i * Cell, j * Cell, Cell, Cell);
+                foreach (var foot in _footprints)
+                    if (foot.Overlaps(cell)) return true;
+                return false;
+            }
+
+            /// <summary>Is this cell the block's PAVEMENT - a plate, or a kerb tile of the
+            /// outer ring? The drive is not: it is road cut through the pavement, and the
+            /// pavement it passes wants a kerb against it like any other edge.</summary>
+            bool Pave(int i, int j)
+            {
+                if (!Held(i, j)) return false;
+                if (_drive[At(i, j)] || _corridor[At(i, j)]) return false;
+                return Kerbed(i, j) || _floor[At(i, j)] == Surface.Plate;
+            }
+
+            /// <summary>The block's own working ground: held, and not pavement. What an
+            /// inside kerb faces.</summary>
+            bool Bare(int i, int j) => Held(i, j) && !Pave(i, j);
+
             /// <summary>The block's outline, kerb or fence alike.</summary>
             bool Rim(int i, int j)
             {
@@ -629,8 +661,11 @@ namespace RoadDemo
                     for (int j = first + 1; j < NZ; j++)
                     {
                         // it stops at the far boundary, kerb or fence: a drive that runs
-                        // into the neighbour's yard is not a drive
-                        if (!Held(i, j) || Rim(i, j) || _laid[At(i, j)]) break;
+                        // into the neighbour's yard is not a drive. And it stops at a
+                        // building's ground, ANY part of it - not just the cells a building
+                        // fills whole, which is what let it take half a cell out from under
+                        // a shed and leave it standing on two surfaces
+                        if (!Held(i, j) || Rim(i, j) || _laid[At(i, j)] || Apron(i, j)) break;
                         _floor[At(i, j)] = Surface.Asphalt;
                         _corridor[At(i, j)] = true;
                         last = j;
@@ -1358,6 +1393,15 @@ namespace RoadDemo
                         if (walk) _floor[At(i, j)] = Surface.Plate;
                     }
 
+                // and then, over the top of all of it: EVERY cell a building touches is
+                // pavement. The skirt above already reaches them, but saying it outright is
+                // what makes it a rule rather than a consequence - a building stands on one
+                // surface, and it is this one.
+                for (int j = 0; j < NZ; j++)
+                    for (int i = 0; i < NX; i++)
+                        if (Held(i, j) && !Kerbed(i, j) && Apron(i, j))
+                            _floor[At(i, j)] = Surface.Plate;
+
                 Gateway();
             }
 
@@ -1381,8 +1425,11 @@ namespace RoadDemo
                     {
                         if (!Held(i, j) || Rim(i, j)) break;
                         if (_floor[At(i, j)] != Surface.Plate) break;   // the yard: done
+                        // a building's ground is NOT the gateway's to take. It used to set
+                        // the cell to road and THEN notice the building on it, which is
+                        // precisely a building standing half on pavement and half on road
+                        if (Apron(i, j)) break;
                         _floor[At(i, j)] = Surface.Asphalt;
-                        if (_laid[At(i, j)]) break;                     // a building: done
                     }
                 }
             }
@@ -1417,29 +1464,100 @@ namespace RoadDemo
                         bool west = Open(i, j, -1, 0), east = Open(i, j, 1, 0);
                         bool south = Open(i, j, 0, -1), north = Open(i, j, 0, 1);
                         if (!west && !east && !south && !north) continue;
-
-                        bool corner = !(west && east) && !(south && north) &&
-                                      ((east && north) || (east && south) ||
-                                       (west && south) || (west && north));
-
-                        string tile;
-                        float yaw;
-                        if (corner)
-                        {
-                            tile = KerbCorner;
-                            yaw = east && north ? 0f
-                                : east && south ? 90f
-                                : west && south ? 180f : 270f;
-                        }
-                        else
-                        {
-                            tile = Kerb;
-                            yaw = south ? 180f : north ? 0f : west ? 270f : 90f;
-                        }
-
-                        _laid[At(i, j)] =
-                            IndustrialBlocks.Lay(tile, Root, i * Cell, j * Cell, Cell, Cell, yaw) != null;
+                        LayKerb(i, j, west, east, south, north);
                     }
+
+                Inside();
+            }
+
+            /// <summary>
+            /// The kerb round the pavement INSIDE the block, corners and all.
+            ///
+            /// The yard is tarmac and the ground a building stands on is concrete, and where
+            /// the two meet there is a kerb - the same kerb, turning the same corners, as the
+            /// one at the street. Without it the apron was a flat plate butted against the
+            /// asphalt with nothing but a change of colour between them, which from a car is
+            /// no edge at all.
+            ///
+            /// It goes wherever pavement meets the block's own working ground, and the ONLY
+            /// thing that stops it is a building standing on the stone itself.
+            ///
+            /// The first rule was "not where a building stands", meaning any cell a footprint
+            /// touched - and a footprint usually takes a corner of a cell and stops, so the
+            /// very cells that ARE the pavement's edge were the ones ruled out, and half the
+            /// aprons came out unkerbed. What matters is not whether the building is in the
+            /// cell but whether it is on the 90 cm of it the stone occupies, which is what
+            /// <see cref="Clear"/> asks.
+            ///
+            /// Against a shared fence there is no kerb at all: the thing on the far side is
+            /// the neighbour, not a road.
+            /// </summary>
+            void Inside()
+            {
+                for (int j = 0; j < NZ; j++)
+                    for (int i = 0; i < NX; i++)
+                    {
+                        if (!Held(i, j) || _laid[At(i, j)]) continue;
+                        if (_floor[At(i, j)] != Surface.Plate) continue;
+
+                        bool west = Bare(i - 1, j) && Clear(i, j, -1, 0);
+                        bool east = Bare(i + 1, j) && Clear(i, j, 1, 0);
+                        bool south = Bare(i, j - 1) && Clear(i, j, 0, -1);
+                        bool north = Bare(i, j + 1) && Clear(i, j, 0, 1);
+                        if (!west && !east && !south && !north) continue;
+                        LayKerb(i, j, west, east, south, north);
+                    }
+            }
+
+            /// <summary>Is the strip of this cell the kerb stone would stand on free of every
+            /// building? A kerb under a shed is a kerb nobody can see, and a shed standing on
+            /// a step.</summary>
+            bool Clear(int i, int j, int di, int dj)
+            {
+                const float Stone = 0.9f;
+                float x = i * Cell, z = j * Cell;
+                var strip = di < 0 ? new Rect(x, z, Stone, Cell)
+                          : di > 0 ? new Rect(x + Cell - Stone, z, Stone, Cell)
+                          : dj < 0 ? new Rect(x, z, Cell, Stone)
+                                   : new Rect(x, z + Cell - Stone, Cell, Stone);
+                foreach (var foot in _footprints)
+                    if (foot.Overlaps(strip)) return false;
+                return true;
+            }
+
+            /// <summary>
+            /// One kerb tile, facing the sides given.
+            ///
+            /// Which way it faces is not guessed at. The street kit lays a road's south
+            /// pavement at yaw 0, which puts the raised stone on the tile's +Z side, and
+            /// every other side follows from that; the corner piece carries its stone on +X
+            /// and +Z at yaw 0, so a north-east corner is 0 and the other three are quarter
+            /// turns from it. The outer ring and the inside edge want the same answer, so
+            /// they ask the same question here.
+            /// </summary>
+            void LayKerb(int i, int j, bool west, bool east, bool south, bool north)
+            {
+                bool corner = !(west && east) && !(south && north) &&
+                              ((east && north) || (east && south) ||
+                               (west && south) || (west && north));
+
+                string tile;
+                float yaw;
+                if (corner)
+                {
+                    tile = KerbCorner;
+                    yaw = east && north ? 0f
+                        : east && south ? 90f
+                        : west && south ? 180f : 270f;
+                }
+                else
+                {
+                    tile = Kerb;
+                    yaw = south ? 180f : north ? 0f : west ? 270f : 90f;
+                }
+
+                _laid[At(i, j)] =
+                    IndustrialBlocks.Lay(tile, Root, i * Cell, j * Cell, Cell, Cell, yaw) != null;
             }
 
             /// <summary>Does the block's pavement face the street in this direction? Off the
@@ -1567,6 +1685,34 @@ namespace RoadDemo
                 }
             }
 
+            /// <summary>
+            /// Buildings standing on more than one surface - the fault the drive and the
+            /// gateway kept making, and the one a screenshot shows plainly the moment
+            /// somebody looks for it: a shed with its front on concrete and its flank on
+            /// tarmac, because half a cell of its ground was floored as road.
+            ///
+            /// Counted rather than eyeballed, and nought is the only passing answer.
+            /// </summary>
+            public int Straddles()
+            {
+                int split = 0;
+                foreach (var foot in _footprints)
+                {
+                    bool two = false;
+                    int i0 = Mathf.FloorToInt(foot.xMin / Cell), i1 = Mathf.CeilToInt(foot.xMax / Cell) - 1;
+                    int j0 = Mathf.FloorToInt(foot.yMin / Cell), j1 = Mathf.CeilToInt(foot.yMax / Cell) - 1;
+                    for (int i = Mathf.Max(0, i0); i <= Mathf.Min(NX - 1, i1) && !two; i++)
+                        for (int j = Mathf.Max(0, j0); j <= Mathf.Min(NZ - 1, j1) && !two; j++)
+                        {
+                            if (!Held(i, j) || Kerbed(i, j)) continue;   // the ring is its own tile
+                            if (_floor[At(i, j)] != Surface.Plate ||
+                                _drive[At(i, j)] || _corridor[At(i, j)]) two = true;
+                        }
+                    if (two) split++;
+                }
+                return split;
+            }
+
             /// <summary>Cells of the block with nothing on the floor at all, which a block
             /// dropped into the city would be seen straight through.</summary>
             public int Gaps()
@@ -1632,7 +1778,7 @@ namespace RoadDemo
                 case IndustrialLayout.Recipe.Depot: Depot(block, rng); break;
                 case IndustrialLayout.Recipe.Yard: Stockyard(block, rng); break;
                 case IndustrialLayout.Recipe.Strip: Strip(block, rng); break;
-                case IndustrialLayout.Recipe.Stop: Stop(block, rng); break;
+                case IndustrialLayout.Recipe.Haulage: Haulage(block, rng); break;
                 case IndustrialLayout.Recipe.Fuel: TankFarm(block, rng); break;
                 case IndustrialLayout.Recipe.Waste: Wasteland(block, rng); break;
                 default: Works(block, rng); break;
@@ -1976,56 +2122,127 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// The truck stop: the pack's own filling station on the frontage, a diner beside it,
-        /// and lorry bays behind.
+        /// The haulage yard: the estate's lorries, where they are kept, fuelled and mended.
         ///
-        /// No wall and no gate - a forecourt is open to the road by definition, and that is
-        /// exactly what makes it read at a glance among a mile of fenced yards. The station
-        /// itself is <see cref="FuelStation.Stand"/>, the same forecourt the city's wayside
-        /// runs, so it comes wired: bays a car can book, a nozzle to stand at, and a shop
-        /// door that opens. Nothing drives it here yet - that is the district's to do - but
-        /// the plan is already right, and nothing about it has been measured twice.
+        /// It was a TRUCK STOP - the Town pack's whole filling station, canopy and price
+        /// board and a convenience shop with a slushie machine in it, standing unfenced on
+        /// the corner. Three things were wrong with that and the user named the first: it
+        /// looked like a commercial forecourt. It also duplicated the wayside station the
+        /// city already stands on the roads between its districts, from the same cluster;
+        /// and it was the one unwalled, brightly-coloured parcel in a quarter whose whole
+        /// character is walled, grey and low, so it was the first thing the eye went to.
+        ///
+        /// What replaces it is what an estate actually has. The fuel here is a FLEET
+        /// installation, and every difference from a forecourt is deliberate:
+        ///
+        ///   - a raised island with two pumps on it and nothing over them. No canopy.
+        ///   - a bulk tank standing behind the island in its own bund, which is where the
+        ///     diesel comes from and is the thing that says "this is not for sale".
+        ///   - no shop, no price board, no pole sign.
+        ///   - and a wire fence with a gate round the lot of it, like every other yard here.
+        ///
+        /// Nothing on it is retail, down to the frontage: the canteen that stood there first
+        /// was the pack's chrome roadside diner, which broke the same rule the forecourt did.
         /// </summary>
-        static void Stop(Block block, System.Random rng)
+        static void Haulage(Block block, System.Random rng)
         {
-            block.Wall = Wall.None;
+            block.Wall = Wall.Wire;
 
-            // the forecourt on the frontage, its own +Z turned to face the street
-            float canopyX = block.In + 12f;
-            float canopyZ = block.Near + 9f;
-            var forecourt = new Rect(canopyX - 9f, block.Near, 22f, 26f);
-            block.Book(forecourt);
-            Forecourt(block, canopyX, canopyZ);
+            // the frontage: the fleet garage and the fitter's shop, with the gate between.
+            //
+            // The canteen was tried here and taken out again. A transport cafe at the gate is
+            // a real thing, but the prefab for it is a chrome-and-neon roadside DINER, and
+            // stood among brick works it became the loudest thing on the parcel - the same
+            // objection that took the forecourt out, one building over. The rule that governs
+            // is the one the user gave: nothing here may read as retail.
+            // BOTH buildings sit together and the gate takes the far end of the frontage,
+            // which is what leaves one yard instead of two.
+            //
+            // They stood either side of a central gate first, and the drive - which runs from
+            // the road to the back fence and books its ground as it goes - cut the yard into
+            // a 24 m strip and a 12 m one. A lorry bay is 10 m wide: the wide strip took two
+            // columns, the narrow one took a single column, and the whole yard came out with
+            // three bays in it. With the drive against one edge the parking is one rectangle
+            // and holds four times as many.
+            var garage = block.Put(DepotGarage, block.In, block.Near, 180f);
+            var shopFoot = Foot(Workshop, 180f);
+            float fittersAt = garage.width > 0f ? garage.xMax + 1.5f : block.In;
+            var fitters = block.Put(Workshop, Mathf.Min(fittersAt, block.Out - shopFoot.x),
+                                    block.Near, 180f);
+            float built = Mathf.Max(garage.width > 0f ? garage.xMax : block.In,
+                                    fitters.width > 0f ? fitters.xMax : block.In);
+            block.Way = Gate(block, built + 1.5f, block.Out);
 
-            // the diner, set back beside it with its own front on the street
-            var dinerFoot = Foot(Diner, 180f);
-            var diner = block.Put(Diner, Mathf.Min(block.Out - dinerFoot.x, forecourt.xMax + 6f),
-                                  block.Near + 1f, 180f);
+            float from = Mathf.Max(Mathf.Max(garage.yMax, fitters.yMax), block.Near + 2f) + 2f;
 
-            // and the lorry park behind: bays across the back, the row a lorry can turn in
-            float bayZ = Mathf.Round((block.Near + 28f) / Cell) * Cell;
-            for (float x = Mathf.Round(block.In / Cell) * Cell + Cell; x + Cell * 2f <= block.Out; x += Cell * 2f)
-                block.Bay(x, bayZ, 0f);
-            // the lorries that are stopped here, one to a pair of bays down the row
-            for (float x = block.In + 8f; x < block.Out - 6f; x += Cell * 2f)
+            // the yard: everything inside the drive, behind the buildings, in ONE piece
+            float driveAt = block.Way.y > block.Way.x ? block.Way.x - 2f : block.Out - 2f;
+            var yard = Rect.MinMaxRect(block.In + 1.5f, from,
+                                       Mathf.Max(block.In + 3f, driveAt), block.Far - 1.5f);
+
+            // ---- the fuel island, on the west flank, and the whole point of the recipe
+            //
+            // Laid by hand rather than through the pack's cluster: the cluster IS the
+            // forecourt, canopy and shop and all, and there is no way to ask it for just the
+            // pumps. Two bases end to end make one island; the pumps stand back to back on
+            // it, which is how a two-hose fleet pump is arranged so a lorry can take either
+            // side.
+            //
+            // The pumps go down with Atop and NOT with Prop, because they stand ON the island
+            // and the island has just booked that ground - asked for room, each of them was
+            // refused by the very thing it belongs to, and the yard came out with a bare
+            // island and no pumps on it.
+            if (yard.width > 12f)
             {
-                if (Chance(rng, 0.35)) continue;
-                block.Prop(Chance(rng, 0.6) ? BoxLorry : TownLorry, x, bayZ + Cell * 0.5f, 0f);
+                // against the back fence, clear of the parking, which is where a yard puts
+                // its pump: a lorry fills up on the way to its bay, not across it
+                float islandX = Mathf.Min(yard.xMin + 9f, yard.center.x);
+                float islandZ = Mathf.Max(from + 4f, block.Far - 20f);
+                var bar = Foot(GasPumpBase, 0f);
+                block.Prop(GasPumpBase, islandX - bar.x * 0.5f, islandZ, 0f);
+                block.Prop(GasPumpBase, islandX + bar.x * 0.5f, islandZ, 0f);
+                float onIsland = Mathf.Max(0f, Box(GasPumpBase).max.y - Deck);
+                block.Atop(GasPump, islandX - 1.85f, islandZ, 0f, onIsland);
+                block.Atop(GasPump, islandX + 1.85f, islandZ, 180f, onIsland);
+                // a bollard at either end, which is what stops a reversing trailer taking the
+                // pumps off their island
+                block.Prop(Bollard, islandX - bar.x - 1.4f, islandZ, 0f);
+                block.Prop(Bollard, islandX + bar.x + 1.4f, islandZ, 0f);
+                block.Prop(DangerSign, islandX, islandZ - 3.2f, 0f);
+
+                // the tank the diesel comes out of, bunded, standing behind the island
+                float tankZ = Mathf.Min(islandZ + 11f, block.Far - 6f);
+                float half = Mathf.Min(6f, yard.width * 0.5f - 1f);
+                if (block.Tank(islandX, tankZ, Mathf.Min(4.5f, half * 1.4f), 6f) != null)
+                {
+                    Bund(block, Rect.MinMaxRect(islandX - half, tankZ - 5f, islandX + half, tankZ + 5f));
+                    block.Prop(Ladder, islandX + half - 1f, tankZ, 270f);
+                    block.Prop(KeepOut, islandX - half, tankZ - 6.5f, 0f);
+                }
             }
 
-            var yard = Rect.MinMaxRect(block.In + 2f, bayZ + Cell + 2f, block.Out - 2f, block.Far - 2f);
-            block.Prop(Dumpster, block.Out - 4f, yard.yMin + 2f, 90f);
-            // and the way in, which for a forecourt is the WHOLE frontage: the pavement
-            // stops and the apron comes out to the road. Set last, so the drive it lays
-            // stops against the forecourt instead of running the depth of the parcel.
-            //
-            // Without it the block was open to the road in the doc and kerbed all the way
-            // across in the scene - the station's own mouths (FuelStation.MouthIn/Out) sat
-            // behind a raised kerb with no crossover cut to reach them.
-            block.Way = Gate(block, forecourt.xMin, forecourt.xMax);
-            if (diner.width > 0f) block.Prop(Barrier, diner.center.x, diner.yMax + 1.5f, 0f);
-            Lamps(block, Rect.MinMaxRect(block.In + 2f, block.Near + 4f, block.Out - 2f, bayZ), 3);
-            block.Scatter(Cone, rng.Next(1, 3), yard, 20f);
+            // ---- the lorry park down the east flank, and across the back of the west one
+            float lane = Cell * 2f;
+            for (float z = Mathf.Round(from / Cell) * Cell; z + lane <= yard.yMax; z += lane)
+                for (float x = Mathf.Round(yard.xMin / Cell) * Cell; x + lane <= yard.xMax + 1f; x += lane)
+                    block.Bay(x, z, 0f, Chance(rng, 0.5) ? (Chance(rng, 0.6) ? BoxLorry : TownLorry) : null);
+
+            // ---- the wash-down, against the garage where the drain is
+            if (garage.width > 0f)
+            {
+                block.Prop(HoseReel, garage.xMin + 1.5f, garage.yMax + 2f, 0f);
+                block.Prop(Bollard, garage.xMin + 4.5f, garage.yMax + 2f, 0f);
+            }
+
+            // ---- the office, the fitter's clutter, and whatever ground is left on each side
+            var hut = block.Put(YardShed, block.In, block.Far - Foot(YardShed, 0f).y, 0f);
+            block.Prop(Forklift, Mathf.Min(yard.xMax - 3f, block.In + 6f), from + 1f, 90f);
+            block.Prop(PropaneTall, block.In + 3f, from + 6f, 0f);
+            block.Prop(Dumpster, yard.xMax - 2.5f, from + 2f, 90f);
+
+            FillYard(block, yard, rng, stacked: true);
+            Lamps(block, Rect.MinMaxRect(block.In + 2f, from, block.Out - 2f, block.Far - 2f), 3);
+            Gatepost(block, rng);
         }
 
         /// <summary>
@@ -2585,18 +2802,5 @@ namespace RoadDemo
             block.Fix(Bollard, block.Way.y - 0.5f, Cell + 1.6f, 0f);
         }
 
-        /// <summary>The pack's whole filling station, canopy and pumps and store, turned so
-        /// its front faces the block's own street.</summary>
-        static void Forecourt(Block block, float x, float z)
-        {
-            var turn = Quaternion.Euler(0f, 180f, 0f);
-            var anchor = new Vector3(x, Deck, z);
-            // the cluster's frame has +Z facing the road; turned about, the kerb line sits
-            // this far along its own +Z
-            float crossZ = z - Cell;
-            FuelStation.Stand(block.Root, anchor, turn, Deck, crossZ);
-            var sign = Sit(FuelSign, block.Root, x, block.Near + 2f, 180f, Deck + 4.5f);
-            if (sign != null) sign.name = "fuel sign";
-        }
     }
 }

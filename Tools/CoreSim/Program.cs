@@ -20,6 +20,8 @@ static class Program
     {
         int seed = 1, count = 1;
         bool synty = false, map = false, rows = false, tiles = false, stats = false, industrial = false;
+        bool park = false, sweep = false;
+        string size = "";
         int deal = -1;
         string file = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "blocks.txt");
         for (int i = 0; i < args.Length; i++)
@@ -30,6 +32,9 @@ static class Program
                 case "--count": count = int.Parse(args[++i]); break;
                 case "--synty": synty = true; break;
                 case "--industrial": industrial = true; break;
+                case "--park": park = true; break;
+                case "--size": size = args[++i]; break;
+                case "--sweep": sweep = true; break;
                 case "--map": map = true; break;
                 case "--rows": rows = true; break;
                 case "--tiles": tiles = true; break;
@@ -40,6 +45,7 @@ static class Program
                 default: Console.WriteLine("unknown " + args[i]); return 2;
             }
         }
+        if (park) return Parks(seed, count, size, map, sweep);
         if (industrial) return Industry(seed, count, deal, map, rows, stats);
 
         var blocks = ReadBlocks(file);
@@ -191,6 +197,84 @@ static class Program
                           $"deals needed max {needed.Max()} mean {needed.Average():F2}, worst faults {worst}");
         Console.WriteLine("   cast: " + string.Join("  ", cast.OrderByDescending(p => p.Value).Select(p => $"{p.Key} {p.Value}")));
         return clean == count ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Parks. Nothing is read off disk and no roads are drawn: a park is dealt from its own
+    /// SIZE, which is what the quarter hands it, so the whole verdict is arithmetic.
+    ///
+    /// --sweep is the one that matters. A park generator that works on the sizes it was
+    /// written against and falls over on 5 x 30 is a generator that will fall over the first
+    /// time a quarter deals it an awkward rectangle, and the belt round the core deals
+    /// nothing else.
+    /// </summary>
+    static int Parks(int seed, int count, string size, bool map, bool sweep)
+    {
+        if (sweep)
+        {
+            int tried = 0, clean = 0, worst = 0;
+            var faulty = new Dictionary<string, int>();
+            var classes = new Dictionary<ParkWalk.Klass, int>();
+            for (int w = 5; w <= 30; w++)
+                for (int d = 5; d <= 30; d++)
+                {
+                    var plan = ParkWalk.Lay(w, d, ParkWalk.Edge.Alone(), new Random(seed * 7919 + w * 131 + d));
+                    string said = ParkWalk.Report(plan, out int faults);
+                    tried++;
+                    classes[plan.Klass] = classes.TryGetValue(plan.Klass, out var c) ? c + 1 : 1;
+                    if (faults == 0) { clean++; continue; }
+                    worst = Math.Max(worst, faults);
+                    foreach (var line in said.Split('
+'))
+                    {
+                        if (!line.Contains("WARNING")) continue;
+                        string key = line.Substring(line.IndexOf("WARNING") + 9);
+                        key = System.Text.RegularExpressions.Regex.Replace(key, @"[0-9]+", "N");
+                        faulty[key] = faulty.TryGetValue(key, out var k) ? k + 1 : 1;
+                        if (faulty[key] <= 2) Console.WriteLine($"   {w * 5}x{d * 5} m: {key}");
+                    }
+                }
+            Console.WriteLine($"{tried} sizes, {clean} clean ({100.0 * clean / tried:F0}%), worst {worst} faults");
+            foreach (var pair in classes.OrderBy(p => p.Key.ToString()))
+                Console.WriteLine($"   {pair.Value,5}  {pair.Key}");
+            foreach (var pair in faulty.OrderByDescending(p => p.Value))
+                Console.WriteLine($"   {pair.Value,5}  {pair.Key}");
+            return clean == tried ? 0 : 1;
+        }
+
+        int good = 0;
+        for (int n = 0; n < count; n++)
+        {
+            int s = seed + n;
+            var dice = new Random(s);
+            Measure(size, dice, out int nx, out int nz);
+            var plan = ParkWalk.Lay(nx, nz, ParkWalk.Edge.Alone(), new Random(s));
+            string report = ParkWalk.Report(plan, out int faults);
+            if (faults == 0) good++;
+            Console.WriteLine($"seed {s,-6} {nx * 5}x{nz * 5} m  faults {faults,2}  {report}");
+            if (map) Console.WriteLine(plan.Map);
+        }
+        Console.WriteLine($"{count} parks: {good} clean");
+        return good == count ? 0 : 1;
+    }
+
+    /// <summary>The size to deal: a class name, an explicit WxD in cells, or anything at
+    /// all if nothing was asked for.</summary>
+    static void Measure(string size, Random dice, out int nx, out int nz)
+    {
+        size = (size ?? "").ToLowerInvariant();
+        int at = size.IndexOf('x');
+        if (at > 0 && int.TryParse(size.Substring(0, at), out nx) &&
+            int.TryParse(size.Substring(at + 1), out nz)) return;
+
+        switch (size)
+        {
+            case "pocket": nx = dice.Next(5, 8); nz = dice.Next(5, 8); return;
+            case "square": nx = dice.Next(8, 13); nz = dice.Next(8, 13); return;
+            case "park": nx = dice.Next(13, 31); nz = dice.Next(13, 31); return;
+            case "strip": nx = dice.Next(20, 61); nz = dice.Next(6, 9); return;
+            default: nx = dice.Next(5, 31); nz = dice.Next(5, 31); return;
+        }
     }
 
     /// <summary>blocks.txt: a header line "name pivotX pivotZ groundMinX groundMinZ cw cd maxH"

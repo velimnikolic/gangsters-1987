@@ -149,7 +149,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RoadDemo.IndustrialDemoBuilder
   seed: 1987
-  carCount: 18
+  carCount: 0
   streetSpeed: 9
   arterySpeed: 13
   lorryShare: 0.5

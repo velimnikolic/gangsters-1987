@@ -1360,19 +1360,22 @@ namespace RoadDemo
                     float at = 2f * Cell * (bay + 0.5f) / 3f;
                     bool noseIn = dice.NextDouble() < NosedIn;
                     Vector3 pos;
-                    int nose;   // a car nosed in faces away from the open edge
+                    int into;   // from the open edge into the bay
                     if (rowsAlongX)
                     {
                         pos = new Vector3(mx + at, 0f, mz + Cell * 0.5f);
-                        nose = openLow ? (noseIn ? 0 : 180) : (noseIn ? 180 : 0);
+                        into = openLow ? 0 : 180;
                     }
                     else
                     {
                         pos = new Vector3(mx + Cell * 0.5f, 0f, mz + at);
-                        nose = openLow ? (noseIn ? 90 : 270) : (noseIn ? 270 : 90);
+                        into = openLow ? 90 : 270;
                     }
                     var car = Cars.Pick(dice);
-                    if (car != null) kit.Stand(car, pos, nose);
+                    if (car == null) continue;
+                    // a car nosed in faces away from the open edge; one that backed in
+                    // faces it, and either way the far end of it is at the back of the bay
+                    InBay(kit.Stand(car, pos, noseIn ? into : (into + 180) % 360), pos, into);
                 }
             }
 
@@ -1403,6 +1406,48 @@ namespace RoadDemo
         /// <summary>How many bays of a car park are taken, and how many of the cars in them
         /// nosed in rather than backing in.</summary>
         const float Occupancy = 0.35f, NosedIn = 0.8f;
+
+        /// <summary>
+        /// A car pushed back to the END of its bay instead of floating in the middle of it.
+        ///
+        /// The pack's painted bay is five metres deep and the pack's own cars are 5.8 and
+        /// 6.9 metres long, so a car centred in a bay hangs over BOTH of its lines - out of
+        /// the back of the lot as far as out of the front - and every car park in the city
+        /// read as too small for the cars in it (2026-08-26, the user: "parking je nekako
+        /// premali, uvek viri auto s njega. to se desava na svim parkinzima u gradu").
+        ///
+        /// Nothing is scaled to fit - the pack drew the bay and the pack drew the car, and
+        /// what is wrong is where the car was put. Backed up against the far line, the
+        /// overhang is all at the open edge, over the aisle the car drove in along, which is
+        /// what a full car park looks like anywhere.
+        ///
+        /// Measured off the standing car, so a body whose pivot is not its own middle is
+        /// still put by its ends.
+        /// </summary>
+        /// <param name="bay">The middle of the bay, on the ground.</param>
+        /// <param name="into">From the bay's open edge towards its back, as a quarter turn.
+        /// Not the car's own facing: a car that backed in faces the other way and is still
+        /// parked at the same end.</param>
+        public static void InBay(GameObject car, Vector3 bay, int into, float depth = Cell)
+        {
+            if (car == null) return;
+
+            var box = new Bounds();
+            bool any = false;
+            foreach (var drawn in car.GetComponentsInChildren<Renderer>(true))
+            {
+                if (!any) { box = drawn.bounds; any = true; }
+                else box.Encapsulate(drawn.bounds);
+            }
+            if (!any) return;
+
+            var way = Quaternion.Euler(0f, into, 0f) * Vector3.forward;
+            float length = Mathf.Abs(Vector3.Dot(box.size, way));
+            var far = box.center + way * (length * 0.5f);
+            var shift = bay + way * (depth * 0.5f) - far;
+            shift.y = 0f;                       // it stands on the tarmac, not in it
+            car.transform.position += shift;
+        }
 
         /// <summary>Tiles that close [lo, hi] across a road at nearest to the 5 m beat: each
         /// one's near edge off the axis, and its width (RoadDemoBuilder.Band).</summary>

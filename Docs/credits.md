@@ -49,3 +49,9 @@ carries an attribution obligation. It is stale; `SOURCES.md` records the drop.
 
 The UI chrome is CC0 (the Waste No Space set, `Assets/Scripts/UI/UiSkin.cs`) and owes
 nothing either.
+
+The type is all OFL 1.1 (Lekton, IBM Plex Mono, PT Serif, Oswald, and Silkscreen -
+the tactical map's terminal face), which asks for the licence text to travel with
+the fonts and for the reserved names not to be reused. Both hold: every licence
+sits beside the files in `Assets/Fonts/Ledger1987/`, and nothing here is a
+modified cut. So no credits row is owed for a face.

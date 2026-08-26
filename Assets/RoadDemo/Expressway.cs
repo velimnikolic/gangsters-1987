@@ -65,6 +65,16 @@ namespace RoadDemo
                  "at, in a signalled junction with the grid's edge street.")]
         public int terminusLine = 2;
 
+        [Header("The toll")]
+        [Tooltip("The motorway itself is paid for, on top of the barrier the branch " +
+                 "always carries. A barrier on EVERY way on to it - each ramp up from an " +
+                 "arterial and each of the trunk's own two ends - so a flat fare is paid " +
+                 "once by everyone who joins and nobody can drive on at one interchange " +
+                 "and off at the next for nothing. OFF: the road is free and only the " +
+                 "branch takes money, which is what the causeways this city is drawn " +
+                 "from did in 1987.")]
+        public bool tollRoad = true;
+
         [Header("Dressing")]
         public bool guideSigns = true;
         public bool lamps = true;

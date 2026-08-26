@@ -41,6 +41,7 @@ is keyed to a hash of the changes themselves, so the next edit closes the gate a
 | what | where |
 |---|---|
 | the play harness, the trace, the reader | `Docs/play-harness.md` |
+| the tactical map (320x200 raster + turf HUD) | `Docs/tactical-map.md` |
 | the city's districts | `Docs/city-districts-plan.md` |
 | what the port is made of | `Docs/harbor-detail.md` |
 | the period | `Docs/1987-period-reference.md` |

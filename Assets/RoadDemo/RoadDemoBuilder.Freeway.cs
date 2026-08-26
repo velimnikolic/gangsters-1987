@@ -485,7 +485,10 @@ namespace RoadDemo
             float lift = armAlongX
                 ? (b.center.x >= 0f ? 75f : -75f)
                 : (b.center.z >= 0f ? -75f : 75f);
-            gate.Arms.Add(new TollArm(go.transform, axis, lift));
+            var arm = FreewayKit.BoomOf(go.transform);
+            gate.Arms.Add(arm == null
+                ? new TollArm(go.transform, axis, lift)
+                : new TollArm(arm, Quaternion.Inverse(arm.localRotation) * axis, lift));
         }
 
         /// <summary>Where a pier may stand: never in a street of the grid, and never in

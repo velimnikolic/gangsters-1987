@@ -30,6 +30,24 @@ namespace RoadDemo
             public float RoadV;               // and how far up it a metre of road goes
             public Vector2 Concrete;
             public bool Real;                 // read off the pack (else a plain grey stand-in)
+
+            /// <summary>And what the RUNNING SURFACE is made of, where that is not the
+            /// same thing as the structure. A viaduct is concrete and the road on top of
+            /// it is the same black stuff as the street it came off; drawn in one colour
+            /// it was a mile of pale grey running into a dark town, with a seam across
+            /// the road wherever the two met. Null: the structure's own surface.</summary>
+            public Material RoadMat;
+            public Vector2 RoadUV;
+
+            /// <summary>The same structure with that surface laid on it.</summary>
+            public Skin Surfaced(Skin surface)
+            {
+                if (!surface.Real || surface.Mat == null) return this;
+                var s = this;
+                s.RoadMat = surface.Mat;
+                s.RoadUV = surface.Concrete;
+                return s;
+            }
         }
 
         // the section, in metres off the road surface
@@ -250,6 +268,7 @@ namespace RoadDemo
             Vector2 C = skin.Concrete;
             Vector2 RoadUV(float x)
             {
+                if (skin.RoadMat != null) return skin.RoadUV;      // one colour, no strip
                 float t = Mathf.InverseLerp(roadLo, roadHi, x);
                 return Vector2.LerpUnclamped(skin.RoadA, skin.RoadB, t);
             }
@@ -321,10 +340,16 @@ namespace RoadDemo
             var h0 = wallAt != null ? wallAt(s0) : new Vector2(Parapet, Parapet);
             Section(sec, w0.x, w0.y, h0.x, h0.y, skin);
             int m = sec.Count;
+            // which of the section's edges is the carriageway. Taken once: the section is
+            // swept again at every station and the widths move, but what is road and what
+            // is concrete does not.
+            var carriageway = new bool[m];
+            for (int i = 0; i < m; i++) carriageway[i] = sec[i].Road;
 
             var verts = new List<Vector3>(m * n * 2);
             var uvs = new List<Vector2>(m * n * 2);
             var tris = new List<int>(m * n * 6);
+            var road = new List<int>(n * 6);
             var origin = line.PointAt((s0 + s1) * 0.5f);
 
             // one strip of its own for every edge of the section: shared along the road
@@ -350,7 +375,7 @@ namespace RoadDemo
                         at.y = y + pt.Y - pt.X * bank;
                         verts.Add(at - origin);
                         var t = pt.UV;
-                        if (pt.Road && skin.RoadV != 0f)
+                        if (pt.Road && skin.RoadMat == null && skin.RoadV != 0f)
                         {
                             // the surface runs on down the road, so its markings do too
                             var d = skin.RoadB - skin.RoadA;
@@ -360,11 +385,12 @@ namespace RoadDemo
                         uvs.Add(t);
                     }
                 }
+                var into = skin.RoadMat != null && carriageway[e] && carriageway[e + 1] ? road : tris;
                 for (int k = 0; k + 1 < n; k++)
                 {
                     int a = baseIndex + k * 2, b = a + 1, c = a + 2, d2 = a + 3;
-                    tris.Add(a); tris.Add(c); tris.Add(b);
-                    tris.Add(b); tris.Add(c); tris.Add(d2);
+                    into.Add(a); into.Add(c); into.Add(b);
+                    into.Add(b); into.Add(c); into.Add(d2);
                 }
             }
 
@@ -372,7 +398,13 @@ namespace RoadDemo
             if (verts.Count > 65000) mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
             mesh.SetVertices(verts);
             mesh.SetUVs(0, uvs);
-            mesh.SetTriangles(tris, 0);
+            if (road.Count > 0)
+            {
+                mesh.subMeshCount = 2;
+                mesh.SetTriangles(tris, 0);
+                mesh.SetTriangles(road, 1);
+            }
+            else mesh.SetTriangles(tris, 0);
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
 
@@ -381,7 +413,8 @@ namespace RoadDemo
             go.transform.position = origin;
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var r2 = go.AddComponent<MeshRenderer>();
-            r2.sharedMaterial = skin.Mat;
+            if (road.Count > 0) r2.sharedMaterials = new[] { skin.Mat, skin.RoadMat };
+            else r2.sharedMaterial = skin.Mat;
             return go;
         }
 
@@ -396,7 +429,7 @@ namespace RoadDemo
                                        float width, bool broken, Material mat,
                                        Transform parent, string name)
         {
-            if (line == null || mat == null || s1 - s0 < 1f) return null;
+            if (line == null || mat == null || s1 - s0 < 0.15f) return null;
             const float dash = 4f, gap = 8f, lift = 0.02f;
             var verts = new List<Vector3>();
             var uvs = new List<Vector2>();

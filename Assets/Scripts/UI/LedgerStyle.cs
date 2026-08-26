@@ -249,6 +249,7 @@ namespace LivingCity.UI
 
         static TMP_FontAsset type, mono, monoBold, monoItalic;
         static TMP_FontAsset serif, serifBold, serifItalic, condensed, condensedText;
+        static TMP_FontAsset pixel, pixelBold;
         static readonly System.Collections.Generic.HashSet<string> missing =
             new System.Collections.Generic.HashSet<string>();
 
@@ -286,6 +287,24 @@ namespace LivingCity.UI
         /// </summary>
         public static TMP_FontAsset CondensedText =>
             Font(ref condensedText, "Oswald-Regular", 0.04f, 0.864f);
+
+        /// <summary>
+        /// The one face that is not type but PIXELS: Silkscreen, the bitmap gothic an
+        /// early-VGA survey terminal printed in, and the only font on the tactical map
+        /// (<see cref="RoadDemo.TacticalHud"/>). It is built by <see cref="Bitmap"/>
+        /// rather than <see cref="Font"/>, because everything the other five faces want
+        /// - an SDF atlas, antialiasing, a hair of face dilation - is exactly what turns
+        /// a pixel font into a smear. Rendered as a RASTER atlas with no padding and
+        /// sampled with a point filter, so a letter drawn at 16 px is the 8 px letter
+        /// with square pixels twice the size, which is what the design asks for.
+        ///
+        /// No optical figure: Silkscreen's sizes were not inherited from an older face,
+        /// they were authored against this one.
+        /// </summary>
+        public static TMP_FontAsset Pixel => Bitmap(ref pixel, "Silkscreen-Regular");
+
+        /// <summary>The same terminal's headings and figures.</summary>
+        public static TMP_FontAsset PixelBold => Bitmap(ref pixelBold, "Silkscreen-Bold");
 
         /// <summary>Loads and caches one face. dilate is the SDF face dilation - a face
         /// cut thin needs a hair of it to print like a fresh ribbon at ledger sizes
@@ -357,6 +376,64 @@ namespace LivingCity.UI
             }
             else
                 missing.Add(name);
+            return slot;
+        }
+
+        /// <summary>
+        /// The pixel path. A bitmap face has ONE right size - the size it was drawn at -
+        /// and every mechanism <see cref="Font"/> uses to make an outline print well at
+        /// any size destroys it: an SDF atlas rounds the corners off a 3x5 letter, and a
+        /// bilinear sample turns each of its pixels into a grey smudge. So the atlas is
+        /// rasterised at the face's own 8 px with no padding and read back with a point
+        /// filter, and the HUD only ever asks for whole multiples of that size.
+        ///
+        /// SampleSize is the drawn size and not a taste: Silkscreen's grid is 8 px tall,
+        /// and rasterising it at anything else lands its stems between texels - which is
+        /// how a pixel font ends up with one column of a letter a shade lighter than the
+        /// rest of it.
+        /// </summary>
+        static TMP_FontAsset Bitmap(ref TMP_FontAsset slot, string name)
+        {
+            const int SampleSize = 8;
+
+            if (slot)
+                return slot;
+            if (missing.Contains(name))
+                return null;
+
+            var source = Resources.Load<Font>("Ledger1987/" + name);
+            if (!source)
+            {
+                missing.Add(name);
+                Debug.LogWarning("[LedgerStyle] Pixel font Ledger1987/" + name +
+                                 " not found in Resources - the tactical map falls back " +
+                                 "to the TMP default face.");
+                return null;
+            }
+
+            // One pixel of padding, not none. A raster atlas is packed tight without
+            // it and neighbouring glyphs bleed into each other's cells - which prints
+            // as letters wearing pieces of the letter next to them.
+            slot = TMP_FontAsset.CreateFontAsset(source, SampleSize, 1,
+                GlyphRenderMode.RASTER, 512, 512, AtlasPopulationMode.Dynamic, true);
+            if (!slot)
+            {
+                missing.Add(name);
+                return null;
+            }
+
+            slot.name = "Ledger " + name;
+
+            // The whole point of the face: nearest-neighbour on the way out, so a
+            // glyph scaled to 16 or 24 px is still made of square pixels.
+            if (slot.atlasTexture)
+                slot.atlasTexture.filterMode = FilterMode.Point;
+            var atlases = slot.atlasTextures;
+            if (atlases != null)
+                for (var i = 0; i < atlases.Length; i++)
+                    if (atlases[i])
+                        atlases[i].filterMode = FilterMode.Point;
+
             return slot;
         }
 

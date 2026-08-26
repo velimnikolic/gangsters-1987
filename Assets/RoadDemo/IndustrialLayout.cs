@@ -71,24 +71,34 @@ namespace RoadDemo
         /// did - somewhere to buy fuel, somewhere to keep it, and a plot nobody has built
         /// on yet.
         /// </summary>
-        public enum Recipe { Works, Plant, Strip, Yard, Depot, Stop, Fuel, Waste }
+        public enum Recipe { Works, Plant, Strip, Yard, Depot, Haulage, Fuel, Waste }
 
-        /// <summary>The smallest parcel a recipe can fill, in cells. A recipe asked for
-        /// less than this leaves its yard showing through the middle of a building.</summary>
+        /// <summary>
+        /// The smallest parcel a recipe can fill, in cells.
+        ///
+        /// Every one of these is the recipe's own frontage plus its setbacks, measured off
+        /// the kit rather than picked: a works is FactoryOld (22.5 m) + the gate + Factory
+        /// (24.4 m) = 55 m of street, and 13.2 m of setback either side, so 70 m across. The
+        /// first table rounded all of them UP for comfort and the quarter came out of
+        /// compounds a hundred metres across with the yard showing through the middle - the
+        /// thing this floor exists to prevent, arrived at from the other direction.
+        /// </summary>
         public static void Smallest(Recipe recipe, out int w, out int d)
         {
             switch (recipe)
             {
-                case Recipe.Works: w = 15; d = 12; break;
-                case Recipe.Plant: w = 18; d = 12; break;
-                case Recipe.Yard: w = 18; d = 12; break;
-                case Recipe.Depot: w = 15; d = 15; break;
-                // the truck stop runs a forecourt, a diner and a row of lorry bays one
-                // behind the other, and wants the depth for all three: asked for less, the
-                // yard behind the bays comes out with a negative height and everything in it
-                // quietly does nothing
-                case Recipe.Stop: w = 14; d = 11; break;
-                default: w = 12; d = 9; break;      // strip, fuel, waste
+                case Recipe.Works: w = 14; d = 11; break;
+                case Recipe.Plant: w = 14; d = 12; break;
+                case Recipe.Yard: w = 14; d = 11; break;
+                case Recipe.Depot: w = 12; d = 14; break;
+                // the haulage yard runs a garage on the frontage, a fuel island and rows
+                // of lorry bays one behind the other, and wants the depth for all three:
+                // asked for less, the yard behind the bays comes out with a negative height
+                // and everything in it quietly does nothing
+                case Recipe.Haulage: w = 12; d = 11; break;
+                case Recipe.Strip: w = 12; d = 10; break;
+                case Recipe.Fuel: w = 10; d = 9; break;
+                default: w = 9; d = 8; break;       // the empty plot, which wants nothing
             }
         }
 
@@ -96,6 +106,24 @@ namespace RoadDemo
         {
             Smallest(recipe, out int mw, out int md);
             return w >= mw && d >= md;
+        }
+
+        /// <summary>What a recipe is called on a card, in words rather than in the enum's
+        /// shorthand: a click is meant to answer "what is this", and "Yard" is not an
+        /// answer if the thing is a container stockyard.</summary>
+        public static string Words(Recipe recipe)
+        {
+            switch (recipe)
+            {
+                case Recipe.Works: return "Works";
+                case Recipe.Plant: return "Processing plant";
+                case Recipe.Strip: return "Service strip";
+                case Recipe.Yard: return "Stockyard";
+                case Recipe.Depot: return "Warehouse depot";
+                case Recipe.Haulage: return "Haulage yard";
+                case Recipe.Fuel: return "Tank farm";
+                default: return "Empty plot";
+            }
         }
 
         /// <summary>Does this recipe wall itself in brick and build its street frontage?
@@ -224,25 +252,45 @@ namespace RoadDemo
         /// <summary>
         /// A parcel, in cells: 75-105 m across and 55-75 m deep.
         ///
-        /// The floor is not a guess: it is read off <see cref="Smallest"/>, and it was
-        /// learned by dealing. With the floor at 60 m the splitter made most parcels exactly
-        /// 60 m, nothing but the service strip fitted them, and eight seeds came out 116
-        /// strips to one plant. A quarter of one recipe is not a quarter.
+        /// The floor is read off <see cref="Smallest"/> and the ceiling is a judgement:
+        /// 60-85 m across, 55-70 m deep, which is the size the bench composes a candidate at
+        /// (Tools/City/Core/Industrial) and the size a works actually is.
         ///
-        /// The DEPTH floor is the same lesson a second time. At 55 m no works, plant,
-        /// stockyard or depot fits, so a tier that rolled that depth came out as a row of
-        /// service strips and nothing else - the same monoculture, one axis over. It is now
-        /// 60 m, which every recipe but the depot can fill; the depot wants 75 m and is
-        /// dealt only on the tiers deep enough for it.
+        /// It was 75-105 x 60-75 and that was too big - the first drawing came out of
+        /// compounds you could not see the far fence of, with the yard spread so thin that
+        /// no amount of clutter filled it. A recipe furnishes what it is given, so the way to
+        /// a dense yard is a smaller yard, not more barrels.
+        ///
+        /// The floor still has to clear <see cref="Smallest"/> or the deal reverts to a
+        /// monoculture: with the depth floor under 11 cells nothing but the service strip
+        /// fits, and a tier that rolled it came out as a row of strips and nothing else.
         /// </summary>
-        const int ParcelWMin = 15, ParcelWMax = 21;
-        const int ParcelDMin = 12, ParcelDMax = 15;
+        const int ParcelWMin = 12, ParcelWMax = 17;
+        const int ParcelDMin = 11, ParcelDMax = 14;
 
-        /// <summary>How long a tier runs before it stops, in cells: 200-300 m.</summary>
-        const int TierMin = 40, TierMax = 60;
+        /// <summary>How long a tier runs before it stops, in cells: 150-230 m.</summary>
+        const int TierMin = 30, TierMax = 46;
 
-        /// <summary>How often a tier is two rows deep, back fence to back fence.</summary>
-        const double DoubleOdds = 0.5;
+        /// <summary>
+        /// How often a tier is two rows deep, back fence to back fence.
+        ///
+        /// It was every other tier, and doubled onto parcels of 75 m that made a single
+        /// walled block 150 m deep - which with two or three of them side by side is a
+        /// quarter of four enormous compounds and no texture at all. A quarter of a hundred
+        /// small works with streets between them is the thing being drawn, so back to back
+        /// is now the exception it is in life: the odd pair whose yards happen to meet.
+        /// </summary>
+        const double DoubleOdds = 0.25;
+
+        /// <summary>
+        /// How often two parcels share a fence instead of taking a street between them.
+        ///
+        /// The point of a shared fence is that an industrial street falls every 150-250 m
+        /// rather than every 90 - but three to an island made compounds 300 m across. Two is
+        /// the most, and most islands are one block on its own, which is what the bench
+        /// composes and what the quarter is meant to read as.
+        /// </summary>
+        const double ShareOdds = 0.35;
 
         /// <summary>The seed deals a quarter; the drawing judges it. Same seed, same
         /// quarter, every time.</summary>
@@ -287,7 +335,7 @@ namespace RoadDemo
                 int length = 0, want = dice.Next(TierMin, TierMax + 1);
                 while (length < want)
                 {
-                    int parcels = dice.Next(1, 4);
+                    int parcels = dice.NextDouble() < ShareOdds ? 2 : 1;
                     int wide = 0;
                     for (int p = 0; p < parcels; p++) wide += dice.Next(ParcelWMin, ParcelWMax + 1);
                     widths.Add(wide);
@@ -373,7 +421,7 @@ namespace RoadDemo
                         int deep, int yaw, bool back, int tier)
         {
             int most = Mathf.Max(1, wide / ParcelWMin);
-            int parts = Mathf.Clamp(dice.Next(1, 4), 1, most);
+            int parts = Mathf.Clamp(dice.NextDouble() < ShareOdds ? 2 : 1, 1, most);
             var cuts = Split(wide, parts, ParcelWMin, dice);
 
             int i = i0;
@@ -406,6 +454,13 @@ namespace RoadDemo
         /// The remainder is dealt a cell at a time so no part is left a sliver.</summary>
         static List<int> Split(int total, int parts, int min, System.Random dice)
         {
+            // no part wider than a parcel may be, however the dice fell. The island's width
+            // and the row's division are rolled SEPARATELY - the width is a sum of parcel
+            // draws, the division a fresh coin - so a run of two draws could be handed back
+            // as one parcel of a hundred and forty metres, which is twice what any recipe
+            // was measured for. The floor is the roll's; the ceiling is not negotiable.
+            int least = Mathf.CeilToInt(total / (float)ParcelWMax);
+            parts = Mathf.Max(least, parts);
             parts = Mathf.Max(1, Mathf.Min(parts, total / Mathf.Max(1, min)));
             var cuts = new List<int>();
             // a run shorter than one part is ONE part of the whole run, not one part of the
@@ -470,8 +525,11 @@ namespace RoadDemo
         ///   - the artery frontage is BUILT and brick. Anything fronting the main road is
         ///     a works, a plant or a service strip;
         ///   - the ground behind is wire: stockyards and depots;
-        ///   - one filling station and diner, on a corner of the artery, because there is
-        ///     one to a district and it is always on the through road;
+        ///   - one HAULAGE yard, on a corner of the artery, because the lorries that serve
+        ///     an estate are kept at one end of it and go in and out by the main road. It is
+        ///     not a filling station: a retail forecourt with a shop behind it is a roadside
+        ///     thing, and the city already has one where it belongs, out on the road between
+        ///     the districts (RoadDemoBuilder.Wayside);
         ///   - one tank farm and one empty plot, back among the wire;
         ///   - a chimney SOMEWHERE. A works quarter with nothing smoking over it reads as
         ///     a retail park;
@@ -489,13 +547,13 @@ namespace RoadDemo
             }
 
             // the one-offs, each on the best parcel for it rather than wherever it lands
-            var corner = Best(plan, p => Artery(p) && Corner(p) && Fits(Recipe.Stop, p.W, p.D));
-            if (corner != null) corner.Recipe = Recipe.Stop;
+            var corner = Best(plan, p => Artery(p) && Corner(p) && Fits(Recipe.Haulage, p.W, p.D));
+            if (corner != null) corner.Recipe = Recipe.Haulage;
 
-            var tank = Best(plan, p => !Artery(p) && p.Recipe != Recipe.Stop && Fits(Recipe.Fuel, p.W, p.D));
+            var tank = Best(plan, p => !Artery(p) && p.Recipe != Recipe.Haulage && Fits(Recipe.Fuel, p.W, p.D));
             if (tank != null) tank.Recipe = Recipe.Fuel;
 
-            var spare = Best(plan, p => !Artery(p) && p.Recipe != Recipe.Stop && p.Recipe != Recipe.Fuel &&
+            var spare = Best(plan, p => !Artery(p) && p.Recipe != Recipe.Haulage && p.Recipe != Recipe.Fuel &&
                                         Fits(Recipe.Waste, p.W, p.D));
             if (spare != null) spare.Recipe = Recipe.Waste;
 
@@ -504,7 +562,7 @@ namespace RoadDemo
             foreach (var parcel in plan.Parcels)
                 if (parcel.Recipe == Recipe.Works || parcel.Recipe == Recipe.Plant) { smoke = true; break; }
             if (smoke) return;
-            var stack = Best(plan, p => p.Recipe != Recipe.Stop && p.Recipe != Recipe.Fuel &&
+            var stack = Best(plan, p => p.Recipe != Recipe.Haulage && p.Recipe != Recipe.Fuel &&
                                         Fits(Recipe.Works, p.W, p.D));
             if (stack != null) stack.Recipe = Recipe.Works;
         }
@@ -538,7 +596,7 @@ namespace RoadDemo
             int room = 0;
             foreach (Recipe recipe in System.Enum.GetValues(typeof(Recipe)))
             {
-                if (recipe == Recipe.Stop || recipe == Recipe.Fuel || recipe == Recipe.Waste) continue;
+                if (recipe == Recipe.Haulage || recipe == Recipe.Fuel || recipe == Recipe.Waste) continue;
                 if (!Fits(recipe, parcel.W, parcel.D)) continue;
                 Smallest(recipe, out int mw, out int md);
                 if (mw * md <= room) continue;

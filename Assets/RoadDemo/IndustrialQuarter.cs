@@ -29,7 +29,7 @@ namespace RoadDemo
             /// <summary>Faults the composer could see in its own work: cells with no floor,
             /// metres of fence missing, and pieces of fence standing inside a building.
             /// All three should be nought.</summary>
-            public int Gaps, WallInBuilding;
+            public int Gaps, WallInBuilding, Straddles;
             public float WallGap;
 
             /// <summary>What the recipe asked for and the ground refused, worst first - not
@@ -74,6 +74,11 @@ namespace RoadDemo
                                                    parcel.Locals(), rng, raise);
                 block.Streetside(rng);
 
+                // measured BEFORE the turn, while the block's own frame and the world's are
+                // still the same one - which is what makes this a local box, good wherever
+                // the quarter is eventually stood
+                var own = Measure(root);
+
                 // NOW it is turned into place. A parcel is always composed facing south -
                 // every recipe puts its gate on the south kerb and works north from it, and
                 // a second set of those geometries for the parcels that face the other way
@@ -86,12 +91,15 @@ namespace RoadDemo
                                 turned ? (parcel.J0 + parcel.D) * IndustrialLayout.Cell : parcel.J0 * IndustrialLayout.Cell),
                     Quaternion.Euler(0f, parcel.Yaw, 0f));
 
+                Pickable(root, parcel, own);
+
                 stood.Add(new Stood
                 {
                     Parcel = parcel, Root = root, Block = block,
                     Gaps = block.Gaps(),
                     WallGap = block.WallGap,
                     WallInBuilding = block.WallInBuilding(),
+                    Straddles = block.Straddles(),
                     Refused = block.Refused(),
                 });
             }
@@ -104,6 +112,89 @@ namespace RoadDemo
         }
 
         /// <summary>
+        /// Makes the parcel answer a click, and says what it is when it does.
+        ///
+        /// One box to the parcel and not one to each building, because a block is the thing
+        /// being asked about: "what is this" wants "a stockyard, two sheds, three ranks of
+        /// containers", not the prefab name of the shed that happened to be under the
+        /// pointer. The box is the parcel's whole rectangle, so any part of it answers.
+        ///
+        /// The card counts what actually STOOD rather than what the recipe asked for. A
+        /// recipe refuses what will not fit, so the two are not the same thing, and the one
+        /// worth reading is the one you can see.
+        /// </summary>
+        static void Pickable(Transform root, IndustrialLayout.Parcel parcel, Bounds own)
+        {
+            float w = parcel.W * IndustrialLayout.Cell, d = parcel.D * IndustrialLayout.Cell;
+            float tall = Mathf.Max(6f, own.size.y);
+
+            // A TRIGGER, and that matters. This box is the whole parcel from the ground to
+            // the roofline, which is the right shape for "click anywhere on this block" and
+            // a disastrous one for anything else: solid, it would swallow every bullet fired
+            // across the quarter and every walker crossing it. A trigger still answers
+            // Physics.RaycastAll - queriesHitTriggers is on by default and the picker relies
+            // on it - and stops nothing.
+            var box = root.gameObject.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+            box.center = new Vector3(w * 0.5f, tall * 0.5f, d * 0.5f);
+            box.size = new Vector3(w, tall, d);
+
+            int buildings = 0, vehicles = 0, cans = 0, tanks = 0, stacks = 0, bays = 0;
+            foreach (Transform piece in root)
+            {
+                var name = piece.name;
+                if (name.StartsWith("building-")) buildings++;
+                else if (name.StartsWith("SM_Veh_")) vehicles++;
+                else if (name.StartsWith("container-20")) cans++;
+                else if (name == "tank") tanks++;
+                else if (name == "chimney crown") stacks++;
+                else if (name.StartsWith("SM_Env_Road_ParkingLines")) bays++;
+            }
+
+            var built = new List<string>();
+            if (buildings > 0) built.Add(Count(buildings, "building", "buildings"));
+            if (stacks > 0) built.Add(Count(stacks, "chimney", "chimneys"));
+            if (tanks > 0) built.Add(Count(tanks, "tank", "tanks"));
+
+            var yard = new List<string>();
+            if (vehicles > 0) yard.Add(Count(vehicles, "vehicle", "vehicles"));
+            if (cans > 0) yard.Add(Count(cans, "container", "containers"));
+            if (bays > 0) yard.Add(Count(bays, "painted bay", "painted bays"));
+
+            // a bare newline, not Environment.NewLine: this is a string for IMGUI to draw,
+            // not a line of a file, and the carriage return Windows adds comes out as a box
+            // glyph at the end of every line of the card
+            var body = new System.Text.StringBuilder();
+            body.Append($"{w:F0} x {d:F0} m, fronts {parcel.Face.ToString().ToLowerInvariant()}");
+            if (built.Count > 0) body.Append('\n').Append(string.Join(", ", built));
+            if (yard.Count > 0) body.Append('\n').Append(string.Join(", ", yard));
+            if (built.Count == 0 && yard.Count == 0)
+                body.Append('\n').Append("nothing built on it");
+
+            CardFacts.On(root.gameObject, IndustrialLayout.Words(parcel.Recipe), body.ToString(),
+                         new Bounds(box.center, box.size));
+        }
+
+        static string Count(int many, string one, string more) =>
+            many == 1 ? $"1 {one}" : $"{many} {more}";
+
+        /// <summary>Everything the parcel stood, boxed - the smoke off a chimney excepted,
+        /// because a particle renderer that has not played reports an empty box at the world
+        /// origin and would drag the measurement across the map.</summary>
+        static Bounds Measure(Transform root)
+        {
+            var box = new Bounds(root.position, Vector3.one);
+            bool any = false;
+            foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer is ParticleSystemRenderer) continue;
+                if (!any) { box = renderer.bounds; any = true; }
+                else box.Encapsulate(renderer.bounds);
+            }
+            return box;
+        }
+
+        /// <summary>
         /// What the composer found wrong with its own work, in one line - the counterpart to
         /// the raster's report, which judges the ROADS.
         ///
@@ -113,21 +204,24 @@ namespace RoadDemo
         /// </summary>
         public static string Report(List<Stood> stood)
         {
-            int gaps = 0, through = 0;
+            int gaps = 0, through = 0, split = 0;
             float wall = 0f;
             var bad = new List<string>();
             foreach (var one in stood)
             {
                 gaps += one.Gaps;
                 through += one.WallInBuilding;
+                split += one.Straddles;
                 wall += one.WallGap;
-                if (one.Gaps == 0 && one.WallInBuilding == 0 && one.WallGap < 0.5f) continue;
+                if (one.Gaps == 0 && one.WallInBuilding == 0 && one.Straddles == 0 && one.WallGap < 0.5f) continue;
                 bad.Add($"{one.Parcel.Name}: {one.Gaps} holes, {one.WallGap:F1} m of fence missing, " +
-                        $"{one.WallInBuilding} pieces of fence inside a building");
+                        $"{one.WallInBuilding} pieces of fence inside a building, " +
+                        $"{one.Straddles} buildings on two surfaces");
             }
             var sb = new System.Text.StringBuilder();
             sb.Append($"   {stood.Count} parcels: {gaps} cells with no floor, {wall:F1} m of fence missing, " +
-                      $"{through} pieces of fence standing in a building");
+                      $"{through} pieces of fence standing in a building, " +
+                      $"{split} buildings standing on two surfaces");
             foreach (var line in bad) sb.Append(Environment.NewLine).Append("   WARNING: ").Append(line);
             if (IndustrialBlocks.Missing.Count > 0)
                 sb.Append(Environment.NewLine).Append("   WARNING: missing from the project: ")

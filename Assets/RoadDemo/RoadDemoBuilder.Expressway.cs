@@ -46,6 +46,12 @@ namespace RoadDemo
             public RoadLine Line;                // its own centre line, in travel order
             public readonly List<XwStretch> Stretches = new List<XwStretch>();
             public readonly List<(float s, float lo, float hi)> AuxWindows = new List<(float, float, float)>();
+
+            /// <summary>The barrier at the mouth of this carriageway, where the road
+            /// begins at a junction of the town. A car joins the motorway here and at
+            /// no other place a ramp does not cover.</summary>
+            public RoadNode TollNode;
+            public float TollS;
         }
 
         sealed class XwRamp
@@ -75,6 +81,12 @@ namespace RoadDemo
             /// ramp that "does not line up with the road" is.</summary>
             public float[] Clip;
             public const float ClipStep = 4f;
+
+            /// <summary>The barrier on the way in, and how far up the ramp it stands.
+            /// A turnpike takes its money where you JOIN it, so every ramp on to the
+            /// motorway has one and no ramp off it does.</summary>
+            public RoadNode TollNode;
+            public float TollS;
 
             /// <summary>Which way this one goes: an off ramp falls off the deck and
             /// arrives at the arterial, an on ramp leaves the arterial and climbs.</summary>
@@ -168,8 +180,8 @@ namespace RoadDemo
         Transform _xwRoot;
         Material _xwPaint;
         TollPlaza _xwToll;
-        DeckMesh.Skin _xwSkin;      // the motorway's own surface, up on the viaduct
-        DeckMesh.Skin _xwGround;    // and the town's, once the road is on the ground
+        DeckMesh.Skin _xwSkin;      // the motorway: the pack's structure, the town's road
+        DeckMesh.Skin _xwGround;    // and the town's asphalt on its own, for the junctions
         readonly XwDeck[] _xwDecks = new XwDeck[2];
         readonly List<XwRamp> _xwRamps = new List<XwRamp>();
         readonly List<XwRoad> _xwRoads = new List<XwRoad>();
@@ -207,8 +219,10 @@ namespace RoadDemo
 
             _xwRoot = ((IDistrictHost)this).StaticRoot("Expressway");
             EnsureConnectorKit();
-            _xwSkin = DeckMesh.Probe(FreewayKit.TryLoad(FreewayKit.DeckPath));
             _xwGround = DeckMesh.Flat(_bare);
+            // the pack's concrete for what is concrete - parapet, kerb, edge beam,
+            // soffit - and the town's own asphalt for the carriageway on top of it
+            _xwSkin = DeckMesh.Probe(FreewayKit.TryLoad(FreewayKit.DeckPath)).Surfaced(_xwGround);
 
             PlanExpresswayEnds();
             PlanExpresswayToll();
@@ -217,7 +231,9 @@ namespace RoadDemo
             ReserveExpresswayGround();      // after the ramps: it holds the ground under them too
 
             MeasureRampClips();         // and with it, where each ramp starts to fall
-            MeasureRampWindows();       // which is read off the ramps' heights
+            PlanRampTolls();            // which says how far up a ramp is still flat
+            PlanDeckTolls();            // and how far along the trunk is still at grade
+            MeasureRampWindows();       // read off the ramps' heights
             LayExpresswayDecks();
             LayExpresswayRamps();
             LayExpresswayGroundRoads();
@@ -376,8 +392,23 @@ namespace RoadDemo
                 hi = Mathf.Max(hi, Mathf.Lerp(ExpresswayLayout.DeckHalf, ExpresswayLayout.AuxHalf,
                                               Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t))));
             }
+            // and a plaza's own apron, where the road opens out for the booth to stand
+            // on. The same widening an auxiliary lane gets, for the same reason: there
+            // is nowhere else on an eleven-metre carriageway to put a building.
+            if (deck.TollNode != null)
+            {
+                float t = 1f - Mathf.InverseLerp(TollApronRun, TollApronRun + taper,
+                                                 Mathf.Abs(s - deck.TollS));
+                if (t > 0f)
+                    hi = Mathf.Max(hi, Mathf.Lerp(ExpresswayLayout.DeckHalf, ExpresswayLayout.AuxHalf,
+                                                  Mathf.SmoothStep(0f, 1f, t)));
+            }
             return new Vector2(-ExpresswayLayout.DeckHalf, hi);
         }
+
+        /// <summary>How much of the plaza's apron is at its full width before it tapers
+        /// back into the carriageway.</summary>
+        const float TollApronRun = 26f;
 
         /// <summary>The walls of a deck: NONE on the inside, because the two decks of a
         /// dual carriageway share one line of barrier between them and not a wall each
@@ -493,14 +524,13 @@ namespace RoadDemo
         /// edge of its carriageway at the station where it goes.</summary>
         const float RampKerb = 0.12f;
 
-        /// <summary>And how high the ramp stands where it stops being a bridge. Its
-        /// parapet has come down to that kerb by here (RampWalls) and what the road is
-        /// MADE of changes with it: the motorway's own deck above, the town's asphalt
-        /// below. Both are read off the packs' own pieces and they are not the same grey
-        /// - the drawn motorway takes its surface from PolygonPalmCity's highway and the
-        /// streets are PolygonCity's - so a ramp given one surface for its whole length
-        /// arrives at a town junction in the colour of a viaduct, with a seam across the
-        /// road where the two meet.</summary>
+        /// <summary>And how high the ramp stands where it stops being a bridge: its
+        /// parapet has come down to that kerb by here (RampWalls), and it is as far up
+        /// the ramp as a toll plaza can be put and still be on level ground
+        /// (PlanRampTolls). What the road is MADE of does not change here - the
+        /// carriageway is the town's asphalt the whole way and the concrete is kept for
+        /// the concrete (DeckMesh.Skin.Surfaced), because a road that changes colour half
+        /// way along is two roads.</summary>
         const float RampAbutment = 1f;
 
         /// <summary>And how high it has to stand before a pier is worth putting under
@@ -547,6 +577,122 @@ namespace RoadDemo
                     ramp.GradeTo = Mathf.Max(30f, (i + 1) * XwRamp.ClipStep - ease);
             }
         }
+
+        // WHERE A BARRIER BELONGS.
+        //
+        // A toll works only where the road it stands on is a CUT: everybody who uses the
+        // thing being charged for passes it exactly once, and nobody else passes at all.
+        // On this road there is one such place and it is the BRANCH - the causeway out to
+        // the port or the mainland. One way on, one way off, a barrier half way along it
+        // (PlanDiamond), and it charges every car that crosses and no other car in the
+        // city. That is the toll this road was planned with, and it is what the causeways
+        // this city is drawn from charged for in 1987.
+        //
+        // The TRUNK is not a cut anywhere. Every interchange is a way on and a way off,
+        // so a barrier across the carriageway would charge only the cars that happen to
+        // be passing it and let everybody between two interchanges travel free - and
+        // there is nowhere to put one in any case: the interchanges stand 800 m apart and
+        // their auxiliary lanes take 340 m before the gore and 400 m after the merge,
+        // which leaves FOUR METRES of open trunk between one and the next. A plaza wants
+        // two hundred.
+        //
+        // Which leaves the ramps. A booth on every ramp ON to the motorway does work as a
+        // system - a flat fare, paid once, by everyone who joins - but only if every way
+        // on has one, and the trunk's two ends are junctions of the city (TerminalNodeFor)
+        // that nothing charges. Built on the ramps alone it is a toll with a free door
+        // beside it, and a stop at every entrance into the bargain. So it is off unless
+        // it is asked for (expressway.rampTolls), and if it is ever turned on for good
+        // the two termini want barriers of their own.
+
+        /// <summary>The barriers on the ramps, when they are asked for: one on every ramp
+        /// ON to the motorway, standing where the ramp is still low - half way to the
+        /// point at which the road leaves the ground (Abutment) - and never nearer the
+        /// junction than the kerb returns reach.</summary>
+        void PlanRampTolls()
+        {
+            if (_xwToll == null || expressway == null || !expressway.tollRoad) return;
+            foreach (var ramp in _xwRamps)
+            {
+                if (ramp.Falling) continue;              // money on the way in, not out
+                if (ramp.Line.Length < TollClear * 4f) continue;
+                float s = Mathf.Max(TollClear, ramp.Abutment(RampAbutment) * 0.5f);
+                var at = ramp.Line.PointAt(s);
+                var node = XwNode(at, TollBoxHalf, TollBoxHalf, 3f, seam: false);
+                var gate = new TollGate
+                {
+                    Name = (ramp.Tag ?? "ramp") + " toll",
+                    Dwell = 2.2f,
+                    Node = node,
+                };
+                node.Toll = gate;
+                _xwToll.Gates.Add(gate);
+                ramp.TollNode = node;
+                ramp.TollS = s;
+            }
+        }
+
+        /// <summary>The other way on: the trunk's own two ends. Each carriageway begins
+        /// at a junction of the town (TerminalNodeFor), and a car that joins there has
+        /// passed no ramp at all - which is the free door beside the toll, and the reason
+        /// a driver could come on at one interchange and off at the next for nothing.
+        ///
+        /// One barrier a carriageway, at its MOUTH, which is the end it begins at: the two
+        /// decks run opposite ways, so their mouths are at opposite ends of the road and
+        /// the pair of them close both. It stands half way along the run the trunk is
+        /// still at street level for, so the plaza is on flat ground and not on the
+        /// climb.</summary>
+        void PlanDeckTolls()
+        {
+            if (_xwToll == null || expressway == null || !expressway.tollRoad) return;
+            foreach (var deck in _xwDecks)
+            {
+                if (deck.Stretches.Count == 0) continue;
+                var first = deck.Stretches[0];
+                float s = Mathf.Max(TollClear, DeckFlatRun(deck) * 0.5f);
+                if (s - TollBoxHalf < first.S0 + 1f || s + TollBoxHalf > first.S1 - 1f) continue;
+                var at = deck.Line.PointAt(s);
+                var node = XwNode(at, TollBoxHalf, TollBoxHalf, 3f, seam: false);
+                var gate = new TollGate
+                {
+                    Name = $"entry plaza {(deck.Side > 0 ? "A" : "B")}",
+                    Dwell = 2.2f,
+                    Node = node,
+                };
+                node.Toll = gate;
+                _xwToll.Gates.Add(gate);
+                deck.TollNode = node;
+                deck.TollS = s;
+            }
+        }
+
+        /// <summary>How far this carriageway runs at street level from its own mouth
+        /// before the trunk begins to climb.</summary>
+        float DeckFlatRun(XwDeck deck)
+        {
+            for (float s = 0f; s < deck.Line.Length; s += 10f)
+                if (_xw.HeightAt(TrunkS(deck, s)) > ExpresswayLayout.GradeY + 0.5f) return s;
+            return deck.Line.Length;
+        }
+
+        /// <summary>How far up a ramp its plaza stands at the nearest, and how big the
+        /// box it holds is. Twelve clears the junction's own kerb returns (KerbReturn,
+        /// ten metres past the arterial's edge) and is comfortably more than the box's
+        /// own half, so there is always a length of ramp between the terminal and the
+        /// gate for the queue to stand on.</summary>
+        const float TollClear = 12f, TollBoxHalf = 7f;
+
+        /// <summary>Half a toll lane. Narrow - a car creeps through a plaza - and it is
+        /// what leaves room on the mouth's own extra width for the island beside it.
+        /// </summary>
+        const float TollLaneHalf = 1.9f;
+
+        /// <summary>And how far either way the island is marked off.</summary>
+        const float TollIslandRun = 9f;
+
+        /// <summary>How deep a line a car stops at is painted. Two feet: a metre of it,
+        /// which is what the paint would draw at its shortest, is a white slab lying
+        /// across the road rather than a line painted on it.</summary>
+        const float StopLine = 0.6f;
 
         void ClipRamps()
         {
@@ -713,7 +859,7 @@ namespace RoadDemo
                                    _ => -ExpresswayLayout.RampHalf,
                                    0.14f, true, _xwPaint, _xwRoot, "Mouth lane line");
                     if (ramp.Falling)
-                        DeckMesh.Paint(ramp.Line, mouthTo - 1.6f, mouthTo - 0.4f, ramp.Lift,
+                        DeckMesh.Paint(ramp.Line, mouthTo - StopLine - 0.8f, mouthTo - 0.8f, ramp.Lift,
                                        ss => (ramp.Inner(ss) + ExpresswayLayout.RampHalf) * 0.5f,
                                        XwRamp.MouthHalf + ExpresswayLayout.RampHalf - 0.6f,
                                        false, _xwPaint, _xwRoot, "Stop line");
@@ -735,7 +881,7 @@ namespace RoadDemo
         /// did.</summary>
         void LayExpresswayToll()
         {
-            if (_xwToll == null || _xwTollNodes.Count == 0) return;
+            if (_xwToll == null) return;
             var boom = FreewayKit.TryLoad(FreewayKit.BoomPath);
             var booth = FreewayKit.TryLoad(FreewayKit.BoothPath);
             var live = new GameObject("Toll booms").transform;
@@ -780,7 +926,84 @@ namespace RoadDemo
                     }
                 }
             }
-            Debug.Log($"[expressway] toll plaza on the branch: {_xwToll.Gates.Count} gate(s).");
+            foreach (var ramp in _xwRamps)
+                if (ramp.TollNode != null) LayRampToll(ramp, boom, booth, live);
+            foreach (var deck in _xwDecks)
+                if (deck.TollNode != null) LayDeckToll(deck, boom, booth, live);
+            int onRamps = 0, mouths = 0;
+            foreach (var r in _xwRamps) if (r.TollNode != null) onRamps++;
+            foreach (var d in _xwDecks) if (d.TollNode != null) mouths++;
+            Debug.Log($"[expressway] toll: {_xwToll.Gates.Count} gate(s) - " +
+                      $"{_xwTollNodes.Count} on the branch, {onRamps} on the ramps up " +
+                      $"and {mouths} at the trunk's own ends; every way on is charged.");
+        }
+
+        /// <summary>The plaza at the mouth of a carriageway: a booth on the apron the road
+        /// opens out into (DeckWidth), and an arm over each of the two lanes - both lifted
+        /// by the one gate, because a gate lets one car through whichever lane he is
+        /// in.</summary>
+        void LayDeckToll(XwDeck deck, GameObject boom, GameObject booth, Transform live)
+        {
+            float s = deck.TollS;
+            var line = deck.Line;
+            var dir = line.DirAt(s);
+            float yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+            float y = _xw.HeightAt(TrunkS(deck, s));
+            float shoulder = DeckWidth(deck, s).y;
+            if (booth != null)
+            {
+                // hard against the far edge of the apron, measured off the piece rather
+                // than assumed: the apron is as wide as it is and the booth has to stand
+                // ON it, not half over the drop at the end of it
+                float half = FreewayKit.Measure(booth).size.x * 0.5f;
+                var at = line.Pose(s, shoulder - half - 0.3f);
+                at.y = y;
+                FreewayKit.Sit(booth, at, yaw, _xwRoot, "Toll booth");
+            }
+            if (boom == null) return;
+            // one arm a lane, each post standing at ITS OWN LANE'S far edge and the arm
+            // reaching back across it. Posted on the near edge instead, an arm of four
+            // metres covers the lane it stands beside and stops half way over the next.
+            foreach (float lane in ExpresswayLayout.DeckLanes)
+            {
+                var stand = line.Pose(s, lane + TollLaneHalf);
+                stand.y = y;
+                StandXwBoom(boom, stand, -1f, dir, live, deck.TollNode.Toll);
+            }
+        }
+
+        /// <summary>A plaza on an on-ramp: one lane, and the island on the driver's LEFT
+        /// because that is the side his window is on and the side the money is taken
+        /// from. The room for it is already there - the ramp's mouth opens out on its
+        /// left (XwRamp.Flare) and the traffic lane stays where it was.</summary>
+        void LayRampToll(XwRamp ramp, GameObject boom, GameObject booth, Transform live)
+        {
+            float s = ramp.TollS;
+            var line = ramp.Line;
+            var dir = line.DirAt(s);
+            float yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+            float y = ramp.Lift(s);
+            float post = -TollLaneHalf;                       // the island's near edge
+            if (booth != null)
+            {
+                var at = line.Pose(s, post - TollIsland);
+                at.y = y;
+                FreewayKit.Sit(booth, at, yaw, _xwRoot, "Toll booth");
+            }
+            // the island's edge and the line the money is paid at. A booth on a shoulder
+            // with nothing marked round it is a hut beside a road; what makes a plaza is
+            // the paint that tells a driver which side of it to pass.
+            float edge = ramp.Inner(s) + 0.5f;
+            DeckMesh.Paint(line, s - TollIslandRun, s + TollIslandRun, ramp.Lift,
+                           _ => post, 0.2f, false, _xwPaint, _xwRoot, "Toll island");
+            DeckMesh.Paint(line, s - StopLine * 0.5f, s + StopLine * 0.5f, ramp.Lift,
+                           _ => (post + ExpresswayLayout.RampHalf) * 0.5f,
+                           ExpresswayLayout.RampHalf - post - 0.6f,
+                           false, _xwPaint, _xwRoot, "Toll line");
+            if (boom == null) return;
+            var stand = line.Pose(s, post);
+            stand.y = y;
+            StandXwBoom(boom, stand, 1f, dir, live, ramp.TollNode.Toll);
         }
 
         /// <summary>Post to lane centre: the island a boom stands on, which is where
@@ -808,7 +1031,10 @@ namespace RoadDemo
             if (go == null) return;
             var axis = armAlongX ? Vector3.forward : Vector3.right;
             float lift = armAlongX ? (b.center.x >= 0f ? 75f : -75f) : (b.center.z >= 0f ? -75f : 75f);
-            gate.Arms.Add(new TollArm(go.transform, axis, lift));
+            var arm = FreewayKit.BoomOf(go.transform);
+            gate.Arms.Add(arm == null
+                ? new TollArm(go.transform, axis, lift)
+                : new TollArm(arm, Quaternion.Inverse(arm.localRotation) * axis, lift));
         }
 
         // -------------------------------------------------------- the interchanges
@@ -846,7 +1072,7 @@ namespace RoadDemo
                 ? -(ExpresswayLayout.SpurOff + Mathf.Max(120f, ex.Run))
                 : -Mathf.Max(160f, term + 100f);
 
-            float half = avenue ? BoulevardHalf + 1.5f : StreetKit.RoadHalf + 4f;
+            float half = (avenue ? BoulevardHalf : StreetHalf) + 1.5f;
             // stopped WELL back from the box, the way the city's own junctions are: a
             // nose over the line is a nose in the boot of whatever is crossing, and a
             // touch of eighty centimetres is enough to put both cars into reverse and
@@ -1079,15 +1305,9 @@ namespace RoadDemo
                 var walls = RampWalls(ramp);
                 // eight metres a section, not the sixteen a straight would be given: what
                 // changes over the gore is the WIDTH, and the bend knows nothing about it
-                void Run(float from, float to, DeckMesh.Skin skin)
-                {
-                    for (float s = from; s < to; s += 120f)
-                        DeckMesh.Build(ramp.Line, s, Mathf.Min(s + 120f, to), ramp.Lift, wide,
-                                       walls, skin, _xwRoot, ramp.Tag, 8f);
-                }
-                float abutment = ramp.Abutment(RampAbutment);
-                if (ramp.Falling) { Run(0f, abutment, _xwSkin); Run(abutment, len, _xwGround); }
-                else { Run(0f, abutment, _xwGround); Run(abutment, len, _xwSkin); }
+                for (float s = 0f; s < len; s += 120f)
+                    DeckMesh.Build(ramp.Line, s, Mathf.Min(s + 120f, len), ramp.Lift, wide,
+                                   walls, _xwSkin, _xwRoot, ramp.Tag, 8f);
 
                 var pillar = FreewayKit.TryLoad(FreewayKit.PillarPath);
                 if (pillar == null) continue;
@@ -1114,11 +1334,32 @@ namespace RoadDemo
                 // An arterial carrying a whole interchange is an AVENUE, not a street:
                 // two carriageways with a median between them, which is what the ramp
                 // terminals need if a car is ever to wait to turn left across one.
-                float[] sides = r.Boulevard ? new[] { -12.5f, 12.5f } : new[] { 0f };
+                //
+                // Each carriageway is centred on the MIDDLE OF THE LANES IT CARRIES,
+                // taken off the same LaneOffsets the graph is built from, so the asphalt
+                // and the lanes cannot drift apart. Laid at a number of its own it was
+                // two and a half metres out, and a boulevard's inner lane ran with one
+                // wheel over the kerb line.
+                var lanes = LaneOffsets(r.Boulevard);
+                float mid = (lanes[0] + lanes[lanes.Length - 1]) * 0.5f;
+                float[] sides = r.Boulevard ? new[] { -mid, mid } : new[] { 0f };
                 foreach (float side in sides)
                 {
-                    if (alongX) _connectorKit.LayRoadAlongX(r.A.z + side, Mathf.Min(r.A.x, r.B.x), Mathf.Max(r.A.x, r.B.x));
-                    else _connectorKit.LayRoadAlongZ(r.A.x + side, Mathf.Min(r.A.z, r.B.z), Mathf.Max(r.A.z, r.B.z));
+                    // and the strips either side of it, so the road is the width the town
+                    // built it, all the way to the junction it leaves the town by
+                    bool lo = !r.Boulevard || side < 0f, hi = !r.Boulevard || side > 0f;
+                    if (alongX)
+                    {
+                        float x0 = Mathf.Min(r.A.x, r.B.x), x1 = Mathf.Max(r.A.x, r.B.x);
+                        _connectorKit.LayRoadAlongX(r.A.z + side, x0, x1);
+                        _connectorKit.LayShouldersAlongX(r.A.z + side, x0, x1, lo, hi);
+                    }
+                    else
+                    {
+                        float z0 = Mathf.Min(r.A.z, r.B.z), z1 = Mathf.Max(r.A.z, r.B.z);
+                        _connectorKit.LayRoadAlongZ(r.A.x + side, z0, z1);
+                        _connectorKit.LayShouldersAlongZ(r.A.x + side, z0, z1, lo, hi);
+                    }
                 }
             }
             PaveRampTerminals();
@@ -1150,13 +1391,13 @@ namespace RoadDemo
         {
             if (node == null) return;
             var along = Vector3.zero;
-            float half = StreetKit.RoadHalf;
+            float half = StreetHalf;
             foreach (var r in _xwRoads)
             {
                 if (r.NodeA != node && r.NodeB != node) continue;
                 along = r.B - r.A;
                 along.y = 0f;
-                half = r.Boulevard ? BoulevardHalf : StreetKit.RoadHalf;
+                half = r.Boulevard ? BoulevardHalf : StreetHalf;
                 break;
             }
             if (along.sqrMagnitude < 1e-6f) return;
@@ -1202,11 +1443,13 @@ namespace RoadDemo
                     if (st.A != null && !net.Nodes.Contains(st.A)) net.Nodes.Add(st.A);
                     if (st.B != null && !net.Nodes.Contains(st.B)) net.Nodes.Add(st.B);
                 }
+                if (deck.TollNode != null && !net.Nodes.Contains(deck.TollNode)) net.Nodes.Add(deck.TollNode);
             }
             foreach (var r in _xwRamps)
             {
                 if (r.A != null && !net.Nodes.Contains(r.A)) net.Nodes.Add(r.A);
                 if (r.B != null && !net.Nodes.Contains(r.B)) net.Nodes.Add(r.B);
+                if (r.TollNode != null && !net.Nodes.Contains(r.TollNode)) net.Nodes.Add(r.TollNode);
             }
             foreach (var r in _xwRoads)
             {
@@ -1220,12 +1463,10 @@ namespace RoadDemo
                 var d = deck;
                 RoadNode head = TerminalNodeFor(d, first: true);
                 RoadNode tail = TerminalNodeFor(d, first: false);
-                for (int i = 0; i < d.Stretches.Count; i++)
+                void Piece(XwStretch st, float s0, float s1, RoadNode a, RoadNode b)
                 {
-                    var st = d.Stretches[i];
-                    var a = st.A ?? head;
-                    var b = st.B ?? tail;
-                    var line = d.Line.Sub(st.S0, st.S1);
+                    if (s1 - s0 < 1f) return;
+                    var line = d.Line.Sub(s0, s1);
                     var offs = st.Aux
                         ? new[] { -2.85f, 2.85f, ExpresswayLayout.AuxOff }
                         : ExpresswayLayout.DeckLanes;
@@ -1236,8 +1477,8 @@ namespace RoadDemo
                     // trunk-s along this stretch, as a straight line between its ends:
                     // a projection down a two-kilometre polyline is not a thing to do for
                     // every car every frame, and over one stretch the two agree to a metre
-                    float t0 = TrunkS(d, st.S0), t1 = TrunkS(d, st.S1);
-                    float span = Mathf.Max(1f, st.S1 - st.S0);
+                    float t0 = TrunkS(d, s0), t1 = TrunkS(d, s1);
+                    float span = Mathf.Max(1f, s1 - s0);
                     var lay = _xw;
                     road.SurfaceY = lay.HeightAt(t0);
                     road.SurfaceAt = s => lay.HeightAt(Mathf.Lerp(t0, t1, Mathf.Clamp01(s / span)));
@@ -1248,18 +1489,45 @@ namespace RoadDemo
                         if (aux != null) { aux.Auxiliary = true; aux.Exit = st.AuxIsExit; }
                     }
                 }
+                for (int i = 0; i < d.Stretches.Count; i++)
+                {
+                    var st = d.Stretches[i];
+                    var a = st.A ?? head;
+                    var b = st.B ?? tail;
+                    // the plaza at the mouth is a BOX in the graph, so the stretch it
+                    // stands in is two roads with the box between them
+                    if (d.TollNode != null && st.S0 < d.TollS && d.TollS < st.S1)
+                    {
+                        Piece(st, st.S0, d.TollS - TollBoxHalf, a, d.TollNode);
+                        Piece(st, d.TollS + TollBoxHalf, st.S1, d.TollNode, b);
+                    }
+                    else Piece(st, st.S0, st.S1, a, b);
+                }
             }
 
-            // the ramps
+            // the ramps - in two pieces where one carries a toll, because a gate is a
+            // BOX in the graph and a box has to have a road either side of it
             foreach (var r in _xwRamps)
             {
                 if (r.A == null || r.B == null) continue;
-                var road = net.AddCurve(r.Line, ExpresswayLayout.RampHalf, RampLane, ExpresswayLayout.RampSpeed,
-                                        r.A, r.B, oneWay: true, cls: RoadClass.Ramp);
                 var ramp = r;
-                road.SurfaceY = ramp.Lift(0f);
-                road.SurfaceAt = ramp.Lift;
-                road.Elevated = Mathf.Max(r.Y0, r.Y1) > 2.5f;
+                void Piece(float s0, float s1, RoadNode a, RoadNode b)
+                {
+                    if (s1 - s0 < 1f) return;
+                    bool whole = s0 <= 0f && s1 >= ramp.Line.Length;
+                    var line = whole ? ramp.Line : ramp.Line.Sub(s0, s1);
+                    var road = net.AddCurve(line, ExpresswayLayout.RampHalf, RampLane,
+                                            ExpresswayLayout.RampSpeed, a, b, oneWay: true, cls: RoadClass.Ramp);
+                    road.SurfaceY = ramp.Lift(s0);
+                    road.SurfaceAt = ss => ramp.Lift(s0 + ss);
+                    road.Elevated = Mathf.Max(ramp.Lift(s0), ramp.Lift(s1)) > 2.5f;
+                }
+                if (ramp.TollNode == null) Piece(0f, ramp.Line.Length, r.A, r.B);
+                else
+                {
+                    Piece(0f, ramp.TollS - TollBoxHalf, r.A, ramp.TollNode);
+                    Piece(ramp.TollS + TollBoxHalf, ramp.Line.Length, ramp.TollNode, r.B);
+                }
             }
 
             // and the streets on the ground
@@ -1277,7 +1545,7 @@ namespace RoadDemo
                 float limit = r.Boulevard ? boulevardSpeed : streetSpeed;
                 if (len2 < 160f) limit = Mathf.Min(limit, streetSpeed);
                 var road = net.AddRoad(a, bb,
-                                       r.Boulevard ? BoulevardHalf : StreetKit.RoadHalf,
+                                       r.Boulevard ? BoulevardHalf : StreetHalf,
                                        LaneOffsets(r.Boulevard),
                                        limit,
                                        r.NodeA, r.NodeB, northSouth,

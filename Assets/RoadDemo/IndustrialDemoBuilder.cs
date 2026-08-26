@@ -19,9 +19,10 @@ namespace RoadDemo
         public int seed = 1987;
 
         [Header("Traffic")]
-        [Tooltip("Lorries, vans and cars on the quarter's roads. Eighteen is what the " +
-                 "estate carries without a queue standing at a junction.")]
-        public int carCount = 18;
+        [Tooltip("Lorries, vans and cars on the quarter's roads. Nought lets the quarter " +
+                 "work it out from how much road the deal gave it, which is the right answer " +
+                 "when the deal ranges from 300 to 700 m across.")]
+        public int carCount = 0;
         public float streetSpeed = 9f;
         public float arterySpeed = 13f;
         [Range(0f, 1f)]
@@ -49,7 +50,7 @@ namespace RoadDemo
             host.cameraPitch = 55f;
             host.cameraFar = 2500f;
             host.skyboxSky = true;
-            host.hint = "WASD/arrows: move   Q/E or right-drag: rotate   wheel: zoom   " +
+            host.hint = "click a block: card   WASD/arrows: move   Q/E or right-drag: rotate   wheel: zoom   " +
                         "Space: pause   , . : slower/faster";
             host.HostSeeded(district, seed);
 #else

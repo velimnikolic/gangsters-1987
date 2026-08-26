@@ -73,7 +73,7 @@ namespace LivingCity.EditorTools
         /// What "all" deals: two works, a stockyard and a service strip.
         ///
         /// The depot is a warehouse and there is a stockyard in the four already, so it is
-        /// kept for --recipe depot. The quarter's own three - the truck stop, the tank farm
+        /// kept for --recipe depot. The quarter's own three - the haulage yard, the tank farm
         /// and the empty plot - are not dealt here either: each is a one-off that only means
         /// anything among other parcels (a filling station on a quarter's corner, a plot
         /// nobody has built on YET), and standing four of them in a row on a bench says
@@ -110,7 +110,9 @@ namespace LivingCity.EditorTools
                 case "depot": return IndustrialLayout.Recipe.Depot;
                 case "yard": return IndustrialLayout.Recipe.Yard;
                 case "strip": return IndustrialLayout.Recipe.Strip;
-                case "stop": return IndustrialLayout.Recipe.Stop;
+                // "stop" still answers, because that is what this was called when it was a
+                // truck stop and a note somewhere will still say so
+                case "haulage": case "stop": return IndustrialLayout.Recipe.Haulage;
                 case "fuel": return IndustrialLayout.Recipe.Fuel;
                 case "waste": return IndustrialLayout.Recipe.Waste;
                 default: return Dealt[index % Dealt.Length];

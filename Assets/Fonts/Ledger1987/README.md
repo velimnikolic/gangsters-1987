@@ -11,6 +11,8 @@ no baked SDF assets to keep in sync.
 | PTSerif-*.ttf | the newspaper's masthead and text | OFL 1.1 (`OFL-PTSerif.txt`) |
 | Oswald-Bold.ttf | tabloid headlines, rubber stamps, label-maker tape, every display line the city's own screens print | OFL 1.1 (`OFL-Oswald.txt`) |
 | Oswald-Regular.ttf | the running text of those screens - map marks, block tags, popup lines | OFL 1.1 (`OFL-Oswald.txt`) |
+| Silkscreen-Regular.ttf | the tactical map terminal - every line of its HUD | OFL 1.1 (`OFL-Silkscreen.txt`) |
+| Silkscreen-Bold.ttf | the same terminal's headings and figures | OFL 1.1 (`OFL-Silkscreen.txt`) |
 
 These are the whole game's type, not the book's alone: `DemoUi` (the top bar, the map,
 the overlays) takes its two faces from `LedgerStyle` as well, so nothing on screen is

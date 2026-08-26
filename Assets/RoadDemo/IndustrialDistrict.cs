@@ -22,10 +22,35 @@ namespace RoadDemo
     /// </summary>
     public sealed class IndustrialDistrict : IDistrict
     {
-        /// <summary>Lorries and vans in the quarter's traffic. Fewer than the core's
-        /// twenty-four: the roads here are longer and there are far fewer of them, and a
-        /// lorry takes the room of two cars at a junction.</summary>
-        public int carCount = 18;
+        /// <summary>
+        /// Lorries and vans in the quarter's traffic, or NOUGHT to let the quarter work it
+        /// out from how much road it was dealt.
+        ///
+        /// A fixed number is wrong here in a way it is not wrong for the core, because the
+        /// core is always about the same size and this is not: the deal gives anything from
+        /// 300 to 700 m across. Eighteen was measured against a quarter of 505 x 485 m and
+        /// came through five runs with no refusals; the same eighteen on a 315 x 400 m deal
+        /// gave FORTY-EIGHT, which is not a fault in the roads but too much traffic on too
+        /// little of them.
+        /// </summary>
+        public int carCount = 0;
+
+        /// <summary>
+        /// Square metres of road to a vehicle, when the count is worked out rather than
+        /// given.
+        ///
+        /// It was 3,400, read off the one run that passed - and one run is not a reading.
+        /// Over five runs of the 315 x 400 m deal that density came out four clean and one
+        /// with 605 refusals of the road-space band, climbing from nothing at 95 s to 605 by
+        /// 180 s. Nobody was deadlocked (the worst car stood 23 s) so it is congestion
+        /// building rather than a lock, which is exactly what too many vehicles on too few
+        /// junctions looks like as a run goes on.
+        ///
+        /// 4,200 is the same reading with the margin the first number should have had: it
+        /// takes the small deal from twelve vehicles to ten, and leaves the big ones where
+        /// they were, because those are capped at twenty-four anyway.
+        /// </summary>
+        const float RoadPerVehicle = 4200f;
         public float streetSpeed = 9f;
         public float arterySpeed = 13f;
 
@@ -119,15 +144,18 @@ namespace RoadDemo
         /// </summary>
         void SpawnLorries(Transform parent)
         {
-            if (carCount <= 0 || _edges.Count == 0) return;
+            int want = carCount > 0
+                ? carCount
+                : Mathf.Clamp(Mathf.RoundToInt(_raster.RoadArea / RoadPerVehicle), 6, 24);
+            if (want <= 0 || _edges.Count == 0) return;
             var dice = new System.Random(_seed);
             int placed = 0;
-            for (int round = 0; placed < carCount && round < 40; round++)
+            for (int round = 0; placed < want && round < 40; round++)
             {
                 bool any = false;
                 foreach (var edge in _edges)
                 {
-                    if (placed >= carCount) break;
+                    if (placed >= want) break;
                     float s = 8f + round * 24f;      // lorries want more room than cars do
                     if (s > edge.Length - 16f) continue;
                     any = true;
@@ -194,7 +222,17 @@ namespace RoadDemo
                         if (!any) { box = renderer.bounds; any = true; }
                         else box.Encapsulate(renderer.bounds);
                     }
-                    if (any) host.Blocked(box, one.Parcel.Name);
+                    // named for the BUILDING, with its parcel after it - which is what the
+                    // port, the villages and the airfield all pass, and what a card naming a
+                    // building wants. The parcel's name alone came from copying the core,
+                    // and the core is the odd one out: it hands the same name to every
+                    // building in a block, so a dozen sheds all answer to "haulage-01".
+                    //
+                    // Keeping the parcel in the string is not decoration. Whatever reads
+                    // these classifies by name first, and "works" or "plant" in it is what
+                    // says factory hall; "building-factory" on its own says nothing to that
+                    // rule and falls through to a guess off the footprint.
+                    if (any) host.Blocked(box, $"{piece.name} ({one.Parcel.Name})");
                 }
             }
         }

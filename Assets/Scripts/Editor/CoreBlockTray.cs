@@ -393,16 +393,243 @@ namespace LivingCity.EditorTools
 
             var panel = tray.GetComponent<RoadDemo.CoreTray>();
             int band = panel ? Mathf.Clamp(panel.pavementTiles, 1, 4) : 2;
-            Ground(tray, rect, already, pieces, out var open, out var roofed, out var gates);
-            var plan = RoadDemo.CorePavement.Around(walls, band, open, roofed, gates);
+            Ground(tray, rect, already, pieces, out var open, out var roofed, out var gates,
+                   out var parks, out int parkYaw, out var fleet);
+            var plan = RoadDemo.CorePavement.Around(walls, band, open, roofed, gates,
+                                                    parks, parkYaw);
             int laid = RoadDemo.CorePavement.Lay(
                 plan, (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent),
                 group.transform, out said, y: tray.position.y, seed: seed,
                 under: !(panel && panel.ownGround));
+            laid += Ramps(plan, group.transform, tray.position.y, tray.name);
+            laid += Parked(plan, group.transform, fleet);
 
             if (laid != 0) return true;
             Undo.DestroyObjectImmediate(group);
             return false;
+        }
+
+        /// <summary>
+        /// The cars standing in a block's own car park - one to every bay the pavement
+        /// painted, all facing the way the lot was declared to face.
+        ///
+        /// NOSED UP TO THE BACK OF THE BAY, not stood in the middle of it. The pack's bay
+        /// is five metres deep and the pack's own cars are 5.8 and 6.9 long, so a car
+        /// centred in one hangs over BOTH lines and the lot reads as too small for the
+        /// force parked in it (2026-08-26, the user: "parking je nekako premali, uvek viri
+        /// auto s njega"). Nosed up, the front wheels are at the line they should be at and
+        /// what hangs over is the tail, over the crossing the car drove in across - which is
+        /// what a car park full of cars actually looks like. Nothing is scaled to fit: the
+        /// pack drew the bay and the pack drew the car, and the answer is where the car is
+        /// put, not how big it is.
+        ///
+        /// The fleet is dealt round in order rather than at random, so the block comes out
+        /// the same way every time it is baked.
+        /// </summary>
+        static int Parked(RoadDemo.CorePavement.Plan plan, Transform parent, string[] fleet)
+        {
+            if (plan?.Stalls == null || fleet == null || fleet.Length == 0) return 0;
+
+            var facing = Quaternion.Euler(0f, plan.ParkYaw, 0f);
+            int stood = 0;
+
+            foreach (var stall in plan.Stalls)
+            {
+                var name = fleet[stood % fleet.Length];
+                var prefab = Find(name);
+                if (prefab == null)
+                {
+                    Debug.LogWarning($"[CoreTray] no prefab called {name} - the car park is a " +
+                                     "bay short.");
+                    continue;
+                }
+                var car = (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent);
+                car.transform.SetPositionAndRotation(stall, facing);
+                Undo.RegisterCreatedObjectUndo(car, "Pave block tray");
+
+                RoadDemo.CoreRoads.InBay(car, stall, plan.ParkYaw);
+                stood++;
+            }
+            return stood;
+        }
+
+        /// <summary>One pack prefab by its plain name, the way the catalogs give them.</summary>
+        static GameObject Find(string name)
+        {
+            foreach (var guid in AssetDatabase.FindAssets($"{name} t:Prefab"))
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (System.IO.Path.GetFileNameWithoutExtension(path) != name) continue;
+                return AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            }
+            return null;
+        }
+
+        /// <summary>Tiles a palm may be planted on: the kerb of a block, whichever way it
+        /// runs. The corner pieces are left out - a corner is where the bollards guard and
+        /// where two runs meet, and a tree standing on one blocks both.</summary>
+        static readonly string[] PalmTiles =
+        {
+            "SM_Env_Sidewalk_Straight", "SM_Env_Sidewalk_Gutter",
+        };
+
+        /// <summary>What already stands on a block, so a palm is not planted through it:
+        /// everything the pack calls a prop, and anything green already growing.</summary>
+        static readonly string[] Standing =
+        {
+            "SM_Prop_", "SM_Env_Tree", "SM_Env_Plant",
+        };
+
+        /// <summary>
+        /// The palms the HARVESTED blocks never had.
+        ///
+        /// A block this class grew is furnished as it is laid (CorePavement.Furnish); a block
+        /// copied out of the demo scene carries the artists' own furniture and no trees at
+        /// all, so a city dealt from both came out half planted (2026-08-26, the user: "ovi
+        /// stari blokovi nemaju palme, dodaj i na njih da bude uniformno"). This plants the
+        /// second kind to the same rhythm as the first.
+        ///
+        /// Idempotent by inspection rather than by a marker: a block with a palm on it has
+        /// been planted and is left alone. So it can be run again after a harvest without
+        /// thickening what is already done, and run on a grown block it does nothing.
+        /// </summary>
+        [MenuItem("Tools/City/Core/Plant Palms On Baked Blocks", priority = 43)]
+        public static void PlantPalmsFromMenu()
+        {
+            int blocks = PlantPalms(out var said);
+            Debug.Log($"[CoreTray] palms planted on {blocks} block(s): " + string.Join("; ", said));
+            if (blocks > 0) AssetDatabase.SaveAssets();
+        }
+
+        /// <summary>Plants every baked block that has a kerb and no tree. Returns how many
+        /// were written; <paramref name="said"/> gets a line each.</summary>
+        internal static int PlantPalms(out List<string> said)
+        {
+            said = new List<string>();
+            if (!AssetDatabase.IsValidFolder(OutDir)) return 0;
+
+            int written = 0;
+            foreach (var guid in AssetDatabase.FindAssets("t:Prefab", new[] { OutDir }))
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                string name = System.IO.Path.GetFileNameWithoutExtension(path);
+                var block = PrefabUtility.LoadPrefabContents(path);
+                if (block == null) continue;
+
+                try
+                {
+                    var kerbs = new List<RoadDemo.CorePavement.Kerbstone>();
+                    var standing = new List<Vector3>();
+                    bool already = false;
+
+                    foreach (Transform piece in block.transform)
+                    {
+                        if (Named(piece.gameObject, RoadDemo.CorePavement.PalmPiece))
+                        { already = true; break; }
+                        if (Named(piece.gameObject, Standing)) { standing.Add(piece.position); continue; }
+                        if (!Named(piece.gameObject, PalmTiles)) continue;
+
+                        // the pack pivots every tile on the +X/+Z corner of its own cell, so
+                        // the middle is half a cell back along the TILE'S own axes - which is
+                        // the whole of what the turn has to be read through
+                        kerbs.Add(new RoadDemo.CorePavement.Kerbstone(
+                            piece.TransformPoint(new Vector3(-HalfCell, 0f, -HalfCell)),
+                            piece.eulerAngles.y));
+                    }
+
+                    if (already) { said.Add($"{name}: has trees already"); continue; }
+                    if (kerbs.Count == 0) { said.Add($"{name}: no kerb to plant on"); continue; }
+
+                    // the block's own name is the seed, so the same block is planted the same
+                    // way every time and no two blocks are planted alike
+                    int seed = 17;
+                    foreach (char letter in name) seed = seed * 31 + letter;
+
+                    int palms = RoadDemo.CorePavement.Plant(
+                        kerbs, standing,
+                        (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent),
+                        block.transform, seed);
+
+                    if (palms == 0)
+                    {
+                        said.Add($"{name}: no room on {kerbs.Count} kerb tile(s)");
+                        continue;
+                    }
+
+                    PrefabUtility.SaveAsPrefabAsset(block, path);
+                    written++;
+                    said.Add($"{name}: {palms} palm(s) on {kerbs.Count} kerb tile(s)");
+                }
+                finally
+                {
+                    PrefabUtility.UnloadPrefabContents(block);
+                }
+            }
+            return written;
+        }
+
+        /// <summary>Half a cell of the pack's module.</summary>
+        const float HalfCell = RoadDemo.CorePavement.Cell * 0.5f;
+
+        /// <summary>Where a block's drawn ramps are kept. A mesh built in the scene and
+        /// saved nowhere does not survive being written into a prefab - the block would come
+        /// out with a MeshFilter pointing at nothing - so each one goes on disk beside the
+        /// blocks themselves and the block carries the asset.</summary>
+        const string MeshDir = OutDir + "/Meshes";
+
+        /// <summary>The ramps the plan asked for, drawn and stood. Two surfaces apiece and a
+        /// material each - see <see cref="RoadDemo.CoreRamp"/>.</summary>
+        static int Ramps(RoadDemo.CorePavement.Plan plan, Transform parent, float y, string name)
+        {
+            if (plan?.Slopes == null || plan.Slopes.Count == 0) return 0;
+
+            EnsureFolder(MeshDir);
+            string file = string.Join("_", name.Split(System.IO.Path.GetInvalidFileNameChars()));
+            int stood = 0;
+
+            for (int at = 0; at < plan.Slopes.Count; at++)
+            {
+                var slope = plan.Slopes[at];
+                RoadDemo.CoreRamp.Build(slope, out var deck, out var walls);
+                string tag = plan.Slopes.Count > 1 ? $" {at + 1}" : "";
+                if (Stand(deck, $"ramp{tag} deck", $"{file}-ramp{at + 1}-deck", parent, slope, y)) stood++;
+                if (Stand(walls, $"ramp{tag} walls", $"{file}-ramp{at + 1}-walls", parent, slope, y)) stood++;
+            }
+            return stood;
+        }
+
+        /// <summary>One drawn surface saved and stood, turned so that its own +Z climbs the
+        /// way the slope does.</summary>
+        static bool Stand(RoadDemo.CoreRamp.Drawn drawn, string name, string file,
+                          Transform parent, RoadDemo.CorePavement.Slope slope, float y)
+        {
+            if (!drawn.Any) return false;
+
+            string path = $"{MeshDir}/{file}.asset";
+            var already = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            if (already == null) AssetDatabase.CreateAsset(drawn.Mesh, path);
+            else
+            {
+                // the same block re-paved: the asset keeps its guid so every block already
+                // pointing at it follows the change instead of being left on a ghost
+                already.Clear();
+                already.SetVertices(drawn.Mesh.vertices);
+                already.SetUVs(0, drawn.Mesh.uv);
+                already.SetTriangles(drawn.Mesh.triangles, 0);
+                already.RecalculateNormals();
+                already.RecalculateBounds();
+                EditorUtility.SetDirty(already);
+                Object.DestroyImmediate(drawn.Mesh);
+            }
+            var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+
+            var go = new GameObject(name, typeof(MeshFilter), typeof(MeshRenderer));
+            Undo.RegisterCreatedObjectUndo(go, "Pave block tray");
+            go.transform.SetParent(parent, false);
+            go.transform.SetPositionAndRotation(slope.Middle(y), slope.Facing);
+            go.GetComponent<MeshFilter>().sharedMesh = mesh;
+            go.GetComponent<MeshRenderer>().sharedMaterial = drawn.Wearing;
+            return true;
         }
 
         /// <summary>What the kit's own building bakes are called - the catalog's buildings
@@ -470,11 +697,15 @@ namespace LivingCity.EditorTools
         /// <see cref="Scan"/>, which is where the question is actually settled.
         /// </summary>
         static void Ground(Transform tray, Rect rect, Transform paving, List<Piece> pieces,
-                           out List<Bounds> open, out List<Bounds> roofed, out List<Bounds> gates)
+                           out List<Bounds> open, out List<Bounds> roofed, out List<Bounds> gates,
+                           out List<Bounds> parks, out int parkYaw, out string[] fleet)
         {
             open = new List<Bounds>();
             roofed = new List<Bounds>();
             gates = new List<Bounds>();
+            parks = new List<Bounds>();
+            parkYaw = 0;
+            fleet = null;
 
             foreach (var piece in pieces)
             {
@@ -485,6 +716,14 @@ namespace LivingCity.EditorTools
 
                 // a walled yard's way in cannot be read off the mesh - see GateOf
                 if (CoreBuildingBlocks.GateOf(piece.Go, out var gate)) gates.Add(gate);
+
+                // nor can the ground a building's own cars stand on - see ParkOf
+                if (CoreBuildingBlocks.ParkOf(piece.Go, out var park, out int yaw, out var cars))
+                {
+                    parks.Add(park);
+                    parkYaw = yaw;
+                    fleet = cars;
+                }
 
                 bool dips = piece.Box.min.y <= RoadDemo.CorePavement.Underground;
 
@@ -518,20 +757,30 @@ namespace LivingCity.EditorTools
         /// What one piece leaves OPEN and what it ROOFS, cell by cell off its mesh rather
         /// than off its bounding box.
         ///
-        /// The box was the old test and it was wrong for anything with a basement: the
-        /// police station reaches -4.25 m under its own walls, so its box read as one 60 x
-        /// 40 m hole and the block was baked with the city showing through the middle of it.
-        /// What makes a hole is not depth, it is depth with NOTHING STANDING OVER IT - a
-        /// sunken entrance stair, a basement door, a subway mouth, this station's vehicle
-        /// yard. A slab laid at nought under a building's own floor is never seen.
+        /// A cell is OPEN where the piece lays a FLOOR below ground in it - not where its
+        /// lowest vertex happens to be low, which was the old reading and was wrong at both
+        /// ends. It called a whole police station one 60 x 40 m hole because its box reaches
+        /// -4.25; and at the other end it called a corner of the same station solid ground
+        /// on the strength of three square metres of kerb, and left the city showing through
+        /// beside it. So the FLOOR is what is measured - up-facing horizontal surface, by
+        /// area, at the height it lies at - and a cell counts as dropping through when
+        /// <see cref="RoadDemo.CorePavement.Covers"/> of it is floored below
+        /// <see cref="RoadDemo.CorePavement.Underground"/>.
+        ///
+        /// And a roof over it changes nothing (2026-08-26, the user, of the police station:
+        /// "ne sme da ima pavement ispod sebe jer ide u - po vertikali"). A slab at nought
+        /// over a basement is a lid inside the building, whether the building is over it or
+        /// not; the pack's own rule is that a unit which goes below ground is given no floor
+        /// at all, and the roof only ever mattered to the way OUT - which is why Roofed is
+        /// still measured, and separately.
         ///
         /// Cells are snapped to the world 5 m beat, which is the beat
         /// <see cref="RoadDemo.CorePavement.Around"/> lays its raster on, so a box handed
-        /// back here covers exactly one cell of it. A cell with head room standing over it
-        /// is roofed and never open, whatever it does underneath.
+        /// back here covers exactly one cell of it. An open cell's box carries the floor it
+        /// found as its foot: that is how far a way out has to climb.
         ///
-        /// Returns false when the piece cannot be read whole - no MeshFilter at all, or one
-        /// of its meshes imported without Read/Write - and nothing is written to either list.
+        /// Returns false when the piece cannot be read whole - no MeshFilter at all, or a
+        /// mesh whose data is gone - and nothing is written to either list.
         ///
         /// Either list may be null: a prop that dips is asked only what it leaves open, and
         /// a building with no basement only what it stands on.
@@ -539,40 +788,86 @@ namespace LivingCity.EditorTools
         static bool Scan(GameObject go, List<Bounds> open, List<Bounds> roofed)
         {
             const float cell = RoadDemo.CorePavement.Cell;
-            var spans = new Dictionary<Vector2Int, Vector2>();   // cell -> (lowest y, highest y)
+            var floors = new Dictionary<Vector2Int, Vector2>();   // cell -> (floor area, lowest floor)
+            var tops = new Dictionary<Vector2Int, float>();       // cell -> highest point
             bool read = false;
 
             foreach (var filter in go.GetComponentsInChildren<MeshFilter>())
             {
                 var mesh = filter.sharedMesh;
                 if (mesh == null) continue;
-                if (!mesh.isReadable) return false;
+
+                // isReadable is NOT the test here. The merge releases the CPU copy of every
+                // mesh it folds in (RoadDemo's merge, on entering play), which clears that
+                // flag on the asset for the rest of the editor session - and a bake taken
+                // afterwards would quietly fall back to bounding boxes. In the editor the
+                // data is on disk either way, so it is asked for and the answer is the test
+                var points = mesh.vertices;
+                var corners = mesh.triangles;
+                if (points.Length == 0 || corners.Length == 0) return false;
                 read = true;
+
                 var toWorld = filter.transform.localToWorldMatrix;
-                foreach (var vertex in mesh.vertices)
+                for (int t = 0; t + 2 < corners.Length; t += 3)
                 {
-                    var at = toWorld.MultiplyPoint3x4(vertex);
-                    var key = new Vector2Int(Mathf.FloorToInt(at.x / cell), Mathf.FloorToInt(at.z / cell));
-                    if (spans.TryGetValue(key, out var span))
-                        spans[key] = new Vector2(Mathf.Min(span.x, at.y), Mathf.Max(span.y, at.y));
+                    var a = toWorld.MultiplyPoint3x4(points[corners[t]]);
+                    var b = toWorld.MultiplyPoint3x4(points[corners[t + 1]]);
+                    var c = toWorld.MultiplyPoint3x4(points[corners[t + 2]]);
+                    var key = new Vector2Int(Mathf.FloorToInt((a.x + b.x + c.x) / (3f * cell)),
+                                             Mathf.FloorToInt((a.z + b.z + c.z) / (3f * cell)));
+
+                    float high = Mathf.Max(a.y, Mathf.Max(b.y, c.y));
+                    if (!tops.TryGetValue(key, out float had) || high > had) tops[key] = high;
+
+                    // a floor: level, facing up, and low enough to be under the pavement
+                    var normal = Vector3.Cross(b - a, c - a);
+                    float twice = normal.magnitude;
+                    if (twice < Sliver || normal.y < Level * twice) continue;
+                    float y = (a.y + b.y + c.y) / 3f;
+                    if (y > RoadDemo.CorePavement.Underground) continue;
+
+                    // the area it covers on the GROUND, not the area of the triangle: a
+                    // ramp lying at an angle floors less than its own size
+                    float covers = normal.y * 0.5f;
+                    if (floors.TryGetValue(key, out var floor))
+                        floors[key] = new Vector2(floor.x + covers, Mathf.Min(floor.y, y));
                     else
-                        spans[key] = new Vector2(at.y, at.y);
+                        floors[key] = new Vector2(covers, y);
                 }
             }
             if (!read) return false;
 
             // the order cells come out of the table in does not matter: each one is claimed
             // on its own and claiming is idempotent
-            foreach (var pair in spans)
+            float enough = RoadDemo.CorePavement.Covers * cell * cell;
+            foreach (var pair in tops)
+                if (pair.Value >= HeadRoom)
+                    roofed?.Add(Square(pair.Key, RoadDemo.CorePavement.Underground, pair.Value));
+
+            foreach (var pair in floors)
             {
-                float low = pair.Value.x, high = pair.Value.y;
-                var box = new Bounds(new Vector3((pair.Key.x + 0.5f) * cell, (low + high) * 0.5f,
-                                                 (pair.Key.y + 0.5f) * cell),
-                                     new Vector3(cell, Mathf.Max(0.1f, high - low), cell));
-                if (high >= HeadRoom) roofed?.Add(box);
-                else if (low <= RoadDemo.CorePavement.Underground) open?.Add(box);
+                if (pair.Value.x < enough) continue;
+                open?.Add(Square(pair.Key, pair.Value.y, RoadDemo.CorePavement.Underground));
             }
             return true;
+        }
+
+        /// <summary>How square a triangle has to lie before it counts as floor rather than
+        /// wall. A car park ramp a driver would call steep is one in five, and 0.95 lets
+        /// everything gentler than about eighteen degrees count as ground.</summary>
+        const float Level = 0.95f;
+
+        /// <summary>A triangle smaller than this has no area worth adding up.</summary>
+        const float Sliver = 1e-6f;
+
+        /// <summary>One cell of the world raster, as a box from one height to another.</summary>
+        static Bounds Square(Vector2Int at, float low, float high)
+        {
+            const float cell = RoadDemo.CorePavement.Cell;
+            if (high < low) (low, high) = (high, low);
+            return new Bounds(
+                new Vector3((at.x + 0.5f) * cell, (low + high) * 0.5f, (at.y + 0.5f) * cell),
+                new Vector3(cell, Mathf.Max(0.1f, high - low), cell));
         }
 
         /// <summary>
@@ -1235,7 +1530,7 @@ namespace LivingCity.EditorTools
         public static void EmptyTrays()
         {
             var scene = SceneManager.GetActiveScene();
-            int gone = Remove(scene, Standing(scene));
+            int gone = Remove(scene, StandingIn(scene));
             Debug.Log(gone > 0
                 ? $"[CoreTray] {gone} piece(s) taken off the trays. NOTHING was baked - " +
                   "Ctrl+Z puts them back."
@@ -1243,7 +1538,7 @@ namespace LivingCity.EditorTools
         }
 
         /// <summary>Everything the trays are holding, however it got there.</summary>
-        static List<GameObject> Standing(Scene scene)
+        static List<GameObject> StandingIn(Scene scene)
         {
             var standing = new List<GameObject>();
             var trays = TraysOf(scene);
@@ -1286,7 +1581,7 @@ namespace LivingCity.EditorTools
                 return Wrote.Unchanged;
             }
 
-            EnsureFolder();
+            EnsureFolder(OutDir);
             var root = new GameObject(name);
             int copied = 0;
             foreach (var piece in pieces)
@@ -1821,7 +2116,7 @@ namespace LivingCity.EditorTools
                 return byX != 0 ? byX : Mathf.RoundToInt(pa.y).CompareTo(Mathf.RoundToInt(pb.y));
             });
 
-            EnsureFolder();
+            EnsureFolder(OutDir);
             var said = new List<string>();
             int written = 0;
             for (int i = 0; i < blocks.Count; i++)
@@ -2755,9 +3050,9 @@ namespace LivingCity.EditorTools
         /// <summary>Makes whatever folder <see cref="OutDir"/> names, one level at a time,
         /// so moving the output somewhere else is a one-line change and not a hunt through
         /// hard-coded CreateFolder calls.</summary>
-        static void EnsureFolder()
+        static void EnsureFolder(string dir)
         {
-            var parts = OutDir.Split('/');
+            var parts = dir.Split('/');
             var path = parts[0];
             for (int i = 1; i < parts.Length; i++)
             {
