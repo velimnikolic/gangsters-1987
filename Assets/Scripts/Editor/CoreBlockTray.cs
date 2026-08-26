@@ -1281,7 +1281,17 @@ namespace LivingCity.EditorTools
         [MenuItem("Tools/City/Core/Bake Trays Now", priority = 20)]
         public static void BakeNow()
         {
-            int written = BakeAll(SceneManager.GetActiveScene(), force: true, out var said, out _, out _);
+            var scene = SceneManager.GetActiveScene();
+            int written = BakeAll(scene, force: true, out var said, out _, out _);
+
+            // a block that has just been baked has to appear where the other blocks are, or
+            // the only proof it exists is a line of text. The row is rebuilt from the folder,
+            // so the new one takes its place in the order rather than being hung on the end -
+            // and only for someone who has the row open, which is the same rule the save
+            // follows (OnSceneSaved). Nobody who has never asked for the row gets one.
+            if (written > 0 && scene.GetRootGameObjects().Any(go => go.name == ReviewRoot))
+                Review(scene, out _);
+
             if (said.Count == 0)
             {
                 EditorUtility.DisplayDialog("Bake Trays",
@@ -1626,8 +1636,8 @@ namespace LivingCity.EditorTools
         ///
         /// <paramref name="linked"/> says whether the link survived.
         /// </summary>
-        static GameObject Restand(GameObject piece, Transform parent, Vector3 position,
-                                  out bool linked)
+        internal static GameObject Restand(GameObject piece, Transform parent, Vector3 position,
+                                           out bool linked)
         {
             var source = PrefabUtility.GetCorrespondingObjectFromSource(piece);
             linked = source != null && !Rebuilt(piece);

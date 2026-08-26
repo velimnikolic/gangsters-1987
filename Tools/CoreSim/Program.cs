@@ -20,7 +20,7 @@ static class Program
     {
         int seed = 1, count = 1;
         bool synty = false, map = false, rows = false, tiles = false, stats = false, industrial = false;
-        bool park = false, sweep = false, quay = false;
+        bool park = false, sweep = false, quay = false, residential = false;
         string size = "";
         int deal = -1;
         string file = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "blocks.txt");
@@ -33,6 +33,7 @@ static class Program
                 case "--synty": synty = true; break;
                 case "--industrial": industrial = true; break;
                 case "--park": park = true; break;
+                case "--residential": residential = true; break;
                 case "--quay": quay = true; break;
                 case "--size": size = args[++i]; break;
                 case "--sweep": sweep = true; break;
@@ -46,6 +47,7 @@ static class Program
                 default: Console.WriteLine("unknown " + args[i]); return 2;
             }
         }
+        if (residential) return Residential(seed, count, size, map);
         if (park) return Parks(seed, count, size, map, sweep);
         if (industrial) return Industry(seed, count, deal, map, rows, stats);
 
@@ -218,6 +220,98 @@ static class Program
     /// time a quarter deals it an awkward rectangle, and the belt round the core deals
     /// nothing else.
     /// </summary>
+    /// <summary>
+    /// The residential block, dealt from seeds and judged with no editor open.
+    ///
+    /// Thirty seeds of every class is the tally that counts - one seed proves nothing, and a
+    /// block that comes out clean once can be a block whose corner unit happened to fit.
+    /// </summary>
+    static int Residential(int seed, int count, string size, bool map)
+    {
+        var sizes = new List<(string Name, int W, int D)>();
+        if (size.Contains("x"))
+        {
+            var bits = size.Split('x');
+            sizes.Add(("asked", int.Parse(bits[0]), int.Parse(bits[1])));
+        }
+        else if (size.Length > 0) sizes.Add((size, 0, 0));
+        else
+        {
+            sizes.Add(("corner", 0, 0));
+            sizes.Add(("row", 0, 0));
+            sizes.Add(("block", 0, 0));
+            sizes.Add(("court", 0, 0));
+        }
+
+        int tried = 0, clean = 0;
+        var faulty = new Dictionary<string, int>();
+        var refused = new Dictionary<string, int>();
+        var tallies = new List<string>();
+
+        foreach (var want in sizes)
+        {
+            int good = 0, empties = 0, doors = 0, gaps = 0;
+            for (int n = 0; n < count; n++)
+            {
+                int s = seed + n;
+                var dice = new Random(s * 31 + want.Name.Length);
+                int w = want.W, d = want.D;
+                if (w == 0) Size(want.Name, dice, out w, out d);
+
+                var plan = ResidentialLot.Roll(w, d, s, artery: dice.Next(4));
+                tried++;
+                if (plan.Clean) { clean++; good++; }
+                empties += plan.M.Empty;
+                doors += plan.M.Doors;
+                gaps += plan.M.Gaps;
+
+                foreach (var fault in plan.Faults)
+                {
+                    string key = System.Text.RegularExpressions.Regex.Replace(fault, @"[0-9]+", "N");
+                    key = key.Substring(0, Math.Min(key.Length, 90));
+                    faulty[key] = faulty.TryGetValue(key, out var k) ? k + 1 : 1;
+                    if (faulty[key] <= 2) Console.WriteLine($"   {w * 5}x{d * 5} m seed {s}: {fault}");
+                }
+                foreach (var line in plan.Refused)
+                {
+                    string key = System.Text.RegularExpressions.Regex.Replace(line, @"[0-9]+", "N");
+                    refused[key] = refused.TryGetValue(key, out var r) ? r + 1 : 1;
+                }
+                if (count <= 3 || map)
+                {
+                    Console.WriteLine(ResidentialLot.Report(plan));
+                    if (map) Console.WriteLine(ResidentialLot.Map(plan));
+                }
+            }
+            tallies.Add($"   {want.Name,-8} {good,3}/{count} clean, " +
+                        $"{(double)doors / count:F1} doors, {(double)gaps / count:F1} gaps, " +
+                        $"{(double)empties / count:F1} empty cells a block");
+        }
+
+        Console.WriteLine($"{tried} block(s), {clean} clean ({100.0 * clean / tried:F0}%)");
+        foreach (var line in tallies) Console.WriteLine(line);
+        foreach (var pair in refused.OrderByDescending(p => p.Value))
+            Console.WriteLine($"   {pair.Value,5}  REFUSED {pair.Key}");
+        foreach (var pair in faulty.OrderByDescending(p => p.Value))
+            Console.WriteLine($"   {pair.Value,5}  {pair.Key}");
+        return clean == tried ? 0 : 1;
+    }
+
+    /// <summary>A block of the asked-for class, in cells, pavement ring included.</summary>
+    static void Size(string name, Random dice, out int w, out int d)
+    {
+        switch (name)
+        {
+            case "corner": w = dice.Next(6, 10); d = dice.Next(5, 9); break;
+            case "row": w = dice.Next(4, 7); d = dice.Next(10, 15); break;
+            case "court": w = dice.Next(16, 21); d = dice.Next(16, 21); break;
+            default: w = dice.Next(10, 16); d = dice.Next(11, 20); break;
+        }
+        w += 2 * ResidentialLot.Walk;
+        d += 2 * ResidentialLot.Walk;
+        if (dice.Next(2) == 0) { int t = w; w = d; d = t; }
+    }
+
     static int Parks(int seed, int count, string size, bool map, bool sweep)
     {
         if (sweep)

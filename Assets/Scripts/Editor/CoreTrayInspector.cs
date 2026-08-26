@@ -1,4 +1,5 @@
 using UnityEditor;
+using UnityEditorInternal;
 using UnityEngine;
 
 namespace LivingCity.EditorTools
@@ -25,6 +26,26 @@ namespace LivingCity.EditorTools
         {
             Read();
             EditorApplication.hierarchyChanged += Read;
+            Open();
+        }
+
+        /// <summary>
+        /// Unfolds the component the panel is drawn in.
+        ///
+        /// Unity draws a custom inspector only while its component is expanded, and the
+        /// fold is remembered per type across sessions - so one absent-minded click on the
+        /// arrow hides every button this tool has, on every tray, for good, and what is
+        /// left on a pad is a Mesh Renderer and a row of lighting settings. A tray that
+        /// has been clicked is a tray somebody wants to work on: it opens.
+        ///
+        /// The rebuild is what makes it take effect now rather than at the next selection,
+        /// and it only runs when the fold was actually shut, so it cannot loop.
+        /// </summary>
+        void Open()
+        {
+            if (!target || InternalEditorUtility.GetIsInspectorExpanded(target)) return;
+            InternalEditorUtility.SetIsInspectorExpanded(target, true);
+            ActiveEditorTracker.sharedTracker.ForceRebuild();
         }
 
         void OnDisable() => EditorApplication.hierarchyChanged -= Read;
