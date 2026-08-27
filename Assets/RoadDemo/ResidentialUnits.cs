@@ -249,6 +249,74 @@ namespace RoadDemo
             },
             new ResidentialUnit
             {
+                Name = "residential-12", CW = 3, CD = 2,
+                Kind = ResidentialKind.Row,
+                MaxH = 15.2f, Floor = -0.03f, Trees = 0, Pieces = 69,
+                Plan = new[]
+                {
+                    "###",
+                    "###",
+                },
+                Face = new[] { false, false, true, false },
+                Doors = new[] { 1, 0, 0, 0 },
+                Shops = new[] { 0, 1, 2, 0 },
+                Stoops = new[] { 0, 0, 0, 0 },
+                Over = new[] { 1.65f, 0.57f, 1.81f, 0.81f },
+            },
+            new ResidentialUnit
+            {
+                Name = "residential-13", CW = 4, CD = 2,
+                Kind = ResidentialKind.Row,
+                MaxH = 17.1f, Floor = 0.00f, Trees = 0, Pieces = 118,
+                Plan = new[]
+                {
+                    ".###",
+                    "####",
+                },
+                Face = new[] { false, false, true, false },
+                Doors = new[] { 0, 0, 0, 0 },
+                Shops = new[] { 1, 1, 3, 0 },
+                Stoops = new[] { 0, 0, 0, 0 },
+                Over = new[] { 1.76f, 1.76f, 1.78f, 0.75f },
+            },
+            new ResidentialUnit
+            {
+                Name = "residential-15", CW = 3, CD = 3,
+                Kind = ResidentialKind.Row,
+                MaxH = 15.2f, Floor = 0.00f, Trees = 0, Pieces = 88,
+                Plan = new[]
+                {
+                    "##.",
+                    "###",
+                    "###",
+                },
+                Face = new[] { true, false, false, false },
+                Doors = new[] { 0, 0, 0, 0 },
+                Shops = new[] { 3, 0, 0, 1 },
+                Stoops = new[] { 0, 0, 0, 0 },
+                Over = new[] { 0.72f, 1.40f, 0.72f, 1.68f },
+            },
+            new ResidentialUnit
+            {
+                Name = "residential-16", CW = 2, CD = 5,
+                Kind = ResidentialKind.Island,
+                MaxH = 15.2f, Floor = 0.00f, Trees = 0, Pieces = 103,
+                Plan = new[]
+                {
+                    "##",
+                    "##",
+                    "##",
+                    "##",
+                    "##",
+                },
+                Face = new[] { true, true, false, true },
+                Doors = new[] { 0, 1, 0, 0 },
+                Shops = new[] { 2, 2, 1, 3 },
+                Stoops = new[] { 0, 0, 0, 0 },
+                Over = new[] { 1.74f, 1.84f, 0.46f, 1.68f },
+            },
+            new ResidentialUnit
+            {
                 Name = "park-01", CW = 4, CD = 4,
                 Kind = ResidentialKind.Park,
                 MaxH = 4.9f, Floor = -0.03f, Trees = 6, Pieces = 93,
