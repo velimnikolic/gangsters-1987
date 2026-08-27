@@ -24,13 +24,15 @@ namespace LivingCity.EditorTools
         const string Bare = "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab";
 
         /// <summary>The five blocks the demo scene stands: every class the recipe knows, and
-        /// the block class twice because it is the one a quarter is mostly made of.</summary>
+        /// the block class twice because it is the one a quarter is mostly made of. Kept to
+        /// the small end of each class - the user, 2026-08-27: "izbegavaj velike residential
+        /// blokove".</summary>
         static readonly (string Name, int W, int D)[] Five =
         {
-            ("block", 15, 17),
+            ("block", 13, 15),
             ("corner", 8, 7),
             ("row", 6, 13),
-            ("court", 18, 18),
+            ("court", 16, 16),
             ("block", 12, 14),
         };
 
@@ -62,7 +64,6 @@ namespace LivingCity.EditorTools
 
             var plan = ResidentialLot.Roll(w, d, seed, artery: 0);
             var stood = ResidentialBlocks.Compose(plan, root.transform, new System.Random(seed), Raise);
-            ResidentialBlocks.Mouths(plan, root.transform, stood);
             return ResidentialLot.Report(plan) + "\n" + ResidentialLot.Map(plan) + stood;
         }
 
@@ -102,9 +103,8 @@ namespace LivingCity.EditorTools
                 // so a root moved first is a root whose children ignore it: the first run of
                 // this scene stood all five blocks on top of one another.
                 var stood = ResidentialBlocks.Compose(plan, root.transform, new System.Random(seed), Raise);
-                ResidentialBlocks.Mouths(plan, root.transform, stood);
                 root.transform.position = new Vector3(at * ResidentialLot.Cell, 0f,
-                                                      Street * ResidentialLot.Cell);
+                                                  Street * ResidentialLot.Cell);
 
                 said.AppendLine($"{name,-7} {ResidentialLot.Report(plan)}");
                 said.AppendLine($"        {stood}");
@@ -137,13 +137,30 @@ namespace LivingCity.EditorTools
 
             var asset = AssetDatabase.LoadAssetAtPath<GameObject>(Bare);
             if (asset == null) return;
+
+            // The tile is laid by MEASURING where it lands, not by its pivot: the pack's road
+            // tile hangs from its far corner, so laid by pivot every tile sat one cell off and
+            // the carpet ran under the east and north pavements of every block (the user,
+            // 2026-08-27: "preplice se put s necime").
+            var probe = (GameObject)PrefabUtility.InstantiatePrefab(asset, road.transform);
+            probe.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            var shift = Vector3.zero;
+            var renderers = probe.GetComponentsInChildren<Renderer>();
+            if (renderers.Length > 0)
+            {
+                var box = renderers[0].bounds;
+                foreach (var r in renderers) box.Encapsulate(r.bounds);
+                shift = new Vector3(-box.min.x, 0f, -box.min.z);
+            }
+            Object.DestroyImmediate(probe);
+
             for (int i = 0; i < w; i++)
                 for (int j = 0; j < d; j++)
                 {
                     if (taken.Contains(new Vector2Int(i, j))) continue;
                     var go = (GameObject)PrefabUtility.InstantiatePrefab(asset, road.transform);
                     go.transform.position = new Vector3(i * ResidentialLot.Cell, -0.06f,
-                                                        j * ResidentialLot.Cell);
+                                                        j * ResidentialLot.Cell) + shift;
                 }
         }
 

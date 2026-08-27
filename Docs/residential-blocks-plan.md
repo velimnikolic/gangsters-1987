@@ -38,7 +38,8 @@
       `Composer`-u + `Assets/Scripts/Editor/ResidentialSketch.cs`;
       **`Assets/Scenes/ResidentialDemo.unity` = 5 blokova, 0 kvarova**, meniji
       `Tools/City/Residential/Sketch A Block` i `Demo Scene (five blocks)`
-- [ ] pogledano i ocenjeno (slike poslate 2026-08-26; §5.2 čeka korisnikov sud)
+- [x] pogledano i ocenjeno (2026-08-27): **šest primedbi** na prvi crtež, sve ugrađene — §5.3;
+      CoreSim 120/120 čisto, kafić na 76/120 blokova, najveća jedinica ≤ 24 % (`block`) / 35 % (`court`), uličica odbijena na 4/120
 - [ ] kvart (sledeći plan)
 
 ---
@@ -184,8 +185,10 @@ Ovaj kit **nema** porodične kuće — to je PolygonTown i `SuburbDistrict`. Sa 
    - 1 ćelija (5 m): **prilaz** — asfalt, i to samo ako **iza ima šta da opslužuje** (uličicu
      ili parking) u najviše 6 ćelija; ako nema, rupa je popločana, ne prilaz,
    - 2–4 ćelije: **popločana rupa** (`Sidewalk_01`), **nikad trava** (odluka 2026-08-26),
-   - ≥ 5 ćelija: **„izvađen zub"** — mali parking sa linijama (`Road_ParkingLines_01`, 10 × 5, tri
-     mesta), sa sopstvenim ušćem kroz prsten trotoara.
+   - ≥ 5 ćelija: **„izvađen zub"** — mali parking **kakav parking jeste** (2026-08-27): ulaz kroz
+     prsten trotoara, **prolaz** duž reda iza trotoara, mesta s obe strane prolaza nosom ka njemu
+     (`Road_ParkingLines_01`, 10 × 5, tri mesta, položena DUŽ reda — slagana u dubinu pravi pruge
+     preko celog placa); neparna ćelija na kraju reda = go asfalt, ne pola mesta.
 3. **Radnja samo na ćošku, i to na jednom.** Jedinice 1/2/3/6 imaju radnje u prizemlju: na
    *stambenom* bloku najviše **jedan** takav ćošak, i to onaj ka arteriji (strana koju kvart
    označi kao glavnu); ostali ćoškovi su brownstone (4). Blok uz park drive ili bulevar sme dva.
@@ -195,7 +198,7 @@ Ovaj kit **nema** porodične kuće — to je PolygonTown i `SuburbDistrict`. Sa 
    bloku — ovde 0–1). Kit kafić je PalmCity stil; v. §7.2.
 5. **Unutrašnjost po dubini** (ono što ostane iza pročelja):
    - 0–1 ćelija: ništa (jedinica 5 je „kroz blok" — dva lica, nema leđa);
-   - 2–3 ćelije: **zadnja dvorišta** (trava, ograde `SM_Env_Fence_01` između, veš-konopci, kante,
+   - 2–3 ćelije: **zadnja dvorišta** (**beton**, ne trava — 2026-08-27; ograde `SM_Env_Fence_01` između, veš-konopci, kante,
      kartonske kutije) i **uličica 5 m** kroz sredinu (`Road_Bare_01` + strelica, jednosmerna, kao
      u jezgru) sa **kontejnerima** (`SM_Prop_Skip_01/02`, `Dumpster_01`) uz leđa zgrada;
    - ≥ 6 ćelija: **dvorište-park** kao u block-12 — `ParkBlocks` klasa `pocket`/`square` u sredini
@@ -269,6 +272,11 @@ uzima `CorePavement`; recept radi na **unutrašnjem** pravougaoniku `(w−2) × 
 Mera koja ne upada ni u jednu klasu **ne dobija recept**: vraća se presuda `NoRecipe` sa
 merom (kvart bira drugu deobu). Ne pogađa se.
 
+**Udeo (2026-08-27):** na `block` i `court` nijedna jedinica ne sme kutijom da pokrije više od
+**50 %** unutrašnje površine (`ResidentialLot.ShareMost`; presuda `Monolith`, mera `Share`). L od
+50 × 45 m na bloku 50 × 60 m bio je ceo blok sa redom zalepljenim sa strane („ovaj drugi je
+preogroman"). `corner` je jedna kuća i bašta, `row` je jedinica kroz blok — njih pravilo ne pita.
+
 ### 2.3 Recept (redosled deljenja — sva bacanja unapred, determinizam u `(seed, blockId)`)
 
 1. **Ćoškovi.** Za svaki ugao koji gleda na dve ulice: ako je ugao na arteriji i blok još nema
@@ -281,13 +289,23 @@ merom (kvart bira drugu deobu). Ne pogađa se.
 3. **Unutrašnjost.** Po dubini iza pročelja (§1.5): uličica se deklariše **preko cele dužine**
    (pouka jezgra: L-ugao zaključava saobraćaj), izlazi na ulicu kroz prilaz, jednosmerna sa
    strelicom na ušću; dvorišta = ćelije između leđa i uličice; dvorište-park kad dubina ≥ 6.
-4. **Kafić** (0–1): u rupi na arteriji, ili ništa (ćošak 1/2/3/6 već ima kafić-natpis → ne dupliraj).
-5. **Props** — kataloški, po receptu, na y = 0: kontejneri uz leđa zgrade u uličici (2–4 po
-   bloku), kante/kese/kutije uz njih, veš-konopci između dvorišta (jedinice 1–3 ih već nose na
-   krovu), power box na leđima, ograde između dvorišta i na liniji trotoara uz bašte. Ništa na
-   trotoaru — to je `CorePavement`.
-6. **Pod**: trava pod baštama i dvorištima (`Grass_01`), `Sidewalk_01` pod parkingom i prilazom,
-   `Road_Bare_01` pod uličicom, **ništa** pod otiskom jedinica 4/5 i njihovim rovom.
+4. **Kafić** (0–1, 2026-08-27): kit storefront u **popločanoj rupi od ≥ 2 ćelije** — na arteriji ako
+   je ima, inače na bilo kojoj ulici (rupa na arteriji je sreća; pola blokova je nije imalo, pa kafića
+   nije bilo nigde). `building-coffeeshop` (5,8 × 7,2 m) u rupi od 2–3 ćelije, `building-diner` /
+   `building-burger-joint` (16,3 × 8,8 m) u rupi od 4; lice **izmereno** (`Composer.FrontYaw`),
+   pročelje 0,3 m od linije trotoara, stoji na y = 0 (`Composer.Building`); ispod dajnera (pod na
+   −1,56 m) nema pločice, oko njega beton.
+5. **Props** — kataloški, po receptu, na y = 0: kontejneri **na trotoaru uz uličicu (verge), uz leđa
+   zgrada — nikad na kolovozu** (2026-08-27: „ako si stavio put ne mozes na put da stavis
+   kontenjere"), kese/kutije uz njih, veš-konopci između dvorišta (jedinice 1–3 ih već nose na
+   krovu), power box na leđima, ograde između dvorišta i na liniji trotoara uz bašte. Na
+   trotoaru-prstenu **palme** u ritmu jezgra (`CorePavement.Plant`, jedna na 10 ivičnjaka, ista
+   traka) i lampe — jedino drveće bloka (2026-08-27: „palme po trotoaru").
+6. **Pod**: **beton** (`Sidewalk_01`) pod dvorištima, baštama, rupama i oko kafića — **trave nema**
+   (2026-08-27); `Road_Bare_01` pod uličicom, prilazom, ulazom i prolazom parkinga; **jedna pločica
+   po ćeliji, uvek** — strelica na ušću uličice je cela pločica puta i ne leži preko gole (treperile
+   su jedna kroz drugu); **ništa** pod otiskom jedinica, njihovim rovom i praznim ćelijama unutar
+   kutije jedinice koja ide u minus (bašta u L-u broja 4: ceo otisak je na −1,5 m).
 
 Izlaz: `ResidentialLot.Plan` = lista postavki (jedinica, ćelija, rotacija), program po ćeliji
 (`Yard/Alley/Parking/Drive/Court/Empty`) + `Measures` (§2.4). Crta ga
@@ -454,6 +472,38 @@ Ocena izgleda čeka korisnika (v. §7 — estetika je njegova odluka). Šta ja v
 * **kafića još nema** (§7.2 odobreno, ali deoba još ne postavlja kit storefront u rupu);
 * **jedinice se ponavljaju** — 5 ugaonih zgrada u katalogu, od kojih 4 nose radnje, pa na
   bloku sa 4 ćoška stoje dva-tri ista brownstone-a (`Repeats` je u meri).
+
+### 5.3 Šta je korisnik rekao na prvi crtež (2026-08-27) i šta je urađeno
+
+| primedba | uzrok | urađeno |
+|---|---|---|
+| „ne vidim da stavljas kafice i to igde" | `Use.Cafe` postojao, niko ga nije dodeljivao; §7.2 vezao kafić za arteriju | `ResidentialLot.Cafe`: rupa ≥ 2 ćelije, arterija pa bilo koja ulica; `ResidentialBlocks.CafeOf/CafeStand` bira coffeeshop ili diner po dužini rupe, lice mereno |
+| „zajebi travu izmedju, ocu samo beton i palme po trotoaru" | dvorišta/dvorište-park = `Grass_01` + Synty drveće | sve `Sidewalk_01`; drveća u dvorištima nema; palme na prstenu kroz `CorePavement.Plant` |
+| „sta znace ove linije? zna se kako parking izgleda" | `ParkingLines_01` slagane po parovima u dubinu preko celog zuba → linije se nadovezuju u pruge | zub = ulaz + prolaz (`Drive`) + redovi mesta nosom ka prolazu; pločica se polaže DUŽ reda, neparna ćelija = go asfalt |
+| „preplice se put s necime… izbegavaj dupli layering" | (a) strelica ušća preko gole pločice u istoj ravni; (b) tepih asfalta demo klupe polagan po pivotu, a pivot pločice je u max-uglu → tepih ispod istočnog i severnog trotoara svakog bloka | (a) ušće = samo strelica (`MouthArrow`), `Mouths()` ukinut; (b) `ResidentialSketch.Asphalt` polaže merenjem gde pločica sleti |
+| „ako si stavio put ne mozes na put da stavis kontenjere" | skip/smeće na `Alley` ćelijama | `Bins()`: na verge-u uz uličicu, uz suprotnu ivicu (leđa kuća), dužom stranom duž uličice |
+| „izbegavaj velike residential blokove, ovaj drugi je preogroman" | ćošak uzima NAJVEĆU jedinicu koja stane → L 10 × 9 (50 × 45 m) na bloku 12 × 14 = 75 % unutrašnjosti | `ShareMost` 50 % na `block`/`court` u `Fit`/`Longest`, presuda `Monolith`; demo klupa na malom kraju klasa (13×15, 8×7, 6×13, 16×16, 12×14) |
+| „ispod residential4 ne smes da crtas pod jer ide u minus" | izmereno: ceo otisak broja 4 je na −1,5 m, a 2 × 2 „prazne" ćelije u njegovom L-u (bašta) dobijale su travu na +0,05 | `Place`: prazne ćelije u kutiji jedinice koja ide u minus = `Forecourt` = ništa se ne polaže; `Forecourt` više nikad ne dobija pločicu |
+
+Mere posle: `CoreSim --residential --count 30` **120/120 čisto**, kafić na **76/120** blokova
+(corner 20, row 9, block 23, court 24), najveća jedinica **24 %** (`block`) / **35 %** (`court`),
+0 praznih ćelija. **Kola na parkingu (2026-08-27)**: jedno mesto od dva dobija auto iz istog bazena iz
+kog jezgro puni svoje parkinge (`CoreRoads.PickCar`: kataloška kola bez pogrešne decenije i bez
+livreja), nosom od prolaza (`CoreRoads.InBay`); klupa: 6 kola u 12 mesta, nijedno na trotoaru.
+Palme su iste koje tray polaže na `CoreHarvest` (`SM_Env_Tree_Palm_01–06` + rešetka, ista
+`CorePavement.Sapling`). Usput: uličica je probala samo dužu osu bloka (18/120 blokova bez uličice, među
+njima klupa 13 × 15) — sada uzme kraću kad samo ona prima red kuća sa obe strane (4/120). **Drugi krug (2026-08-27, iste večeri):** „zidovi koji nisu završeni" i „veš koji visi u vazduhu" → ograde,
+veš-konopci, kante i kutije po dvorištima **izbačeni skroz** (dvorište je go beton; ono za šta recept nema
+ništa ostaje prazno). „Patio pored kafića" → `ResidentialBlocks.Patio`: kafić stoji uz **jedan kraj** rupe
+(centriran je ostavljao 2 m sa svake strane), a pojas pored njega dobija stolove sa četiri stolice i
+suncobranom (kejski `Table_02`/`Chair_01`/`Umbrella_02`, soba 2,4 m — rupa od 10 m minus 7,2 m pročelja
+coffeeshop-a je tačno 2,5) i klupu uz zadnju liniju licem ka ulici. „Ne možeš na sred ulaznog puta da
+staviš lampu" → lampa se ne postavlja na ćeliju prstena koja nije trotoar (ušće). „Kante okrenute ka
+uličici" → poklopac skipa pada ka +z, to mu je lice; okreće se ka uličici, leđima uz zid. Klupa: 10
+stolova, 5 klupa, 0 lampi na kolovozu, 0 ograda.
+
+Nije urađeno: `Dumpster_01` iz GangWarfare (samo skip),
+istočna strana broja 4 seže 4,6 m preko prstena (stepeništa; `Over` kaže 0,13 — žetva to ne meri).
 
 ## 6. Nije deo ovog zadatka
 

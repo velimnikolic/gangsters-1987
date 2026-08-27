@@ -299,29 +299,6 @@ namespace RoadDemo
             }
         }
 
-        static readonly Dictionary<string, float> Fronts = new Dictionary<string, float>();
-
-        /// <summary>The yaw that turns a baked building's FRONT to the water (+x), measured
-        /// off its mesh once and remembered - never assumed from the file.</summary>
-        static float FrontYaw(string path)
-        {
-            if (Fronts.TryGetValue(path, out float known)) return known;
-            float yaw = 90f;
-            var go = Raise(path, null);
-            if (go != null)
-            {
-                try
-                {
-                    go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-                    var front = FacadeFinder.FrontOf(go, out _);
-                    yaw = FacadeFinder.YawToPlusZ(front) + 90f;
-                }
-                finally { UnityEngine.Object.DestroyImmediate(go); }
-            }
-            Fronts[path] = yaw;
-            return yaw;
-        }
-
         /// <summary>The diner, its back a step off the kerb and its front to the water, with
         /// a few tables under umbrellas before it - a roadside diner turned to the river,
         /// which is what a 1987 waterfront made of the ones it had.</summary>

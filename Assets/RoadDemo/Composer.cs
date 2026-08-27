@@ -214,6 +214,74 @@ namespace RoadDemo
             return go;
         }
 
+        static readonly Dictionary<string, float> Fronts = new Dictionary<string, float>();
+
+        /// <summary>The yaw that turns a baked building's FRONT to +x, measured off its mesh
+        /// once (<see cref="FacadeFinder"/>) and remembered - never assumed from the file.
+        /// To face the building −z, +x, +z or −x (a block's south, east, north, west), add
+        /// 90, 0, 270 or 180 - a yaw is a clockwise turn seen from above.</summary>
+        internal static float FrontYaw(string path)
+        {
+            if (Fronts.TryGetValue(path, out float known)) return known;
+            float yaw = 90f;
+            var go = Raise(path, null);
+            if (go != null)
+            {
+                try
+                {
+                    go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                    var front = FacadeFinder.FrontOf(go, out _);
+                    // a storefront's front is where its glass is: the coffee shop's windows
+                    // and door are all on one side, and FacadeFinder read its blank flank
+                    // as the front (the user, 2026-08-27: "prednja strana kafea mora uvek da
+                    // je ka ulici"). Where a mesh carries glass, the glass decides
+                    if (GlassSide(go, out var glazed)) front = glazed;
+                    yaw = FacadeFinder.YawToPlusZ(front) + 90f;
+                }
+                finally { UnityEngine.Object.DestroyImmediate(go); }
+            }
+            Fronts[path] = yaw;
+            return yaw;
+        }
+
+        /// <summary>The side of the instance that carries most of its glass, when one side
+        /// clearly does: the shop window and the door. False when there is no glass or it
+        /// is spread round the building.</summary>
+        static bool GlassSide(GameObject go, out FacadeFinder.Side side)
+        {
+            side = FacadeFinder.Side.PlusZ;
+            if (!WorldBox(go, out var box)) return false;
+            var tally = new int[4];               // PlusZ, PlusX, MinusZ, MinusX
+            foreach (var mf in go.GetComponentsInChildren<MeshFilter>())
+            {
+                var mesh = mf.sharedMesh;
+                var drawn = mf.GetComponent<Renderer>();
+                if (mesh == null || drawn == null || !mesh.isReadable) continue;
+                var mats = drawn.sharedMaterials;
+                var verts = mesh.vertices;
+                for (int s = 0; s < mesh.subMeshCount; s++)
+                {
+                    if (s >= mats.Length || mats[s] == null ||
+                        mats[s].name.IndexOf("glass", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    foreach (int i in mesh.GetTriangles(s))
+                    {
+                        var at = mf.transform.TransformPoint(verts[i]) - box.center;
+                        if (at.z > 0.3f * box.extents.z) tally[0]++;
+                        if (at.x > 0.3f * box.extents.x) tally[1]++;
+                        if (at.z < -0.3f * box.extents.z) tally[2]++;
+                        if (at.x < -0.3f * box.extents.x) tally[3]++;
+                    }
+                }
+            }
+            int best = 0;
+            for (int k = 1; k < 4; k++) if (tally[k] > tally[best]) best = k;
+            int next = 0;
+            for (int k = 0; k < 4; k++) if (k != best && tally[k] > next) next = tally[k];
+            if (tally[best] == 0 || tally[best] < next * 2) return false;
+            side = (FacadeFinder.Side)best;
+            return true;
+        }
+
         /// <summary>Is there room for the piece's foot, with this much air round it? A
         /// refusal is counted against the piece's name.</summary>
         static bool Book(string path, float x, float z, float yaw, float room, out Rect where)

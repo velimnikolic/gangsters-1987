@@ -40,15 +40,15 @@ namespace RoadDemo
             Empty,
             Walkway,     // the block's own pavement ring
             Building,    // a unit stands here
-            Forecourt,   // a unit's own stoop, pit or garden
-            Yard,        // back yard: grass, fences, washing lines
+            Forecourt,   // a unit's own ground - stoop, pit, garden: nothing is laid on it
+            Yard,        // back yard: concrete, fences, washing lines (no grass: the user, 2026-08-27)
             Paved,       // a gap in the row, paved - never grass (the user's call, 2026-08-26)
             Verge,       // pavement INSIDE the block, edging a way cars use
-            Drive,       // the way in off the street: asphalt, right through the kerb line
-            Parking,     // a tooth pulled out of the row: bays behind a chain
-            Alley,       // 5 m one-way, bins against the backs
-            Court,       // the courtyard park a big block keeps in the middle
-            Cafe,        // a kit storefront in a gap, fronting the artery
+            Drive,       // tarmac a car uses: the way in off the street, the car park's aisle
+            Parking,     // painted bays, nosed to an aisle
+            Alley,       // 5 m one-way, bins on the verge against the backs
+            Court,       // the paved court a big block keeps in the middle
+            Cafe,        // a kit storefront in a gap, fronting the street
         }
 
         // ------------------------------------------------------------------ the plan
@@ -69,8 +69,19 @@ namespace RoadDemo
             public int Units, Doors, Shops, Cafes, Trees;
             public int Gaps, GapCells, Paved, Drives, Parking, AlleyCells, CourtCells, Verge;
             public int Empty, Pits, Repeats;
+            /// <summary>The biggest unit's box as a share of the inner ground, percent.</summary>
+            public int Share;
             public double DoorsPerHa;
             public string EmptyAt = "";
+        }
+
+        /// <summary>A gap in the row and what it was made: where it starts along its side,
+        /// how long it runs and how deep it goes.</summary>
+        public sealed class Gap
+        {
+            public int Side, At, Run, Depth;
+            public Use Use;
+            public override string ToString() => $"{Use} {Run} cell(s) on {SideName[Side]} at {At}";
         }
 
         public sealed class Plan
@@ -81,6 +92,9 @@ namespace RoadDemo
             public int Artery = -1;                // the side the shops look at
             public int Seed;
             public List<Spot> Spots = new List<Spot>();
+            public List<Gap> Gaps = new List<Gap>();
+            /// <summary>The gap the kit storefront stands in, if the block got one.</summary>
+            public Gap Cafe;
             public Use[,] Ground;
             public List<string> Faults = new List<string>();
             public List<string> Refused = new List<string>();
@@ -196,11 +210,29 @@ namespace RoadDemo
             Declare(plan);
             Corners(plan, rng);
             Edges(plan, rng);
+            Cafe(plan, rng);
             Inside(plan, rng);
             Measure(plan);
             Judge(plan);
             return plan;
         }
+
+        /// <summary>Does this unit drop below the ground anywhere - a pit, a sunken floor?</summary>
+        public static bool Pitted(ResidentialUnit unit) =>
+            unit.Plan.Any(row => row.IndexOf(':') >= 0 || row.IndexOf(',') >= 0);
+
+        /// <summary>
+        /// A unit's box may cover at most this much of the inner ground, percent - on the
+        /// classes built on all four corners. The 50 x 45 m L stood on a 50 x 60 m block WAS
+        /// the block: one building with a row stuck on the side (the user, 2026-08-27: "ovaj
+        /// drugi je preogroman"). A corner block is one house and its garden and a row block
+        /// is the through-row by definition, so the rule is not asked of those.
+        /// </summary>
+        public const int ShareMost = 50;
+
+        static bool Modest(Plan plan, Turn turn) =>
+            (plan.Klass != Klass.Block && plan.Klass != Klass.Court) ||
+            turn.CW * turn.CD * 100 <= plan.Inner * plan.InnerD * ShareMost;
 
         /// <summary>
         /// The alley is declared before anything is built, right across the block.
@@ -214,9 +246,6 @@ namespace RoadDemo
         static void Declare(Plan plan)
         {
             if (plan.Klass != Klass.Block) return;
-
-            bool eastWest = plan.Inner >= plan.InnerD;
-            int across = eastWest ? plan.D : plan.W;
 
             // The line has to leave a row of houses either side of it. Put down the middle
             // regardless and a block one cell too shallow gets four cells on one side for a
@@ -232,11 +261,23 @@ namespace RoadDemo
             // of 2026-08-26 - a way put in between must be kerbed on every side, and no car
             // may cross a pavement to reach it - so the verges are declared with the road
             // rather than hoped for afterwards, and nothing gets built on them.
-            int lo = Walk + least + 1, hi = across - Walk - 2 - least;
+            int lo = Walk + least + 1;
+            int Hi(int across) => across - Walk - 2 - least;
+
+            // The alley runs the long way if it can, and the short way if only that fits:
+            // a 65 x 75 m block is too narrow for a north-south alley with a row of houses
+            // either side, but an east-west one across its depth fits - and the alley is
+            // what makes the block class a block (a third of the first sweep's blocks gave
+            // it up without trying the other way)
+            bool eastWest = plan.Inner >= plan.InnerD;
+            if (lo > Hi(eastWest ? plan.D : plan.W) && lo <= Hi(eastWest ? plan.W : plan.D))
+                eastWest = !eastWest;
+            int across = eastWest ? plan.D : plan.W;
+            int hi = Hi(across);
             if (lo > hi)
             {
-                plan.Refused.Add($"alley: {across - 2 * Walk} cells across leaves no room for " +
-                                 "a kerbed way and a row of houses either side");
+                plan.Refused.Add($"alley: {plan.Inner}x{plan.InnerD} cells leaves no room for " +
+                                 "a kerbed way and a row of houses either side, either way");
                 return;
             }
             int mid = Math.Min(hi, Math.Max(lo, (across - 1) / 2));
@@ -353,6 +394,7 @@ namespace RoadDemo
                 {
                     var turn = Turn.Of(unit, yaw);
                     if (!turn.Face(a) || !turn.Face(b)) continue;
+                    if (!Modest(plan, turn)) continue;
 
                     int i = ci == Walk ? ci : ci - turn.CW + 1;
                     int j = cj == Walk ? cj : cj - turn.CD + 1;
@@ -463,12 +505,22 @@ namespace RoadDemo
         static void Place(Plan plan, Spot spot)
         {
             var turn = Turn.Of(spot.Unit, spot.Yaw);
+            bool pitted = Pitted(spot.Unit);
             for (int u = 0; u < turn.CW; u++)
                 for (int v = 0; v < turn.CD; v++)
                 {
-                    if (!turn.Filled(u, v)) continue;
-                    plan.Ground[spot.I + u, spot.J + v] =
-                        turn.Wall(u, v) ? Use.Building : Use.Forecourt;
+                    int i = spot.I + u, j = spot.J + v;
+                    if (turn.Filled(u, v))
+                    {
+                        plan.Ground[i, j] = turn.Wall(u, v) ? Use.Building : Use.Forecourt;
+                        continue;
+                    }
+                    // The empty cells inside a SUNKEN unit's box are its own ground too: the
+                    // garden in the brownstone's L is fenced at zero and drops into the pit
+                    // beside it, and a slab laid there roofs the pit (the user, 2026-08-27:
+                    // "ispod residential4 ne smes da crtas pod"). An L that keeps its floor at
+                    // zero leaves the block the ground inside its arms, as before
+                    if (pitted && plan.Ground[i, j] == Use.Empty) plan.Ground[i, j] = Use.Forecourt;
                 }
             plan.Spots.Add(spot);
         }
@@ -558,6 +610,7 @@ namespace RoadDemo
                 {
                     var turn = Turn.Of(unit, yaw);
                     if (!turn.Face(side)) continue;
+                    if (!Modest(plan, turn)) continue;
                     int along = side == 0 || side == 2 ? turn.CW : turn.CD;
                     int deep = side == 0 || side == 2 ? turn.CD : turn.CW;
                     if (along > run || along <= bestLong) continue;
@@ -613,19 +666,84 @@ namespace RoadDemo
                     var (i, j) = Into(plan, side, at + n, k);
                     if (i < Walk || j < Walk || i >= plan.W - Walk || j >= plan.D - Walk) continue;
                     if (plan.Ground[i, j] != Use.Empty) break;
-                    plan.Ground[i, j] = use;
-                    if (k == 0 && cut < 0 && Drives(use)) cut = at + n;
+                    var cell = use;
+                    if (use == Use.Parking)
+                    {
+                        // A CAR PARK, NOT A FIELD OF LINES. The first one tiled painted bays
+                        // over every cell of the tooth, and the lines chained into stripes
+                        // the length of the lot (the user, 2026-08-27: "zna se kako parking
+                        // izgleda"). So: the way in at the mouth, an aisle along the row
+                        // behind the pavement, and the bays either side of the aisle, nosed
+                        // to it. Two cells deep is one row of bays and the aisle; three is
+                        // bays on both sides; one is a lay-by
+                        bool entrance = n == 0 && k == 0;
+                        bool aisle = k == 1 || depth == 1;
+                        cell = entrance || aisle ? Use.Drive : Use.Parking;
+                    }
+                    plan.Ground[i, j] = cell;
+                    if (k == 0 && cut < 0 && Drives(cell)) cut = at + n;
                 }
 
             // the mouth: the ring cell in front of it stops being pavement and becomes road,
             // so a car comes off the street onto the block without ever crossing a kerb
             if (cut >= 0) Mouth(plan, side, cut);
 
+            plan.Gaps.Add(new Gap { Side = side, At = at, Run = run, Depth = depth, Use = use });
             plan.M.Gaps++;
             plan.M.GapCells += run;
             if (use == Use.Paved) plan.M.Paved++;
             if (use == Use.Drive) plan.M.Drives++;
             if (use == Use.Parking) plan.M.Parking++;
+        }
+
+        // ------------------------------------------------------------------ the cafe
+
+        /// <summary>How deep the kit storefront's ground goes: two cells, the depth of the
+        /// diner and of the coffee shop alike.</summary>
+        public const int CafeDeep = 2;
+
+        /// <summary>
+        /// The kit storefront: one to a block, in a paved gap of two cells or more, on the
+        /// artery when the artery has such a gap and on any street when it has not.
+        ///
+        /// The approved plan (§7.2) allowed one and put it on the artery only, and the first
+        /// drawing had none on any block (the user, 2026-08-27: "ne vidim da stavljas kafice
+        /// i to igde") - a gap on the artery is luck, and half the blocks had none. Which
+        /// building stands in it is the composer's, by the length of the gap: a coffee shop
+        /// in two or three cells, a diner in four.
+        /// </summary>
+        static void Cafe(Plan plan, Random rng)
+        {
+            var gaps = plan.Gaps
+                .Where(g => g.Use == Use.Paved && g.Run >= 2 && g.Depth >= CafeDeep)
+                .OrderByDescending(g => g.Side == plan.Artery)
+                .ThenByDescending(g => g.Run)
+                .ThenBy(g => rng.Next())
+                .ToList();
+
+            foreach (var gap in gaps)
+            {
+                // the whole gap, CafeDeep in, has to be paved ground - a gap's columns stop
+                // short where they met something already built
+                bool whole = true;
+                for (int n = 0; n < gap.Run && whole; n++)
+                    for (int k = 0; k < CafeDeep && whole; k++)
+                    {
+                        var (i, j) = Into(plan, gap.Side, gap.At + n, k);
+                        if (plan.Ground[i, j] != Use.Paved) whole = false;
+                    }
+                if (!whole) continue;
+
+                for (int n = 0; n < gap.Run; n++)
+                    for (int k = 0; k < CafeDeep; k++)
+                    {
+                        var (i, j) = Into(plan, gap.Side, gap.At + n, k);
+                        plan.Ground[i, j] = Use.Cafe;
+                    }
+                plan.Cafe = gap;
+                plan.M.Cafes = 1;
+                return;
+            }
         }
 
         /// <summary>How many cells in from this edge cell the nearest way a car uses lies,
@@ -761,6 +879,9 @@ namespace RoadDemo
                 }
             }
             m.Repeats = plan.Spots.Count - plan.Spots.Select(s => s.Unit.Name).Distinct().Count();
+            int inner = Math.Max(1, plan.Inner * plan.InnerD);
+            m.Share = plan.Spots.Count == 0 ? 0
+                    : plan.Spots.Max(s => s.CW * s.CD * 100 / inner);
 
             var empties = new List<string>();
             for (int i = 0; i < plan.W; i++)
@@ -818,6 +939,10 @@ namespace RoadDemo
 
             int shops = plan.Spots.Count(s => s.Shop);
             if (shops > 1) plan.Faults.Add($"TwoShops: {shops} units carry shopfronts");
+
+            // no one building is the block: the placer's share rule, measured back
+            if ((plan.Klass == Klass.Block || plan.Klass == Klass.Court) && plan.M.Share > ShareMost)
+                plan.Faults.Add($"Monolith: one unit's box covers {plan.M.Share}% of the inner ground");
 
             // Every corner a block of this class is built on carries a building. A corner
             // block is one building and its garden, a row keeps its open ends: asking all
@@ -960,7 +1085,8 @@ namespace RoadDemo
             var m = plan.M;
             var sb = new StringBuilder();
             sb.Append($"{plan.Klass} {plan.W}x{plan.D} cells ({plan.W * Cell}x{plan.D * Cell} m) seed {plan.Seed}: ");
-            sb.Append($"{m.Units} unit(s), {m.Doors} door(s) ({m.DoorsPerHa:F0}/ha), {m.Shops} shop(s), ");
+            sb.Append($"{m.Units} unit(s) (biggest {m.Share}%), {m.Doors} door(s) ({m.DoorsPerHa:F0}/ha), ");
+            sb.Append($"{m.Shops} shop(s), {m.Cafes} cafe(s), ");
             sb.Append($"{m.Gaps} gap(s) over {m.GapCells} cell(s), {m.Trees} tree(s), ");
             sb.Append($"alley {m.AlleyCells}, verge {m.Verge}, court {m.CourtCells}, empty {m.Empty}");
             if (m.Empty > 0) sb.Append($" at {m.EmptyAt}");

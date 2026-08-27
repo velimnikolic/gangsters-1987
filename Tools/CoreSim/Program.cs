@@ -250,7 +250,7 @@ static class Program
 
         foreach (var want in sizes)
         {
-            int good = 0, empties = 0, doors = 0, gaps = 0;
+            int good = 0, empties = 0, doors = 0, gaps = 0, cafes = 0, share = 0;
             for (int n = 0; n < count; n++)
             {
                 int s = seed + n;
@@ -264,6 +264,8 @@ static class Program
                 empties += plan.M.Empty;
                 doors += plan.M.Doors;
                 gaps += plan.M.Gaps;
+                cafes += plan.M.Cafes;
+                share = Math.Max(share, plan.M.Share);
 
                 foreach (var fault in plan.Faults)
                 {
@@ -285,6 +287,7 @@ static class Program
             }
             tallies.Add($"   {want.Name,-8} {good,3}/{count} clean, " +
                         $"{(double)doors / count:F1} doors, {(double)gaps / count:F1} gaps, " +
+                        $"{cafes}/{count} cafes, biggest unit {share}%, " +
                         $"{(double)empties / count:F1} empty cells a block");
         }
 
