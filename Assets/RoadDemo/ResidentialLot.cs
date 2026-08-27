@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -62,6 +62,7 @@ namespace RoadDemo
             public int I, J;                // its SW cell in the block
             public int CW, CD;              // turned
             public int Side = -1;           // the street it fronts, if it was put on an edge
+            public int SideB = -1;          // the other street, if it was put on a corner
             public bool Shop;               // it carries the block's shopfronts
             public override string ToString() => $"{Unit.Name}@{Yaw} ({I},{J}) {CW}x{CD}";
         }
@@ -328,6 +329,48 @@ namespace RoadDemo
             ResidentialUnits.Houses.Where(u => u.Shops.Sum() == 0 && u.Doors.Sum() > 0);
 
         /// <summary>
+        /// Whether a shopfront may still stand on this side of the block.
+        ///
+        /// ONE SHOPFRONT BUILDING TO A STREET, not one to a whole block. The block plan
+        /// asked for a single shop corner, and with a catalogue of six houses - four of
+        /// which carry shops at street level - that one line locked four of the six out of
+        /// the entire block the moment the corner was dealt. The sweep's own tally on
+        /// 2026-08-27: sixty-three per cent of every unit in the city was ONE building.
+        /// Read per street the rule keeps its meaning - no street becomes a parade of shops
+        /// - and all six houses can stand in the same block.
+        /// </summary>
+        static bool ShopRoom(Plan plan, int side) =>
+            side < 0 || ShopsPerStreet <= 0 ||
+            plan.Spots.Count(s => s.Shop && (s.Side == side || s.SideB == side)) < ShopsPerStreet;
+
+        /// <summary>
+        /// How many buildings with shops at street level one street of a block may carry.
+        /// ZERO IS NO LIMIT, and no limit is what the city is built with.
+        ///
+        /// There was a limit, and it was never the user's: "radnja samo na cosku, i to na
+        /// jednom" was written into the block plan by me on 2026-08-27 as a guess at what a
+        /// residential block is, and judged as a fault (TwoShops). Four of the catalogue's
+        /// six houses carry shops in their ground floor, so that one line locked four of the
+        /// six out of the whole block the moment its corner was dealt: the sweep measured ONE
+        /// building as 63% of every unit in the city, and two as 88%. Told about it the user
+        /// took the rule out - "ma bez ogranicenja" (2026-08-27). The knob stays because the
+        /// measurement is worth keeping: at 1 the top house is 63%, at 3 it is 39%, at no
+        /// limit see the tally in Docs/residential-quarter-plan.md.
+        /// </summary>
+        public static int ShopsPerStreet = 0;
+
+        /// <summary>What to divide a unit's weight in the draw by because it is already
+        /// standing in this block. The same house twice over is what makes a quarter read
+        /// as one block printed again and again; it is discouraged, not forbidden, because
+        /// a long run with three houses to choose from has to put something down.</summary>
+        static int Again(Plan plan, ResidentialUnit unit)
+        {
+            int used = 0;
+            foreach (var s in plan.Spots) if (s.Unit == unit) used++;
+            return 1 + 4 * used;
+        }
+
+        /// <summary>
         /// A building on every corner that looks at two streets, and only ONE of them
         /// carrying shops - the corner on the artery.
         ///
@@ -373,15 +416,26 @@ namespace RoadDemo
                 if (stood >= built) break;
                 if (!plan.Street[corner.A] || !plan.Street[corner.B]) continue;
 
-                bool wantShop = !shopTaken && (corner.A == plan.Artery || corner.B == plan.Artery);
-                var wants = wantShop ? Shops().ToList() : Stoops().ToList();
-                if (wants.Count == 0) wants = Stoops().Concat(Shops()).ToList();
+                // THE CORNER IS DEALT FROM THE WHOLE CATALOGUE. It used to be dealt from
+                // the houses with no shops in them, and there are two of those - one of
+                // which faces two opposite ways and can never be a corner at all. One
+                // building took eight hundred of the sweep's thirteen hundred corners
+                // (2026-08-27). The shopfront rule is kept where it belongs - in Fit, per
+                // street - and the artery's corner still asks for a shop first, because
+                // that is where the traffic is.
+                bool onArtery = corner.A == plan.Artery || corner.B == plan.Artery;
+                bool room = ShopRoom(plan, corner.A) && ShopRoom(plan, corner.B);
+                bool wantShop = onArtery && !shopTaken && room;
+                var wants = wantShop ? Shops().ToList() : ResidentialUnits.Houses.ToList();
 
                 var rest = order.Select(x => x.c).Where(c => c != corner &&
                                 plan.Street[c.A] && plan.Street[c.B]).ToList();
                 var spot = Fit(plan, wants, corner.I, corner.J, corner.A, corner.B, rng, rest, built - stood - 1);
+                // nothing with a shopfront fits, or the street already has one: the corner
+                // is dealt again from every house there is rather than stand blank
                 if (spot == null && wantShop)
-                    spot = Fit(plan, Stoops().ToList(), corner.I, corner.J, corner.A, corner.B, rng, rest, built - stood - 1);
+                    spot = Fit(plan, ResidentialUnits.Houses.ToList(), corner.I, corner.J,
+                               corner.A, corner.B, rng, rest, built - stood - 1);
                 if (spot == null)
                 {
                     plan.Refused.Add($"corner {SideName[corner.A]}{SideName[corner.B]}: " +
@@ -415,6 +469,9 @@ namespace RoadDemo
                     var turn = Turn.Of(unit, yaw);
                     if (!turn.Face(a) || !turn.Face(b)) continue;
                     if (!Modest(plan, turn)) continue;
+                    // a house with shops at street level may take a corner only where
+                    // neither of its two streets carries a shopfront already
+                    if (unit.Shops.Sum() > 0 && !(ShopRoom(plan, a) && ShopRoom(plan, b))) continue;
 
                     int i = ci == Walk ? ci : ci - turn.CW + 1;
                     int j = cj == Walk ? cj : cj - turn.CD + 1;
@@ -425,18 +482,24 @@ namespace RoadDemo
                     spots.Add(new Spot
                     {
                         Unit = unit, Yaw = yaw, I = i, J = j, CW = turn.CW, CD = turn.CD,
-                        Shop = unit.Shops.Sum() > 0, Side = a,
+                        Shop = unit.Shops.Sum() > 0, Side = a, SideB = b,
                     });
                 }
             if (spots.Count == 0) return null;
 
+            var weight = new List<int>();
             int total = 0;
-            foreach (var spot in spots) total += spot.CW * spot.CD;
-            int draw = rng.Next(total);
             foreach (var spot in spots)
             {
-                draw -= spot.CW * spot.CD;
-                if (draw < 0) return spot;
+                int w = Math.Max(1, spot.CW * spot.CD / Again(plan, spot.Unit));
+                weight.Add(w);
+                total += w;
+            }
+            int draw = rng.Next(total);
+            for (int k = 0; k < spots.Count; k++)
+            {
+                draw -= weight[k];
+                if (draw < 0) return spots[k];
             }
             return spots[spots.Count - 1];
         }
@@ -635,8 +698,8 @@ namespace RoadDemo
             var spots = new List<Spot>();
             foreach (var unit in ResidentialUnits.Houses)
             {
-                // one shopfront to a block: the corner already took it
-                if (unit.Shops.Sum() > 0 && plan.Spots.Any(s => s.Shop)) continue;
+                // one shopfront building to a STREET - see ShopRoom
+                if (unit.Shops.Sum() > 0 && !ShopRoom(plan, side)) continue;
                 for (int yaw = 0; yaw < 360; yaw += 90)
                 {
                     var turn = Turn.Of(unit, yaw);
@@ -663,18 +726,22 @@ namespace RoadDemo
             }
             if (spots.Count == 0) return null;
 
+            var weight = new List<int>();
             int total = 0;
             foreach (var spot in spots)
             {
                 int along = side == 0 || side == 2 ? spot.CW : spot.CD;
-                total += along * along;                       // the square: long houses still win most runs
+                // the square: long houses still win most runs - divided by how many of this
+                // house the block already carries, so the run does not repeat one of them
+                int w = Math.Max(1, along * along / Again(plan, spot.Unit));
+                weight.Add(w);
+                total += w;
             }
             int draw = rng.Next(total);
-            foreach (var spot in spots)
+            for (int k = 0; k < spots.Count; k++)
             {
-                int along = side == 0 || side == 2 ? spot.CW : spot.CD;
-                draw -= along * along;
-                if (draw < 0) return spot;
+                draw -= weight[k];
+                if (draw < 0) return spots[k];
             }
             return spots[spots.Count - 1];
         }
@@ -1193,8 +1260,16 @@ namespace RoadDemo
                 }
             }
 
-            int shops = plan.Spots.Count(s => s.Shop);
-            if (shops > 1) plan.Faults.Add($"TwoShops: {shops} units carry shopfronts");
+            // A SHOPFRONT IS NOT A FAULT. It was judged one - at first one to a block, then
+            // one to a street - and neither line was ever the user's; both were mine, and
+            // both cost the quarter its variety (see ShopsPerStreet). Off by default, and
+            // still judged if anyone turns the limit back on.
+            for (int s = 0; s < 4 && ShopsPerStreet > 0; s++)
+            {
+                int shops = plan.Spots.Count(x => x.Shop && (x.Side == s || x.SideB == s));
+                if (shops > ShopsPerStreet)
+                    plan.Faults.Add($"TwoShops: {shops} units carry shopfronts on the {SideName[s]} street");
+            }
 
             // no one building is the block: the placer's share rule, measured back
             if ((plan.Klass == Klass.Block || plan.Klass == Klass.Court) && plan.M.Share > ShareMost)

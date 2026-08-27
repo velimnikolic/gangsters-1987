@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using static RoadDemo.Composer;
@@ -598,19 +598,32 @@ namespace RoadDemo
         /// </summary>
         static void Stand(ResidentialLot.Plan plan, Transform root, Stood stood)
         {
+            int nth = 0;
             foreach (var spot in plan.Spots)
             {
-                var go = StandUnit(spot.Unit, spot.Yaw, spot.I, spot.J, root);
+                // A COLOURWAY PER BUILDING. Synty ships the city atlas three times over -
+                // PolygonCity_0N_A, _B and _C, the same UVs over three different albedo maps
+                // - and every unit was harvested in _A, so a quarter of six houses was also a
+                // quarter of one brick. Dealt a colourway each, the same six read as
+                // eighteen. Off the block's own shape and the unit's place in it, so it is
+                // settled by the deal and not by the order things happen to be built in.
+                int mix = unchecked((plan.W * 73856093) ^ (plan.D * 19349663) ^
+                                    (spot.I * 83492791) ^ (spot.J * 486187739) ^
+                                    (nth++ * 2038074743));
+                var go = StandUnit(spot.Unit, spot.Yaw, spot.I, spot.J, root,
+                                   spot.Unit.Kind == ResidentialKind.Park ? 0 : ((mix % 3) + 3) % 3);
                 if (go == null) continue;
                 if (spot.Unit.Kind == ResidentialKind.Park) stood.Parks++;
                 else stood.Units++;
             }
         }
 
-        static GameObject StandUnit(ResidentialUnit unit, int yaw, int i, int j, Transform root)
+        static GameObject StandUnit(ResidentialUnit unit, int yaw, int i, int j, Transform root,
+                                   int way = 0)
         {
             var go = Raise($"{Units}{unit.Name}.prefab", root);
             if (go == null) return null;
+            Colourway(go, way);
 
             float cell = ResidentialLot.Cell;
             float w = unit.CW * cell, d = unit.CD * cell;
@@ -625,6 +638,39 @@ namespace RoadDemo
             go.transform.SetPositionAndRotation(new Vector3(x, 0f, z) + offset, Quaternion.Euler(0f, yaw, 0f));
             go.name = $"{unit.Name} ({i},{j}) {yaw}";
             return go;
+        }
+
+        /// <summary>Where Synty keeps the other two albedo maps of the city atlas.</summary>
+        const string CityAlts = "Assets/Synty/PolygonCity/Materials/Alts/";
+
+        /// <summary>
+        /// Put this building in one of the pack's three colourways.
+        ///
+        /// The _A maps carry an emission map - the lit windows - and _B and _C do not, so a
+        /// tinted building's windows will not glow when the city has a night. Worth knowing
+        /// before it does.
+        /// </summary>
+        static void Colourway(GameObject go, int way)
+        {
+            if (way <= 0) return;                       // _A: what the prefab was baked in
+            string letter = way == 1 ? "B" : "C";
+            foreach (var mr in go.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                var mats = mr.sharedMaterials;
+                bool swapped = false;
+                for (int k = 0; k < mats.Length; k++)
+                {
+                    var mat = mats[k];
+                    if (mat == null) continue;
+                    if (!mat.name.StartsWith("PolygonCity_") || !mat.name.EndsWith("_A")) continue;
+                    var alt = DemoAssetLoad.Load<Material>(
+                        CityAlts + mat.name.Substring(0, mat.name.Length - 1) + letter + ".mat");
+                    if (alt == null) continue;
+                    mats[k] = alt;
+                    swapped = true;
+                }
+                if (swapped) mr.sharedMaterials = mats;
+            }
         }
 
         // ------------------------------------------------------------------ the subway

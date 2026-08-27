@@ -189,9 +189,13 @@ Ovaj kit **nema** porodične kuće — to je PolygonTown i `SuburbDistrict`. Sa 
      prsten trotoara, **prolaz** duž reda iza trotoara, mesta s obe strane prolaza nosom ka njemu
      (`Road_ParkingLines_01`, 10 × 5, tri mesta, položena DUŽ reda — slagana u dubinu pravi pruge
      preko celog placa); neparna ćelija na kraju reda = go asfalt, ne pola mesta.
-3. **Radnja samo na ćošku, i to na jednom.** Jedinice 1/2/3/6 imaju radnje u prizemlju: na
-   *stambenom* bloku najviše **jedan** takav ćošak, i to onaj ka arteriji (strana koju kvart
-   označi kao glavnu); ostali ćoškovi su brownstone (4). Blok uz park drive ili bulevar sme dva.
+3. ~~**Radnja samo na ćošku, i to na jednom.**~~ **POVUČENO 2026-08-27 na korisnikovu reč
+   („ma bez ograničenja") — i nikad nije ni bilo njegovo pravilo, nego moja pretpostavka
+   upisana u ovaj plan.** Jedinice 1/2/3/6 imaju radnje u prizemlju; ograničenje „jedna radnja
+   po bloku" ih je isključivalo iz celog bloka čim ćošak uzme radnju, pa je od šest kuća
+   ostajalo dve — izmereno: **jedna zgrada = 63 % svih jedinica u gradu, dve = 88 %**. Sada
+   **nema ograničenja** (`ResidentialLot.ShopsPerStreet = 0`); arterijski ćošak i dalje prvo
+   traži radnju, jer je tu saobraćaj.
 4. **Kafić.** Jedan po bloku najviše: ili je to radnja u prizemlju ugaone jedinice (natpisi
    `Sign_Cafe`, `LargeSign_Coffee` već su tu) ili kit storefront (`building-cafe` /
    `building-coffeeshop`) u rupi na arteriji, pročeljem uz ivicu (pravilo BlockFabric-a: 1–3 po

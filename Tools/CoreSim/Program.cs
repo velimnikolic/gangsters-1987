@@ -1,4 +1,4 @@
-// CoreSim - deals the city core from seeds with no editor, and tallies the verdicts.
+﻿// CoreSim - deals the city core from seeds with no editor, and tallies the verdicts.
 //
 //     cd Tools/CoreSim
 //     dotnet run -c Release -- --seed 1 --count 30       # thirty seeds: deals needed, faults, areas
@@ -34,6 +34,7 @@ static class Program
                 case "--industrial": industrial = true; break;
                 case "--park": park = true; break;
                 case "--residential": residential = true; break;
+                case "--shops": ResidentialLot.ShopsPerStreet = int.Parse(args[++i]); break;
                 case "--quay": quay = true; break;
                 case "--size": size = args[++i]; break;
                 case "--sweep": sweep = true; break;
@@ -245,6 +246,8 @@ static class Program
         }
 
         int tried = 0, clean = 0;
+        var stood = new Dictionary<string, int>();
+        var role = new Dictionary<string, int>();
         var faulty = new Dictionary<string, int>();
         var refused = new Dictionary<string, int>();
         var tallies = new List<string>();
@@ -267,6 +270,16 @@ static class Program
                 gaps += plan.M.Gaps;
                 cafes += plan.M.Cafes;
                 share = Math.Max(share, plan.M.Share);
+
+                foreach (var spot in plan.Spots)
+                {
+                    stood[spot.Unit.Name] = stood.TryGetValue(spot.Unit.Name, out var q) ? q + 1 : 1;
+                    bool onI = spot.I == ResidentialLot.Walk || spot.I + spot.CW == plan.W - ResidentialLot.Walk;
+                    bool onJ = spot.J == ResidentialLot.Walk || spot.J + spot.CD == plan.D - ResidentialLot.Walk;
+                    string what = onI && onJ ? "corner" : "row";
+                    string tag = $"{spot.Unit.Name} {what}";
+                    role[tag] = role.TryGetValue(tag, out var t2) ? t2 + 1 : 1;
+                }
 
                 foreach (var fault in plan.Faults)
                 {
@@ -292,6 +305,14 @@ static class Program
                         $"{(double)empties / count:F1} empty cells a block");
         }
 
+        int all = stood.Values.Sum();
+        Console.WriteLine($"   units stood: {all}, {stood.Count} kind(s)");
+        foreach (var pair in stood.OrderByDescending(p => p.Value))
+        {
+            role.TryGetValue($"{pair.Key} corner", out int cor);
+            role.TryGetValue($"{pair.Key} row", out int rw);
+            Console.WriteLine($"   {pair.Value,5} {100.0 * pair.Value / Math.Max(1, all),5:F1}%  {pair.Key,-16} ({cor} corner, {rw} row)");
+        }
         Console.WriteLine($"{tried} block(s), {clean} clean ({100.0 * clean / tried:F0}%)");
         foreach (var line in tallies) Console.WriteLine(line);
         foreach (var pair in refused.OrderByDescending(p => p.Value))

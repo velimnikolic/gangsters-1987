@@ -12,6 +12,7 @@
   <ItemGroup>
     <Compile Include="Stubs.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="..\..\Assets\RoadDemo\Dice.cs" />
     <Compile Include="..\..\Assets\RoadDemo\CoreLayout.cs" />
     <Compile Include="..\..\Assets\RoadDemo\CoreLayout.Ring.cs" />
     <Compile Include="..\..\Assets\RoadDemo\CoreRoads.cs" />

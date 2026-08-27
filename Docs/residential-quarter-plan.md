@@ -349,3 +349,51 @@ postave). Nije još: pojas na 3 strane, mreža, policija/park u mreži, harness 
 4. **Policija u mreži: da, za sad** (§1.8).
 5. **Ostaci = parking i parkovi** (§1.5), park uz pravilo §1.3 i kvotu §1.7.
 6. **Park u mreži: 10 %** (§1.7).
+
+---
+
+## 10. Raznolikost kvarta: mera, uzrok i plafon (2026-08-27)
+
+**Mera (sweep 480 blokova, `--residential`), pre bilo kakve izmene:**
+
+| jedinica | udeo | ćoškovi | redovi |
+|---|---:|---:|---:|
+| `residential-04` | **63,4 %** | većina | većina |
+| `residential-01` | 15,8 % | | |
+| ostale četiri | 3–8 % svaka | | |
+
+**Uzrok — nije bio raspored nego pravilo + katalog.** Katalog ima **šest kuća**, od kojih
+**četiri nose radnje u prizemlju** (`residential-01/02/03/06`). Pravilo iz plana bloka bilo je
+*jedan izlog po bloku*, pa je čim ćošak uzme radnju, **sve četiri bile zabranjene u celom bloku** —
+ostajale su dve (`-04` i `-05`), a `-05` gleda na dve **suprotne** strane pa nikad ne može biti
+ćošak. Dakle: svaki ne-arterijski ćošak je mogla da uzme **tačno jedna zgrada u igri**.
+
+**Izmene:**
+1. **Ograničenje na radnje je UKINUTO** — `ResidentialLot.ShopsPerStreet = 0` (0 = bez
+   ograničenja), `TwoShops` presuda se ne primenjuje. Korisnik ga je povukao 2026-08-27
+   („ma bez ograničenja") pošto je čuo da pravilo nije bilo njegovo nego moja pretpostavka
+   upisana u plan bloka. Mera: na 1 po bloku najčešća zgrada je 63 %, na 3 po ulici 39 %,
+   bez ograničenja **isto 39 %** — ograničenje na 3 već nije bilo obavezujuće.
+2. **Ćošak se deli iz celog kataloga**, a pravilo o izlogu se proverava u `Fit` po strani;
+   arterijski ćošak i dalje prvo traži radnju.
+3. **Kazna za ponavljanje u bloku** — težina u žrebu se deli sa `1 + 4×(koliko ih već stoji)`.
+4. **Boja po zgradi** — Synty isporučuje atlas u tri varijante (`PolygonCity_0N_A/B/C`), sve
+   jedinice su požnjevene u `_A`; sada svaka zgrada dobija svoju. *Napomena: `_B`/`_C` nemaju
+   emisionu mapu (osvetljeni prozori noću).*
+
+**Posle izmena:** `residential-01` 39 %, `-04` 22 %, `-02` 11 %, `-03` 10 %, `-06` 8 %, `-05` 3,5 %.
+Prve dve **88 % → 61 %**. Sweep **480/480 čisto**, grad seed 1987 i dalje 0 grešaka (93 deal-a).
+
+**Plafon je katalog.** Pokušana je automatska žetva još kuća iz `CORE BLOCKS (bare)` i `Demo`:
+ne ide. Izmereno: Synty blok je **jedan povezan prsten** (flood fill daje ceo blok, ne zgradu), a
+**radnje su izmešane skoro u svakoj ćeliji** — traženje „redova bez radnji dužine ≥3" našlo je
+**jedan** kandidat u celoj sceni. Šest jedinica je požnjeveno **ručno, okom** (ime je ugovor:
+`residentialN` na svakom komadu u `Assets/Scenes/CoreHarvest.unity`).
+
+**Otvoreno za korisnika:**
+1. **Još kuća** — imenovati 4–6 zgrada kao `residential7..12` u `CoreHarvest.unity`, najbolje bez
+   izloga; jedna komanda ih peče i kvartovi ih odmah koriste.
+2. **Krovovi** — odozgo se vidi samo krov, a svi su isti sivi. Boja fasade (tačka 4) se odozgo
+   **ne vidi**. Oprema na krovu (rezervoari za vodu, klime, bilbordi, krovne bašte) bi za pogled
+   odozgo uradila više nego bilo šta drugo — ali je to odluka o izgledu.
+3. **Prazan beton u sredini bloka** — polovina svakog bloka je gola ploča.
