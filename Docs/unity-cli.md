@@ -42,7 +42,7 @@ worthless:**
     grep -c 'YourFile.cs"' Assembly-CSharp.csproj        # is your file even in it?
 
 Grep the BARE FILENAME, never the path. The project lists files Windows-style
-(`Assets\RoadDemo\Map\MapBuildings.cs`), and a grep carrying those backslashes comes back 0
+(`Assets\RoadDemo\TurfMapSurvey.cs`), and a grep carrying those backslashes comes back 0
 through this shell whether the file is listed or not - which reads exactly like "my file is not
 in the build" and is the same trap one paragraph down, sprung on the check meant to catch it.
 If you want the path as well, do it from python, where the backslashes survive.

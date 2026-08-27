@@ -477,7 +477,7 @@ UV-e pa se u sceni ne razlikuje od pločice. Traži potvrdu (§13).
   „DO NOT ENTER" / „WRONG WAY", na ulaznim „ONE WAY" i zeleni trailblazer „SR 9 EAST →".
 - **Ime**: pul u `StreetNames` — deblo „<Grad> Expressway" / „Bayshore Expressway" /
   „STATE ROAD 9xx"; grane po listu: „Airport Expressway", „Port Connector", „<Kopno>
-  Causeway". Mapa (`DemoMap`) dobija sloj: debela crveno-plava linija sa štitom, tanke
+  Causeway". Taktička mapa (`TurfMapSurvey`) dobija sloj: debela crveno-plava linija sa štitom, tanke
   rampe, broj izlaza uz svaki priključak, imena grana.
 - **Bilbordi** (odlučeno: da): `SM_Prop_Billboard_01` na ~300 m, van ROW-a na strani sela,
   okrenuti ka dolazećem saobraćaju; sadržaj = period reklame (cigarete, pivo, Miami Vice
@@ -530,11 +530,11 @@ luka) i bar jedno deblo → D → grid; lutalice čine ≥ 30 % silazaka.
 | faza | šta | fajlovi | gotovo kad |
 |---|---|---|---|
 | **0** | plan + `expressway.py`; probe mesha `Highway_01` (trake, UV trake) — mali editor command | `Docs/`, `PipelineCommands.cs` | 0 padova; broj traka odlučen |
-| **1** | `FreewayPlan` u `CityLayout.Roll`: portovi listova, deblo (luk + produžetak do D), trube, zona spusta, dijamanti; sve kao polilinijske rezervacije; NearStrip 200/280, obala +90, promocija arterija; `gangsters_layout` ispisuje stablo; `DemoMap` crta sloj | `CityLayout.cs`, `Districts.cs`, `Island.cs`, `DemoMap.cs`, `StreetNames.cs`, `PipelineCommands.cs` | 30 seed-ova: ≥ 6 sela, deblo A → D, truba za H u ≥ 80 % seedova, 2–4 dijamanta, 0 sudara, luka uvek sa stripom ≥ 470 |
+| **1** | `FreewayPlan` u `CityLayout.Roll`: portovi listova, deblo (luk + produžetak do D), trube, zona spusta, dijamanti; sve kao polilinijske rezervacije; NearStrip 200/280, obala +90, promocija arterija; `gangsters_layout` ispisuje stablo; `TurfMapSurvey` crta sloj | `CityLayout.cs`, `Districts.cs`, `Island.cs`, `TurfMapSurvey.cs`, `StreetNames.cs`, `PipelineCommands.cs` | 30 seed-ova: ≥ 6 sela, deblo A → D, truba za H u ≥ 80 % seedova, 2–4 dijamanta, 0 sudara, luka uvek sa stripom ≥ 470 |
 | **2** | `LaneNet`: `Path` kolovozi, `Lane.s0/s1`, `Class` + `CruiseFor`, brzina u krivini, rutiranje po vremenu — **bez ijednog novog puta** | `LaneNet.cs`, `RoadCar.cs`, `DriverProfile.cs` | regresija: CrewDemo/CoreDemo/Game harness kao pre (tally 30) |
 | **3** | `Fork`/`Merge`, `LaneChange`, izlazi lutalica; **lab scena** `ExpresswayLab.unity` (grid 4×3 + deblo sa jednim dijamantom, jednom trubom ka „aerodromu" od dva bloka i terminusom D — sva tri tipa čvora; tanki host kao `BlockLabBuilder`); `analyze.py --freeway` proširen | `LaneNet.cs`, `RoadCar.cs`, `Assets/ExpresswayLab/`, `Tools/play/analyze.py`, `DriveTrace` | invarijante iz §9 u labu, 30/30 |
 | **4** | geometrija u gradu: `RoadDemoBuilder.Expressway.cs` (profil, ekstruder `DeckMesh`, pločice na pravim, stubovi, mostovi, rampe, truba, izlazni luk, terminus, bulevar-arterija, tlo, polilinijska rezervacija + `HighwayFade`, pojas brda) | `RoadDemoBuilder.Expressway.cs`, `FreewayKit.cs`, `District.cs`, `Island.cs`, `Seams.cs`, `Wayside.cs` | Game.unity harness 30/30; Play pregled |
-| **5** | opremanje: ograde, razdelnik, lampe, putokazi, brojevi izlaza, zid protiv buke, bilbordi, život ispod decka (props + propalice), mapa, imena | `RoadDemoBuilder.ExpresswayDressing.cs`, `CityLife.cs`, `DemoMap.cs` | Play pregled sa §7 kao kontrolnom listom |
+| **5** | opremanje: ograde, razdelnik, lampe, putokazi, brojevi izlaza, zid protiv buke, bilbordi, život ispod decka (props + propalice), mapa, imena | `RoadDemoBuilder.ExpresswayDressing.cs`, `CityLife.cs`, `TurfMapSurvey.cs` | Play pregled sa §7 kao kontrolnom listom |
 | **6** | čišćenje: belt, šav `Highway`, `FreewayRoute`, `HighwayTraffic`, `freeway.py`/`motorway.py` napolje; `freeways` prekidač → `expressway`; docs | v. §12 | kompajl čist, tally 30 |
 | **7** | opciono: causeway + naplata (M), parclo, kamioni, potera, sastanci pod deckom | | |
 
@@ -672,7 +672,7 @@ otvorenog mora, jer isečena ćelija je ćelija koju ostrvo uopšte ne crta. Rav
 4. **Arterija dijamanta je bulevar**: dva kolovoza sa medijanom od 15 m između njih,
    trake na ±7.5 i ±12.5, `MedianHalf = 5` — terminali sada imaju gde da čekaju levo.
 5. **Autoput na strateškoj mapi**: crta se **svojom bojom** (`Deck`) i **po liniji koju
-   prati**, a ne kao tetiva od kraja do kraja (`DemoMap.BuildPlan`).
+   prati**, a ne kao tetiva od kraja do kraja (danas `TurfMapSurvey.DrawSeams`).
 6. **Zelene table imaju slova**: TMP legenda („EXIT 2 / PORT / 1/2 MILE"), okrenuta ka
    saobraćaju, na **živom** korenu — tekst uvučen u merge izgubi svoj materijal.
 

@@ -61,7 +61,7 @@ namespace LivingCity.EditorTools
             var scene = SceneManager.GetActiveScene();
             foreach (var root in scene.GetRootGameObjects())
                 if (root.name == SketchRoot) Object.DestroyImmediate(root);
-            bool anyScene = Extent(out Bounds others);
+            bool anyScene = SketchFrame.Extent(SketchRoot, out Bounds others);
 
             var plan = Plan(seed, depth, length);
             LastSeed = seed;
@@ -87,7 +87,7 @@ namespace LivingCity.EditorTools
 
             EditorSceneManager.MarkSceneDirty(scene);
             Selection.activeGameObject = quay;
-            Frame(quay.transform.position + new Vector3(wide * 0.4f, 0f, deep * 0.5f), Mathf.Max(wide, deep));
+            SketchFrame.Frame(quay.transform.position + new Vector3(wide * 0.4f, 0f, deep * 0.5f), Mathf.Max(wide, deep) * 1.2f);
 
             var log = new System.Text.StringBuilder();
             log.AppendLine($"[Quay] seed {seed}: {said}");
@@ -121,39 +121,8 @@ namespace LivingCity.EditorTools
                           $"{stood.Lamps} lamps, {stood.Benches} benches, {stood.Tables} tables, {stood.BoatCount} boats" +
                           (stood.Wheel ? ", the wheel" : "") + "\n" + string.Join(", ", rooms) +
                           (faults > 0 ? $"\n{faults} FAULTS - see the console" : "");
-            BlockLotPads.PadLabel("quay label", text,
+            SketchFrame.Caption("quay label", text,
                 new Vector3(plan.Depth * QuayWalk.Cell * 0.5f, 26f, plan.Length * QuayWalk.Cell * 0.5f), labels);
-            var caption = labels.Find("quay label");
-            if (caption) caption.rotation = Quaternion.Euler(35f, 180f, 0f);
-        }
-
-        static bool Extent(out Bounds box)
-        {
-            box = new Bounds();
-            bool any = false;
-            for (int i = 0; i < SceneManager.sceneCount; i++)
-            {
-                var open = SceneManager.GetSceneAt(i);
-                if (!open.isLoaded) continue;
-                foreach (var root in open.GetRootGameObjects())
-                {
-                    if (root.name == SketchRoot) continue;
-                    foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
-                    {
-                        if (renderer is ParticleSystemRenderer) continue;
-                        if (!any) { box = renderer.bounds; any = true; }
-                        else box.Encapsulate(renderer.bounds);
-                    }
-                }
-            }
-            return any;
-        }
-
-        static void Frame(Vector3 centre, float span)
-        {
-            var view = SceneView.lastActiveSceneView;
-            if (view == null) return;
-            view.LookAt(centre, Quaternion.Euler(55f, 0f, 0f), span * 1.2f);
         }
     }
 }

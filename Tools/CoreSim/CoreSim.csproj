@@ -13,6 +13,7 @@
     <Compile Include="Stubs.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="..\..\Assets\RoadDemo\CoreLayout.cs" />
+    <Compile Include="..\..\Assets\RoadDemo\CoreLayout.Ring.cs" />
     <Compile Include="..\..\Assets\RoadDemo\CoreRoads.cs" />
     <Compile Include="..\..\Assets\RoadDemo\IndustrialLayout.cs" />
     <Compile Include="..\..\Assets\RoadDemo\ParkWalk.cs" />

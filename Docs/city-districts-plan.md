@@ -89,7 +89,7 @@ Potreban je **ugovor kvarta** i da oba demoa pređu na njega.
   - `DistrictPortal[]` — spojevi: lokalna tačka na ivici footprinta, smer, profil
     (`Street` = 2 trake, trotoar) + koje pešačke čvorove nosi;
   - `Build(IDistrictHost, DistrictFrame, settings)`, `Tick(dt)`, `Dispose()`;
-  - `MapStrokes` za `DemoMap` (ulice, voda, placevi/hale) — kao što `SeamInfo` danas hrani mapu.
+  - `MapStrokes` za taktičku mapu (ulice, voda, placevi/hale) — kao što `SeamInfo` danas hrani mapu.
 - **Settings** = ono što su danas javna polja buildera, kao `[Serializable] class HarborSettings` /
   `SuburbSettings` sa **istim default-ima u kodu** → demo scena i grad dobijaju isti kvart.
   Seed kvarta je njegov (`HarborSettings.seed = 1987`), ne gradski → luka sa seed-om 1987 je
@@ -218,7 +218,7 @@ Koraci rola (deterministično iz `System.Random(cityLayoutSeed)`):
    računa margine po ivici: `margin(edge) = max(base, strip + dubina kvarta + baseWild)`,
    a unutar footprinta + skirt heightfield preskače ćelije (kao za grid), bez suburb Quad-a.
 5. Upis u `districts[]` + `Debug.Log` tabele (ivica, linije, yaw, origin, seed) i crtanje u
-   `OnDrawGizmos`/`DemoMap` — da se svaki rol vidi i na mapi.
+   `OnDrawGizmos`/taktičkoj mapi — da se svaki rol vidi i na mapi.
 
 Šta je **fiksno** bez obzira na rol: profil spoja (obična ulica), pravila pinova, pojas ≥ 40 m,
 najviše jedna luka, ostrvo oko svega, demo scene = isti kvart sa `frame0` i istim settings-om
@@ -242,7 +242,7 @@ najviše jedna luka, ostrvo oko svega, demo scene = isti kvart sa `frame0` i ist
   dolazi iz grada, zadnja ulica luke se stapa u red 0 grida.
 - Noćni prozori / lampe / farovi / audio / mapa: `DemoNightWindows.facadeRoot` i
   `DemoStreetLamps` dobijaju i korene kvartova; `DemoAudio`/`DemoHeadlights` rade nad
-  domaćinovim listama (suburb kola su već tamo); `DemoMap` crta `MapStrokes` kvartova.
+  domaćinovim listama (suburb kola su već tamo); taktička mapa crta `MapStrokes` kvartova.
 - Klik-kartice: `BuildingCardPicker.pickRoot` je jedan Transform → drugi picker za kvartove ili
   zajednički roditelj `Districts` pod koji idu i blokovi (odluka u Fazi 4).
 
@@ -278,7 +278,7 @@ najviše jedna luka, ostrvo oko svega, demo scene = isti kvart sa `frame0` i ist
 2. `RoadDemoBuilder.Districts.cs`: `districts[]`, `BuildDistricts()` posle `BuildSeams`
    a pre `DressStreets`/`BuildGraph` (da krakovi uđu u graf i geometriju); `ArmOpen`;
    polaganje segmenta spoja StreetKit-om; `AddEdge`/`AddPedLink` za spoj; `Tick` kvartova u
-   `Update`; statički koreni kvartova u perf pass; `MapStrokes` u `DemoMap`.
+   `Update`; statički koreni kvartova u perf pass; `MapStrokes` na taktičkoj mapi.
 3. `Island.cs`: `BuildIsland(unionRect, reservations)`; `IslandHeight` = 0 u `FlatLand`,
    preskok ćelija u footprintima, `CoastDistance` stegnut u `Water`, `DressWilderness`
    preskače `NoFlora`.
@@ -397,7 +397,7 @@ nisu naše). **Ništa još nije viđeno u Play-u.**
 
 **Ostalo nedovršeno (svesno)**
 - `DemoNightWindows.facadeRoot` je jedan Transform → prozori u kvartovima ne svetle noću.
-- `DemoMap` ne crta kvartove (crta grid, šavove i placeve).
+- ~~mapa ne crta kvartove~~ — rešeno: turf mapa ih crta (`TurfMapSurvey.DrawQuarters`, `TurfDistrict`).
 - `ScaleLifeToCity` broji samo gradske placeve (kvartovi donose svoj život, pa je to OK).
 - Trotoar spoja je gradskih 6.5 m, a suburb nastavlja svojim 5 m; visina 0.13 vs 0.10.
 

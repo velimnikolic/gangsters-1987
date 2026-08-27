@@ -216,10 +216,34 @@ namespace LivingCity.Gameplay
             return OpResult.Success;
         }
 
+        /// <summary>
+        /// The purchase gate's undo: a purchase whose second half failed after the money
+        /// moved (a hire the roster then refused) is unbooked exactly as it was booked -
+        /// the safe refilled AND the open day's Purchases line reduced, so the Finances
+        /// page never shows a purchase that bought nothing.
+        /// </summary>
+        public void Refund(int price, string what)
+        {
+            if (price <= 0)
+                return;
+
+            Accounts.Safe += price;
+            if (Accounts.Current != null)
+                Accounts.Current.Purchases -= price;
+            Version++;
+            Debug.Log("[Outfit] Refunded " + UI.LedgerText.Cash(price) + " for " + what +
+                      "; safe at " + UI.LedgerText.Cash(Accounts.Safe) + ".");
+        }
+
         void Awake()
         {
             if (Instance && Instance != this)
+            {
+                // A second director would advance the clock and pay the wages twice over
+                // the one shared roster; it stays a dead component, not a silent double.
+                enabled = false;
                 return;
+            }
             Instance = this;
         }
 

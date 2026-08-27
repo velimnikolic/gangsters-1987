@@ -23,9 +23,8 @@ namespace LivingCity.Entities
     /// for free: the authored _AI prefab keeps a root capsule and both pick sites
     /// resolve with GetComponentInParent.
     ///
-    /// The WalkTo/Face loop is copied from PedestrianAgent via DockWorkerAgent, the
-    /// sixth consumer, under the standing reasoning: the shared thirty lines are
-    /// arithmetic, and everything around them differs.
+    /// The WalkTo/Face loop is the shared AgentLocomotion one, over this agent's own
+    /// handles.
     ///
     /// Crowd invariants honoured: the body registers once for the object's lifetime;
     /// Stationary is kept truthful around every shuffle; no per-instance Update.
@@ -48,11 +47,6 @@ namespace LivingCity.Entities
 
         /// <summary>PoliceOfficerAgent's reasoning: the head is ~1.9m up.</summary>
         const float MarkerHeight = 2.2f;
-
-        /// <summary>Matches HumanBehavior's own animator scaling (speed * 0.8).</summary>
-        const float AnimatorSpeedScale = 0.8f;
-
-        static readonly WaitForFixedUpdate FixedStep = new WaitForFixedUpdate();
 
         HumanBehavior human;
         Animator animator;
@@ -104,6 +98,7 @@ namespace LivingCity.Entities
             GangId = gangId;
             Identity = identity;
             rng = new System.Random(seed);
+            PedestrianRegistry.Seed(body, seed);
             post = standPost;
             outward = faceOutward.sqrMagnitude > 1e-4f ? faceOutward.normalized : Vector3.forward;
 
@@ -168,95 +163,24 @@ namespace LivingCity.Entities
             ((long)GangId << 8) | (Identity != null && Identity.Lieutenant ? 1L : 0L);
 
         // ------------------------------------------------------------------ movement
-        // Copied from PedestrianAgent via DockWorkerAgent - see the class comment for
-        // why copied rather than shared.
+        // The shared AgentLocomotion loop, over this agent's own handles.
 
-        IEnumerator WalkTo(Vector3 target, float stopWithin, float timeout)
-        {
-            SetStationary(false);
-            var speed = 0f;
-            var deadline = Time.time + timeout;
+        IEnumerator WalkTo(Vector3 target, float stopWithin, float timeout) =>
+            AgentLocomotion.WalkTo(transform, human, body, animator, hasSpeedParam,
+                                   target, stopWithin, timeout);
 
-            while (Time.time < deadline)
-            {
-                var toTarget = target - transform.position;
-                var remaining = PedestrianSteering.Flat(toTarget).magnitude;
-                if (remaining <= stopWithin)
-                    break;
-
-                speed = Mathf.MoveTowards(speed, human.maxspeed, 4f * Time.deltaTime);
-
-                var obstacle = PedestrianRegistry.Probe(body, toTarget);
-                var heading = PedestrianSteering.Blend(toTarget, obstacle.Push);
-                var advance = Mathf.Min(speed * Time.deltaTime,
-                              Mathf.Min(obstacle.AllowedAdvance, remaining));
-
-                var step = heading * advance;
-                step.y = Mathf.Clamp(toTarget.y, -advance, advance);
-                transform.position += step;
-
-                if (heading != Vector3.zero)
-                    transform.rotation = Quaternion.LookRotation(heading, Vector3.up);
-
-                var actual = advance / Mathf.Max(Time.deltaTime, 1e-5f);
-                body.SpeedMs = actual;
-                SetSpeed(actual);
-
-                yield return FixedStep;
-            }
-
-            body.SpeedMs = 0f;
-            SetSpeed(0f);
-        }
-
-        IEnumerator Face(Vector3 point, float seconds = 0.35f)
-        {
-            var direction = PedestrianSteering.Flat(point - transform.position);
-            if (direction.sqrMagnitude < 1e-4f)
-                yield break;
-
-            var from = transform.rotation;
-            var to = Quaternion.LookRotation(direction.normalized, Vector3.up);
-            for (var t = 0f; t < seconds; t += Time.deltaTime)
-            {
-                transform.rotation = Quaternion.Slerp(from, to, t / seconds);
-                yield return null;
-            }
-            transform.rotation = to;
-        }
+        IEnumerator Face(Vector3 point, float seconds = 0.35f) =>
+            AgentLocomotion.Face(transform, point, seconds);
 
         // ------------------------------------------------------------------ plumbing
 
-        void SetStationary(bool stationary)
-        {
-            if (body == null)
-                return;
+        void SetStationary(bool stationary) =>
+            AgentLocomotion.SetStationary(body, animator, hasSpeedParam, stationary);
 
-            body.Stationary = stationary;
-            if (stationary)
-            {
-                body.SpeedMs = 0f;
-                SetSpeed(0f);
-            }
-        }
+        void SetSpeed(float metresPerSecond) =>
+            AgentLocomotion.SetSpeed(animator, hasSpeedParam, metresPerSecond);
 
-        void SetSpeed(float metresPerSecond)
-        {
-            if (hasSpeedParam)
-                animator.SetFloat(PedestrianAnimation.SpeedHash,
-                                  metresPerSecond * AnimatorSpeedScale);
-        }
-
-        static bool HasParameter(Animator animator, int nameHash)
-        {
-            if (!animator || !animator.runtimeAnimatorController)
-                return false;
-
-            foreach (var parameter in animator.parameters)
-                if (parameter.nameHash == nameHash)
-                    return true;
-
-            return false;
-        }
+        static bool HasParameter(Animator animator, int nameHash) =>
+            AgentLocomotion.HasParameter(animator, nameHash);
     }
 }

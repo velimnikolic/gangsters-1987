@@ -67,12 +67,13 @@ public class TrafficLightsControl : MonoBehaviour
     /// <summary>
     /// PATCH (Living City): every light red, and deliberately WITHOUT firing lightChange.
     ///
-    /// Nothing needs the event here and two things break on it. TrafficLight.ChangeCrosswalk
-    /// toggles crosswalk.CanCross rather than assigning it, so an extra invoke permanently
-    /// inverts pedestrian permission at that junction - the desync CarBehavior's HoldWatchdog
-    /// exists to survive. And a car already stopped at the line is holding a reference to its own
-    /// light; leaving it uninvoked keeps it held, which is exactly right, while a car arriving
-    /// during the clearance reads isGreen on trigger entry and stops of its own accord.
+    /// Nothing needs the event here. TrafficLight.ChangeCrosswalk used to toggle crosswalk.CanCross
+    /// rather than assign it, so an extra invoke permanently inverted pedestrian permission at
+    /// that junction - the desync CarBehavior's HoldWatchdog exists to survive; it assigns now,
+    /// but the event is still not wanted. A car already stopped at the line is holding a
+    /// reference to its own light; leaving it uninvoked keeps it held, which is exactly right,
+    /// while a car arriving during the clearance reads isGreen on trigger entry and stops of its
+    /// own accord.
     ///
     /// Both are released by their own light's lightChange when the next phase turns it green -
     /// CarBehavior.StartMoving already ignores an invoke that carries isGreen false, and the
@@ -94,7 +95,7 @@ public class TrafficLightsControl : MonoBehaviour
             if (!light)
                 continue;
 
-            light.GetComponent<Renderer>().materials[1].SetColor("_EmissionColor", color);
+            light.SetLampColor(color);
             light.isGreen = green;
 
             if (notify)

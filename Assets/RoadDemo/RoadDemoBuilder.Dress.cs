@@ -100,7 +100,7 @@ namespace RoadDemo
             {
                 string kind = null;
                 foreach (var name in FoodFronts)
-                    if (t.name.StartsWith(name)) { kind = name; break; }
+                    if (t.name.StartsWith(name, System.StringComparison.Ordinal)) { kind = name; break; }
                 if (kind == null) continue;
 
                 // which side the shop's front is on, measured once per kit prefab:

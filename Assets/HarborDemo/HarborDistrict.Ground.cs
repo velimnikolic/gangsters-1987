@@ -92,7 +92,7 @@ namespace HarborDemo
         {
             var renderers = water.GetComponentsInChildren<MeshRenderer>();
             if (renderers.Length == 0 || renderers[0].sharedMaterial == null) return;
-            var mat = new Material(renderers[0].sharedMaterial) { name = "Harbor Water" };
+            var mat = Keep(new Material(renderers[0].sharedMaterial) { name = "Harbor Water" });
             float k = Mathf.Max(1f, (kx + kz) * 0.5f);
 
             void Scale(string prop, float by)
@@ -261,9 +261,19 @@ namespace HarborDemo
         Material GrassMaterial()
         {
             if (_grassMat != null) return _grassMat;
-            _grassMat = HarborKit.LoadMaterial(HarborKit.PalmGround)
-                        ?? HarborKit.Flat("Harbor Grass", new Color(0.36f, 0.52f, 0.27f), 0.05f);
+            _grassMat = Keep(HarborKit.LoadMaterial(HarborKit.PalmGround)
+                             ?? HarborKit.Flat("Harbor Grass", new Color(0.36f, 0.52f, 0.27f), 0.05f));
             return _grassMat;
+        }
+
+        /// <summary>Every material the port makes for itself, so Dispose can take them
+        /// down: a fresh Material is not destroyed with the renderers that wore it.</summary>
+        readonly List<Material> _mats = new List<Material>();
+
+        Material Keep(Material mat)
+        {
+            if (mat != null) _mats.Add(mat);
+            return mat;
         }
 
         /// <summary>The same material with its sand face turned up - the pack carries
@@ -271,13 +281,13 @@ namespace HarborDemo
         Material SandMaterial()
         {
             if (_sandMat != null) return _sandMat;
-            _sandMat = HarborKit.LoadMaterial(HarborKit.PalmGround);
+            _sandMat = Keep(HarborKit.LoadMaterial(HarborKit.PalmGround));
             if (_sandMat != null && _sandMat.HasProperty("_Triplanar_Texture_Top"))
             {
                 _sandMat.SetTexture("_Triplanar_Texture_Top", _sandMat.GetTexture("_Triplanar_Texture_Side"));
                 _sandMat.SetTexture("_Triplanar_Normal_Texture_Top", _sandMat.GetTexture("_Triplanar_Normal_Texture_Side"));
             }
-            else _sandMat = HarborKit.Flat("Harbor Sand", new Color(0.76f, 0.72f, 0.58f), 0.08f);
+            else _sandMat = Keep(HarborKit.Flat("Harbor Sand", new Color(0.76f, 0.72f, 0.58f), 0.08f));
             return _sandMat;
         }
 
@@ -292,8 +302,8 @@ namespace HarborDemo
         Material ConcreteMaterial()
         {
             if (_concreteMat != null) return _concreteMat;
-            _concreteMat = HarborKit.LoadMaterial(HarborKit.ConcreteMat)
-                           ?? HarborKit.Flat("Harbor Concrete", new Color(0.66f, 0.64f, 0.6f), 0.05f);
+            _concreteMat = Keep(HarborKit.LoadMaterial(HarborKit.ConcreteMat)
+                                ?? HarborKit.Flat("Harbor Concrete", new Color(0.66f, 0.64f, 0.6f), 0.05f));
             _concreteMat.name = "Harbor Concrete";
             return _concreteMat;
         }
@@ -304,8 +314,8 @@ namespace HarborDemo
         Material AsphaltMaterial()
         {
             if (_asphaltMat != null) return _asphaltMat;
-            _asphaltMat = HarborKit.LoadMaterial(HarborKit.AsphaltMat)
-                          ?? HarborKit.Flat("Harbor Asphalt", new Color(0.3f, 0.3f, 0.31f), 0.1f);
+            _asphaltMat = Keep(HarborKit.LoadMaterial(HarborKit.AsphaltMat)
+                               ?? HarborKit.Flat("Harbor Asphalt", new Color(0.3f, 0.3f, 0.31f), 0.1f));
             _asphaltMat.name = "Harbor Asphalt";
             var tint = new Color(0.62f, 0.62f, 0.63f, 1f);
             if (_asphaltMat.HasProperty("_BaseColor")) _asphaltMat.SetColor("_BaseColor", tint);

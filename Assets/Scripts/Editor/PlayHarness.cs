@@ -39,7 +39,7 @@ namespace GangstersTools
     public static class PlayHarness
     {
         const string CfgKey = "PlayHarness.Cfg";
-        const string ArmedKey = "PlayHarness.Armed";
+        internal const string ArmedKey = "PlayHarness.Armed";
 
         [Serializable]
         public class Cfg
@@ -343,6 +343,18 @@ namespace GangstersTools
             if (Time.frameCount % 60 == 0) _log.Flush();
         }
 
+        /// <summary>Play can end under the driver - a Stop from the editor, a scene
+        /// torn down - and a log hook left on a destroyed object throws at the next line
+        /// written, with the file's tail still in the buffer. What Finish closes, this
+        /// closes too; after a Finish there is nothing left to do.</summary>
+        void OnDestroy()
+        {
+            Application.logMessageReceived -= OnLog;
+            _log?.Flush();
+            _log?.Dispose();
+            _log = null;
+        }
+
         void Update()
         {
             if (_done) return;
@@ -426,7 +438,7 @@ namespace GangstersTools
             _log?.Dispose();
             _log = null;
             Time.captureDeltaTime = 0f;
-            SessionState.SetBool("PlayHarness.Armed", false);
+            SessionState.SetBool(PlayHarness.ArmedKey, false);
             PlayHarness.LetGo();
             Debug.Log($"[harness] {why} - {_sim:F0}s played, {_errors} errors, {_exceptions} exceptions");
             PlayHarness.Leave(code);

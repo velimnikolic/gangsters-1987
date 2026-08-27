@@ -143,13 +143,6 @@ namespace LivingCity.Generation
             placed.Add(instance);
         }
 
-        /// <summary>
-        /// A warehouse on each pad, doors to the water. The chooser is the works chooser's
-        /// shape without its look-ahead: the port kit is three or four pieces, and near-tie
-        /// spread alone keeps a row from repeating. Landmark first - building-port-sea takes
-        /// the widest pad, because the terminal building IS the elevation the port shows the
-        /// city, and left to the width-fit roll it lost that pad to a warehouse half the time.
-        /// </summary>
         /// <summary>A warehouse that actually stood, in the terms the apron-stack pass needs.</summary>
         struct Stood
         {
@@ -159,6 +152,13 @@ namespace LivingCity.Generation
             public float HalfDepth;
         }
 
+        /// <summary>
+        /// A warehouse on each pad, doors to the water. The chooser is the works chooser's
+        /// shape without its look-ahead: the port kit is three or four pieces, and near-tie
+        /// spread alone keeps a row from repeating. Landmark first - building-port-sea takes
+        /// the widest pad, because the terminal building IS the elevation the port shows the
+        /// city, and left to the width-fit roll it lost that pad to a warehouse half the time.
+        /// </summary>
         static List<Stood> BuildWarehouses(
             PortLayout.Layout layout,
             PrefabDatabase.ZonePalette palette,
@@ -236,7 +236,7 @@ namespace LivingCity.Generation
                                  + lateral * (cursor + width * 0.5f - padWidth * 0.5f)
                                  - pad.Outward * ((padDepth - depthUsed) * 0.5f - RoadSetback);
 
-                    var instance = Spawn(pick, position, pickYaw, parent, spawn, occupied, placed);
+                    var instance = OverlapSpawn.Place(pick, position, pickYaw, 1f, parent, spawn, occupied, placed);
 
                     cursor += width + HallClearance;
                     remaining -= width + HallClearance;
@@ -329,7 +329,7 @@ namespace LivingCity.Generation
                     continue;
 
                 var yaw = Mathf.Atan2(spot.Outward.x, spot.Outward.z) * Mathf.Rad2Deg;
-                Spawn(crane, spot.Centre, yaw, parent, spawn, occupied, placed);
+                OverlapSpawn.Place(crane, spot.Centre, yaw, 1f, parent, spawn, occupied, placed);
             }
         }
 
@@ -372,7 +372,7 @@ namespace LivingCity.Generation
                 var start = centre - along * ((count - 1) * 0.5f * step);
 
                 for (var i = 0; i < count; i++)
-                    Spawn(box, start + along * (step * i), yaw, parent, spawn, occupied, placed);
+                    OverlapSpawn.Place(box, start + along * (step * i), yaw, 1f, parent, spawn, occupied, placed);
 
                 // The second tier is a shorter run on top, one end flush - how a real stack
                 // is worked down. Placed WITHOUT the occupancy test: it deliberately stands
@@ -489,8 +489,8 @@ namespace LivingCity.Generation
             for (var i = 0; i < count; i++)
             {
                 var t = (i + 0.5f) / count - 0.5f;
-                Spawn(palette.portQuayLamp, line + along * (t * span), 0f,
-                      parent, spawn, occupied, placed);
+                OverlapSpawn.Place(palette.portQuayLamp, line + along * (t * span), 0f, 1f,
+                                   parent, spawn, occupied, placed);
             }
         }
 
@@ -540,8 +540,8 @@ namespace LivingCity.Generation
                           + hall.Outward * (hall.HalfDepth - step * 0.5f);
 
                 for (var i = 0; i < count; i++)
-                    Spawn(prefab, start - hall.Outward * (step * i), yaw,
-                          parent, spawn, occupied, placed);
+                    OverlapSpawn.Place(prefab, start - hall.Outward * (step * i), yaw, 1f,
+                                       parent, spawn, occupied, placed);
             }
         }
 
@@ -583,7 +583,7 @@ namespace LivingCity.Generation
                 var position = centre + along * slide
                              - layout.Seaward * (PortLayout.StackBandDepth * 0.5f + 4f);
 
-                Spawn(box, position, yaw, parent, spawn, occupied, placed);
+                OverlapSpawn.Place(box, position, yaw, 1f, parent, spawn, occupied, placed);
             }
         }
 
@@ -669,7 +669,7 @@ namespace LivingCity.Generation
                            - stand.Outward * (IndustrialLayout.LorryStandDepth * 0.5f);
 
                 var yaw = Mathf.Atan2(stand.Outward.x, stand.Outward.z) * Mathf.Rad2Deg;
-                Spawn(lorry, centre, yaw, parent, spawn, occupied, placed);
+                OverlapSpawn.Place(lorry, centre, yaw, 1f, parent, spawn, occupied, placed);
             }
         }
 
@@ -710,7 +710,7 @@ namespace LivingCity.Generation
                 var position = coping + along * ((t - 0.5f) * span);
                 var yaw = (float)rng.NextDouble() * 360f;
 
-                Spawn(prop, position, yaw, parent, spawn, occupied, placed);
+                OverlapSpawn.Place(prop, position, yaw, 1f, parent, spawn, occupied, placed);
             }
 
             // Buoys: over the water, past the ship, sunk to the same plane it floats on.
@@ -800,35 +800,6 @@ namespace LivingCity.Generation
         /// <summary>Size of an XZ footprint along an axis-aligned direction.</summary>
         static float Extent(Vector2 footprint, Vector3 direction) =>
             Mathf.Abs(direction.x) > 0.5f ? footprint.x : footprint.y;
-
-        /// <summary>
-        /// Overlap-checked placement - IndustrialDresser.Spawn's shape, kept as its own copy
-        /// under the same not-while-adding-a-zone precedent that copy itself cites.
-        /// </summary>
-        static GameObject Spawn(
-            GameObject prefab,
-            Vector3 position,
-            float yaw,
-            Transform parent,
-            SpawnPrefab spawn,
-            List<Bounds> occupied,
-            List<GameObject> placed)
-        {
-            if (!prefab)
-                return null;
-
-            var footprint = PrefabBounds.FootprintXZ(prefab, yaw);
-            var bounds = new Bounds(new Vector3(position.x, 0f, position.z),
-                                    new Vector3(footprint.x, 1f, footprint.y));
-
-            foreach (var existing in occupied)
-                if (existing.Intersects(bounds))
-                    return null;
-
-            var instance = SpawnFree(prefab, position, yaw, parent, spawn, placed);
-            occupied.Add(bounds);
-            return instance;
-        }
 
         /// <summary>
         /// Placement with no occupancy test, for the pieces that legitimately overlap the

@@ -1,6 +1,5 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace LivingCity.City
@@ -53,9 +52,13 @@ namespace LivingCity.City
             if (isMoving && trajectory != null)
             {
                 UpdateCheckpoint(ref frontBogiePath, ref frontBogieCheckpoint, true);
+                // The front bogie reaching the end of the line asks for a new path, and a failed
+                // rail search leaves trajectory null for the rear bogie to dereference.
+                if (trajectory == null)
+                    return;
                 UpdateCheckpoint(ref rearBogiePath, ref rearBogieCheckpoint, false);
-                if(wagons.Count > 0)
-                    currentMaxSpeed = Mathf.Min(wagons.Min(w => w.currentMaxSpeed),currentMaxSpeed);
+                for (int i = 0; i < wagons.Count; i++)
+                    currentMaxSpeed = Mathf.Min(wagons[i].currentMaxSpeed, currentMaxSpeed);
                 if (speed < currentMaxSpeed)
                 {
                     speed += ((maxspeed * Mathf.Cos((speed/maxspeed) *  0.5f * Mathf.PI)) * Time.deltaTime) * acceleration;
@@ -126,7 +129,7 @@ namespace LivingCity.City
                         checkpoint = 1;
                         if (isFront)
                         {
-                            if(wagons.All(w => w.transform.forward == transform.forward))
+                            if (WagonsInLine())
                             {
                                 SetWagonTransforms();
                             }
@@ -146,6 +149,15 @@ namespace LivingCity.City
                         targetRearPoint = trajectory[path].pathPositions[checkpoint].transform.position;
                 }
             }
+        }
+
+        //Every wagon pointing the way the locomotive does, i.e. the train is on a straight
+        private bool WagonsInLine()
+        {
+            for (int i = 0; i < wagons.Count; i++)
+                if (wagons[i].transform.forward != transform.forward)
+                    return false;
+            return true;
         }
 
         //Finds and sets up new path to follow

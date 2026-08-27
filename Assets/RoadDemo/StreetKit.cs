@@ -312,14 +312,6 @@ namespace RoadDemo
             return true;
         }
 
-        /// <summary>Where two of these meet: the road demo's junction square, four
-        /// cells of bare asphalt centred on the crossing, and a pavement cap on any
-        /// side asked for - the side a street's pavement runs past on, which makes the
-        /// square a T or a bend rather than a crossroads. <paramref name="splaySouth"/>
-        /// / <paramref name="splayNorth"/> lay that many cells of bare ground in place
-        /// of the pavement either side of the square on that flank - the splayed kerb
-        /// a lorry's turn needs; the street is laid without its pavement there
-        /// (LayAlongX's southWalk/northWalk).</summary>
         /// <summary>The strip either side of a carriageway, laid on its own: the same
         /// bare asphalt a street in the town keeps its parked cars on, and out of town
         /// the shoulder a car pulls off on to. Two and a half metres, which is what
@@ -355,6 +347,14 @@ namespace RoadDemo
             return true;
         }
 
+        /// <summary>Where two of these meet: the road demo's junction square, four
+        /// cells of bare asphalt centred on the crossing, and a pavement cap on any
+        /// side asked for - the side a street's pavement runs past on, which makes the
+        /// square a T or a bend rather than a crossroads. <paramref name="splaySouth"/>
+        /// / <paramref name="splayNorth"/> lay that many cells of bare ground in place
+        /// of the pavement either side of the square on that flank - the splayed kerb
+        /// a lorry's turn needs; the street is laid without its pavement there
+        /// (LayAlongX's southWalk/northWalk).</summary>
         public bool LayJunction(float cx, float cz, bool capNorth = false, bool capSouth = false, bool capEast = false, bool capWest = false,
                                 int splaySouth = 0, int splayNorth = 0, float half = StreetHalf)
         {

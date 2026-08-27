@@ -564,6 +564,10 @@ namespace LivingCity.Generation
                 var cornerLo = alongX ? Edge(Sides.West) : Edge(Sides.South);
                 var cornerHi = alongX ? Edge(Sides.East) : Edge(Sides.North);
 
+                // A sea wall's water keeps the block span as it stands: clamped at the shared
+                // corner like any other, and clamped at the city end - the coastline stops
+                // where the port does instead of jutting 39m along a dry neighbour. Only the
+                // quay's water reaches further.
                 if (isQuay)
                 {
                     // Continue to the centreline, stop at a shared corner (the square takes
@@ -571,12 +575,6 @@ namespace LivingCity.Generation
                     // overhang where there is neither: a block tested on its own.
                     lo += continuation.Low > 0f ? -continuation.Low : (cornerLo ? 0f : -WaterOverhang);
                     hi += continuation.High > 0f ? continuation.High : (cornerHi ? 0f : WaterOverhang);
-                }
-                else
-                {
-                    // A sea wall's water: clamped at the shared corner like any other, and
-                    // clamped to the block span at the city end - the coastline stops where
-                    // the port does instead of jutting 39m along a dry neighbour.
                 }
 
                 IndustrialLayout.Rect rect;

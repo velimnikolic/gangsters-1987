@@ -399,7 +399,6 @@ namespace RoadDemo
             return s;
         }
 
-        /// <summary>The height of THIS deck's surface at a station of its own line.</summary>
         /// <summary>The surface of a carriageway at a station: the trunk's own profile,
         /// eased down to the height of the CITY's asphalt over the last few metres at
         /// each end. The motorway runs at a hand over the bed it is held flat to
@@ -549,9 +548,6 @@ namespace RoadDemo
             }
         }
 
-        /// <summary>A ramp's walls: a parapet on the outside and NOTHING on the side
-        /// facing the motorway it came off. The deck's own parapet is the wall between
-        /// the two of them, and one wall is what there is.</summary>
         /// <summary>What a ramp carries down its outside: a parapet while it is in the
         /// air, and a kerb once it is on the ground. A metre of concrete wall standing
         /// beside a road at street level is a wall in a field, and at the mouth it would

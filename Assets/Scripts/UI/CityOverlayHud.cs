@@ -362,78 +362,76 @@ namespace LivingCity.UI
 
         void UpdateMarker(Marker marker, float width, float height)
         {
+            if (!marker.Target)
+                return;
+
+            // A SelectedOnly marker earns its pixels only as the selection; unselected it
+            // pays nothing either - the early-out is before the WorldToScreenPoint and the
+            // OverlayColor read, so a hundred quiet businesses cost this loop nothing.
+            if (marker.Style.SelectedOnly && marker != selected)
             {
-                if (!marker.Target)
-                    return;
+                if (marker.Image.enabled)
+                    marker.Image.enabled = false;
+                return;
+            }
 
-                // A SelectedOnly marker earns its pixels only as the selection; unselected it
-                // pays nothing either - the early-out is before the WorldToScreenPoint and the
-                // OverlayColor read, so a hundred quiet businesses cost this loop nothing.
-                if (marker.Style.SelectedOnly && marker != selected)
-                {
-                    if (marker.Image.enabled)
-                        marker.Image.enabled = false;
-                    return;
-                }
+            var hidden = marker.Subject.OverlayHidden;
+            var screen = cam.WorldToScreenPoint(
+                marker.Target.position + Vector3.up * marker.Subject.OverlayHeight);
 
-                var hidden = marker.Subject.OverlayHidden;
-                var screen = cam.WorldToScreenPoint(
-                    marker.Target.position + Vector3.up * marker.Subject.OverlayHeight);
+            // Same off-screen rule as the block labels: toggle the Graphic, never
+            // SetActive - a canvas layout rebuild per edge crossing is the alternative.
+            var on = !hidden && screen.z > 0f &&
+                     screen.x >= 0f && screen.x <= width &&
+                     screen.y >= 0f && screen.y <= height;
 
-                // Same off-screen rule as the block labels: toggle the Graphic, never
-                // SetActive - a canvas layout rebuild per edge crossing is the alternative.
-                var on = !hidden && screen.z > 0f &&
-                         screen.x >= 0f && screen.x <= width &&
-                         screen.y >= 0f && screen.y <= height;
+            if (marker.Style.AlwaysVisible && !hidden && !on)
+            {
+                // The rig is orthographic, so a ground-level subject is never behind the
+                // camera - off-screen only ever means panned away. This marker's whole
+                // job is to never be lost, so it clamps into an edge margin instead of
+                // culling; the margin is in reference pixels like every other size here.
+                var margin = EdgeMargin * canvas.scaleFactor;
+                screen.x = Mathf.Clamp(screen.x, margin, width - margin);
+                screen.y = Mathf.Clamp(screen.y, margin, height - margin);
+                screen.z = 0f;
+                on = true;
+            }
 
-                if (marker.Style.AlwaysVisible && !hidden && !on)
-                {
-                    // The rig is orthographic, so a ground-level subject is never behind the
-                    // camera - off-screen only ever means panned away. This marker's whole
-                    // job is to never be lost, so it clamps into an edge margin instead of
-                    // culling; the margin is in reference pixels like every other size here.
-                    var margin = EdgeMargin * canvas.scaleFactor;
-                    screen.x = Mathf.Clamp(screen.x, margin, width - margin);
-                    screen.y = Mathf.Clamp(screen.y, margin, height - margin);
-                    screen.z = 0f;
-                    on = true;
-                }
+            if (marker.Image.enabled != on)
+                marker.Image.enabled = on;
 
-                if (marker.Image.enabled != on)
-                    marker.Image.enabled = on;
+            if (on)
+            {
+                screen.z = 0f;
+                marker.Image.transform.position = screen;
+            }
 
-                if (on)
-                {
-                    screen.z = 0f;
-                    marker.Image.transform.position = screen;
-                }
+            var colour = marker.Subject.OverlayColor;
+            if (marker.Shown != colour)
+            {
+                marker.Shown = colour;
+                marker.Image.color = colour;
+            }
 
-                var colour = marker.Subject.OverlayColor;
-                if (marker.Shown != colour)
-                {
-                    marker.Shown = colour;
-                    marker.Image.color = colour;
-                }
-
-                var wantSelected = marker == selected;
-                if (marker.Selected != wantSelected)
-                {
-                    marker.Selected = wantSelected;
-                    if (!marker.Style.Pulse)
-                        marker.Image.rectTransform.localScale =
-                            Vector3.one * (wantSelected ? SelectedScale : 1f);
-                }
-
-                if (marker.Style.Pulse && on)
-                {
-                    // One Sin per pulsing marker per frame - exactly one subject pulses
-                    // today. SizeScale was baked into sizeDelta at build, so localScale
-                    // carries only the selection factor and the breath.
-                    var beat = 1f + marker.Style.PulseAmplitude * Mathf.Sin(
-                        Time.time * (2f * Mathf.PI / Mathf.Max(0.2f, marker.Style.PulsePeriod)));
+            var wantSelected = marker == selected;
+            if (marker.Selected != wantSelected)
+            {
+                marker.Selected = wantSelected;
+                if (!marker.Style.Pulse)
                     marker.Image.rectTransform.localScale =
-                        Vector3.one * (beat * (wantSelected ? SelectedScale : 1f));
-                }
+                        Vector3.one * (wantSelected ? SelectedScale : 1f);
+            }
+
+            if (marker.Style.Pulse && on)
+            {
+                // One Sin per pulsing marker per frame - exactly one subject pulses
+                // today. SizeScale was baked into sizeDelta at build, so localScale
+                // carries only the selection factor and the breath.
+                var beat = 1f + marker.Style.PulseAmplitude * Mathf.Sin(
+                    Time.time * (2f * Mathf.PI / Mathf.Max(0.2f, marker.Style.PulsePeriod)));
+                marker.Image.rectTransform.localScale =
+                    Vector3.one * (beat * (wantSelected ? SelectedScale : 1f));
             }
         }
 

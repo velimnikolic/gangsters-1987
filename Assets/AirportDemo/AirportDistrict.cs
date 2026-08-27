@@ -279,6 +279,7 @@ namespace AirportDemo
             _people?.Dispose();
             _boarding?.Dispose();
             _ground?.Dispose();
+            TestBench.DestroyAll(_mats);
         }
 
         // ------------------------------------------------------------ into place

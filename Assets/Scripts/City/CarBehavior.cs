@@ -134,8 +134,8 @@ namespace LivingCity.City
         // events are genuinely losable: Crosswalk only fires when its pedestrian count decrements
         // to zero, so one pedestrian destroyed or deactivated inside the trigger leaves
         // PedestriansAreCrossing true for the rest of the scene and every car that ever stops
-        // there is finished. TrafficLight.ChangeCrosswalk toggles rather than assigns, so one
-        // missed invoke desynchronises it the same way.
+        // there is finished. TrafficLight.ChangeCrosswalk used to toggle rather than assign, so
+        // one missed invoke desynchronised it the same way.
         //
         // The fix is to stop trusting the event and go and look. Holding the reference that
         // stopped us is what makes that possible - it also keeps the watchdog strictly scoped to
@@ -255,7 +255,7 @@ namespace LivingCity.City
                         while (Vector3.Distance(start, destination) < minDistance && tries < Tile.Tiles.Count)
                         {
                             tries++;
-                            Tile t = Tile.Tiles[UnityEngine.Random.Range(0, Tile.Tiles.Count - 1)];
+                            Tile t = Tile.Tiles[UnityEngine.Random.Range(0, Tile.Tiles.Count)];
                             if (t.tileType == Tile.TileType.Road || t.tileType == Tile.TileType.RoadAndRail)
                             {
                                 if (t.verticalType == Tile.VerticalType.Bridge)

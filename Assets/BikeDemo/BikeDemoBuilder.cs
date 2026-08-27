@@ -205,8 +205,119 @@ namespace BikeDemo
         string _standing = "";       // the machine currently built
         LineRenderer _aimLine;
         readonly Transform[] _marks = new Transform[10];
+        readonly Vector3[] _markAt = new Vector3[10];   // where each mark goes, refilled every frame
 
         BikeShow _show;
+
+        // the labels: GUI.skin only exists inside OnGUI, so the styles are made on the
+        // first pass and kept, and the readout is only rebuilt when a number in it moved
+        GUIStyle _readStyle, _tagStyle;
+        string _readout;
+        ReadoutKey _readKey;
+
+        struct ReadoutKey
+        {
+            public string Standing;
+            public float Wheelbase, WheelRadius, GripY, DriverSize, ShooterSize;
+            public bool SeatsTwo;
+            public Vector3 SaddleRider, SaddlePillion, PegRight, PillionPegRight;
+
+            public bool Same(in ReadoutKey o) =>
+                Standing == o.Standing && Wheelbase == o.Wheelbase && WheelRadius == o.WheelRadius &&
+                GripY == o.GripY && DriverSize == o.DriverSize && ShooterSize == o.ShooterSize &&
+                SeatsTwo == o.SeatsTwo && SaddleRider == o.SaddleRider && SaddlePillion == o.SaddlePillion &&
+                PegRight == o.PegRight && PillionPegRight == o.PillionPegRight;
+        }
+
+        // What BikeBody and BikePose read before this bench wrote its knobs over them,
+        // put back when the bench goes: the statics are the game's, and a scene that
+        // tuned them is not the scene that runs next.
+        Tuning _before;
+        bool _captured;
+
+        struct Tuning
+        {
+            float _saddleAhead, _saddleBehindBars, _saddleBelowBars, _saddleAboveWheel, _hipsAbove;
+            float _pillionBehind, _pillionAbove, _pillionShare, _pegHeight, _pegWidth, _pegAhead;
+            float _pillionPegBack, _pillionPegLift;
+            Vector3 _riderNudge, _pillionNudge;
+            float _crouchMax, _crouchAt, _elbowOut, _elbowDown, _elbowBack;
+            float _kneeAhead, _kneeOut, _kneeOutFootDown, _kneeDown, _toeAhead, _toeDown;
+            float _holdWide, _holdLift, _holdForward;
+
+            public static Tuning Capture() => new Tuning
+            {
+                _saddleAhead = BikeBody.SaddleAheadOfRearAxle,
+                _saddleBehindBars = BikeBody.SaddleBehindBars,
+                _saddleBelowBars = BikeBody.SaddleBelowBars,
+                _saddleAboveWheel = BikeBody.SaddleAboveWheel,
+                _hipsAbove = BikeBody.HipsAboveSaddle,
+                _pillionBehind = BikeBody.PillionBehind,
+                _pillionAbove = BikeBody.PillionAbove,
+                _pillionShare = BikeBody.PillionBehindOfWheelbase,
+                _pegHeight = BikeBody.PegHeightOfSaddle,
+                _pegWidth = BikeBody.PegWidthOfFlank,
+                _pegAhead = BikeBody.PegAhead,
+                _pillionPegBack = BikeBody.PillionPegBack,
+                _pillionPegLift = BikeBody.PillionPegLift,
+                _riderNudge = BikeBody.RiderNudge,
+                _pillionNudge = BikeBody.PillionNudge,
+                _crouchMax = BikePose.CrouchMax,
+                _crouchAt = BikePose.CrouchAt,
+                _elbowOut = BikePose.ElbowOut,
+                _elbowDown = BikePose.ElbowDown,
+                _elbowBack = BikePose.ElbowBack,
+                _kneeAhead = BikePose.KneeAhead,
+                _kneeOut = BikePose.KneeOut,
+                _kneeOutFootDown = BikePose.KneeOutFootDown,
+                _kneeDown = BikePose.KneeDown,
+                _toeAhead = BikePose.ToeAhead,
+                _toeDown = BikePose.ToeDown,
+                _holdWide = BikePose.HoldWide,
+                _holdLift = BikePose.HoldLift,
+                _holdForward = BikePose.HoldForward,
+            };
+
+            public void Restore()
+            {
+                BikeBody.SaddleAheadOfRearAxle = _saddleAhead;
+                BikeBody.SaddleBehindBars = _saddleBehindBars;
+                BikeBody.SaddleBelowBars = _saddleBelowBars;
+                BikeBody.SaddleAboveWheel = _saddleAboveWheel;
+                BikeBody.HipsAboveSaddle = _hipsAbove;
+                BikeBody.PillionBehind = _pillionBehind;
+                BikeBody.PillionAbove = _pillionAbove;
+                BikeBody.PillionBehindOfWheelbase = _pillionShare;
+                BikeBody.PegHeightOfSaddle = _pegHeight;
+                BikeBody.PegWidthOfFlank = _pegWidth;
+                BikeBody.PegAhead = _pegAhead;
+                BikeBody.PillionPegBack = _pillionPegBack;
+                BikeBody.PillionPegLift = _pillionPegLift;
+                BikeBody.RiderNudge = _riderNudge;
+                BikeBody.PillionNudge = _pillionNudge;
+                BikePose.CrouchMax = _crouchMax;
+                BikePose.CrouchAt = _crouchAt;
+                BikePose.ElbowOut = _elbowOut;
+                BikePose.ElbowDown = _elbowDown;
+                BikePose.ElbowBack = _elbowBack;
+                BikePose.KneeAhead = _kneeAhead;
+                BikePose.KneeOut = _kneeOut;
+                BikePose.KneeOutFootDown = _kneeOutFootDown;
+                BikePose.KneeDown = _kneeDown;
+                BikePose.ToeAhead = _toeAhead;
+                BikePose.ToeDown = _toeDown;
+                BikePose.HoldWide = _holdWide;
+                BikePose.HoldLift = _holdLift;
+                BikePose.HoldForward = _holdForward;
+            }
+        }
+
+        void OnEnable()
+        {
+            if (_captured) return;
+            _before = Tuning.Capture();
+            _captured = true;
+        }
 
         void Awake()
         {
@@ -301,6 +412,8 @@ namespace BikeDemo
 
         void OnDisable()
         {
+            // the game's numbers back, whichever way the bench goes
+            if (_captured) { _before.Restore(); _captured = false; }
             // The scene being torn down - Play stopping, or the editor unloading it -
             // takes everything in it with it, and destroying by hand at that moment is
             // console noise at best. Just forget what was standing here.
@@ -729,13 +842,17 @@ namespace BikeDemo
         void Marks()
         {
             if (_body == null || _marks[0] == null) return;
-            var at = new[]
-            {
-                _body.Saddle(false), _body.Peg(false, false), _body.Peg(true, false), _body.Ground(false),
-                _body.Saddle(true), _body.Peg(false, true), _body.Peg(true, true),
-                _body.GripNow(false), _body.GripNow(true),
-                AimPoint(),
-            };
+            var at = _markAt;
+            at[0] = _body.Saddle(false);
+            at[1] = _body.Peg(false, false);
+            at[2] = _body.Peg(true, false);
+            at[3] = _body.Ground(false);
+            at[4] = _body.Saddle(true);
+            at[5] = _body.Peg(false, true);
+            at[6] = _body.Peg(true, true);
+            at[7] = _body.GripNow(false);
+            at[8] = _body.GripNow(true);
+            at[9] = AimPoint();
             for (int i = 0; i < _marks.Length; i++)
             {
                 bool show = markers &&
@@ -831,15 +948,23 @@ namespace BikeDemo
             var cam = Camera.main;
             if (cam == null) return;
 
+            if (_tagStyle == null)
+            {
+                _tagStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
+                };
+                _readStyle = new GUIStyle(GUI.skin.label) { fontSize = 12 };
+                _readStyle.normal.textColor = new Color(0.85f, 0.9f, 0.96f);
+            }
+
             if (labels)
             {
                 Tag(cam, _driver, "DRIVER", DriverInk);
                 Tag(cam, _shooter, "SHOOTER", ShooterInk);
             }
 
-            var style = new GUIStyle(GUI.skin.label) { fontSize = 12 };
-            style.normal.textColor = new Color(0.85f, 0.9f, 0.96f);
-            GUI.Label(new Rect(12f, Screen.height - 116f, 900f, 110f), Readout(), style);
+            GUI.Label(new Rect(12f, Screen.height - 116f, 900f, 110f), Readout(), _readStyle);
         }
 
         void Tag(Camera cam, BikeOccupant man, string text, Color ink)
@@ -848,17 +973,31 @@ namespace BikeDemo
             var head = man.Pose.ChestPoint + Vector3.up * 0.45f;
             var p = cam.WorldToScreenPoint(head);
             if (p.z <= 0f) return;   // behind the camera: a label there is a label upside down
-            var style = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
-            };
-            style.normal.textColor = ink;
-            GUI.Label(new Rect(p.x - 70f, Screen.height - p.y - 12f, 140f, 24f), text, style);
+            _tagStyle.normal.textColor = ink;
+            GUI.Label(new Rect(p.x - 70f, Screen.height - p.y - 12f, 140f, 24f), text, _tagStyle);
         }
 
         string Readout()
         {
             if (_body == null) return "no machine";
+            var key = new ReadoutKey
+            {
+                Standing = _standing,
+                Wheelbase = _body.Wheelbase, WheelRadius = _body.WheelRadius, GripY = _body.GripRight.y,
+                SeatsTwo = _body.SeatsTwo,
+                DriverSize = _driver == null ? -1f : _driver.transform.localScale.x,
+                ShooterSize = _shooter == null ? -1f : _shooter.transform.localScale.x,
+                SaddleRider = _body.SaddleRider, SaddlePillion = _body.SaddlePillion,
+                PegRight = _body.PegRight, PillionPegRight = _body.PillionPegRight,
+            };
+            if (_readout != null && key.Same(_readKey)) return _readout;
+            _readKey = key;
+            _readout = BuildReadout();
+            return _readout;
+        }
+
+        string BuildReadout()
+        {
             string Size(BikeOccupant m) => m == null ? "-" : m.transform.localScale.x.ToString("0.00");
             return _standing + "   wheelbase " + _body.Wheelbase.ToString("0.00") +
                    " m   wheel r " + _body.WheelRadius.ToString("0.00") +

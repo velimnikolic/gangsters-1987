@@ -67,12 +67,24 @@ namespace RoadDemo
         public static void Death(PedestrianAgent man, float groundY, bool floor = true)
         {
             if (man == null || man.Tf == null) return;
-            if (!floor) { Colour(man); return; } // he died in the car: no pool on the road
-            // he falls forward of where he stood, more or less; the pool goes with him
-            var spot = man.Tf.position + man.Tf.forward * Random.Range(0.2f, 0.7f);
-            Splat(spot, groundY, Random.Range(1.3f, 1.9f), Pool);
-            Splat(spot + man.Tf.right * Random.Range(-0.4f, 0.4f), groundY, Random.Range(0.6f, 1f), Blood);
+            // no pool on the road for a man who died in the car
+            if (floor)
+            {
+                // he falls forward of where he stood, more or less; the pool goes with him
+                var spot = man.Tf.position + man.Tf.forward * Random.Range(0.2f, 0.7f);
+                Splat(spot, groundY, Random.Range(1.3f, 1.9f), Pool);
+                Splat(spot + man.Tf.right * Random.Range(-0.4f, 0.4f), groundY, Random.Range(0.6f, 1f), Blood);
+            }
             Colour(man);
+            Forget(man);
+        }
+
+        /// <summary>Drop the man's tint block. The renderers keep their own copy of it
+        /// once it is set, so nothing is lost - and a dead, chalked or despawned man
+        /// otherwise kept an entry in the table for the rest of the session.</summary>
+        public static void Forget(PedestrianAgent man)
+        {
+            if (man != null) blocks.Remove(man);
         }
 
         static void Splat(Vector3 at, float groundY, float size, Color tint)
@@ -221,9 +233,6 @@ namespace RoadDemo
             new Vector2(-0.06f, 0.85f),
         };
 
-        /// <summary>Draw the outline where this man lies - the figure's head end toward
-        /// his head, its feet toward his feet - and hand back the object, so the body
-        /// can go and the chalk stay.</summary>
         // ------------------------------------------------------------------ tin
 
         static Material holeMaterial;
@@ -307,9 +316,13 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>Draw the outline where this man lies - the figure's head end toward
+        /// his head, its feet toward his feet - and hand back the object, so the body
+        /// can go and the chalk stay.</summary>
         public static GameObject Chalk(PedestrianAgent man, float groundY)
         {
             if (man == null || man.Tf == null) return null;
+            Forget(man);
             if (chalkMaterial == null)
             {
                 var shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");

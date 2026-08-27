@@ -60,14 +60,24 @@ namespace LivingCity.Entities
         /// is spawned by GameplayBootstrap after the city (and this marker) is built.</summary>
         PlayerArsenal arsenal;
 
+        /// <summary>When the next scene scan for the arsenal is allowed. Throttled the way
+        /// PedestrianInteractionDirector.HasClock is: the overlay reads Arsenal on every
+        /// poll, and in a scene with no player each read must not pay a scene scan.</summary>
+        float nextArsenalSearchAt;
+
         float markerHeight = -1f;
 
         PlayerArsenal Arsenal
         {
             get
             {
-                if (!arsenal)
-                    arsenal = FindAnyObjectByType<PlayerArsenal>();
+                if (arsenal)
+                    return arsenal;
+                if (Time.time < nextArsenalSearchAt)
+                    return null;
+
+                nextArsenalSearchAt = Time.time + 1f;
+                arsenal = FindAnyObjectByType<PlayerArsenal>();
                 return arsenal;
             }
         }

@@ -237,10 +237,6 @@ namespace CrewDemo
             SpawnRivals();
             ParkCar(muster);
             BuildTraffic(clips);
-            // smoke out of the pipes of whatever is running near the camera - the crew's
-            // car and the bikes with the traffic, since it reads the road's own list of
-            // users rather than being handed anything (CarExhaust)
-            CarExhaust.Install();
             BuildParkedCars();
             BuildBikes(clips);
             BuildPavementLife(clips);
@@ -370,44 +366,7 @@ namespace CrewDemo
         void ArmTheOutfit()
         {
             if (_armsGiven || !armTheOutfit) return;
-            var director = LivingCity.Gameplay.PersonnelDirector.Instance;
-            if (director == null || director.Roster == null) return;
-            var roster = director.Roster;
-            if (roster.Crews.Count == 0) { _armsGiven = true; return; }
-            _armsGiven = true;
-
-            if (!CrewArms.IsFirearm(outfitArms))
-            {
-                Debug.LogWarning("[CrewDemo] " + outfitArms + " is not a gun - the outfit keeps its .38s.");
-                return;
-            }
-
-            // bought under the counter's own name and price, so the item reads and
-            // photographs on the armory page exactly as one the player paid for
-            string gun = outfitArms.ToString();
-            int price = 0;
-            foreach (var listing in LivingCity.Outfit.ArmoryCatalog.Weapons)
-                if (listing.Kind == outfitArms) { gun = listing.DisplayName; price = listing.Price; break; }
-
-            int issued = 0;
-            foreach (var crew in roster.Crews)
-            {
-                var lieutenant = roster.Find(crew.LieutenantId);
-                if (lieutenant == null || lieutenant.Status != CharacterStatus.Active) continue;
-                int hands = 1; // the lieutenant carries one himself
-                foreach (int id in crew.HoodIds)
-                {
-                    var hood = roster.Find(id);
-                    if (hood != null && hood.Status == CharacterStatus.Active) hands++;
-                }
-                for (int i = 0; i < hands; i++)
-                {
-                    var item = director.AddEquipment(outfitArms, gun, price);
-                    if (item == null) continue;
-                    if (director.GiveEquipment(item.Id, lieutenant.Id).Ok) issued++;
-                }
-            }
-            Debug.Log("[CrewDemo] " + issued + " x " + gun + " issued to the outfit.");
+            _armsGiven = TestBench.ArmTheOutfit(outfitArms, "[CrewDemo]");
         }
 
         // ------------------------------------------------------------------ the set
@@ -777,27 +736,7 @@ namespace CrewDemo
             traffic.Init(bodies, _net, -0.08f, trafficCars * 2, PassersBy(), clips.SitLoop, along);
         }
 
-        List<GameObject> TrafficBodies()
-        {
-            var bodies = new List<GameObject>();
-            foreach (var name in new[]
-            {
-                "SM_Veh_Car_Sedan_01", "SM_Veh_Car_Medium_01", "SM_Veh_Car_Small_01", "SM_Veh_Car_Muscle_01",
-                "SM_Veh_Sedan_01", "SM_Veh_Suv_01", "SM_Veh_Pickup_01", "SM_Veh_LowCar_01", "SM_Veh_LowCar_02",
-            })
-            {
-                var p = FindCivilianVehicle(name);
-                if (!p) continue;
-                // duplicate-as-weight, the same way the city's pool is built: this list is
-                // drawn from uniformly, so a hand-written list of nine bodies made the muscle
-                // car one street car in nine. It takes two seats where a saloon takes six
-                // (VehicleCatalog.PoolWeight), which is the mix the quarter drives.
-                for (int seat = 0, seats = LivingCity.Gameplay.VehicleCatalog.PoolWeight(name);
-                     seat < seats; seat++)
-                    bodies.Add(p);
-            }
-            return bodies;
-        }
+        List<GameObject> TrafficBodies() => TestBench.WeightedCars(FindCivilianVehicle);
 
         // Cars stood at the kerb of the two side streets, which nothing drives down.
         // They are geometry, not traffic: something to walk round, take cover behind
@@ -1094,29 +1033,9 @@ namespace CrewDemo
             return nodes;
         }
 
-        void Join(PedNode a, PedNode b, bool gated)
-        {
-            float len = Vector3.Distance(a.Pos, b.Pos);
-            var ab = new PedLink { From = a, To = b, Length = len, Gated = gated };
-            var ba = new PedLink { From = b, To = a, Length = len, Gated = gated };
-            a.Links.Add(ab);
-            b.Links.Add(ba);
-            _pedLinks.Add(ab);
-            _pedLinks.Add(ba);
-        }
+        void Join(PedNode a, PedNode b, bool gated) => TestBench.Join(a, b, gated, _pedLinks);
 
-        void TickPavementLife(float dt)
-        {
-            for (int i = 0; i < _walkers.Count; i++) _walkers[i].TickCivilian(dt);
-            CivilianAgent.TickCrowd(dt);
-            for (int i = 0; i < _beat.Count; i++) _beat[i].TickPatrol(dt);
-            _chatScan -= dt;
-            if (_chatScan <= 0f && _walkers.Count > 0)
-            {
-                _chatScan = 1.5f;
-                CivilianAgent.PairChats(_walkers, new Vector2(6f, 14f));
-            }
-        }
+        void TickPavementLife(float dt) => TestBench.TickPavementLife(_walkers, _beat, dt, ref _chatScan);
 
         void OnDestroy()
         {
@@ -1455,74 +1374,20 @@ namespace CrewDemo
             }
         }
 
-        void SpawnRivals()
+        // one crew per frontage of the block - each holds his own face of it, and no
+        // two faces are within either crew's alert range of the other: on the pavement
+        // in front of his own frontage, back to the wall, facing the street
+        static readonly (string, EquipmentKind)[] RivalArms =
         {
-            var rng = new System.Random(nameSeed);
-            var gangNames = LivingCity.Gangs.GangCatalog.Names;
-            var bossModels = LivingCity.Gangs.GangCatalog.LieutenantModels;
-            var soldierModels = LivingCity.Gangs.GangCatalog.SoldierModels;
+            ("SM_Wep_Pistol_Revolver_01", EquipmentKind.Pistol),
+            ("SM_Wep_Machine_Pistol_01", EquipmentKind.MachinePistol),
+            ("SM_Wep_Shotgun_01", EquipmentKind.Shotgun),
+            ("SM_Wep_SubMachineGun_01", EquipmentKind.TommyGun),
+        };
 
-            // one crew per frontage of the block - each holds his own face of it, and
-            // no two faces are within either crew's alert range of the other
-            int count = Mathf.Clamp(rivalCrews, 1, Mathf.Min(gangNames.Length - 1, 4));
-            var arms = new[]
-            {
-                ("SM_Wep_Pistol_Revolver_01", EquipmentKind.Pistol),
-                ("SM_Wep_Machine_Pistol_01", EquipmentKind.MachinePistol),
-                ("SM_Wep_Shotgun_01", EquipmentKind.Shotgun),
-                ("SM_Wep_SubMachineGun_01", EquipmentKind.TommyGun),
-            };
+        void SpawnRivals() =>
+            TestBench.SpawnRivals(_crews, nameSeed, rivalCrews, rivalHoods, RivalArms, Frontage, "[CrewDemo]");
 
-            for (int i = 0; i < count; i++)
-            {
-                int gang = 1 + i; // 0 is the outfit
-                var bossModel = bossModels[gang % bossModels.Length];
-                var bossPrefab = Cast(bossModel);
-                if (bossPrefab == null)
-                {
-                    Debug.LogWarning("[CrewDemo] No body for the " + gangNames[gang] + " lieutenant (" +
-                                     bossModels[gang % bossModels.Length] + ") - that crew sits out.");
-                    continue;
-                }
-
-                var hoodNames = new List<string>();
-                for (int k = 0; k < rivalHoods; k++) hoodNames.Add(DrawName(rng));
-
-                // a body per man, all different and none of them the lieutenant's - a
-                // rival crew is five men, not one man standing five times
-                var hoodPrefabs = new List<GameObject>();
-                foreach (var look in LivingCity.Gangs.GangLooks.HoodsFor(
-                             bossModel, soldierModels[gang % soldierModels.Length], rivalHoods))
-                {
-                    var body = Cast(look);
-                    if (body) hoodPrefabs.Add(body);
-                }
-
-                var (weaponName, kind) = arms[i % arms.Length];
-                var weapon = CrewKit.Weapon(weaponName);
-                if (weapon == null)
-                    Debug.LogWarning("[CrewDemo] Gun " + weaponName + " not found - the " +
-                                     gangNames[gang] + " crew comes unarmed.");
-
-                // on the pavement in front of his own frontage, back to the wall, facing
-                // the street - strung out along the wall (lineUp) rather than bunched
-                var (anchor, facing) = Frontage(i);
-                _crews.AddRival(gang, gangNames[gang], DrawName(rng), bossPrefab, hoodNames,
-                    hoodPrefabs, anchor, facing, weapon, kind, lineUp: true);
-            }
-        }
-
-        /// <summary>The plain pack body of this name - the ledger's baked cast first (no
-        /// crowd scripts to strip), the PrefabDatabase's street copy as the fallback.</summary>
-        static GameObject Cast(string name) =>
-            LivingCity.UI.LedgerModelSet.PersonNamed(name) ??
-            LivingCity.UI.PortraitStudio.FindPeoplePrefab(name);
-
-        static string DrawName(System.Random rng)
-        {
-            var firsts = LivingCity.Entities.PedestrianIdentity.AllMaleNames;
-            var surnames = LivingCity.Entities.PedestrianIdentity.AllSurnames;
-            return firsts[rng.Next(firsts.Count)] + " " + surnames[rng.Next(surnames.Count)];
-        }
+        static GameObject Cast(string name) => TestBench.Cast(name);
     }
 }

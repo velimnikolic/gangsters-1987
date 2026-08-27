@@ -788,17 +788,17 @@ namespace RoadDemo
                     {
                         // walled in on all four sides: either the middle of the block or the
                         // inside of a notch, and the diagonal is what tells those apart
-                        if (!Paved(plan, i + 1, j + 1)) { pieces.Add(new Laid(i, j, InnerCorner, Quadrant(true, true))); notches++; }
-                        else if (!Paved(plan, i + 1, j - 1)) { pieces.Add(new Laid(i, j, InnerCorner, Quadrant(false, true))); notches++; }
-                        else if (!Paved(plan, i - 1, j - 1)) { pieces.Add(new Laid(i, j, InnerCorner, Quadrant(false, false))); notches++; }
-                        else if (!Paved(plan, i - 1, j + 1)) { pieces.Add(new Laid(i, j, InnerCorner, Quadrant(true, false))); notches++; }
+                        if (!Paved(plan, i + 1, j + 1)) { pieces.Add(new Laid(i, j, InnerCorner, KerbYaw.Corner(true, true))); notches++; }
+                        else if (!Paved(plan, i + 1, j - 1)) { pieces.Add(new Laid(i, j, InnerCorner, KerbYaw.Corner(false, true))); notches++; }
+                        else if (!Paved(plan, i - 1, j - 1)) { pieces.Add(new Laid(i, j, InnerCorner, KerbYaw.Corner(false, false))); notches++; }
+                        else if (!Paved(plan, i - 1, j + 1)) { pieces.Add(new Laid(i, j, InnerCorner, KerbYaw.Corner(true, false))); notches++; }
                         else if (under || !plan.Built[i, j]) { pieces.Add(new Laid(i, j, Flat, 0)); floor++; }
                         continue;
                     }
 
                     if (open == 2 && north != south && east != west)
                     {
-                        int yaw = Quadrant(!north, !east);
+                        int yaw = KerbYaw.Corner(!north, !east);
                         // the DIPPED corner is the one with the ramp down to a crossing, and
                         // it belongs on a corner the STREET turns. Where the pavement turns
                         // because a driveway is cut through the band the kerb does not drop -
@@ -915,13 +915,13 @@ namespace RoadDemo
             {
                 bool street = !plan.In(i, j + 1);
                 if (street == !plan.In(i, j - 1)) return false;
-                yaw = Quadrant(street, !east);
+                yaw = KerbYaw.Corner(street, !east);
                 return true;
             }
 
             bool eastward = !plan.In(i + 1, j);
             if (eastward == !plan.In(i - 1, j)) return false;
-            yaw = Quadrant(!north, eastward);
+            yaw = KerbYaw.Corner(!north, eastward);
             return true;
         }
 
@@ -997,11 +997,7 @@ namespace RoadDemo
 
             var order = new List<int>(kerbs.Count);
             for (int i = 0; i < kerbs.Count; i++) order.Add(i);
-            for (int i = order.Count - 1; i > 0; i--)
-            {
-                int j = dice.Next(i + 1);
-                (order[i], order[j]) = (order[j], order[i]);
-            }
+            Dice.Shuffle(order, dice);
 
             int planted = 0, want = Mathf.RoundToInt(kerbs.Count / (float)PalmEvery);
             foreach (int i in order)
@@ -1309,11 +1305,6 @@ namespace RoadDemo
                 default: return new Vector3(mx + across, y, mz + along);
             }
         }
-
-        /// <summary>A corner tile wraps one corner of its cell, and which corner IS the
-        /// yaw: NE 0, SE 90, SW 180, NW 270. The plain corner and the inner corner both
-        /// read straight off this; the dipped corner is a quarter further round.</summary>
-        static int Quadrant(bool north, bool east) => north ? (east ? 0 : 270) : (east ? 90 : 180);
 
         /// <summary>The pack's pivot: the +X/+Z corner of the cell at yaw 0, and whichever
         /// corner lands there once it is turned. Same arithmetic as RoadDemoBuilder.PlaceTile,

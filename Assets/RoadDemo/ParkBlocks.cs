@@ -872,11 +872,7 @@ namespace RoadDemo
                 new Vector2(i * Cell + edge * 0.7f, (j + 1) * Cell - edge * 0.7f),
                 new Vector2((i + 1) * Cell - edge * 0.7f, (j + 1) * Cell - edge * 0.7f),
             };
-            for (int k = corners.Count - 1; k > 0; k--)
-            {
-                int at = rng.Next(k + 1);
-                (corners[k], corners[at]) = (corners[at], corners[k]);
-            }
+            Dice.Shuffle(corners, rng);
             spot = corners[0];
             return true;
         }
@@ -889,11 +885,7 @@ namespace RoadDemo
             spot = default;
             facing = 0f;
             var ways = new List<int> { 0, 1, 2, 3 };
-            for (int k = ways.Count - 1; k > 0; k--)
-            {
-                int at = rng.Next(k + 1);
-                (ways[k], ways[at]) = (ways[at], ways[k]);
-            }
+            Dice.Shuffle(ways, rng);
             foreach (int way in ways)
             {
                 int di = way == 0 ? 1 : way == 1 ? -1 : 0;

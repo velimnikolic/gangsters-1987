@@ -1331,21 +1331,25 @@ namespace LivingCity.Generation
             var free = new List<int>(layout.Stalls.Count);
 
             for (var index = 0; index < layout.Stalls.Count; index++)
-            {
-                var stall = layout.Stalls[index];
-
-                var quarter = Mathf.RoundToInt(stall.Yaw / 90f) & 1;
-                var bounds = new Bounds(
-                    stall.Centre,
-                    quarter == 0
-                        ? new Vector3(ParkingLayout.StallWidth, 1f, ParkingLayout.StallDepth)
-                        : new Vector3(ParkingLayout.StallDepth, 1f, ParkingLayout.StallWidth));
-
-                if (!Blocked(bounds, occupied))
+                if (!Blocked(StallBounds(layout.Stalls[index]), occupied))
                     free.Add(index);
-            }
 
             return free;
+        }
+
+        /// <summary>
+        /// The bay as the obstacle it reserves. Every stall yaw is a quarter turn - the lot
+        /// frame and the four lot sides are both axis-aligned - so an odd quarter simply swaps
+        /// depth and width.
+        /// </summary>
+        static Bounds StallBounds(ParkingLayout.Stall stall)
+        {
+            var quarter = Mathf.RoundToInt(stall.Yaw / 90f) & 1;
+            return new Bounds(
+                stall.Centre,
+                quarter == 0
+                    ? new Vector3(ParkingLayout.StallWidth, 1f, ParkingLayout.StallDepth)
+                    : new Vector3(ParkingLayout.StallDepth, 1f, ParkingLayout.StallWidth));
         }
 
         /// <summary>Is anything already standing in this box? The survey test, pulled out so the
@@ -2035,15 +2039,7 @@ namespace LivingCity.Generation
             for (var index = 0; index < layout.Stalls.Count; index++)
             {
                 var stall = layout.Stalls[index];
-
-                // Every stall yaw is a quarter turn - the lot frame and the four lot sides are
-                // both axis-aligned - so an odd quarter simply swaps depth and width.
-                var quarter = Mathf.RoundToInt(stall.Yaw / 90f) & 1;
-                var bounds = new Bounds(
-                    stall.Centre,
-                    quarter == 0
-                        ? new Vector3(ParkingLayout.StallWidth, 1f, ParkingLayout.StallDepth)
-                        : new Vector3(ParkingLayout.StallDepth, 1f, ParkingLayout.StallWidth));
+                var bounds = StallBounds(stall);
 
                 var blocked = false;
                 foreach (var existing in occupied)

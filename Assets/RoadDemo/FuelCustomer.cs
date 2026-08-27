@@ -129,7 +129,7 @@ namespace RoadDemo
                     // standing still, and a car going round and round is not
                     _approach += dt;
                     if (_approach > ApproachPatience) { GiveUp("still not at the pumps"); break; }
-                    TickApproach();
+                    TickApproach(dt);
                     break;
 
                 case Mode.TurningIn:
@@ -252,9 +252,8 @@ namespace RoadDemo
         /// actually clears instead of being walked over by the next man along;
         ///
         /// and if it is anywhere else with no goal left, it asks for the kerb again.</summary>
-        void TickApproach()
+        void TickApproach(float dt)
         {
-            float dt = Time.deltaTime;
             // MEASURED OFF THE GROUND, not off the lane's parameter. A car sent to a
             // point stops with its NOSE there, so its middle is a body-length short of
             // it, and a pickup is longer than a saloon: judged by lane progress within a
@@ -418,6 +417,11 @@ namespace RoadDemo
             var at = PatrolDocking.Point(_curve, _t);
             at.y = RoadY;   // the forecourt is at road level; the curve carries no height
             Tf.SetPositionAndRotation(at, PatrolDocking.Heading(_curve, _t, _fromRot));
+            // the street reads where a car IS off its road position, and a hand-driven
+            // transform never writes it: without this the body stood at the kerb, in
+            // the traffic's way, for the whole of the fuelling (CrewBike does the same
+            // for a spill)
+            Slid(at);
             Body?.TickWheels(dt, PatrolDocking.Speed, 0f);
             // clear of the lane at last: the claim on it goes back
             if (!_left && State == Mode.TurningIn && !OnCarriageway(at)) { _left = true; Despawn(); }

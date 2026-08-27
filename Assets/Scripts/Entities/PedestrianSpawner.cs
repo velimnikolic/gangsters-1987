@@ -87,11 +87,6 @@ namespace LivingCity.Entities
             // Same reason as VehicleSpawner: sidewalk paths are linked in Tile.Start().
             yield return null;
 
-            // TEMP DIAGNOSTIC (remove once the empty-city report is settled).
-            Debug.Log($"[PedestrianSpawner] starting: count={config.pedestrianCount}, " +
-                      $"tiles={Tile.Tiles.Count}, batch={config.pedestrianSpawnBatch}, " +
-                      $"interval={config.entitySpawnInterval}", this);
-
             var interval = config.entitySpawnInterval > 0f
                 ? new WaitForSeconds(config.entitySpawnInterval)
                 : null;
@@ -105,9 +100,6 @@ namespace LivingCity.Entities
                 if ((i + 1) % Mathf.Max(1, config.pedestrianSpawnBatch) == 0)
                     yield return interval;
             }
-
-            // TEMP DIAGNOSTIC (remove once the empty-city report is settled).
-            Debug.Log($"[PedestrianSpawner] done: spawned {active.Count} of {config.pedestrianCount}.", this);
         }
 
         /// <summary>

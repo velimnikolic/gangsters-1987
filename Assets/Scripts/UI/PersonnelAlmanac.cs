@@ -105,11 +105,6 @@ namespace LivingCity.UI
         /// the close would otherwise act on the very press that closed the book.</summary>
         public static bool ClaimsEsc => IsOpen || Time.frameCount == lastCloseFrame;
 
-        /// <summary>The book covers the screen now, so nothing behind it is live. The
-        /// war-room split - book left, strategic map docked right - is retired; the map
-        /// is its own screen again, and the two no longer share the glass.</summary>
-        public static bool MapInteractive => false;
-
         static int lastCloseFrame = -1;
 
         // Static state outlives Play when domain reload is off - same fix as OverlayRegistry.
@@ -372,8 +367,7 @@ namespace LivingCity.UI
             if (page)
                 page.SetActive(false);
             IsOpen = false;
-            if (StrategicMapHud.Targeting == (IMapTargetingConsumer)this)
-                StrategicMapHud.Targeting = null;
+            RefreshTargeting();
             if (StrategicMapHud.Instance)
                 StrategicMapHud.Instance.SetTargetHighlights(null, Color.clear);
             lastCloseFrame = Time.frameCount;
@@ -382,6 +376,15 @@ namespace LivingCity.UI
             HideHoverNote();
             if (sortMenu)
                 sortMenu.SetActive(false);
+        }
+
+        /// <summary>Play-stop or a scene torn down with the book open: the static flag
+        /// would otherwise keep every world-input reader standing down in the next
+        /// scene, and the map would keep sending clicks to a page that is gone.</summary>
+        void OnDestroy()
+        {
+            IsOpen = false;
+            RefreshTargeting();
         }
 
         /// <summary>

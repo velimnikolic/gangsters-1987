@@ -777,13 +777,6 @@ namespace LivingCity.Generation
         }
 
         /// <summary>
-        /// Stretches one ground tile over a world-space rectangle and shades it.
-        ///
-        /// shade:false is not merely "leave it plain" - Shade takes two draws off the stream
-        /// whatever it decides, so a slab that opts out must skip the call entirely or every
-        /// block after it re-rolls its surface. The apron is the one caller that does.
-        /// </summary>
-        /// <summary>
         /// One stretched ground tile, for a caller outside this class that already knows exactly
         /// what it wants where.
         ///
@@ -798,6 +791,13 @@ namespace LivingCity.Generation
             Transform parent, SpawnPrefab spawn) =>
             LayRect(tile, min, max, lift, name, null, null, parent, spawn, null, shade: false);
 
+        /// <summary>
+        /// Stretches one ground tile over a world-space rectangle and shades it.
+        ///
+        /// shade:false is not merely "leave it plain" - Shade takes two draws off the stream
+        /// whatever it decides, so a slab that opts out must skip the call entirely or every
+        /// block after it re-rolls its surface. The apron is the one caller that does.
+        /// </summary>
         static GameObject LayRect(
             GameObject tile,
             Vector2 min,

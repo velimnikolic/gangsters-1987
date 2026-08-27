@@ -41,8 +41,11 @@ namespace LivingCity.EditorTools
         [MenuItem("Tools/City/Core/Sketch The Core City (Synty's arrangement)", priority = 9)]
         public static void SketchSynty() => Draw(CoreLayout.SyntySeed);
 
-        /// <summary>Draws the core a seed gives, in the open scene, and returns its plan.</summary>
-        public static CoreLayout.Plan Draw(int seed)
+        /// <summary>Draws the core a seed gives, in the open scene, and returns its plan.
+        /// <paramref name="quiet"/> is for a command or a batch run: nobody is at the
+        /// editor to press OK, and a modal box left standing freezes it under the CLI, so
+        /// what would have been a dialog goes to the console instead.</summary>
+        public static CoreLayout.Plan Draw(int seed, bool quiet = false)
         {
             var scene = SceneManager.GetActiveScene();
             foreach (var root in scene.GetRootGameObjects())
@@ -50,21 +53,23 @@ namespace LivingCity.EditorTools
 
             // the drawing stands clear of everything else: measured before anything is
             // added, moved into place once its size is known
-            bool anyScene = Extent(scene, out Bounds others);
+            bool anyScene = SketchFrame.Extent(CityRoot, out Bounds others);
 
             var city = new GameObject(CityRoot);
             var blocks = Stand(city.transform, (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent));
             if (blocks.Count == 0)
             {
                 Object.DestroyImmediate(city);
-                EditorUtility.DisplayDialog("Sketch The Core City",
-                    $"No block prefabs found under {CoreLayout.BlocksDir}.", "OK");
+                string missing = $"No block prefabs found under {CoreLayout.BlocksDir}.";
+                if (quiet || Application.isBatchMode) Debug.LogError("[CoreCity] " + missing);
+                else EditorUtility.DisplayDialog("Sketch The Core City", missing, "OK");
                 return null;
             }
 
             var plan = CoreLayout.Arrange(blocks, seed, out var raster);
             foreach (var block in blocks) CoreLayout.Place(block);
             Parks(plan, city.transform, seed);
+            Homes(plan, city.transform, seed);
             Quays(plan, city.transform, seed);
             LastMap = raster.Map;
             LastSeed = seed;
@@ -86,13 +91,13 @@ namespace LivingCity.EditorTools
                 string stood = seed == CoreLayout.SyntySeed
                     ? $"moved ({block.Shift.x:+0;-0;0}, {block.Shift.y:+0;-0;0})"
                     : $"turned {block.Yaw}";
-                Caption($"{block.Name} label", $"{block.Name}\n{block.MaxH:F0} m\n{stood}",
+                SketchFrame.Caption($"{block.Name} label", $"{block.Name}\n{block.MaxH:F0} m\n{stood}",
                     new Vector3(box.center.x, Mathf.Max(12f, block.MaxH + 8f), box.center.y),
                     labels.transform);
             }
 
             float minX = raster.X0, maxX = raster.X(raster.NX), minZ = raster.Z0, maxZ = raster.Z(raster.NZ);
-            Caption("city label",
+            SketchFrame.Caption("city label",
                 $"{CityRoot}\n{blocks.Count} blocks, {plan.Name}\nstreets 15 m, the main road a 35 m boulevard" +
                 (raster.Faults > 0 ? $"\n{raster.Faults} FAULTS - see the console" : ""),
                 new Vector3((minX + maxX) * 0.5f, 75f, (minZ + maxZ) * 0.5f), labels.transform);
@@ -102,8 +107,10 @@ namespace LivingCity.EditorTools
 
             EditorSceneManager.MarkSceneDirty(scene);
             Selection.activeGameObject = city;
-            Frame(city.transform.position + new Vector3((minX + maxX) * 0.5f, 0f, (minZ + maxZ) * 0.5f),
-                  Mathf.Max(maxX - minX, maxZ - minZ));
+            // from the south and well above, in perspective, so the skyline reads - that
+            // is what the drawing is for
+            SketchFrame.Frame(city.transform.position + new Vector3((minX + maxX) * 0.5f, 0f, (minZ + maxZ) * 0.5f),
+                              Mathf.Max(maxX - minX, maxZ - minZ) * 0.55f, 50f, perspective: true);
 
             var log = new System.Text.StringBuilder();
             log.AppendLine($"[CoreCity] {plan.Name}: {blocks.Count} blocks drawn under \"{CityRoot}\": {maxX - minX:F0} x {maxZ - minZ:F0} m. " +
@@ -130,6 +137,45 @@ namespace LivingCity.EditorTools
         /// because every piece is placed by measuring where it lands in world space; given
         /// its place first, a park builds itself around the world origin.
         /// </summary>
+        /// <summary>
+        /// The deal's residential blocks - the made-up ends of the short rows - composed on
+        /// the spot like the parks. The deal gives each one a rectangle and which of its sides
+        /// looks at the core; <see cref="ResidentialLot"/> divides it and
+        /// <see cref="ResidentialBlocks"/> stands it.
+        /// </summary>
+        static void Homes(CoreLayout.Plan plan, Transform city, int seed)
+        {
+            if (plan == null || plan.Residential.Count == 0) return;
+
+            var homes = new GameObject("homes").transform;
+            homes.SetParent(city, false);
+            Composer.ForgetMissing();
+
+            foreach (var block in plan.Residential)
+            {
+                var root = new GameObject(block.Name).transform;
+                root.SetParent(homes, false);
+
+                var box = block.Box;
+                int w = Mathf.Max(3, Mathf.RoundToInt(box.width / CoreLayout.Cell));
+                int d = Mathf.Max(3, Mathf.RoundToInt(box.height / CoreLayout.Cell));
+                int dice = unchecked(seed * 7919 + Mathf.RoundToInt(box.xMin) * 104729 +
+                                     Mathf.RoundToInt(box.yMin) * 1299709);
+
+                // composed at the ORIGIN and moved afterwards: every piece is placed by
+                // measuring where it lands in the world, so a root moved first is ignored
+                var lot = ResidentialLot.Roll(w, d, dice, Mathf.Max(0, block.Artery));
+                var stood = ResidentialBlocks.Compose(lot, root, new System.Random(dice),
+                    (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent));
+                root.position = new Vector3(box.xMin, 0f, box.yMin);
+
+                if (lot.Faults.Count > 0 || stood.Missing > 0)
+                    Debug.LogWarning($"[CoreCity] {block.Name} ({w}x{d} cells, {lot.Klass}): " +
+                                     string.Join("; ", lot.Faults) +
+                                     (stood.Missing > 0 ? $" {stood.Missing} piece(s) missing" : ""));
+            }
+        }
+
         static void Parks(CoreLayout.Plan plan, Transform city, int seed)
         {
             if (plan == null || plan.Parks.Count == 0) return;
@@ -221,37 +267,5 @@ namespace LivingCity.EditorTools
             return blocks;
         }
 
-        /// <summary>Everything already standing in the scene, the drawing itself excepted.</summary>
-        static bool Extent(Scene scene, out Bounds box)
-        {
-            box = new Bounds();
-            bool any = false;
-            foreach (var root in scene.GetRootGameObjects())
-            {
-                if (root.name == CityRoot) continue;
-                foreach (var r in root.GetComponentsInChildren<Renderer>(true))
-                {
-                    if (!any) { box = r.bounds; any = true; }
-                    else box.Encapsulate(r.bounds);
-                }
-            }
-            return any;
-        }
-
-        static void Caption(string name, string text, Vector3 position, Transform parent)
-        {
-            BlockLotPads.PadLabel(name, text, position, parent);
-            var caption = parent.Find(name);
-            if (caption) caption.rotation = Quaternion.Euler(35f, 180f, 0f);
-        }
-
-        /// <summary>Turns the scene view onto the drawing, from the south and well above it,
-        /// so the skyline reads - that is what it was drawn for.</summary>
-        static void Frame(Vector3 centre, float span)
-        {
-            var view = SceneView.lastActiveSceneView;
-            if (view == null) return;
-            view.LookAt(centre, Quaternion.Euler(50f, 0f, 0f), span * 0.55f, false);
-        }
     }
 }

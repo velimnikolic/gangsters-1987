@@ -83,6 +83,10 @@ namespace RoadDemo
         int _paintedStamp = -1;
         float _scroll;
 
+        /// <summary>The minute and day the date plate last printed, so the two
+        /// readings are rebuilt when the clock moves and not every frame.</summary>
+        int _shownMinute = -1, _shownDay = -1;
+
         public void Init(TurfMapHud owner, DemoClock cityClock)
         {
             _hud = owner;
@@ -343,16 +347,25 @@ namespace RoadDemo
             _clockText.rectTransform.sizeDelta =
                 new Vector2(width - HeadPad * 2f, _clockText.rectTransform.sizeDelta.y);
 
+            // Both readings are set only when they change: a string built and handed
+            // to TMP every frame is a mesh rebuild for a clock that moves once a minute.
             if (_clock != null)
             {
-                int hour = Mathf.FloorToInt(_clock.Hour) % 24;
-                int minute = Mathf.FloorToInt((_clock.Hour - Mathf.Floor(_clock.Hour)) * 60f);
-                _clockText.text = hour.ToString("00") + ":" + minute.ToString("00");
+                int minute = Mathf.FloorToInt(_clock.Hour * 60f);
+                if (minute != _shownMinute)
+                {
+                    _shownMinute = minute;
+                    _clockText.SetText("{0:00}:{1:00}", (minute / 60) % 24, minute % 60);
+                }
             }
 
             var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
             int day = outfit != null ? outfit.Campaign.Day : 1;
-            _dateText.text = LivingCity.News.NewsDate.FromClockDay(day - 1).Stamped();
+            if (day != _shownDay)
+            {
+                _shownDay = day;
+                _dateText.text = LivingCity.News.NewsDate.FromClockDay(day - 1).Stamped();
+            }
 
             int stamp = Stamp();
             if (stamp != _paintedStamp)
@@ -459,7 +472,7 @@ namespace RoadDemo
             // title's height hung eight units below it.
             const float titleRow = 24f;
             Caps(_dossierRect, Pad, y + Mid(titleRow, LedgerKit.LineBox(10f)),
-                inner - CloseBox - 4f, "PERSONAL FILE · " + crew.File, 10f, Slate,
+                inner - CloseBox - 4f, "PERSONAL FILE", 10f, Slate,
                 LedgerStyle.Condensed);
 
             var close = DemoUi.NewRect("Close", _dossierRect);
@@ -507,10 +520,12 @@ namespace RoadDemo
             // The typewritten kicker is the one line here that can run to any length -
             // a rank, a family and an alias - so it is the one line set without extra
             // tracking and cut rather than allowed to run off the paper.
+            // A rival's lieutenant is on nobody's books and has no rank to print, so
+            // the line starts at his family rather than at a blank.
             var house = TurfHouses.For(crew.GangId);
             var sub = LedgerKit.Line(_dossierRect, LedgerStyle.Mono, 9f, Red, Pad, y, inner,
                 LedgerKit.LineBox(9f),
-                crew.Rank + " · " + house.Short +
+                (string.IsNullOrEmpty(crew.Rank) ? "" : crew.Rank + " · ") + house.Short +
                 (string.IsNullOrEmpty(crew.Alias) ? "" : " · " + crew.Alias));
             sub.overflowMode = TextOverflowModes.Ellipsis;
             y -= LedgerKit.LineBox(9f) + 6f;
@@ -837,6 +852,9 @@ namespace RoadDemo
             var house = TurfHouses.For(building.GangId);
             float metresPerUnit = _hud.Survey.Plan.MetresPerUnit;
 
+            // Only what the city knows. Floors are derived from the height and say so;
+            // the take is the business's own figure and the row is left off when it
+            // has none, because a number invented for a file is a lie in a ledger.
             string text =
                 building.Name + "\n" +
                 building.District + "\n" +
@@ -847,10 +865,11 @@ namespace RoadDemo
                     Mathf.RoundToInt(_hud.Survey.Plan.Units(building.World.height) * TurfPlate.S) +
                     " px (" + Mathf.RoundToInt(building.World.width) + " × " +
                     Mathf.RoundToInt(building.World.height) + " m)\n" +
-                "FLOORS: " + building.Floors + "   TENANTS: " + building.Occupants + "\n" +
-                "WORTH TO US: $" + building.Rent + " a week";
+                "FLOORS: ~" + building.Floors;
+            if (building.Rent > 0)
+                text += "\nTAKE: $" + building.Rent + " a week";
 
-            return FileSheet(width, top, building.File, text,
+            return FileSheet(width, top, "PROPERTY FILE", text,
                 "surveyed from the street · owner unaware",
                 building.GangId == 0 ? "ALREADY OURS" : "TAKE IT",
                 building.GangId == 0 ? null : (UnityEngine.Events.UnityAction)(() =>
@@ -879,7 +898,7 @@ namespace RoadDemo
                 "GROUND: " + (district.World.width / 1000f).ToString("0.0") + " × " +
                     (district.World.height / 1000f).ToString("0.0") + " km";
 
-            return FileSheet(width, top, district.Name.Replace(' ', '-') + "-04", text,
+            return FileSheet(width, top, "DISTRICT FILE", text,
                 "pencil marks are this month's · ink is last year's", null, null,
                 _hud.Survey.Plan.MetresPerUnit);
         }

@@ -37,8 +37,6 @@ namespace RoadDemo
             return Mathf.Abs(fwd.z) * halfLength + Mathf.Abs(fwd.x) * halfWidth;
         }
 
-        /// <summary>Do these two boxes on the ground share any ground - and if they do,
-        /// the shortest shove that takes the first clear of the second.</summary>
         /// <summary>Two roads this far apart in height pass OVER one another and share
         /// no ground at all. Without it the belt is a plan view: a slip road running
         /// under a viaduct is in the same square metre as the deck seven metres above
@@ -48,6 +46,8 @@ namespace RoadDemo
         /// crosses beneath the road it came off.</summary>
         public const float Storey = 3.2f;
 
+        /// <summary>Do these two boxes on the ground share any ground - and if they do,
+        /// the shortest shove that takes the first clear of the second.</summary>
         public static bool Overlap(Vector3 aP, Vector3 aF, float aHL, float aHW,
                                    Vector3 bP, Vector3 bF, float bHL, float bHW,
                                    float pad, out Vector3 push)

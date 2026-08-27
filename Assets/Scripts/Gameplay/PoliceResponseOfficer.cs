@@ -33,7 +33,6 @@ namespace LivingCity.Gameplay
             Dormant, Responding, Searching, Chasing, Engaging, Shootout, Arresting, StandingDown,
         }
 
-        const float NodeTolerance = 1.2f;
         const float NodeTimeout = 8f;
 
         /// <summary>Matches HumanBehavior's own animator scaling (speed * 0.8).</summary>
@@ -59,6 +58,9 @@ namespace LivingCity.Gameplay
 
         State state;
         Coroutine life;
+
+        /// <summary>SetSpeed as a delegate, made once - the walk loop takes it per route.</summary>
+        System.Action<float> speedSetter;
 
         // The throttled sight cache - one raycast per losTickSeconds, not per caller.
         float nextLosAt;
@@ -88,8 +90,9 @@ namespace LivingCity.Gameplay
             weapon = GetComponent<WeaponController>();
             death = GetComponent<PedestrianDeath>();
 
-            hasSpeedParam = HasParameter(PedestrianAnimation.SpeedHash);
-            hasActivityParam = HasParameter(PedestrianAnimation.ActivityHash);
+            hasSpeedParam = RouteWalker.HasParameter(animator, PedestrianAnimation.SpeedHash);
+            hasActivityParam = RouteWalker.HasParameter(animator, PedestrianAnimation.ActivityHash);
+            speedSetter = SetSpeed;
 
             if (death)
                 death.died += OnDown;
@@ -254,7 +257,9 @@ namespace LivingCity.Gameplay
                 speed = Mathf.MoveTowards(speed, ChaseSpeed, 4f * Time.deltaTime);
 
                 var obstacle = PedestrianRegistry.Probe(body, toTarget);
-                var heading = WallSlide(PedestrianSteering.Blend(toTarget, obstacle.Push));
+                var heading = RouteWalker.WallSlide(transform.position,
+                                                    PedestrianSteering.Blend(toTarget, obstacle.Push),
+                                                    SightBlockers);
                 var advance = Mathf.Min(speed * Time.deltaTime,
                               Mathf.Min(obstacle.AllowedAdvance, remaining));
 
@@ -477,8 +482,9 @@ namespace LivingCity.Gameplay
         }
 
         // ------------------------------------------------------------------ movement
-        // Copied from PedestrianAgent via PlayerMafioso (see PoliceOfficerAgent's class
-        // comment for the copy-not-share convention), parameterised by speed.
+        // The route building is the PlayerMafioso shape, parameterised by speed; the
+        // steering loop itself is the shared RouteWalker (the pack's own walkers keep
+        // their copies, per PoliceOfficerAgent's class comment).
 
         float ChaseSpeed { get { var c = Police; return c ? c.chaseSpeed : 3.25f; } }
 
@@ -503,7 +509,8 @@ namespace LivingCity.Gameplay
                             continue;
 
                         var nodes = path.pathPositions;
-                        for (var i = p == 0 ? NearestNodeIndex(nodes) : 1; i < nodes.Count; i++)
+                        for (var i = p == 0 ? RouteWalker.NearestNodeIndex(nodes, transform.position) : 1;
+                             i < nodes.Count; i++)
                             if (nodes[i])
                                 waypoints.Add(nodes[i].position);
                     }
@@ -527,100 +534,16 @@ namespace LivingCity.Gameplay
             yield return FollowRoute(waypoints, tolerance, speedCap, abortWhen);
         }
 
-        /// <summary>
-        /// One steering loop over the whole list - speed carries across waypoints (see
-        /// PlayerMafioso.FollowRoute for the surge this replaces), walls slide rather than
-        /// swallow.
-        /// </summary>
+        /// <summary>The shared steering loop (RouteWalker), fed this officer's body,
+        /// wall mask and speed float.</summary>
         IEnumerator FollowRoute(System.Collections.Generic.List<Vector3> points,
                                 float finalTolerance, float speedCap,
-                                System.Func<bool> abortWhen)
-        {
-            if (points.Count == 0)
-                yield break;
-
-            var speed = 0f;
-            var index = 0;
-            var deadline = Time.time + 15f + points.Count * 4f;
-
-            while (index < points.Count && Time.time < deadline)
-            {
-                if (abortWhen != null && abortWhen())
-                    break;
-
-                var last = index == points.Count - 1;
-                var target = points[index];
-                var toTarget = target - transform.position;
-                var remaining = PedestrianSteering.Flat(toTarget).magnitude;
-                if (remaining <= (last ? finalTolerance : NodeTolerance))
-                {
-                    index++;
-                    continue;
-                }
-
-                speed = Mathf.MoveTowards(speed, speedCap, 4f * Time.deltaTime);
-
-                var obstacle = PedestrianRegistry.Probe(body, toTarget);
-                var heading = WallSlide(PedestrianSteering.Blend(toTarget, obstacle.Push));
-                var advance = Mathf.Min(speed * Time.deltaTime,
-                              Mathf.Min(obstacle.AllowedAdvance, remaining));
-
-                var step = heading * advance;
-                step.y = Mathf.Clamp(toTarget.y, -advance, advance);
-                transform.position += step;
-
-                if (heading != Vector3.zero)
-                    transform.rotation = Quaternion.LookRotation(heading, Vector3.up);
-
-                var actual = advance / Mathf.Max(Time.deltaTime, 1e-5f);
-                body.SpeedMs = actual;
-                SetSpeed(actual);
-
-                yield return FixedStep;
-            }
-
-            body.SpeedMs = 0f;
-            SetSpeed(0f);
-        }
+                                System.Func<bool> abortWhen) =>
+            RouteWalker.FollowRoute(transform, body, points, finalTolerance, speedCap,
+                                    SightBlockers, abortWhen, speedSetter);
 
         readonly System.Collections.Generic.List<Vector3> waypoints =
             new System.Collections.Generic.List<Vector3>(64);
-
-        /// <summary>A knee-height ray one stride ahead; a hit slides the heading along the
-        /// wall - the avoidance registry knows people, not architecture.</summary>
-        Vector3 WallSlide(Vector3 heading)
-        {
-            if (heading == Vector3.zero)
-                return heading;
-
-            if (!Physics.Raycast(transform.position + Vector3.up * 0.9f, heading,
-                                 out var hit, 1.1f, SightBlockers, QueryTriggerInteraction.Ignore))
-                return heading;
-
-            var slide = Vector3.ProjectOnPlane(heading, hit.normal);
-            slide.y = 0f;
-            return slide.sqrMagnitude > 1e-4f ? slide.normalized : Vector3.zero;
-        }
-
-        int NearestNodeIndex(System.Collections.Generic.List<Transform> nodes)
-        {
-            var best = 0;
-            var bestSqr = float.MaxValue;
-            for (var i = 0; i < nodes.Count; i++)
-            {
-                if (!nodes[i])
-                    continue;
-
-                var sqr = (nodes[i].position - transform.position).sqrMagnitude;
-                if (sqr < bestSqr)
-                {
-                    bestSqr = sqr;
-                    best = i;
-                }
-            }
-
-            return best;
-        }
 
         // ------------------------------------------------------------------ plumbing
 
@@ -651,16 +574,6 @@ namespace LivingCity.Gameplay
         {
             if (hasActivityParam && animator)
                 animator.SetInteger(PedestrianAnimation.ActivityHash, value);
-        }
-
-        bool HasParameter(int nameHash)
-        {
-            if (!animator || !animator.runtimeAnimatorController)
-                return false;
-            foreach (var parameter in animator.parameters)
-                if (parameter.nameHash == nameHash)
-                    return true;
-            return false;
         }
 
         // ------------------------------------------------------------------ the overlay

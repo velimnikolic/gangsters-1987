@@ -418,12 +418,12 @@ namespace RoadDemo
 
         // ---------------------------------------------------------------- levels
 
-        /// <summary>The water's surface, below the quay's coping - the PalmCity demo
-        /// scene's own level under its streets, so the pack's shore foam is tuned to
-        /// exactly this depth of wall showing above the water.</summary>
-        /// <summary>The sea plane's own height. Public because the MAP has to know
-        /// where the water line is: ground under this is sea on the plan, ground over it
-        /// and under <see cref="BeachLine"/> is the sand of the shore.</summary>
+        /// <summary>The sea plane's own height: the water's surface below the quay's
+        /// coping, the PalmCity demo scene's own level under its streets, so the pack's
+        /// shore foam is tuned to exactly this depth of wall showing above the water.
+        /// Public because the MAP has to know where the water line is: ground under
+        /// this is sea on the plan, ground over it and under <see cref="BeachLine"/> is
+        /// the sand of the shore.</summary>
         public const float WaterY = -2.65f;
 
         /// <summary>How far past the grid a river's quays run before the natural bank

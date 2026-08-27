@@ -31,7 +31,7 @@ namespace LivingCity.CameraRig
         /// itself here, and any click it claims never reaches the building raycast -
         /// a click on a patrol unit must not also open the card of the block behind it.
         /// </summary>
-        public static System.Func<Vector2, bool> ClickVeto;
+        public static System.Func<Vector2, bool> ClickVeto { get; set; }
 
         // The card dresses in the Synty InterfaceModernMenus sheet - a dark panel plus a
         // glow triangle flipped into a bubble tail. Editor-only load: both host scenes
@@ -44,6 +44,13 @@ namespace LivingCity.CameraRig
         static readonly Color TailTint = new(0.13f, 0.15f, 0.19f, 0.95f);
         static readonly Color HighlightTint = new(1f, 0.78f, 0.32f);
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+
+        // The 9-slice edges, filled in place per draw: OnGUI runs several times a frame
+        // and four fresh arrays each time was garbage for a card that never moves.
+        static readonly float[] SliceXs = new float[4];
+        static readonly float[] SliceYs = new float[4];
+        static readonly float[] SliceUs = new float[4];
+        static readonly float[] SliceVs = new float[4];
 
         Camera cam;
         string cardTitle;
@@ -239,10 +246,15 @@ namespace LivingCity.CameraRig
         {
             var u = srcBorder / tex.width;
             var v = srcBorder / tex.height;
-            var xs = new[] { dst.x, dst.x + dstBorder, dst.xMax - dstBorder, dst.xMax };
-            var ys = new[] { dst.y, dst.y + dstBorder, dst.yMax - dstBorder, dst.yMax };
-            var us = new[] { 0f, u, 1f - u, 1f };
-            var vs = new[] { 1f, 1f - v, v, 0f };   // GUI y grows down, UV up
+            var xs = SliceXs;
+            var ys = SliceYs;
+            var us = SliceUs;
+            var vs = SliceVs;
+            xs[0] = dst.x; xs[1] = dst.x + dstBorder; xs[2] = dst.xMax - dstBorder; xs[3] = dst.xMax;
+            ys[0] = dst.y; ys[1] = dst.y + dstBorder; ys[2] = dst.yMax - dstBorder; ys[3] = dst.yMax;
+            us[0] = 0f; us[1] = u; us[2] = 1f - u; us[3] = 1f;
+            // GUI y grows down, UV up.
+            vs[0] = 1f; vs[1] = 1f - v; vs[2] = v; vs[3] = 0f;
             for (var row = 0; row < 3; row++)
                 for (var col = 0; col < 3; col++)
                     GUI.DrawTextureWithTexCoords(

@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace LivingCity.Gameplay
 {
@@ -45,6 +45,9 @@ namespace LivingCity.Gameplay
 
         float lastContactAt = float.NegativeInfinity;
 
+        /// <summary>The star ladder when no config carries one.</summary>
+        static readonly float[] DefaultStarThresholds = { 10f, 25f, 45f, 70f, 100f };
+
         WantedConfig Config => GameplayRuntime.Wanted;
 
         float DecayDelay { get { var c = Config; return c ? c.decayDelaySeconds : 20f; } }
@@ -52,7 +55,7 @@ namespace LivingCity.Gameplay
         void Awake()
         {
             if (Instance && Instance != this)
-                return;
+                { enabled = false; return; }
             Instance = this;
         }
 
@@ -141,7 +144,7 @@ namespace LivingCity.Gameplay
             var config = Config;
             var thresholds = config && config.starThresholds is { Length: > 0 }
                 ? config.starThresholds
-                : new[] { 10f, 25f, 45f, 70f, 100f };
+                : DefaultStarThresholds;
 
             var level = 0;
             foreach (var threshold in thresholds)

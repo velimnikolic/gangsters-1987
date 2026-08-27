@@ -133,6 +133,14 @@ namespace LivingCity.Ambient
         readonly List<Light> lamps = new();
         readonly List<int> order = new();
 
+        /// <summary>Per-lamp sort keys (squared metres from the camera's focus), stamped
+        /// once per resort; a dead lamp keys to infinity and sorts last.</summary>
+        readonly List<float> keys = new();
+
+        /// <summary>The ranking, made once on first use rather than as a closure per
+        /// resort - and without the null branch that made the old order inconsistent.</summary>
+        System.Comparison<int> byKey;
+
         float nextResort;
         float lit = -1f;
 
@@ -385,17 +393,17 @@ namespace LivingCity.Ambient
                 if (forward.y < -0.05f && eye.y > 0f)
                     eye += forward * (eye.y / -forward.y);
 
-                order.Sort((a, b) =>
+                // Keys once per lamp rather than twice per comparison.
+                keys.Clear();
+                for (var i = 0; i < lamps.Count; i++)
                 {
-                    var lampA = lamps[a];
-                    var lampB = lamps[b];
+                    var lamp = lamps[i];
+                    keys.Add(lamp ? (lamp.transform.position - eye).sqrMagnitude
+                                  : float.PositiveInfinity);
+                }
 
-                    if (!lampA || !lampB)
-                        return 0;
-
-                    return (lampA.transform.position - eye).sqrMagnitude
-                           .CompareTo((lampB.transform.position - eye).sqrMagnitude);
-                });
+                byKey ??= (a, b) => keys[a].CompareTo(keys[b]);
+                order.Sort(byKey);
             }
 
             var on = 0;

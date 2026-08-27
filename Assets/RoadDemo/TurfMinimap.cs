@@ -68,10 +68,34 @@ namespace RoadDemo
         RectTransform _card, _view;
         Texture2D _paper;
 
-        readonly List<RectTransform> _dots = new List<RectTransform>();
+        /// <summary>The crew markers, pooled as Images: the Image carries its own
+        /// RectTransform, so one list serves both the placing and the tinting.</summary>
+        readonly List<Image> _dots = new List<Image>();
         readonly RectTransform[] _frame = new RectTransform[4];
 
+        /// <summary>Baked once and shared by every marker on the card. Static state
+        /// outlives Play when domain reload is off, so it is dropped at play start
+        /// and released with the card - a sprite left standing keeps its texture.
+        /// </summary>
         static Sprite _dotSprite;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetForPlay() => Release();
+
+        /// <summary>Lets the dot's texture go. The sprite is baked again on the next
+        /// ask, so a card that outlives another may simply call for it afresh.</summary>
+        static void Release()
+        {
+            // Unity's null, not C#'s: a sprite the editor already unloaded is only
+            // dropped, and one still standing takes its texture down with it.
+            if (_dotSprite != null)
+            {
+                if (_dotSprite.texture != null)
+                    Object.Destroy(_dotSprite.texture);
+                Object.Destroy(_dotSprite);
+            }
+            _dotSprite = null;
+        }
 
         // ------------------------------------------------------------- the survey
 
@@ -109,6 +133,7 @@ namespace RoadDemo
         {
             if (_paper != null)
                 Destroy(_paper);
+            Release();
         }
 
         // -------------------------------------------------------------------- card
@@ -298,15 +323,15 @@ namespace RoadDemo
                         continue;
 
                     var dot = DotAt(used++);
-                    dot.anchoredPosition = at;
-                    dot.GetComponent<Image>().color = TurfHouses.For(unit.Faction).Ink;
+                    dot.rectTransform.anchoredPosition = at;
+                    dot.color = TurfHouses.For(unit.Faction).Ink;
                 }
 
             for (int i = used; i < _dots.Count; i++)
                 _dots[i].gameObject.SetActive(false);
         }
 
-        RectTransform DotAt(int index)
+        Image DotAt(int index)
         {
             while (_dots.Count <= index)
             {
@@ -317,7 +342,7 @@ namespace RoadDemo
                 var image = rect.gameObject.AddComponent<Image>();
                 image.sprite = Dot();
                 image.raycastTarget = false;
-                _dots.Add(rect);
+                _dots.Add(image);
             }
 
             _dots[index].gameObject.SetActive(true);
@@ -338,7 +363,7 @@ namespace RoadDemo
 
             // The same reading the full map makes of the boom, so the box on the card
             // and the ground the wheel would open on are the same rectangle.
-            float down = Mathf.Max(20f, _rig.distance * 1.15f);
+            float down = Mathf.Max(20f, _rig.distance * DemoCamera.BoomToMetres);
             float across = down * Mathf.Max(0.1f,
                 (float)Screen.width / Mathf.Max(1, Screen.height));
 

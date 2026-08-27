@@ -61,7 +61,7 @@ namespace LivingCity.Gameplay
         };
 
         /// <summary>Chance in a hundred that a business's civilian owner is a woman - it is
-        /// 1980 and the ledgers skew male, but not absurdly so.</summary>
+        /// 1987 and the ledgers skew male, but not absurdly so.</summary>
         const int FemaleOwnerChance = 45;
 
         /// <summary>Metres of slack around the port wall rect - a shed whose origin sits on
@@ -75,6 +75,32 @@ namespace LivingCity.Gameplay
             public string Name;
             public int BlockId;
         }
+
+        /// <summary>
+        /// THE position order of the ownership pass: world x, then z, each to the decimetre
+        /// so float noise between sessions cannot swap neighbours, then the name as the tie-
+        /// break. Every later pass that must agree with the deed order (GangDirector's front
+        /// picks) sorts with this and not a copy, so the two can never drift apart.
+        /// </summary>
+        public static int CompareByPosition(Vector3 a, string nameA, Vector3 b, string nameB)
+        {
+            var ax = Mathf.RoundToInt(a.x * 10f);
+            var bx = Mathf.RoundToInt(b.x * 10f);
+            if (ax != bx)
+                return ax.CompareTo(bx);
+
+            var az = Mathf.RoundToInt(a.z * 10f);
+            var bz = Mathf.RoundToInt(b.z * 10f);
+            if (az != bz)
+                return az.CompareTo(bz);
+
+            return string.CompareOrdinal(nameA, nameB);
+        }
+
+        /// <summary>The same order over live businesses, for anyone sorting markers.</summary>
+        public static readonly System.Comparison<BusinessMarker> BusinessOrder = (a, b) =>
+            CompareByPosition(a.transform.position, a.gameObject.name,
+                              b.transform.position, b.gameObject.name);
 
         void Start()
         {
@@ -97,19 +123,7 @@ namespace LivingCity.Gameplay
             // Sorted by position, not by child order: the hierarchy's order is whatever the
             // generator happened to append, and this list IS the draw order below.
             candidates.Sort((a, b) =>
-            {
-                var ax = Mathf.RoundToInt(a.Target.position.x * 10f);
-                var bx = Mathf.RoundToInt(b.Target.position.x * 10f);
-                if (ax != bx)
-                    return ax.CompareTo(bx);
-
-                var az = Mathf.RoundToInt(a.Target.position.z * 10f);
-                var bz = Mathf.RoundToInt(b.Target.position.z * 10f);
-                if (az != bz)
-                    return az.CompareTo(bz);
-
-                return string.CompareOrdinal(a.Name, b.Name);
-            });
+                CompareByPosition(a.Target.position, a.Name, b.Target.position, b.Name));
 
             var rng = new System.Random(builder.Config.seed + SeedOffsets.Ownership);
 

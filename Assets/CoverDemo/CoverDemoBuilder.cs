@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Text;
 using LivingCity.Personnel;
 using RoadDemo;
@@ -111,11 +111,6 @@ namespace CoverDemo
         const float Cell = StreetKit.Cell;            // the 5 m tile
         const float RoadY = -0.08f;                   // the asphalt, which is sunk a tenth
         const float WalkY = 0f;                       // the pavement top, where the men stand
-
-        // DemoCrews' own cover policy, mirrored so the bench can say in advance what
-        // will be usable. Kept in step with PropCoverMinHalf / PropCoverMaxHalf there.
-        const float CoverMinHalf = 0.22f;
-        const float CoverMaxHalf = 3f;
 
         float StreetXMin => -Mathf.Round(streetLength * 0.5f / Cell) * Cell;
         float StreetXMax => Mathf.Round(streetLength * 0.5f / Cell) * Cell;
@@ -379,8 +374,8 @@ namespace CoverDemo
             if (!foot.Known) return "no mesh to measure";
             if (!foot.Solid) return "flat - paving, not an obstacle";
             if (foot.Tall) return "a trunk or a post: the box is knee height and the thing goes on up";
-            if (Mathf.Min(foot.Half.x, foot.Half.y) < CoverMinHalf) return "too slim on its short side";
-            if (Mathf.Max(foot.Half.x, foot.Half.y) > CoverMaxHalf) return "too wide - a wall, not furniture";
+            if (Mathf.Min(foot.Half.x, foot.Half.y) < DemoCrews.PropCoverMinHalf) return "too slim on its short side";
+            if (Mathf.Max(foot.Half.x, foot.Half.y) > DemoCrews.PropCoverMaxHalf) return "too wide - a wall, not furniture";
             return null;
         }
 
@@ -521,11 +516,7 @@ namespace CoverDemo
         {
             var bodies = new List<GameObject>();
 #if UNITY_EDITOR
-            foreach (var name in new[]
-            {
-                "SM_Veh_Car_Sedan_01", "SM_Veh_Car_Medium_01", "SM_Veh_Car_Small_01", "SM_Veh_Car_Muscle_01",
-                "SM_Veh_Sedan_01", "SM_Veh_Suv_01", "SM_Veh_Pickup_01", "SM_Veh_LowCar_01", "SM_Veh_LowCar_02",
-            })
+            foreach (var name in TestBench.StreetCars)
             {
                 var guids = UnityEditor.AssetDatabase.FindAssets("t:Prefab " + name, VehicleFolders);
                 foreach (var guid in guids)
@@ -604,60 +595,23 @@ namespace CoverDemo
 
         // ------------------------------------------------------------------ the mobs
 
+        static readonly (string, EquipmentKind)[] RivalArms =
+        {
+            ("SM_Wep_Machine_Pistol_01", EquipmentKind.MachinePistol),
+            ("SM_Wep_Shotgun_01", EquipmentKind.Shotgun),
+            ("SM_Wep_SubMachineGun_01", EquipmentKind.TommyGun),
+            ("SM_Wep_Pistol_Revolver_01", EquipmentKind.Pistol),
+        };
+
+        // one crew per pavement, turn and turn about, so the fight is fought ACROSS
+        // the street: a man shot at from the far pavement has the kerb strip, the
+        // parked cars and his own pavement's furniture between him and the shooter,
+        // which is the arrangement the cover code was written for and the one a block
+        // never quite produces
         void SpawnRivals()
         {
-            var rng = new System.Random(nameSeed);
-            var gangNames = LivingCity.Gangs.GangCatalog.Names;
-            var bossModels = LivingCity.Gangs.GangCatalog.LieutenantModels;
-            var soldierModels = LivingCity.Gangs.GangCatalog.SoldierModels;
-
-            int count = Mathf.Clamp(rivalCrews, 1, Mathf.Min(gangNames.Length - 1, 4));
-            var arms = new[]
-            {
-                ("SM_Wep_Machine_Pistol_01", EquipmentKind.MachinePistol),
-                ("SM_Wep_Shotgun_01", EquipmentKind.Shotgun),
-                ("SM_Wep_SubMachineGun_01", EquipmentKind.TommyGun),
-                ("SM_Wep_Pistol_Revolver_01", EquipmentKind.Pistol),
-            };
-
-            for (int i = 0; i < count; i++)
-            {
-                int gang = 1 + i;   // 0 is the outfit
-                var bossModel = bossModels[gang % bossModels.Length];
-                var bossPrefab = Cast(bossModel);
-                if (bossPrefab == null)
-                {
-                    Debug.LogWarning("[CoverDemo] no body for the " + gangNames[gang] +
-                                     " lieutenant (" + bossModel + ") - that crew sits out.");
-                    continue;
-                }
-
-                var hoodNames = new List<string>();
-                for (int k = 0; k < rivalHoods; k++) hoodNames.Add(DrawName(rng));
-
-                var hoodPrefabs = new List<GameObject>();
-                foreach (var look in LivingCity.Gangs.GangLooks.HoodsFor(
-                             bossModel, soldierModels[gang % soldierModels.Length], rivalHoods))
-                {
-                    var body = Cast(look);
-                    if (body) hoodPrefabs.Add(body);
-                }
-
-                var (weaponName, kind) = arms[i % arms.Length];
-                var weapon = CrewKit.Weapon(weaponName);
-                if (weapon == null)
-                    Debug.LogWarning("[CoverDemo] gun " + weaponName + " not found - the " +
-                                     gangNames[gang] + " crew comes unarmed.");
-
-                // one crew per pavement, turn and turn about, so the fight is fought
-                // ACROSS the street: a man shot at from the far pavement has the kerb
-                // strip, the parked cars and his own pavement's furniture between him
-                // and the shooter, which is the arrangement the cover code was written
-                // for and the one a block never quite produces
-                var anchor = RivalAnchor(i, out var facing);
-                _crews.AddRival(gang, gangNames[gang], DrawName(rng), bossPrefab, hoodNames,
-                    hoodPrefabs, anchor, facing, weapon, kind, lineUp: true);
-            }
+            TestBench.SpawnRivals(_crews, nameSeed, rivalCrews, rivalHoods, RivalArms,
+                i => { var at = RivalAnchor(i, out var facing); return (at, facing); }, "[CoverDemo]");
         }
 
         /// <summary>Where a rival crew stands and which way it looks: one per pavement,
@@ -690,63 +644,15 @@ namespace CoverDemo
                 _kit.Plan.Reserve(RivalAnchor(i, out _), 0f, new Vector2(9f, 2.2f));
         }
 
-        static GameObject Cast(string name) =>
-            LivingCity.UI.LedgerModelSet.PersonNamed(name) ??
-            LivingCity.UI.PortraitStudio.FindPeoplePrefab(name);
-
-        static string DrawName(System.Random rng)
-        {
-            var firsts = LivingCity.Entities.PedestrianIdentity.AllMaleNames;
-            var surnames = LivingCity.Entities.PedestrianIdentity.AllSurnames;
-            return firsts[rng.Next(firsts.Count)] + " " + surnames[rng.Next(surnames.Count)];
-        }
-
         // The outfit opens with long guns rather than the .38 in the coat, the same way
-        // the crew demo's bench does it: through the ledger, so the armory page and the
-        // street show the same guns and a dead man's rifle goes back to his crew. Free -
-        // this is a bench, and the money half of a purchase lives with the accounts.
-        // Once, when the roster is in (the outfit is dealt off it a frame or two later).
+        // the crew demo's bench does it (TestBench.ArmTheOutfit). Once, when the roster
+        // is in (the outfit is dealt off it a frame or two later).
         bool _armsGiven;
 
         void ArmTheOutfit()
         {
             if (_armsGiven || !armTheOutfit) return;
-            var director = LivingCity.Gameplay.PersonnelDirector.Instance;
-            if (director == null || director.Roster == null) return;
-            var roster = director.Roster;
-            if (roster.Crews.Count == 0) { _armsGiven = true; return; }
-            _armsGiven = true;
-
-            if (!CrewArms.IsFirearm(outfitArms))
-            {
-                Debug.LogWarning("[CoverDemo] " + outfitArms + " is not a gun - the outfit keeps its .38s.");
-                return;
-            }
-
-            string gun = outfitArms.ToString();
-            int price = 0;
-            foreach (var listing in LivingCity.Outfit.ArmoryCatalog.Weapons)
-                if (listing.Kind == outfitArms) { gun = listing.DisplayName; price = listing.Price; break; }
-
-            int issued = 0;
-            foreach (var crew in roster.Crews)
-            {
-                var lieutenant = roster.Find(crew.LieutenantId);
-                if (lieutenant == null || lieutenant.Status != CharacterStatus.Active) continue;
-                int hands = 1;
-                foreach (int id in crew.HoodIds)
-                {
-                    var hood = roster.Find(id);
-                    if (hood != null && hood.Status == CharacterStatus.Active) hands++;
-                }
-                for (int i = 0; i < hands; i++)
-                {
-                    var item = director.AddEquipment(outfitArms, gun, price);
-                    if (item == null) continue;
-                    if (director.GiveEquipment(item.Id, lieutenant.Id).Ok) issued++;
-                }
-            }
-            Debug.Log("[CoverDemo] " + issued + " x " + gun + " issued to the outfit.");
+            _armsGiven = TestBench.ArmTheOutfit(outfitArms, "[CoverDemo]");
         }
     }
 }

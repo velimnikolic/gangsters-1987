@@ -235,7 +235,9 @@ namespace HarborDemo
             {
                 if (o == b || !o.Manoeuvring || o.Index < b.Index) continue;   // an inner berth's turn never crosses my lane
                 var w = o.Window;
-                if (w.x > x - 2f && w.x < goal) blockAt = Mathf.Min(blockAt, w.x - 6f);
+                // a window accepted from two metres astern has its hold point six
+                // metres astern: she holds where she is rather than being sent backwards
+                if (w.x > x - 2f && w.x < goal) blockAt = Mathf.Min(blockAt, Mathf.Max(x, w.x - 6f));
             }
             if (blockAt < float.MaxValue)
             {

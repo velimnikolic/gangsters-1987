@@ -50,7 +50,10 @@ namespace RoadDemo
         static float _x0, _z0;
         static int _builtAt = -1;
 
-        static readonly List<int> _open = new List<int>();
+        // the open set, a heap keyed on guessed total cost: the list it replaces was
+        // scanned end to end for every square taken off it, a square of the squares
+        // opened on a long way across the city
+        static readonly WalkHeap _open = new WalkHeap();
         static float[] _cost;
         static int[] _from;
         static int[] _stamp;
@@ -350,24 +353,16 @@ namespace RoadDemo
             _cost[a] = 0f;
             _from[a] = a;
             _stamp[a] = _visit;
-            _open.Add(a);
-
             var goal = Middle(b);
+            _open.Push(a, (Middle(a) - goal).magnitude);
+
             int guard = 0;
             while (_open.Count > 0)
             {
-                // the cheapest open square, guessed distance included
-                int best = 0;
-                float bestF = float.MaxValue;
-                for (int k = 0; k < _open.Count; k++)
-                {
-                    int c = _open[k];
-                    float f = _cost[c] + (Middle(c) - goal).magnitude;
-                    if (f < bestF) { bestF = f; best = k; }
-                }
-                int cur = _open[best];
-                _open[best] = _open[_open.Count - 1];
-                _open.RemoveAt(_open.Count - 1);
+                // the cheapest open square, guessed distance included. A square reached
+                // again by a cheaper way sits in the heap twice; the dearer copy comes
+                // up later, finds nothing it can better, and costs eight looks
+                int cur = _open.Pop();
                 if (cur == b) return true;
                 if (++guard > 200000) return false;
 
@@ -403,7 +398,7 @@ namespace RoadDemo
                     _stamp[nb] = _visit;
                     _cost[nb] = cost;
                     _from[nb] = cur;
-                    _open.Add(nb);
+                    _open.Push(nb, cost + (Middle(nb) - goal).magnitude);
                 }
             }
             return false;

@@ -70,8 +70,9 @@ Uz to, dve stvari koje su pravile **rupe** oko svakog kvarta:
   `Island.cs`, jedino mesto koje zna gde mu je obala) gura morski kraj svakog bazena
   dok ne prođe obalu — inače je luka ribnjak nasred livade.
 - `farClipPlane` 3200 → **8000** (poslednji klik mape diže kameru ~5.3 km), a
-  `DemoMap.BuildLand` skalira svoju ćeliju sa površinom ostrva — na 20 m bi bilo 90
-  000 uzoraka i daleka polovina zemlje prosto ne bi bila nacrtana.
+  mapa ostrva se ne crta na fiksnoj ćeliji — na 20 m bi bilo 90 000 uzoraka i daleka
+  polovina zemlje prosto ne bi bila nacrtana (danas `TurfMapSurvey` kešira heightfield
+  jednom u `Prepare` i crta ga po pogledu).
 
 ## 3. Reka
 

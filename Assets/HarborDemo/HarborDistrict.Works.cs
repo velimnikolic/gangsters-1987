@@ -28,8 +28,8 @@ namespace HarborDemo
         Transform WorksRoot => _worksRoot ??= Root("Harbor Works");
 
         Material _warnMat, _paleMat;
-        Material WarnMaterial() => _warnMat ??= HarborKit.Flat("Harbor Warning", new Color(0.72f, 0.16f, 0.13f), 0.2f);
-        Material PaleMaterial() => _paleMat ??= HarborKit.Flat("Harbor Pale", new Color(0.86f, 0.85f, 0.8f), 0.2f);
+        Material WarnMaterial() => _warnMat ??= Keep(HarborKit.Flat("Harbor Warning", new Color(0.72f, 0.16f, 0.13f), 0.2f));
+        Material PaleMaterial() => _paleMat ??= Keep(HarborKit.Flat("Harbor Pale", new Color(0.86f, 0.85f, 0.8f), 0.2f));
 
         void BuildPortWorks()
         {

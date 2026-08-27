@@ -35,6 +35,9 @@ namespace LivingCity.Gameplay
 
         static readonly RaycastHit[] Hits = new RaycastHit[64];
 
+        /// <summary>Hit indices in distance order - the cast hands them back unsorted.</summary>
+        static readonly int[] Order = new int[64];
+
         [Tooltip("Found in the scene when empty.")]
         [SerializeField] PlayerMafioso player;
 
@@ -190,13 +193,14 @@ namespace LivingCity.Gameplay
             var count = Physics.SphereCastNonAlloc(
                 ray, PickRadius, Hits, PickDistance, PickMask, QueryTriggerInteraction.Ignore);
 
-            var bestNpcDistance = float.MaxValue;
-            var bestTargetDistance = float.MaxValue;
-            var bestHitDistance = float.MaxValue;
+            // Nearest first, so each of the three answers is settled by the FIRST hit that
+            // carries it and the parent walks stop there - unsorted, every hit paid up to
+            // four GetComponentInParent walks ten times a second.
+            SortByDistance(count);
 
-            for (var i = 0; i < count; i++)
+            for (var k = 0; k < count; k++)
             {
-                var hit = Hits[i];
+                var hit = Hits[Order[k]];
                 if (!hit.collider)
                     continue;
 
@@ -206,9 +210,8 @@ namespace LivingCity.Gameplay
                 if (PlayerOcclusionHider.InvisibleAt(hit.collider, hit.point))
                     continue;
 
-                if (hit.distance < bestHitDistance)
+                if (!result.HasSurface)
                 {
-                    bestHitDistance = hit.distance;
                     result.HasSurface = true;
                     result.SurfacePoint = hit.point;
                     // A hidden subject (a shopper indoors, capsule still at the door) is not
@@ -218,28 +221,37 @@ namespace LivingCity.Gameplay
                         hit.collider.GetComponentInParent<IOverlaySubject>() is { OverlayHidden: false };
                 }
 
-                if (hit.distance < bestNpcDistance)
-                {
-                    var npc = hit.collider.GetComponentInParent<InteractableNpc>();
-                    if (npc)
-                    {
-                        bestNpcDistance = hit.distance;
-                        result.Npc = npc;
-                    }
-                }
+                if (result.Target == null)
+                    result.Target = hit.collider.GetComponentInParent<IContextTarget>();
 
-                if (hit.distance < bestTargetDistance)
-                {
-                    var target = hit.collider.GetComponentInParent<IContextTarget>();
-                    if (target != null)
-                    {
-                        bestTargetDistance = hit.distance;
-                        result.Target = target;
-                    }
-                }
+                if (!result.Npc)
+                    result.Npc = hit.collider.GetComponentInParent<InteractableNpc>();
+
+                // An InteractableNpc is itself a context target, so once the pedestrian is
+                // found every answer is - nothing further down the ray can be nearer.
+                if (result.Npc)
+                    break;
             }
 
             return result;
+        }
+
+        /// <summary>Insertion sort of the hit indices by distance - the cast returns a
+        /// few dozen at most, and this allocates nothing.</summary>
+        static void SortByDistance(int count)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var index = i;
+                var distance = Hits[i].distance;
+                var j = i - 1;
+                while (j >= 0 && Hits[Order[j]].distance > distance)
+                {
+                    Order[j + 1] = Order[j];
+                    j--;
+                }
+                Order[j + 1] = index;
+            }
         }
     }
 }

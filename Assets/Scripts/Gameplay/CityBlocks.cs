@@ -30,8 +30,8 @@ namespace LivingCity.Gameplay
             public Vector2 Center => Union.center;
         }
 
-        static readonly List<BlockInfo> blocks = new List<BlockInfo>();
-        static readonly Dictionary<int, BlockInfo> byId = new Dictionary<int, BlockInfo>();
+        static readonly List<BlockInfo> Known = new List<BlockInfo>();
+        static readonly Dictionary<int, BlockInfo> ById = new Dictionary<int, BlockInfo>();
         static bool collected;
 
         public static IReadOnlyList<BlockInfo> Blocks
@@ -39,14 +39,14 @@ namespace LivingCity.Gameplay
             get
             {
                 EnsureCollected();
-                return blocks;
+                return Known;
             }
         }
 
         public static BlockInfo Get(int blockId)
         {
             EnsureCollected();
-            return byId.TryGetValue(blockId, out var block) ? block : null;
+            return ById.TryGetValue(blockId, out var block) ? block : null;
         }
 
         /// <summary>Nearest block by centre distance; null in a city with no ground.</summary>
@@ -55,7 +55,7 @@ namespace LivingCity.Gameplay
             EnsureCollected();
             BlockInfo best = null;
             var bestSqr = float.MaxValue;
-            foreach (var block in blocks)
+            foreach (var block in Known)
             {
                 var d = block.Center - worldXZ;
                 var sqr = d.x * d.x + d.y * d.y;
@@ -73,7 +73,7 @@ namespace LivingCity.Gameplay
         public static BlockInfo At(Vector2 worldXZ)
         {
             EnsureCollected();
-            foreach (var block in blocks)
+            foreach (var block in Known)
             {
                 if (!block.Union.Contains(worldXZ))
                     continue;
@@ -116,11 +116,11 @@ namespace LivingCity.Gameplay
                 var bounds = renderer.bounds;
                 var rect = new Rect(bounds.min.x, bounds.min.z, bounds.size.x, bounds.size.z);
 
-                if (!byId.TryGetValue(blockId, out var block))
+                if (!ById.TryGetValue(blockId, out var block))
                 {
                     block = new BlockInfo { Id = blockId, Zone = zone, Union = rect };
-                    byId[blockId] = block;
-                    blocks.Add(block);
+                    ById[blockId] = block;
+                    Known.Add(block);
                 }
 
                 block.Slabs.Add(rect);
@@ -137,8 +137,8 @@ namespace LivingCity.Gameplay
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
         {
-            blocks.Clear();
-            byId.Clear();
+            Known.Clear();
+            ById.Clear();
             collected = false;
         }
     }

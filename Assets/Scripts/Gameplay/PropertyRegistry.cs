@@ -47,20 +47,20 @@ namespace LivingCity.Gameplay
     /// </summary>
     public static class PropertyRegistry
     {
-        static readonly List<PropertyOwner> owners = new List<PropertyOwner>();
-        static readonly List<Entities.BusinessMarker> businesses =
+        static readonly List<PropertyOwner> OwnerList = new List<PropertyOwner>();
+        static readonly List<Entities.BusinessMarker> BusinessList =
             new List<Entities.BusinessMarker>();
 
-        public static IReadOnlyList<PropertyOwner> Owners => owners;
-        public static IReadOnlyList<Entities.BusinessMarker> Businesses => businesses;
+        public static IReadOnlyList<PropertyOwner> Owners => OwnerList;
+        public static IReadOnlyList<Entities.BusinessMarker> Businesses => BusinessList;
 
         /// <summary>Bumped on every add and every remove, owners and businesses alike.</summary>
         public static int Version { get; private set; }
 
         public static PropertyOwner AddOwner(string displayName, bool civic = false)
         {
-            var owner = new PropertyOwner(owners.Count, displayName, civic);
-            owners.Add(owner);
+            var owner = new PropertyOwner(OwnerList.Count, displayName, civic);
+            OwnerList.Add(owner);
             Version++;
             return owner;
         }
@@ -70,13 +70,13 @@ namespace LivingCity.Gameplay
             if (business == null)
                 return;
 
-            businesses.Add(business);
+            BusinessList.Add(business);
             Version++;
         }
 
         public static void Unregister(Entities.BusinessMarker business)
         {
-            if (business != null && businesses.Remove(business))
+            if (business != null && BusinessList.Remove(business))
                 Version++;
         }
 
@@ -85,8 +85,8 @@ namespace LivingCity.Gameplay
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
         {
-            owners.Clear();
-            businesses.Clear();
+            OwnerList.Clear();
+            BusinessList.Clear();
             Version = 0;
         }
     }

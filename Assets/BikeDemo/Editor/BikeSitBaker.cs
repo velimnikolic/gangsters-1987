@@ -94,9 +94,27 @@ namespace BikeDemo
             foreach (var col in bike.GetComponentsInChildren<Collider>()) Object.DestroyImmediate(col);
 
             // the pose is derived off the machine's own measurements, and the nudge is
-            // part of that derivation - so it goes in before the body is read
+            // part of that derivation - so it goes in before the body is read, and the
+            // game's own nudge goes back once the men are set in stone (the statics are
+            // BikeBody's for every machine, not this bake's)
+            var riderWas = BikeBody.RiderNudge;
+            var pillionWas = BikeBody.PillionNudge;
             BikeBody.RiderNudge = riderNudge;
             BikeBody.PillionNudge = pillionNudge;
+            try
+            {
+                return StandNudged(machine, bike, riderSize, pillionSize, riderNudge, pillionNudge);
+            }
+            finally
+            {
+                BikeBody.RiderNudge = riderWas;
+                BikeBody.PillionNudge = pillionWas;
+            }
+        }
+
+        static bool StandNudged(string machine, GameObject bike, float riderSize, float pillionSize,
+                                Vector3 riderNudge, Vector3 pillionNudge)
+        {
             var body = new BikeBody(bike.transform);
 
             var tag = bike.AddComponent<BikeSitTag>();
@@ -260,15 +278,29 @@ namespace BikeDemo
             string machine = tag.machine;
             var bakedRider = tag.riderNudge;
             var bakedPillion = tag.pillionNudge;
-            BikeBody.RiderNudge = tag.riderNudge;
-            BikeBody.PillionNudge = tag.pillionNudge;
-            var body = new BikeBody(bike);
+            // the body is read with the bake's own nudge in, and the game's put back
+            // after: the statics are BikeBody's for every machine, not this scene's
+            var riderWas = BikeBody.RiderNudge;
+            var pillionWas = BikeBody.PillionNudge;
+            Vector3 rider, pillion;
+            bool riderMoved, pillionMoved;
+            try
+            {
+                BikeBody.RiderNudge = tag.riderNudge;
+                BikeBody.PillionNudge = tag.pillionNudge;
+                new BikeBody(bike);
 
-            // measured off where each man was LEFT at bake time, not off the saddle:
-            // that is the same sum anyone reading the saved scene file would do, and two
-            // ways of answering one question is one way too many
-            var rider = Moved(bike, Driver, tag.riderAtBake, bakedRider, out bool riderMoved);
-            var pillion = Moved(bike, Shooter, tag.pillionAtBake, bakedPillion, out bool pillionMoved);
+                // measured off where each man was LEFT at bake time, not off the saddle:
+                // that is the same sum anyone reading the saved scene file would do, and two
+                // ways of answering one question is one way too many
+                rider = Moved(bike, Driver, tag.riderAtBake, bakedRider, out riderMoved);
+                pillion = Moved(bike, Shooter, tag.pillionAtBake, bakedPillion, out pillionMoved);
+            }
+            finally
+            {
+                BikeBody.RiderNudge = riderWas;
+                BikeBody.PillionNudge = pillionWas;
+            }
 
             if (!riderMoved && !pillionMoved)
             {

@@ -36,7 +36,7 @@ there is no hook - the old review gate (`.claude/hooks/unity-review-gate.sh`) wa
 | what | where |
 |---|---|
 | the play harness, the trace, the reader | `Docs/play-harness.md` |
-| the tactical map (320x200 raster + turf HUD) | `Docs/tactical-map.md` |
+| the tactical map (the turf map: survey plate on the wheel, panel, minimap) | `Docs/tactical-map.md` |
 | the city's districts | `Docs/city-districts-plan.md` |
 | what the port is made of | `Docs/harbor-detail.md` |
 | the period | `Docs/1987-period-reference.md` |

@@ -165,7 +165,21 @@ namespace LivingCity.Ambient
         /// frame - anything saved would be re-clobbered one frame later. Colour, ambient
         /// and the sun are untouched; the map keeps the weather's light, just not its haze.
         /// </summary>
-        public static bool FogSuppressed;
+        public static bool FogSuppressed { get; set; }
+
+        /// <summary>
+        /// Seconds between searches for a key light or a volume the scene has not offered.
+        /// Both are looked up per frame while missing, and a scene with neither (the demo
+        /// hosts, a pack scene) would otherwise pay a light sweep every LateUpdate for
+        /// nothing - the miss is remembered and asked again this often.
+        /// </summary>
+        const float MissingWiringRetrySeconds = 2f;
+
+        /// <summary>The sun and volume found at runtime when the Inspector slots are empty -
+        /// held apart from the serialised fields so a preview never writes into the scene.</summary>
+        Light foundSun;
+        Volume foundVolume;
+        float nextWiringRetryAt;
 
         // Static state outlives Play when domain reload is off - same fix as OverlayRegistry.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -242,6 +256,7 @@ namespace LivingCity.Ambient
         public void Apply(WeatherKind kind)
         {
             Current = kind;
+            RetryMissingWiring();
 
             var look = Look.For(kind);
 
@@ -255,6 +270,33 @@ namespace LivingCity.Ambient
             ApplyAtmosphere(look, night);
             ApplyGrade(kind);
         }
+
+        /// <summary>
+        /// Looks for whatever the Inspector left empty and the scene has not yet supplied,
+        /// on a timer while it stays missing. Real time rather than game time so the
+        /// editor preview, which has no Time.time, gets the same behaviour.
+        /// </summary>
+        void RetryMissingWiring()
+        {
+            var haveSun = sun || foundSun;
+            var haveVolume = globalVolume || foundVolume;
+            if (haveSun && haveVolume)
+                return;
+
+            var now = Time.realtimeSinceStartup;
+            if (now < nextWiringRetryAt)
+                return;
+            nextWiringRetryAt = now + MissingWiringRetrySeconds;
+
+            if (!haveSun)
+                foundSun = FindDirectionalLight();
+            if (!haveVolume)
+                foundVolume = FindAnyObjectByType<Volume>();
+        }
+
+        Light Sun => sun ? sun : foundSun;
+
+        Volume GlobalVolume => globalVolume ? globalVolume : foundVolume;
 
         /// <summary>
         /// How much of the night is in force at this hour: 0 in full daylight, 1 after dark, and
@@ -330,7 +372,7 @@ namespace LivingCity.Ambient
         /// </summary>
         void ApplySun(in Look look, float hour, float night)
         {
-            var light = sun ? sun : FindDirectionalLight();
+            var light = Sun;
             if (!light)
                 return;
 
@@ -448,7 +490,7 @@ namespace LivingCity.Ambient
 
         void ApplyGrade(WeatherKind kind)
         {
-            var volume = globalVolume ? globalVolume : FindAnyObjectByType<Volume>();
+            var volume = GlobalVolume;
             if (!volume)
                 return;
 

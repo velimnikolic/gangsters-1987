@@ -7,6 +7,28 @@ public class LevelCrossing : MonoBehaviour
 
     public GameObject Barrier;
     public MeshRenderer meshRenderer;
+
+    // The warning lamp is the third material slot of the crossing's renderer. Its colour goes
+    // through a property block rather than .materials, which would instantiate a private copy
+    // of every material on the renderer and take it out of batching.
+    private const int LampMaterialIndex = 2;
+    private static readonly int EmissionColor = Shader.PropertyToID("_EmissionColor");
+
+    private MaterialPropertyBlock _lamp;
+
+    public void SetLampColor(Color color)
+    {
+        if (!meshRenderer)
+            return;
+
+        if (_lamp == null)
+            _lamp = new MaterialPropertyBlock();
+
+        meshRenderer.GetPropertyBlock(_lamp, LampMaterialIndex);
+        _lamp.SetColor(EmissionColor, color);
+        meshRenderer.SetPropertyBlock(_lamp, LampMaterialIndex);
+    }
+
     public void ChangeBarrier(bool open)
     {
         StopAllCoroutines();

@@ -302,7 +302,7 @@ namespace LivingCity.Generation
                         continue;
 
                     tinter?.Paint(
-                        Spawn(vehicle, stall.Centre, stall.Yaw, 1f, parent, spawn, occupied, placed),
+                        OverlapSpawn.Place(vehicle, stall.Centre, stall.Yaw, 1f, parent, spawn, occupied, placed),
                         vehicle);
                 }
             }
@@ -336,9 +336,9 @@ namespace LivingCity.Generation
 
                 var yaw = Mathf.Atan2(stand.Outward.x, stand.Outward.z) * Mathf.Rad2Deg;
 
-                // Spawn returns null when the stand was already occupied; Paint no-ops on that,
+                // Place returns null when the stand was already occupied; Paint no-ops on that,
                 // but the roll is still taken, which is what keeps the stream stable.
-                tinter?.Paint(Spawn(lorry, centre, yaw, 1f, parent, spawn, occupied, placed), lorry);
+                tinter?.Paint(OverlapSpawn.Place(lorry, centre, yaw, 1f, parent, spawn, occupied, placed), lorry);
             }
         }
 
@@ -411,7 +411,7 @@ namespace LivingCity.Generation
                                  + lateral * (cursor + bestWidth * 0.5f - padWidth * 0.5f)
                                  - pad.Outward * ((padDepth - depthUsed) * 0.5f - RoadSetback);
 
-                    var instance = Spawn(best, position, bestYaw, 1f, parent, spawn, occupied, placed);
+                    var instance = OverlapSpawn.Place(best, position, bestYaw, 1f, parent, spawn, occupied, placed);
 
                     cursor += bestWidth + HallClearance;
                     remaining -= bestWidth + HallClearance;
@@ -508,8 +508,8 @@ namespace LivingCity.Generation
                         var side = (i % 2 == 0 ? 1f : -1f)
                                  * (padWidth * 0.5f - Extent(footprint, lateral) * 0.5f - 1f);
 
-                        var instance = Spawn(stack, bandCentre + lateral * side, yaw, 1f,
-                                             parent, spawn, occupied, placed, obstacles);
+                        var instance = OverlapSpawn.Place(stack, bandCentre + lateral * side, yaw, 1f,
+                                                          parent, spawn, occupied, placed, obstacles);
                         if (instance)
                         {
                             Ambient.SmokeVent.Mark(instance, stack, prefabs, Ambient.VentKind.Works);
@@ -541,8 +541,8 @@ namespace LivingCity.Generation
                     var t = (slot + 0.5f) / wanted;
                     var offset = Mathf.Lerp(-padWidth * 0.5f + 2f, padWidth * 0.5f - 2f, t);
 
-                    Spawn(aux, bandCentre + lateral * offset, yaw, 1f,
-                          parent, spawn, occupied, placed, obstacles);
+                    OverlapSpawn.Place(aux, bandCentre + lateral * offset, yaw, 1f,
+                                       parent, spawn, occupied, placed, obstacles);
                 }
             }
         }
@@ -631,8 +631,8 @@ namespace LivingCity.Generation
                           + hall.Outward * (hall.HalfDepth - step * 0.5f);
 
                 for (var i = 0; i < count; i++)
-                    Spawn(prefab, start - hall.Outward * (step * i), yaw, 1f,
-                          parent, spawn, occupied, placed, obstacles);
+                    OverlapSpawn.Place(prefab, start - hall.Outward * (step * i), yaw, 1f,
+                                       parent, spawn, occupied, placed, obstacles);
             }
         }
 
@@ -779,54 +779,6 @@ namespace LivingCity.Generation
 
             /// <summary>The ground this hall was given, so the back-yard pass knows its bounds.</summary>
             public IndustrialLayout.Pad Pad;
-        }
-
-        /// <summary>
-        /// Instantiates one piece, rejecting it if it would sit inside something already placed.
-        ///
-        /// Line for line what ParkDresser.Spawn does. Left as its own copy rather than shared
-        /// because the two files are the only callers and merging them is a change to ParkDresser
-        /// - worth doing, but not while adding a zone.
-        /// </summary>
-        static GameObject Spawn(
-            GameObject prefab,
-            Vector3 position,
-            float yaw,
-            float scale,
-            Transform parent,
-            SpawnPrefab spawn,
-            List<Bounds> occupied,
-            List<GameObject> placed,
-            List<Bounds> obstacles = null)
-        {
-            if (!prefab)
-                return null;
-
-            var footprint = PrefabBounds.FootprintXZ(prefab, yaw) * scale;
-            var bounds = new Bounds(new Vector3(position.x, 0f, position.z),
-                                    new Vector3(footprint.x, 1f, footprint.y));
-
-            foreach (var existing in occupied)
-                if (existing.Intersects(bounds))
-                    return null;
-
-            // The mesh is not necessarily centred on its pivot, so offset by the rotated - and
-            // scaled - local bounds centre to land the geometry where it was asked for.
-            var rotation = Quaternion.Euler(0f, yaw, 0f);
-            var localCentre = PrefabBounds.Get(prefab).center;
-            var offset = rotation * new Vector3(localCentre.x, 0f, localCentre.z) * scale;
-
-            var instance = spawn(prefab,
-                                 new Vector3(position.x - offset.x, position.y, position.z - offset.z),
-                                 rotation, parent);
-
-            if (!Mathf.Approximately(scale, 1f))
-                instance.transform.localScale *= scale;
-
-            occupied.Add(bounds);
-            obstacles?.Add(bounds);
-            placed.Add(instance);
-            return instance;
         }
     }
 }

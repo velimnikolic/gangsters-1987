@@ -28,7 +28,7 @@ namespace RoadDemo
     /// z -10..25). A host that stands the core somewhere else in the world does so through
     /// its DistrictFrame, never by editing these numbers.
     /// </summary>
-    public static class CoreLayout
+    public static partial class CoreLayout
     {
         public const float Cell = 5f;
         public const string BlocksDir = "Assets/Prefabs/CoreBlocks/";
@@ -242,6 +242,10 @@ namespace RoadDemo
             /// <summary>Ground the block keeps beyond its own box - the car park behind a
             /// block shallower than its row. Empty when it keeps none.</summary>
             public Rect Lot;
+            /// <summary>For a block composed on the spot rather than harvested (a
+            /// residential block): which of its sides the shops look at - the side facing
+            /// the busiest street. South, east, north, west; -1 for none.</summary>
+            public int Artery = -1;
             public Bounds Ground;              // pivot-relative box of its paving, turned
             public int CW, CD;                 // the box in cells
             public bool[,] Mask;               // which cells of the box the block fills, [i along x, j along z]
@@ -452,6 +456,206 @@ namespace RoadDemo
             block.Turn(block.Yaw);
         }
 
+        // ------------------------------------------------------------- the residential
+
+        /// <summary>What a residential block is called. Like a park it has no prefab: the
+        /// deal gives it a rectangle and <c>ResidentialLot</c> divides it, so the name is
+        /// how everything downstream tells it from a harvested block.</summary>
+        public const string ResPrefix = "res-";
+
+        public static bool IsRes(Block block) => block != null && block.Name.StartsWith(ResPrefix);
+
+        /// <summary>A residential block of a given size, measured from the origin like a
+        /// park. <paramref name="artery"/> is the side its shops look at.</summary>
+        public static Block Res(int index, int cw, int cd, int artery)
+        {
+            var mask = new bool[cw, cd];
+            for (int i = 0; i < cw; i++)
+                for (int j = 0; j < cd; j++) mask[i, j] = true;
+            var block = Describe($"{ResPrefix}{index:00}", Vector2.zero, cw, cd, mask);
+            block.Artery = artery;
+            return block;
+        }
+
+        /// <summary>
+        /// The ground at a row's land end, made up so that every row runs the same length.
+        ///
+        /// It used to be a car park up to <see cref="LotMax"/> and a PARK beyond that, and
+        /// the park is what the user threw out (2026-08-27: "ne smeju tri linije parka
+        /// uzastopno, max 1"). A row whose end is made up with a park, the row behind it the
+        /// same, and the belt of parks beyond them both, is three lines of green in a row -
+        /// which is what the drawing of seed 1987 came out as.
+        ///
+        /// So the end is dealt like a small quarter instead: residential blocks of whatever
+        /// class the ROW'S DEPTH can carry, with the row's own streets between them. They go
+        /// in AS UNITS OF THE ROW rather than as ground laid beside it afterwards, and that
+        /// is the whole of why this works: the row's machinery then gives them their streets,
+        /// counts those streets among the row's own (<see cref="Streets"/>) and keeps them
+        /// clear of the facing row's (<see cref="Order"/>). Laid afterwards, their streets
+        /// were nobody's business and the drawing came out with junctions run together in
+        /// four deals out of five.
+        ///
+        /// What the classes cannot fill exactly - never more than <see cref="Skirt"/> cells,
+        /// because that is as far as the road reader looks through a block's own parking -
+        /// is a car park at the outer end, where it reads as the ground the downtown peters
+        /// out into. A row too shallow for any class at all (five cells, twenty-five metres)
+        /// still takes a park, as it always did; the run rule then judges whether it may.
+        /// </summary>
+        static void Fill(Plan plan, Row row, int cells, bool riverEast, List<int> facing,
+                         int lo, int hi, int pitch)
+        {
+            if (cells <= 0) return;
+            var pad = new List<Unit>();
+
+            // THE PAD'S STREETS STAND ON THE FACING ROW'S. Dealt to their own best fit they
+            // landed a cell or two from the street across the way, and the raster ran the two
+            // junction boxes into one - six hundred such boxes in two hundred and forty deals,
+            // against a handful before the pad existed. A street either meets the one opposite
+            // it square or keeps a whole block clear of it; nothing between.
+            // what the classes cannot fill exactly - never more than Skirt cells, which is as
+            // far as the road reader looks through a block's own parking - is a car park at
+            // the outer end, where the downtown peters out into the ground beyond it
+            List<int> widths = null;
+            for (int skirt = 0; skirt <= Skirt && widths == null; skirt++)
+            {
+                widths = Split(cells - skirt, row.Depth, facing, riverEast, lo, hi, pitch);
+                if (widths != null) row.Skirt = skirt;
+            }
+            if (widths == null)
+            {
+                // nothing the recipe knows stands in a row this shallow: the park it always was
+                if (cells <= StreetGap + PadNarrow) { row.Skirt = cells; return; }
+                var park = Park(plan.Parks.Count + 1, cells - StreetGap, row.Depth);
+                plan.Parks.Add(park);
+                pad.Add(Piece(park));
+            }
+            else
+                foreach (int w in widths)
+                {
+                    var block = Res(plan.Residential.Count + 1, w, row.Depth, riverEast ? 1 : 3);
+                    plan.Residential.Add(block);
+                    pad.Add(Piece(block));
+                }
+
+            // the pad stands at the land end: at the head of the row when the river is east
+            // and the row is laid west to east, at its tail when the river is west
+            if (riverEast)
+                for (int k = pad.Count - 1; k >= 0; k--)
+                {
+                    row.Units.Insert(0, pad[k]);
+                    row.Gaps.Insert(0, StreetGap);
+                }
+            else
+                foreach (var unit in pad)
+                {
+                    row.Gaps.Add(StreetGap);
+                    row.Units.Add(unit);
+                }
+        }
+
+        /// <summary>How wide a residential block of a made-up end is when there is no facing
+        /// street to stand on - the first row of each side has nothing across the way. Nine to
+        /// twelve cells with its street: a block of 30 to 45 m, which is what the recipe's row
+        /// and corner classes are.</summary>
+        const int PitchMin = 9, PitchMax = 12;
+
+        /// <summary>Would the recipe give a block of this size a class? Its own answer, asked
+        /// of the ground INSIDE the pavement ring it carries.</summary>
+        static bool Fits(int w, int depth) =>
+            w >= PadNarrow && ResidentialLot.Classify(w - 2 * ResidentialLot.Walk,
+                                                      depth - 2 * ResidentialLot.Walk) != null;
+
+        /// <summary>
+        /// How a made-up end of this many cells is cut up: the widths of its residential
+        /// blocks, from the outer edge in, each with a street beyond it, or null where nothing
+        /// the recipe knows stands at this depth.
+        ///
+        /// The cuts are offered the facing row's street lines first and taken where the piece
+        /// they would leave has a class. What is left over goes to the innermost piece, whose
+        /// street is where the pad meets the row - the one street of a pad that cannot be
+        /// placed, the row's own length having fixed it.
+        /// </summary>
+        static List<int> Split(int cells, int depth, List<int> facing, bool riverEast,
+                               int lo, int hi, int pitch)
+        {
+            // every width the recipe gives a class at this depth; nothing else may be dealt
+            var widths = new List<int>();
+            for (int w = PadNarrow; w <= PadWide; w++) if (Fits(w, depth)) widths.Add(w);
+            if (widths.Count == 0) return null;
+
+            // the facing streets as distances from the pad's outer edge
+            var across = new List<int>();
+            if (facing != null)
+                foreach (int street in facing)
+                {
+                    int d = riverEast ? street - lo : hi - (street + StreetGap);
+                    if (d > 0 && d < cells) across.Add(d);
+                }
+
+            // A CUT WANTS THE STREET ACROSS THE WAY. Standing square on it, the two make one
+            // junction; a few cells off, the raster runs their boxes together and calls it a
+            // fault. So the fill is worked out for the whole pad at once rather than piece by
+            // piece - a cut on a facing street is worth having, one near it is worth avoiding,
+            // and the widths have to come out exactly right either way.
+            int Worth(int cut)
+            {
+                int best = 0;
+                foreach (int other in across)
+                {
+                    if (other == cut) return 3;
+                    if (Mathf.Abs(other - cut) < StreetGap + StreetGap) best = -4;
+                }
+                // failing that, a cut on the pad's own pitch keeps the blocks even
+                return best != 0 ? best : (cut % pitch == 0 ? 1 : 0);
+            }
+
+            var score = new int[cells + 1];
+            var laid = new int[cells + 1];
+            for (int t = 1; t <= cells; t++) { score[t] = int.MinValue; laid[t] = 0; }
+            for (int t = 1; t <= cells; t++)
+                foreach (int w in widths)
+                {
+                    int back = t - w - StreetGap;
+                    if (back < 0 || (back > 0 && score[back] == int.MinValue)) continue;
+                    // the last cut of all is where the pad meets the row: the row's own length
+                    // put it there and it is not this code's to choose
+                    int worth = score[back] + (t == cells ? 0 : Worth(t - StreetGap));
+                    if (worth <= score[t]) continue;
+                    score[t] = worth;
+                    laid[t] = w;
+                }
+            if (score[cells] == int.MinValue) return null;
+
+            var pieces = new List<int>();
+            for (int at = cells; at > 0; at -= laid[at] + StreetGap) pieces.Add(laid[at]);
+            pieces.Reverse();
+            return pieces;
+        }
+
+        /// <summary>A unit of one composed block, standing square.</summary>
+        static Unit Piece(Block block)
+        {
+            var unit = new Unit { Pad = true };
+            unit.Members.Add(block);
+            unit.Offsets.Add(Vector2.zero);
+            unit.Turn(0);
+            return unit;
+        }
+
+        /// <summary>The widest and the narrowest residential block a made-up end is dealt,
+        /// in cells, ITS PAVEMENT RING INCLUDED. The classes are read off
+        /// <c>ResidentialLot.Sized</c>, which measures the ground INSIDE the ring: the
+        /// narrowest thing it knows is a row block 4 cells across (6 with the ring) and the
+        /// widest a court at 16 and up (18). Nothing here decides what a block is - the
+        /// recipe does, and this only asks it.</summary>
+        const int PadNarrow = 6, PadWide = 21;
+
+        /// <summary>How much of a made-up end may be left to a car park, in cells. Four:
+        /// the road reader looks four cells through a block's own parking for its street
+        /// (<c>CoreRoads.Served</c>), so a wider skirt would leave the block beside it with
+        /// no road along that side - which is a fault, and rightly.</summary>
+        const int Skirt = 4;
+
         // --------------------------------------------------------------------- the belt
 
         /// <summary>
@@ -517,6 +721,10 @@ namespace RoadDemo
                 var belt = new Row { Depth = depth };
                 var park = Park(plan.Parks.Count + 1, span, depth);
                 plan.Parks.Add(park);
+                // the north, south and land belts are ONE belt turning two corners: the run
+                // rule counts them as one park, or the drawing would be refused for the very
+                // shape it was asked for
+                plan.BeltParks.Add(park);
                 var unit = new Unit();
                 unit.Members.Add(park);
                 unit.Offsets.Add(Vector2.zero);
@@ -671,7 +879,7 @@ namespace RoadDemo
                 if (band.yMin - z0 < QuayEndMin * Cell || z1 - band.yMax < QuayEndMin * Cell) continue;
                 candidates.Add(b);
             }
-            Shuffle(candidates, dice);
+            Dice.Shuffle(candidates, dice);
             int wanted = dice.Next(BridgesMin, BridgesMax + 1);
             var crossing = new HashSet<int>();
             foreach (int b in candidates)
@@ -837,6 +1045,39 @@ namespace RoadDemo
             /// </summary>
             public readonly List<Block> Parks = new List<Block>();
 
+            /// <summary>
+            /// The residential blocks this deal made: the made-up ground at the rows' land
+            /// ends (<see cref="Pad"/>), and later the quarters outside the belt. Composed
+            /// on the spot like a park - <c>ResidentialLot</c> divides the rectangle and
+            /// <c>ResidentialBlocks</c> stands it - so they are kept apart from the
+            /// harvested blocks the caller handed in.
+            /// </summary>
+            public readonly List<Block> Residential = new List<Block>();
+
+            /// <summary>The stretches of the belt on the land side. They are parks like any
+            /// other and are in <see cref="Parks"/> too, but the run rule does not count them
+            /// against each other: they are ONE park, cut by the gates the streets need
+            /// (<see cref="Ring"/>).</summary>
+            public readonly HashSet<Block> BeltParks = new HashSet<Block>();
+
+            /// <summary>Where a street of the core crosses the belt on the land side.</summary>
+            public readonly List<Rect> Gates = new List<Rect>();
+
+            /// <summary>Where the core's edges lie once the belt is on, and how big a quarter
+            /// is. Empty in a plan with no ring (the Synty reference).</summary>
+            public RingLine Ring;
+
+            /// <summary>
+            /// The longest run of parks facing each other across a street.
+            ///
+            /// ONE is the only answer a deal may give (the user, 2026-08-27: "ne smeju tri
+            /// linije parka uzastopno, max 1"). Two parks across a street from one another
+            /// read as one park with a road through it, three as a green quarter - and the
+            /// core is not one. The belt counts as a park like any other; the stretches of
+            /// the belt itself do not count against each other, being one park.
+            /// </summary>
+            public int ParkRuns;
+
             /// <summary>The river along the east of the core (<see cref="River"/>): the
             /// promenade in stretches between the bridges, the far bank's kerb, the water,
             /// the bridges, and where the drawing ends. Composed on the spot like the parks;
@@ -915,6 +1156,10 @@ namespace RoadDemo
             public readonly List<Vector2> Offsets = new List<Vector2>();   // each member's pivot less the anchor's
             public Lane[] Lanes = new Lane[0];
             public int Yaw;
+            /// <summary>Dealt to make a row's land end up (<see cref="Fill"/>) rather than
+            /// out of the pool. It stays at that end: reordering a row must not send a
+            /// residential block into the middle of a downtown row.</summary>
+            public bool Pad;
             public Rect Box;               // anchor-relative, metres, at the current yaw
             public int W => Mathf.RoundToInt(Box.width / Cell);
             public int D => Mathf.RoundToInt(Box.height / Cell);
@@ -957,6 +1202,9 @@ namespace RoadDemo
             public readonly List<Unit> Units = new List<Unit>();
             public readonly List<int> Gaps = new List<int>();   // cells after each unit but the last: 1 alley, 3 street
             public int Depth;
+            /// <summary>Cells of car park at the row's land end, beyond its units: what the
+            /// classes could not fill exactly (<see cref="Fill"/>).</summary>
+            public int Skirt;
             public int Length
             {
                 get
@@ -1040,7 +1288,7 @@ namespace RoadDemo
                 unit.Members.Add(park); unit.Offsets.Add(Vector2.zero);
                 units.Add(unit);
             }
-            Shuffle(units, dice);
+            Dice.Shuffle(units, dice);
 
             // the rows
             var rows = new List<Row>();
@@ -1117,6 +1365,23 @@ namespace RoadDemo
                 rows.RemoveAt(r);
             }
 
+            // A PARK NEVER FACES THE BELT. The belt is the last row stood on each side, so
+            // the two rows dealt before it are the ones whose parks would look at it across
+            // the street behind them - the belt, a park, and (with the row behind that one)
+            // a third line of green, which is the one thing the drawing may not do (the
+            // user, 2026-08-27). The rows are in no particular order, so a row with a park
+            // in it simply changes places with one without.
+            for (int r = rows.Count - 1; r >= rows.Count - 2 && r >= 0; r--)
+            {
+                if (!Green(rows[r])) continue;
+                for (int other = 0; other < rows.Count - 2; other++)
+                {
+                    if (Green(rows[other])) continue;
+                    (rows[r], rows[other]) = (rows[other], rows[r]);
+                    break;
+                }
+            }
+
             Belt(plan, rows, dice);
 
             // A PARK GROWS TO ITS ROW. Every other unit shallower than its row keeps the
@@ -1153,6 +1418,12 @@ namespace RoadDemo
             // along one of them as the seed says, and every row's end on that edge is flush
             int lo = -(span / 2), hi = lo + span;
             bool riverEast = dice.Next(2) == 0;
+            // EVERY ROW RUNS THE SAME LENGTH, and the short ones are made up at the land end
+            // with residential blocks (Fill). Rows of different lengths put their land-side
+            // edge streets a cell or two apart, and where two such streets meet the band
+            // between the rows the raster runs their junctions into one wide box - the box
+            // the play harness locks three cars in (seed 1987, x -145..-120 z -55..-35)
+            int pitch = dice.Next(PitchMin, PitchMax + 1);
             float southKerb = plan.MainRoad.x, northKerb = plan.MainRoad.y;
             float northNext = northKerb, southNext = southKerb;
             bool north = dice.Next(2) == 0;
@@ -1163,7 +1434,13 @@ namespace RoadDemo
             {
                 var facing = north ? (northStreets.Count > 0 ? northStreets : southStreets)
                                    : (southStreets.Count > 0 ? southStreets : northStreets);
-                Order(row, length => riverEast ? hi - length : lo, facing, dice);
+                // EVERY ROW RUNS THE SAME LENGTH, the short ones made up at the land end with
+                // residential blocks: rows of different lengths put their land-side edge
+                // streets a cell or two apart, and two such streets meeting the band between
+                // the rows run their junctions into one wide box - the box the play harness
+                // locks three cars in (seed 1987, x -145..-120 z -55..-35)
+                Fill(plan, row, span - row.Length, riverEast, facing, lo, hi, pitch);
+                Order(row, length => riverEast ? hi - length : lo, facing, dice, riverEast);
                 int length = row.Length;
                 int x0Cell = riverEast ? hi - length : lo;
                 var streets = Streets(row, x0Cell);
@@ -1180,22 +1457,15 @@ namespace RoadDemo
                 // on the east, and the box is gone. A surface car park at the edge of the
                 // downtown is the 1987 picture besides; a park takes the ground instead
                 // where the shortfall is more than a car park's width
-                int shortfall = span - length;
-                if (shortfall > 0)
+                // and what the classes could not fill exactly is a car park at the OUTER
+                // end, where a block beside it still finds its street within four cells and
+                // where it reads as the ground the downtown peters out into
+                if (row.Skirt > 0)
                 {
-                    // the made-up ground lies on the land side, away from the river: a car
-                    // park facing the promenade is not what the promenade is for
-                    float padLo = riverEast ? lo * Cell : (lo + length) * Cell;
-                    float padHi = padLo + shortfall * Cell;
+                    float skirtLo = riverEast ? lo * Cell : (lo + length) * Cell;
                     float zLo = north ? northNext : southNext - row.Depth * Cell;
-                    if (shortfall <= LotMax)
-                        plan.Lots.Add(Rect.MinMaxRect(padLo, zLo, padHi, zLo + row.Depth * Cell));
-                    else
-                    {
-                        var park = Park(plan.Parks.Count + 1, shortfall - StreetGap, row.Depth);
-                        park.Pivot = new Vector2(riverEast ? padLo : padLo + StreetGap * Cell, zLo);
-                        plan.Parks.Add(park);
-                    }
+                    plan.Lots.Add(Rect.MinMaxRect(skirtLo, zLo, skirtLo + row.Skirt * Cell,
+                                                  zLo + row.Depth * Cell));
                 }
                 // the street behind the row: as long as the row, and as long as the row
                 // that will stand behind it, which is not known yet - so it is written for
@@ -1257,7 +1527,83 @@ namespace RoadDemo
             // beyond. On the river side the river takes them all: they end on the quay
             // street, or go on over the water
             River(plan, dice, riverEast, riverEast ? hi : lo, southNext, northNext);
+            // and beyond the core: the belt on the land side, and the five quarters of
+            // residential blocks that surround the lot (Docs/residential-quarter-plan.md)
+            Ring(plan, dice, riverEast, lo, hi, southNext, northNext);
+            plan.ParkRuns = Runs(plan);
             return plan;
+        }
+
+        /// <summary>Is there a park in this row?</summary>
+        static bool Green(Row row)
+        {
+            foreach (var unit in row.Units)
+                if (IsPark(unit.Members[0])) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// The longest run of parks facing one another across a street - what
+        /// <see cref="Plan.ParkRuns"/> reports and the verdict refuses above one.
+        ///
+        /// Measured on the ground the parks actually stand on, not inferred from how they
+        /// were dealt: a rule that is judged by the same reasoning that laid it out cannot
+        /// catch the case the reasoning missed (Docs/park-plan.md, the lesson of the park
+        /// generator).
+        /// </summary>
+        static int Runs(Plan plan)
+        {
+            var boxes = new List<Rect>();
+            var belt = new List<bool>();
+            foreach (var park in plan.Parks) { boxes.Add(park.Box); belt.Add(plan.BeltParks.Contains(park)); }
+            if (boxes.Count == 0) return 0;
+            var seen = new bool[boxes.Count];
+            int most = 1;
+            for (int i = 0; i < boxes.Count; i++)
+            {
+                if (seen[i]) continue;
+                seen[i] = true;
+                int size = 0;
+                var todo = new Queue<int>();
+                todo.Enqueue(i);
+                while (todo.Count > 0)
+                {
+                    int a = todo.Dequeue();
+                    size++;
+                    for (int b = 0; b < boxes.Count; b++)
+                    {
+                        if (seen[b] || !Faces(boxes[a], boxes[b])) continue;
+                        // the belt's own stretches are one park either side of a gate
+                        if (belt[a] && belt[b]) continue;
+                        seen[b] = true;
+                        todo.Enqueue(b);
+                    }
+                }
+                most = Mathf.Max(most, size);
+            }
+            return most;
+        }
+
+        /// <summary>
+        /// Do these two pieces of ground look at each other across a street?
+        ///
+        /// A street, and nothing else: ground that TOUCHES is one park in two pieces (the
+        /// belt turns a corner that way), and ground a boulevard apart is not a run either -
+        /// a park on each side of a 35 m boulevard is a parkway, which is a thing the period
+        /// has. So the gap has to be a street's width or less, and the two have to face each
+        /// other along at least fifteen metres, or it is a corner rather than a frontage.
+        /// </summary>
+        static bool Faces(Rect one, Rect other)
+        {
+            const float Touching = 2.5f;
+            float most = (StreetGap + 1) * Cell;
+            float gapX = Mathf.Max(one.xMin - other.xMax, other.xMin - one.xMax);
+            float gapZ = Mathf.Max(one.yMin - other.yMax, other.yMin - one.yMax);
+            float overX = Mathf.Min(one.xMax, other.xMax) - Mathf.Max(one.xMin, other.xMin);
+            float overZ = Mathf.Min(one.yMax, other.yMax) - Mathf.Max(one.yMin, other.yMin);
+            if (gapX > Touching && gapX < most && overZ >= 3f * Cell) return true;
+            if (gapZ > Touching && gapZ < most && overX >= 3f * Cell) return true;
+            return false;
         }
 
         /// <summary>Widens the declared street on this z band, if there is one, to cover
@@ -1307,17 +1653,29 @@ namespace RoadDemo
         /// against a park), from dice of the row's own so every order is judged on the
         /// same throws. The first order tried is the one the row was dealt in.
         /// </summary>
-        static void Order(Row row, System.Func<int, int> x0Of, List<int> facing, System.Random dice)
+        static void Order(Row row, System.Func<int, int> x0Of, List<int> facing, System.Random dice,
+                          bool padFirst)
         {
             if (row.Units.Count < 2) return;
             int throws = dice.Next();
             var best = new List<Unit>(row.Units);
             var bestGaps = new List<int>(row.Gaps);
             int bestClash = int.MaxValue;
+            // the made-up end keeps its end: a residential block dealt to fill a short row
+            // belongs at the edge of the downtown, not shuffled into the middle of it
+            var pad = new List<Unit>();
+            var free = new List<Unit>();
+            foreach (var unit in row.Units) (unit.Pad ? pad : free).Add(unit);
             var order = new List<Unit>(row.Units);
             for (int k = 0; k < Orders; k++)
             {
-                if (k > 0) Shuffle(order, dice);
+                if (k > 0)
+                {
+                    Dice.Shuffle(free, dice);
+                    order.Clear();
+                    if (padFirst) { order.AddRange(pad); order.AddRange(free); }
+                    else { order.AddRange(free); order.AddRange(pad); }
+                }
                 var gaps = Gaps(order, row.Depth, new System.Random(throws));
                 var trial = new Row { Depth = row.Depth };
                 trial.Units.AddRange(order);
@@ -1356,6 +1714,7 @@ namespace RoadDemo
                 var unit = units[u];
                 bool alley = last.D == depth && unit.D == depth &&
                              last.Straight(false) && unit.Straight(true) &&
+                             !last.Pad && !unit.Pad &&
                              !IsPark(last.Members[0]) && !IsPark(unit.Members[0]) &&
                              dice.NextDouble() < AlleyOdds;
                 gaps.Add(alley ? AlleyGap : StreetGap);
@@ -1363,27 +1722,30 @@ namespace RoadDemo
             return gaps;
         }
 
-        static void Shuffle<T>(List<T> list, System.Random dice)
-        {
-            for (int i = list.Count - 1; i > 0; i--)
-            {
-                int j = dice.Next(i + 1);
-                (list[i], list[j]) = (list[j], list[i]);
-            }
-        }
-
         static int[] Quarters(System.Random dice)
         {
             var quarters = new List<int> { 0, 90, 180, 270 };
-            Shuffle(quarters, dice);
+            Dice.Shuffle(quarters, dice);
             return quarters.ToArray();
         }
 
         // ------------------------------------------------------------- the verdict
 
-        /// <summary>How many deals of one seed are tried before the best of them is taken
-        /// with its faults on record.</summary>
-        public const int Deals = 80;
+        /// <summary>
+        /// How many deals of one seed are tried before the best of them is taken with its
+        /// faults on record.
+        ///
+        /// It was eighty, and eighty was enough while a short row was made up with one park:
+        /// one more street to fall clear of the facing row's. Made up with residential blocks
+        /// a row carries two to four more streets, every one of them another chance for two
+        /// junction boxes to run together, and the share of deals that come out clean falls
+        /// from six in a hundred to five - which over thirty seeds left two of them with a
+        /// fault. The deals are arithmetic and cost about three milliseconds each; the drawing
+        /// is what has to be right. With the five quarters round the core it is four hundred:
+        /// the quarters themselves are regular and hardly ever fault, but the core is dealt
+        /// afresh for each try and thirty seeds wanted as many as 231 of them.
+        /// </summary>
+        public const int Deals = 600;
 
         /// <summary>
         /// The plan for a seed, with the roads drawn off it and the drawing judged:
@@ -1410,6 +1772,7 @@ namespace RoadDemo
             }
             Plan best = null;
             CoreRoads.Raster bestRaster = null;
+            int bestFaults = int.MaxValue;
             for (int attempt = 0; attempt < Deals; attempt++)
             {
                 var plan = Roll(blocks, unchecked(seed * 1000003 + attempt * 7919));
@@ -1422,15 +1785,21 @@ namespace RoadDemo
                 // row for it, nothing fills the ground, and the verdict calls it bare. That
                 // alone took the share of clean deals from 72 % to 24 %.
                 var drawn = CoreRoads.Build(WithGround(blocks, plan), plan);
-                if (drawn.Faults == 0)
+                // A RUN OF PARKS IS A FAULT LIKE ANY OTHER. It is the plan's fault rather
+                // than the drawing's - the roads come out perfectly well - so it is added
+                // here, where a deal is accepted or thrown away, and not smuggled into the
+                // road reader's own count
+                int faults = drawn.Faults + Mathf.Max(0, plan.ParkRuns - 1);
+                if (faults == 0)
                 {
                     raster = drawn;
                     return plan;
                 }
-                if (bestRaster == null || drawn.Faults < bestRaster.Faults)
+                if (bestRaster == null || faults < bestFaults)
                 {
                     best = plan;
                     bestRaster = drawn;
+                    bestFaults = faults;
                 }
             }
             // the blocks stand where the last deal left them: put them back on the best.
@@ -1449,9 +1818,11 @@ namespace RoadDemo
         /// Neither list is touched.</summary>
         public static List<Block> WithGround(List<Block> blocks, Plan plan)
         {
-            if (plan.Parks.Count == 0 && plan.Quays.Count == 0 && plan.Bank == null) return blocks;
+            if (plan.Parks.Count == 0 && plan.Quays.Count == 0 && plan.Residential.Count == 0 &&
+                plan.Bank == null) return blocks;
             var all = new List<Block>(blocks);
             all.AddRange(plan.Parks);
+            all.AddRange(plan.Residential);
             all.AddRange(plan.Quays);
             all.AddRange(plan.Aprons);
             if (plan.Bank != null) all.Add(plan.Bank);

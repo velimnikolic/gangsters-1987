@@ -501,8 +501,6 @@ namespace LivingCity.Personnel
             return null;
         }
 
-        /// <summary>Removes the member from wherever he stands - crew or front. After this
-        /// he is, by derivation, in the pool.</summary>
         /// <summary>
         /// A man shot dead on the street. He stays on the books, struck through (the
         /// record keeps his line), his gear goes back to the pool unheld, and his post
@@ -561,7 +559,7 @@ namespace LivingCity.Personnel
 
             // Being taken goes on his record - that IS the rap sheet, and a file that
             // showed only the priors would stop being a record the day he joined.
-            if (charge.Length > 0)
+            if (!string.IsNullOrEmpty(charge))
                 RapSheet.Add(member, dateStamp, charge,
                     backOnDay > 0 ? "Held — out day " + backOnDay : "Held");
             return OpResult.Success;
@@ -643,6 +641,8 @@ namespace LivingCity.Personnel
         static string GoneReason(Character member) =>
             member.Status == CharacterStatus.Deserted ? LedgerText.ReasonDeserted : LedgerText.ReasonDead;
 
+        /// <summary>Removes the member from wherever he stands - crew or front. After this
+        /// he is, by derivation, in the pool.</summary>
         static void Detach(Roster roster, int id)
         {
             if (roster.FrontId == id)

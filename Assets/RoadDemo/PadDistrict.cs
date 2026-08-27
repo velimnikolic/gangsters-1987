@@ -65,12 +65,7 @@ namespace RoadDemo
             {
                 float x = _links[k];
                 LayLocalRoadAlongZ(x, _bounds.yMin + 10f, 0f);
-                var node = new RoadNode
-                {
-                    I = -1, J = -k - 1,
-                    X = _frame.ToWorld(new Vector3(x, 0f, -StreetKit.StreetHalf)).x,
-                    Z = _frame.ToWorld(new Vector3(x, 0f, -StreetKit.StreetHalf)).z,
-                };
+                var node = new RoadNode { I = -1, J = -k - 1 };
                 var centre = _frame.ToWorld(new Vector3(x, 0f, -StreetKit.StreetHalf));
                 node.X = centre.x; node.Z = centre.z;
                 node.XMin = node.X - StreetKit.StreetHalf; node.XMax = node.X + StreetKit.StreetHalf;

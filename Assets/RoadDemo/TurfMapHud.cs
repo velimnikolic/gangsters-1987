@@ -119,16 +119,23 @@ namespace RoadDemo
 
         static int _lastCloseFrame = -1;
 
-        /// <summary>A turf map exists in this scene, so the old plan must not also
-        /// take the screen on the same line. Read by DemoMap, which gives up its
-        /// full-screen mode and its corner postcard both.</summary>
+        /// <summary>A turf map exists in this scene and is the one map on the wheel's
+        /// line. Cleared when the map is destroyed with the scene, like IsOpen: a
+        /// static left standing outlives the scene it described.</summary>
         public static bool Installed { get; private set; }
+
+        /// <summary>True while the map is up and the pointer is on its paper - the
+        /// panel, the key or the context menu - rather than on the plate. The camera
+        /// reads it so the wheel over the roster scrolls the roster and does not also
+        /// move the boom.</summary>
+        public static bool PointerOverChrome { get; private set; }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
         {
             IsOpen = false;
             Installed = false;
+            PointerOverChrome = false;
             _lastCloseFrame = -1;
         }
 
@@ -244,6 +251,19 @@ namespace RoadDemo
             // scene build nobody is looking at is free.
             DrawNow(_survey.CityView);
 
+            // How far back the wheel may go: the TOWN in the frame with a hand's width
+            // of country round it, not the whole island. The screen shows
+            // distance * BoomToMetres metres down its height, and the survey's own
+            // city view is already the grid with a margin, fitted to the plate's
+            // aspect - so the ceiling is the boom at which that view fills the height.
+            if (_rig != null)
+            {
+                var city = _survey.CityView;
+                float wants = Mathf.Max(city.height, city.width / TurfPlate.AW * TurfPlate.AH);
+                _rig.mapCeiling = Mathf.Clamp(
+                    wants * CityFrame / DemoCamera.BoomToMetres, 260f, 6000f);
+            }
+
             // And the same plate in the corner, for the player down in the street. It
             // is installed from HERE and not by the city builder so it can borrow this
             // survey's coastline: sampling the island twice is a pause at load, and
@@ -270,12 +290,26 @@ namespace RoadDemo
             foreach (var texture in new[] { _groundTex, _turfTex, _builtTex, _liveTex })
                 if (texture != null)
                     Destroy(texture);
+
+            // The statics describe THIS map. A scene unloaded with the map up would
+            // otherwise leave the camera's hint off and the top bar retracted for the
+            // rest of the session, waiting on a map that no longer exists.
+            Installed = false;
         }
 
         void OnDisable()
         {
-            // Never leave the world switched off behind a plan that is no longer there.
+            // Never leave the world switched off behind a plan that is no longer there,
+            // nor the street's picker, nor the "map is up" flag every other screen reads.
             Blank(false);
+            if (_picker)
+                _picker.enabled = true;
+            if (IsOpen)
+            {
+                IsOpen = false;
+                _lastCloseFrame = Time.frameCount;
+            }
+            PointerOverChrome = false;
         }
 
         // ------------------------------------------------------- the world behind
@@ -293,9 +327,8 @@ namespace RoadDemo
         /// verts, a thousand lamps and the whole crowd - all of it in frustum at once,
         /// because the map is the furthest the boom ever goes.
         ///
-        /// DemoMap owns the same switch but only reaches for it in its full-screen
-        /// mode, which it no longer takes while this map is installed; its restore is
-        /// guarded on having saved a mask of its own, so the two never fight.
+        /// The restore is guarded on having saved a mask of its own, so a second
+        /// caller that blanked the camera first is never handed a zero mask back.
         /// </summary>
         void Blank(bool on)
         {
@@ -409,6 +442,7 @@ namespace RoadDemo
                 Land();
                 _dragging = false;
                 _panel.CloseMenu();
+                PointerOverChrome = false;
             }
         }
 
@@ -522,10 +556,9 @@ namespace RoadDemo
 
         // ------------------------------------------------------------ the view
 
-        /// <summary>Metres of ground down the view per metre of boom - the old plan's
-        /// own number, so the map opens showing exactly what it always showed at a
-        /// given click of the wheel.</summary>
-        const float BoomToMetres = 1.15f;
+        /// <summary>How much more of the town than the town the ceiling shows: the
+        /// city in the frame with a hand's width of country round it.</summary>
+        const float CityFrame = 1.25f;
 
         /// <summary>
         /// How much more ground the plate carries than the window can show. Cover
@@ -551,8 +584,8 @@ namespace RoadDemo
         /// <summary>
         /// What rectangle of ground the plate ought to be drawn for right now.
         ///
-        /// The screen shows <c>distance * BoomToMetres</c> metres down its height -
-        /// that is the old plan's zoom, kept exactly. The plate is displayed cover-fit,
+        /// The screen shows <c>distance * DemoCamera.BoomToMetres</c> metres down its
+        /// height - the camera's own reading of the boom. The plate is displayed cover-fit,
         /// so only part of it is on screen; scaling that back out gives the ground the
         /// WHOLE 960 x 600 sheet has to carry, centred on the camera's own pivot.
         /// </summary>
@@ -561,7 +594,7 @@ namespace RoadDemo
             if (_rig == null)
                 return _survey.CityView;
 
-            float down = Mathf.Max(40f, _rig.distance * BoomToMetres);
+            float down = Mathf.Max(40f, _rig.distance * DemoCamera.BoomToMetres);
             float metresPerPixel = down * Cover * Overscan / Mathf.Max(1f, Screen.height);
             var span = new Vector2(TurfPlate.RW * metresPerPixel, TurfPlate.RH * metresPerPixel);
             var centre = new Vector2(_rig.pivot.x, _rig.pivot.z);
@@ -722,7 +755,9 @@ namespace RoadDemo
             if (drawn.height <= 0f)
                 return;
 
-            float down = _rig != null ? Mathf.Max(40f, _rig.distance * BoomToMetres) : drawn.height;
+            float down = _rig != null
+                ? Mathf.Max(40f, _rig.distance * DemoCamera.BoomToMetres)
+                : drawn.height;
             float screenPerMetre = Mathf.Max(1f, Screen.height) / down;
 
             _sheetScale = drawn.height / TurfPlate.RH * screenPerMetre;
@@ -835,17 +870,21 @@ namespace RoadDemo
                     GangId = unit.Faction,
                     Mine = unit.Faction == 0,
                     Post = unit.Position,
-                    File = "P-" + (1300 + Mathf.Abs(unit.CrewId)),
                 };
 
+                // A man's rank is the ledger's word, never the crew's size: a rival's
+                // men are on nobody's books and print the plain fact of who leads.
                 foreach (var walker in unit.All())
                 {
                     if (walker == null)
                         continue;
+                    var character = Man(roster, walker);
                     crew.Men.Add(new TurfMan
                     {
                         Name = string.IsNullOrEmpty(walker.DisplayName) ? "Unnamed" : walker.DisplayName,
-                        Role = walker == unit.Boss ? "LIEUTENANT" : "MUSCLE",
+                        Role = character != null
+                            ? character.Rank.ToString().ToUpperInvariant()
+                            : walker == unit.Boss ? "LIEUTENANT" : "MUSCLE",
                         Gun = GunName(walker.WeaponKind),
                         Condition = walker.Health >= 3 ? "FIT" : walker.Health == 2 ? "WINGED" : "HURT",
                         ConditionNote = walker.Health >= 3 ? "on his feet"
@@ -853,13 +892,10 @@ namespace RoadDemo
                     });
                 }
 
-                int size = Mathf.Max(1, crew.Men.Count);
-                crew.Rank = size >= 5 ? "CAPO" : size >= 3 ? "LIEUTENANT" : "SOLDIER";
-                if (crew.Men.Count > 0)
-                    crew.Men[0].Role = crew.Rank;
+                var leader = Man(roster, unit.Boss);
+                crew.Rank = leader != null ? leader.Rank.ToString().ToUpperInvariant() : "";
                 crew.Name = crew.Men.Count > 0 ? crew.Men[0].Name : unit.Name;
                 crew.Alias = string.IsNullOrEmpty(unit.Name) ? "" : unit.Name.ToUpperInvariant();
-                crew.Mug = "mug-" + crew.Name.ToLowerInvariant().Replace(' ', '-');
                 crew.Ride = unit.Car != null ? unit.Car.DisplayName : "On foot";
                 crew.Loyal = unit.Loyalty;
                 crew.Zone = new Rect(unit.Position.x - ZoneWide * 0.5f,
@@ -901,13 +937,22 @@ namespace RoadDemo
                 return;
 
             crew.Name = lieutenant.FullName;
+            crew.Rank = lieutenant.Rank.ToString().ToUpperInvariant();
             crew.Look = lieutenant.Look;
             crew.Nerve = Stars(lieutenant, LivingCity.Personnel.CharacterAttribute.Fists);
             crew.Gunplay = Stars(lieutenant, LivingCity.Personnel.CharacterAttribute.Firearms);
             crew.Respect = Stars(lieutenant, LivingCity.Personnel.CharacterAttribute.Intimidation);
             crew.Loyal = lieutenant.Loyalty;
-            crew.Mug = "mug-" + crew.Name.ToLowerInvariant().Replace(' ', '-');
         }
+
+        /// <summary>The ledger entry behind a man on the street. Rivals are on
+        /// nobody's books and answer null, which is why every read of this is
+        /// guarded.</summary>
+        static LivingCity.Personnel.Character Man(LivingCity.Personnel.Roster roster,
+            CrewWalker walker) =>
+            roster != null && walker != null && walker.CharacterId >= 0
+                ? roster.Find(walker.CharacterId)
+                : null;
 
         static int Stars(LivingCity.Personnel.Character man,
             LivingCity.Personnel.CharacterAttribute attribute) =>
@@ -934,6 +979,7 @@ namespace RoadDemo
 
             var screen = mouse.position.ReadValue();
             bool overChrome = _panel.ClaimsPointer(screen);
+            PointerOverChrome = overChrome;
 
             if (mouse.rightButton.wasPressedThisFrame && !overChrome)
             {

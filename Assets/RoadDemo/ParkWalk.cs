@@ -454,7 +454,7 @@ namespace RoadDemo
             if (open.Count == 0) { plan.Notes.Add("no side has a street: the park has no way in"); return; }
 
             int want = Wanted(plan, rng);
-            Shuffle(open, rng);
+            Dice.Shuffle(open, rng);
             // a strip takes its first two gates at the ENDS, because the walk between them is
             // what runs the length of it. Given the long sides first, a two hundred metre
             // strip was joined gate to gate across the middle and the far half of it never
@@ -680,7 +680,7 @@ namespace RoadDemo
             for (int k = plan.I0 + 1; k <= plan.I1 - 1; k++) routes.Add(Dogleg(from, to, k, true));
             for (int k = plan.J0 + 1; k <= plan.J1 - 1; k++) routes.Add(Dogleg(from, to, k, false));
 
-            Shuffle(routes, rng);
+            Dice.Shuffle(routes, rng);
             // a route that never leaves the middle of the park beats one that only just
             // clears the fence, and the shuffle above decides between equals
             List<Spot> chosen = null;
@@ -1402,18 +1402,5 @@ namespace RoadDemo
         static bool Leaves(Side side, int di, int dj) =>
             side == Side.South ? dj < 0 : side == Side.North ? dj > 0
           : side == Side.West ? di < 0 : di > 0;
-
-        // ---------------------------------------------------------------------- the dice
-
-        static void Shuffle<T>(IList<T> list, System.Random rng)
-        {
-            for (int i = list.Count - 1; i > 0; i--)
-            {
-                int k = rng.Next(i + 1);
-                var swap = list[i];
-                list[i] = list[k];
-                list[k] = swap;
-            }
-        }
     }
 }

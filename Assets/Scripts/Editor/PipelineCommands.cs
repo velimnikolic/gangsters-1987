@@ -321,7 +321,7 @@ namespace GangstersTools
             {
                 UnityEngine.Object.DestroyImmediate(yard);
             }
-            if (draw) LivingCity.EditorTools.CoreCitySketch.Draw(seed);
+            if (draw) LivingCity.EditorTools.CoreCitySketch.Draw(seed, quiet: true);
             return new
             {
                 dealsPerSeed = CoreLayout.Deals,

@@ -38,9 +38,11 @@ namespace RoadDemo
             ShopDamage.ScorchNear(at, groundY);   // a shopfront in the blast catches fire
 
             // the loudest thing on the street by far: heard three streets over, so the
-            // whole quarter reacts and the police are called to it
+            // whole quarter reacts and the police are called to it. The deaths are not
+            // reported here: each man killed reports his own (CivilianAgent.Kill), and
+            // a blanket report on top of that was a death the heat counted twice - or
+            // once for a blast that hit nobody.
             StreetAlarm.Report(at, null, faction, 130f);
-            StreetAlarm.Death(at, StreetAlarm.DeathOf.Civilian);
 
             if (DriveTrace.On)
                 DriveTrace.Event("bomb", "blast",

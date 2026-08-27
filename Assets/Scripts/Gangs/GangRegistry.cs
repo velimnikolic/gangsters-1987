@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace LivingCity.Gangs
 {
@@ -41,8 +42,10 @@ namespace LivingCity.Gangs
             Version++;
         }
 
+        /// <summary>Null for a gang with no door, and null again once the door's scene is
+        /// gone - a destroyed marker must never come back as a live reference.</summary>
         public static Entities.BusinessMarker FrontBusinessOf(int gangId) =>
-            frontBusinesses.TryGetValue(gangId, out var marker) ? marker : null;
+            frontBusinesses.TryGetValue(gangId, out var marker) && marker ? marker : null;
 
         public static void SetFrontBooks(int gangId, FrontDossier books)
         {
@@ -75,6 +78,32 @@ namespace LivingCity.Gangs
             frontBusinesses.Clear();
             frontBooks.Clear();
             Version = 0;
+
+            SceneManager.sceneUnloaded -= OnSceneUnloaded;
+            SceneManager.sceneUnloaded += OnSceneUnloaded;
+        }
+
+        /// <summary>The markers are scene objects and this dictionary is static: a scene
+        /// load in the middle of Play would otherwise leave it holding destroyed doors
+        /// until the next domain reset. Only the dead entries go - a marker in a scene
+        /// that stayed loaded is still somebody's front.</summary>
+        static void OnSceneUnloaded(Scene scene)
+        {
+            List<int> dead = null;
+            foreach (var pair in frontBusinesses)
+            {
+                if (pair.Value)
+                    continue;
+                dead ??= new List<int>();
+                dead.Add(pair.Key);
+            }
+
+            if (dead == null)
+                return;
+
+            foreach (var gangId in dead)
+                frontBusinesses.Remove(gangId);
+            Version++;
         }
     }
 }

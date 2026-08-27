@@ -45,6 +45,14 @@ namespace RoadDemo
         readonly System.Collections.Generic.Dictionary<RoadCar, float> _lastRunDown =
             new System.Collections.Generic.Dictionary<RoadCar, float>();
 
+        /// <summary>A vehicle off the street takes its beat with it. The ledger is
+        /// keyed on the body, and a car towed or a machine dropped left a dead key
+        /// behind every time - a night of it and the table was mostly wrecks.</summary>
+        void ForgetRunDown(RoadCar vehicle)
+        {
+            if (vehicle != null) _lastRunDown.Remove(vehicle);
+        }
+
         void TickRunDown()
         {
             for (int i = 0; i < Cars.Count; i++)

@@ -74,6 +74,10 @@ namespace RoadDemo
 
         void LateUpdate()
         {
+            // a car that was destroyed took its lamps with it; its rig is not walked
+            // and ranked for the rest of the run
+            for (int i = _rigs.Count - 1; i >= 0; i--)
+                if (!_rigs[i].L || !_rigs[i].R) _rigs.RemoveAt(i);
             if (_rigs.Count == 0)
                 return;
 
@@ -113,9 +117,6 @@ namespace RoadDemo
             for (int rank = 0; rank < _order.Length; rank++)
             {
                 var rig = _rigs[_order[rank]];
-                if (!rig.L || !rig.R)
-                    continue;   // car despawned; lights died with it
-
                 bool burns = burn && rank * 2 < LitBeamBudget;
                 // enabling a light re-registers it with the renderer: touched only on change
                 if (burns != rig.Burning)

@@ -133,7 +133,6 @@ namespace BlockDemo
         Vector3 _parkAt;
         float _phaseAt, _lastOrder, _stillFor, _nextRow, _saidStuck;
         int _killed, _stuckSpells;
-        readonly List<string> _story = new List<string>();
 
         float Now => Time.timeSinceLevelLoad;
         float InPhase => Now - _phaseAt;
@@ -154,8 +153,10 @@ namespace BlockDemo
             // car and still alive is NOT the end of one - the driver being shot puts the
             // crew on the pavement, and the fight goes on from there.
             // (On foot there may be several crews out, and one of them going down is not
-            // the outfit going down: TickWar counts the field itself.)
-            if (!onFoot && _ours != null && _ours.Wiped)
+            // the outfit going down: TickWar counts the field itself. A car bomb run
+            // outlives the crew that laid it - the charge stands, and TickCarBomb says
+            // so - so that run is not failed here either.)
+            if (!onFoot && !carBombRun && _ours != null && _ours.Wiped)
             {
                 // TWO WHEELS: the crew standing at its own kerb being shot to pieces by
                 // the mobs it has been riding past is the game being a game, and it ends
@@ -1462,7 +1463,6 @@ namespace BlockDemo
 
         void Note(string what)
         {
-            _story.Add($"{Now:F0}s {what}");
             Debug.Log("[BlockDemo] mission " + what);
             if (DriveTrace.On) DriveTrace.Event("mission", State.ToString(), what);
         }
@@ -1523,8 +1523,5 @@ namespace BlockDemo
             DriveTrace.Vec(sb, "p", from);
             DriveTrace.Row("mission", sb.ToString());
         }
-
-        /// <summary>The run in one paragraph, for the log at the end.</summary>
-        public string Story() => string.Join("\n   ", _story);
     }
 }

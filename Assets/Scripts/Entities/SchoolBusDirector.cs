@@ -365,7 +365,9 @@ namespace LivingCity.Entities
                     Debug.LogWarning("[SchoolBus] A child prefab has no HumanBehavior - re-run " +
                                      "the asset bootstrap.", this);
                     Destroy(person);
-                    return;
+                    // The prefab is drawn per child, so one bad draw costs one child, not
+                    // the whole class.
+                    continue;
                 }
 
                 // Same instance-level controller swap as PedestrianSpawner and PoliceDirector:

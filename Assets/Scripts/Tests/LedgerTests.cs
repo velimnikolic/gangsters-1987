@@ -313,16 +313,20 @@ namespace LivingCity.Tests
 
             // A watch is stood, never finished, so its hours must not be owed as work.
             var guard = OrderTable.SpecOf(OrderType.Guard);
-            if (OrderMath.WorkHours(guard, 1, 1) != 0f)
+            if (!Near(OrderMath.WorkHours(guard, 1, 1), 0f))
                 failures.Add("OrderTableCoversEveryType: a standing watch owes hours.");
         }
+
+        // derived hours are float arithmetic; an exact compare on them is a compare on
+        // the order the multiplications happened in
+        static bool Near(float a, float b) => System.Math.Abs(a - b) <= 1e-4f;
 
         static void TravelIsHoursNotBudget(List<string> failures)
         {
             // 2,000m: a working morning on foot, an hour in a car.
             var foot = OrderMath.TravelHours(2_000f, hasVehicle: false, drivingHalfSteps: 6);
             var car = OrderMath.TravelHours(2_000f, hasVehicle: true, drivingHalfSteps: 6);
-            if (foot != 5f)
+            if (!Near(foot, 5f))
                 failures.Add($"TravelIsHoursNotBudget: on foot {foot}h, expected 5.");
             if (car >= foot * 0.3f)
                 failures.Add("TravelIsHoursNotBudget: the car did not shrink the city.");
@@ -369,7 +373,7 @@ namespace LivingCity.Tests
             // Men divide the work; the calendar is the price of sending too few.
             var extort = OrderTable.SpecOf(OrderType.Extort);
             var alone = OrderMath.WorkHours(extort, 4, 1);
-            if (OrderMath.WorkHours(extort, 4, 2) != alone / 2f)
+            if (!Near(OrderMath.WorkHours(extort, 4, 2), alone / 2f))
                 failures.Add("TravelIsHoursNotBudget: a second man did not halve the job.");
         }
 

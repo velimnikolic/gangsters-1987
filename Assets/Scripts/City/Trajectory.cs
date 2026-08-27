@@ -17,11 +17,6 @@ public class Trajectory : MonoBehaviour
         }
     }
 
-    // Update is called once per frame
-    void Update()
-    {
-        
-    }
     void OnDrawGizmosSelected()
     {
         int i = 0;

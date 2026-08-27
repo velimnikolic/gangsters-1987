@@ -90,7 +90,7 @@ namespace RoadDemo
             text.font = LivingCity.UI.LedgerStyle.Condensed;
             text.color = TurfInk.Street;
             text.alignment = TextAlignmentOptions.Center;
-            text.enableWordWrapping = false;
+            text.textWrappingMode = TextWrappingModes.NoWrap;
             text.overflowMode = TextOverflowModes.Overflow;
             text.characterSpacing = Tracking;
             text.raycastTarget = false;

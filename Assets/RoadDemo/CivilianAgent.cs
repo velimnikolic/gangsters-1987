@@ -545,15 +545,15 @@ namespace RoadDemo
 
         // -------------------------------------------------------------- chat
 
-        /// <summary>Two walkers meeting head-on on the same stretch stop for a
-        /// word - or, now and then, an argument. Scanned on a slow throttle by
-        /// the builder; O(n^2) but only over ChatReady walkers.</summary>
         // scratch for PairChats: the ready walkers, and who is on which stretch,
         // kept between scans so a scan over three hundred walkers allocates nothing
         static readonly List<CivilianAgent> Ready = new List<CivilianAgent>();
         static readonly Dictionary<PedLink, List<CivilianAgent>> OnLink = new Dictionary<PedLink, List<CivilianAgent>>();
         static readonly Stack<List<CivilianAgent>> Spare = new Stack<List<CivilianAgent>>();
 
+        /// <summary>Two walkers meeting head-on on the same stretch stop for a
+        /// word - or, now and then, an argument. Scanned on a slow throttle by
+        /// the builder; O(n^2) but only over ChatReady walkers.</summary>
         public static void PairChats(List<CivilianAgent> all, Vector2 chatSeconds)
         {
             // bucket the ready walkers by the stretch they are on: a meeting is two

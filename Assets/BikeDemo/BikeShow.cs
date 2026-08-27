@@ -683,10 +683,43 @@ namespace BikeDemo
 
         // ------------------------------------------------------------------ the labels
 
+        // GUI.skin only exists inside OnGUI, so the styles are made on the first pass
+        // and kept; the readout is rebuilt only when a number it quotes has moved
+        GUIStyle _nameStyle, _stateStyle, _readStyle;
+        string _readout;
+        ReadoutKey _readKey;
+
+        struct ReadoutKey
+        {
+            public string Machine;
+            public float RunMetres, Speed, ActAt, TimeScale, CycleTenths;
+            public float ThrowUp, ThrowOut, ThrowAhead, Gravity, Drag, Tumble, Roll, BikeDrag, Slew;
+            public int Runs;
+
+            public bool Same(in ReadoutKey o) =>
+                Machine == o.Machine && RunMetres == o.RunMetres && Speed == o.Speed && ActAt == o.ActAt &&
+                TimeScale == o.TimeScale && CycleTenths == o.CycleTenths && Runs == o.Runs &&
+                ThrowUp == o.ThrowUp && ThrowOut == o.ThrowOut && ThrowAhead == o.ThrowAhead &&
+                Gravity == o.Gravity && Drag == o.Drag && Tumble == o.Tumble &&
+                Roll == o.Roll && BikeDrag == o.BikeDrag && Slew == o.Slew;
+        }
+
         void OnGUI()
         {
             var cam = UnityEngine.Camera.main;
             if (cam == null) return;
+
+            if (_readStyle == null)
+            {
+                _nameStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
+                };
+                _stateStyle = new GUIStyle(_nameStyle) { fontSize = 12, fontStyle = FontStyle.Normal };
+                _stateStyle.normal.textColor = new Color(0.88f, 0.90f, 0.94f);
+                _readStyle = new GUIStyle(GUI.skin.label) { fontSize = 13 };
+                _readStyle.normal.textColor = new Color(0.86f, 0.90f, 0.96f);
+            }
 
             if (labels)
                 foreach (var lane in _lanes)
@@ -695,20 +728,12 @@ namespace BikeDemo
                     if (!at.HasValue) continue;
                     var p = cam.WorldToScreenPoint(at.Value);
                     if (p.z <= 0f) continue;
-                    var style = new GUIStyle(GUI.skin.label)
-                    {
-                        fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter,
-                    };
-                    style.normal.textColor = Ink(lane);
-                    GUI.Label(new Rect(p.x - 110f, Screen.height - p.y - 30f, 220f, 22f), lane.Name, style);
-                    var small = new GUIStyle(style) { fontSize = 12, fontStyle = FontStyle.Normal };
-                    small.normal.textColor = new Color(0.88f, 0.90f, 0.94f);
-                    GUI.Label(new Rect(p.x - 110f, Screen.height - p.y - 10f, 220f, 20f), State(lane), small);
+                    _nameStyle.normal.textColor = Ink(lane);
+                    GUI.Label(new Rect(p.x - 110f, Screen.height - p.y - 30f, 220f, 22f), lane.Name, _nameStyle);
+                    GUI.Label(new Rect(p.x - 110f, Screen.height - p.y - 10f, 220f, 20f), State(lane), _stateStyle);
                 }
 
-            var read = new GUIStyle(GUI.skin.label) { fontSize = 13 };
-            read.normal.textColor = new Color(0.86f, 0.90f, 0.96f);
-            GUI.Label(new Rect(12f, Screen.height - 84f, 1200f, 80f), Readout(), read);
+            GUI.Label(new Rect(12f, Screen.height - 84f, 1200f, 80f), Readout(), _readStyle);
         }
 
         Vector3? Head(Lane lane)
@@ -746,6 +771,22 @@ namespace BikeDemo
         }
 
         string Readout()
+        {
+            var key = new ReadoutKey
+            {
+                Machine = machine, RunMetres = runMetres, Speed = speed, ActAt = actAt,
+                TimeScale = Time.timeScale, CycleTenths = Mathf.Round(_cycle * 10f), Runs = _runs,
+                ThrowUp = RiderSpill.ThrowUp, ThrowOut = RiderSpill.ThrowOut, ThrowAhead = RiderSpill.ThrowAhead,
+                Gravity = RiderSpill.Gravity, Drag = RiderSpill.Drag, Tumble = RiderSpill.TumbleRate,
+                Roll = BikeSpill.RollRate, BikeDrag = BikeSpill.Drag, Slew = BikeSpill.Slew,
+            };
+            if (_readout != null && key.Same(_readKey)) return _readout;
+            _readKey = key;
+            _readout = BuildReadout();
+            return _readout;
+        }
+
+        string BuildReadout()
         {
             string clock = Time.timeScale < 0.001f ? "PAUSED"
                 : Time.timeScale.ToString("0.00") + "x";

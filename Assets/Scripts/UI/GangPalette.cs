@@ -4,17 +4,18 @@ namespace LivingCity.UI
 {
     /// <summary>
     /// One colour per gang, everywhere a gang shows: overlay diamonds, the street
-    /// overlay's dots over a rival's men, and the M-map (through MapAffiliation and
-    /// DemoMap). Gang 0 reuses the map's PlayerGold so "yours" is one colour across
-    /// every surface. The rest were picked against the taken palette - police blue,
+    /// overlay's dots over a rival's men, the strategic map (through MapAffiliation)
+    /// and the turf map's wash (through TurfHouses). Gang 0 is the player's gold so
+    /// "yours" is one colour across every surface. The rest were picked against the
+    /// taken palette - police blue,
     /// civilian white, and IntentionPalette's activity teal/green/grey/yellow - and live
     /// in this one file so a retune is a one-line change.
     ///
     /// Twenty rivals is most of a colour wheel, so the walk is deliberate: hue turns
     /// about twenty degrees a family and the VALUE alternates deep/bright, which is what
     /// keeps two neighbouring hues apart on a four-pixel map dot. Two bands are left
-    /// out - the gold the player owns, and the blue the law drives in (DemoMap's
-    /// PoliceBlue). The first four ids keep the colours they had; an id is a family for
+    /// out - the gold the player owns, and the blue the law drives in. The first four
+    /// ids keep the colours they had; an id is a family for
     /// the life of a campaign and its colour must not move under it.
     /// </summary>
     public static class GangPalette

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using RoadDemo;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -20,8 +20,6 @@ namespace CoverDemo
     public class CoverWatch : MonoBehaviour
     {
         // the same policy DemoCrews.CoverNear applies to a prop's box
-        const float CoverMinHalf = 0.22f;
-        const float CoverMaxHalf = 3f;
         const float BoxReach = 14f;      // how far round a fighting man boxes are drawn
         const float BoxEvery = 0.35f;    // and how often that survey is redone
         const float Width = 0.07f;       // the drawn line, in metres
@@ -123,8 +121,8 @@ namespace CoverDemo
                         foreach (var b in _near)
                         {
                             if (b.Tall) continue;
-                            if (Mathf.Min(b.H.x, b.H.y) < CoverMinHalf) continue;
-                            if (Mathf.Max(b.H.x, b.H.y) > CoverMaxHalf) continue;
+                            if (Mathf.Min(b.H.x, b.H.y) < DemoCrews.PropCoverMinHalf) continue;
+                            if (Mathf.Max(b.H.x, b.H.y) > DemoCrews.PropCoverMaxHalf) continue;
                             // one prop is reported to every man near it: keep it once,
                             // by where it stands to the nearest ten centimetres
                             long key = ((long)Mathf.RoundToInt(b.C.x * 10f) << 32) ^

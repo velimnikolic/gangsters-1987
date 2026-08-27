@@ -144,10 +144,21 @@ namespace LivingCity.UI
         /// The order-targeting seam: while non-null, LMB belongs to the consumer - a
         /// drag becomes an area box (world-XZ rect), a click a point - and the map's
         /// own card selection stands down. Clicks over clickable UI (the ledger's
-        /// panel has the raycaster) are ignored here. Set by the Orders page while it
-        /// is picking targets; cleared on page leave and at Play reset.
+        /// panel has the raycaster) are ignored here. Taken by the Orders page while it
+        /// is picking targets (<see cref="SetTargeting"/>), given back on page leave
+        /// (<see cref="ClearTargeting"/>) and at Play reset.
         /// </summary>
-        public static IMapTargetingConsumer Targeting;
+        public static IMapTargetingConsumer Targeting { get; private set; }
+
+        public static void SetTargeting(IMapTargetingConsumer consumer) => Targeting = consumer;
+
+        /// <summary>Only the consumer that holds the seam gives it back - a page
+        /// closing must not knock another's targeting out from under it.</summary>
+        public static void ClearTargeting(IMapTargetingConsumer consumer)
+        {
+            if (Targeting == consumer)
+                Targeting = null;
+        }
 
         public Camera MapCamera => mapCamera;
 
@@ -207,6 +218,13 @@ namespace LivingCity.UI
         readonly List<Outfit.Turf.Holding> holdingsScratch = new List<Outfit.Turf.Holding>();
         RectTransform territoryRoot;
 
+        /// <summary>Each held building's footprint, measured once: the wash reprojects
+        /// every frame, and a GetComponent per premise per frame was what it cost.
+        /// Buildings do not move, so a rect is good until the registry changes.</summary>
+        readonly Dictionary<Entities.BusinessMarker, Rect> _footprints =
+            new Dictionary<Entities.BusinessMarker, Rect>();
+        int _footprintsVersion = -1;
+
         readonly List<Rect> targetRects = new List<Rect>();
         readonly List<Image> targetTiles = new List<Image>();
         RectTransform targetRoot;
@@ -255,7 +273,7 @@ namespace LivingCity.UI
             // to nobody, exactly as InteractionController stands down for it. There is
             // no exception any more: the war-room split that kept this map live beside
             // the book is retired, and the file now covers the glass.
-            if (PersonnelAlmanac.IsOpen && !PersonnelAlmanac.MapInteractive)
+            if (PersonnelAlmanac.IsOpen)
                 return;
 
             if (!PersonnelAlmanac.IsOpen && keyboard.mKey.wasPressedThisFrame)
@@ -448,13 +466,6 @@ namespace LivingCity.UI
 
         public void Open() => OpenAs(beside: false);
 
-        /// <summary>The old war-room mode: the same live map docked into the right half
-        /// of the screen while the book held the left. The ledger is a full-screen file
-        /// now and nothing calls this, but the docked viewport it drives is still the
-        /// only code path for a half-screen map - keep it for whatever wants one next.
-        /// </summary>
-        public void OpenBeside() => OpenAs(beside: true);
-
         void OpenAs(bool beside)
         {
             if (IsOpen)
@@ -521,9 +532,14 @@ namespace LivingCity.UI
                 return;
 
             docked = false;
-            page.SetActive(false);
-            mapCamera.enabled = false;
-            mapCamera.rect = new Rect(0f, 0f, 1f, 1f);
+            // Torn down from OnDestroy the page and the camera may already be gone.
+            if (page)
+                page.SetActive(false);
+            if (mapCamera)
+            {
+                mapCamera.enabled = false;
+                mapCamera.rect = new Rect(0f, 0f, 1f, 1f);
+            }
             if (isoCamera) isoCamera.enabled = true;
             if (isoController) isoController.enabled = true;
             if (occlusionHider) occlusionHider.enabled = true;
@@ -1331,6 +1347,12 @@ namespace LivingCity.UI
         /// </summary>
         void PaintTerritory()
         {
+            if (_footprintsVersion != PropertyRegistry.Version)
+            {
+                _footprints.Clear();
+                _footprintsVersion = PropertyRegistry.Version;
+            }
+
             var used = 0;
             foreach (var business in Gameplay.PropertyRegistry.Businesses)
             {
@@ -1347,7 +1369,9 @@ namespace LivingCity.UI
                 colour.a = business.GangId == Gangs.GangCatalog.PlayerGangId ? 0.62f : 0.45f;
                 if (tile.color != colour)
                     tile.color = colour;
-                ProjectRect(tile, FootprintOf(business));
+                if (!_footprints.TryGetValue(business, out var footprint))
+                    _footprints[business] = footprint = FootprintOf(business);
+                ProjectRect(tile, footprint);
             }
 
             for (var i = used; i < territoryTiles.Count; i++)

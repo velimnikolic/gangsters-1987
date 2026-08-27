@@ -10,17 +10,17 @@ namespace LivingCity.Gameplay
     /// </summary>
     public static class ContextActionRegistry
     {
-        static readonly List<IContextAction> actions = new List<IContextAction>();
+        static readonly List<IContextAction> Registered = new List<IContextAction>();
 
-        public static IReadOnlyList<IContextAction> Actions => actions;
+        public static IReadOnlyList<IContextAction> Actions => Registered;
 
         public static void Register(IContextAction action)
         {
-            if (action == null || actions.Contains(action))
+            if (action == null || Registered.Contains(action))
                 return;
 
-            actions.Add(action);
-            actions.Sort((a, b) => a.SortOrder.CompareTo(b.SortOrder));
+            Registered.Add(action);
+            Registered.Sort((a, b) => a.SortOrder.CompareTo(b.SortOrder));
         }
 
         /// <summary>
@@ -32,7 +32,7 @@ namespace LivingCity.Gameplay
             PlayerMafioso actor, IContextTarget target, List<IContextAction> buffer)
         {
             buffer.Clear();
-            foreach (var action in actions)
+            foreach (var action in Registered)
                 if (action.IsAvailable(actor, target))
                     buffer.Add(action);
         }
@@ -44,7 +44,7 @@ namespace LivingCity.Gameplay
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
         {
-            actions.Clear();
+            Registered.Clear();
             Register(new KillAction());
             Register(new CancelAction());
         }

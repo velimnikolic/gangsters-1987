@@ -115,7 +115,8 @@ static class Program
             Console.WriteLine($"{plan.Name,-18} deals {plan.Attempt + 1,2}  faults {raster.Faults,2}  " +
                               $"{raster.NX * 5}x{raster.NZ * 5} m  blocks {raster.BlockArea} road {raster.RoadArea} " +
                               $"parking {raster.ParkingArea} spare {raster.SpareArea} water {raster.WaterArea}  " +
-                              $"quay {plan.Quays.Count}/{plan.Bridges.Count}  {roads}");
+                              $"quay {plan.Quays.Count}/{plan.Bridges.Count}  " +
+                              $"parks {plan.Parks.Count} (run {plan.ParkRuns}) res {plan.Residential.Count}  {roads}");
             if (rows) foreach (var row in plan.Rows) Console.WriteLine("   " + row);
             if (raster.Faults > 0 || rows)
                 foreach (var line in raster.Report.Split('\n'))

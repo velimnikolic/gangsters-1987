@@ -67,7 +67,7 @@ namespace LivingCity.EditorTools
 
             // the drawing stands clear of everything else: measured before anything is added,
             // moved into place once its size is known
-            bool anyScene = Extent(out Bounds others);
+            bool anyScene = SketchFrame.Extent(SketchRoot, out Bounds others);
 
             Measure(size, new System.Random(seed), out int nx, out int nz);
             var plan = ParkWalk.Lay(nx, nz, ParkWalk.Edge.Alone(), new System.Random(seed));
@@ -97,8 +97,8 @@ namespace LivingCity.EditorTools
 
             EditorSceneManager.MarkSceneDirty(scene);
             Selection.activeGameObject = park;
-            Frame(park.transform.position + new Vector3(plan.Wide * 0.5f, 0f, plan.Deep * 0.5f),
-                  Mathf.Max(plan.Wide, plan.Deep));
+            SketchFrame.Frame(park.transform.position + new Vector3(plan.Wide * 0.5f, 0f, plan.Deep * 0.5f),
+                              Mathf.Max(plan.Wide, plan.Deep) * 1.4f);
 
             var log = new System.Text.StringBuilder();
             log.AppendLine($"[Park] {plan.Name} from seed {seed}: {plan.Wide:F0} x {plan.Deep:F0} m, " +
@@ -152,43 +152,8 @@ namespace LivingCity.EditorTools
                           (rooms.Count > 0 ? string.Join(", ", rooms) : "walk and lawn only") +
                           (faults > 0 ? $"\n{faults} FAULTS - see the console" : "");
 
-            BlockLotPads.PadLabel("park label", text,
+            SketchFrame.Caption("park label", text,
                 new Vector3(plan.Wide * 0.5f, 26f, plan.Deep * 0.5f), labels);
-            var caption = labels.Find("park label");
-            if (caption) caption.rotation = Quaternion.Euler(35f, 180f, 0f);
-        }
-
-        /// <summary>Everything already standing, the drawing itself excepted - across EVERY
-        /// open scene, not only the active one, and skipping particle systems (a system that
-        /// has not played reports an empty box at the origin and would drag the measurement
-        /// across the map).</summary>
-        static bool Extent(out Bounds box)
-        {
-            box = new Bounds();
-            bool any = false;
-            for (int i = 0; i < SceneManager.sceneCount; i++)
-            {
-                var open = SceneManager.GetSceneAt(i);
-                if (!open.isLoaded) continue;
-                foreach (var root in open.GetRootGameObjects())
-                {
-                    if (root.name == SketchRoot) continue;
-                    foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
-                    {
-                        if (renderer is ParticleSystemRenderer) continue;
-                        if (!any) { box = renderer.bounds; any = true; }
-                        else box.Encapsulate(renderer.bounds);
-                    }
-                }
-            }
-            return any;
-        }
-
-        static void Frame(Vector3 centre, float span)
-        {
-            var view = SceneView.lastActiveSceneView;
-            if (view == null) return;
-            view.LookAt(centre, Quaternion.Euler(55f, 0f, 0f), span * 1.4f);
         }
     }
 }

@@ -494,26 +494,7 @@ namespace PumpDemo
         // (VehicleCatalog.PoolWeight): a saloon is common, a muscle car is not.
         List<GameObject> _cars;
 
-        List<GameObject> CarBodies()
-        {
-            if (_cars != null) return _cars;
-            _cars = new List<GameObject>();
-#if UNITY_EDITOR
-            foreach (var name in new[]
-            {
-                "SM_Veh_Car_Sedan_01", "SM_Veh_Car_Medium_01", "SM_Veh_Car_Small_01", "SM_Veh_Car_Muscle_01",
-                "SM_Veh_Sedan_01", "SM_Veh_Suv_01", "SM_Veh_Pickup_01", "SM_Veh_LowCar_01", "SM_Veh_LowCar_02",
-            })
-            {
-                var prefab = FindVehicle(name);
-                if (prefab == null) continue;
-                for (int seat = 0, seats = LivingCity.Gameplay.VehicleCatalog.PoolWeight(name);
-                     seat < seats; seat++)
-                    _cars.Add(prefab);
-            }
-#endif
-            return _cars;
-        }
+        List<GameObject> CarBodies() => _cars ??= TestBench.WeightedCars(FindVehicle);
 
         static readonly string[] VehicleFolders =
         {
@@ -609,7 +590,7 @@ namespace PumpDemo
             // the shop's customers.
             var eastEnd = new PedNode { Pos = new Vector3(13f, ApronY, StationZ + 4.7f) };
             var westEnd = new PedNode { Pos = new Vector3(-13f, ApronY, StationZ + 4.7f) };
-            Join(eastEnd, westEnd, false, _forecourtLinks);   // across the shop front, past its door
+            TestBench.Join(eastEnd, westEnd, false, _forecourtLinks);   // across the shop front, past its door
 
             // What is left of the ground to walk on. Read against EVERYTHING blocked and
             // not just the street kit's own plan (WalkObstacles.SampleWalk): the kit
@@ -653,18 +634,7 @@ namespace PumpDemo
             return best;
         }
 
-        void Join(PedNode a, PedNode b, bool gated) => Join(a, b, gated, _pedLinks);
-
-        static void Join(PedNode a, PedNode b, bool gated, List<PedLink> into)
-        {
-            float len = Vector3.Distance(a.Pos, b.Pos);
-            var ab = new PedLink { From = a, To = b, Length = len, Gated = gated };
-            var ba = new PedLink { From = b, To = a, Length = len, Gated = gated };
-            a.Links.Add(ab);
-            b.Links.Add(ba);
-            into.Add(ab);
-            into.Add(ba);
-        }
+        void Join(PedNode a, PedNode b, bool gated) => TestBench.Join(a, b, gated, _pedLinks);
 
         /// <summary>Hang a door off the stretch of walk that fronts it, both ways - the
         /// same wiring the city does (RoadDemoBuilder.BuildCityLife).</summary>
@@ -734,17 +704,7 @@ namespace PumpDemo
 #endif
         }
 
-        void TickPavementLife(float dt)
-        {
-            for (int i = 0; i < _walkers.Count; i++) _walkers[i].TickCivilian(dt);
-            CivilianAgent.TickCrowd(dt);
-            _chatScan -= dt;
-            if (_chatScan <= 0f && _walkers.Count > 0)
-            {
-                _chatScan = 1.5f;
-                CivilianAgent.PairChats(_walkers, new Vector2(6f, 14f));
-            }
-        }
+        void TickPavementLife(float dt) => TestBench.TickPavementLife(_walkers, null, dt, ref _chatScan);
 
         // ------------------------------------------------------------------- the watch
 

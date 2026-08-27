@@ -60,6 +60,22 @@ namespace RoadDemo
         static readonly Dictionary<GameObject, Skin> Skins = new Dictionary<GameObject, Skin>();
         static readonly Dictionary<GameObject, Skin> Flats = new Dictionary<GameObject, Skin>();
 
+        /// <summary>The one plain-concrete stand-in, made on first demand and shared by
+        /// every road that has no pack to read. A material a call was a material a deck
+        /// piece, and none of them was ever let go of.</summary>
+        static Material _grey;
+
+        // The stand-in is a runtime material and Play's end destroys it; with domain
+        // reload off the reference would outlive it, and so would every cached skin
+        // that carries it. Both start over with the next Play.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetForPlay()
+        {
+            _grey = null;
+            Skins.Clear();
+            Flats.Clear();
+        }
+
         /// <summary>The pack's own colours: the strip of atlas its deck's carriageway
         /// uses across its width, and a patch of the concrete its parapet is made of.
         /// Read once off the mesh - not typed in, so a pack that moves its atlas moves
@@ -137,11 +153,16 @@ namespace RoadDemo
 
         static Skin Grey()
         {
-            var sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
-            var m = new Material(sh) { name = "Expressway concrete" };
-            m.color = new Color(0.58f, 0.57f, 0.55f);
-            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.12f);
-            return new Skin { Mat = m, RoadA = Vector2.zero, RoadB = Vector2.zero, RoadV = 0f, Concrete = Vector2.zero };
+            // the Unity null, not the C# one: a material Play's end destroyed compares
+            // equal to null and is made afresh rather than handed out dead
+            if (_grey == null)
+            {
+                var sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+                _grey = new Material(sh) { name = "Expressway concrete" };
+                _grey.color = new Color(0.58f, 0.57f, 0.55f);
+                if (_grey.HasProperty("_Smoothness")) _grey.SetFloat("_Smoothness", 0.12f);
+            }
+            return new Skin { Mat = _grey, RoadA = Vector2.zero, RoadB = Vector2.zero, RoadV = 0f, Concrete = Vector2.zero };
         }
 
         static Skin Read(GameObject prefab)

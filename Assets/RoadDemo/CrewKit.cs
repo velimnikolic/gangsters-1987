@@ -429,8 +429,9 @@ namespace RoadDemo
 
         /// <summary>A machine burning where it lies, and the sparks it throws while it
         /// is still sliding (BikeSpill).</summary>
-        public static GameObject Fire => Load<GameObject>(FirePath);
-        public static GameObject FireBurst => Load<GameObject>(FireBurstPath);
+        public static GameObject Fire => _fire != null ? _fire : _fire = Load<GameObject>(FirePath);
+        public static GameObject FireBurst => _fireBurst != null ? _fireBurst : _fireBurst = Load<GameObject>(FireBurstPath);
+        static GameObject _fire, _fireBurst;
 
         /// <summary>The two smokes a car makes. Both are the pack's mesh puffs, whose
         /// mesh measures 0.19m across, so every size in CarSmoke is read against that
@@ -439,8 +440,9 @@ namespace RoadDemo
         ///
         /// White for what a running engine puts out of the back, black for what a shot
         /// one puts out of the front.</summary>
-        public static GameObject Exhaust => Load<GameObject>(ExhaustPath);
-        public static GameObject EngineSmoke => Load<GameObject>(EngineSmokePath);
+        public static GameObject Exhaust => _exhaust != null ? _exhaust : _exhaust = Load<GameObject>(ExhaustPath);
+        public static GameObject EngineSmoke => _engineSmoke != null ? _engineSmoke : _engineSmoke = Load<GameObject>(EngineSmokePath);
+        static GameObject _exhaust, _engineSmoke;
 
         /// <summary>The civilian wardrobe: the crowd's own clips plus a run, a flinch,
         /// a fall and the cower - so a bystander can bolt, be hit, and go down.</summary>
@@ -484,9 +486,13 @@ namespace RoadDemo
             return list;
         }
 
-        public static GameObject MuzzleFlash => Load<GameObject>(FlashPath);
-        public static GameObject Blood => Load<GameObject>(BloodPath);
-        public static GameObject Impact => Load<GameObject>(ImpactPath);
+        // each an AssetDatabase read per shot before they were held: the flash, the
+        // blood and the impact are asked for by every round fired
+        public static GameObject MuzzleFlash => _muzzleFlash != null ? _muzzleFlash : _muzzleFlash = Load<GameObject>(FlashPath);
+        public static GameObject Blood => _blood != null ? _blood : _blood = Load<GameObject>(BloodPath);
+        public static GameObject Impact => _impact != null ? _impact : _impact = Load<GameObject>(ImpactPath);
+        static GameObject _muzzleFlash, _blood, _impact;
+
         /// <summary>The reports for one weapon, drawn at random per shot. Real
         /// recordings of the gun the armoury actually sells - a .45 and a .38 for the
         /// pistols, two 12 gauges, a Swedish K, an AK, a PPSh - cut by
@@ -516,7 +522,8 @@ namespace RoadDemo
         }
 
         /// <summary>The round going past: a whip crack, which is the same physics.</summary>
-        public static AudioClip Crack => Load<AudioClip>(ShotDir + "bullet_crack.wav");
+        public static AudioClip Crack => _crack != null ? _crack : _crack = Load<AudioClip>(ShotDir + "bullet_crack.wav");
+        static AudioClip _crack;
 
         static readonly Dictionary<EquipmentKind, AudioClip[]> _shots = new();
 

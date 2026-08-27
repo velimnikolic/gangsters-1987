@@ -2992,13 +2992,6 @@ namespace LivingCity.EditorTools
                 seen.Add(t.gameObject);
         }
 
-        static bool Taken(GameObject go, HashSet<GameObject> seen)
-        {
-            for (var t = go.transform.parent; t != null; t = t.parent)
-                if (seen.Contains(t.gameObject)) return true;
-            return false;
-        }
-
         /// <summary>What a piece measures - or, for something that draws nothing at all,
         /// the point it stands on, so an empty group dragged onto a tray still has a
         /// middle to be claimed by.</summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using UnityEditor;
 using UnityEngine;
@@ -34,6 +35,21 @@ namespace LivingCity.EditorTools
         static bool resolved;
         static bool warned;
 
+        /// <summary>A pinch waits this long at most for the snap - a few times a
+        /// second, not every editor tick: the check boxes a struct out of reflection
+        /// per window per call.</summary>
+        const double SnapInterval = 0.25;
+
+        /// <summary>The Game views, found once and kept: FindObjectsOfTypeAll walks
+        /// every loaded object, and doing that every tick of Play was the clamp's whole
+        /// cost. The list goes stale only when a view opens or closes, so it is taken
+        /// again every few seconds.</summary>
+        const double ScanInterval = 3.0;
+
+        static readonly List<EditorWindow> _views = new List<EditorWindow>();
+        static double _nextSnap;
+        static double _nextScan;
+
         static GameViewZoomClamp()
         {
             EditorApplication.update += Tick;
@@ -44,7 +60,12 @@ namespace LivingCity.EditorTools
             if (!EditorApplication.isPlaying || GameViewType == null)
                 return;
 
-            SnapAll(logCorrections: false);
+            var now = EditorApplication.timeSinceStartup;
+            if (now < _nextSnap)
+                return;
+            _nextSnap = now + SnapInterval;
+
+            SnapAll(logCorrections: false, rescan: now >= _nextScan);
         }
 
         static bool Resolve()
@@ -81,19 +102,21 @@ namespace LivingCity.EditorTools
                 return;
             }
 
-            SnapAll(logCorrections: true);
+            SnapAll(logCorrections: true, rescan: true);
         }
 
-        static void SnapAll(bool logCorrections)
+        static void SnapAll(bool logCorrections, bool rescan)
         {
             if (!Resolve())
                 return;
 
-            // FindObjectsOfTypeAll rather than GetWindow - GetWindow would open a second
-            // Game view when none is docked (the GameViewResolutionFix reasoning).
-            foreach (var obj in Resources.FindObjectsOfTypeAll(GameViewType))
+            if (rescan)
+                Scan();
+
+            foreach (var window in _views)
             {
-                if (obj is not EditorWindow window)
+                // A view closed since the scan - the next scan drops it.
+                if (!window)
                     continue;
 
                 var zoomArea = zoomAreaField.GetValue(window);
@@ -112,6 +135,17 @@ namespace LivingCity.EditorTools
                     Debug.Log($"[GameViewZoomClamp] {window.titleContent.text}: " +
                               $"zoom {Mathf.Abs(scale.x):F2}x snapped back to 1x.", window);
             }
+        }
+
+        // FindObjectsOfTypeAll rather than GetWindow - GetWindow would open a second
+        // Game view when none is docked (the GameViewResolutionFix reasoning).
+        static void Scan()
+        {
+            _nextScan = EditorApplication.timeSinceStartup + ScanInterval;
+            _views.Clear();
+            foreach (var obj in Resources.FindObjectsOfTypeAll(GameViewType))
+                if (obj is EditorWindow window)
+                    _views.Add(window);
         }
 
         static void WarnOnce()

@@ -354,8 +354,10 @@ namespace RoadDemo
             if (!Ready)
                 return;
 
-            _planView = FitToPlate(view);
-            _plan = new TurfProjection(_planView);
+            _plan = new TurfProjection(FitToPlate(view));
+            // The projection snapped its origin to the pixel grid; the view the sheet
+            // is slid by on screen has to be the ground actually drawn.
+            _planView = _plan.World;
 
             _zebras.Clear();
             _labelBoxes.Clear();
@@ -440,23 +442,28 @@ namespace RoadDemo
         }
 
         /// <summary>The fleck for a piece of GROUND rather than a pixel - the sheet's
-        /// own origin quantised to this draw's pixel size, so panning at a fixed zoom
-        /// slides the texture with the city instead of re-sprinkling it.
-        ///
-        /// The quantisation is one add per pixel, not a divide: the ground under pixel
-        /// rx is (origin + rx * metres), and dividing that by metres again is just
-        /// (origin / metres) + rx - a constant per draw, cached in _fleckAt.</summary>
+        /// origin in whole real pixels of the world, so panning at a fixed zoom slides
+        /// the texture with the city instead of re-sprinkling it. Exact: the
+        /// projection snaps its origin to the pixel grid and hands the integer over.
+        /// Every pattern laid on a lattice - the water's hatch, the lane dashes, the
+        /// speckle on a yard - is phased off the same two numbers, or the lattice
+        /// stands still on the sheet while the city moves under it.</summary>
         int _fleckX, _fleckY;
 
         void SetFleckOrigin()
         {
-            float metres = _plan.MetresPerUnit / TurfPlate.S;
-            _fleckX = Mathf.FloorToInt(_plan.Origin.x / metres);
-            _fleckY = Mathf.FloorToInt(_plan.Origin.y / metres);
+            _fleckX = _plan.OriginPx.x;
+            _fleckY = _plan.OriginPx.y;
         }
 
         uint GroundFleck(int rx, int ry, int salt) =>
             Fleck(_fleckX + rx + salt, _fleckY + ry - salt);
+
+        /// <summary>A pixel's place in the world's own pixel grid.</summary>
+        int GroundX(int rx) => _fleckX + rx;
+        int GroundY(int ry) => _fleckY + ry;
+
+        static int Mod(int a, int n) => ((a % n) + n) % n;
 
         void SampleWater()
         {
@@ -478,8 +485,10 @@ namespace RoadDemo
 
         /// <summary>Land, sea, and the paper texture over both. The vocabulary is
         /// PAPER and not a screen: one-pixel stipple on the ground, ruled four-pixel
-        /// hatch on the water, a one-pixel ink shoreline, two-by-two scrub blobs out in
-        /// the country. No dither, no scanline, no glow.</summary>
+        /// hatch on the water, a one-pixel ink shoreline. No dither, no scanline, no
+        /// glow - and no scrub: the country used to carry two-by-two blobs of tree and
+        /// they were taken off at the player's word, because a wood that is not
+        /// stock-still under a pan reads as a fault and not as a wood.</summary>
         void DrawGround()
         {
             for (int ry = 0; ry < TurfPlate.RH; ry++)
@@ -489,8 +498,9 @@ namespace RoadDemo
 
                     if (_water[ry * TurfPlate.RW + rx])
                     {
+                        int gx = GroundX(rx), gy = GroundY(ry);
                         Ground.Dot(rx, ry,
-                            ry % 4 == 0 && (rx + ry) % 9 < 5 ? TurfInk.Water2 : TurfInk.Water);
+                            Mod(gy, 4) == 0 && Mod(gx + gy, 9) < 5 ? TurfInk.Water2 : TurfInk.Water);
                         // a scratch of swell, about one pixel in five hundred
                         if ((fleck & 0x1FF) < 1)
                             Ground.Px(rx, ry, 3, 1, TurfInk.Wave);
@@ -510,25 +520,6 @@ namespace RoadDemo
                         (Water(rx + 1, ry) || Water(rx - 1, ry) ||
                          Water(rx, ry + 1) || Water(rx, ry - 1)))
                         Ground.Dot(rx, ry, TurfInk.Ink2);
-
-            // scrub, in the country only - the ground the city has not taken. Inside
-            // the grid the green comes off the lots actually left as parks.
-            var town = _plan.ToPlan(TownWorld());
-            int tx0 = PxX(town.xMin), tx1 = PxX(town.xMax);
-            int ty0 = PxY(town.yMin), ty1 = PxY(town.yMax);
-            for (int ry = 0; ry < TurfPlate.RH; ry += 2)
-                for (int rx = 0; rx < TurfPlate.RW; rx += 2)
-                {
-                    if (Water(rx, ry))
-                        continue;
-                    if (rx >= tx0 && rx < tx1 && ry >= ty0 && ry < ty1)
-                        continue;
-
-                    uint fleck = GroundFleck(rx, ry, 7919);
-                    if ((fleck & 0x3F) >= 6)
-                        continue;
-                    Ground.Px(rx, ry, 2, 2, (fleck & 0x40) != 0 ? TurfInk.Tree : TurfInk.Grass2);
-                }
         }
 
         /// <summary>The gaps in the grid that are not blocks: the river the bridges
@@ -586,7 +577,6 @@ namespace RoadDemo
                     continue;
 
                 Ground.Fill(plan, TurfInk.Grass);
-                Scatter(plan, 0x2FA1, 8, TurfInk.Tree, TurfInk.Grass2);
             }
         }
 
@@ -610,11 +600,15 @@ namespace RoadDemo
         }
 
         /// <summary>Flecks over one rectangle, hashed off the ground so a pan does not
-        /// re-sprinkle them.</summary>
+        /// re-sprinkle them. The two-pixel lattice they sit on is phased off the
+        /// ground as well: started on the sheet's own even pixels it would pick a
+        /// different set of ground cells every time the origin moved an odd number.</summary>
         void Scatter(Rect plan, int salt, int odds, Color32 a, Color32 b)
         {
             int x0 = Mathf.Max(0, PxX(plan.xMin)), x1 = Mathf.Min(TurfPlate.RW, PxX(plan.xMax));
             int y0 = Mathf.Max(0, PxY(plan.yMin)), y1 = Mathf.Min(TurfPlate.RH, PxY(plan.yMax));
+            x0 += GroundX(x0) & 1;
+            y0 += GroundY(y0) & 1;
 
             for (int ry = y0; ry < y1; ry += 2)
                 for (int rx = x0; rx < x1; rx += 2)
@@ -938,7 +932,7 @@ namespace RoadDemo
                     int y1 = Mathf.Min(TurfPlate.RH, PxY(street.Plan.yMax));
                     for (int ry = y0; ry < y1; ry++)
                     {
-                        if (ry % 12 >= 7 || !Road(cx, ry))
+                        if (Mod(GroundY(ry), 12) >= 7 || !Road(cx, ry))
                             continue;
                         if (_roadCount[ry * TurfPlate.RW + cx] != 1 || InZebra(cx, ry))
                             continue;
@@ -954,7 +948,7 @@ namespace RoadDemo
                     int x1 = Mathf.Min(TurfPlate.RW, PxX(street.Plan.xMax));
                     for (int rx = x0; rx < x1; rx++)
                     {
-                        if (rx % 12 >= 7 || !Road(rx, cy))
+                        if (Mod(GroundX(rx), 12) >= 7 || !Road(rx, cy))
                             continue;
                         if (_roadCount[cy * TurfPlate.RW + rx] != 1 || InZebra(rx, cy))
                             continue;
@@ -996,19 +990,23 @@ namespace RoadDemo
                     break;
                 }
 
+            // The lines stand on round metres of the world and the dots along them
+            // are phased off the world's own pixels too, so the ruling is the same
+            // ruling in every framing - a dot pattern started at the sheet's edge
+            // crawled along the line at every pan.
             for (float wx = Mathf.Ceil(_plan.Origin.x / pitch) * pitch;
                  wx < _plan.Origin.x + _plan.World.width; wx += pitch)
             {
-                int rx = PxX(_plan.Units(wx - _plan.Origin.x));
-                for (int ry = 0; ry < TurfPlate.RH; ry += 3)
+                int rx = PxX(_plan.ToPlan(new Vector2(wx, 0f)).x);
+                for (int ry = Mod(-_fleckY, 3); ry < TurfPlate.RH; ry += 3)
                     Ground.Dot(rx, ry, TurfInk.Pencil);
             }
 
             for (float wz = Mathf.Ceil(_plan.Origin.y / pitch) * pitch;
                  wz < _plan.Origin.y + _plan.World.height; wz += pitch)
             {
-                int ry = PxY(_plan.Units(wz - _plan.Origin.y));
-                for (int rx = 0; rx < TurfPlate.RW; rx += 3)
+                int ry = PxY(_plan.ToPlan(new Vector2(0f, wz)).y);
+                for (int rx = Mod(-_fleckX, 3); rx < TurfPlate.RW; rx += 3)
                     Ground.Dot(rx, ry, TurfInk.Pencil);
             }
         }
@@ -1025,7 +1023,6 @@ namespace RoadDemo
         void CollectBuildings(Transform blockRoot)
         {
             Buildings.Clear();
-            var roll = new TurfPlate.Roll(PaperSeed);
             int id = 0;
 
             if (blockRoot != null)
@@ -1043,12 +1040,12 @@ namespace RoadDemo
 
                     Add(++id, tf,
                         Rect.MinMaxRect(bounds.min.x, bounds.min.z, bounds.max.x, bounds.max.z),
-                        bounds.size.y, tf.GetComponentInParent<BusinessMarker>(), ref roll);
+                        bounds.size.y, tf.GetComponentInParent<BusinessMarker>());
                 }
             }
 
             foreach (var (area, rise, _) in _builder.QuarterRoofs)
-                Add(++id, null, area, rise, null, ref roll);
+                Add(++id, null, area, rise, null);
 
             // Biggest first, so a shed against a tower block still takes its own click:
             // the picker walks the list backwards and the small footprint is on top.
@@ -1056,8 +1053,7 @@ namespace RoadDemo
                 (b.World.width * b.World.height).CompareTo(a.World.width * a.World.height));
         }
 
-        void Add(int id, Transform tf, Rect world, float rise, BusinessMarker business,
-            ref TurfPlate.Roll roll)
+        void Add(int id, Transform tf, Rect world, float rise, BusinessMarker business)
         {
             if (world.width <= 0.01f || world.height <= 0.01f)
                 return;
@@ -1078,11 +1074,9 @@ namespace RoadDemo
                     : TurfTypeStyle.Of(type).Label + " " + (100 + id % 900),
                 District = "OUTSKIRTS",
                 BlockId = business != null ? business.BlockId : LotOf(world.center),
-                Occupants = 2 + roll.Next(28),
-                Rent = business != null && business.WeeklyIncome > 0
-                    ? business.WeeklyIncome
-                    : (1 + roll.Next(9)) * 40,
-                File = "B-" + (1300 + id),
+                // Only a business the city has priced has a figure; nothing else on
+                // this map is rolled, so a footprint without one prints no row.
+                Rent = business != null ? Mathf.Max(0, business.WeeklyIncome) : 0,
             });
         }
 

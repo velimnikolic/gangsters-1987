@@ -14,7 +14,7 @@ namespace LivingCity.CameraRig
     /// Uses the new Input System exclusively. This project has activeInputHandler set to
     /// "Input System Package (New)", so any legacy UnityEngine.Input call throws
     /// InvalidOperationException at runtime - which is also why the package's own
-    /// CameraControl.cs / PerspectiveCameraControl.cs cannot be used here.
+    /// CameraControl.cs cannot be used here.
     ///
     /// The rig is a focus point on the XZ plane plus a yaw; the camera is placed back along
     /// its own forward each frame. Rotating therefore orbits the focus point, and panning is
@@ -37,15 +37,16 @@ namespace LivingCity.CameraRig
 
         [Header("Zoom")]
         [SerializeField] float minOrthoSize = 10f;
-        [Tooltip("Namerno MANJI od grada: mapa je 34x33 celija (~1591x1544 m bounds posle " +
-                 "TileScale 1.56), a na 84 kadar pokriva ~300 m sirine - komsiluk, ne ceo " +
-                 "grad. Prvo spusteno sa 200 (za staru 16x7 mapu) na 100, pa na 70 zbog " +
-                 "performansi; 84 je to isto 70 skalirano za +20% siru celiju (70 x 1.2), " +
-                 "pa kadar drzi ISTI broj celija i entiteta koji je 70 placao.")]
+        [Tooltip("Deliberately SMALLER than the city: the map is 34x33 cells (~1591x1544 m " +
+                 "of bounds after TileScale 1.56), and at 84 the frame covers ~300 m across - " +
+                 "a neighbourhood, not the whole city. First lowered from 200 (for the old " +
+                 "16x7 map) to 100, then to 70 for performance; 84 is that same 70 scaled for " +
+                 "the +20% wider cell (70 x 1.2), so the frame holds the SAME number of cells " +
+                 "and entities that 70 paid for.")]
         [SerializeField] float maxOrthoSize = 84f;
         [SerializeField] float orthoSize = 40f;
-        [Tooltip("Percent change in zoom per scroll step. Na 6% je od default zooma 40 do " +
-                 "potpuno odzumirano ~13 klikova, a ceo opseg 10-84 je ~37.")]
+        [Tooltip("Percent change in zoom per scroll step. At 6% it is ~13 clicks from the " +
+                 "default zoom of 40 to fully zoomed out, and ~37 across the whole 10-84 range.")]
         [SerializeField] float scrollZoomSpeed = 6f;
         [SerializeField] float pinchZoomSpeed = 0.05f;
 
@@ -53,9 +54,9 @@ namespace LivingCity.CameraRig
         [Tooltip("World units per second at the default zoom. A city cell is 30 units, so this " +
                  "is roughly two blocks per second.")]
         [SerializeField] float keyboardPanSpeed = 60f;
-        [Tooltip("Multiplikator za drag pan misem. Na 1 grad prati kursor tacno 1:1; iznad toga " +
-                 "jedan povlacaj pokrije vise grada, po cenu da se tlo pod kursorom pomera brze " +
-                 "od samog kursora. Touch ostaje 1:1.")]
+        [Tooltip("Multiplier for mouse drag panning. At 1 the city follows the cursor exactly " +
+                 "1:1; above that one drag covers more city, at the cost of the ground under " +
+                 "the cursor moving faster than the cursor itself. Touch stays 1:1.")]
         [SerializeField] float dragPanSpeed = 3f;
         [Tooltip("Padding beyond the city bounds the focus point may travel.")]
         [SerializeField] float boundsPadding = 30f;
@@ -73,8 +74,9 @@ namespace LivingCity.CameraRig
         [Tooltip("Off = the pipeline asset's authored shadow distance and cascade splits are left " +
                  "alone. On = both are refitted to this rig every frame; see FitShadows.")]
         [SerializeField] bool fitShadowsToView = true;
-        [Tooltip("Metri iza najdalje vidljive tacke tla. Sluzi samo da ivica shadow dometa i " +
-                 "cascade fade band ostanu van kadra; sve iznad par metara je bacena rezolucija.")]
+        [Tooltip("Metres beyond the farthest visible ground point. Only there so the edge of " +
+                 "the shadow range and the cascade fade band stay out of frame; anything " +
+                 "above a few metres is thrown-away resolution.")]
         [SerializeField] float shadowDistanceMargin = 10f;
 
         /// <summary>Where on the ground the camera is looking. The audio listener stands here.</summary>

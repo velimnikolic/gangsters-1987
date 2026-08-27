@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 namespace RoadDemo
@@ -44,8 +44,6 @@ namespace RoadDemo
                  "from its terminus: it leaves that junction, turns on to the band, and " +
                  "climbs. Both ends of the road are junctions of the city.")]
         public int branchLine = 2;
-        [Tooltip("Unused: the road no longer ends in open country.")]
-        public float branchRun = 430f;
         public string branchName = "AIRPORT";
 
         [Header("The interchanges")]

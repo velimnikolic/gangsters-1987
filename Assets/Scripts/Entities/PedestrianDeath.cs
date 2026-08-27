@@ -29,15 +29,24 @@ namespace LivingCity.Entities
 
             IsDead = true;
 
-            var animator = GetComponent<Animator>();
-            if (animator)
-                animator.SetInteger(PedestrianAnimation.ActivityHash, PedestrianAnimation.Die);
-
-            // Order matters: the agent is disabled BEFORE the behaviour, because the agent's
-            // own update reads the behaviour and would spend one more frame steering a corpse.
+            // Order matters, three times over. The agent goes first: its OnDisable restores
+            // whatever activity it was in, which writes Activity = None to the animator, so a
+            // death take set before it would be cancelled on the same frame. The idler goes
+            // before the behaviour: its OnDisable re-enables the behaviour it had paused, and
+            // a corpse must not be handed back to the follower. And the agent goes before the
+            // behaviour because its own update reads the behaviour and would spend one more
+            // frame steering a corpse.
             var agent = GetComponent<PedestrianAgent>();
             if (agent)
                 agent.enabled = false;
+
+            var idler = GetComponent<PedestrianIdler>();
+            if (idler)
+                idler.enabled = false;
+
+            var animator = GetComponent<Animator>();
+            if (animator)
+                animator.SetInteger(PedestrianAnimation.ActivityHash, PedestrianAnimation.Die);
 
             var behaviour = GetComponent<HumanBehavior>();
             if (behaviour)
@@ -47,10 +56,6 @@ namespace LivingCity.Entities
 
                 behaviour.enabled = false;
             }
-
-            var idler = GetComponent<PedestrianIdler>();
-            if (idler)
-                idler.enabled = false;
 
             // The capsule goes, the Rigidbody stays. It is kinematic and gravity-free, so it
             // costs nothing lying there, and removing it would strand any component that holds

@@ -69,26 +69,58 @@ namespace LivingCity.UI
 
         TMP_Text ordersWeek;
 
+        /// <summary>How many categories the order table has - read off the enum, so
+        /// the cyclers wrap on the truth rather than on a number that goes stale the
+        /// day a category is added.</summary>
+        static readonly int CategoryCount =
+            System.Enum.GetValues(typeof(Outfit.OrderCategory)).Length;
+
+        int _cachedCategoryIndex = -1;
+        int _cachedTypeIndex = -1;
+        Outfit.OrderSpec _cachedSpec;
+
+        /// <summary>The order being drafted. The map asks for it every frame of a drag
+        /// (WantsArea), so the category's specs are gathered once per index change and
+        /// the answer kept until a cycler moves.</summary>
         Outfit.OrderSpec CurrentDraftSpec()
         {
+            if (ordersCategoryIndex == _cachedCategoryIndex && ordersTypeIndex == _cachedTypeIndex)
+                return _cachedSpec;
+
+            FillCategorySpecs(ordersCategoryIndex);
+            // A category the table has no orders for cannot be drafted from: the first
+            // that has any stands in for it, and a table with none at all drafts the
+            // empty spec rather than throwing under the map's drag.
+            for (var i = 0; categorySpecs.Count == 0 && i < CategoryCount; i++)
+            {
+                ordersCategoryIndex = i;
+                FillCategorySpecs(i);
+            }
+            if (ordersTypeIndex >= categorySpecs.Count)
+                ordersTypeIndex = 0;
+
+            _cachedCategoryIndex = ordersCategoryIndex;
+            _cachedTypeIndex = ordersTypeIndex;
+            _cachedSpec = categorySpecs.Count > 0 ? categorySpecs[ordersTypeIndex] : default;
+            return _cachedSpec;
+        }
+
+        void FillCategorySpecs(int categoryIndex)
+        {
             categorySpecs.Clear();
-            var category = (Outfit.OrderCategory)ordersCategoryIndex;
+            var category = (Outfit.OrderCategory)categoryIndex;
             foreach (var spec in Outfit.OrderTable.Specs)
                 if (spec.Category == category)
                     categorySpecs.Add(spec);
-            if (ordersTypeIndex >= categorySpecs.Count)
-                ordersTypeIndex = 0;
-            return categorySpecs[ordersTypeIndex];
         }
 
         void RefreshTargeting()
         {
-            var mine = StrategicMapHud.Targeting == (IMapTargetingConsumer)this;
             var wants = IsOpen && currentPage == LedgerPage.Orders && ordersCrewId >= 0;
             if (wants)
-                StrategicMapHud.Targeting = this;
-            else if (mine)
-                StrategicMapHud.Targeting = null;
+                StrategicMapHud.SetTargeting(this);
+            else
+                StrategicMapHud.ClearTargeting(this);
         }
 
         // ---- IMapTargetingConsumer ----
@@ -133,19 +165,31 @@ namespace LivingCity.UI
             draftLabel = "";
             draftBlockId = -1;
             var skipped = 0;
-            string firstReason = null;
+            var firstRefusal = Refusal.None;
+            var firstRival = -1;
+
+            // The holdings are gathered once for the whole box: a preview runs this
+            // every frame of the drag, over every block the box swallows.
+            if (outfit)
+                outfit.CollectHoldings(holdings);
+            else
+                holdings.Clear();
 
             foreach (var block in CityBlocks.Blocks)
             {
                 if (!block.Union.Overlaps(worldRect))
                     continue;
-                var reason = EligibleBlockReason(spec.Type, block.Id);
-                if (reason == null)
+                var refusal = Refuse(spec.Type, block.Id, out var rival);
+                if (refusal == Refusal.None)
                     draftBlocks.Add(block.Id);
                 else
                 {
                     skipped++;
-                    firstReason ??= reason;
+                    if (firstRefusal == Refusal.None)
+                    {
+                        firstRefusal = refusal;
+                        firstRival = rival;
+                    }
                 }
             }
 
@@ -175,7 +219,9 @@ namespace LivingCity.UI
             if (!preview)
                 ordersNote = draftBlocks.Count + " block" +
                     (draftBlocks.Count == 1 ? "" : "s") + " taken" +
-                    (skipped > 0 ? "; " + skipped + " skipped (" + firstReason + ")" : "") +
+                    (skipped > 0
+                        ? "; " + skipped + " skipped (" + RefusalText(firstRefusal, firstRival) + ")"
+                        : "") +
                     ".";
         }
 
@@ -242,34 +288,57 @@ namespace LivingCity.UI
             ordersNote = "Target: " + draftLabel + ".";
         }
 
-        string EligibleBlockReason(Outfit.OrderType type, int blockId)
+        /// <summary>Why a block cannot take an order of this type - a code, not a
+        /// sentence: the preview asks over every block under the drag, every frame,
+        /// and only the note that follows a release ever reads the words.</summary>
+        enum Refusal
         {
-            if (outfit)
-                outfit.CollectHoldings(holdings);
-            else
-                holdings.Clear();
+            None,
+            NoBusinesses,
+            HeldByRival,
+            NotYourTurf,
+        }
 
+        /// <summary>Reads <see cref="holdings"/> as the caller filled them - the box
+        /// gathers them once, not once per block.</summary>
+        Refusal Refuse(Outfit.OrderType type, int blockId, out int rival)
+        {
+            rival = -1;
             switch (type)
             {
                 case Outfit.OrderType.Extort:
                     if (!BlockHasBusiness(blockId))
-                        return "no businesses";
+                        return Refusal.NoBusinesses;
                     // A rival premise on the block shields it - you do not squeeze a
                     // street another family is standing on. Building-held, not block-held.
                     for (var gang = 0; gang < Gangs.GangCatalog.GangCount; gang++)
                         if (gang != Gangs.GangCatalog.PlayerGangId &&
                             Outfit.Turf.CountIn(holdings, blockId, gang) > 0)
-                            return "held by " + Gangs.GangRegistry.NameOf(gang);
-                    return null;
+                        {
+                            rival = gang;
+                            return Refusal.HeldByRival;
+                        }
+                    return Refusal.None;
 
                 case Outfit.OrderType.CollectProtection:
                 case Outfit.OrderType.Patrol:
                     return Outfit.Turf.CountIn(
                         holdings, blockId, Gangs.GangCatalog.PlayerGangId) > 0
-                        ? null : "not your turf";
+                        ? Refusal.None : Refusal.NotYourTurf;
 
                 default:
-                    return null;
+                    return Refusal.None;
+            }
+        }
+
+        static string RefusalText(Refusal refusal, int rival)
+        {
+            switch (refusal)
+            {
+                case Refusal.NoBusinesses: return "no businesses";
+                case Refusal.HeldByRival: return "held by " + Gangs.GangRegistry.NameOf(rival);
+                case Refusal.NotYourTurf: return "not your turf";
+                default: return "";
             }
         }
 
@@ -472,7 +541,7 @@ namespace LivingCity.UI
             // Category and type cyclers - the whole order table, four small tapes.
             Tape(ordersContent, "<", 4f, y, 26f, 22f, () =>
             {
-                ordersCategoryIndex = (ordersCategoryIndex + 4) % 5;
+                ordersCategoryIndex = (ordersCategoryIndex + CategoryCount - 1) % CategoryCount;
                 ordersTypeIndex = 0;
                 draftBlocks.Clear();
                 draftLabel = "";
@@ -485,7 +554,7 @@ namespace LivingCity.UI
             category.characterSpacing = 2f;
             Tape(ordersContent, ">", 4f + OrdersInner - 30f, y, 26f, 22f, () =>
             {
-                ordersCategoryIndex = (ordersCategoryIndex + 1) % 5;
+                ordersCategoryIndex = (ordersCategoryIndex + 1) % CategoryCount;
                 ordersTypeIndex = 0;
                 draftBlocks.Clear();
                 draftLabel = "";
@@ -495,8 +564,8 @@ namespace LivingCity.UI
 
             Tape(ordersContent, "<", 4f, y, 26f, 26f, () =>
             {
-                ordersTypeIndex = (ordersTypeIndex + categorySpecs.Count - 1)
-                    % categorySpecs.Count;
+                var count = Mathf.Max(1, categorySpecs.Count);
+                ordersTypeIndex = (ordersTypeIndex + count - 1) % count;
                 draftBlocks.Clear();
                 draftLabel = "";
                 dirty = true;
@@ -507,7 +576,7 @@ namespace LivingCity.UI
             type.characterSpacing = 3f;
             Tape(ordersContent, ">", 4f + OrdersInner - 30f, y, 26f, 26f, () =>
             {
-                ordersTypeIndex = (ordersTypeIndex + 1) % categorySpecs.Count;
+                ordersTypeIndex = (ordersTypeIndex + 1) % Mathf.Max(1, categorySpecs.Count);
                 draftBlocks.Clear();
                 draftLabel = "";
                 dirty = true;

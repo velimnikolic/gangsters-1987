@@ -21,7 +21,7 @@ public class LevelCrossingController : MonoBehaviour
             {
                 foreach(LevelCrossing levelCrossing in levelCrossings)
                 {
-                    levelCrossing.meshRenderer.materials[2].SetColor("_EmissionColor", Color.red);
+                    levelCrossing.SetLampColor(Color.red);
                     levelCrossing.ChangeBarrier(false);
                 }
             }
@@ -37,7 +37,7 @@ public class LevelCrossingController : MonoBehaviour
                 stateChange?.Invoke(false);
                 foreach (LevelCrossing levelCrossing in levelCrossings)
                 {
-                    levelCrossing.meshRenderer.materials[2].SetColor("_EmissionColor", Color.black);
+                    levelCrossing.SetLampColor(Color.black);
                     levelCrossing.ChangeBarrier(true);
                 }
             }

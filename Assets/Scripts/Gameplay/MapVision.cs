@@ -27,19 +27,19 @@ namespace LivingCity.Gameplay
     /// </summary>
     public static class MapVisionRegistry
     {
-        static readonly List<IMapVisionSource> sources = new List<IMapVisionSource>();
+        static readonly List<IMapVisionSource> Registered = new List<IMapVisionSource>();
 
-        public static IReadOnlyList<IMapVisionSource> Sources => sources;
+        public static IReadOnlyList<IMapVisionSource> Sources => Registered;
 
         public static void Register(IMapVisionSource source)
         {
-            if (source != null && !sources.Contains(source))
-                sources.Add(source);
+            if (source != null && !Registered.Contains(source))
+                Registered.Add(source);
         }
 
         public static void Unregister(IMapVisionSource source)
         {
-            sources.Remove(source);
+            Registered.Remove(source);
         }
 
         /// <summary>
@@ -52,8 +52,8 @@ namespace LivingCity.Gameplay
         {
             get
             {
-                for (var i = 0; i < sources.Count; i++)
-                    if (sources[i].VisionActive)
+                for (var i = 0; i < Registered.Count; i++)
+                    if (Registered[i].VisionActive)
                         return true;
                 return false;
             }
@@ -61,9 +61,9 @@ namespace LivingCity.Gameplay
 
         public static bool IsVisible(Vector3 worldPosition)
         {
-            for (var i = 0; i < sources.Count; i++)
+            for (var i = 0; i < Registered.Count; i++)
             {
-                var source = sources[i];
+                var source = Registered[i];
                 if (!source.VisionActive)
                     continue;
 
@@ -79,7 +79,7 @@ namespace LivingCity.Gameplay
 
         // Static state outlives Play when domain reload is off - same fix as OverlayRegistry.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetForPlay() => sources.Clear();
+        static void ResetForPlay() => Registered.Clear();
     }
 
     /// <summary>

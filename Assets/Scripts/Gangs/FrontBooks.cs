@@ -152,11 +152,6 @@ namespace LivingCity.Gangs
             var trade = Trades[rng.Next(Trades.Length)];
             var takings = 900 + rng.Next(0, 53) * 50;      // $900 - $3,500 a week
 
-            // One door in three carries the family's own name over it. A mob that hides
-            // every premises reads as a conspiracy; a mob that signs one in three reads
-            // as a family that has been on the street for forty years, which is what it
-            // is - and it tells the player whose corner he is standing on before he
-            // clicks anything.
             var racket = Rackets[rng.Next(Rackets.Length)];
 
             // The name on the licence is a CITIZEN's. Drawn from the same shared tables
@@ -176,6 +171,11 @@ namespace LivingCity.Gangs
                     break;
             }
 
+            // One door in three carries the family's own name over it. A mob that hides
+            // every premises reads as a conspiracy; a mob that signs one in three reads
+            // as a family that has been on the street for forty years, which is what it
+            // is - and it tells the player whose corner he is standing on before he
+            // clicks anything.
             var sign = rng.Next(0, 3) == 0 && !string.IsNullOrEmpty(family)
                 ? family + "'s " + trade
                 : Stems[rng.Next(Stems.Length)] + " " + trade;

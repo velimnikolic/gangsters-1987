@@ -71,14 +71,10 @@ namespace LivingCity.Entities
         /// </summary>
         const float SitTransitionSeconds = 1.5f;
 
-        /// <summary>Matches HumanBehavior's own animator scaling (speed * 0.8).</summary>
-        const float AnimatorSpeedScale = 0.8f;
-
         // Fixed-duration yields, shared across all agents. The drawn-per-activity durations
         // (sit, shop, idle, chat) stay as fresh WaitForSeconds - they differ every time.
         static readonly WaitForSeconds ExitBeat = new WaitForSeconds(0.4f);
         static readonly WaitForSeconds ReappearPoll = new WaitForSeconds(0.5f);
-        static readonly WaitForFixedUpdate FixedStep = new WaitForFixedUpdate();
 
         CityConfig config;
         System.Random rng;
@@ -139,6 +135,7 @@ namespace LivingCity.Entities
         {
             config = cityConfig;
             rng = new System.Random(seed);
+            PedestrianRegistry.Seed(body, seed);
 
             identitySeed = seed;
             female = PedestrianIdentity.IsFemale(prefabName);
@@ -686,12 +683,6 @@ namespace LivingCity.Entities
                 human.ResetRoute();
         }
 
-        /// <summary>
-        /// Which door to come back out of. Mostly a different one somewhere else in the city -
-        /// that is what stops every door from being an airlock that returns the same person -
-        /// but always with a fallback to the way in, which can never fail and so can never
-        /// leave somebody stuck indoors.
-        /// </summary>
         /// <summary>The commute's exit: the assigned door, claimed like any other. Null -
         /// never a destroyed reference - when there is nothing to force or the step is
         /// taken, so the caller's fallback test stays a plain truthiness check.</summary>
@@ -704,6 +695,12 @@ namespace LivingCity.Entities
             return forced;
         }
 
+        /// <summary>
+        /// Which door to come back out of. Mostly a different one somewhere else in the city -
+        /// that is what stops every door from being an airlock that returns the same person -
+        /// but always with a fallback to the way in, which can never fail and so can never
+        /// leave somebody stuck indoors.
+        /// </summary>
         BuildingDoor PickExit(BuildingDoor entered)
         {
             var director = PedestrianInteractionDirector.Instance;
@@ -747,40 +744,8 @@ namespace LivingCity.Entities
         IEnumerator WalkTo(Vector3 target, float stopWithin, float timeout = OffGraphTimeout,
                            bool clearing = false)
         {
-            SetStationary(false);
-            var speed = 0f;
-            var deadline = Time.time + timeout;
-
-            while (Time.time < deadline)
-            {
-                var toTarget = target - transform.position;
-                var remaining = PedestrianSteering.Flat(toTarget).magnitude;
-                if (remaining <= stopWithin)
-                    break;
-
-                speed = Mathf.MoveTowards(speed, human.maxspeed, 4f * Time.deltaTime);
-
-                var obstacle = PedestrianRegistry.Probe(body, toTarget);
-                var heading = PedestrianSteering.Blend(toTarget, obstacle.Push);
-                var advance = Mathf.Min(speed * Time.deltaTime,
-                              Mathf.Min(obstacle.AllowedAdvance, remaining));
-
-                var step = heading * advance;
-                step.y = Mathf.Clamp(toTarget.y, -advance, advance);
-                transform.position += step;
-
-                if (heading != Vector3.zero)
-                    transform.rotation = Quaternion.LookRotation(heading, Vector3.up);
-
-                var actual = advance / Mathf.Max(Time.deltaTime, 1e-5f);
-                body.SpeedMs = actual;
-                SetSpeed(actual);
-
-                yield return FixedStep;
-            }
-
-            body.SpeedMs = 0f;
-            SetSpeed(0f);
+            yield return AgentLocomotion.WalkTo(transform, human, body, animator, hasSpeedParam,
+                                                target, stopWithin, timeout);
             walkArrived = PedestrianSteering.Flat(target - transform.position).magnitude <= stopWithin * 2f + 0.5f;
 
             // PATCH (Living City): an off-graph leg can end on the carriageway - a bench or a
@@ -797,21 +762,8 @@ namespace LivingCity.Entities
             }
         }
 
-        IEnumerator Face(Vector3 point, float seconds = 0.35f)
-        {
-            var direction = PedestrianSteering.Flat(point - transform.position);
-            if (direction.sqrMagnitude < 1e-4f)
-                yield break;
-
-            var from = transform.rotation;
-            var to = Quaternion.LookRotation(direction.normalized, Vector3.up);
-            for (var t = 0f; t < seconds; t += Time.deltaTime)
-            {
-                transform.rotation = Quaternion.Slerp(from, to, t / seconds);
-                yield return null;
-            }
-            transform.rotation = to;
-        }
+        IEnumerator Face(Vector3 point, float seconds = 0.35f) =>
+            AgentLocomotion.Face(transform, point, seconds);
 
         // ------------------------------------------------------------------ plumbing
 
@@ -871,18 +823,8 @@ namespace LivingCity.Entities
             insideOf = null;
         }
 
-        void SetStationary(bool stationary)
-        {
-            if (body == null)
-                return;
-
-            body.Stationary = stationary;
-            if (stationary)
-            {
-                body.SpeedMs = 0f;
-                SetSpeed(0f);
-            }
-        }
+        void SetStationary(bool stationary) =>
+            AgentLocomotion.SetStationary(body, animator, hasSpeedParam, stationary);
 
         void SetHidden(bool hidden)
         {
@@ -894,11 +836,8 @@ namespace LivingCity.Entities
                     r.enabled = !hidden;
         }
 
-        void SetSpeed(float metresPerSecond)
-        {
-            if (hasSpeedParam)
-                animator.SetFloat(PedestrianAnimation.SpeedHash, metresPerSecond * AnimatorSpeedScale);
-        }
+        void SetSpeed(float metresPerSecond) =>
+            AgentLocomotion.SetSpeed(animator, hasSpeedParam, metresPerSecond);
 
         void SetActivity(int value)
         {
@@ -940,16 +879,7 @@ namespace LivingCity.Entities
         float Range(Vector2 range) =>
             range.x + (float)rng.NextDouble() * Mathf.Max(0f, range.y - range.x);
 
-        static bool HasParameter(Animator animator, int nameHash)
-        {
-            if (!animator || !animator.runtimeAnimatorController)
-                return false;
-
-            foreach (var parameter in animator.parameters)
-                if (parameter.nameHash == nameHash)
-                    return true;
-
-            return false;
-        }
+        static bool HasParameter(Animator animator, int nameHash) =>
+            AgentLocomotion.HasParameter(animator, nameHash);
     }
 }

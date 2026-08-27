@@ -362,7 +362,10 @@ namespace LivingCity.EditorTools
                     break;
                 }
             }
-            NameLookup[clean] = found;
+            // a miss is not remembered: the prefab may be baked into the catalogue a
+            // moment later, and a cached "" would hide it for the rest of the session
+            if (found.Length > 0)
+                NameLookup[clean] = found;
             return found;
         }
 

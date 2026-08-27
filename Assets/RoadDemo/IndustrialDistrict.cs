@@ -241,6 +241,10 @@ namespace RoadDemo
 
         public void Dispose()
         {
+            // the cars went on the street's list so the men on foot and the outfit's
+            // drivers could see them; off it again, or the next quarter dodges ghosts
+            foreach (var car in _vehicles) StreetTraffic.Users.Remove(car);
+            _vehicles.Clear();
             if (_yard != null && _yard.parent == null) Object.Destroy(_yard.gameObject);
         }
     }

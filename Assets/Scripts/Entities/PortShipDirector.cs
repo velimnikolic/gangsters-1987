@@ -74,12 +74,24 @@ namespace LivingCity.Entities
         System.Random rng;
         bool started;
 
+        /// <summary>Every forklift body still on the crowd registry. A destroyed director
+        /// stops its coroutines before any of them reaches its own Unregister, so the
+        /// bodies are let go here instead of leaking as phantom obstacles.</summary>
+        readonly List<PedestrianBody> forkliftBodies = new List<PedestrianBody>();
+
         /// <summary>For the self-bootstrap path - PortDirector hands its own references over
         /// because an AddComponent'd instance has nothing serialized.</summary>
         public void Configure(CityConfig cityConfig, PrefabDatabase database)
         {
             config = cityConfig;
             prefabs = database;
+        }
+
+        void OnDestroy()
+        {
+            foreach (var body in forkliftBodies)
+                PedestrianRegistry.Unregister(body);
+            forkliftBodies.Clear();
         }
 
         IEnumerator Start()
@@ -370,6 +382,8 @@ namespace LivingCity.Entities
             forklift.name = "port_forklift";
 
             var body = PedestrianRegistry.Register(forklift.transform);
+            if (body != null)
+                forkliftBodies.Add(body);
             StartCoroutine(ForkliftLoop(forklift.transform, body, parkAt, farEnd, working,
                                         new System.Random(berthRng.Next())));
         }
@@ -465,6 +479,7 @@ namespace LivingCity.Entities
             }
 
             PedestrianRegistry.Unregister(body);
+            forkliftBodies.Remove(body);
         }
 
         // ------------------------------------------------------------------ small maths

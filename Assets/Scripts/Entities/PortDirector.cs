@@ -111,10 +111,12 @@ namespace LivingCity.Entities
                 var human = person.GetComponent<HumanBehavior>();
                 if (!human)
                 {
-                    Debug.LogWarning("[PortDirector] The dock worker prefab has no " +
+                    Debug.LogWarning("[PortDirector] A dock worker prefab has no " +
                                      "HumanBehavior - re-run the asset bootstrap.", this);
                     Destroy(person);
-                    return;
+                    // The prefab is drawn per docker, so one bad draw costs one docker, not
+                    // the whole shift.
+                    continue;
                 }
 
                 // Same instance-level controller swap as PedestrianSpawner: the interaction

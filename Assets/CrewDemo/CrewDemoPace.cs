@@ -14,6 +14,10 @@ namespace CrewDemo
 
         int _speed = 2;
         bool _paused;
+        // the readout only changes when a key is pressed, and GUI.skin only exists
+        // inside OnGUI - so the text is rebuilt on Apply and the styles made once there
+        string _text;
+        GUIStyle _bigStyle, _hintStyle;
 
         public bool Paused => _paused;
         public float Multiplier => Speeds[_speed];
@@ -29,7 +33,11 @@ namespace CrewDemo
             if (kb.periodKey.wasPressedThisFrame && _speed < Speeds.Length - 1) { _speed++; Apply(); }
         }
 
-        void Apply() => Time.timeScale = _paused ? 0f : Speeds[_speed];
+        void Apply()
+        {
+            Time.timeScale = _paused ? 0f : Speeds[_speed];
+            _text = _paused ? "PAUSED  ·  Space to resume" : Multiplier + "x";
+        }
 
         void OnDestroy()
         {
@@ -41,17 +49,20 @@ namespace CrewDemo
         void OnGUI()
         {
             if (LivingCity.UI.PersonnelAlmanac.IsOpen) return;
-            var style = new GUIStyle(GUI.skin.label)
+            if (_bigStyle == null)
             {
-                fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperRight,
-            };
-            style.normal.textColor = _paused ? new Color(1f, 0.78f, 0.32f) : new Color(0.9f, 0.95f, 1f);
-            string text = _paused ? "PAUSED  ·  Space to resume" : Multiplier + "x";
-            GUI.Label(new Rect(Screen.width - 420f, 8f, 400f, 32f), text, style);
-            var hint = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperRight };
-            hint.normal.textColor = new Color(0.75f, 0.82f, 0.9f);
+                _bigStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperRight,
+                };
+                _hintStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperRight };
+                _hintStyle.normal.textColor = new Color(0.75f, 0.82f, 0.9f);
+            }
+            if (_text == null) _text = Multiplier + "x";
+            _bigStyle.normal.textColor = _paused ? new Color(1f, 0.78f, 0.32f) : new Color(0.9f, 0.95f, 1f);
+            GUI.Label(new Rect(Screen.width - 420f, 8f, 400f, 32f), _text, _bigStyle);
             GUI.Label(new Rect(Screen.width - 420f, 40f, 400f, 22f),
-                "Space: hold   , / . : slower / faster", hint);
+                "Space: hold   , / . : slower / faster", _hintStyle);
         }
     }
 }

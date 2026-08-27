@@ -135,10 +135,13 @@ namespace HarborDemo
                     Mark(bay, new Vector3(stand.x, 0f, stand.z), 90f, "Bay");
             if (tyres.Count > 0)
             {
-                for (int i = 0; i < 6; i++)
+                // six patches of rubber, each rolled off the gate lanes; a roll that
+                // keeps landing in one is given up after a few tries rather than looped on
+                for (int i = 0, tries = 0; i < 6 && tries < 40; tries++)
                 {
                     float x = HarborKit.Range(_rng, -half + 10f, half - 10f);
-                    if (InGateLane(x, 2f)) { i--; continue; }
+                    if (InGateLane(x, 2f)) continue;
+                    i++;
                     var at = new Vector3(x, 0f, HarborKit.Range(_rng, YardRoadZ0 + 1.2f, YardRoadZ1 - 1.2f));
                     Mark(HarborKit.Pick(_rng, tyres), at, _rng.NextDouble() < 0.5 ? 90f : -90f, "TyreMarks");
                 }

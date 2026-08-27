@@ -292,15 +292,6 @@ namespace LivingCity.City
             if (activepoint == trajectory[activePath].pathPositions.Count - 1)
             {
                 activePath++;
-               /* if (trajectory[activePath].speed < maxspeed)
-                {
-                    maxspeed = trajectory[activePath].speed;
-                }
-                else
-                {
-                    currentMaxSpeed = maxspeed;
-                }*/
-
                 activepoint = 1;
             }
             else
@@ -533,7 +524,7 @@ namespace LivingCity.City
                     Debug.LogWarning(name + ": no sidewalk destination found in the 60-300m range; staying put.");
                     return;
                 }
-                Tile t = Tile.Tiles[UnityEngine.Random.Range(0, Tile.Tiles.Count - 1)];
+                Tile t = Tile.Tiles[UnityEngine.Random.Range(0, Tile.Tiles.Count)];
                 if (t.tileType == Tile.TileType.Road || t.tileType == Tile.TileType.OnlyPathwalk)
                 {
                     if (t.verticalType == Tile.VerticalType.Bridge)

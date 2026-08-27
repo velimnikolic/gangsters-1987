@@ -49,6 +49,8 @@ namespace RoadDemo
             Alley,       // 5 m one-way, bins on the verge against the backs
             Court,       // the paved court a big block keeps in the middle
             Cafe,        // a kit storefront in a gap, fronting the street
+            Park,        // a harvested park unit stands here: it brings its own grass
+            Subway,      // the subway entrance's column: its stair, nothing laid over it
         }
 
         // ------------------------------------------------------------------ the plan
@@ -66,7 +68,7 @@ namespace RoadDemo
 
         public sealed class Measures
         {
-            public int Units, Doors, Shops, Cafes, Trees;
+            public int Units, Doors, Shops, Cafes, Trees, Parks, Subways;
             public int Gaps, GapCells, Paved, Drives, Parking, AlleyCells, CourtCells, Verge;
             public int Empty, Pits, Repeats;
             /// <summary>The biggest unit's box as a share of the inner ground, percent.</summary>
@@ -95,6 +97,9 @@ namespace RoadDemo
             public List<Gap> Gaps = new List<Gap>();
             /// <summary>The gap the kit storefront stands in, if the block got one.</summary>
             public Gap Cafe;
+            /// <summary>The gap the subway entrance goes down in, and which column of it.</summary>
+            public Gap Subway;
+            public int SubwayAt = -1;
             public Use[,] Ground;
             public List<string> Faults = new List<string>();
             public List<string> Refused = new List<string>();
@@ -211,6 +216,8 @@ namespace RoadDemo
             Corners(plan, rng);
             Edges(plan, rng);
             Cafe(plan, rng);
+            Subway(plan, rng);
+            Parks(plan, rng);
             Inside(plan, rng);
             Measure(plan);
             Judge(plan);
@@ -311,11 +318,14 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ the corners
 
+        // The corners and the rows are dealt from the HOUSES. A park is not a house and a
+        // storefront is not a house: the park goes in the ground the houses leave, and the
+        // storefront in a gap in the row, each in its own pass.
         static IEnumerable<ResidentialUnit> Shops() =>
-            ResidentialUnits.All.Where(u => u.Shops.Sum() > 0);
+            ResidentialUnits.Houses.Where(u => u.Shops.Sum() > 0);
 
         static IEnumerable<ResidentialUnit> Stoops() =>
-            ResidentialUnits.All.Where(u => u.Shops.Sum() == 0 && u.Doors.Sum() > 0);
+            ResidentialUnits.Houses.Where(u => u.Shops.Sum() == 0 && u.Doors.Sum() > 0);
 
         /// <summary>
         /// A building on every corner that looks at two streets, and only ONE of them
@@ -350,6 +360,9 @@ namespace RoadDemo
             {
                 Klass.Corner => 1,
                 Klass.Row => 2,
+                // and every corner of a block or a court carries one: a blank corner is a
+                // fault by the approved plan, and leaving one open to vary the drawing was
+                // tried on 2026-08-27 and duly failed fifteen blocks in thirty
                 _ => 4,
             };
 
@@ -387,9 +400,16 @@ namespace RoadDemo
         static Spot Fit(Plan plan, List<ResidentialUnit> units, int ci, int cj, int a, int b,
                         Random rng, List<(int I, int J, int A, int B)> rest = null, int more = 0)
         {
-            Spot best = null;
-            int bestCells = -1;
-            foreach (var unit in units.OrderBy(u => rng.Next()))
+            // EVERY UNIT THAT FITS, and then one of them by lot - not the biggest.
+            //
+            // The biggest that fits is the SAME unit every time, and a quarter of a hundred
+            // blocks of much the same size came out as a hundred copies of one block (the
+            // user, 2026-08-27: "vrtis i dalje iste blokove"). The lot is weighted by area, so
+            // a big corner still usually takes a big house and the small ones are not crowded
+            // out - but not always, which is the whole difference between a street of houses
+            // and a street of one house printed over and over.
+            var spots = new List<Spot>();
+            foreach (var unit in units)
                 for (int yaw = 0; yaw < 360; yaw += 90)
                 {
                     var turn = Turn.Of(unit, yaw);
@@ -402,16 +422,23 @@ namespace RoadDemo
 
                     if (more > 0 && rest != null && !Leaves(plan, turn, i, j, rest, more)) continue;
 
-                    int cells = turn.CW * turn.CD;
-                    if (cells <= bestCells) continue;
-                    bestCells = cells;
-                    best = new Spot
+                    spots.Add(new Spot
                     {
                         Unit = unit, Yaw = yaw, I = i, J = j, CW = turn.CW, CD = turn.CD,
                         Shop = unit.Shops.Sum() > 0, Side = a,
-                    };
+                    });
                 }
-            return best;
+            if (spots.Count == 0) return null;
+
+            int total = 0;
+            foreach (var spot in spots) total += spot.CW * spot.CD;
+            int draw = rng.Next(total);
+            foreach (var spot in spots)
+            {
+                draw -= spot.CW * spot.CD;
+                if (draw < 0) return spot;
+            }
+            return spots[spots.Count - 1];
         }
 
         /// <summary>
@@ -600,9 +627,13 @@ namespace RoadDemo
         /// so the leftovers gather into one gap worth a programme instead of three slivers.</summary>
         static Spot Longest(Plan plan, int side, int at, int run, Random rng)
         {
-            Spot best = null;
-            int bestLong = 0;
-            foreach (var unit in ResidentialUnits.All.OrderBy(u => rng.Next()))
+            // ONE OF THE UNITS THAT FIT, drawn by lot and weighted by how much of the run it
+            // takes - not simply the longest. The longest is the same house every time, and a
+            // row dealt that way is the same row in every block of the quarter (the user,
+            // 2026-08-27). Weighted, a long run still mostly takes long houses, so the
+            // leftovers still gather into one gap rather than three slivers.
+            var spots = new List<Spot>();
+            foreach (var unit in ResidentialUnits.Houses)
             {
                 // one shopfront to a block: the corner already took it
                 if (unit.Shops.Sum() > 0 && plan.Spots.Any(s => s.Shop)) continue;
@@ -613,7 +644,7 @@ namespace RoadDemo
                     if (!Modest(plan, turn)) continue;
                     int along = side == 0 || side == 2 ? turn.CW : turn.CD;
                     int deep = side == 0 || side == 2 ? turn.CD : turn.CW;
-                    if (along > run || along <= bestLong) continue;
+                    if (along > run) continue;
 
                     int i, j;
                     if (side == 0) { i = at; j = Walk; }
@@ -622,16 +653,30 @@ namespace RoadDemo
                     else { i = Walk; j = at; }
                     if (!Fits(plan, turn, i, j)) continue;
 
-                    bestLong = along;
-                    best = new Spot
+                    spots.Add(new Spot
                     {
                         Unit = unit, Yaw = yaw, I = i, J = j,
                         CW = turn.CW, CD = turn.CD, Side = side,
                         Shop = unit.Shops.Sum() > 0,
-                    };
+                    });
                 }
             }
-            return best;
+            if (spots.Count == 0) return null;
+
+            int total = 0;
+            foreach (var spot in spots)
+            {
+                int along = side == 0 || side == 2 ? spot.CW : spot.CD;
+                total += along * along;                       // the square: long houses still win most runs
+            }
+            int draw = rng.Next(total);
+            foreach (var spot in spots)
+            {
+                int along = side == 0 || side == 2 ? spot.CW : spot.CD;
+                draw -= along * along;
+                if (draw < 0) return spot;
+            }
+            return spots[spots.Count - 1];
         }
 
         /// <summary>
@@ -646,6 +691,11 @@ namespace RoadDemo
         {
             Use use = run == 1 ? Use.Drive : run <= 4 ? Use.Paved : Use.Parking;
             int depth = Math.Min(3, Depth(plan, side));
+            // A car park is one row of bays behind the pavement and its aisle - two cells.
+            // Three deep put a second row of bays with its noses against the backs of the
+            // houses, and a car is longer than its stall (the user, 2026-08-27: "parking
+            // mora bude manji, preplicu se auta sa zgradama").
+            if (use == Use.Parking) depth = Math.Min(2, depth);
 
             // A way in is for getting somewhere. Run it only as far as the thing it serves -
             // the alley, or the car park behind the row - and if there is nothing back there
@@ -655,8 +705,45 @@ namespace RoadDemo
             if (use == Use.Drive)
             {
                 int reach = Serves(plan, side, at);
+                // and only if what it reaches has no way out yet: a car park with its own
+                // mouth does not need a second lane cut through the block beside the
+                // house's shopfront (the user, 2026-08-27, of the corner block: the tarmac
+                // ran the length of residential-01's awnings from street to street)
+                if (reach >= 0)
+                {
+                    var (ri, rj) = Into(plan, side, at, reach);
+                    if (HasWayOut(plan, ri, rj)) reach = -1;
+                }
                 if (reach < 0) { use = Use.Paved; depth = Math.Min(2, depth); }
                 else depth = reach;
+            }
+
+            // A car park keeps a cell of pavement between its tarmac and the houses beside
+            // it - beside the bays and beside the aisle alike: the shop corner hangs its
+            // awnings two metres past its wall, and tarmac run up to that wall put the
+            // shopfront on the car park (the user, 2026-08-27: "residential-01 uvek prelazi
+            // na parking", "zgrada i parking ne smeju da se preplicu"). The way in moves to
+            // the first column that is not that pavement.
+            bool Flanked(int n, int k)
+            {
+                foreach (int beside in new[] { at + n - 1, at + n + 1 })
+                {
+                    var (x, y) = Into(plan, side, beside, k);
+                    if (x < 0 || y < 0 || x >= plan.W || y >= plan.D) continue;
+                    var near = plan.Ground[x, y];
+                    if (near == Use.Building || near == Use.Forecourt) return true;
+                }
+                return false;
+            }
+            // The way in leads straight into the aisle, so the entrance column is one where
+            // neither the mouth cell nor the aisle cell behind it is that pavement. A tooth
+            // with no such column is no car park: it is paved.
+            int first = -1;
+            if (use == Use.Parking)
+            {
+                for (int n = 0; n < run && first < 0; n++)
+                    if (!Flanked(n, 0) && (depth < 2 || !Flanked(n, 1))) first = n;
+                if (first < 0) { use = Use.Paved; depth = Math.Min(2, depth); }
             }
 
             int cut = -1;
@@ -676,12 +763,32 @@ namespace RoadDemo
                         // behind the pavement, and the bays either side of the aisle, nosed
                         // to it. Two cells deep is one row of bays and the aisle; three is
                         // bays on both sides; one is a lay-by
-                        bool entrance = n == 0 && k == 0;
+                        bool entrance = n == first && k == 0;
                         bool aisle = k == 1 || depth == 1;
-                        cell = entrance || aisle ? Use.Drive : Use.Parking;
+                        cell = Flanked(n, k) ? Use.Paved : entrance || aisle ? Use.Drive : Use.Parking;
                     }
                     plan.Ground[i, j] = cell;
                     if (k == 0 && cut < 0 && Drives(cell)) cut = at + n;
+                }
+
+            // the mouth is cut where the ENTRANCE is, not at the first painted bay: a bay
+            // in front of a wing that leaves no room for the aisle is pavement (below), and
+            // a mouth cut for it opened onto that pavement
+            if (use == Use.Parking) cut = at + first;
+
+            // A bay is a bay because a car backs out of it into the aisle. Where the aisle
+            // could not be laid behind it - a wing of the house stands there - the bay would
+            // have the house at its tail and its tile run along the house's wall (the user,
+            // 2026-08-27: "pola zgrade prelazi preko parkinga"), so that cell is pavement.
+            if (use == Use.Parking && depth >= 2)
+                for (int n = 0; n < run; n++)
+                {
+                    var (i, j) = Into(plan, side, at + n, 0);
+                    var (x, y) = Into(plan, side, at + n, 1);
+                    if (i < 0 || j < 0 || i >= plan.W || j >= plan.D) continue;
+                    if (plan.Ground[i, j] != Use.Parking) continue;
+                    bool aisle = x >= 0 && y >= 0 && x < plan.W && y < plan.D && plan.Ground[x, y] == Use.Drive;
+                    if (!aisle) plan.Ground[i, j] = Use.Paved;
                 }
 
             // the mouth: the ring cell in front of it stops being pavement and becomes road,
@@ -712,8 +819,15 @@ namespace RoadDemo
         /// building stands in it is the composer's, by the length of the gap: a coffee shop
         /// in two or three cells, a diner in four.
         /// </summary>
+        /// <summary>How often a block gets the kit storefront in one of its gaps. It used to
+        /// be every block that had room for one, which in a quarter of a hundred blocks is a
+        /// hundred cafes with the same red umbrellas outside (the user, 2026-08-27). One in
+        /// three is a corner shop; every one is a high street.</summary>
+        const double CafeOdds = 0.34;
+
         static void Cafe(Plan plan, Random rng)
         {
+            if (rng.NextDouble() >= CafeOdds) return;
             var gaps = plan.Gaps
                 .Where(g => g.Use == Use.Paved && g.Run >= 2 && g.Depth >= CafeDeep)
                 .OrderByDescending(g => g.Side == plan.Artery)
@@ -746,6 +860,123 @@ namespace RoadDemo
             }
         }
 
+        // ------------------------------------------------------------------ the subway
+
+        /// <summary>How deep the subway entrance's column goes: three cells. The pack's
+        /// entrance (SM_Env_SubwayEntrance_01) is 5 m wide and its canopy runs 12 m back
+        /// from the mouth over the stair, with the stair's foot 3 m further - measured
+        /// 2026-08-27. Nothing is laid over any of it.</summary>
+        public const int SubwayDeep = 3;
+
+        /// <summary>How many blocks with room for one get a subway entrance. One in four:
+        /// a stair down on every block is a subway map, not a neighbourhood.</summary>
+        const double SubwayOdds = 0.25;
+
+        /// <summary>
+        /// A subway entrance in a paved gap that is deep enough - one column of the gap,
+        /// at one end of it, mouth on the pavement line. The cafe had first pick of the
+        /// gaps; this takes another, so a block never has its stair in its cafe's patio.
+        /// </summary>
+        static void Subway(Plan plan, Random rng)
+        {
+            if (rng.NextDouble() >= SubwayOdds) return;
+            var gaps = plan.Gaps
+                .Where(g => g != plan.Cafe && g.Use == Use.Paved && g.Run >= 2 && g.Depth >= SubwayDeep)
+                .OrderBy(g => rng.Next())
+                .ToList();
+            foreach (var gap in gaps)
+            {
+                var ends = rng.Next(2) == 0
+                    ? new[] { gap.At, gap.At + gap.Run - 1 }
+                    : new[] { gap.At + gap.Run - 1, gap.At };
+                foreach (int at in ends)
+                {
+                    bool whole = true;
+                    for (int k = 0; k < SubwayDeep && whole; k++)
+                    {
+                        var (i, j) = Into(plan, gap.Side, at, k);
+                        if (plan.Ground[i, j] != Use.Paved) whole = false;
+                    }
+                    if (!whole) continue;
+                    for (int k = 0; k < SubwayDeep; k++)
+                    {
+                        var (i, j) = Into(plan, gap.Side, at, k);
+                        plan.Ground[i, j] = Use.Subway;
+                    }
+                    plan.Subway = gap;
+                    plan.SubwayAt = at;
+                    plan.M.Subways = 1;
+                    return;
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------ the parks
+
+        /// <summary>How many blocks with room for a park get one. Not every one: a park
+        /// behind every row is a garden suburb, and this is not that.</summary>
+        const double ParkOdds = 0.6;
+
+        /// <summary>
+        /// A park in the ground the houses left - the user's word on the second drawing
+        /// (2026-08-27: "neki mini park isto bi mogao da se stavi"), out of the parks he
+        /// laid in the harvest scene. One to a block, whole, never cut, and never against
+        /// a way cars use: the verge stays between the fence and the tarmac, as it does
+        /// for every yard. Of the places it fits, the one that shows most of itself to a
+        /// street or an alley is taken - a park nobody can see is a lawn.
+        /// </summary>
+        static void Parks(Plan plan, Random rng)
+        {
+            if (rng.NextDouble() >= ParkOdds) return;
+            Spot best = null;
+            int bestScore = -1;
+            foreach (var unit in ResidentialUnits.Parks.OrderBy(u => rng.Next()))
+                for (int yaw = 0; yaw < 360; yaw += 90)
+                {
+                    var turn = Turn.Of(unit, yaw);
+                    for (int i = Walk; i + turn.CW <= plan.W - Walk; i++)
+                        for (int j = Walk; j + turn.CD <= plan.D - Walk; j++)
+                        {
+                            if (!Fits(plan, turn, i, j)) continue;
+                            int seen = Seen(plan, turn, i, j);
+                            if (seen < 0) continue;
+                            int score = seen * 4 + rng.Next(4);
+                            if (score <= bestScore) continue;
+                            bestScore = score;
+                            best = new Spot { Unit = unit, Yaw = yaw, I = i, J = j, CW = turn.CW, CD = turn.CD };
+                        }
+                }
+            if (best == null) return;
+
+            var t = Turn.Of(best.Unit, best.Yaw);
+            for (int u = 0; u < t.CW; u++)
+                for (int v = 0; v < t.CD; v++)
+                    if (t.Filled(u, v)) plan.Ground[best.I + u, best.J + v] = Use.Park;
+            plan.Spots.Add(best);
+            plan.M.Parks++;
+        }
+
+        /// <summary>How many of the park's edge cells look at a street or an alley verge -
+        /// or -1 when any of them touches tarmac, which is not allowed.</summary>
+        static int Seen(Plan plan, Turn turn, int i, int j)
+        {
+            int seen = 0;
+            for (int u = 0; u < turn.CW; u++)
+                for (int v = 0; v < turn.CD; v++)
+                {
+                    if (!turn.Filled(u, v)) continue;
+                    for (int s = 0; s < 4; s++)
+                    {
+                        int x = i + u + Step[s, 0], y = j + v + Step[s, 1];
+                        if (x < 0 || y < 0 || x >= plan.W || y >= plan.D) continue;
+                        var use = plan.Ground[x, y];
+                        if (Drives(use)) return -1;
+                        if (use == Use.Walkway || use == Use.Verge) seen++;
+                    }
+                }
+            return seen;
+        }
+
         /// <summary>How many cells in from this edge cell the nearest way a car uses lies,
         /// or -1 if there is nothing back there worth a drive.</summary>
         static int Serves(Plan plan, int side, int at)
@@ -760,6 +991,31 @@ namespace RoadDemo
                 if (use != Use.Empty) return -1;         // a wall, a yard already spoken for
             }
             return -1;
+        }
+
+        /// <summary>Can a car already drive from this tarmac cell off the block - is there
+        /// a mouth on the run of tarmac it belongs to?</summary>
+        static bool HasWayOut(Plan plan, int i, int j)
+        {
+            if (!Drives(plan.Ground[i, j])) return false;
+            var seen = new bool[plan.W, plan.D];
+            var todo = new Queue<(int, int)>();
+            todo.Enqueue((i, j));
+            seen[i, j] = true;
+            while (todo.Count > 0)
+            {
+                var (x, y) = todo.Dequeue();
+                if (x == 0 || y == 0 || x == plan.W - 1 || y == plan.D - 1) return true;
+                for (int s = 0; s < 4; s++)
+                {
+                    int u = x + Step[s, 0], v = y + Step[s, 1];
+                    if (u < 0 || v < 0 || u >= plan.W || v >= plan.D) continue;
+                    if (seen[u, v] || !Drives(plan.Ground[u, v])) continue;
+                    seen[u, v] = true;
+                    todo.Enqueue((u, v));
+                }
+            }
+            return false;
         }
 
         /// <summary>Is this something a car drives on?</summary>
@@ -1065,6 +1321,8 @@ namespace RoadDemo
             Use.Alley => '-',
             Use.Court => 'o',
             Use.Cafe => 'c',
+            Use.Park => 'g',
+            Use.Subway => 'u',
             _ => '?',
         };
 
@@ -1086,11 +1344,12 @@ namespace RoadDemo
             var sb = new StringBuilder();
             sb.Append($"{plan.Klass} {plan.W}x{plan.D} cells ({plan.W * Cell}x{plan.D * Cell} m) seed {plan.Seed}: ");
             sb.Append($"{m.Units} unit(s) (biggest {m.Share}%), {m.Doors} door(s) ({m.DoorsPerHa:F0}/ha), ");
-            sb.Append($"{m.Shops} shop(s), {m.Cafes} cafe(s), ");
+            sb.Append($"{m.Shops} shop(s), {m.Cafes} cafe(s), {m.Parks} park(s), {m.Subways} subway, ");
             sb.Append($"{m.Gaps} gap(s) over {m.GapCells} cell(s), {m.Trees} tree(s), ");
             sb.Append($"alley {m.AlleyCells}, verge {m.Verge}, court {m.CourtCells}, empty {m.Empty}");
             if (m.Empty > 0) sb.Append($" at {m.EmptyAt}");
             if (m.Repeats > 0) sb.Append($", {m.Repeats} repeat(s)");
+            foreach (var gap in plan.Gaps) sb.Append($"\n    gap: {gap}, {gap.Depth} deep");
             foreach (var refused in plan.Refused) sb.Append($"\n    REFUSED: {refused}");
             foreach (var fault in plan.Faults) sb.Append($"\n    FAULT: {fault}");
             return sb.ToString();

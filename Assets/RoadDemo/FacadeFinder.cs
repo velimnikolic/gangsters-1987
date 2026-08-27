@@ -53,19 +53,24 @@ namespace RoadDemo
                 return Side.PlusZ;
             }
 
-            // pass two: how much detail sits against each side, in the outer quarter
+            // pass two: how much detail sits against each side, in the outer quarter.
+            // mesh.vertices hands out a fresh copy on every read, so each mesh is read
+            // once here, brought into the instance's space, and kept for pass three
             float bandX = Mathf.Max(bounds.size.x * 0.25f, 0.5f);
             float bandZ = Mathf.Max(bounds.size.z * 0.25f, 0.5f);
-            foreach (var f in filters)
+            var points = new Vector3[filters.Length][];
+            for (int k = 0; k < filters.Length; k++)
             {
+                var f = filters[k];
                 var mesh = f.sharedMesh;
                 if (!mesh) continue;
                 Vector3[] verts;
                 try { verts = mesh.vertices; }
                 catch { continue; } // a mesh locked against reading: skip it, judge on the rest
-                foreach (var v in verts)
+                var local = points[k] = new Vector3[verts.Length];
+                for (int i = 0; i < verts.Length; i++)
                 {
-                    var p = root.InverseTransformPoint(f.transform.TransformPoint(v));
+                    var p = local[i] = root.InverseTransformPoint(f.transform.TransformPoint(verts[i]));
                     if (p.z >= bounds.max.z - bandZ) counts[(int)Side.PlusZ]++;
                     if (p.x >= bounds.max.x - bandX) counts[(int)Side.PlusX]++;
                     if (p.z <= bounds.min.z + bandZ) counts[(int)Side.MinusZ]++;
@@ -81,16 +86,11 @@ namespace RoadDemo
             // vertices' distance in from the edge, its densest bin is the wall
             var bins = new int[64];
             float band = front == Side.PlusX || front == Side.MinusX ? bandX : bandZ;
-            foreach (var f in filters)
+            foreach (var local in points)
             {
-                var mesh = f.sharedMesh;
-                if (!mesh) continue;
-                Vector3[] verts;
-                try { verts = mesh.vertices; }
-                catch { continue; }
-                foreach (var v in verts)
+                if (local == null) continue;
+                foreach (var p in local)
                 {
-                    var p = root.InverseTransformPoint(f.transform.TransformPoint(v));
                     float d = front switch
                     {
                         Side.PlusZ => bounds.max.z - p.z,

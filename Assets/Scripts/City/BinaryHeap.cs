@@ -35,7 +35,7 @@ namespace LivingCity.City
             Heap[0].currentScore = int.MaxValue;
             Heap[0].lastNode = null;
             Heap[0].score = -1;
-            for (int i = 1; i < count; i++)
+            for (int i = 1; i <= count; i++)
             {
                 Heap[i].path = null;
                 Heap[i].currentScore = int.MaxValue;
@@ -50,7 +50,9 @@ namespace LivingCity.City
             int topIndex = 1;
             int child = 2;
             PathNode tmp = Heap[topIndex];
-            if(topIndex < count && Heap[child].score > Heap[child+1].score)
+            // The heap is 1-based and live in 1..count; the slot past count is a stale node
+            // left behind by a pop, so the sibling is only compared when it is really there.
+            if(child + 1 <= count && Heap[child].score > Heap[child+1].score)
             {
                 child++;
             }
@@ -63,7 +65,7 @@ namespace LivingCity.City
                 {
                     break;
                 }
-                if (topIndex < count && Heap[child].score > Heap[child + 1].score)
+                if (child + 1 <= count && Heap[child].score > Heap[child + 1].score)
                 {
                     child++;
                 }

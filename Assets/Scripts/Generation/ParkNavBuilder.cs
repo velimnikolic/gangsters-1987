@@ -31,6 +31,14 @@ namespace LivingCity.Generation
         const float BoundaryTolerance = 1f;
 
         /// <summary>
+        /// The layer the proxy roots stand on. It has no name in TagManager, so it cannot be
+        /// looked up; the number is what PlayerOcclusionHider masks out so a proxy never hides
+        /// a building, and what the wall masks leave in so the pedestrian probe still lands on
+        /// the park.
+        /// </summary>
+        public const int ProxyLayer = 10;
+
+        /// <summary>
         /// The road tiles by grid cell, recovered from the names RoadNetworkBuilder stamps.
         /// Built once per city build and handed to every park block.
         /// </summary>
@@ -175,7 +183,7 @@ namespace LivingCity.Generation
                 root.transform.SetPositionAndRotation(
                     new Vector3(centre.x, 0f, centre.z), Quaternion.identity);
                 root.transform.localScale = Vector3.one * CityGrid.TileScale;
-                root.layer = 10;
+                root.layer = ProxyLayer;
 
                 // What the neighbours' OverlapBox probe hits. Thin and slightly sunk so it
                 // duplicates the grass tile's collider without adding a walkable step.

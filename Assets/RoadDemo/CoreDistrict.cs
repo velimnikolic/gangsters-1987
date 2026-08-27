@@ -70,6 +70,9 @@ namespace RoadDemo
         public void Plan(float[] links, int seed)
         {
             _seed = seed;
+            // a second plan before Build would leave the first yard standing where the
+            // first plan put it; it goes the way Dispose sends it
+            if (_yard != null && _yard.parent == null) Object.Destroy(_yard.gameObject);
             _yard = new GameObject("Core (unplaced)").transform;
             _blocks.Clear();
             foreach (var stand in CoreLayout.Blocks)
@@ -85,6 +88,7 @@ namespace RoadDemo
             _plan = CoreLayout.Arrange(_blocks, seed, out _raster);
             foreach (var block in _blocks) CoreLayout.Place(block);
             StandParks();
+            StandHomes();
             StandQuays();
             _bounds = Rect.MinMaxRect(_raster.X0, _raster.Z0,
                                       _raster.X(_raster.NX), _raster.Z(_raster.NZ));
@@ -115,6 +119,39 @@ namespace RoadDemo
                 if (stood.Gaps > 0 || stood.RailGap > 0.5f || stood.OnWalk > 0)
                     Debug.LogWarning($"[Core] {block.Name}: {stood.Gaps} cell(s) with no floor, " +
                                      $"{stood.RailGap:F1} m of railing missing, {stood.OnWalk} thing(s) in the way.");
+            }
+        }
+
+        /// <summary>
+        /// The deal's residential blocks - the made-up ends of the short rows - composed into
+        /// the rectangles it gave them, the way the parks are: at the origin, then moved to
+        /// the block's corner, under the same unplaced yard.
+        /// </summary>
+        void StandHomes()
+        {
+            if (_plan == null || _plan.Residential.Count == 0) return;
+            Composer.ForgetMissing();
+
+            foreach (var block in _plan.Residential)
+            {
+                var root = new GameObject(block.Name).transform;
+                root.SetParent(_yard, false);
+
+                var box = block.Box;
+                int w = Mathf.Max(3, Mathf.RoundToInt(box.width / CoreLayout.Cell));
+                int d = Mathf.Max(3, Mathf.RoundToInt(box.height / CoreLayout.Cell));
+                int dice = unchecked(_seed * 7919 + Mathf.RoundToInt(box.xMin) * 104729 +
+                                     Mathf.RoundToInt(box.yMin) * 1299709);
+
+                var lot = ResidentialLot.Roll(w, d, dice, Mathf.Max(0, block.Artery));
+                var stood = ResidentialBlocks.Compose(lot, root, new System.Random(dice),
+                    (prefab, parent) => Object.Instantiate(prefab, parent));
+                root.position = new Vector3(box.xMin, 0f, box.yMin);
+
+                if (lot.Faults.Count > 0 || stood.Missing > 0)
+                    Debug.LogWarning($"[Core] {block.Name} ({w}x{d} cells, {lot.Klass}): " +
+                                     string.Join("; ", lot.Faults) +
+                                     (stood.Missing > 0 ? $" {stood.Missing} piece(s) missing" : ""));
             }
         }
 
@@ -369,6 +406,10 @@ namespace RoadDemo
 
         public void Dispose()
         {
+            // the cars went on the street's list so the men on foot and the outfit's
+            // drivers could see them; off it again, or the next quarter dodges ghosts
+            foreach (var car in _vehicles) StreetTraffic.Users.Remove(car);
+            _vehicles.Clear();
             // the yard is the blocks' home between Plan and Build; if Build never came,
             // it is still standing where Plan left it
             if (_yard != null && _yard.parent == null) Object.Destroy(_yard.gameObject);

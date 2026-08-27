@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using LivingCity.Data;
 using LivingCity.City;
+using LivingCity.Entities;
 
 namespace LivingCity.Ambient
 {
@@ -11,9 +12,11 @@ namespace LivingCity.Ambient
     ///
     /// Attach-on-sight rather than attach-at-spawn: traffic cars come and go through the
     /// pack's own spawning, which this project does not own, so a periodic rescan for
-    /// CarBehaviors without lights is the hook that needs no changes to the pack. The lights
-    /// die with their car (they are plain children), so despawn needs no bookkeeping beyond
-    /// dropping dead references.
+    /// CarBehaviors without lights is the hook that needs no changes to the pack. The scan
+    /// reads TrafficRegistry.All - every enabled CarBehavior registers itself there - rather
+    /// than sweeping the scene, and remembers which cars it has fitted so a car is inspected
+    /// once, not once a second. The lights die with their car (they are plain children), so
+    /// despawn needs no bookkeeping beyond dropping dead references.
     ///
     /// Budgeted since the 10x city: at carCount 300 an unlimited fleet is up to 600 spot
     /// lights, and URP Forward+ renders at most 256 additional lights per frame on desktop -
@@ -86,14 +89,29 @@ namespace LivingCity.Ambient
             public readonly Light Light;
             public readonly CarBehavior Car;
 
-            public Beam(Light light, CarBehavior car)
+            /// <summary>Squared metres from the camera's ground focus, stamped just before
+            /// a sort - a car with no behaviour left keys to infinity and sorts last.</summary>
+            public readonly float SortKey;
+
+            public Beam(Light light, CarBehavior car, float sortKey = 0f)
             {
                 Light = light;
                 Car = car;
+                SortKey = sortKey;
             }
         }
 
+        /// <summary>Made once: the ranking used to be a closure over the camera focus,
+        /// allocated every 0.4 s, with a null branch that made the order inconsistent.</summary>
+        static readonly System.Comparison<Beam> NearestFirst =
+            (a, b) => a.SortKey.CompareTo(b.SortKey);
+
+        static readonly System.Predicate<CarBehavior> Gone = car => !car;
+
         readonly List<Beam> beams = new();
+
+        /// <summary>Cars already inspected for lights - despawned ones are swept per scan.</summary>
+        readonly HashSet<CarBehavior> fitted = new();
 
         float nextScan;
         float nextResort;
@@ -165,14 +183,16 @@ namespace LivingCity.Ambient
                 if (forward.y < -0.05f && eye.y > 0f)
                     eye += forward * (eye.y / -forward.y);
 
-                beams.Sort((a, b) =>
+                // Keys once per beam rather than twice per comparison.
+                for (var i = 0; i < beams.Count; i++)
                 {
-                    if (!a.Car || !b.Car)
-                        return 0;
-
-                    return (a.Car.transform.position - eye).sqrMagnitude
-                           .CompareTo((b.Car.transform.position - eye).sqrMagnitude);
-                });
+                    var beam = beams[i];
+                    var key = beam.Car
+                        ? (beam.Car.transform.position - eye).sqrMagnitude
+                        : float.PositiveInfinity;
+                    beams[i] = new Beam(beam.Light, beam.Car, key);
+                }
+                beams.Sort(NearestFirst);
             }
 
             var on = 0;
@@ -211,10 +231,19 @@ namespace LivingCity.Ambient
         /// intensity right away.</summary>
         void Scan(float intensity)
         {
-            var fitted = 0;
+            var count = 0;
+            fitted.RemoveWhere(Gone);
 
-            foreach (var car in FindObjectsByType<CarBehavior>(FindObjectsSortMode.None))
+            var bodies = TrafficRegistry.All;
+            for (var i = 0; i < bodies.Count; i++)
             {
+                var car = bodies[i]?.Car;
+                if (!car || fitted.Contains(car))
+                    continue;
+                fitted.Add(car);
+
+                // A car fitted by an earlier instance of this component already carries
+                // its pair; the name lookup runs once per car, the first time it is seen.
                 if (car.transform.Find(HolderName))
                     continue;
 
@@ -222,11 +251,11 @@ namespace LivingCity.Ambient
 
                 Attach(car, LeftPosition(car), range, intensity);
                 Attach(car, RightPosition(car), range, intensity);
-                fitted++;
+                count++;
             }
 
-            if (fitted > 0)
-                Debug.Log($"[Headlights] {fitted} cars fitted, {beams.Count} beams total.", this);
+            if (count > 0)
+                Debug.Log($"[Headlights] {count} cars fitted, {beams.Count} beams total.", this);
         }
 
         void Attach(CarBehavior car, Vector3 localPosition, float range, float intensity)

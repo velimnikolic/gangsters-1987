@@ -78,12 +78,13 @@ namespace FreewayDemo
             var vGaps = new float[nv];                          // the interior after each line
             for (int k = 0; k + 1 < nv; k++) vGaps[k] = blockWidth;
             vGaps[perQuarter - 1] = Mathf.Max(200f, quartersApart);
-            var vx = Centrelines(vBlvd, vGaps);
+            // the city's own spacing arithmetic, dealt across the gaps this scene names
+            var vx = RoadDemoBuilder.Centrelines(nv, vBlvd, vGaps);
 
             var hBlvd = new bool[nh];
             var hGaps = new float[nh];
             for (int k = 0; k + 1 < nh; k++) hGaps[k] = blockDepth;
-            var hz = Centrelines(hBlvd, hGaps);
+            var hz = RoadDemoBuilder.Centrelines(nh, hBlvd, hGaps);
 
             // where the freeway stands: north of the last street, clear of it
             float gridNorth = hz[nh - 1] + RoadDemoBuilder.RoadHalf(hBlvd[nh - 1]) + RoadDemoBuilder.PavementWidth;
@@ -159,20 +160,6 @@ namespace FreewayDemo
 #else
             Debug.LogError("[FreewayDemo] This demo loads Synty prefabs through the AssetDatabase and only runs in the editor.");
 #endif
-        }
-
-        /// <summary>Road centrelines for one axis: the interior after each line, with
-        /// the pavements and half a carriageway either side of it. RoadDemoBuilder's own
-        /// arithmetic (PlanLine), written out here because this scene deals the sizes
-        /// itself - one of the gaps is six hundred metres of country.</summary>
-        static float[] Centrelines(bool[] boulevard, float[] interiors)
-        {
-            var at = new float[boulevard.Length];
-            float pave = RoadDemoBuilder.PavementWidth;
-            for (int k = 0; k + 1 < boulevard.Length; k++)
-                at[k + 1] = at[k] + RoadDemoBuilder.RoadHalf(boulevard[k]) + pave +
-                            interiors[k] + pave + RoadDemoBuilder.RoadHalf(boulevard[k + 1]);
-            return at;
         }
 
         // Both quarters and the road between them, from above.

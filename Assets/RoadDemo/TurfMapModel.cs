@@ -281,9 +281,11 @@ namespace RoadDemo
         public string Name;
         public string District;
         public int BlockId = -1;
-        public int Occupants;
+
+        /// <summary>The business's own weekly take, dollars; nought when the city
+        /// has not priced it, and then the file prints no row rather than a guess.
+        /// </summary>
         public int Rent;
-        public string File;
 
         /// <summary>Whose front this is; -1 for the honest majority. Read live off
         /// the marker so a takeover shows without a rebuild. MAIN THREAD ONLY: the
@@ -379,11 +381,13 @@ namespace RoadDemo
         public readonly List<TurfMan> Men = new List<TurfMan>();
 
         public string Name = "";
-        public string Rank = "SOLDIER";
+
+        /// <summary>The lieutenant's rank off the personnel ledger, in caps. Empty
+        /// for a crew on nobody's books - a rival's - and then the dossier leaves the
+        /// word out rather than making one up from the crew's size.</summary>
+        public string Rank = "";
         public string Alias = "";
         public string Ride = "On foot";
-        public string File = "";
-        public string Mug = "";
 
         /// <summary>The body the lieutenant wears, by prefab name - what the ledger's
         /// portrait studio photographs for the mug shot. Empty when the crew has no
@@ -440,8 +444,22 @@ namespace RoadDemo
         /// whatever makes this city's grid fill the plate.</summary>
         public readonly float MetresPerUnit;
 
-        /// <summary>The world point that lands at authored (0,0).</summary>
+        /// <summary>The world point that lands at authored (0,0). Derived from
+        /// <see cref="OriginPx"/>, so it is always a whole real pixel of the world.</summary>
         public readonly Vector2 Origin;
+
+        /// <summary>
+        /// THE framing: the origin as whole REAL pixels of the world. The projection
+        /// works in world pixels - a point is scaled first, by a factor that knows
+        /// nothing about where the sheet is, and only then offset by this integer -
+        /// so two draws at one scale differ by a whole number of pixels and by
+        /// nothing else. Subtract the origin first and scale after, the obvious way
+        /// and the way this used to go, and every edge carries a float error that
+        /// depends on the framing; a city's coordinates are whole metres that land
+        /// exactly on pixel boundaries, and that error decided which side of the
+        /// boundary a kerb, a zebra or a fleck fell on, differently every pan.
+        /// </summary>
+        public readonly Vector2Int OriginPx;
 
         public readonly Rect World;
 
@@ -452,22 +470,32 @@ namespace RoadDemo
                 MetresPerUnit = 1f;
 
             // Centre what is fitted on the sheet: whatever the aspect mismatch leaves
-            // over becomes coast and country at the margins, evenly on both sides.
+            // over becomes coast and country at the margins, evenly on both sides -
+            // and then snapped to the pixel grid, half a pixel at most.
             var span = new Vector2(TurfPlate.AW * MetresPerUnit, TurfPlate.AH * MetresPerUnit);
-            Origin = fit.center - span * 0.5f;
+            var pixel = MetresPerUnit / TurfPlate.S;
+            var wanted = fit.center - span * 0.5f;
+            OriginPx = new Vector2Int(
+                Mathf.RoundToInt(wanted.x / pixel), Mathf.RoundToInt(wanted.y / pixel));
+            Origin = new Vector2(OriginPx.x * pixel, OriginPx.y * pixel);
             World = new Rect(Origin, span);
         }
 
-        public Vector2 ToPlan(Vector2 worldXZ) => (worldXZ - Origin) / MetresPerUnit;
+        /// <summary>Real pixels to the metre.</summary>
+        float PixelsPerMetre => TurfPlate.S / MetresPerUnit;
 
-        public Vector2 ToPlan(Vector3 world) =>
-            (new Vector2(world.x, world.z) - Origin) / MetresPerUnit;
+        float PlanX(float worldX) => (worldX * PixelsPerMetre - OriginPx.x) / TurfPlate.S;
+        float PlanY(float worldZ) => (worldZ * PixelsPerMetre - OriginPx.y) / TurfPlate.S;
 
-        public Rect ToPlan(Rect worldRect) => new Rect(
-            (worldRect.x - Origin.x) / MetresPerUnit,
-            (worldRect.y - Origin.y) / MetresPerUnit,
-            worldRect.width / MetresPerUnit,
-            worldRect.height / MetresPerUnit);
+        public Vector2 ToPlan(Vector2 worldXZ) => new Vector2(PlanX(worldXZ.x), PlanY(worldXZ.y));
+
+        public Vector2 ToPlan(Vector3 world) => new Vector2(PlanX(world.x), PlanY(world.z));
+
+        /// <summary>Both edges projected on their own and the size taken between
+        /// them, so a far edge lands where the near edge of its neighbour does.</summary>
+        public Rect ToPlan(Rect worldRect) => Rect.MinMaxRect(
+            PlanX(worldRect.xMin), PlanY(worldRect.yMin),
+            PlanX(worldRect.xMax), PlanY(worldRect.yMax));
 
         public Vector2 ToWorld(Vector2 plan) => Origin + plan * MetresPerUnit;
 

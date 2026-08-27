@@ -48,6 +48,32 @@ namespace LivingCity.Gameplay
 
         CombatConfig Combat => GameplayRuntime.Combat;
 
+        /// <summary>
+        /// The two waits every shot yields, made once per value rather than per shot: a
+        /// shootout is dozens of shots a minute and each was three fresh allocations.
+        /// Re-made only when the config number moves, so a tuned asset still lands live.
+        /// </summary>
+        WaitForSeconds hitWait;
+        float hitWaitSeconds = -1f;
+        WaitForSeconds flashWait;
+        float flashWaitSeconds = -1f;
+
+        WaitForSeconds HitWait(CombatConfig combat) =>
+            Cached(ref hitWait, ref hitWaitSeconds, combat ? combat.hitDelay : 0.12f);
+
+        WaitForSeconds FlashWait(CombatConfig combat) =>
+            Cached(ref flashWait, ref flashWaitSeconds, combat ? combat.flashSeconds : 0.06f);
+
+        static WaitForSeconds Cached(ref WaitForSeconds wait, ref float seconds, float wanted)
+        {
+            if (wait == null || seconds != wanted)
+            {
+                wait = new WaitForSeconds(wanted);
+                seconds = wanted;
+            }
+            return wait;
+        }
+
         void Awake()
         {
             socket = GetComponent<WeaponSocket>();
@@ -118,7 +144,7 @@ namespace LivingCity.Gameplay
 
             StartCoroutine(FlashOnce(combat));
 
-            yield return new WaitForSeconds(combat ? combat.hitDelay : 0.12f);
+            yield return HitWait(combat);
 
             if (!target || target.IsDead)
                 yield break;
@@ -165,7 +191,7 @@ namespace LivingCity.Gameplay
 
             StartCoroutine(FlashOnce(combat));
 
-            yield return new WaitForSeconds(combat ? combat.hitDelay : 0.12f);
+            yield return HitWait(combat);
 
             if (!target || target.IsDead)
                 yield break;
@@ -202,7 +228,7 @@ namespace LivingCity.Gameplay
             flash.color = combat ? combat.flashColour : new Color(1f, 0.85f, 0.55f);
             flash.enabled = true;
 
-            yield return new WaitForSeconds(combat ? combat.flashSeconds : 0.06f);
+            yield return FlashWait(combat);
 
             flash.enabled = false;
         }

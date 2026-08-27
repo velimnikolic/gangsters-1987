@@ -97,8 +97,9 @@ namespace ExpresswayDemo
             var hGaps = new float[nh];
             for (int k = 0; k + 1 < nh; k++) hGaps[k] = blockDepth;
 
-            var vx = Centrelines(vBlvd, vGaps);
-            var hz = Centrelines(hBlvd, hGaps);
+            // the city's own spacing arithmetic, dealt across the gaps this scene names
+            var vx = RoadDemoBuilder.Centrelines(nv, vBlvd, vGaps);
+            var hz = RoadDemoBuilder.Centrelines(nh, hBlvd, hGaps);
 
             var go = new GameObject("City (with a motorway round it)");
             go.SetActive(false);
@@ -144,7 +145,6 @@ namespace ExpresswayDemo
                 deckY = deckHeight,
                 roll = rollCity,
                 branchLine = branchLine,
-                branchRun = 430f,
                 branchName = "AIRPORT",
                 diamonds = diamondLines,
                 trumpetLine = branchTLine,
@@ -189,18 +189,6 @@ namespace ExpresswayDemo
 #else
             Debug.LogError("[ExpresswayDemo] This demo loads Synty prefabs through the AssetDatabase and only runs in the editor.");
 #endif
-        }
-
-        /// <summary>Road centrelines for one axis: RoadDemoBuilder's own arithmetic
-        /// (PlanLine), written out here because the scene deals its own sizes.</summary>
-        static float[] Centrelines(bool[] boulevard, float[] interiors)
-        {
-            var at = new float[boulevard.Length];
-            float pave = RoadDemoBuilder.PavementWidth;
-            for (int k = 0; k + 1 < boulevard.Length; k++)
-                at[k + 1] = at[k] + RoadDemoBuilder.RoadHalf(boulevard[k]) + pave +
-                            interiors[k] + pave + RoadDemoBuilder.RoadHalf(boulevard[k + 1]);
-            return at;
         }
 
         // The city and the road round it, from above.

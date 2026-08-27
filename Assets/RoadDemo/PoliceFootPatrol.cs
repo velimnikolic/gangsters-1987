@@ -642,43 +642,26 @@ namespace RoadDemo
         /// than in whichever builder stood the man up so that the city's officers and a
         /// demo's cannot be given two different ways home - the same reason the cars ask
         /// <see cref="PolicePatrolCar.RouteToward"/> for theirs.</summary>
-        public static Dictionary<PedNode, PedLink> RouteHome(PedLink home)
-        {
-            var dist = new Dictionary<PedNode, int> { [home.From] = 0, [home.To] = 0 };
-            var queue = new Queue<PedNode>();
-            queue.Enqueue(home.From);
-            queue.Enqueue(home.To);
-            while (queue.Count > 0)
-            {
-                var n = queue.Dequeue();
-                foreach (var l in n.Links)
-                {
-                    if (dist.ContainsKey(l.To)) continue;
-                    dist[l.To] = dist[n] + 1;
-                    queue.Enqueue(l.To);
-                }
-            }
-
-            var next = new Dictionary<PedNode, PedLink>();
-            foreach (var kv in dist)
-            {
-                PedLink best = null;
-                int bestD = int.MaxValue;
-                foreach (var l in kv.Key.Links)
-                    if (dist.TryGetValue(l.To, out int d) && d < bestD) { bestD = d; best = l; }
-                if (best != null) next[kv.Key] = best;
-            }
-            return next;
-        }
+        public static Dictionary<PedNode, PedLink> RouteHome(PedLink home) => Routes(home.From, home.To);
 
         /// <summary>BFS from the target corner over the (symmetric) ped graph,
         /// then the link toward the nearer neighbour per node. Built once per
         /// waypoint draw - the graph is a few hundred nodes.</summary>
-        static Dictionary<PedNode, PedLink> RouteToward(PedNode target)
+        static Dictionary<PedNode, PedLink> RouteToward(PedNode target) => Routes(target, null);
+
+        /// <summary>The one search both of those are: BFS out from the seed corner(s),
+        /// then per corner the link toward the nearer neighbour. <paramref name="second"/>
+        /// is the other end of a posted stretch, or null for a single corner.</summary>
+        static Dictionary<PedNode, PedLink> Routes(PedNode first, PedNode second)
         {
-            var dist = new Dictionary<PedNode, int> { [target] = 0 };
+            var dist = new Dictionary<PedNode, int> { [first] = 0 };
             var queue = new Queue<PedNode>();
-            queue.Enqueue(target);
+            queue.Enqueue(first);
+            if (second != null)
+            {
+                dist[second] = 0;
+                queue.Enqueue(second);
+            }
             while (queue.Count > 0)
             {
                 var n = queue.Dequeue();

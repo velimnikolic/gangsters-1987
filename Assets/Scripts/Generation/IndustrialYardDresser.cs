@@ -246,7 +246,7 @@ namespace LivingCity.Generation
         /// <summary>
         /// Stands one piece on its slot.
         ///
-        /// Two things it does that IndustrialDresser.Spawn does not, and one it deliberately
+        /// Two things it does that OverlapSpawn.Place does not, and one it deliberately
         /// omits.
         ///
         /// It corrects for the PIVOT in y as well as in xz. Every Epic City prefab is authored

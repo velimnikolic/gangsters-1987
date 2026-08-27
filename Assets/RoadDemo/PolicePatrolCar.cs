@@ -81,6 +81,7 @@ namespace RoadDemo
             Profile = DriverProfile.Patrol;
             Tag = "police";
             Tf.SetPositionAndRotation(stall, stallRot);
+            Slid(stall);
         }
 
         /// <summary>The officer at the wheel (CarOccupant), set by the builder. Shown
@@ -105,6 +106,11 @@ namespace RoadDemo
                         _steerByTangent
                             ? PatrolDocking.Heading(_curve, _t, _toRot)
                             : Quaternion.Slerp(_fromRot, _toRot, Mathf.SmoothStep(0f, 1f, _t)));
+                    // off the graph the transform is driven by hand, and the street reads
+                    // where a car IS off its road position, never off the transform: left
+                    // at the kerb, a car in its stall stood as a phantom in the running
+                    // lane for the whole of its rest (the same word CrewBike gives a spill)
+                    Slid(Tf.position);
                     if (_t < 1f) break;
                     if (State == Mode.Undocking)
                     {
@@ -120,6 +126,7 @@ namespace RoadDemo
                         State = Mode.Resting;
                         _restTimer = Random.Range(_restRange.x, _restRange.y);
                         Tf.SetPositionAndRotation(_stall, _stallRot);
+                        Slid(_stall);
                     }
                     break;
 

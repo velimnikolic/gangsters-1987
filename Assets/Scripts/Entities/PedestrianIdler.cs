@@ -72,16 +72,7 @@ namespace LivingCity.Entities
                 behaviour.enabled = true;
         }
 
-        static bool HasParameter(Animator animator, int nameHash)
-        {
-            if (!animator || !animator.runtimeAnimatorController)
-                return false;
-
-            foreach (var parameter in animator.parameters)
-                if (parameter.nameHash == nameHash)
-                    return true;
-
-            return false;
-        }
+        static bool HasParameter(Animator animator, int nameHash) =>
+            AgentLocomotion.HasParameter(animator, nameHash);
     }
 }

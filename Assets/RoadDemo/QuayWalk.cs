@@ -442,7 +442,9 @@ namespace RoadDemo
             var cast = new Dictionary<Programme, int>();
             foreach (var room in plan.Rooms) cast[room.Programme] = cast.TryGetValue(room.Programme, out var c) ? c + 1 : 1;
             sb.Append($"{plan.Depth * Cell:F0} m deep, {plan.Length * Cell:F0} m long, {plan.Mouths.Count} mouths, {plan.Rooms.Count} rooms:");
-            foreach (var pair in cast) sb.Append($" {pair.Value} {pair.Key.ToString().ToLowerInvariant()}");
+            // in the enum's order, not the dictionary's, so two runs of one seed read the same
+            foreach (Programme what in System.Enum.GetValues(typeof(Programme)))
+                if (cast.TryGetValue(what, out var many)) sb.Append($" {many} {what.ToString().ToLowerInvariant()}");
 
             int none = 0;
             for (int x = 0; x < plan.Depth; x++)

@@ -10,10 +10,9 @@ namespace AirportDemo
     /// a speed, and the manners to leave a gap to whoever is in front on the same
     /// route.
     ///
-    /// The road demo's own lane graph is not used here on purpose. It is being
-    /// rebuilt as this is written, and none of what drives at an airport wants it:
-    /// a one-way kerb loop, a ramp service road and a gate run are routes, not a
-    /// network with junctions to give way at.
+    /// The road demo's own lane graph is not used here on purpose: none of what
+    /// drives at an airport wants it. A one-way kerb loop, a ramp service road and a
+    /// gate run are routes, not a network with junctions to give way at.
     /// </summary>
     public sealed class AirportDriver
     {

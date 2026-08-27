@@ -172,8 +172,8 @@ namespace BlockDemo
             int nv = Mathf.Max(1, columns) + 1;
             int nh = Mathf.Max(1, rows) + 1;
 
-            var vBlvd = Avenues(nv, avenuesNorthSouth);
-            var hBlvd = Avenues(nh, avenuesEastWest);
+            var vBlvd = RoadDemoBuilder.Avenues(nv, avenuesNorthSouth);
+            var hBlvd = RoadDemoBuilder.Avenues(nh, avenuesEastWest);
             // The spacing is the city's own arithmetic - half a carriageway, the
             // pavement, the interior, the pavement, half a carriageway - so every
             // interior lands on a pad size the catalog has blocks for. Written out here
@@ -289,16 +289,6 @@ namespace BlockDemo
 #else
             Debug.LogError("[BlockDemo] This scene loads Synty prefabs through the AssetDatabase and only runs in the editor.");
 #endif
-        }
-
-        /// <summary>Which lines are boulevards, out of the line numbers named above.</summary>
-        static bool[] Avenues(int count, int[] named)
-        {
-            var blvd = new bool[count];
-            if (named != null)
-                foreach (int at in named)
-                    if (at >= 0 && at < count) blvd[at] = true;
-            return blvd;
         }
 
         // High enough to hold the whole quarter, low enough that the frontages read.

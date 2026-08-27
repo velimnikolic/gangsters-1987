@@ -162,7 +162,6 @@ namespace SuburbDemo
             OpenGates();
             MarkStreets();
             CarveLots();
-            PlanPlaces();
 
             _bounds = Rect.MinMaxRect(-PinShift, -MapHeight, MapWidth - PinShift, 0f);
         }

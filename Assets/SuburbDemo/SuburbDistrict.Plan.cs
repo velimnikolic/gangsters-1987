@@ -1342,10 +1342,5 @@ namespace SuburbDemo
             Reserve(Find(7, Chance(0.5f)), 7, false, LotUse.Shop, MaxDepthCells + 1);
             Reserve(Find(10, false), 10, false, LotUse.Park, MaxDepthCells * 2);
         }
-
-        void PlanPlaces()
-        {
-            // places were reserved during the carve; nothing more to decide here
-        }
     }
 }

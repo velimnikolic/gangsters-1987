@@ -87,6 +87,13 @@ namespace RoadDemo
         (string text, float until) _refusal;
         readonly List<Image> _carDots = new List<Image>();
         readonly List<TMP_Text> _carTags = new List<TMP_Text>();
+        // tag text per marker slot, kept until the thing in the slot changes: cut and
+        // upper-cased afresh it was a string or three per visible marker per frame
+        readonly List<(CrewWalker man, string name, DemoCrews.Unit unit, string gang, string text)> _menTag = new();
+        readonly List<(CrewCar car, bool civic, string name, DemoCrews.Unit owner, string ownerName, string text)> _carTag = new();
+        // what the popup last said and everything it said it about
+        (CrewWalker boss, string name, int standing, int size, string status, bool boarding, bool orderHint,
+            (bool carHint, bool exitHint, bool bail, string refusal) hints) _popupKey;
         RectTransform _carHint;        // "GET OUT" / "GET IN" over a car under the pointer
         Image _carHintIcon;
         TMP_Text _carHintText;
@@ -422,11 +429,6 @@ namespace RoadDemo
 
         static float MarkerHeight(CrewWalker man) => man.IsLieutenant ? 2.25f : 2.05f;
 
-        /// <summary>The outfit's car under the pointer: a click anywhere on the body -
-        /// the pointer's ray through the car's footprint at bonnet height, with a
-        /// little air round it - or within the same slack as a man of its middle. The
-        /// whole car, not just its middle: a click on the boot of the car the crew is
-        /// sat in is an order to get out, not an order to move the car a yard.</summary>
         /// <summary>The rival family's premises under the pointer: the nearest building
         /// the ray strikes that is somebody's front. Its own raycast rather than the
         /// front card's veto chain (BuildingCardPicker) - this is the right-click order
@@ -448,6 +450,11 @@ namespace RoadDemo
             return null;
         }
 
+        /// <summary>The outfit's car under the pointer: a click anywhere on the body -
+        /// the pointer's ray through the car's footprint at bonnet height, with a
+        /// little air round it - or within the same slack as a man of its middle. The
+        /// whole car, not just its middle: a click on the boot of the car the crew is
+        /// sat in is an order to get out, not an order to move the car a yard.</summary>
         CrewCar PickCarAt(Vector2 screen)
         {
             if (_cam == null) return null;
@@ -1065,8 +1072,7 @@ namespace RoadDemo
 
                 if (tagOn)
                 {
-                    var name = Surname(man.DisplayName);
-                    if (rival) name = _menUnit[i].GangName.ToUpperInvariant() + " · " + name;
+                    var name = MenTag(i, man, _menUnit[i], rival);
                     if (tag.text != name) tag.text = name;
                     tag.transform.position = new Vector3(
                         screen.x, screen.y + bob + (size * 0.5f + TagLift) * scale, 0f);
@@ -1099,6 +1105,34 @@ namespace RoadDemo
             UpdateMark();
             UpdatePopup(w, h, scale);
             UpdateBanner();
+        }
+
+        string MenTag(int i, CrewWalker man, DemoCrews.Unit unit, bool rival)
+        {
+            while (_menTag.Count <= i) _menTag.Add(default);
+            var slot = _menTag[i];
+            if (slot.text != null && slot.man == man && slot.unit == unit &&
+                ReferenceEquals(slot.name, man.DisplayName) && ReferenceEquals(slot.gang, unit.GangName))
+                return slot.text;
+            var name = Surname(man.DisplayName);
+            if (rival) name = unit.GangName.ToUpperInvariant() + " · " + name;
+            _menTag[i] = (man, man.DisplayName, unit, unit.GangName, name);
+            return name;
+        }
+
+        string CarTag(int i, CrewCar car)
+        {
+            while (_carTag.Count <= i) _carTag.Add(default);
+            var slot = _carTag[i];
+            var owner = car.Owner;
+            string ownerName = owner != null ? owner.Name : null;
+            if (slot.text != null && slot.car == car && slot.civic == car.Civic && slot.owner == owner &&
+                ReferenceEquals(slot.name, car.DisplayName) && ReferenceEquals(slot.ownerName, ownerName))
+                return slot.text;
+            string text = car.Civic ? "POLICE" : car.DisplayName.ToUpperInvariant() + " · " +
+                          (owner != null ? Surname(owner.Name) : "NOBODY'S");
+            _carTag[i] = (car, car.Civic, car.DisplayName, owner, ownerName, text);
+            return text;
         }
 
         // The outfit's car: a dot over its roof - gold when a crew owns it, dim when the
@@ -1146,8 +1180,7 @@ namespace RoadDemo
                 img.rectTransform.localScale = Vector3.one * (lit ? SelectedScale : 1f);
                 if (tag != null)
                 {
-                    string name = car.Civic ? "POLICE" : car.DisplayName.ToUpperInvariant() + " · " +
-                                  (owned ? Surname(car.Owner.Name) : "NOBODY'S");
+                    string name = CarTag(i, car);
                     if (tag.text != name) tag.text = name;
                     tag.transform.position = new Vector3(
                         screen.x, screen.y + bob + (BossSize * 0.5f + TagLift) * scale, 0f);
@@ -1194,21 +1227,33 @@ namespace RoadDemo
             }
 
             var boss = unit.Boss;
-            string title = boss.DisplayName + "  ·  Lieutenant";
+            // the words are cut again only when something they say has changed: the
+            // line is half a dozen concatenations, and it ran every frame a crew was
+            // selected
             int standing = unit.Standing(), size = unit.Size();
-            string line = (standing == size ? size + (size == 1 ? " man" : " men")
-                                            : standing + " of " + size + " standing") +
-                          "  ·  " + (unit.Car != null ? unit.Car.StatusLine
-                                     : unit.Boarding != null ? "Getting in the car" : boss.StatusLine);
-            if (unit.Car == null && unit.Boarding == null && !boss.HasOrder && boss.Target == null && !boss.Dead)
-                line += "  ·  right-click: move / attack" + (_crews.CarOf(unit) != null ? " / car" : "");
-            else if (unit.Car != null && !unit.Leaving)
-                line += unit.Car.Hot || unit.Car.State == CrewCar.Mode.DriveBy
-                    ? "  ·  middle-click: bail out"
-                    : "  ·  middle-click: get out";
-            if (_refusal.until > Time.unscaledTime) line = _refusal.text;
-            if (title != _shownTitle) { _shownTitle = title; _popupTitle.text = title; }
-            if (line != _shownLine) { _shownLine = line; _popupLine.text = line; }
+            var car = unit.Car;
+            bool boarding = unit.Boarding != null;
+            string status = car != null ? car.StatusLine : boarding ? null : boss.StatusLine;
+            bool orderHint = car == null && !boarding && !boss.HasOrder && boss.Target == null && !boss.Dead;
+            bool carHint = orderHint && _crews.CarOf(unit) != null;
+            bool exitHint = car != null && !unit.Leaving;
+            bool bail = exitHint && (car.Hot || car.State == CrewCar.Mode.DriveBy);
+            string refusal = _refusal.until > Time.unscaledTime ? _refusal.text : null;
+            var key = (boss, boss.DisplayName, standing, size, status, boarding, orderHint,
+                       (carHint, exitHint, bail, refusal));
+            if (_shownLine == null || !key.Equals(_popupKey))
+            {
+                _popupKey = key;
+                string title = boss.DisplayName + "  ·  Lieutenant";
+                string line = (standing == size ? size + (size == 1 ? " man" : " men")
+                                                : standing + " of " + size + " standing") +
+                              "  ·  " + (status ?? "Getting in the car");
+                if (orderHint) line += "  ·  right-click: move / attack" + (carHint ? " / car" : "");
+                else if (exitHint) line += bail ? "  ·  middle-click: bail out" : "  ·  middle-click: get out";
+                if (refusal != null) line = refusal;
+                if (title != _shownTitle) { _shownTitle = title; _popupTitle.text = title; }
+                if (line != _shownLine) { _shownLine = line; _popupLine.text = line; }
+            }
 
             var screen = _cam.WorldToScreenPoint(
                 boss.Tf.position + Vector3.up * MarkerHeight(boss));

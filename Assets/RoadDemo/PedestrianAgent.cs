@@ -38,12 +38,6 @@ namespace RoadDemo
 
         public static float SlotLateral(int k) => (k - (Slots - 1) / 2) * SlotStep;
 
-        /// <summary>Read the laid props into this stretch: which lateral slots a
-        /// walker of <paramref name="radius"/> can hold at each station. A station
-        /// owns the half-interval to either side of it and a slot is free only if
-        /// it is free over the WHOLE interval - sampled every quarter metre, so a
-        /// lamp post or a parking meter between two stations is seen and not
-        /// walked through. Done once at build; the crowd pays nothing for it.</summary>
         // one rank of lateral lines, reused: SampleClearance runs at build only,
         // and on one thread
         static readonly Vector2[] _rank = new Vector2[Slots];
@@ -51,6 +45,12 @@ namespace RoadDemo
         // one list, reused: sampling runs at build only and on one thread
         static readonly List<SidewalkPlan> _one = new List<SidewalkPlan>(1);
 
+        /// <summary>Read the laid props into this stretch: which lateral slots a
+        /// walker of <paramref name="radius"/> can hold at each station. A station
+        /// owns the half-interval to either side of it and a slot is free only if
+        /// it is free over the WHOLE interval - sampled every quarter metre, so a
+        /// lamp post or a parking meter between two stations is seen and not
+        /// walked through. Done once at build; the crowd pays nothing for it.</summary>
         public void SampleClearance(SidewalkPlan plan, float radius)
         {
             if (plan == null) { Free = null; return; }
@@ -463,6 +463,7 @@ namespace RoadDemo
         public void Dispose()
         {
             Walking.Remove(this);
+            CrewGore.Forget(this);
             if (_graph.IsValid()) _graph.Destroy();
         }
 
@@ -730,17 +731,17 @@ namespace RoadDemo
         /// way round them. Sets _push (metres of lateral) and _hold (0..1 of pace).</summary>
         void ReadCrowd(float dt) => ReadCrowd(dt, LinkDirection);
 
+        /// <summary>Metres of lateral order a second the shove may be changed by - how
+        /// fast a man may change his mind about which flank he is going round somebody
+        /// on. Low enough that the answer flipping sides is a lean and not a jerk.</summary>
+        const float PushEase = 1.2f;
+
         /// <summary>The same, for a walker with no stretch under him: the way he means
         /// to go is given rather than read off a link. THE CROWD IS ONE CROWD - the
         /// bucket holds the citizens, the outfit, the mobs and the law alike, so a man
         /// striding over open ground steps round exactly the people a man on the
         /// pavement steps round, and the two systems cannot disagree about who is
         /// where.</summary>
-        /// <summary>Metres of lateral order a second the shove may be changed by - how
-        /// fast a man may change his mind about which flank he is going round somebody
-        /// on. Low enough that the answer flipping sides is a lean and not a jerk.</summary>
-        const float PushEase = 1.2f;
-
         protected void ReadCrowd(float dt, Vector3 heading)
         {
             float want = 0f;
@@ -1826,6 +1827,16 @@ namespace RoadDemo
             Tf.position = HoldStep(pos, dt, speed);
         }
 
+        /// <summary>A hard ceiling on how far any one frame may move a person, whatever
+        /// the frame time. The per-frame caps are all dt-scaled, so a frame that hitches
+        /// - the scene stalls, dt jumps to a third of a second - would let a man cross a
+        /// lane in a single write and read as a teleport (the fault the player reported
+        /// when the city stutters: a man sidestepping an obstacle "jumps" that way). A
+        /// stalled scene may drop him behind his mark for a frame; it may never fling him
+        /// across the street. Set above any true per-frame stride so normal play never
+        /// meets it.</summary>
+        public const float MaxStepPerFrame = 0.75f;
+
         /// <summary>THE GRAPH NEVER TELEPORTS A MAN. His position is rebuilt from
         /// metre-plus-lateral every frame, and whenever his true feet do not fit
         /// that point - reseated off a stale link, a lateral past the clamp, slid
@@ -1837,16 +1848,6 @@ namespace RoadDemo
         /// the lateral back in every frame and launched men out of the city at
         /// twenty-two metres a second. dt = 0 is the one placement that must snap
         /// (Init seating a fresh walker on his stretch).</summary>
-        /// <summary>A hard ceiling on how far any one frame may move a person, whatever
-        /// the frame time. The per-frame caps are all dt-scaled, so a frame that hitches
-        /// - the scene stalls, dt jumps to a third of a second - would let a man cross a
-        /// lane in a single write and read as a teleport (the fault the player reported
-        /// when the city stutters: a man sidestepping an obstacle "jumps" that way). A
-        /// stalled scene may drop him behind his mark for a frame; it may never fling him
-        /// across the street. Set above any true per-frame stride so normal play never
-        /// meets it.</summary>
-        public const float MaxStepPerFrame = 0.75f;
-
         Vector3 HoldStep(Vector3 want, float dt, float speed)
         {
             if (dt <= 0f) return want;

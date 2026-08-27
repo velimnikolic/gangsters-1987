@@ -59,7 +59,7 @@ namespace LivingCity.EditorTools
 
             // the drawing stands clear of everything else: measured before anything is
             // added, moved into place once its size is known
-            bool anyScene = Extent(out Bounds others);
+            bool anyScene = SketchFrame.Extent(IndustrialQuarter.SketchRoot, out Bounds others);
 
             var plan = IndustrialLayout.Arrange(seed, out var raster);
             if (plan == null)
@@ -84,8 +84,8 @@ namespace LivingCity.EditorTools
 
             EditorSceneManager.MarkSceneDirty(scene);
             Selection.activeGameObject = quarter;
-            Frame(quarter.transform.position + new Vector3(bounds.center.x, 0f, bounds.center.y),
-                  Mathf.Max(bounds.width, bounds.height));
+            SketchFrame.Frame(quarter.transform.position + new Vector3(bounds.center.x, 0f, bounds.center.y),
+                              Mathf.Max(bounds.width, bounds.height) * 1.1f);
 
             var log = new System.Text.StringBuilder();
             log.AppendLine($"[Industry] {plan.Name}: {plan.Islands.Count} islands, {plan.Parcels.Count} parcels " +
@@ -114,67 +114,18 @@ namespace LivingCity.EditorTools
                 string trouble = one.Gaps == 0 && one.WallInBuilding == 0 && one.WallGap < 0.5f
                     ? "" : $"\n{one.Gaps} holes, {one.WallGap:F0} m of fence missing";
                 if (!string.IsNullOrEmpty(one.Refused)) trouble += $"\nrefused: {one.Refused}";
-                Caption($"{one.Parcel.Name} label",
+                SketchFrame.Caption($"{one.Parcel.Name} label",
                         $"{one.Parcel.Recipe.ToString().ToLowerInvariant()}\n" +
                         $"{box.width:F0} x {box.height:F0} m\nfronts {one.Parcel.Face.ToString().ToLowerInvariant()}{trouble}",
                         new Vector3(box.center.x, 26f, box.center.y), labels);
             }
             var bounds = IndustrialLayout.Bounds(raster);
-            Caption("quarter label",
+            SketchFrame.Caption("quarter label",
                     $"{IndustrialQuarter.SketchRoot}\n{plan.Parcels.Count} parcels, {plan.Name}\n" +
                     $"artery 35 m, streets 15 m" +
                     (raster.Faults > 0 ? $"\n{raster.Faults} FAULTS - see the console" : ""),
                     new Vector3(bounds.center.x, 90f, bounds.center.y), labels);
         }
 
-        static void Caption(string name, string text, Vector3 position, Transform parent)
-        {
-            BlockLotPads.PadLabel(name, text, position, parent);
-            var caption = parent.Find(name);
-            if (caption) caption.rotation = Quaternion.Euler(35f, 180f, 0f);
-        }
-
-        /// <summary>
-        /// Everything already standing, the drawing itself excepted - across EVERY open
-        /// scene, not only the active one.
-        ///
-        /// The editor here habitually has two loaded at once (the harvest scene and the
-        /// industrial lab), and the Scene view draws both. Measured against the active scene
-        /// alone the drawing stood clear of its own scene's contents and straight through
-        /// the other's - half the quarter with a tower block in the middle of it, which
-        /// reads as a fault in the quarter and is not one.
-        ///
-        /// A particle system is skipped: until it plays, its renderer reports whatever
-        /// bounds it happens to hold - usually an empty box at the world origin - and one
-        /// plume of chimney smoke would drag the measurement across the whole map.
-        /// </summary>
-        static bool Extent(out Bounds box)
-        {
-            box = new Bounds();
-            bool any = false;
-            for (int i = 0; i < SceneManager.sceneCount; i++)
-            {
-                var open = SceneManager.GetSceneAt(i);
-                if (!open.isLoaded) continue;
-                foreach (var root in open.GetRootGameObjects())
-                {
-                    if (root.name == IndustrialQuarter.SketchRoot) continue;
-                    foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
-                    {
-                        if (renderer is ParticleSystemRenderer) continue;
-                        if (!any) { box = renderer.bounds; any = true; }
-                        else box.Encapsulate(renderer.bounds);
-                    }
-                }
-            }
-            return any;
-        }
-
-        static void Frame(Vector3 centre, float span)
-        {
-            var view = SceneView.lastActiveSceneView;
-            if (view == null) return;
-            view.LookAt(centre, Quaternion.Euler(55f, 0f, 0f), span * 1.1f);
-        }
     }
 }

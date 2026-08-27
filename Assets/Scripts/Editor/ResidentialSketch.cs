@@ -40,17 +40,23 @@ namespace LivingCity.EditorTools
         /// core deals (CoreRoads.StreetCells).</summary>
         const int Street = 3;
 
+        /// <summary>A fresh seed off the clock, so every deal from the menu is a new one -
+        /// the first cut dealt seed 1 every time (the user, 2026-08-27: "dobijam uvek iste").
+        /// The seed is in the root's name and in the report, so a deal worth looking at
+        /// again can be dealt again.</summary>
+        static int FreshSeed() => 1 + (int)((System.DateTime.Now.Ticks / 10000) % 89999);
+
         [MenuItem("Tools/City/Residential/Sketch A Block", priority = 41)]
         public static void SketchMenu()
         {
-            string said = Sketch(SceneManager.GetActiveScene(), 1, "block", 14, 15);
+            string said = Sketch(SceneManager.GetActiveScene(), FreshSeed(), "block", 14, 15);
             Debug.Log(said);
         }
 
         [MenuItem("Tools/City/Residential/Demo Scene (five blocks)", priority = 42)]
         public static void DemoMenu()
         {
-            string said = Demo(1);
+            string said = Demo(FreshSeed());
             Debug.Log(said);
             EditorUtility.DisplayDialog("Residential demo", said, "OK");
         }
@@ -92,11 +98,12 @@ namespace LivingCity.EditorTools
             var plans = new List<(ResidentialLot.Plan Plan, int X)>();
             int at = Street;
             int deepest = 0;
+            int first = seed;
 
             foreach (var (name, w, d) in Five)
             {
                 var plan = ResidentialLot.Roll(w, d, seed++, artery: 0);
-                var root = new GameObject($"{Root} {name} {w}x{d}");
+                var root = new GameObject($"{Root} {name} {w}x{d} seed {plan.Seed}");
 
                 // COMPOSED AT THE ORIGIN AND MOVED AFTERWARDS. Everything the composer sets
                 // down is placed by measuring where it lands in the world, not by its parent,
@@ -119,7 +126,7 @@ namespace LivingCity.EditorTools
             EditorSceneManager.SaveScene(scene, DemoScene);
 
             int faults = plans.Sum(p => p.Plan.Faults.Count);
-            said.Insert(0, $"{plans.Count} block(s) in {DemoScene}, {faults} fault(s)\n");
+            said.Insert(0, $"{plans.Count} block(s) in {DemoScene} from seed {first}, {faults} fault(s)\n");
             return said.ToString();
         }
 

@@ -184,9 +184,13 @@ namespace LivingCity.Gameplay
             var result = RosterOps.Promote(Roster, man.Id, out _);
             if (!result.Ok)
             {
+                // The roster refused him after the safe paid: the man goes back on the
+                // page and the money goes back where it came from, Purchases line included.
                 Roster.Members.Remove(man);
                 man.Id = -1;
                 market.Restore(ad);
+                if (outfit != null)
+                    outfit.Refund(price, "a man out of the paper");
                 return result;
             }
 

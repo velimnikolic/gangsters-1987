@@ -60,7 +60,7 @@ namespace LivingCity.City
             foreach (Path path in startPaths)
             {
                 float h = CalculateHeuristic(path.pathPositions[path.pathPositions.Count - 1].position);
-                float g = Vector3.Distance(transform.position, path.pathPositions[0].position) + Vector3.Distance(transform.position, path.pathPositions[path.pathPositions.Count-1].position);
+                float g = Vector3.Distance(startPoint, path.pathPositions[0].position) + Vector3.Distance(startPoint, path.pathPositions[path.pathPositions.Count-1].position);
                 PathNode node = new PathNode() {path = path, lastNode = null, currentScore = g, score = h +g};
                 Open.Insert(node);
                 OpenIDs.Add(node.path.Id, 0);
@@ -116,6 +116,11 @@ namespace LivingCity.City
 
                 Closed.Clear();
                 List<Path> startPaths;
+                // A later leg re-picks the previous leg's last path: it starts from the
+                // path before it and replaces it. A previous leg of a single path has no
+                // path before its last, so that leg continues from the last path instead and
+                // keeps it.
+                bool replacesLast = false;
                 if (i == 1)
                 {
                     if (pathType == PathType.Sidewalk)
@@ -123,8 +128,13 @@ namespace LivingCity.City
                     else
                         startPaths = startTile.paths;
                 }
-                else
+                else if (wholePath.Count >= 2)
+                {
                     startPaths = wholePath[wholePath.Count - 2].nextPaths;
+                    replacesLast = true;
+                }
+                else
+                    startPaths = wholePath[wholePath.Count - 1].nextPaths;
                 foreach (Path path in startPaths)
                 {
                     float h = CalculateHeuristic(path.pathPositions[path.pathPositions.Count - 1].position);
@@ -146,7 +156,7 @@ namespace LivingCity.City
                     GetPathList(last);
                     PathList.Reverse();
                     //PathList[0] = FindClosestPath(startPoint, startPaths);
-                    if(i>1)
+                    if (replacesLast)
                     {
                         wholePath.RemoveAt(wholePath.Count - 1);
                     }

@@ -79,6 +79,11 @@ namespace RoadDemo
         int _incident = -1;          // the incident number the bookkeeping below is for
         float _shotHeat;             // heat this incident has made from rounds alone
         float _callAt = float.MaxValue;
+        // the witness at the telephone: which hiding this delay was rolled for, and
+        // the delay - rolled once per witness, not once per frame (re-rolled every
+        // Update under a Min it collapsed to the bottom of its range in a second)
+        float _witnessAt = float.MinValue;
+        float _witnessDelay;
         bool _called;
         int _carsSent;
         float _lastSentAt = -1000f;
@@ -171,7 +176,14 @@ namespace RoadDemo
 
             // a witness at a telephone brings the call forward
             if (StreetAlarm.IncidentOpen && CivilianAgent.LastHidAt > StreetAlarm.IncidentStart)
-                _callAt = Mathf.Min(_callAt, CivilianAgent.LastHidAt + Random.Range(2f, 5f));
+            {
+                if (CivilianAgent.LastHidAt != _witnessAt)
+                {
+                    _witnessAt = CivilianAgent.LastHidAt;
+                    _witnessDelay = Random.Range(2f, 5f);
+                }
+                _callAt = Mathf.Min(_callAt, _witnessAt + _witnessDelay);
+            }
 
             if (StreetAlarm.IncidentOpen && Time.time >= _callAt)
             {
@@ -689,16 +701,25 @@ namespace RoadDemo
         public Vector3 Position => Car.Position;
         public bool Available => !_sent && Men != null && !Men.Wiped;
         public bool Carries => true;
-        public bool OnScene => _sent && !Car.Moving && Mathf.Abs(Car.Position.x - _target.x) < 8f;
+        public bool OnScene => _sent && !Car.Moving && Flat(Car.Position - _target).sqrMagnitude < 8f * 8f;
 
+        /// <summary>Short of the scene ALONG THE STREET it is on, on the car's side of
+        /// it. Measured along x it stood off into the yards on every north-south street.</summary>
         public void RouteTo(Vector3 scene, float standOff)
         {
             _sent = true;
-            var here = Car.Position;
-            float dir = scene.x >= here.x ? 1f : -1f;
-            _target = new Vector3(scene.x - dir * standOff, Car.RoadY, scene.z);
+            var toScene = Flat(scene - Car.Position);
+            var lane = Car.Net?.NearestLane(scene, out _, 12f);
+            var along = lane != null ? Flat(lane.Dir) : toScene;
+            if (along.sqrMagnitude < 1e-6f) along = Vector3.forward;
+            along.Normalize();
+            float dir = Vector3.Dot(toScene, along) >= 0f ? 1f : -1f;
+            _target = scene - along * (dir * standOff);
+            _target.y = Car.RoadY;
             Car.ParkNear(_target);
         }
+
+        static Vector3 Flat(Vector3 v) { v.y = 0f; return v; }
 
         public void Release()
         {
@@ -722,6 +743,7 @@ namespace RoadDemo
 
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         static readonly int EmissionId = Shader.PropertyToID("_EmissionColor");
+        static readonly int ColorId = Shader.PropertyToID("_Color");
         static readonly Color Red = new Color(1f, 0.08f, 0.05f), Blue = new Color(0.1f, 0.35f, 1f);
 
         public PoliceLights(Transform car)
@@ -810,7 +832,7 @@ namespace RoadDemo
         {
             r.GetPropertyBlock(_block);
             _block.SetColor(BaseColorId, c);
-            _block.SetColor(Shader.PropertyToID("_Color"), c);
+            _block.SetColor(ColorId, c);
             r.SetPropertyBlock(_block);
         }
     }

@@ -138,6 +138,9 @@ namespace RoadDemo
         RectTransform _row;
         RectTransform _frontKey;      // the outfit's own door, at the head of the row
         TMP_Text _frontTrade;
+        // the books' word for the trade and the label cut from it, kept until the word
+        // itself changes: upper-casing it every LateUpdate was a string a frame
+        string _tradeRaw, _tradeLabel;
         GangFront _front;
         Transform _cameraRoot;
         readonly List<Block> _blocks = new List<Block>();
@@ -176,8 +179,20 @@ namespace RoadDemo
         void OnDestroy()
         {
             if (Instance == this) Instance = null;
+            // the feeds are runtime objects of the bar's own making: a texture only
+            // released and a camera left under its root outlived the bar, one pair per
+            // block, every time the scene was rebuilt
             foreach (var block in _blocks)
-                if (block.Target != null) block.Target.Release();
+            {
+                if (block.Target != null)
+                {
+                    block.Target.Release();
+                    Destroy(block.Target);
+                    block.Target = null;
+                }
+                if (block.Cam != null) Destroy(block.Cam.gameObject);
+            }
+            if (_cameraRoot != null) Destroy(_cameraRoot.gameObject);
         }
 
         /// <summary>Is this screen point on the bar? The street pickers stand down for
@@ -466,9 +481,13 @@ namespace RoadDemo
 
             if (house && _frontTrade != null)
             {
-                var trade = _front.Books != null && !string.IsNullOrEmpty(_front.Books.Trade)
-                    ? _front.Books.Trade.ToUpperInvariant() : "FRONT";
-                if (_frontTrade.text != trade) _frontTrade.SetText(trade);
+                var raw = _front.Books != null ? _front.Books.Trade : null;
+                if (_tradeLabel == null || !ReferenceEquals(raw, _tradeRaw))
+                {
+                    _tradeRaw = raw;
+                    _tradeLabel = string.IsNullOrEmpty(raw) ? "FRONT" : raw.ToUpperInvariant();
+                }
+                if (_frontTrade.text != _tradeLabel) _frontTrade.SetText(_tradeLabel);
             }
 
             var mouse = Mouse.current;

@@ -1627,9 +1627,17 @@ namespace RoadDemo
                 if (_pool == null)
                 {
                     _pool = new List<GameObject>();
+#if UNITY_EDITOR
+                    // in path order, not the index's: FindAssets answers in whatever order
+                    // the asset database holds its entries, which is not the same on two
+                    // machines, and the dice index into this list - so the list is sorted
+                    // before it is weighted, and one seed picks one car anywhere
+                    var paths = new List<string>();
                     foreach (var guid in DemoAssetLoad.Find("t:Prefab", Folders))
+                        paths.Add(UnityEditor.AssetDatabase.GUIDToAssetPath(guid));
+                    paths.Sort(string.CompareOrdinal);
+                    foreach (var path in paths)
                     {
-                        string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
                         string low = path.ToLowerInvariant();
                         bool denied = false;
                         foreach (var deny in Deny)
@@ -1642,6 +1650,7 @@ namespace RoadDemo
                         for (int seat = 0, seats = LivingCity.Gameplay.VehicleCatalog.PoolWeight(path); seat < seats; seat++)
                             _pool.Add(prefab);
                     }
+#endif
                     if (_pool.Count == 0) Debug.LogWarning("[CoreRoads] no cars for the car parks: the vehicle folders came up empty.");
                 }
                 return _pool.Count == 0 ? null : _pool[dice.Next(_pool.Count)];
@@ -1699,6 +1708,7 @@ namespace RoadDemo
             public GameObject Stand(GameObject prefab, Vector3 at, int yaw)
             {
                 var go = _stand(prefab, _parent);
+                if (go == null) return null;
                 go.transform.SetPositionAndRotation(at, Quaternion.Euler(0f, yaw, 0f));
                 return go;
             }
@@ -1713,6 +1723,7 @@ namespace RoadDemo
                 }
                 if (prefab == null) return null;
                 var go = _stand(prefab, _parent);
+                if (go == null) return null;
                 go.transform.SetPositionAndRotation(at, Quaternion.Euler(0f, yaw, 0f));
                 return go;
             }

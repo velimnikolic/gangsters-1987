@@ -278,10 +278,30 @@ namespace MotoDemo
         }
 
         readonly List<Stood> _line = new List<Stood>();
+        /// <summary>The materials the stand made for itself, taken down with it.</summary>
+        readonly List<Material> _mats = new List<Material>();
         Transform _stage;
         DemoCamera _cam;
         Bounds _field;
-        string _built = "";     // the switches the line standing now was built from
+        Switch _built;          // the switches the line standing now was built from
+        string _guiText;        // the footer, rebuilt only when the count it quotes moves
+        int _guiCount = -1;
+        GUIStyle _guiStyle;
+
+        /// <summary>Every knob a change of which re-deals the rank. Compared as fields
+        /// rather than through a string built every frame to be thrown away.</summary>
+        struct Switch
+        {
+            public bool Motorcycles, Mopeds, Quads, Electric, Pedal, Plaques, Riders, Pillions, Spin;
+            public int PerRow;
+            public float Gap, RowGap, Yaw;
+
+            public bool Same(in Switch o) =>
+                Motorcycles == o.Motorcycles && Mopeds == o.Mopeds && Quads == o.Quads &&
+                Electric == o.Electric && Pedal == o.Pedal && Plaques == o.Plaques &&
+                Riders == o.Riders && Pillions == o.Pillions && Spin == o.Spin &&
+                PerRow == o.PerRow && Gap == o.Gap && RowGap == o.RowGap && Yaw == o.Yaw;
+        }
 
         const string StageName = "Moto Showroom";
 
@@ -310,7 +330,7 @@ namespace MotoDemo
             // the preview switched on or off, or the scripts reloaded out from under it
             if (!Application.isPlaying && preview == (_stage == null)) { Clear(); Stand(); }
             if (_stage == null) return;
-            if (Switches() != _built) { Clear(); Stand(); }
+            if (!Switches().Same(_built)) { Clear(); Stand(); }
             if (spin && Application.isPlaying) Spin(Time.deltaTime);
             Ride();
             if (logNow) { logNow = false; Debug.Log(Sheet()); }
@@ -625,12 +645,21 @@ namespace MotoDemo
         void OnGUI()
         {
             if (!Application.isPlaying || _line.Count == 0) return;
-            var style = new GUIStyle(GUI.skin.label) { fontSize = 12 };
-            style.normal.textColor = new Color(0.85f, 0.9f, 0.96f);
-            GUI.Label(new Rect(12f, Screen.height - 40f, 1200f, 34f),
-                _line.Count + " machines   amber: motorcycle   blue: moped/scooter   " +
-                "green: quad   red: BARRED (1987)   grey: pedal\n" +
-                "L: print the list   T: turntable", style);
+            // GUI.skin is only there inside OnGUI, so the style is made on the first
+            // pass and kept; the text only moves when the count it quotes does
+            if (_guiStyle == null)
+            {
+                _guiStyle = new GUIStyle(GUI.skin.label) { fontSize = 12 };
+                _guiStyle.normal.textColor = new Color(0.85f, 0.9f, 0.96f);
+            }
+            if (_guiCount != _line.Count)
+            {
+                _guiCount = _line.Count;
+                _guiText = _line.Count + " machines   amber: motorcycle   blue: moped/scooter   " +
+                           "green: quad   red: BARRED (1987)   grey: pedal\n" +
+                           "L: print the list   T: turntable";
+            }
+            GUI.Label(new Rect(12f, Screen.height - 40f, 1200f, 34f), _guiText, _guiStyle);
         }
 
         // ------------------------------------------------------------------ the set
@@ -651,6 +680,7 @@ namespace MotoDemo
             var mat = new Material(shader) { name = "Moto Showroom Floor" };
             mat.SetColor("_BaseColor", new Color(0.21f, 0.22f, 0.24f));
             mat.SetFloat("_Smoothness", 0.12f);
+            _mats.Add(mat);
             floor.GetComponent<MeshRenderer>().sharedMaterial = mat;
         }
 
@@ -741,11 +771,12 @@ namespace MotoDemo
         /// <summary>Every switch that changes what is STANDING, as one string. A knob
         /// that only changes how it is drawn is left out on purpose - the rank is
         /// rebuilt when it must be and not on every repaint.</summary>
-        string Switches() =>
-            (motorcycles ? "M" : "") + (mopeds ? "m" : "") + (quads ? "q" : "") +
-            (electric ? "e" : "") + (pedal ? "p" : "") + "|" + perRow + "|" +
-            gap.ToString("0.00") + "|" + rowGap.ToString("0.00") + "|" + yaw.ToString("0.0") + "|" +
-            (plaques ? "P" : "") + (riders ? "R" : "") + (pillions ? "2" : "") + (spin ? "T" : "");
+        Switch Switches() => new Switch
+        {
+            Motorcycles = motorcycles, Mopeds = mopeds, Quads = quads, Electric = electric, Pedal = pedal,
+            PerRow = perRow, Gap = gap, RowGap = rowGap, Yaw = yaw,
+            Plaques = plaques, Riders = riders, Pillions = pillions, Spin = spin,
+        };
 
         Bounds FieldBounds()
         {
@@ -795,6 +826,7 @@ namespace MotoDemo
         void Clear()
         {
             if (_stage) Kill(_stage.gameObject);
+            TestBench.DestroyAll(_mats);
             Forget();
         }
 
@@ -803,7 +835,7 @@ namespace MotoDemo
             _line.Clear();
             _stage = null;
             _cam = null;
-            _built = "";
+            _built = default;
         }
 
         static void KillComp(Component c)

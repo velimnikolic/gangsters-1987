@@ -824,8 +824,6 @@ namespace LivingCity.UI
 
         // ------------------------------------------------------------ rubber stamp
 
-        /// <summary>A rubber stamp: red condensed caps in a double frame, tilted, never
-        /// quite opaque. Laid over whatever it judges.</summary>
         /// <summary>
         /// A rubber stamp: a double-ruled box and a letter-spaced word, canted off
         /// square. Deliberately UNEVEN - a rubber stamp is a hand pressing a wet block

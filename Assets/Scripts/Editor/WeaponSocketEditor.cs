@@ -21,11 +21,32 @@ namespace LivingCity.EditorTools
     [CustomEditor(typeof(WeaponSocket))]
     public sealed class WeaponSocketEditor : Editor
     {
+        /// <summary>The measured barrel tip in the weapon's own space, taken when the
+        /// socket is selected and again whenever something on it changes - the mesh
+        /// walk behind Measure is too dear for every repaint of the inspector.</summary>
+        Vector3 _measuredLocal;
+
+        void OnEnable() => Remeasure();
+
+        void Remeasure()
+        {
+            var socket = target as WeaponSocket;
+            if (!socket || !socket.Weapon)
+            {
+                _measuredLocal = Vector3.zero;
+                return;
+            }
+
+            socket.Measure();
+            _measuredLocal = socket.Weapon.InverseTransformPoint(socket.MeasuredMuzzle);
+        }
+
         public override void OnInspectorGUI()
         {
             var socket = (WeaponSocket)target;
 
-            DrawDefaultInspector();
+            if (DrawDefaultInspector())
+                Remeasure();
 
             // Deliberately NOT live. The grip values are the authored answer, not a slider to
             // ride: re-placing on every inspector change is what used to snap a hand-placed
@@ -44,7 +65,10 @@ namespace LivingCity.EditorTools
             using (new EditorGUI.DisabledScope(!socket.Prefab))
             {
                 if (GUILayout.Button("Attach weapon", GUILayout.Height(24f)))
+                {
                     Attach(socket);
+                    Remeasure();
+                }
             }
 
             if (!socket.Prefab)
@@ -67,10 +91,14 @@ namespace LivingCity.EditorTools
                     Undo.RecordObject(socket.Weapon, "Re-place weapon");
                     socket.Reposition();
                     Mark(socket);
+                    Remeasure();
                 }
 
                 if (GUILayout.Button("Remove", GUILayout.Height(22f)))
+                {
                     Remove(socket);
+                    Remeasure();
+                }
             }
 
             EditorGUILayout.HelpBox(
@@ -109,15 +137,17 @@ namespace LivingCity.EditorTools
                 if (socket.MuzzleMarker)
                     Reveal(socket.MuzzleMarker);
                 else
+                {
                     CreateMuzzle(socket);
+                    Remeasure();
+                }
             }
 
             // The measured tip, printed. If this reads all zeroes the mesh measurement found
             // nothing and the marker was created down in the grip, inside the fist - which
             // looks exactly like "the marker is invisible" and is worth being able to tell
             // apart at a glance.
-            socket.Measure();
-            var local = socket.Weapon.InverseTransformPoint(socket.MeasuredMuzzle);
+            var local = _measuredLocal;
 
             EditorGUILayout.LabelField("Measured barrel tip", local.ToString("F4"));
 

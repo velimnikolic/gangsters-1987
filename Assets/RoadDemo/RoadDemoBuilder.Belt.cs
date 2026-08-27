@@ -369,7 +369,7 @@ namespace RoadDemo
             _reservations.NoFlora(Shoulder(gLo, gHi));
             _highwayRuns.Add((vertical, u - BeltHalf, u + BeltHalf, lo - BeltCornerHalf - 20f, hi + BeltCornerHalf + 20f));
             // (the map draws the grid alone, the quarters and the belt with them are
-            // off its sheet - the same gap DemoMap has for the districts)
+            // off its sheet - the same gap the turf map has for the districts)
             return laid;
         }
 

@@ -193,6 +193,13 @@ namespace RoadDemo
         public static bool Merging => _merging > 0;
         static int _merging;
 
+        // A fold that is abandoned - Play stopped half way through it, the host
+        // destroyed under it - never reaches its finally: Unity drops the coroutine
+        // without disposing the enumerator. With domain reload off the count would
+        // carry into the next Play and the cutaway would never engage again.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetForPlay() => _merging = 0;
+
         /// <summary>The merge, one step at a time. While it is still GATHERING it yields
         /// every few thousand renderers and after every root, and nothing is switched off
         /// yet - the whole city keeps drawing as its own pieces. While it is BUILDING it
@@ -204,7 +211,19 @@ namespace RoadDemo
         /// instead of one locked frame.</summary>
         public static IEnumerator MergeSteps(IList<MergeRoot> roots, Transform mergedRoot, string tag)
         {
+            // the count comes back down in the finally: a step that throws must not
+            // leave Merging true, or the cutaway stands down for the rest of the run
             _merging++;
+            try
+            {
+                var steps = MergeBody(roots, mergedRoot, tag);
+                while (steps.MoveNext()) yield return steps.Current;
+            }
+            finally { _merging = Mathf.Max(0, _merging - 1); }
+        }
+
+        static IEnumerator MergeBody(IList<MergeRoot> roots, Transform mergedRoot, string tag)
+        {
             var groups = new Dictionary<MergeKey, List<CombineInstance>>();
             // which renderers fed each group, and how many groups each renderer still has
             // left to be built: a source is only safe to hide once that count hits zero,
@@ -426,7 +445,6 @@ namespace RoadDemo
             // swallowed and may be taken apart on demand. Before this line it is half
             // folded and pulling it apart would leave a hole, which is what Ready says.
             foreach (var kv in chunks) kv.Value.Ready = true;
-            _merging = Mathf.Max(0, _merging - 1);
 
             int freed = 0;
             foreach (var mesh in sources)

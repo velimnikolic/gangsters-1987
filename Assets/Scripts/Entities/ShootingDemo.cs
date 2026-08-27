@@ -133,8 +133,7 @@ namespace LivingCity.Entities
         /// but plays with root motion off, so the body has not actually travelled - still, the
         /// start pose is restored explicitly rather than assumed, because that stops being true
         /// the moment anyone turns root motion on for the death state.
-        /// </summary>
-        /// <summary>
+        ///
         /// Not called Reset: that is a MonoBehaviour message Unity sends in the Editor when the
         /// component is added or reset from the inspector, and a method that both Unity and the
         /// loop call is a method that runs at times nobody intended.

@@ -29,11 +29,28 @@ namespace LivingCity.Entities
         static readonly Dictionary<Path, bool> LaneCache = new Dictionary<Path, bool>();
         static readonly Dictionary<Tile, bool> TileCache = new Dictionary<Tile, bool>();
 
+        /// <summary>
+        /// How many tiles the caches were filled against. The road network is built once,
+        /// synchronously - but a Play-mode rebuild or a scene load replaces every tile, and a
+        /// cache keyed on destroyed tiles would answer for lanes that no longer exist.
+        /// RoadSurface's invalidation, applied here: a changed count throws the lot away.
+        /// </summary>
+        static int builtFromTileCount = -1;
+
         /// <summary>Is this lane inside a junction box? Cached after the first ask.</summary>
         public static bool IsJunctionLane(Path path)
         {
             if (!path)
                 return false;
+
+            var tiles = Tile.Tiles;
+            var tileCount = tiles != null ? tiles.Count : 0;
+            if (tileCount != builtFromTileCount)
+            {
+                LaneCache.Clear();
+                TileCache.Clear();
+                builtFromTileCount = tileCount;
+            }
 
             if (LaneCache.TryGetValue(path, out var cached))
                 return cached;
@@ -83,6 +100,16 @@ namespace LivingCity.Entities
 
             TileCache[tile] = result;
             return result;
+        }
+
+        /// <summary>Static state outlives Play when domain reload is off - the registries'
+        /// reason, closed the same way.</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetForPlay()
+        {
+            LaneCache.Clear();
+            TileCache.Clear();
+            builtFromTileCount = -1;
         }
 
         /// <summary>

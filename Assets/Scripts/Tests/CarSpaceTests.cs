@@ -32,13 +32,24 @@ namespace LivingCity.Tests
         public static List<string> Run()
         {
             var fails = new List<string>();
-            OverlapSeparates(fails);
-            DaylightIsNotOverlap(fails);
-            AdvanceStopsShort(fails);
-            AdvanceEasesOutOfAWedge(fails);
-            AngledCarIsWider(fails);
-            UTurnKeepsTheBodyInTheRoad(fails);
-            KerbClampHoldsAnAngledCar(fails);
+            // With() writes the live global list of road users; whatever was on the
+            // street before the tests is put back after them
+            var street = new List<IRoadUser>(StreetTraffic.Users);
+            try
+            {
+                OverlapSeparates(fails);
+                DaylightIsNotOverlap(fails);
+                AdvanceStopsShort(fails);
+                AdvanceEasesOutOfAWedge(fails);
+                AngledCarIsWider(fails);
+                UTurnKeepsTheBodyInTheRoad(fails);
+                KerbClampHoldsAnAngledCar(fails);
+            }
+            finally
+            {
+                StreetTraffic.Users.Clear();
+                StreetTraffic.Users.AddRange(street);
+            }
             return fails;
         }
 

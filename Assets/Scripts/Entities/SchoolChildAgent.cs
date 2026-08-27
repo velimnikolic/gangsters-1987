@@ -18,12 +18,9 @@ namespace LivingCity.Entities
     /// artificial thing this project has spent its effort avoiding. A child waiting a long time
     /// for a bus is, if anything, the more period-accurate of the two.
     ///
-    /// The off-graph legs (to the bus door, along the school's facade, through the door) reuse
-    /// the WalkTo/Face loop from PedestrianAgent VERBATIM, via PoliceOfficerAgent, rather than
-    /// by refactor. That class is the 10k-crowd hot path and this is the third consumer of the
-    /// loop - the point at which its own comment says to extract. It is still copied, because
-    /// what the three consumers share is thirty lines of arithmetic while what they differ in
-    /// is every line around it, and a base class here would be inheritance used as a clipboard.
+    /// The off-graph legs (to the bus door, along the school's facade, through the door) run
+    /// the shared AgentLocomotion loop - what every scripted agent shares is thirty lines of
+    /// arithmetic, and a static helper carries them without a base class over the crowd.
     ///
     /// Crowd invariants honoured: the body registers once for the object's lifetime; every move
     /// goes through Probe/Blend and the AllowedAdvance clamp; Hidden and Stationary are kept
@@ -50,12 +47,8 @@ namespace LivingCity.Entities
         /// <summary>Give-up timer on any single off-graph leg - the PedestrianAgent value.</summary>
         const float OffGraphTimeout = 20f;
 
-        /// <summary>Matches HumanBehavior's own animator scaling (speed * 0.8).</summary>
-        const float AnimatorSpeedScale = 0.8f;
-
         static readonly WaitForSeconds ClearPoll = new WaitForSeconds(0.5f);
         static readonly WaitForSeconds WalkPoll = new WaitForSeconds(0.5f);
-        static readonly WaitForFixedUpdate FixedStep = new WaitForFixedUpdate();
 
         SchoolBusDirector director;
 
@@ -149,6 +142,7 @@ namespace LivingCity.Entities
             director = owner;
             HomeStop = stop;
             Number = number;
+            PedestrianRegistry.Seed(body, number);
             UI.OverlayRegistry.Register(this);
 
             // Standing at the stop with the follower off. Nothing here wanders: the child is
@@ -398,79 +392,21 @@ namespace LivingCity.Entities
         }
 
         // ------------------------------------------------------------------ movement
-        // Copied from PedestrianAgent via PoliceOfficerAgent - see the class comment for why
-        // copied rather than shared.
+        // The shared AgentLocomotion loop, over this agent's own handles.
 
-        IEnumerator WalkTo(Vector3 target, float stopWithin, float timeout = OffGraphTimeout)
-        {
-            SetStationary(false);
-            var speed = 0f;
-            var deadline = Time.time + timeout;
+        IEnumerator WalkTo(Vector3 target, float stopWithin, float timeout = OffGraphTimeout) =>
+            AgentLocomotion.WalkTo(transform, human, body, animator, hasSpeedParam,
+                                   target, stopWithin, timeout);
 
-            while (Time.time < deadline)
-            {
-                var toTarget = target - transform.position;
-                var remaining = PedestrianSteering.Flat(toTarget).magnitude;
-                if (remaining <= stopWithin)
-                    break;
-
-                speed = Mathf.MoveTowards(speed, human.maxspeed, 4f * Time.deltaTime);
-
-                var obstacle = PedestrianRegistry.Probe(body, toTarget);
-                var heading = PedestrianSteering.Blend(toTarget, obstacle.Push);
-                var advance = Mathf.Min(speed * Time.deltaTime,
-                              Mathf.Min(obstacle.AllowedAdvance, remaining));
-
-                var step = heading * advance;
-                step.y = Mathf.Clamp(toTarget.y, -advance, advance);
-                transform.position += step;
-
-                if (heading != Vector3.zero)
-                    transform.rotation = Quaternion.LookRotation(heading, Vector3.up);
-
-                var actual = advance / Mathf.Max(Time.deltaTime, 1e-5f);
-                body.SpeedMs = actual;
-                SetSpeed(actual);
-
-                yield return FixedStep;
-            }
-
-            body.SpeedMs = 0f;
-            SetSpeed(0f);
-        }
-
-        IEnumerator Face(Vector3 point, float seconds = 0.35f)
-        {
-            var direction = PedestrianSteering.Flat(point - transform.position);
-            if (direction.sqrMagnitude < 1e-4f)
-                yield break;
-
-            var from = transform.rotation;
-            var to = Quaternion.LookRotation(direction.normalized, Vector3.up);
-            for (var t = 0f; t < seconds; t += Time.deltaTime)
-            {
-                transform.rotation = Quaternion.Slerp(from, to, t / seconds);
-                yield return null;
-            }
-            transform.rotation = to;
-        }
+        IEnumerator Face(Vector3 point, float seconds = 0.35f) =>
+            AgentLocomotion.Face(transform, point, seconds);
 
         // ------------------------------------------------------------------ plumbing
 
         bool IsVisible => body != null && !body.Hidden;
 
-        void SetStationary(bool stationary)
-        {
-            if (body == null)
-                return;
-
-            body.Stationary = stationary;
-            if (stationary)
-            {
-                body.SpeedMs = 0f;
-                SetSpeed(0f);
-            }
-        }
+        void SetStationary(bool stationary) =>
+            AgentLocomotion.SetStationary(body, animator, hasSpeedParam, stationary);
 
         void SetHidden(bool hidden)
         {
@@ -489,11 +425,8 @@ namespace LivingCity.Entities
                     c.enabled = enabled;
         }
 
-        void SetSpeed(float metresPerSecond)
-        {
-            if (hasSpeedParam)
-                animator.SetFloat(PedestrianAnimation.SpeedHash, metresPerSecond * AnimatorSpeedScale);
-        }
+        void SetSpeed(float metresPerSecond) =>
+            AgentLocomotion.SetSpeed(animator, hasSpeedParam, metresPerSecond);
 
         static Vector3 Flat(Vector3 v)
         {
@@ -501,16 +434,7 @@ namespace LivingCity.Entities
             return v;
         }
 
-        static bool HasParameter(Animator animator, int nameHash)
-        {
-            if (!animator || !animator.runtimeAnimatorController)
-                return false;
-
-            foreach (var parameter in animator.parameters)
-                if (parameter.nameHash == nameHash)
-                    return true;
-
-            return false;
-        }
+        static bool HasParameter(Animator animator, int nameHash) =>
+            AgentLocomotion.HasParameter(animator, nameHash);
     }
 }

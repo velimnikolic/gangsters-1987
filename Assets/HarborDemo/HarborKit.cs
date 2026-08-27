@@ -224,8 +224,9 @@ namespace HarborDemo
             "Assets/Synty/PolygonCity/Prefabs/Vehicles",
         };
 
-        /// <summary>No longer laid anywhere - the finger pier and the pleasure-boat passers
-        /// went when the port became a box port only. Kept for whoever wants a marina.</summary>
+        /// <summary>The small craft that lie along the wall inside a fishing berth
+        /// (HarborDistrict.DressFishingBerth). The finger pier and the pleasure-boat
+        /// passers they once served went when the port became a box port.</summary>
         public static readonly string[] SmallBoats =
         {
             PalmVeh + "SM_Veh_Power_Boat_01.prefab",

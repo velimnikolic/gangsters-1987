@@ -32,13 +32,22 @@ namespace AirportDemo
         /// same colour. Laying a few bays in these instead of a repeating texture is
         /// what stops eighty thousand square metres reading as one flat sheet.</summary>
         Material _pourPale, _pourDark;
+        /// <summary>Every material made here, so Dispose can take them down: a fresh
+        /// Material is not destroyed with the renderers that wore it.</summary>
+        readonly List<Material> _mats = new List<Material>();
 
         GameObject _lightWhite, _lightAmber, _lightGreen, _lightRed, _lightBlue;
         GameObject _conePrefab, _bollardPrefab;
 
+        Material Keep(Material mat)
+        {
+            if (mat != null) _mats.Add(mat);
+            return mat;
+        }
+
         void LoadKit()
         {
-            _grassMat = AirportKit.LoadMaterial(AirportKit.GrassMat) ?? AirportKit.Flat("airport grass", new Color(0.35f, 0.47f, 0.25f));
+            _grassMat = Keep(AirportKit.LoadMaterial(AirportKit.GrassMat) ?? AirportKit.Flat("airport grass", new Color(0.35f, 0.47f, 0.25f)));
 
             // concrete, tarmac and shoulder are ONE tiling material taken to three
             // tones. An airfield's surfaces differ by shade and by age far more than
@@ -56,31 +65,31 @@ namespace AirportDemo
             // airfield paint. No pack has a road decal at runway scale - a centreline
             // stripe is 36 m long and 90 cm wide - so the markings are flat colour on
             // quads, which is what airfield paint is.
-            _whitePaint = AirportKit.Flat("airport paint white", new Color(0.88f, 0.88f, 0.85f), 0.05f);
-            _yellowPaint = AirportKit.Flat("airport paint yellow", new Color(0.85f, 0.68f, 0.09f), 0.05f);
-            _blackPaint = AirportKit.Flat("airport paint black", new Color(0.07f, 0.07f, 0.08f), 0.05f);
-            _redPaint = AirportKit.Flat("airport paint red", new Color(0.60f, 0.10f, 0.09f), 0.05f);
-            _rubberMat = AirportKit.Flat("airport rubber", new Color(0.16f, 0.16f, 0.17f), 0.02f);
+            _whitePaint = Keep(AirportKit.Flat("airport paint white", new Color(0.88f, 0.88f, 0.85f), 0.05f));
+            _yellowPaint = Keep(AirportKit.Flat("airport paint yellow", new Color(0.85f, 0.68f, 0.09f), 0.05f));
+            _blackPaint = Keep(AirportKit.Flat("airport paint black", new Color(0.07f, 0.07f, 0.08f), 0.05f));
+            _redPaint = Keep(AirportKit.Flat("airport paint red", new Color(0.60f, 0.10f, 0.09f), 0.05f));
+            _rubberMat = Keep(AirportKit.Flat("airport rubber", new Color(0.16f, 0.16f, 0.17f), 0.02f));
 
             // paint ages toward the surface it is on: white goes grey, yellow goes to
             // the colour of the tarmac showing through it
             _whiteTiers = new[]
             {
                 _whitePaint,
-                AirportKit.Flat("airport paint white faded", new Color(0.74f, 0.74f, 0.72f), 0.04f),
-                AirportKit.Flat("airport paint white worn", new Color(0.58f, 0.58f, 0.57f), 0.03f),
+                Keep(AirportKit.Flat("airport paint white faded", new Color(0.74f, 0.74f, 0.72f), 0.04f)),
+                Keep(AirportKit.Flat("airport paint white worn", new Color(0.58f, 0.58f, 0.57f), 0.03f)),
             };
             _yellowTiers = new[]
             {
                 _yellowPaint,
-                AirportKit.Flat("airport paint yellow faded", new Color(0.72f, 0.60f, 0.17f), 0.04f),
-                AirportKit.Flat("airport paint yellow worn", new Color(0.56f, 0.49f, 0.24f), 0.03f),
+                Keep(AirportKit.Flat("airport paint yellow faded", new Color(0.72f, 0.60f, 0.17f), 0.04f)),
+                Keep(AirportKit.Flat("airport paint yellow worn", new Color(0.56f, 0.49f, 0.24f), 0.03f)),
             };
 
-            _stainMat = AirportKit.Flat("airport stain", new Color(0.20f, 0.19f, 0.18f), 0.14f);
-            _patchMat = AirportKit.Flat("airport patch", new Color(0.20f, 0.20f, 0.21f), 0.03f);
-            _sealMat = AirportKit.Flat("airport crack seal", new Color(0.11f, 0.11f, 0.12f), 0.10f);
-            _dirtMat = AirportKit.Flat("airport dirt", new Color(0.40f, 0.35f, 0.26f), 0.02f);
+            _stainMat = Keep(AirportKit.Flat("airport stain", new Color(0.20f, 0.19f, 0.18f), 0.14f));
+            _patchMat = Keep(AirportKit.Flat("airport patch", new Color(0.20f, 0.20f, 0.21f), 0.03f));
+            _sealMat = Keep(AirportKit.Flat("airport crack seal", new Color(0.11f, 0.11f, 0.12f), 0.10f));
+            _dirtMat = Keep(AirportKit.Flat("airport dirt", new Color(0.40f, 0.35f, 0.26f), 0.02f));
 
             _lightWhite = AirportKit.TryLoad(AirportKit.EdgeLights[AirportKit.LightWhite]);
             _lightAmber = AirportKit.TryLoad(AirportKit.EdgeLights[AirportKit.LightAmber]);
@@ -97,8 +106,8 @@ namespace AirportDemo
         /// than replacing it, so whatever shading the pack authored survives the tint.</summary>
         Material Surface(string name, float tone, Color fallback)
         {
-            var mat = AirportKit.LoadMaterial(AirportKit.ConcreteMat);
-            if (mat == null) return AirportKit.Flat(name, fallback, 0.05f);
+            var mat = Keep(AirportKit.LoadMaterial(AirportKit.ConcreteMat));
+            if (mat == null) return Keep(AirportKit.Flat(name, fallback, 0.05f));
             mat.name = name;
             if (mat.HasProperty("_BaseColor"))
             {

@@ -56,7 +56,7 @@ namespace HarborDemo
         readonly List<GameObject> _inside = new List<GameObject>();
         int _node;
         float _speed, _timer, _doorOpen;
-        bool _docked;
+        bool _docked, _leaving;
         readonly System.Random _rng = new System.Random(19);
 
         /// <summary>How long before she first shows - so a yard's lorries do not all
@@ -85,8 +85,15 @@ namespace HarborDemo
                 // the goods handled a pallet at a time over the length of the stop
                 ShowLoad(Mathf.Clamp01(1f - _timer / Mathf.Max(0.01f, DockStay)));
                 if (_timer > 0f) return;
-                if (_doorOpen > 0.01f) { _docked = false; return; }
+                // the stop is over; she pulls out once the doors have swung shut, and
+                // the doors close because she is no longer docked (wantDoor above)
                 _docked = false;
+                _leaving = true;
+            }
+            if (_leaving)
+            {
+                if (_doorOpen > 0.01f) return;
+                _leaving = false;
             }
             if (_node >= Route.Count - 1)
             {
@@ -138,6 +145,7 @@ namespace HarborDemo
             _node = 0;
             _speed = 0f;
             _docked = false;
+            _leaving = false;
             _doorOpen = 0f;
             _inside.Clear();
             _inside.AddRange(Stow(_tf, Pallet, Freight, Load != null ? Load.Count : 3, _rng));

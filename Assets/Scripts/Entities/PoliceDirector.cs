@@ -210,8 +210,11 @@ namespace LivingCity.Entities
                     if (!tile)
                         continue;
 
+                    // SidewalkPoint works in the tile's LOCAL frame, so the distance along
+                    // the street is an AUTHORED one - PedestrianSpawner's reason: CellSize
+                    // carries TileScale and would put the officer off the end of the tile.
                     var side = rng.Next(2) == 0 ? 1f : -1f;
-                    var along = ((float)rng.NextDouble() - 0.5f) * CityGrid.CellSize * 0.6f;
+                    var along = ((float)rng.NextDouble() - 0.5f) * CityGrid.AuthoredCellSize * 0.6f;
                     position = PedestrianSpawner.SidewalkPoint(tile, side, along);
                     rotation = Quaternion.Euler(0f, rng.Next(4) * 90f, 0f);
                 }

@@ -57,8 +57,8 @@ namespace LivingCity.Gameplay
             idler = GetComponent<PedestrianIdler>();
             death = GetComponent<PedestrianDeath>();
             animator = GetComponent<Animator>();
-            hasSpeedParam = HasParameter(PedestrianAnimation.SpeedHash);
-            hasActivityParam = HasParameter(PedestrianAnimation.ActivityHash);
+            hasSpeedParam = RouteWalker.HasParameter(animator, PedestrianAnimation.SpeedHash);
+            hasActivityParam = RouteWalker.HasParameter(animator, PedestrianAnimation.ActivityHash);
 
             // Take over. Disabling the agent runs its Restore - seats released, activity
             // cleared, HumanBehavior re-enabled - which is exactly the clean slate to
@@ -266,16 +266,6 @@ namespace LivingCity.Gameplay
         {
             if (hasActivityParam && animator)
                 animator.SetInteger(PedestrianAnimation.ActivityHash, value);
-        }
-
-        bool HasParameter(int nameHash)
-        {
-            if (!animator || !animator.runtimeAnimatorController)
-                return false;
-            foreach (var parameter in animator.parameters)
-                if (parameter.nameHash == nameHash)
-                    return true;
-            return false;
         }
 
         static float Range(Vector2 range) =>

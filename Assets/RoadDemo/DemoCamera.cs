@@ -19,6 +19,12 @@ namespace RoadDemo
         /// disagree about where the player is looking.</summary>
         public float mapAt = 180f;
 
+        /// <summary>Metres of ground down the view per metre of boom once the map is
+        /// up. The one number the plate's scale, the minimap's frame and the ceiling
+        /// below are all read off, so the map opens showing exactly what a given click
+        /// of the wheel always showed.</summary>
+        public const float BoomToMetres = 1.15f;
+
         /// <summary>Open the boom on something of a given SPAN - the widest side of
         /// what has to be in frame - and stay on the street side of the map line.
         ///
@@ -41,8 +47,8 @@ namespace RoadDemo
         public float minDistance = 18f;
 
         /// <summary>How far back the wheel may go once the map is up. Set by
-        /// <see cref="DemoMap"/> from the CITY's own size and a margin of country, so
-        /// the last click of the wheel is the town filling the frame - the way the
+        /// <see cref="TurfMapHud"/> from the CITY's own size and a margin of country,
+        /// so the last click of the wheel is the town filling the frame - the way the
         /// original's plan opens - and not the whole island with the streets a smudge
         /// in the middle of it.</summary>
         public float mapCeiling = 900f;
@@ -54,7 +60,9 @@ namespace RoadDemo
         /// nothing left of it to watch. Null itself while the camera is the player's
         /// own - which is all the time until someone calls <see cref="Ride"/>.</summary>
         System.Func<Vector3?> _ride;
-        GUIStyle _zoomStyle;   // made on first OnGUI: GUI.skin exists only there
+
+        /// <summary>Made on first OnGUI: GUI.skin exists only there.</summary>
+        GUIStyle _zoomStyle;
 
         /// <summary>How quickly the pivot closes on what it rides. A man on foot is
         /// held dead centre; a car at speed runs a metre or two ahead of the picture -
@@ -80,7 +88,14 @@ namespace RoadDemo
         /// <summary>Debug readout of the boom in the bottom-left corner: how far back
         /// the camera sits, and at what angles. On while the demos are being tuned -
         /// the numbers are the ones to quote when a zoom level looks wrong.</summary>
-        public bool showZoom = true;
+        public bool showZoom = false;
+
+        /// <summary>The readout as last printed, and the rounded figures it was
+        /// printed from: the line is only formatted again when one of them moves,
+        /// not on every frame the camera stands still.</summary>
+        string _zoomLine = "";
+        int _zoomDistance = -1, _zoomPitch, _zoomYaw, _zoomX, _zoomZ;
+        bool _zoomRiding;
 
         /// <summary>The book owns the screen while it is open - its own keys, its own
         /// wheel (the roster scrolls on it) - and the map takes the half of the world
@@ -125,8 +140,13 @@ namespace RoadDemo
             var mouse = BookOpen ? null : Mouse.current;
             if (mouse != null)
             {
+                // The wheel over the map's paper panel scrolls the roster, and a
+                // boom that also moved would drop under the map line and close the
+                // map mid-scroll.
                 float scroll = mouse.scroll.ReadValue().y;
-                if (scroll != 0f) distance *= 1f - Mathf.Sign(scroll) * 0.09f;
+                bool panelHasWheel = TurfMapHud.IsOpen && TurfMapHud.PointerOverChrome;
+                if (scroll != 0f && !panelHasWheel)
+                    distance *= 1f - Mathf.Sign(scroll) * 0.09f;
                 if (mouse.rightButton.isPressed && !MapOut)
                 {
                     Vector2 d = mouse.delta.ReadValue();
@@ -146,8 +166,8 @@ namespace RoadDemo
             }
 
             // 18 m is a man's shoulder; the ceiling is the map's, which is the TOWN
-            // and a margin of country round it once DemoMap has measured it (900 m
-            // until it has). The floor under that ceiling is the line the map comes up
+            // and a margin of country round it once the turf map has measured it
+            // (900 m until it has). The floor under that ceiling is the line the map comes up
             // at and not a fixed 900 m: a small city's last click of the wheel must be
             // allowed to stop at the city, or the plan opens on a stamp of streets in a
             // screenful of sea.
@@ -212,16 +232,35 @@ namespace RoadDemo
                 // because at the default nobody could read what it said.
                 if (_zoomStyle == null)
                     _zoomStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
-                string line = string.Format(
-                    "zoom {0:0.0} m   pitch {1:0}   yaw {2:0}   pivot {3:0}, {4:0}{5}",
-                    distance, pitch, Mathf.Repeat(yaw, 360f), pivot.x, pivot.z,
-                    _ride != null ? "   [riding]" : string.Empty);
+
+                int d = Mathf.RoundToInt(distance * 10f);
+                int p = Mathf.RoundToInt(pitch);
+                int y = Mathf.RoundToInt(Mathf.Repeat(yaw, 360f));
+                int px = Mathf.RoundToInt(pivot.x);
+                int pz = Mathf.RoundToInt(pivot.z);
+                bool riding = _ride != null;
+                if (d != _zoomDistance || p != _zoomPitch || y != _zoomYaw ||
+                    px != _zoomX || pz != _zoomZ || riding != _zoomRiding)
+                {
+                    _zoomDistance = d;
+                    _zoomPitch = p;
+                    _zoomYaw = y;
+                    _zoomX = px;
+                    _zoomZ = pz;
+                    _zoomRiding = riding;
+                    _zoomLine = string.Format(
+                        "zoom {0:0.0} m   pitch {1}   yaw {2}   pivot {3}, {4}{5}",
+                        d / 10f, p, y, px, pz, riding ? "   [riding]" : string.Empty);
+                }
+
                 var at = new Rect(14f, UnityEngine.Screen.height - 52f, 1500f, 44f);
                 var was = GUI.color;
-                GUI.color = Color.black; // cheap drop shadow: the sky is too pale for grey text
-                GUI.Label(new Rect(at.x + 2f, at.y + 2f, at.width, at.height), line, _zoomStyle);
+                // A black copy two pixels off is the drop shadow: the sky is too pale
+                // for grey text on its own.
+                GUI.color = Color.black;
+                GUI.Label(new Rect(at.x + 2f, at.y + 2f, at.width, at.height), _zoomLine, _zoomStyle);
                 GUI.color = Color.white;
-                GUI.Label(at, line, _zoomStyle);
+                GUI.Label(at, _zoomLine, _zoomStyle);
                 GUI.color = was;
             }
         }

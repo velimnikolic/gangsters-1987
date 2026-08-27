@@ -81,48 +81,48 @@ namespace RoadDemo
         /// right end is a hard diagonal and its 9-slice keeps 750 of 1024 pixels in
         /// the right border, so a full-width bar puts a sloping cut exactly where the
         /// transport keys sit.</summary>
-        public static Sprite Gradient => Slot(ref gradient,
+        public static Sprite Gradient => Slot(ref _gradient,
             General + "SPR_ModernMenus_Menu_Gradient_Vertical_01.png");
 
         /// <summary>The flat chip every soft-key and readout in the demo wears - the
         /// pack's toolbar species, deliberately not its thick action slab.</summary>
-        public static Sprite Chip => Slot(ref chip, Chrome + "SPR_ModernMenus_Button_08.png");
+        public static Sprite Chip => Slot(ref _chip, Chrome + "SPR_ModernMenus_Button_08.png");
 
         /// <summary>The framed box behind a floating popup - the same panel the
         /// ledger's detail card and sort menu wear.</summary>
-        public static Sprite Box => Slot(ref box,
+        public static Sprite Box => Slot(ref _box,
             Chrome + "SPR_ModernMenus_Frame_Box_Medium_01_Background.png");
 
         /// <summary>Icons: the flat "Clean" cut, authored white so a tint IS the
         /// colour. There is no pause glyph in the pack - the bar draws its own.</summary>
-        public static Sprite IconTimer => Slot(ref iconTimer, Flat + "ICON_ModernMenus_Timer_01_Clean.png");
-        public static Sprite IconPlay => Slot(ref iconPlay, Flat + "ICON_ModernMenus_Play_01_Clean.png");
-        public static Sprite IconFaster => Slot(ref iconFaster, Flat + "ICON_ModernMenus_FastForward_01_Clean.png");
+        public static Sprite IconTimer => Slot(ref _iconTimer, Flat + "ICON_ModernMenus_Timer_01_Clean.png");
+        public static Sprite IconPlay => Slot(ref _iconPlay, Flat + "ICON_ModernMenus_Play_01_Clean.png");
+        public static Sprite IconFaster => Slot(ref _iconFaster, Flat + "ICON_ModernMenus_FastForward_01_Clean.png");
 
         /// <summary>The crews' activity glyphs - on the move, in a fight, in a word,
         /// down - and the recruit slot's plus. Same flat white cut, tinted in place.</summary>
-        public static Sprite IconArrow => Slot(ref iconArrow, Flat + "ICON_ModernMenus_Arrow_01_Clean.png");
-        public static Sprite IconCombat => Slot(ref iconCombat, Flat + "ICON_ModernMenus_Combat_01_Clean.png");
-        public static Sprite IconChat => Slot(ref iconChat, Flat + "ICON_ModernMenus_Chat_01_Clean.png");
-        public static Sprite IconDeath => Slot(ref iconDeath, Flat + "ICON_ModernMenus_Death_01_Clean.png");
-        public static Sprite IconPlus => Slot(ref iconPlus, Flat + "ICON_ModernMenus_Plus_01_Clean.png");
+        public static Sprite IconArrow => Slot(ref _iconArrow, Flat + "ICON_ModernMenus_Arrow_01_Clean.png");
+        public static Sprite IconCombat => Slot(ref _iconCombat, Flat + "ICON_ModernMenus_Combat_01_Clean.png");
+        public static Sprite IconChat => Slot(ref _iconChat, Flat + "ICON_ModernMenus_Chat_01_Clean.png");
+        public static Sprite IconDeath => Slot(ref _iconDeath, Flat + "ICON_ModernMenus_Death_01_Clean.png");
+        public static Sprite IconPlus => Slot(ref _iconPlus, Flat + "ICON_ModernMenus_Plus_01_Clean.png");
 
         /// <summary>The car hint's glyphs: the back arrow for "get out", the plain one for "get in".</summary>
-        public static Sprite IconBack => Slot(ref iconBack, Flat + "ICON_ModernMenus_Arrow_Back_01_Clean.png");
+        public static Sprite IconBack => Slot(ref _iconBack, Flat + "ICON_ModernMenus_Arrow_Back_01_Clean.png");
 
         /// <summary>The shop over the outfit's own door - the crew bar's key to the
         /// front. A storefront and not a house, because that is what a front IS: the
         /// premises the street sees, with the family behind it.</summary>
-        public static Sprite IconShop => Slot(ref iconShop, Flat + "ICON_ModernMenus_Shop_01_Clean.png");
+        public static Sprite IconShop => Slot(ref _iconShop, Flat + "ICON_ModernMenus_Shop_01_Clean.png");
 
         /// <summary>The soft glow dot the world markers ride on.</summary>
-        public static Sprite Dot => Slot(ref dot, Pack + "Sprites/FX/SPR_ModernMenus_FX_Glow_Dot_01.png");
+        public static Sprite Dot => Slot(ref _dot, Pack + "Sprites/FX/SPR_ModernMenus_FX_Glow_Dot_01.png");
 
         /// <summary>The little car the crew bar's key wears. Modern Menus has no
         /// vehicle glyph, so it comes out of Synty's icon pack - a model, not a
         /// sprite, printed dead straight on by PortraitStudio like every other object
         /// the screens show.</summary>
-        public static GameObject CarGlyph => ModelSlot(ref carGlyph, Icons + "SM_Icon_Car_01.prefab");
+        public static GameObject CarGlyph => ModelSlot(ref _carGlyph, Icons + "SM_Icon_Car_01.prefab");
 
         /// <summary>The display face: the clock, a popup's title. The type is the one
         /// exception to the demo-local rule below, and for two reasons: the pack's faces
@@ -135,21 +135,21 @@ namespace RoadDemo
         /// <summary>Everything else the demo prints - the same gothic, reading weight.</summary>
         public static TMP_FontAsset Body => LivingCity.UI.LedgerStyle.CondensedText;
 
-        static Sprite gradient, chip, box, iconTimer, iconPlay, iconFaster, dot;
-        static Sprite iconArrow, iconCombat, iconChat, iconDeath, iconPlus, iconBack, iconShop;
-        static GameObject carGlyph;
-        static bool warned;
+        static Sprite _gradient, _chip, _box, _iconTimer, _iconPlay, _iconFaster, _dot;
+        static Sprite _iconArrow, _iconCombat, _iconChat, _iconDeath, _iconPlus, _iconBack, _iconShop;
+        static GameObject _carGlyph;
+        static bool _warned;
 
         // Static state outlives Play when domain reload is off, and a re-import can
         // leave a stale reference behind - the same guard LedgerStyle keeps.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
         {
-            gradient = chip = box = iconTimer = iconPlay = iconFaster = dot = null;
-            iconArrow = iconCombat = iconChat = iconDeath = iconPlus = iconBack = null;
-            iconShop = null;
-            carGlyph = null;
-            warned = false;
+            _gradient = _chip = _box = _iconTimer = _iconPlay = _iconFaster = _dot = null;
+            _iconArrow = _iconCombat = _iconChat = _iconDeath = _iconPlus = _iconBack = null;
+            _iconShop = null;
+            _carGlyph = null;
+            _warned = false;
         }
 
         static Sprite Slot(ref Sprite cached, string path)
@@ -178,9 +178,9 @@ namespace RoadDemo
 
         static void Warn()
         {
-            if (warned)
+            if (_warned)
                 return;
-            warned = true;
+            _warned = true;
             Debug.LogWarning("[RoadDemo] Interface Modern Menus art is missing - the " +
                              "demo's screens fall back to flat blocks and the default " +
                              "TMP face.");
@@ -212,6 +212,22 @@ namespace RoadDemo
             return image;
         }
 
+        /// <summary>The material that makes an Image multiply with what is behind it
+        /// (Photoshop's multiply layer) instead of covering it - one for all of them.
+        /// Null when the shader is not in the project, and the caller keeps flat paint.</summary>
+        static Material _multiply;
+        public static Material Multiply
+        {
+            get
+            {
+                if (_multiply != null) return _multiply;
+                var shader = Shader.Find("RoadDemo/UI Multiply");
+                if (shader == null) return null;
+                _multiply = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+                return _multiply;
+            }
+        }
+
         /// <summary>
         /// Puts a pack sprite on an Image as 9-sliced chrome. The caller says how
         /// thick the drawn rim should LOOK in reference units and the multiplier is
@@ -220,22 +236,6 @@ namespace RoadDemo
         /// otherwise swallow the key whole. A sprite-less call leaves the flat tint,
         /// which is exactly the no-pack fallback.
         /// </summary>
-        /// <summary>The material that makes an Image multiply with what is behind it
-        /// (Photoshop's multiply layer) instead of covering it - one for all of them.
-        /// Null when the shader is not in the project, and the caller keeps flat paint.</summary>
-        static Material multiply;
-        public static Material Multiply
-        {
-            get
-            {
-                if (multiply != null) return multiply;
-                var shader = Shader.Find("RoadDemo/UI Multiply");
-                if (shader == null) return null;
-                multiply = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
-                return multiply;
-            }
-        }
-
         public static Image Dress(Image image, Sprite sprite, float drawnRim, Color tint)
         {
             if (!image)

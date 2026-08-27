@@ -505,11 +505,7 @@ namespace RoadDemo
         {
             var jitters = new List<int>();
             for (int j = -6; j <= 6; j++) jitters.Add(j);
-            for (int k = jitters.Count - 1; k > 0; k--)
-            {
-                int j = dice.Next(k + 1);
-                (jitters[k], jitters[j]) = (jitters[j], jitters[k]);
-            }
+            Dice.Shuffle(jitters, dice);
             return jitters.ToArray();
         }
 

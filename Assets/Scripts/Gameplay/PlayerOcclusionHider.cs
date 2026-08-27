@@ -81,9 +81,14 @@ namespace LivingCity.Gameplay
         const int MaxClipsPerFrame = 1;
         const long ClipReportMs = 50;           // below this a clip is not worth a log line
 
+        // The player layer is parked (GameplayBootstrap), so in the shipping scene there is
+        // no PlayerMafioso to find - ever. A per-frame scene search for him would be the
+        // most expensive no-op in Update; the miss is remembered and asked again this often.
+        const float MissingLookupSeconds = 2f;
+
         // Everything except pedestrians (the player himself) and the park-nav
         // proxy roots on layer 10 - the same idiom as PlayerMafioso.WallMask.
-        static readonly int Mask = ~((1 << PedestrianSpawner.PedestrianLayer) | (1 << 10));
+        static readonly int Mask = ~((1 << PedestrianSpawner.PedestrianLayer) | (1 << LivingCity.Generation.ParkNavBuilder.ProxyLayer));
 
         struct HiddenEntry
         {
@@ -108,6 +113,7 @@ namespace LivingCity.Gameplay
         bool zoomReveal; // zoom-gate hysteresis state
         int gridRow;     // round-robin row cursor - the grid is swept a few rows per frame
         int clipsThisFrame;
+        float nextLookupAt; // when the unresolved player / buildings root are searched for again
 
         // Left in: a clip runs once per shared mesh, so timing it costs nothing and
         // this is the only place that can say WHICH mesh is expensive - the frame
@@ -155,16 +161,7 @@ namespace LivingCity.Gameplay
 
         void Sweep()
         {
-            if (!player)
-                player = FindAnyObjectByType<PlayerMafioso>();
-            if (!cam)
-                cam = Camera.main;
-            if (!buildingsRoot)
-            {
-                var builder = FindAnyObjectByType<CityBuilder>();
-                var root = builder ? builder.GeneratedRoot : null;
-                buildingsRoot = root ? root.Find("Buildings") : null;
-            }
+            ResolveSceneReferences();
             if (!player || !cam || !buildingsRoot)
                 return;
 
@@ -175,6 +172,31 @@ namespace LivingCity.Gameplay
                                                    CastDistance + BackOffset, Mask,
                                                    QueryTriggerInteraction.Ignore);
             HideOccluders(count);
+        }
+
+        /// <summary>
+        /// Lazily fills the camera, the player and the Buildings root. The camera is a tag
+        /// lookup and free to retry; the other two are scene searches, retried on the
+        /// MissingLookupSeconds timer while they keep coming up empty.
+        /// </summary>
+        void ResolveSceneReferences()
+        {
+            if (!cam)
+                cam = Camera.main;
+            if (player && buildingsRoot)
+                return;
+            if (Time.unscaledTime < nextLookupAt)
+                return;
+            nextLookupAt = Time.unscaledTime + MissingLookupSeconds;
+
+            if (!player)
+                player = FindAnyObjectByType<PlayerMafioso>();
+            if (!buildingsRoot)
+            {
+                var builder = FindAnyObjectByType<CityBuilder>();
+                var root = builder ? builder.GeneratedRoot : null;
+                buildingsRoot = root ? root.Find("Buildings") : null;
+            }
         }
 
         /// <summary>
@@ -190,7 +212,7 @@ namespace LivingCity.Gameplay
         void ZoomSweep()
         {
             if (!cam || !buildingsRoot)
-                return; // Sweep resolves both lazily; no player needed here
+                return; // Sweep's ResolveSceneReferences fills both; no player needed here
 
             var size = cam.orthographicSize;
             if (zoomReveal ? size > ZoomRevealExit : size >= ZoomRevealEnter)

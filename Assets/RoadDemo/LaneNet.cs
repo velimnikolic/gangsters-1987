@@ -1052,37 +1052,40 @@ namespace RoadDemo
         {
             dist = new Dictionary<RoadEdge, float> { [target] = 0f };
             shift?.Clear();
-            var open = new List<RoadEdge> { target };
-            // Dijkstra backwards over the turn graph; small graphs, a list will do
+            // Dijkstra backwards over the turn graph. The open set is a heap keyed on
+            // distance with ties broken by arrival, which is exactly the lane the
+            // linear scan this replaced would have picked, so every route comes out
+            // the same as it did - the scan was a quadratic walk on a city's worth of
+            // lanes, once per patrol leg and per errand.
+            var open = new RouteOpenSet();
+            open.Push(target, 0f);
+            var closed = new HashSet<RoadEdge>();
             while (open.Count > 0)
             {
-                int bi = 0;
-                for (int i = 1; i < open.Count; i++) if (dist[open[i]] < dist[open[bi]]) bi = i;
-                var f = open[bi];
-                open.RemoveAt(bi);
-                float df = dist[f];
+                var f = open.Pop(out float df);
+                if (!closed.Add(f)) continue;
                 // the lane beside it: a car in that one reaches this one by moving over
                 var road = f.Road;
                 if (road != null)
                     for (int i = 0; i < road.Lanes.Count; i++)
                     {
                         var sib = road.Lanes[i];
-                        if (sib == f || sib.Heading != f.Heading) continue;
+                        if (sib == f || sib.Heading != f.Heading || closed.Contains(sib)) continue;
                         float nd = df + LaneShiftCost;
                         if (dist.TryGetValue(sib, out float had) && had <= nd) continue;
                         dist[sib] = nd;
                         if (shift != null) shift[sib] = f;
-                        if (!open.Contains(sib)) open.Add(sib);
+                        open.Push(sib, nd);
                     }
                 if (f.From == null) continue;
                 foreach (var e in f.From.Incoming)
                 {
-                    if (f.From.ConnectorFor(e, f) == null) continue;
+                    if (f.From.ConnectorFor(e, f) == null || closed.Contains(e)) continue;
                     float nd = df + RouteWeight(e);
                     if (dist.TryGetValue(e, out float old) && old <= nd) continue;
                     dist[e] = nd;
                     shift?.Remove(e);          // it is reached by driving on, not by moving over
-                    if (!open.Contains(e)) open.Add(e);
+                    open.Push(e, nd);
                 }
             }
             var next = new Dictionary<RoadEdge, RoadEdge>();
@@ -1099,6 +1102,97 @@ namespace RoadDemo
                 if (best != null) next[e] = best;
             }
             return next;
+        }
+
+        /// <summary>The route search's open set: a binary heap of lanes keyed on the
+        /// distance found so far, ties broken by the order the lanes first entered it.
+        /// That tie-break is the point - it is the lane a first-strictly-smaller scan
+        /// of an insertion-ordered list picks, so the search is deterministic and picks
+        /// what it always did where two ways cost the same. A lane already in the set
+        /// is moved up in place when a shorter way to it is found (it keeps its place
+        /// in the arrival order, as it kept its slot in the list).</summary>
+        sealed class RouteOpenSet
+        {
+            struct Entry
+            {
+                public RoadEdge Edge;
+                public float Dist;
+                public int Seq;
+            }
+
+            readonly List<Entry> _heap = new List<Entry>();
+            readonly Dictionary<RoadEdge, int> _at = new Dictionary<RoadEdge, int>();
+            int _seq;
+
+            public int Count => _heap.Count;
+
+            public void Push(RoadEdge edge, float dist)
+            {
+                if (_at.TryGetValue(edge, out int i))
+                {
+                    var held = _heap[i];
+                    if (dist >= held.Dist) return;
+                    held.Dist = dist;
+                    _heap[i] = held;
+                    Up(i);
+                    return;
+                }
+                _heap.Add(new Entry { Edge = edge, Dist = dist, Seq = _seq++ });
+                _at[edge] = _heap.Count - 1;
+                Up(_heap.Count - 1);
+            }
+
+            public RoadEdge Pop(out float dist)
+            {
+                var top = _heap[0];
+                int last = _heap.Count - 1;
+                _at.Remove(top.Edge);
+                if (last > 0)
+                {
+                    _heap[0] = _heap[last];
+                    _at[_heap[0].Edge] = 0;
+                }
+                _heap.RemoveAt(last);
+                if (_heap.Count > 1) Down(0);
+                dist = top.Dist;
+                return top.Edge;
+            }
+
+            static bool Before(Entry a, Entry b) => a.Dist < b.Dist || (a.Dist == b.Dist && a.Seq < b.Seq);
+
+            void Up(int i)
+            {
+                while (i > 0)
+                {
+                    int parent = (i - 1) >> 1;
+                    if (!Before(_heap[i], _heap[parent])) break;
+                    Swap(i, parent);
+                    i = parent;
+                }
+            }
+
+            void Down(int i)
+            {
+                int n = _heap.Count;
+                while (true)
+                {
+                    int left = 2 * i + 1, right = left + 1, least = i;
+                    if (left < n && Before(_heap[left], _heap[least])) least = left;
+                    if (right < n && Before(_heap[right], _heap[least])) least = right;
+                    if (least == i) break;
+                    Swap(i, least);
+                    i = least;
+                }
+            }
+
+            void Swap(int a, int b)
+            {
+                var t = _heap[a];
+                _heap[a] = _heap[b];
+                _heap[b] = t;
+                _at[_heap[a].Edge] = a;
+                _at[_heap[b].Edge] = b;
+            }
         }
 
         public Dictionary<RoadEdge, RoadEdge> RouteToward(RoadEdge target) => RouteToward(Edges, target);

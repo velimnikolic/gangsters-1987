@@ -14,9 +14,12 @@ namespace LivingCity.Entities
         /// <summary>
         /// Deterministic per-body fraction in [0,1), used to break exact ties - two bodies
         /// spawned onto the same point have no direction to push each other in, and both
-        /// picking the same arbitrary one would keep them coincident.
+        /// picking the same arbitrary one would keep them coincident. Hashed off the transform
+        /// at registration, then re-derived from the agent's own seed by
+        /// <see cref="PedestrianRegistry.Seed"/> once the agent has one, so it is the same
+        /// every run for anybody who was dealt a seed.
         /// </summary>
-        public readonly float Jitter;
+        public float Jitter { get; internal set; }
 
         /// <summary>Written by whoever is moving the transform this frame. m/s, never negative.</summary>
         public float SpeedMs;
@@ -141,6 +144,9 @@ namespace LivingCity.Entities
             if (!tf)
                 return null;
 
+            // The transform hash is a placeholder jitter: distinct per body within a session,
+            // which is all a tie-break needs, but not stable across runs. Agents that carry a
+            // seed replace it through Seed as soon as they are configured.
             var body = new PedestrianBody(tf, MeasureRadius(tf),
                 Mathf.Abs(tf.GetHashCode() % 1000) / 1000f);
 
@@ -150,6 +156,26 @@ namespace LivingCity.Entities
             body.CellKey = KeyFor(tf.position);
             CellFor(body.CellKey).Add(body);
             return body;
+        }
+
+        /// <summary>
+        /// Re-derives the body's tie-break jitter from a seed the agent already carries, so
+        /// two runs of the same city break the same tie the same way. The seed is mixed
+        /// before it is folded to a fraction: agents dealt consecutive seeds (a class of
+        /// schoolchildren numbered 1..N) would otherwise get near-equal jitters, and a
+        /// near-equal pair pushes in near-the-same direction, which is the tie again.
+        /// </summary>
+        public static void Seed(PedestrianBody body, int seed)
+        {
+            if (body == null)
+                return;
+
+            unchecked
+            {
+                var mixed = (uint)seed * 2654435761u;
+                mixed ^= mixed >> 16;
+                body.Jitter = (mixed % 1000u) / 1000f;
+            }
         }
 
         public static void Unregister(PedestrianBody body)

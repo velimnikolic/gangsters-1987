@@ -47,12 +47,7 @@ public class CameraControl : MonoBehaviour
     private Vector3 lastMousePosition;
     private Vector3 mousePosition;
     private float fieldOfView;
-    GameObject postprocess;
 
-    //move
-    private Coroutine camMoveCoroutine;
-    private Coroutine cameraLook;
-    
     private void Start()
     {
         Physics.reuseCollisionCallbacks = true;
@@ -423,7 +418,10 @@ public class CameraControl : MonoBehaviour
 
     void OnDrawGizmos()
     {
-        // Draw a yellow sphere at the transform's position
+        // Gizmos draw in edit mode too, before a target is assigned
+        if (!target)
+            return;
+
         Gizmos.color = Color.red;
         Gizmos.DrawSphere(target.position, 1);
     }

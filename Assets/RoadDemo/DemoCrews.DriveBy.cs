@@ -242,6 +242,7 @@ namespace RoadDemo
             StreetTraffic.Users.Remove(bike);
             Bikes.Remove(bike);
             _ledgerBikes.Remove(bike);
+            ForgetRunDown(bike);
             if (bike.Tf) Destroy(bike.Tf.gameObject);
         }
 

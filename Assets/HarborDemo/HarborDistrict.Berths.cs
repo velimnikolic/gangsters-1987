@@ -196,8 +196,8 @@ namespace HarborDemo
         static float BerthWorkZ0 => QuayWalkZ + WalkWidth * 0.5f + 2.2f;
         static float BerthWorkZ1 => YardRoadZ0 - 4f;
 
-        Material CoalMaterial() => _coalMat ??= HarborKit.Flat("Harbor Coal", new Color(0.14f, 0.14f, 0.15f), 0.06f);
-        Material SteelMaterial() => _steelMat ??= HarborKit.Flat("Harbor Works Steel", new Color(0.46f, 0.48f, 0.5f), 0.35f);
+        Material CoalMaterial() => _coalMat ??= Keep(HarborKit.Flat("Harbor Coal", new Color(0.14f, 0.14f, 0.15f), 0.06f));
+        Material SteelMaterial() => _steelMat ??= Keep(HarborKit.Flat("Harbor Works Steel", new Color(0.46f, 0.48f, 0.5f), 0.35f));
 
         /// <summary>What stands behind each berth because of what the berth is. Run
         /// after the yard and the back lots, so it fills ground the boxes were told to

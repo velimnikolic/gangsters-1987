@@ -311,6 +311,7 @@ namespace HarborDemo
         {
             for (int i = 0; i < _workers.Count; i++) _workers[i].Dispose();
             _shipping?.Dispose();
+            TestBench.DestroyAll(_mats);
         }
 
         // ------------------------------------------------------------ into place

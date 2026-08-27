@@ -31,10 +31,6 @@ namespace LivingCity.Gameplay
         /// <summary>Public because the HUD and the popup word themselves off it.</summary>
         public enum State { Idle, Moving, Aiming, Shooting, Surrendering, Dead }
 
-        /// <summary>Metres from a route node at which the walk rolls on to the next one -
-        /// loose, because nodes are waypoints, not destinations.</summary>
-        const float NodeTolerance = 1.2f;
-
         /// <summary>Give-up timer on a single node-to-node leg. Legs are a few metres.</summary>
         const float NodeTimeout = 8f;
 
@@ -46,8 +42,6 @@ namespace LivingCity.Gameplay
 
         /// <summary>Kill-order approaches tolerated before the player shrugs and stands down.</summary>
         const int ApproachRetries = 3;
-
-        static readonly WaitForFixedUpdate FixedStep = new WaitForFixedUpdate();
 
         [Tooltip("Identity, movement and marker numbers. Falls back to GameplayRuntime, " +
                  "then to class defaults, when empty.")]
@@ -65,6 +59,9 @@ namespace LivingCity.Gameplay
         Coroutine order;
         State state;
         CapsuleCollider capsule;
+
+        /// <summary>SetSpeed as a delegate, made once - the walk loop takes it per route.</summary>
+        System.Action<float> speedSetter;
 
         /// <summary>Where an arrest or a death puts him back. His starting kerb, for now;
         /// a real hideout building can take over later without touching the respawn flow.</summary>
@@ -105,12 +102,13 @@ namespace LivingCity.Gameplay
             pathFinding = GetComponent<PathFinding>();
             gunman = GetComponent<GunmanAim>();
             weapon = GetComponent<WeaponController>();
+            speedSetter = SetSpeed;
         }
 
         void Start()
         {
-            hasSpeedParam = HasParameter(animator, PedestrianAnimation.SpeedHash);
-            hasActivityParam = HasParameter(animator, PedestrianAnimation.ActivityHash);
+            hasSpeedParam = RouteWalker.HasParameter(animator, PedestrianAnimation.SpeedHash);
+            hasActivityParam = RouteWalker.HasParameter(animator, PedestrianAnimation.ActivityHash);
 
             MaxHealth = Config ? Config.maxHealth : 100f;
             Health = MaxHealth;
@@ -127,9 +125,17 @@ namespace LivingCity.Gameplay
             OverlayRegistry.Register(this);
         }
 
-        void OnDestroy()
+        // The overlay entry comes and goes with enabled state - the registry appends
+        // without dedup, so an enable/disable cycle that only unregistered at destroy
+        // would leave a second marker over the same man. The crowd body deliberately
+        // stays: it registers once for the object's lifetime (class note above).
+        void OnDisable()
         {
             OverlayRegistry.Unregister(this);
+        }
+
+        void OnDestroy()
+        {
             PedestrianRegistry.Unregister(body);
             body = null;
         }
@@ -391,7 +397,8 @@ namespace LivingCity.Gameplay
                     // The first path is entered wherever the player already stands;
                     // consecutive paths share their boundary node, so later ones skip it -
                     // both exactly as HumanBehavior walks the same lists.
-                    for (var i = p == 0 ? NearestNodeIndex(nodes) : 1; i < nodes.Count; i++)
+                    for (var i = p == 0 ? RouteWalker.NearestNodeIndex(nodes, transform.position) : 1;
+                         i < nodes.Count; i++)
                         if (nodes[i])
                             waypoints.Add(nodes[i].position);
                 }
@@ -409,66 +416,10 @@ namespace LivingCity.Gameplay
                 waypoints.Add(destination);
             }
 
-            yield return FollowRoute(waypoints, tolerance, WalkSpeed, abortWhen);
-        }
-
-        /// <summary>
-        /// ONE steering loop over the whole waypoint list - the speed carries across nodes.
-        /// The first version walked each node as its own loop, and every loop began at
-        /// speed zero: with route nodes a few metres apart the walker never reached full
-        /// stride before resetting, and surged node to node like a broken toy. The loop is
-        /// otherwise the PedestrianAgent Probe/Blend/clamp step, plus the wall slide - the
-        /// registry only steers around PEOPLE, and the off-graph legs need walls too.
-        /// </summary>
-        IEnumerator FollowRoute(System.Collections.Generic.List<Vector3> points,
-                                float finalTolerance, float speedCap,
-                                System.Func<bool> abortWhen)
-        {
-            if (points.Count == 0)
-                yield break;
-
-            var speed = 0f;
-            var index = 0;
-            var deadline = Time.time + 15f + points.Count * 4f;
-
-            while (index < points.Count && Time.time < deadline)
-            {
-                if (abortWhen != null && abortWhen())
-                    break;
-
-                var last = index == points.Count - 1;
-                var target = points[index];
-                var toTarget = target - transform.position;
-                var remaining = PedestrianSteering.Flat(toTarget).magnitude;
-                if (remaining <= (last ? finalTolerance : NodeTolerance))
-                {
-                    index++;
-                    continue;
-                }
-
-                speed = Mathf.MoveTowards(speed, speedCap, 4f * Time.deltaTime);
-
-                var obstacle = PedestrianRegistry.Probe(body, toTarget);
-                var heading = WallSlide(PedestrianSteering.Blend(toTarget, obstacle.Push));
-                var advance = Mathf.Min(speed * Time.deltaTime,
-                              Mathf.Min(obstacle.AllowedAdvance, remaining));
-
-                var step = heading * advance;
-                step.y = Mathf.Clamp(toTarget.y, -advance, advance);
-                transform.position += step;
-
-                if (heading != Vector3.zero)
-                    transform.rotation = Quaternion.LookRotation(heading, Vector3.up);
-
-                var actual = advance / Mathf.Max(Time.deltaTime, 1e-5f);
-                body.SpeedMs = actual;
-                SetSpeed(actual);
-
-                yield return FixedStep;
-            }
-
-            body.SpeedMs = 0f;
-            SetSpeed(0f);
+            // The shared steering loop - see RouteWalker for why the speed carries across
+            // nodes and why walls slide rather than swallow.
+            yield return RouteWalker.FollowRoute(transform, body, waypoints, tolerance, WalkSpeed,
+                                                 WallMask, abortWhen, speedSetter);
         }
 
         readonly System.Collections.Generic.List<Vector3> waypoints =
@@ -476,46 +427,6 @@ namespace LivingCity.Gameplay
 
         /// <summary>What blocks walking: everything except the crowd's own layer.</summary>
         static readonly int WallMask = ~(1 << PedestrianSpawner.PedestrianLayer);
-
-        /// <summary>
-        /// A knee-height ray one stride ahead; a hit projects the heading along the wall.
-        /// This is what keeps the short off-graph legs honest - the avoidance registry
-        /// knows people, not architecture.
-        /// </summary>
-        Vector3 WallSlide(Vector3 heading)
-        {
-            if (heading == Vector3.zero)
-                return heading;
-
-            if (!Physics.Raycast(transform.position + Vector3.up * 0.9f, heading,
-                                 out var hit, 1.1f, WallMask, QueryTriggerInteraction.Ignore))
-                return heading;
-
-            var slide = Vector3.ProjectOnPlane(heading, hit.normal);
-            slide.y = 0f;
-            return slide.sqrMagnitude > 1e-4f ? slide.normalized : Vector3.zero;
-        }
-
-        /// <summary>Nearest node of the first route path - entry point onto the graph.</summary>
-        int NearestNodeIndex(System.Collections.Generic.List<Transform> nodes)
-        {
-            var best = 0;
-            var bestSqr = float.MaxValue;
-            for (var i = 0; i < nodes.Count; i++)
-            {
-                if (!nodes[i])
-                    continue;
-
-                var sqr = (nodes[i].position - transform.position).sqrMagnitude;
-                if (sqr < bestSqr)
-                {
-                    bestSqr = sqr;
-                    best = i;
-                }
-            }
-
-            return best;
-        }
 
         // ------------------------------------------------------------------- plumbing
 
@@ -529,18 +440,6 @@ namespace LivingCity.Gameplay
         {
             if (hasActivityParam)
                 animator.SetInteger(PedestrianAnimation.ActivityHash, value);
-        }
-
-        static bool HasParameter(Animator animator, int nameHash)
-        {
-            if (!animator || !animator.runtimeAnimatorController)
-                return false;
-
-            foreach (var parameter in animator.parameters)
-                if (parameter.nameHash == nameHash)
-                    return true;
-
-            return false;
         }
 
         // ------------------------------------------------------------------ the overlay

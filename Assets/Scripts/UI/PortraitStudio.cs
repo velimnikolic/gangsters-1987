@@ -88,6 +88,8 @@ namespace LivingCity.UI
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
         {
+            if (instance)
+                instance.StrikeSet();
             instance = null;
             warned.Clear();
             showroom = new System.Random();
@@ -333,6 +335,35 @@ namespace LivingCity.UI
             instance = go.AddComponent<PortraitStudio>();
             instance.BuildRig();
             return instance;
+        }
+
+        /// <summary>The film and every print are GPU memory that a destroyed
+        /// MonoBehaviour does not take with it; struck with the set.</summary>
+        void OnDestroy()
+        {
+            StrikeSet();
+            if (instance == this)
+                instance = null;
+        }
+
+        void StrikeSet()
+        {
+            if (cam)
+                cam.targetTexture = null;
+            if (film)
+            {
+                film.Release();
+                Destroy(film);
+                film = null;
+            }
+            foreach (var print in prints.Values)
+                if (print)
+                    Destroy(print);
+            prints.Clear();
+            if (staged)
+                Destroy(staged);
+            staged = null;
+            queue.Clear();
         }
 
         void BuildRig()

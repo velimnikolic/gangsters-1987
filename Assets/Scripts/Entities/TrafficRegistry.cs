@@ -50,8 +50,10 @@ namespace LivingCity.Entities
 
         /// <summary>
         /// Extra seconds this particular car waits before giving up on yielding, so a symmetric
-        /// pair does not give up on the same frame and recreate the standoff. Derived from the id
-        /// rather than drawn randomly, so a car behaves the same way every run.
+        /// pair does not give up on the same frame and recreate the standoff. Derived from the
+        /// instance id rather than drawn from the shared rng, so it costs the spawn stream
+        /// nothing - but instance ids differ per session, so this is fixed for the car's life,
+        /// not the same across runs. CarBehavior carries no per-car seed to do better with.
         /// </summary>
         public readonly float StallJitter;
 

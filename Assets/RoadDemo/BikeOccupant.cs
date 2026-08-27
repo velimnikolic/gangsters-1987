@@ -11,10 +11,11 @@ namespace RoadDemo
     /// tick and nothing to own. Where it parts company with the car is the pose: a man
     /// in a car is a torso and a pair of arms with his legs folded away out of sight,
     /// and a man on a bike is all of him, so the limbs are put where the bike says
-    /// (BikePose) instead of left where the clip left them.</summary>
-        // Not ExecuteAlways either: nothing here is driven by a Unity message off Play -
-    // Seat() and Dress() are called outright - so running in edit mode would buy nothing
-    // and would drag BikePose back in with it.
+    /// (BikePose) instead of left where the clip left them.
+    ///
+    /// Not ExecuteAlways either: nothing here is driven by a Unity message off Play -
+    /// Seat() and Dress() are called outright - so running in edit mode would buy nothing
+    /// and would drag BikePose back in with it.</summary>
     public sealed class BikeOccupant : MonoBehaviour, RiderSpill.IBody
     {
         PlayableGraph _graph;

@@ -290,8 +290,8 @@ namespace LivingCity.UI
 
         /// <summary>
         /// The one face that is not type but PIXELS: Silkscreen, the bitmap gothic an
-        /// early-VGA survey terminal printed in, and the only font on the tactical map
-        /// (<see cref="RoadDemo.TacticalHud"/>). It is built by <see cref="Bitmap"/>
+        /// early-VGA survey terminal printed in. Kept for a screen that wants pixels;
+        /// the turf map is set in the gothic above. It is built by <see cref="Bitmap"/>
         /// rather than <see cref="Font"/>, because everything the other five faces want
         /// - an SDF atlas, antialiasing, a hair of face dilation - is exactly what turns
         /// a pixel font into a smear. Rendered as a RASTER atlas with no padding and

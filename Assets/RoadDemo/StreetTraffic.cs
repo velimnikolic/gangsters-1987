@@ -129,6 +129,9 @@ namespace RoadDemo
 
         static float _thinAt;
         static int _thinFrom;
+        // the camera's frustum, refilled per pass: the allocating overload made a
+        // fresh six every thinning
+        static readonly Plane[] FrustumPlanes = new Plane[6];
 
         /// <summary>How far behind the camera a car has to be before it may be moved at
         /// all, on top of being out of the frame - a car just off the edge of the screen
@@ -154,7 +157,8 @@ namespace RoadDemo
             if (eye == null) eye = Camera.main;
             if (eye == null) return;
 
-            var planes = GeometryUtility.CalculateFrustumPlanes(eye);
+            var planes = FrustumPlanes;
+            GeometryUtility.CalculateFrustumPlanes(eye, planes);
             var from = eye.transform.position;
 
             // one pass over the cars, starting where the last pass left off, so a car

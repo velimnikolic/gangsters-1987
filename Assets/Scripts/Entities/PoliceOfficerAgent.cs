@@ -17,10 +17,8 @@ namespace LivingCity.Entities
     /// Locomotion is the pack's HumanBehavior, exactly as for civilians, plus the scripted
     /// destination patch: patrolling is randomDestination wandering, the trip home sets
     /// human.scriptedDestination and rides the ordinary re-path queue. The off-graph legs at
-    /// the door reuse the WalkTo/Face loop from PedestrianAgent VERBATIM rather than by
-    /// refactor - that class is the 10k-crowd hot path, and extracting a base class for a
-    /// four-instance feature is risk without payoff. If a third consumer ever appears,
-    /// extract then.
+    /// the door run the shared AgentLocomotion loop - the same thirty lines PedestrianAgent
+    /// walks, without a base class over the 10k-crowd hot path.
     ///
     /// Crowd invariants honoured: the body registers once for the object's lifetime; every
     /// move goes through Probe/Blend and the AllowedAdvance clamp; Hidden and Stationary are
@@ -52,11 +50,7 @@ namespace LivingCity.Entities
         /// <summary>Failed returns tolerated before the officer shrugs and patrols on.</summary>
         const int ReturnRetries = 3;
 
-        /// <summary>Matches HumanBehavior's own animator scaling (speed * 0.8).</summary>
-        const float AnimatorSpeedScale = 0.8f;
-
         static readonly WaitForSeconds ReappearPoll = new WaitForSeconds(0.5f);
-        static readonly WaitForFixedUpdate FixedStep = new WaitForFixedUpdate();
 
         CityConfig config;
         PoliceStation station;
@@ -94,6 +88,7 @@ namespace LivingCity.Entities
             config = cityConfig;
             station = home;
             rng = new System.Random(seed);
+            PedestrianRegistry.Seed(body, seed);
             UnitNumber = unitNumber;
             UI.OverlayRegistry.Register(this);
             human.routeCompleted += OnRouteCompleted;
@@ -268,78 +263,23 @@ namespace LivingCity.Entities
         }
 
         // ------------------------------------------------------------------ movement
-        // Copied from PedestrianAgent (see the class comment for why copied, not shared).
+        // The shared AgentLocomotion loop; walkArrived is this agent's own verdict on it.
 
         IEnumerator WalkTo(Vector3 target, float stopWithin, float timeout = OffGraphTimeout)
         {
-            SetStationary(false);
-            var speed = 0f;
-            var deadline = Time.time + timeout;
-
-            while (Time.time < deadline)
-            {
-                var toTarget = target - transform.position;
-                var remaining = PedestrianSteering.Flat(toTarget).magnitude;
-                if (remaining <= stopWithin)
-                    break;
-
-                speed = Mathf.MoveTowards(speed, human.maxspeed, 4f * Time.deltaTime);
-
-                var obstacle = PedestrianRegistry.Probe(body, toTarget);
-                var heading = PedestrianSteering.Blend(toTarget, obstacle.Push);
-                var advance = Mathf.Min(speed * Time.deltaTime,
-                              Mathf.Min(obstacle.AllowedAdvance, remaining));
-
-                var step = heading * advance;
-                step.y = Mathf.Clamp(toTarget.y, -advance, advance);
-                transform.position += step;
-
-                if (heading != Vector3.zero)
-                    transform.rotation = Quaternion.LookRotation(heading, Vector3.up);
-
-                var actual = advance / Mathf.Max(Time.deltaTime, 1e-5f);
-                body.SpeedMs = actual;
-                SetSpeed(actual);
-
-                yield return FixedStep;
-            }
-
-            body.SpeedMs = 0f;
-            SetSpeed(0f);
+            yield return AgentLocomotion.WalkTo(transform, human, body, animator, hasSpeedParam,
+                                                target, stopWithin, timeout);
             walkArrived =
                 PedestrianSteering.Flat(target - transform.position).magnitude <= stopWithin * 2f + 0.5f;
         }
 
-        IEnumerator Face(Vector3 point, float seconds = 0.35f)
-        {
-            var direction = PedestrianSteering.Flat(point - transform.position);
-            if (direction.sqrMagnitude < 1e-4f)
-                yield break;
-
-            var from = transform.rotation;
-            var to = Quaternion.LookRotation(direction.normalized, Vector3.up);
-            for (var t = 0f; t < seconds; t += Time.deltaTime)
-            {
-                transform.rotation = Quaternion.Slerp(from, to, t / seconds);
-                yield return null;
-            }
-            transform.rotation = to;
-        }
+        IEnumerator Face(Vector3 point, float seconds = 0.35f) =>
+            AgentLocomotion.Face(transform, point, seconds);
 
         // ------------------------------------------------------------------ plumbing
 
-        void SetStationary(bool stationary)
-        {
-            if (body == null)
-                return;
-
-            body.Stationary = stationary;
-            if (stationary)
-            {
-                body.SpeedMs = 0f;
-                SetSpeed(0f);
-            }
-        }
+        void SetStationary(bool stationary) =>
+            AgentLocomotion.SetStationary(body, animator, hasSpeedParam, stationary);
 
         void SetHidden(bool hidden)
         {
@@ -351,11 +291,8 @@ namespace LivingCity.Entities
                     r.enabled = !hidden;
         }
 
-        void SetSpeed(float metresPerSecond)
-        {
-            if (hasSpeedParam)
-                animator.SetFloat(PedestrianAnimation.SpeedHash, metresPerSecond * AnimatorSpeedScale);
-        }
+        void SetSpeed(float metresPerSecond) =>
+            AgentLocomotion.SetSpeed(animator, hasSpeedParam, metresPerSecond);
 
         int DrawRoutes()
         {
@@ -367,16 +304,7 @@ namespace LivingCity.Entities
         float Range(Vector2 range) =>
             range.x + (float)rng.NextDouble() * Mathf.Max(0f, range.y - range.x);
 
-        static bool HasParameter(Animator animator, int nameHash)
-        {
-            if (!animator || !animator.runtimeAnimatorController)
-                return false;
-
-            foreach (var parameter in animator.parameters)
-                if (parameter.nameHash == nameHash)
-                    return true;
-
-            return false;
-        }
+        static bool HasParameter(Animator animator, int nameHash) =>
+            AgentLocomotion.HasParameter(animator, nameHash);
     }
 }

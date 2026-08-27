@@ -586,7 +586,6 @@ namespace RoadDemo
             Pass("SpawnCrews", SpawnCrews);
             Pass("BuildEnvironment", BuildEnvironment);
             Pass("BuildDayNight", BuildDayNight);
-            Pass("BuildExhaust", BuildExhaust);
             Pass("BuildAudio", BuildAudio);
             Pass("BuildMap", BuildMap);
             Pass("BuildLotOverlay", BuildLotOverlay);
@@ -642,9 +641,12 @@ namespace RoadDemo
             }
             TickTimer.Mark(7, "chats");
             TickWaysideWatch(dt);
-            TickTimer.Report(updateProfile, dt,
-                $"{_vehicles.Count} cars, {_pedestrians.Count} civilians, " +
-                $"{_policeCars.Count + _policeOfficers.Count} police, {_districtWalkers.Count} district hands");
+            // the counts are only ever read into the report, so they are only ever
+            // built for one: a string a frame for a profile that is off is garbage
+            TickTimer.Report(updateProfile, dt, updateProfile
+                ? $"{_vehicles.Count} cars, {_pedestrians.Count} civilians, " +
+                  $"{_policeCars.Count + _policeOfficers.Count} police, {_districtWalkers.Count} district hands"
+                : null);
         }
 
         void OnDestroy()
@@ -1164,7 +1166,7 @@ namespace RoadDemo
 
         // ---- what the top-down map reads the city off ----
         //
-        // DemoMap draws the plan rather than photographing it, so it needs the same
+        // The turf map draws the plan rather than photographing it, so it needs the same
         // three numbers the kit is laid on: where a carriageway ends, where a block
         // interior begins, and how wide the sidewalk ring between them runs.
 
@@ -2428,15 +2430,18 @@ namespace RoadDemo
         }
 
         // Renderer AABB of a prefab measured at the origin (so min.y is relative
-        // to the pivot); instantiated once, cached, destroyed before render.
+        // to the pivot); instantiated once, cached, and torn down on the spot.
+        // Immediate, not deferred: a whole block bake stood at the origin until the
+        // end of the frame would still be there for every Start the same frame runs
+        // (the night windows clone its materials, the lamps wire lights into it).
         Bounds PrefabBoundsOf(GameObject prefab)
         {
             if (!_prefabBoundsCache.TryGetValue(prefab, out var b))
             {
                 var tmp = Instantiate(prefab, Vector3.zero, Quaternion.identity);
-                b = BoundsOf(tmp);
+                try { b = BoundsOf(tmp); }
+                finally { DestroyImmediate(tmp); }
                 _prefabBoundsCache[prefab] = b;
-                Destroy(tmp);
             }
             return b;
         }
@@ -3595,13 +3600,6 @@ namespace RoadDemo
             LivingCity.UI.LedgerModelSet.PersonNamed(name) ??
             LivingCity.UI.PortraitStudio.FindPeoplePrefab(name);
 
-        static string DrawName(System.Random rng)
-        {
-            var firsts = LivingCity.Entities.PedestrianIdentity.AllMaleNames;
-            var surnames = LivingCity.Entities.PedestrianIdentity.AllSurnames;
-            return firsts[rng.Next(firsts.Count)] + " " + surnames[rng.Next(surnames.Count)];
-        }
-
         // ------------------------------------------------------------------- cars
 
         void SpawnCars()
@@ -3845,82 +3843,18 @@ namespace RoadDemo
             if (count <= 1) return homes;
 
             // Scattering the RESTING cars over the city jams the traffic: a patrol left at
-            // a kerb is a registered obstacle, and even set off the running lane (KerbClear)
-            // it gridlocked the ambient cars in ~a quarter of seeds (car soak: worst 14k+
+            // a kerb is a registered obstacle, and even set off the running lane it
+            // gridlocked the ambient cars in ~a quarter of seeds (car soak: worst 14k+
             // belt refusals with the spread; 0 in every one of 12 with the cars docked).
             // So the spread is OFF until the resting spots are provably traffic-safe (a
             // known parking bay, not a computed kerb point). The city still gets its police
             // presence from the patrols, whose beats already cover the whole map, and the
             // reaction to fights stays LOCAL (PoliceDispatch.ResponseRange), which is what
-            // the user actually asked for. Flip to true again once placement is safe.
-            const bool SPREAD = false;
-            if (!SPREAD)
-            {
-                for (int i = 1; i < count; i++) homes.Add(homes[0]);
-                return homes;
-            }
-
-            var longs = new List<RoadEdge>();
-            foreach (var e in _edges) if (e.Length >= 30f) longs.Add(e);
-            if (longs.Count == 0)
-            {
-                for (int i = 1; i < count; i++) homes.Add(homes[0]);
-                return homes;
-            }
-
-            // farthest-point sampling: each new home is the long lane whose middle is
-            // farthest from the station and from every home already placed
-            var anchors = new List<Vector3> { _stallCentre };
-            for (int n = 1; n < count; n++)
-            {
-                RoadEdge best = null;
-                float bestNear = -1f;
-                foreach (var e in longs)
-                {
-                    var mid = e.Start + e.Dir * (e.Length * 0.5f);
-                    float near = float.MaxValue;
-                    for (int a = 0; a < anchors.Count; a++)
-                        near = Mathf.Min(near, (mid - anchors[a]).sqrMagnitude);
-                    if (near > bestNear) { bestNear = near; best = e; }
-                }
-                if (best == null) best = longs[Random.Range(0, longs.Count)];
-                float s = best.Length * 0.5f;
-                var on = best.Start + best.Dir * s;
-                // rest CLEAR of the running lane, not stood in it: a patrol car left in a
-                // live lane is a registered obstacle every car has to thread past, and in
-                // a jammed street (the roadblock) that tips the traffic into gridlock.
-                // Walk out to the far side of the kerb (past the outermost lane band, so
-                // LaneNet marks it parked-and-passed, not a wreck-in-lane); the undock
-                // curve pulls it back onto the lane when its rest is up.
-                var right = new Vector3(best.Dir.z, 0f, -best.Dir.x);
-                var stall = KerbClear(on, right);
-                stall.y = _stallLift;
-                anchors.Add(on);
-                homes.Add((best, s, stall, Quaternion.LookRotation(best.Dir, Vector3.up)));
-            }
+            // the user actually asked for. Every car rests on the forecourt; the
+            // farthest-point spread over the long lanes, with its kerb-clearing walk-out,
+            // is in git history (before 2026-08-27) for the day placement is safe.
+            for (int i = 1; i < count; i++) homes.Add(homes[0]);
             return homes;
-        }
-
-        /// <summary>The nearest point off the carriageway to rest a car - out past a kerb
-        /// far enough that its body clears the outermost lane band (so LaneNet counts it
-        /// parked-and-passed, not a wreck-in-lane the traffic must plan a way round).
-        /// Both kerbs are tried; the nearer clear point wins. Falls back to a plain 4 m
-        /// step if there is no net to measure against.</summary>
-        Vector3 KerbClear(Vector3 on, Vector3 right)
-        {
-            var net = LaneNet.Active;
-            if (net == null) return on + right * 4f;
-            float bestOff = float.MaxValue;
-            var best = on + right * 4f;
-            for (int sign = -1; sign <= 1; sign += 2)
-                for (float off = 3f; off <= 8f; off += 0.5f)
-                {
-                    var cand = on + right * (sign * off);
-                    var road = net.Locate(cand, out _, out float dd, 1.0f);
-                    bool clear = road == null || Mathf.Abs(dd) > road.HalfRoad + 1.3f;
-                    if (clear) { if (off < bestOff) { bestOff = off; best = cand; } break; }
-                }
-            return best;
         }
 
         void SpawnFootPatrols(Transform parent, List<IPatrolMarker> markers)
@@ -4245,13 +4179,6 @@ namespace RoadDemo
             _clock = clock;
         }
 
-        // --------------------------------------------------------------- exhaust
-
-        // The smoke out of the tailpipes. One rig for the whole city and no
-        // registration at all: it reads the cars off StreetTraffic.Users itself, and
-        // smokes the few nearest the camera (CarExhaust).
-        void BuildExhaust() => CarExhaust.Install();
-
         // ----------------------------------------------------------------- audio
 
         // The demo's mix, self-contained in this folder like everything else here:
@@ -4269,20 +4196,12 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------- map
         //
-        // The war-room half: the ledger the demo installs takes the left of the
-        // screen and leaves the right empty, so the top-down map moves in there for
-        // as long as the book stands open. Built last, when there is a city to draw
-        // and a crowd to plot.
+        // The turf map: the city as a 1987 survey plate, up whenever the wheel goes
+        // past the map line. Built last, when there is a city to draw and a crowd
+        // to plot. It draws the city onto paper rather than photographing it, and
+        // everything on it is the outfit's business rather than the street's.
         void BuildMap()
         {
-            var go = new GameObject("Map");
-            go.AddComponent<DemoMap>().Init(this, _blocks, _picker, _rig,
-                _pedestrians, _policeOfficers, _vehicles, _policeCars, _crews);
-
-            // And the turf map: the same city as a 1987 survey plate, on T. Its own
-            // screen, not a mode of the plan above - it draws the city onto paper
-            // rather than photographing it, and everything on it is the outfit's
-            // business rather than the street's.
             var turf = new GameObject("Turf Map");
             turf.AddComponent<TurfMapHud>().Init(this, _blocks, _picker, _rig, _crews,
                 _clock, _vehicles, _policeCars);

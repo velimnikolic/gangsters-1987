@@ -140,20 +140,7 @@ namespace LivingCity.Gameplay
                                      "them will operate without a front.", this);
             }
 
-            markers.Sort((a, b) =>
-            {
-                var ax = Mathf.RoundToInt(a.transform.position.x * 10f);
-                var bx = Mathf.RoundToInt(b.transform.position.x * 10f);
-                if (ax != bx)
-                    return ax.CompareTo(bx);
-
-                var az = Mathf.RoundToInt(a.transform.position.z * 10f);
-                var bz = Mathf.RoundToInt(b.transform.position.z * 10f);
-                if (az != bz)
-                    return az.CompareTo(bz);
-
-                return string.CompareOrdinal(a.gameObject.name, b.gameObject.name);
-            });
+            markers.Sort(PropertyDirector.BusinessOrder);
 
             candidates = new List<GangFronts.FrontCandidate>(markers.Count);
             foreach (var marker in markers)

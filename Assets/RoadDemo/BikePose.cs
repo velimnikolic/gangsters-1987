@@ -23,12 +23,13 @@ namespace RoadDemo
     /// per rider per frame - nothing beside a skinned mesh - but it is a LateUpdate on
     /// a MonoBehaviour, so a hundred bikes is a hundred callbacks; the traffic's bikes
     /// are meant to be a handful, and the crowd's culling takes the rest.
+    ///
+    /// NOT ExecuteAlways, and that is the point. LateUpdate re-seats a man every frame -
+    /// right in Play, and unusable in the editor, where it puts him back before a drag of
+    /// the move handle has finished and the axes read as broken. Off Play nobody poses
+    /// anybody unless they ask: the bench calls Apply() itself when a number changes, and
+    /// the baked sitting scene calls it once and then takes this component off altogether.
     /// </summary>
-        // NOT ExecuteAlways, and that is the point. LateUpdate re-seats a man every frame -
-    // right in Play, and unusable in the editor, where it puts him back before a drag of
-    // the move handle has finished and the axes read as broken. Off Play nobody poses
-    // anybody unless they ask: the bench calls Apply() itself when a number changes, and
-    // the baked sitting scene calls it once and then takes this component off altogether.
     public sealed class BikePose : MonoBehaviour
     {
         // ------------------------------------------------------------------ the seat
