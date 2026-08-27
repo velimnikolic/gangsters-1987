@@ -181,6 +181,74 @@ namespace RoadDemo
             },
             new ResidentialUnit
             {
+                Name = "residential-07", CW = 2, CD = 5,
+                Kind = ResidentialKind.Island,
+                MaxH = 15.6f, Floor = 0.00f, Trees = 0, Pieces = 109,
+                Plan = new[]
+                {
+                    "##",
+                    "##",
+                    "##",
+                    "##",
+                    "##",
+                },
+                Face = new[] { true, true, false, true },
+                Doors = new[] { 0, 1, 0, 0 },
+                Shops = new[] { 2, 2, 1, 3 },
+                Stoops = new[] { 0, 0, 0, 0 },
+                Over = new[] { 1.74f, 1.84f, 0.46f, 1.68f },
+            },
+            new ResidentialUnit
+            {
+                Name = "residential-08", CW = 4, CD = 2,
+                Kind = ResidentialKind.Through,
+                MaxH = 18.6f, Floor = 0.00f, Trees = 0, Pieces = 123,
+                Plan = new[]
+                {
+                    ".###",
+                    "####",
+                },
+                Face = new[] { true, false, true, false },
+                Doors = new[] { 0, 0, 0, 0 },
+                Shops = new[] { 2, 1, 3, 0 },
+                Stoops = new[] { 0, 0, 0, 0 },
+                Over = new[] { 1.76f, 1.76f, 1.78f, 0.75f },
+            },
+            new ResidentialUnit
+            {
+                Name = "residential-10", CW = 3, CD = 3,
+                Kind = ResidentialKind.Row,
+                MaxH = 15.6f, Floor = 0.00f, Trees = 0, Pieces = 95,
+                Plan = new[]
+                {
+                    "##.",
+                    "###",
+                    "###",
+                },
+                Face = new[] { true, false, false, false },
+                Doors = new[] { 0, 0, 0, 0 },
+                Shops = new[] { 3, 0, 0, 1 },
+                Stoops = new[] { 0, 0, 0, 0 },
+                Over = new[] { 1.74f, 1.40f, 0.72f, 1.68f },
+            },
+            new ResidentialUnit
+            {
+                Name = "residential-11", CW = 3, CD = 2,
+                Kind = ResidentialKind.Row,
+                MaxH = 15.6f, Floor = -0.03f, Trees = 0, Pieces = 73,
+                Plan = new[]
+                {
+                    "###",
+                    "###",
+                },
+                Face = new[] { false, false, true, false },
+                Doors = new[] { 1, 0, 0, 0 },
+                Shops = new[] { 0, 1, 2, 0 },
+                Stoops = new[] { 0, 0, 0, 0 },
+                Over = new[] { 1.65f, 0.57f, 1.81f, 0.81f },
+            },
+            new ResidentialUnit
+            {
                 Name = "park-01", CW = 4, CD = 4,
                 Kind = ResidentialKind.Park,
                 MaxH = 4.9f, Floor = -0.03f, Trees = 6, Pieces = 93,
@@ -229,6 +297,22 @@ namespace RoadDemo
                 Shops = new[] { 1, 0, 0, 1 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 Over = new[] { 0.46f, 0.19f, 0.46f, 0.54f },
+            },
+            new ResidentialUnit
+            {
+                Name = "pizzapub2", CW = 2, CD = 2,
+                Kind = ResidentialKind.Storefront,
+                MaxH = 8.6f, Floor = 0.00f, Trees = 0, Pieces = 20,
+                Plan = new[]
+                {
+                    "##",
+                    "##",
+                },
+                Face = new[] { true, false, true, false },
+                Doors = new[] { 0, 0, 0, 0 },
+                Shops = new[] { 2, 0, 2, 0 },
+                Stoops = new[] { 0, 0, 0, 0 },
+                Over = new[] { 0.46f, 0.85f, 0.75f, 0.88f },
             },
         };
     }
