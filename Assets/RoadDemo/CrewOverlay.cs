@@ -155,8 +155,14 @@ namespace RoadDemo
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight = 1f;
 
-            _dotRoot = new GameObject("Dots", typeof(RectTransform)).transform;
-            _dotRoot.SetParent(root.transform, false);
+            var dotRootRect = new GameObject("Dots", typeof(RectTransform))
+                .GetComponent<RectTransform>();
+            dotRootRect.SetParent(root.transform, false);
+            dotRootRect.anchorMin = Vector2.zero;
+            dotRootRect.anchorMax = Vector2.one;
+            dotRootRect.offsetMin = Vector2.zero;
+            dotRootRect.offsetMax = Vector2.zero;
+            _dotRoot = dotRootRect;
 
             _mark = new GameObject("Order Mark", typeof(RectTransform)).AddComponent<Image>();
             _mark.transform.SetParent(root.transform, false);
@@ -348,6 +354,11 @@ namespace RoadDemo
                 var ground = new GameObject("ground indicator", typeof(RectTransform))
                     .AddComponent<GroundSquareGraphic>();
                 ground.transform.SetParent(_dotRoot, false);
+                var groundRect = ground.rectTransform;
+                groundRect.anchorMin = Vector2.zero;
+                groundRect.anchorMax = Vector2.one;
+                groundRect.offsetMin = Vector2.zero;
+                groundRect.offsetMax = Vector2.zero;
                 ground.raycastTarget = false;
                 ground.enabled = false;
                 _groundSquares.Add(ground);
