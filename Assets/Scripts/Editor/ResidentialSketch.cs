@@ -11,7 +11,7 @@ namespace LivingCity.EditorTools
 {
     /// <summary>
     /// The bench the residential block is looked at on: one block into the open scene, or a
-    /// demo scene of five blocks of every class the recipe knows.
+    /// demo scene of compact, currently production-ready residential recipes.
     ///
     /// The deal and the verdict are <see cref="ResidentialLot"/>'s and are judged with no
     /// editor at all (<c>Tools/CoreSim --residential</c>); this only stands the answer up so
@@ -23,8 +23,11 @@ namespace LivingCity.EditorTools
         const string Root = "RESIDENTIAL";
         const string Bare = "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab";
 
-        /// <summary>The blocks the demo scene stands: every class the recipe knows, and the
-        /// block class twice because it is the one a quarter is mostly made of. Kept to the
+        /// <summary>The blocks the demo scene stands. The large Court recipe is intentionally
+        /// absent here: at its minimum 80 x 80 m it needs a dedicated courtyard programme,
+        /// and presenting its unfinished paved centre made the whole demo read as empty.
+        /// The Block class appears three times because it supplies the alleys, rear parking
+        /// and mixed frontage this residential quarter is meant to demonstrate. Kept to the
         /// small end of each class - the user, 2026-08-27: "izbegavaj velike residential
         /// blokove".
         ///
@@ -37,8 +40,8 @@ namespace LivingCity.EditorTools
             ("block", 13, 15, null),
             ("corner", 8, 7, null),
             ("row", 6, 13, null),
-            ("court", 16, 16, null),
-            ("block", 12, 14, null),
+            ("block", 13, 15, null),
+            ("block", 14, 15, null),
         };
 
         /// <summary>The bench's blocks, the yard blocks measured in after them.</summary>
@@ -92,9 +95,11 @@ namespace LivingCity.EditorTools
         }
 
         /// <summary>
-        /// The demo scene: five blocks in a line on one street, asphalt between them, saved
-        /// to <see cref="DemoScene"/>. The scene is made fresh every time - it is generated,
-        /// so there is nothing in it worth keeping.
+        /// The demo scene: the residential recipes and yard blocks in two compact rows,
+        /// with a proper street band between them, saved to <see cref="DemoScene"/>. A long
+        /// single row left a full block-depth of dead test ground behind every shallow lot.
+        /// The scene is made fresh every time - it is generated, so there is nothing in it
+        /// worth keeping.
         /// </summary>
         public static string Demo(int seed)
         {
@@ -113,15 +118,33 @@ namespace LivingCity.EditorTools
             }
 
             var said = new StringBuilder();
-            var plans = new List<(ResidentialLot.Plan Plan, int X)>();
-            int at = Street;
-            int deepest = 0;
+            var plans = new List<(ResidentialLot.Plan Plan, int X, int Z)>();
+            int atX = Street;
+            int atZ = Street;
+            int rowDepth = 0;
+            int widest = 0;
             int first = seed;
+            int index = 0;
 
             foreach (var (name, w, d, unit) in Bench())
             {
+                if (index > 0 && index % 4 == 0)
+                {
+                    widest = Mathf.Max(widest, atX);
+                    atX = Street;
+                    atZ += rowDepth + Street;
+                    rowDepth = 0;
+                }
                 var plan = unit == null
-                    ? ResidentialLot.Roll(w, d, seed++, artery: 0)
+                    ? ResidentialLot.Roll(w, d, seed++, artery: 0,
+                        forced: name switch
+                        {
+                            "block" => ResidentialLot.Klass.Block,
+                            "corner" => ResidentialLot.Klass.Corner,
+                            "row" => ResidentialLot.Klass.Row,
+                            "court" => ResidentialLot.Klass.Court,
+                            _ => null,
+                        })
                     : ResidentialLot.Yard(w, d, seed++, unit);
                 var root = new GameObject($"{Root} {name} {w}x{d} seed {plan.Seed}");
 
@@ -130,17 +153,20 @@ namespace LivingCity.EditorTools
                 // so a root moved first is a root whose children ignore it: the first run of
                 // this scene stood all five blocks on top of one another.
                 var stood = ResidentialBlocks.Compose(plan, root.transform, new System.Random(seed), Raise);
-                root.transform.position = new Vector3(at * ResidentialLot.Cell, 0f,
-                                                  Street * ResidentialLot.Cell);
+                root.transform.position = new Vector3(atX * ResidentialLot.Cell, 0f,
+                                                      atZ * ResidentialLot.Cell);
 
                 said.AppendLine($"{name,-7} {ResidentialLot.Report(plan)}");
                 said.AppendLine($"        {stood}");
-                plans.Add((plan, at));
-                at += w + Street;
-                deepest = Mathf.Max(deepest, d);
+                plans.Add((plan, atX, atZ));
+                atX += w + Street;
+                rowDepth = Mathf.Max(rowDepth, d);
+                index++;
             }
 
-            Asphalt(at + Street, deepest + 2 * Street, plans);
+            widest = Mathf.Max(widest, atX);
+            int deepest = atZ + rowDepth;
+            Asphalt(widest + Street, deepest + Street, plans);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, DemoScene);
@@ -153,14 +179,14 @@ namespace LivingCity.EditorTools
         /// <summary>A carpet of bare asphalt everywhere no block stands - the streets between
         /// them and the ground round the edge. It is a bench, not a city: the roads a quarter
         /// gets are dealt by <c>CoreRoads</c> and are not this tool's business.</summary>
-        static void Asphalt(int w, int d, List<(ResidentialLot.Plan Plan, int X)> plans)
+        static void Asphalt(int w, int d, List<(ResidentialLot.Plan Plan, int X, int Z)> plans)
         {
             var road = new GameObject("STREETS");
             var taken = new HashSet<Vector2Int>();
-            foreach (var (plan, x) in plans)
+            foreach (var (plan, x, z) in plans)
                 for (int i = 0; i < plan.W; i++)
                     for (int j = 0; j < plan.D; j++)
-                        taken.Add(new Vector2Int(x + i, Street + j));
+                        taken.Add(new Vector2Int(x + i, z + j));
 
             var asset = AssetDatabase.LoadAssetAtPath<GameObject>(Bare);
             if (asset == null) return;

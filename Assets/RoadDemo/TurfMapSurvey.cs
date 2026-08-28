@@ -296,6 +296,8 @@ namespace RoadDemo
         /// <summary>The grid's own ground, kerb to kerb, in world metres.</summary>
         Rect TownWorld()
         {
+            if (_builder.HasPrimaryStructure)
+                return _builder.PrimaryWorldBounds;
             var vx = _builder.verticalRoadX;
             var hz = _builder.horizontalRoadZ;
             return Rect.MinMaxRect(
@@ -629,32 +631,57 @@ namespace RoadDemo
         void CollectStreets()
         {
             Streets.Clear();
-            var vx = _builder.verticalRoadX;
-            var hz = _builder.horizontalRoadZ;
-            var town = TownWorld();
-
-            for (int i = 0; i < vx.Length; i++)
+            if (!_builder.HasPrimaryStructure)
             {
-                float half = _builder.VerticalHalfWidth(i);
-                Streets.Add(new Street
+                var vx = _builder.verticalRoadX;
+                var hz = _builder.horizontalRoadZ;
+                var town = TownWorld();
+
+                for (int i = 0; i < vx.Length; i++)
                 {
-                    World = Rect.MinMaxRect(vx[i] - half, town.yMin, vx[i] + half, town.yMax),
-                    Vertical = true,
-                    Boulevard = Boulevard(_builder.verticalIsBoulevard, i),
-                    Name = Named(_builder.Streets != null ? _builder.Streets.Vertical(i) : null),
-                });
+                    float half = _builder.VerticalHalfWidth(i);
+                    Streets.Add(new Street
+                    {
+                        World = Rect.MinMaxRect(vx[i] - half, town.yMin, vx[i] + half, town.yMax),
+                        Vertical = true,
+                        Boulevard = Boulevard(_builder.verticalIsBoulevard, i),
+                        Name = Named(_builder.Streets != null ? _builder.Streets.Vertical(i) : null),
+                    });
+                }
+
+                for (int j = 0; j < hz.Length; j++)
+                {
+                    float half = _builder.HorizontalHalfWidth(j);
+                    Streets.Add(new Street
+                    {
+                        World = Rect.MinMaxRect(town.xMin, hz[j] - half, town.xMax, hz[j] + half),
+                        Vertical = false,
+                        Boulevard = Boulevard(_builder.horizontalIsBoulevard, j),
+                        Name = Named(_builder.Streets != null ? _builder.Streets.Horizontal(j) : null),
+                    });
+                }
             }
 
-            for (int j = 0; j < hz.Length; j++)
+            // They are the entire road plan in CoreDemo. The ordinary game's grid map
+            // stays on its existing path; only a primary structure substitutes these
+            // registered roads for that grid.
+            if (_builder.HasPrimaryStructure)
             {
-                float half = _builder.HorizontalHalfWidth(j);
-                Streets.Add(new Street
+                foreach (var road in _builder.QuarterRoads)
                 {
-                    World = Rect.MinMaxRect(town.xMin, hz[j] - half, town.xMax, hz[j] + half),
-                    Vertical = false,
-                    Boulevard = Boulevard(_builder.horizontalIsBoulevard, j),
-                    Name = Named(_builder.Streets != null ? _builder.Streets.Horizontal(j) : null),
-                });
+                    bool vertical = Mathf.Abs(road.b.y - road.a.y) > Mathf.Abs(road.b.x - road.a.x);
+                    float half = Mathf.Max(0.5f, road.half);
+                    Streets.Add(new Street
+                    {
+                        World = Rect.MinMaxRect(
+                            Mathf.Min(road.a.x, road.b.x) - (vertical ? half : 0f),
+                            Mathf.Min(road.a.y, road.b.y) - (vertical ? 0f : half),
+                            Mathf.Max(road.a.x, road.b.x) + (vertical ? half : 0f),
+                            Mathf.Max(road.a.y, road.b.y) + (vertical ? 0f : half)),
+                        Vertical = vertical,
+                        Boulevard = half > 10f,
+                    });
+                }
             }
         }
 

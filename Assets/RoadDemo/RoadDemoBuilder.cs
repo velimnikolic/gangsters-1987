@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using LivingCity.Entities;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
 
@@ -438,6 +439,8 @@ namespace RoadDemo
         LivingCity.CameraRig.BuildingCardPicker _picker;
         readonly Dictionary<GameObject, Bounds> _prefabBoundsCache = new Dictionary<GameObject, Bounds>();
 
+        int AnthropometrySeed => unchecked(spacingSeed * 1000003 + cityLayoutSeed * 7919 + 1987);
+
         readonly HashSet<long> _cells = new HashSet<long>();
         RoadNode[,] _nodes;
         readonly List<RoadEdge> _edges = new List<RoadEdge>();
@@ -518,9 +521,19 @@ namespace RoadDemo
             _traffic = new GameObject("Traffic").transform;
             _cars = new GameObject("Cars").transform;
 
-            // the number of the city, and the street plan and the seams it draws:
-            // first of everything, because every pass below reads what it writes
-            Pass("PlanCity", PlanCity);
+            if (HasPrimaryStructure)
+            {
+                // CoreDemo supplies only WHERE the city stands. Everything after this
+                // branch is the same runtime pass sequence Game.unity uses.
+                Pass("PlanPrimaryStructure", PlanPrimaryStructure);
+                Pass("BuildPrimaryStructure", BuildPrimaryStructure);
+                Pass("BuildWalkClearance", BuildWalkClearance);
+            }
+            else
+            {
+                // the number of the city, and the street plan and the seams it draws:
+                // first of everything, because every pass below reads what it writes
+                Pass("PlanCity", PlanCity);
             // no freeways in this town, whatever the inspector or an old scene says:
             // the Highway seams come out of the list before the grid is spaced on them
             Pass("NoFreeways", NoFreeways);
@@ -577,7 +590,8 @@ namespace RoadDemo
             Pass("BuildDistricts", BuildDistricts);
             // the freeway's terminal link roads (a city with no belt), once the
             // connectors they cross are in
-            Pass("BuildHighwayLinks", BuildHighwayLinks);
+                Pass("BuildHighwayLinks", BuildHighwayLinks);
+            }
             Pass("BuildCityLife", BuildCityLife);
             Pass("SpawnCars", SpawnCars);
             Pass("SpawnBikes", SpawnBikes);
@@ -3236,6 +3250,12 @@ namespace RoadDemo
                 var go = Instantiate(prefab, root);
                 foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
                 foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
+                PedestrianAnthropometry.Apply(
+                    go,
+                    PedestrianAnthropometry.Seed(AnthropometrySeed, k, PedestrianAnthropometry.CivilianSalt),
+                    PedestrianIdentity.IsFemale(prefab.name),
+                    PedestrianAnthropometry.CohortFor("Civilians", prefab.name),
+                    prefab.name);
                 // the crowd casts no shadow: a few pixels of shadow under three hundred
                 // walkers is four cascade passes of skinned meshes for nothing
                 foreach (var r in go.GetComponentsInChildren<Renderer>())
@@ -3267,7 +3287,7 @@ namespace RoadDemo
             _crews.CrackClip = CrewKit.Crack;
             _crews.BarTopInset = 52f; // under the top bar (42) with a little air
             _crews.BombsPerCrew = bombsPerCrew;
-            _crews.Init(_pedLinks, clips, _pedPrefabs);
+            _crews.Init(_pedLinks, clips, _pedPrefabs, AnthropometrySeed);
 
             // the law: the patrol cars and beat officers already out answer the
             // dispatcher's calls; the men who get out of a car are dealt by it
@@ -3907,14 +3927,23 @@ namespace RoadDemo
             PoliceFootPatrol lead = null;
             for (int i = 0; i < policeOfficerCount; i++)
             {
+                var unitNumber = i + 1;
                 var prefab = _officerPrefabs[i % _officerPrefabs.Count];
                 var go = Instantiate(prefab, door, Quaternion.identity, parent);
-                go.name = "Beat Officer " + (i + 1);
+                go.name = "Beat Officer " + unitNumber;
                 foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
                 foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
+                var anthropometry = PedestrianAnthropometry.Apply(
+                    go,
+                    PedestrianAnthropometry.Seed(AnthropometrySeed, 20000 + unitNumber,
+                        PedestrianAnthropometry.PoliceSalt),
+                    PedestrianIdentity.IsFemale(prefab.name),
+                    PedestrianAgeCohort.Adult,
+                    prefab.name);
 
                 var officer = new PoliceFootPatrol
-                    { Speed = Random.Range(1.3f, 1.5f), UnitNumber = i + 1 };
+                    { Speed = Random.Range(1.3f, 1.5f), UnitNumber = unitNumber,
+                      Anthropometry = anthropometry };
                 // the beat's whole wardrobe: the walk and the stand, the JOG he answers
                 // a call at, and the PISTOL IDLE he stands over an arrest in
                 officer.Init(go.transform,
@@ -3940,11 +3969,33 @@ namespace RoadDemo
         void SpawnBlockBeats(Transform parent, List<IPatrolMarker> markers)
         {
             if (_officerPrefabs.Count == 0 || _walkClip == null || _idleClip == null) return;
+
+            // Grid cities deal beats from lot centres. A primary structure has no
+            // RoadDemo lot plan, so its pavement itself supplies evenly spaced centres.
+            var beatCentres = new List<Vector3>();
+            if (_lotPlans.Count > 0)
+            {
+                foreach (var lot in _lotPlans)
+                    beatCentres.Add(new Vector3(lot.Interior.center.x, 0f, lot.Interior.center.y));
+            }
+            else
+            {
+                foreach (var link in _pedLinks)
+                {
+                    if (link.Gated || link.Length < 6f) continue;
+                    var a = link.From.Pos; var b = link.To.Pos;
+                    // Both directions are in the graph; keep a stable one of the pair.
+                    if (a.x > b.x + 0.01f ||
+                        (Mathf.Abs(a.x - b.x) <= 0.01f && a.z >= b.z)) continue;
+                    beatCentres.Add((a + b) * 0.5f);
+                }
+            }
+
             int pairs = policeBeatPairs < 0
-                ? Mathf.Max(1, _lotPlans.Count / 4)
+                ? Mathf.Max(1, _lotPlans.Count > 0 ? _lotPlans.Count / 4 : beatCentres.Count / 24)
                 : policeBeatPairs;
-            if (pairs <= 0 || _lotPlans.Count == 0 || _pedLinks.Count == 0) return;
-            pairs = Mathf.Min(pairs, _lotPlans.Count);
+            if (pairs <= 0 || beatCentres.Count == 0 || _pedLinks.Count == 0) return;
+            pairs = Mathf.Min(pairs, beatCentres.Count);
 
             // the waypoint pool a call routes over - every walkable corner
             var nodeSet = new HashSet<PedNode>();
@@ -3954,8 +4005,7 @@ namespace RoadDemo
             int unit = _policeOfficers.Count;
             for (int p = 0; p < pairs; p++)
             {
-                var lot = _lotPlans[p * _lotPlans.Count / pairs];
-                var centre = new Vector3(lot.Interior.center.x, 0f, lot.Interior.center.y);
+                var centre = beatCentres[p * beatCentres.Count / pairs];
 
                 // the block's nearest stretch of pavement, and its reverse
                 PedLink front = null;
@@ -3987,14 +4037,23 @@ namespace RoadDemo
                 PoliceFootPatrol lead = null;
                 for (int i = 0; i < 2; i++)
                 {
+                    var unitNumber = unit + i + 1;
                     var prefab = _officerPrefabs[(unit + i) % _officerPrefabs.Count];
                     var go = Instantiate(prefab, start.From.Pos, Quaternion.identity, parent);
-                    go.name = "Beat Officer " + (unit + i + 1);
+                    go.name = "Beat Officer " + unitNumber;
                     foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
                     foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
+                    var anthropometry = PedestrianAnthropometry.Apply(
+                        go,
+                        PedestrianAnthropometry.Seed(AnthropometrySeed, 20000 + unitNumber,
+                            PedestrianAnthropometry.PoliceSalt),
+                        PedestrianIdentity.IsFemale(prefab.name),
+                        PedestrianAgeCohort.Adult,
+                        prefab.name);
 
                     var officer = new PoliceFootPatrol
-                        { Speed = Random.Range(1.3f, 1.5f), UnitNumber = unit + i + 1 };
+                        { Speed = Random.Range(1.3f, 1.5f), UnitNumber = unitNumber,
+                          Anthropometry = anthropometry };
                     officer.Init(go.transform,
                         CrewKit.WithArms(new PedClips { Walk = _walkClip, Idle = _idleClip }),
                         start, i == 0 ? 1.5f : 0.3f);
@@ -4016,8 +4075,17 @@ namespace RoadDemo
 
         void BuildEnvironment()
         {
-            float minX = verticalRoadX[0], maxX = verticalRoadX[verticalRoadX.Length - 1];
-            float minZ = horizontalRoadZ[0], maxZ = horizontalRoadZ[horizontalRoadZ.Length - 1];
+            float minX, maxX, minZ, maxZ;
+            if (HasPrimaryStructure)
+            {
+                minX = _primaryWorld.xMin; maxX = _primaryWorld.xMax;
+                minZ = _primaryWorld.yMin; maxZ = _primaryWorld.yMax;
+            }
+            else
+            {
+                minX = verticalRoadX[0]; maxX = verticalRoadX[verticalRoadX.Length - 1];
+                minZ = horizontalRoadZ[0]; maxZ = horizontalRoadZ[horizontalRoadZ.Length - 1];
+            }
             // the town is the grid AND its quarters: the camera must be able to look at
             // the port and the suburbs too, so the boom is measured over all of it
             foreach (var r in _landRects)
@@ -4032,10 +4100,19 @@ namespace RoadDemo
             // that lies all round it (RoadDemoBuilder.Island.cs). The grid rectangle
             // itself is fully tiled by carriageways, sidewalks and the interior pads,
             // so the island's ground rings it and never runs beneath it.
-            float gx0 = verticalRoadX[0] - VHalf(0) - Sidewalk;
-            float gx1 = verticalRoadX[verticalRoadX.Length - 1] + VHalf(verticalRoadX.Length - 1) + Sidewalk;
-            float gz0 = horizontalRoadZ[0] - HHalf(0) - Sidewalk;
-            float gz1 = horizontalRoadZ[horizontalRoadZ.Length - 1] + HHalf(horizontalRoadZ.Length - 1) + Sidewalk;
+            float gx0, gx1, gz0, gz1;
+            if (HasPrimaryStructure)
+            {
+                gx0 = _primaryWorld.xMin; gx1 = _primaryWorld.xMax;
+                gz0 = _primaryWorld.yMin; gz1 = _primaryWorld.yMax;
+            }
+            else
+            {
+                gx0 = verticalRoadX[0] - VHalf(0) - Sidewalk;
+                gx1 = verticalRoadX[verticalRoadX.Length - 1] + VHalf(verticalRoadX.Length - 1) + Sidewalk;
+                gz0 = horizontalRoadZ[0] - HHalf(0) - Sidewalk;
+                gz1 = horizontalRoadZ[horizontalRoadZ.Length - 1] + HHalf(horizontalRoadZ.Length - 1) + Sidewalk;
+            }
             BuildIsland(gx0, gx1, gz0, gz1);
 
             var sunGo = new GameObject("Sun");
@@ -4162,12 +4239,14 @@ namespace RoadDemo
             windows.clock = clock;
             // window panes are lit inside the block bakes only - the traffic's
             // windscreens use the same glass materials and must stay dark
-            windows.facadeRoot = _blocks;
+            // A primary structure's buildings live under district roots, not Blocks.
+            // With no root the component scans the scene and still filters vehicle glass.
+            windows.facadeRoot = HasPrimaryStructure ? null : _blocks;
 
             var headlights = go.AddComponent<DemoHeadlights>();
             headlights.clock = clock;
             foreach (var v in _vehicles)
-                headlights.Register(v.Tf, v.HalfLen);
+                headlights.Register(v);
             foreach (var traffic in _highwayTraffic)
                 foreach (var car in traffic.Cars())
                     headlights.Register(car, 2.3f);

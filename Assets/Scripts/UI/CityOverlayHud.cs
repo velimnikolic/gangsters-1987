@@ -64,16 +64,6 @@ namespace LivingCity.UI
 
         const float HoverInterval = 0.1f;
 
-        /// <summary>Half the world-space square around a person, before authored scale.</summary>
-        const float HumanBracketHalfSize = 0.48f;
-
-        const float HumanBracketGroundLift = 0.04f;
-        const float HumanBracketArm = 14f;
-        const float HumanBracketSelectedArm = 18f;
-        const float HumanBracketPulseArm = 6f;
-        const float HumanBracketThickness = 2.5f;
-        const float HumanBracketPulsePeriod = 0.9f;
-
         /// <summary>Pick slack, metres. Enough to make a 0.2m child capsule clickable,
         /// small enough not to grab the car in the next lane.</summary>
         const float PickRadius = 0.35f;
@@ -89,9 +79,6 @@ namespace LivingCity.UI
 
         /// <summary>Reference pixels of margin an always-visible marker keeps off the edge.</summary>
         const float EdgeMargin = 18f;
-
-        static readonly Color OwnHumanBracket = new Color(0.16f, 0.95f, 0.35f, 0.96f);
-        static readonly Color OtherHumanBracket = new Color(0.24f, 0.58f, 1f, 0.94f);
 
         enum MarkerKind { Status, Hover, SelectionBracket }
 
@@ -157,6 +144,11 @@ namespace LivingCity.UI
         {
             var go = new GameObject("City Overlay", typeof(RectTransform));
             go.transform.SetParent(transform, false);
+            var canvasRect = (RectTransform)go.transform;
+            canvasRect.anchorMin = Vector2.zero;
+            canvasRect.anchorMax = Vector2.one;
+            canvasRect.offsetMin = Vector2.zero;
+            canvasRect.offsetMax = Vector2.zero;
 
             canvas = go.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -584,62 +576,25 @@ namespace LivingCity.UI
                 return;
             }
 
-            var centreScreen = cam.WorldToScreenPoint(
-                marker.Target.position + Vector3.up * HumanBracketGroundLift);
-            var on = centreScreen.z > 0f &&
-                     centreScreen.x >= 0f && centreScreen.x <= width &&
-                     centreScreen.y >= 0f && centreScreen.y <= height;
-            if (!on)
+            if (!HumanGroundBracket.TryProject(
+                    cam, markerRoot, marker.Target,
+                    marker.WorldCorners, marker.LocalCorners,
+                    width, height))
             {
                 DisableMarker(marker);
                 return;
             }
 
-            var half = HumanBracketHalfMetres(marker.Target);
-            var centre = marker.Target.position + Vector3.up * HumanBracketGroundLift;
-            marker.WorldCorners[0] = centre + new Vector3(-half, 0f, -half);
-            marker.WorldCorners[1] = centre + new Vector3(half, 0f, -half);
-            marker.WorldCorners[2] = centre + new Vector3(half, 0f, half);
-            marker.WorldCorners[3] = centre + new Vector3(-half, 0f, half);
-
-            for (var i = 0; i < marker.WorldCorners.Length; i++)
-            {
-                var screen = cam.WorldToScreenPoint(marker.WorldCorners[i]);
-                if (screen.z <= 0f ||
-                    !RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                        markerRoot, screen, null, out marker.LocalCorners[i]))
-                {
-                    DisableMarker(marker);
-                    return;
-                }
-            }
-
-            var arm = marker.Kind == MarkerKind.SelectionBracket
-                ? HumanBracketSelectedArm
-                : HumanBracketArm;
-            if (marker.Kind == MarkerKind.SelectionBracket && IsOwnHuman(marker.Subject))
-            {
-                var beat = Mathf.Sin(Time.unscaledTime *
-                                     (2f * Mathf.PI / HumanBracketPulsePeriod));
-                arm += beat * HumanBracketPulseArm;
-            }
-
-            var colour = HumanBracketColor(marker.Subject);
-            marker.Bracket.Set(marker.LocalCorners, arm, HumanBracketThickness, colour);
-
+            var selectedHuman = marker.Kind == MarkerKind.SelectionBracket;
+            var own = IsOwnHuman(marker.Subject);
             if (!marker.Graphic.enabled)
                 marker.Graphic.enabled = true;
+            marker.Bracket.Set(
+                marker.LocalCorners,
+                HumanGroundBracket.ArmLength(selectedHuman, selectedHuman && own, Time.unscaledTime),
+                HumanGroundBracket.Thickness,
+                HumanGroundBracket.Tint(own));
         }
-
-        static float HumanBracketHalfMetres(Transform target)
-        {
-            var scale = target.lossyScale;
-            var footprintScale = Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.z));
-            return Mathf.Clamp(HumanBracketHalfSize * footprintScale, 0.35f, 0.82f);
-        }
-
-        static Color HumanBracketColor(IOverlaySubject subject) =>
-            IsOwnHuman(subject) ? OwnHumanBracket : OtherHumanBracket;
 
         static bool IsOwnHuman(IOverlaySubject subject)
         {
@@ -849,67 +804,5 @@ namespace LivingCity.UI
             };
         }
 
-        sealed class GroundBracketGraphic : MaskableGraphic
-        {
-            readonly Vector2[] corners = new Vector2[4];
-            float arm = HumanBracketArm;
-            float thickness = HumanBracketThickness;
-            bool hasGeometry;
-
-            public void Set(Vector2[] source, float armLength, float lineThickness, Color tint)
-            {
-                for (var i = 0; i < corners.Length; i++)
-                    corners[i] = source[i];
-
-                arm = Mathf.Max(1f, armLength);
-                thickness = Mathf.Max(1f, lineThickness);
-                color = tint;
-                hasGeometry = true;
-                SetVerticesDirty();
-            }
-
-            protected override void OnPopulateMesh(VertexHelper vh)
-            {
-                vh.Clear();
-                if (!hasGeometry)
-                    return;
-
-                for (var i = 0; i < corners.Length; i++)
-                {
-                    var corner = corners[i];
-                    AddArm(vh, corner, corners[(i + 1) % corners.Length]);
-                    AddArm(vh, corner, corners[(i + corners.Length - 1) % corners.Length]);
-                }
-            }
-
-            void AddArm(VertexHelper vh, Vector2 corner, Vector2 toward)
-            {
-                var delta = toward - corner;
-                var length = delta.magnitude;
-                if (length <= 0.001f)
-                    return;
-
-                var end = corner + delta / length * Mathf.Min(arm, length * 0.45f);
-                AddLine(vh, corner, end);
-            }
-
-            void AddLine(VertexHelper vh, Vector2 a, Vector2 b)
-            {
-                var delta = b - a;
-                var length = delta.magnitude;
-                if (length <= 0.001f)
-                    return;
-
-                var normal = new Vector2(-delta.y, delta.x) / length * (thickness * 0.5f);
-                var tint = (Color32)color;
-                var start = vh.currentVertCount;
-                vh.AddVert(a - normal, tint, Vector2.zero);
-                vh.AddVert(a + normal, tint, Vector2.zero);
-                vh.AddVert(b - normal, tint, Vector2.zero);
-                vh.AddVert(b + normal, tint, Vector2.zero);
-                vh.AddTriangle(start, start + 1, start + 2);
-                vh.AddTriangle(start + 2, start + 1, start + 3);
-            }
-        }
     }
 }

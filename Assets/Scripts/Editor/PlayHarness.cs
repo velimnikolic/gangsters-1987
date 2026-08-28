@@ -40,6 +40,9 @@ namespace GangstersTools
     {
         const string CfgKey = "PlayHarness.Cfg";
         internal const string ArmedKey = "PlayHarness.Armed";
+        const string StateKey = "PlayHarness.State";
+        const string Pending = "pending";
+        const string Running = "running";
 
         [Serializable]
         public class Cfg
@@ -91,6 +94,7 @@ namespace GangstersTools
 
             SessionState.SetString(CfgKey, JsonUtility.ToJson(cfg));
             SessionState.SetBool(ArmedKey, true);
+            SessionState.SetString(StateKey, Pending);
             Hold();
             _armedAt = DateTime.UtcNow;
             EditorApplication.update -= Watchdog;
@@ -109,12 +113,25 @@ namespace GangstersTools
 
         public static void LetGo() => _letGo = true;
 
+        internal static void Disarm()
+        {
+            SessionState.SetBool(ArmedKey, false);
+            SessionState.EraseString(CfgKey);
+            SessionState.EraseString(StateKey);
+            EditorApplication.update -= Watchdog;
+            EditorApplication.playModeStateChanged -= OnPlayMode;
+            EditorApplication.wantsToQuit -= Stay;
+            Time.captureDeltaTime = 0f;
+            Time.captureFramerate = 0;
+            Time.timeScale = 1f;
+        }
+
         /// <summary>How a run ends. In batch that is the editor's exit code; in a live
         /// editor it is only the end of play mode - killing the user's editor because a
         /// soak finished would be a poor trade.</summary>
-        internal static void Leave(int code)
+        internal static void Leave(int code, Cfg cfg = null)
         {
-            var cfg = JsonUtility.FromJson<Cfg>(SessionState.GetString(CfgKey, "{}")) ?? new Cfg();
+            cfg ??= JsonUtility.FromJson<Cfg>(SessionState.GetString(CfgKey, "{}")) ?? new Cfg();
             if (cfg.quit) EditorApplication.Exit(code);
             else { Debug.Log($"[harness] the run is over (code {code}); the editor stays up"); EditorApplication.isPlaying = false; }
         }
@@ -136,19 +153,24 @@ namespace GangstersTools
         /// reload that went wrong - the run is abandoned rather than left hanging.</summary>
         static void Watchdog()
         {
-            if (!SessionState.GetBool(ArmedKey, false)) { EditorApplication.update -= Watchdog; return; }
+            if (!ArmedForHarness()) { Disarm(); return; }
             if (UnityEngine.Object.FindAnyObjectByType<HarnessDriver>() != null) { EditorApplication.update -= Watchdog; return; }
             if ((DateTime.UtcNow - _armedAt).TotalSeconds < 600) return;
             Debug.LogError("[harness] the play driver never came up - giving in");
+            var cfg = JsonUtility.FromJson<Cfg>(SessionState.GetString(CfgKey, "{}")) ?? new Cfg();
             _letGo = true;
-            SessionState.SetBool(ArmedKey, false);
-            Leave(5);
+            Disarm();
+            Leave(5, cfg);
         }
 
         [InitializeOnLoadMethod]
         static void Rearm()
         {
-            if (!SessionState.GetBool(ArmedKey, false)) return;
+            if (!ArmedForHarness())
+            {
+                Disarm();
+                return;
+            }
             Debug.Log("[harness] rearmed after a domain reload");
             Hold();
             if (_armedAt == default) _armedAt = DateTime.UtcNow;
@@ -166,13 +188,23 @@ namespace GangstersTools
 
         static void StartDriver()
         {
-            if (!SessionState.GetBool(ArmedKey, false)) return;
+            if (!ArmedForHarness()) { Disarm(); return; }
             if (UnityEngine.Object.FindAnyObjectByType<HarnessDriver>() != null) return;
             var cfg = JsonUtility.FromJson<Cfg>(SessionState.GetString(CfgKey, "{}")) ?? new Cfg();
+            SessionState.SetString(StateKey, Running);
             Debug.Log("[harness] the run has begun");
             var go = new GameObject("~PlayHarness");
             UnityEngine.Object.DontDestroyOnLoad(go);
             go.AddComponent<HarnessDriver>().Begin(cfg);
+        }
+
+        static bool ArmedForHarness()
+        {
+            if (!SessionState.GetBool(ArmedKey, false))
+                return false;
+
+            var state = SessionState.GetString(StateKey, "");
+            return state == Pending || state == Running;
         }
 
         // ------------------------------------------------------------------ arguments
@@ -271,7 +303,7 @@ namespace GangstersTools
         static void Fail(Cfg cfg, string why)
         {
             Say(cfg, "[harness] FAILED: " + why);
-            SessionState.SetBool(ArmedKey, false);
+            Disarm();
             if (cfg.quit) EditorApplication.Exit(4);
         }
     }
@@ -353,6 +385,8 @@ namespace GangstersTools
             _log?.Flush();
             _log?.Dispose();
             _log = null;
+            if (!_done)
+                PlayHarness.Disarm();
         }
 
         void Update()
@@ -437,11 +471,10 @@ namespace GangstersTools
             _log?.Flush();
             _log?.Dispose();
             _log = null;
-            Time.captureDeltaTime = 0f;
-            SessionState.SetBool(PlayHarness.ArmedKey, false);
             PlayHarness.LetGo();
+            PlayHarness.Disarm();
             Debug.Log($"[harness] {why} - {_sim:F0}s played, {_errors} errors, {_exceptions} exceptions");
-            PlayHarness.Leave(code);
+            PlayHarness.Leave(code, _cfg);
         }
     }
 }

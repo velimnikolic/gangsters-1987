@@ -27,7 +27,7 @@ namespace RoadDemo
     /// in the harvest scene stand where the houses left room, and the storefront is drawn
     /// from a pool and set a fire escape's reach off its neighbour.
     /// </summary>
-    public static class ResidentialBlocks
+    public static partial class ResidentialBlocks
     {
         const string CityEnv = "Assets/Synty/PolygonCity/Prefabs/Environments/";
         const string CityProps = "Assets/Synty/PolygonCity/Prefabs/Props/";
@@ -87,6 +87,10 @@ namespace RoadDemo
             PalmProps + "SM_Prop_Umbrella_03.prefab",
         };
         const string ParkBench = CityProps + "SM_Prop_ParkBench_01.prefab";
+        const string CourtFountain = PalmProps + "SM_Prop_Fountain_01.prefab";
+        const string CourtPlanterBench = PalmProps + "SM_Prop_Planter_Bench_01.prefab";
+        const string CourtPlanter = PalmProps + "SM_Prop_Planter_04.prefab";
+        const string CourtTable = PalmProps + "SM_Prop_Table_Outdoor_01.prefab";
         const float TableAlongMin = 3.6f, TableAlongMax = 4.6f;
         const float TableRowMin = 3.6f, TableRowMax = 4.5f;
         const float TableJitter = 0.45f;
@@ -124,7 +128,6 @@ namespace RoadDemo
         static readonly string[] Kit =
         {
             KitBld + "building-coffeeshop.prefab",
-            KitBld + "building-store-01.prefab",
             KitBld + "building-diner.prefab",
             KitBld + "building-burger-joint.prefab",
         };
@@ -178,6 +181,8 @@ namespace RoadDemo
         {
             public int Units, Tiles, Props, Lamps, Palms, Stalls, Cars, Tables, Benches, Parks;
             public int Drains, Dug, Meters, Bins, Boxes, Picnics;
+            public int SurfaceFlush, SurfaceClusters, SurfaceMissing;
+            public string SurfaceProfile = "";
             public bool Subway, BusStop, Hotdog, Billboard, Mailbox;
             public int Missing;
             public string Cafe = "";
@@ -199,6 +204,8 @@ namespace RoadDemo
                 if (Picnics > 0) extra.Add($"{Picnics} picnic table(s)");
                 if (Drains > 0) extra.Add($"{Drains} drain(s)");
                 if (Dug > 0) extra.Add("dug-up pavement");
+                if (SurfaceFlush + SurfaceClusters > 0)
+                    extra.Add($"surface {SurfaceProfile}: {SurfaceFlush} flush/{SurfaceClusters} cluster(s)");
                 return
                     $"{Units} unit(s), {Tiles} tile(s), {Props} prop(s) ({Palms} palm(s), {Lamps} lamp(s), " +
                     $"{Tables} table(s), {Benches} bench(es)), {Cars} car(s) in {Stalls} stall(s)" +
@@ -221,28 +228,40 @@ namespace RoadDemo
             ForgetMissing();
             var stood = new Stood();
 
-            // the storefront is chosen before the ground, which is laid round its foot
-            var cafe = CafeOf(plan, rng, stood);
+            // Storefronts are chosen before the ground, which is laid round their feet.
+            // Each reserved gap is composed independently: folding two gaps into one bound
+            // made the first shop claim a huge, mostly empty slab.
+            var cafes = new List<(ResidentialLot.Gap Gap, CafeSpot Spot)>();
+            var cafeGaps = plan.Cafes.Count > 0
+                ? plan.Cafes
+                : (plan.Cafe != null ? new List<ResidentialLot.Gap> { plan.Cafe }
+                                     : new List<ResidentialLot.Gap>());
+            foreach (var gap in cafeGaps)
+            {
+                var spot = CafeOf(plan, gap, rng, stood);
+                if (spot != null) cafes.Add((gap, spot));
+            }
             var ring = Ring(plan, rng);
             var kerbs = new List<CorePavement.Kerbstone>();
             var stalls = new List<Stall>();
             var standing = new List<Vector3>();
 
             AmenityFloors(plan, root, stood);
-            Ground(plan, root, cafe, ring, kerbs, stalls, stood);
+            Ground(plan, root, cafes.Select(c => c.Spot).ToList(), ring, kerbs, stalls, stood);
             Stand(plan, root, stood);
             Subway(plan, root, stood);
-            if (cafe != null && CafeStand(cafe, root, stood))
+            foreach (var placed in cafes)
             {
-                // a storefront that arrived with its own terrace is not given a second one:
-                // the demo's diner brings 87 chairs, tables and umbrellas of its own, and
-                // the patio's rows would stand in them
-                if ((cafe.Unit?.Seats ?? 0) < OwnSeats)
+                if (!CafeStand(placed.Spot, root, stood)) continue;
+                // A storefront that arrived with its own terrace is not given a second one.
+                if ((placed.Spot.Unit?.Seats ?? 0) < OwnSeats)
                 {
-                    Patio(plan, cafe, root, rng, standing, stood);
-                    Terraces(plan, cafe, root, rng, standing, stood);
+                    Patio(plan, placed.Gap, placed.Spot, root, rng, standing, stood);
+                    Terraces(plan, placed.Gap, placed.Spot, root, rng, standing, stood);
                 }
             }
+            Courtyard(plan, root, rng, standing, stood);
+            SharedYards(plan, root, rng, standing, stood);
             Cars(stalls, root, rng, raise, stood);
             if (Dressed)
             {
@@ -254,6 +273,7 @@ namespace RoadDemo
             Lamps(plan, root, standing, stood);
             if (Dressed) Street(plan, root, rng, standing, stood);
             Palms(kerbs, standing, root, raise, rng.Next(), stood);
+            SurfaceDetails(plan, root, stood);
 
             stood.Absent.AddRange(Missing);
             stood.Missing = Missing.Count;
@@ -390,7 +410,7 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ the ground
 
-        static void Ground(ResidentialLot.Plan plan, Transform root, CafeSpot cafe,
+        static void Ground(ResidentialLot.Plan plan, Transform root, List<CafeSpot> cafes,
                            Dictionary<(int, int), RingTile> ring,
                            List<CorePavement.Kerbstone> kerbs, List<Stall> stalls, Stood stood)
         {
@@ -438,8 +458,8 @@ namespace RoadDemo
                             // any part of the foot in the cell, not just its middle: a 16 m
                             // diner in a 20 m gap runs a metre of sunken wall into the
                             // fourth cell, and a slab laid over that roofs it
-                            if (cafe != null && cafe.Sunk &&
-                                cafe.Foot.Overlaps(new Rect(i * cell, j * cell, cell, cell))) continue;
+                            if (cafes.Any(cafe => cafe.Sunk &&
+                                cafe.Foot.Overlaps(new Rect(i * cell, j * cell, cell, cell)))) continue;
                             tile = Paving;
                             break;
                         case ResidentialLot.Use.Verge:
@@ -514,7 +534,8 @@ namespace RoadDemo
             }
             bool Free(int x, int y) => Is(x, y, ResidentialLot.Use.Parking) && !laid[x, y] && !ByWall(x, y);
             bool Inside(int x, int y) => x > 0 && y > 0 && x < plan.W - 1 && y < plan.D - 1;
-            bool Aisle(int x, int y) => Inside(x, y) && Is(x, y, ResidentialLot.Use.Drive);
+            bool Aisle(int x, int y) => Inside(x, y) &&
+                (Is(x, y, ResidentialLot.Use.Drive) || Is(x, y, ResidentialLot.Use.Alley));
             if (ByWall(i, j)) return false;
 
             float cell = ResidentialLot.Cell;
@@ -819,16 +840,18 @@ namespace RoadDemo
         /// the first cut stood the coffee shop's terrace in it (the user, 2026-08-27:
         /// "kafic i zgrada pored se preklapaju").
         /// </summary>
-        static CafeSpot CafeOf(ResidentialLot.Plan plan, System.Random rng, Stood stood)
+        static CafeSpot CafeOf(ResidentialLot.Plan plan, ResidentialLot.Gap gap,
+                               System.Random rng, Stood stood)
         {
-            var gap = plan.Cafe;
             if (gap == null) return null;
 
             float cell = ResidentialLot.Cell;
             float minX = float.MaxValue, minZ = float.MaxValue, maxX = float.MinValue, maxZ = float.MinValue;
-            for (int i = 0; i < plan.W; i++)
-                for (int j = 0; j < plan.D; j++)
+            for (int n = 0; n < gap.Run; n++)
+                for (int k = 0; k < ResidentialLot.CafeDeep; k++)
                 {
+                    var (i, j) = Into(plan, gap.Side, gap.At + n, k);
+                    if (i < 0 || j < 0 || i >= plan.W || j >= plan.D) continue;
                     if (plan.Ground[i, j] != ResidentialLot.Use.Cafe) continue;
                     minX = Mathf.Min(minX, i * cell); maxX = Mathf.Max(maxX, (i + 1) * cell);
                     minZ = Mathf.Min(minZ, j * cell); maxZ = Mathf.Max(maxZ, (j + 1) * cell);
@@ -949,9 +972,16 @@ namespace RoadDemo
 
             if (picks.Count == 0)
             {
-                stood.Cafe = $"no storefront fits the {along:0} x {deep:0} m gap";
+                string failed = $"no restaurant fits the {along:0} x {deep:0} m gap";
+                stood.Cafe = stood.Cafe.Length == 0 ? failed : stood.Cafe + "; " + failed;
                 return null;
             }
+            var restaurants = picks.Where(p =>
+                p.Name.IndexOf("coffee", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                p.Name.IndexOf("diner", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                p.Name.IndexOf("burger", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                p.Name.IndexOf("pizza", System.StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+            if (restaurants.Count > 0) picks = restaurants;
             return picks[rng.Next(picks.Count)];
         }
 
@@ -1056,10 +1086,172 @@ namespace RoadDemo
                 if (go != null) Claim(cafe.Foot);
             }
             else go = Building(cafe.Path, root, cafe.X, cafe.Z, cafe.YawF, 1f);
-            if (go == null) { stood.Cafe = $"no {cafe.Name}: no room"; return false; }
+            if (go == null)
+            {
+                string failed = $"no {cafe.Name}: no room";
+                stood.Cafe = stood.Cafe.Length == 0 ? failed : stood.Cafe + "; " + failed;
+                return false;
+            }
             go.name = $"{cafe.Name} (cafe)";
-            stood.Cafe = cafe.Name;
+            stood.Cafe = stood.Cafe.Length == 0 ? cafe.Name : stood.Cafe + " + " + cafe.Name;
             return true;
+        }
+
+        /// <summary>
+        /// A court is not leftover paving. Its parks and passages are placed by the plan;
+        /// this gives the remaining court a Palm City civic centre and several small
+        /// seating/green anchors. It runs after buildings and restaurants, so Composer's
+        /// booked footprints reject anything that would crowd them.
+        /// </summary>
+        static void Courtyard(ResidentialLot.Plan plan, Transform root, System.Random rng,
+                              List<Vector3> standing, Stood stood)
+        {
+            if (plan.Klass != ResidentialLot.Klass.Court) return;
+
+            float cell = ResidentialLot.Cell;
+            float cx = plan.W * cell * 0.5f, cz = plan.D * cell * 0.5f;
+            var cells = new List<(int I, int J, float D2)>();
+            for (int i = 0; i < plan.W; i++)
+                for (int j = 0; j < plan.D; j++)
+                {
+                    if (plan.Ground[i, j] != ResidentialLot.Use.Court) continue;
+                    float x = (i + 0.5f) * cell, z = (j + 0.5f) * cell;
+                    cells.Add((i, j, (x - cx) * (x - cx) + (z - cz) * (z - cz)));
+                }
+            if (cells.Count == 0) return;
+
+            var pen = new GameObject("courtyard programme").transform;
+            pen.SetParent(root, false);
+            bool Put(string path, int i, int j, float yaw, float room, bool seat = false)
+            {
+                float x = (i + 0.5f) * cell, z = (j + 0.5f) * cell;
+                if (Prop(path, pen, x, z, yaw, room, Deck) == null) return false;
+                stood.Props++;
+                if (seat) stood.Benches++;
+                standing.Add(new Vector3(x, 0f, z));
+                return true;
+            }
+
+            // One legible centre, then a loose ring. The modulo spreads candidates without
+            // turning the whole court into furniture storage.
+            foreach (var c in cells.OrderBy(c => c.D2))
+                if (Put(CourtFountain, c.I, c.J, 90f * rng.Next(4), 1.25f)) break;
+
+            int benches = 0;
+            foreach (var c in cells.OrderBy(c => c.D2).ThenBy(_ => rng.Next()))
+            {
+                if (benches >= 8 || (c.I * 3 + c.J * 5) % 4 != 0) continue;
+                float yaw = Mathf.Atan2(cx - (c.I + 0.5f) * cell,
+                                       cz - (c.J + 0.5f) * cell) * Mathf.Rad2Deg;
+                if (Put(CourtPlanterBench, c.I, c.J, yaw, 1.15f, seat: true)) benches++;
+            }
+
+            int planters = 0;
+            foreach (var c in cells.OrderByDescending(c => c.D2).ThenBy(_ => rng.Next()))
+            {
+                if (planters >= 6 || (c.I + c.J * 2) % 3 != 0) continue;
+                if (Put(CourtPlanter, c.I, c.J, 90f * rng.Next(4), 1.1f)) planters++;
+            }
+
+            int tables = 0;
+            foreach (var c in cells.OrderBy(_ => rng.Next()))
+            {
+                if (tables >= 3) break;
+                if (Put(CourtTable, c.I, c.J, 90f * rng.Next(4), 1.2f)) tables++;
+            }
+        }
+
+        /// <summary>
+        /// The privacy depth between a house and its alley is useful shared space, not a
+        /// second building row. Each connected yard gets one restrained Palm City seating
+        /// cluster, placed only in cells with a full-cell buffer from residential walls.
+        /// Cafe and parking ground are different uses and can never be selected here.
+        /// </summary>
+        static void SharedYards(ResidentialLot.Plan plan, Transform root, System.Random rng,
+                                List<Vector3> standing, Stood stood)
+        {
+            if (plan.Klass != ResidentialLot.Klass.Block) return;
+
+            bool[,] seen = new bool[plan.W, plan.D];
+            var components = new List<List<(int I, int J)>>();
+            for (int i = 0; i < plan.W; i++)
+                for (int j = 0; j < plan.D; j++)
+                {
+                    if (seen[i, j] || plan.Ground[i, j] != ResidentialLot.Use.Yard) continue;
+                    var part = new List<(int, int)>();
+                    var todo = new Queue<(int, int)>();
+                    todo.Enqueue((i, j));
+                    seen[i, j] = true;
+                    while (todo.Count > 0)
+                    {
+                        var cell = todo.Dequeue();
+                        part.Add(cell);
+                        for (int side = 0; side < 4; side++)
+                        {
+                            int x = cell.Item1 + ResidentialLot.Step[side, 0];
+                            int y = cell.Item2 + ResidentialLot.Step[side, 1];
+                            if (x < 0 || y < 0 || x >= plan.W || y >= plan.D || seen[x, y]) continue;
+                            if (plan.Ground[x, y] != ResidentialLot.Use.Yard) continue;
+                            seen[x, y] = true;
+                            todo.Enqueue((x, y));
+                        }
+                    }
+                    if (part.Count >= 3) components.Add(part);
+                }
+            if (components.Count == 0) return;
+
+            var pen = new GameObject("shared yards").transform;
+            pen.SetParent(root, false);
+            float unit = ResidentialLot.Cell;
+            foreach (var part in components.OrderByDescending(p => p.Count).Take(4))
+            {
+                bool Clear(int i, int j)
+                {
+                    for (int side = 0; side < 4; side++)
+                    {
+                        int x = i + ResidentialLot.Step[side, 0], y = j + ResidentialLot.Step[side, 1];
+                        if (x < 0 || y < 0 || x >= plan.W || y >= plan.D) return false;
+                        var use = plan.Ground[x, y];
+                        if (use == ResidentialLot.Use.Building || use == ResidentialLot.Use.Forecourt ||
+                            use == ResidentialLot.Use.Alley || use == ResidentialLot.Use.Drive) return false;
+                    }
+                    return true;
+                }
+
+                float ci = (float)part.Average(c => c.I), cj = (float)part.Average(c => c.J);
+                var candidates = part.Where(c => Clear(c.I, c.J))
+                    .OrderBy(c => (c.I - ci) * (c.I - ci) + (c.J - cj) * (c.J - cj))
+                    .ThenBy(_ => rng.Next()).ToList();
+                if (candidates.Count == 0) continue;
+
+                bool Put(string path, (int I, int J) cell, float yaw, float room, bool bench)
+                {
+                    float x = (cell.I + 0.5f) * unit, z = (cell.J + 0.5f) * unit;
+                    if (Prop(path, pen, x, z, yaw, room, Deck) == null) return false;
+                    stood.Props++;
+                    if (bench) stood.Benches++;
+                    standing.Add(new Vector3(x, 0f, z));
+                    return true;
+                }
+
+                var anchor = candidates[0];
+                Put(CourtPlanterBench, anchor, 90f * rng.Next(4), 1.1f, bench: true);
+                if (part.Count >= 6 && candidates.Count > 1)
+                {
+                    var table = candidates.OrderByDescending(c =>
+                        (c.I - anchor.I) * (c.I - anchor.I) + (c.J - anchor.J) * (c.J - anchor.J)).First();
+                    Put(Picnic, table, 90f * rng.Next(2), 1.1f, bench: false);
+                }
+
+                int greens = 0;
+                foreach (var green in candidates.OrderByDescending(c =>
+                    (c.I - anchor.I) * (c.I - anchor.I) + (c.J - anchor.J) * (c.J - anchor.J)))
+                {
+                    int di = green.I - anchor.I, dj = green.J - anchor.J;
+                    if (greens >= 2 || di * di + dj * dj < 2) continue;
+                    if (Put(CourtPlanter, green, 90f * rng.Next(4), 1.05f, bench: false)) greens++;
+                }
+            }
         }
 
         /// <summary>
@@ -1067,13 +1259,19 @@ namespace RoadDemo
         /// the whole end of a row block, both gaps together. The patio fills all of it
         /// (the user, 2026-08-27: "ispuni citav patio na toj strani bloka").
         /// </summary>
-        static bool[,] Plateau(ResidentialLot.Plan plan)
+        static bool[,] Plateau(ResidentialLot.Plan plan, ResidentialLot.Gap gap)
         {
             var on = new bool[plan.W, plan.D];
             var todo = new Queue<(int, int)>();
-            for (int i = 0; i < plan.W; i++)
-                for (int j = 0; j < plan.D; j++)
-                    if (plan.Ground[i, j] == ResidentialLot.Use.Cafe) { on[i, j] = true; todo.Enqueue((i, j)); }
+            for (int n = 0; n < gap.Run; n++)
+                for (int k = 0; k < ResidentialLot.CafeDeep; k++)
+                {
+                    var (i, j) = Into(plan, gap.Side, gap.At + n, k);
+                    if (i < 0 || j < 0 || i >= plan.W || j >= plan.D) continue;
+                    if (plan.Ground[i, j] != ResidentialLot.Use.Cafe) continue;
+                    on[i, j] = true;
+                    todo.Enqueue((i, j));
+                }
             while (todo.Count > 0)
             {
                 var (i, j) = todo.Dequeue();
@@ -1129,12 +1327,12 @@ namespace RoadDemo
         /// booked, so nothing stands in the storefront's foot or in another table's room;
         /// what does not fit is refused and counted, never crammed.
         /// </summary>
-        static void Patio(ResidentialLot.Plan plan, CafeSpot cafe, Transform root, System.Random rng,
+        static void Patio(ResidentialLot.Plan plan, ResidentialLot.Gap gap, CafeSpot cafe,
+                          Transform root, System.Random rng,
                           List<Vector3> standing, Stood stood)
         {
-            var gap = plan.Cafe;
             if (gap == null) return;
-            var plateau = Plateau(plan);
+            var plateau = Plateau(plan, gap);
             if (!Bounds(plateau, out float minX, out float minZ, out float maxX, out float maxZ)) return;
             var pen = new GameObject("patio").transform;
             pen.SetParent(root, false);
@@ -1206,10 +1404,10 @@ namespace RoadDemo
         /// other (the user, 2026-08-27, of the row block: "narokaj stolove svuda oko kafica
         /// na tom cosku").
         /// </summary>
-        static void Terraces(ResidentialLot.Plan plan, CafeSpot cafe, Transform root, System.Random rng,
+        static void Terraces(ResidentialLot.Plan plan, ResidentialLot.Gap gap, CafeSpot cafe,
+                             Transform root, System.Random rng,
                              List<Vector3> standing, Stood stood)
         {
-            var gap = plan.Cafe;
             float cell = ResidentialLot.Cell;
             bool alongX = gap.Side == 0 || gap.Side == 2;
             float foot0 = alongX ? cafe.Foot.xMin : cafe.Foot.yMin, foot1 = alongX ? cafe.Foot.xMax : cafe.Foot.yMax;
@@ -1226,7 +1424,7 @@ namespace RoadDemo
             Terrace(plan, gap.Side, Mathf.Min(cornerEdge, foot0), Mathf.Max(cornerEdge, foot1), root, rng, standing, stood);
 
             // and round the corner, the whole length of the plateau along the other street
-            var plateau = Plateau(plan);
+            var plateau = Plateau(plan, gap);
             if (!Bounds(plateau, out float minX, out float minZ, out float maxX, out float maxZ)) return;
             float across = (alongX ? plan.D : plan.W) * cell;
             bool nearEdge = gap.Side == 0 || gap.Side == 3;     // the gap's street is at the low end of the other axis
@@ -1425,7 +1623,7 @@ namespace RoadDemo
             float cell = ResidentialLot.Cell;
             foreach (var gap in plan.Gaps)
             {
-                if (gap == plan.Cafe || gap.Use != ResidentialLot.Use.Paved || gap.Run < 2) continue;
+                if (plan.Cafes.Contains(gap) || gap.Use != ResidentialLot.Use.Paved || gap.Run < 2) continue;
                 bool alongX = gap.Side == 0 || gap.Side == 2;
                 float toStreet = ToStreet(gap.Side);
 

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using LivingCity.CameraRig;
+using LivingCity.UI;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -7,9 +8,10 @@ using UnityEngine.UI;
 
 namespace RoadDemo
 {
-    // Anything the police overlay hangs a dot over: a patrol car or an officer
-    // on foot. Dimmed while the subject rests at the station; the title and line
-    // feed the click-to-inspect popup.
+    // Anything the police overlay tracks: a patrol car or an officer on foot.
+    // Cars keep the overhead dot; foot officers use the shared ground bracket for
+    // hover/selection. Dimmed while the subject rests at the station; the title and
+    // line feed the click-to-inspect popup.
     public interface IPatrolMarker
     {
         Transform MarkerTf { get; }
@@ -44,12 +46,11 @@ namespace RoadDemo
         }
     }
 
-    // The blue indicator riding above every patrol unit: a small dot - the white
-    // glow-dot sprite from the Synty Interface Modern Menus pack (the project's
-    // single source of UI art) tinted police-blue - drawn with the main game's
-    // CityOverlayHud trick: ScreenSpaceOverlay means a UI transform.position IS
-    // screen pixels, so WorldToScreenPoint feeds it directly, it stays crisp at
-    // every zoom and needs no billboarding.
+    // The blue indicator for every patrol unit: cars get the overhead glow-dot
+    // sprite, foot patrols get the same floor-corner brackets CityOverlayHud uses.
+    // Both are drawn with the main game's ScreenSpaceOverlay trick: a UI
+    // transform.position IS screen pixels, so WorldToScreenPoint feeds it directly,
+    // it stays crisp at every zoom and needs no billboarding.
     //
     // Click-to-inspect: a left click within PickRadius of a unit (its dot or its
     // body) selects it and opens a popup - the pack's dark box, 9-sliced - that
@@ -64,6 +65,7 @@ namespace RoadDemo
         const float BobAmplitude = 3f; // reference pixels of idle float
         const float BobPeriod = 1.8f;
         const float SelectedScale = 1.5f;
+        const float HoverInterval = 0.1f;
 
         const float PickRadius = 30f;  // reference pixels of click slack
         const float PopupWidth = 320f;
@@ -79,6 +81,7 @@ namespace RoadDemo
 
         List<IPatrolMarker> _subjects;
         readonly List<Image> _images = new List<Image>();
+        readonly List<GroundBracketGraphic> _brackets = new List<GroundBracketGraphic>();
         Canvas _canvas;
         Camera _cam;
 
@@ -86,7 +89,14 @@ namespace RoadDemo
         RectTransform _popupRect;
         TMP_Text _popupTitle, _popupLine;
         int _selected = -1;
+        int _hovered = -1;
+        float _nextHoverAt;
         string _shownTitle, _shownLine;
+        readonly Vector3[] _bracketWorld = new Vector3[4];
+        readonly Vector2[] _bracketLocal = new Vector2[4];
+
+        static bool BookOpen => LivingCity.UI.PersonnelAlmanac.IsOpen ||
+                                TurfMapHud.IsOpen;
 
         public void Init(List<IPatrolMarker> subjects)
         {
@@ -105,6 +115,11 @@ namespace RoadDemo
 
             var root = new GameObject("Police Overlay", typeof(RectTransform));
             root.transform.SetParent(transform, false);
+            var rootRect = (RectTransform)root.transform;
+            rootRect.anchorMin = Vector2.zero;
+            rootRect.anchorMax = Vector2.one;
+            rootRect.offsetMin = Vector2.zero;
+            rootRect.offsetMax = Vector2.zero;
             _canvas = root.AddComponent<Canvas>();
             _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
 
@@ -124,6 +139,18 @@ namespace RoadDemo
                 img.rectTransform.sizeDelta = new Vector2(MarkerSize, MarkerSize);
                 img.enabled = false;
                 _images.Add(img);
+
+                var bracket = new GameObject("ground bracket", typeof(RectTransform))
+                    .AddComponent<GroundBracketGraphic>();
+                bracket.transform.SetParent(root.transform, false);
+                bracket.raycastTarget = false;
+                var rect = bracket.rectTransform;
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = Vector2.one;
+                rect.offsetMin = Vector2.zero;
+                rect.offsetMax = Vector2.zero;
+                bracket.enabled = false;
+                _brackets.Add(bracket);
             }
 
             BuildPopup();
@@ -253,10 +280,21 @@ namespace RoadDemo
             // ledger is open. A click spent on a screen never reaches a cop either.
             var mouse = Mouse.current;
             if (mouse != null && mouse.leftButton.wasPressedThisFrame && !_claimedThisFrame &&
-                !(UnityEngine.EventSystems.EventSystem.current &&
-                  UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject()))
+                !BookOpen && !PointerOverUi())
                 Select(PickAt(mouse.position.ReadValue()));
             _claimedThisFrame = false;
+
+            var pointerBlocked = mouse == null || BookOpen || PointerOverUi();
+            if (pointerBlocked)
+            {
+                _hovered = -1;
+            }
+            else if (Time.unscaledTime >= _nextHoverAt)
+            {
+                _nextHoverAt = Time.unscaledTime + HoverInterval;
+                _hovered = PickAt(mouse.position.ReadValue());
+            }
+
             var kb = Keyboard.current;
             if (kb != null && kb.escapeKey.wasPressedThisFrame)
                 Select(-1);
@@ -266,10 +304,12 @@ namespace RoadDemo
             {
                 var subject = _subjects[i];
                 var img = _images[i];
+                var bracket = _brackets[i];
                 var tf = subject.MarkerTf;
                 if (tf == null)
                 {
                     if (img.enabled) img.enabled = false;
+                    if (bracket.enabled) bracket.enabled = false;
                     if (_selected == i) Select(-1);
                     continue;
                 }
@@ -279,8 +319,16 @@ namespace RoadDemo
                 bool on = screen.z > 0f &&
                           screen.x >= 0f && screen.x <= w &&
                           screen.y >= 0f && screen.y <= h;
-                if (img.enabled != on) img.enabled = on;
-                if (!on) continue;
+                var selected = _selected == i;
+                var footPatrol = subject is PoliceFootPatrol;
+                var bracketOn = footPatrol && on && (_hovered == i || selected) &&
+                                UpdateGroundBracket(bracket, tf, selected);
+                if (!bracketOn && bracket.enabled)
+                    bracket.enabled = false;
+
+                var dotOn = on && !bracketOn;
+                if (img.enabled != dotOn) img.enabled = dotOn;
+                if (!dotOn) continue;
 
                 // phase-shifted per unit so a parked row does not bounce in unison
                 float bob = Mathf.Sin(Time.time * (2f * Mathf.PI / BobPeriod) + i * 1.3f)
@@ -288,10 +336,40 @@ namespace RoadDemo
                 img.transform.position = new Vector3(screen.x, screen.y + bob, 0f);
                 img.color = subject.MarkerDimmed ? Resting : OnDuty;
                 img.rectTransform.localScale =
-                    Vector3.one * (_selected == i ? SelectedScale : 1f);
+                    Vector3.one * (selected ? SelectedScale : 1f);
             }
 
             UpdatePopup(w, h);
+        }
+
+        static bool PointerOverUi()
+        {
+            return UnityEngine.EventSystems.EventSystem.current &&
+                   UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject();
+        }
+
+        bool UpdateGroundBracket(GroundBracketGraphic bracket, Transform target, bool selected)
+        {
+            if (!bracket || !target)
+                return false;
+
+            if (!HumanGroundBracket.TryProject(
+                    _cam, (RectTransform)_canvas.transform, target,
+                    _bracketWorld, _bracketLocal,
+                    Screen.width, Screen.height))
+            {
+                if (bracket.enabled) bracket.enabled = false;
+                return false;
+            }
+
+            if (!bracket.enabled)
+                bracket.enabled = true;
+            bracket.Set(
+                _bracketLocal,
+                HumanGroundBracket.ArmLength(selected, false, Time.unscaledTime),
+                HumanGroundBracket.Thickness,
+                HumanGroundBracket.Tint(false));
+            return true;
         }
 
         void UpdatePopup(float w, float h)

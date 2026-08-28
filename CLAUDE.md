@@ -23,6 +23,10 @@ The old ways still have their place — `Tools/play/run.sh` and `soak.sh` for un
 (they need the editor **closed**), and the offline Roslyn build for a fast syntax check with no
 editor at all — but neither is the first thing to try any more.
 
+Do not run `gangsters_play` over a scene the user is currently trying to inspect unless they ask
+for that harness run. It drives Play mode fast for automation, so it can make manual testing
+unusable.
+
 ## Review the C# when the user says commit, and not before
 
 The `code-review-unity` skill runs **once, at commit time**: when the user says "commit", the
@@ -30,6 +34,14 @@ pending `.cs` is reviewed first, the real findings are fixed or reported tersely
 commit is made. Nothing gates a harness run, a soak or an editor verb during development, and
 there is no hook - the old review gate (`.claude/hooks/unity-review-gate.sh`) was removed on
 2026-08-26 at the user's word. Keep replies short: what was done, what is left.
+
+## Central systems cover demo scenes
+
+Unless the user explicitly asks for a one-off demo-only change, implement gameplay, UI and data
+behaviour in the central/shared systems and wire every demo scene through those same systems.
+The small scenes are faster test harnesses for the real game behaviour; they should expose the
+same rules as the main scene, not fork them. If a demo scene needs an adapter, keep it thin and
+make it call the shared service/model.
 
 ## The rest
 

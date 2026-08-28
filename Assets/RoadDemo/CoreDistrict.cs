@@ -21,10 +21,10 @@ namespace RoadDemo
     /// a <see cref="RoadNode"/>, a stretch becomes a <see cref="Carriageway"/> with a lane
     /// each way, and <see cref="LaneNet.Finish"/> builds every way across every box.
     ///
-    /// Not here yet: the pavement graph and the people on it, the traffic lights at the
-    /// four crossings Synty put them on, and the PORTALS the city welds its own streets
-    /// onto - so for now this stands on its own, in its own scene, and the cars in it are
-    /// what says whether the roads read (Docs/core-district-plan.md, 2.3).
+    /// The pavement graph is read from the same raster by <see cref="RasterPedGraph"/>,
+    /// so a host may now put the shared crowd, crews, police and combat on this structure.
+    /// Traffic lights and the portals used to weld this quarter into a larger layout are
+    /// still structural work for later (Docs/core-district-plan.md, 2.3).
     /// </summary>
     public sealed class CoreDistrict : IDistrict
     {
@@ -52,6 +52,7 @@ namespace RoadDemo
         readonly List<CoreLayout.Block> _blocks = new List<CoreLayout.Block>();
         readonly List<DemoVehicle> _vehicles = new List<DemoVehicle>();
         readonly List<RoadEdge> _edges = new List<RoadEdge>();
+        readonly List<PedLink> _walks = new List<PedLink>();
         readonly List<DistrictPortal> _portals = new List<DistrictPortal>();
 
         CoreRoads.Raster _raster;
@@ -241,10 +242,12 @@ namespace RoadDemo
             quarter.SetPositionAndRotation(Frame.origin, Frame.Rotation);
 
             BuildLaneGraph();
+            BuildPavementGraph();
             InstallBascules(host, river);
             SpawnCars(host.LiveRoot("Core Traffic"));
 
             host.RegisterRoads(_edges);
+            host.RegisterPavement(_walks);
             for (int i = 0; i < _vehicles.Count; i++) host.RegisterVehicle(_vehicles[i]);
             BlockTheBuildings(host);
 
@@ -338,6 +341,12 @@ namespace RoadDemo
             _edges.AddRange(Net.Edges);
         }
 
+        void BuildPavementGraph()
+        {
+            _walks.Clear();
+            _walks.AddRange(RasterPedGraph.Build(_raster, Frame));
+        }
+
         // ------------------------------------------------------------------ cars
 
         /// <summary>
@@ -415,6 +424,7 @@ namespace RoadDemo
             // drivers could see them; off it again, or the next quarter dodges ghosts
             foreach (var car in _vehicles) StreetTraffic.Users.Remove(car);
             _vehicles.Clear();
+            _walks.Clear();
             // the yard is the blocks' home between Plan and Build; if Build never came,
             // it is still standing where Plan left it
             if (_yard != null && _yard.parent == null) Object.Destroy(_yard.gameObject);

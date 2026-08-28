@@ -75,11 +75,18 @@ namespace CrewDemo
         public bool outfitBike = true;
         [Tooltip("The outfit's machine by name. Empty: the first of VehicleCatalog.Motorcycles the packs actually have.")]
         public string outfitBikeBody = "";
-        [Tooltip("Send the bike at the first rival this many seconds into Play, with no key pressed. 0: only on B. What the headless harness sets to watch a drive-by go by.")]
+        [Tooltip("Only used when headlessAutomation is on: send the bike at the first rival this many seconds into Play, with no key pressed. 0: only on B.")]
         [Min(0)] public float bikeAttackAfter = 0f;
 
-        [Header("Mission (headless)")]
-        [Tooltip("Send the outfit at the rivals this many seconds into Play, with no click. " +
+        [Header("Manual test mode")]
+        [Tooltip("Optional Space/,/. time controls. Off by default so pressing Play is always normal-speed manual testing.")]
+        public bool paceHotkeys = false;
+
+        [Header("Headless automation")]
+        [Tooltip("Off for manual testing. When true, missionAfter and bikeAttackAfter may issue automatic commands for unattended harness runs.")]
+        public bool headlessAutomation = false;
+
+        [Tooltip("Only used when headlessAutomation is on: send the outfit at the rivals this many seconds into Play, with no click. " +
                  "0: only by hand. The lab's own driver is BlockDemoMission, which wants " +
                  "nothing of the block - it reads DemoCrews and nothing else - so it drives " +
                  "this scene just as well, and every crew it is given goes at whatever mob " +
@@ -156,6 +163,7 @@ namespace CrewDemo
         DemoCrews _crews;
         Transform _blockRoot;
         Vector3 _seenNudge, _seenTilt;
+        const float NormalFixedDeltaTime = 0.02f;
 
         // ------------------------------------------------------------ the ground plan
         //
@@ -189,6 +197,7 @@ namespace CrewDemo
         void Awake()
         {
 #if UNITY_EDITOR
+            ResetManualClock();
             CrewArms.GripNudge = _seenNudge = gripNudge;
             CrewArms.GripTilt = _seenTilt = gripTilt;
 
@@ -202,7 +211,8 @@ namespace CrewDemo
             BuildBlock();
             BuildLight();
             BuildCamera();
-            gameObject.AddComponent<CrewDemoPace>();
+            if (paceHotkeys)
+                gameObject.AddComponent<CrewDemoPace>();
 
             var clips = CrewKit.Clips();
             if (clips.Walk == null || clips.Idle == null)
@@ -247,7 +257,7 @@ namespace CrewDemo
             // is exactly what a player does with the mouse: pick a crew, send it at a
             // mob, and when that mob is down send it at the next one, until the street
             // is ours or the outfit is not.
-            if (missionAfter > 0f)
+            if (headlessAutomation && missionAfter > 0f)
             {
                 var mission = gameObject.AddComponent<BlockDemo.BlockDemoMission>();
                 mission.startAfter = missionAfter;
@@ -265,6 +275,14 @@ namespace CrewDemo
 #else
             Debug.LogError("[CrewDemo] This demo loads Synty prefabs through the AssetDatabase and only runs in the editor.");
 #endif
+        }
+
+        static void ResetManualClock()
+        {
+            Time.timeScale = 1f;
+            Time.fixedDeltaTime = NormalFixedDeltaTime;
+            Time.captureDeltaTime = 0f;
+            Time.captureFramerate = 0;
         }
 
         bool _armsGiven, _bikeOwned;
@@ -889,7 +907,8 @@ namespace CrewDemo
 
             // the clock, for a run nobody is sat at: the harness sets the seconds and
             // watches what the pass does
-            if (!_bikeSent && bikeAttackAfter > 0f && Time.timeSinceLevelLoad >= bikeAttackAfter)
+            if (headlessAutomation && !_bikeSent && bikeAttackAfter > 0f &&
+                Time.timeSinceLevelLoad >= bikeAttackAfter)
             {
                 _bikeSent = true;
                 SendBike();
@@ -1039,6 +1058,7 @@ namespace CrewDemo
 
         void OnDestroy()
         {
+            ResetManualClock();
             for (int i = 0; i < _walkers.Count; i++) _walkers[i].Dispose();
             for (int i = 0; i < _beat.Count; i++) _beat[i].Dispose();
         }

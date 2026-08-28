@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using LivingCity.CameraRig;
+using LivingCity.UI;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -7,16 +8,15 @@ using UnityEngine.UI;
 
 namespace RoadDemo
 {
-    // The indicators riding above the crews' men - gold for the outfit, red for a
-    // rival mob; the lieutenant's dot larger with his surname over it, his hoods'
-    // smaller and dimmer - and the two clicks that command them: a left click
-    // within PickRadius of any man of the outfit selects his crew (the popup names
-    // the lieutenant and words what the crew is doing); a right click - a click,
-    // not the camera's right-drag orbit - sends the selected lieutenant to the
-    // point (the sidewalk nearest it in the city) with his hoods after him, or, on
-    // a rival's man, sends the crew at that rival. Same ScreenSpaceOverlay trick as
-    // the police overlay: a UI transform.position IS screen pixels, so
-    // WorldToScreenPoint feeds it.
+    // The indicators for the crews' men: status dots ride above unselected men,
+    // while hover and selection move to green/blue ground brackets around their
+    // feet. The two clicks that command them: a left click within PickRadius of any
+    // man of the outfit selects his crew (the popup names the lieutenant and words
+    // what the crew is doing); a right click - a click, not the camera's right-drag
+    // orbit - sends the selected lieutenant to the point (the sidewalk nearest it
+    // in the city) with his hoods after him, or, on a rival's man, sends the crew
+    // at that rival. Same ScreenSpaceOverlay trick as the police overlay: a UI
+    // transform.position IS screen pixels, so WorldToScreenPoint feeds it.
     //
     // Left clicks come through BuildingCardPicker's veto - chained behind the
     // police overlay's, which registered first - so a click on a man opens no
@@ -29,6 +29,7 @@ namespace RoadDemo
         const float BobPeriod = 1.8f;
         const float SelectedScale = 1.45f;
         const float TagLift = 12f;     // surname over the boss dot
+        const float HoverInterval = 0.1f;
 
         const float PickRadius = 30f;
         const float PopupWidth = 360f;
@@ -74,6 +75,7 @@ namespace RoadDemo
         readonly List<Image> _dots = new List<Image>();
         readonly List<TMP_Text> _tags = new List<TMP_Text>();
         readonly List<Image> _glyphs = new List<Image>(); // the activity sign beside a boss's dot
+        readonly List<GroundBracketGraphic> _brackets = new List<GroundBracketGraphic>();
         readonly List<CrewWalker> _men = new List<CrewWalker>();
         readonly List<bool> _menBoss = new List<bool>();
         readonly List<DemoCrews.Unit> _menUnit = new List<DemoCrews.Unit>();
@@ -107,6 +109,10 @@ namespace RoadDemo
         Vector2 _rightDown;
         float _rightDownAt;
         bool _rightPending;
+        int _hovered = -1;
+        float _nextHoverAt;
+        readonly Vector3[] _bracketWorld = new Vector3[4];
+        readonly Vector2[] _bracketLocal = new Vector2[4];
 
         /// <summary>The last right click that became a walk order: when, and where on
         /// the screen. A second one on the same spot inside <see cref="DoubleClick"/>
@@ -133,6 +139,11 @@ namespace RoadDemo
 
             var root = new GameObject("Crew Overlay", typeof(RectTransform));
             root.transform.SetParent(transform, false);
+            var rootRect = (RectTransform)root.transform;
+            rootRect.anchorMin = Vector2.zero;
+            rootRect.anchorMax = Vector2.one;
+            rootRect.offsetMin = Vector2.zero;
+            rootRect.offsetMax = Vector2.zero;
             _canvas = root.AddComponent<Canvas>();
             _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             // over the police overlay's default 0, so a selected crew's card is never
@@ -147,6 +158,11 @@ namespace RoadDemo
 
             _dotRoot = new GameObject("Dots", typeof(RectTransform)).transform;
             _dotRoot.SetParent(root.transform, false);
+            var dotRect = (RectTransform)_dotRoot;
+            dotRect.anchorMin = Vector2.zero;
+            dotRect.anchorMax = Vector2.one;
+            dotRect.offsetMin = Vector2.zero;
+            dotRect.offsetMax = Vector2.zero;
 
             _mark = new GameObject("Order Mark", typeof(RectTransform)).AddComponent<Image>();
             _mark.transform.SetParent(root.transform, false);
@@ -330,7 +346,7 @@ namespace RoadDemo
             return text;
         }
 
-        // one dot (and one tag, used only over lieutenants) per man, grown on demand
+        // one status dot (and one tag, used only over lieutenants) per man, grown on demand
         void EnsureSlots(int count)
         {
             while (_dots.Count < count)
@@ -359,6 +375,18 @@ namespace RoadDemo
                 var glyph = DemoUi.Icon(_dotRoot, "glyph", null, 16f, Color.clear);
                 glyph.enabled = false;
                 _glyphs.Add(glyph);
+
+                var bracket = new GameObject("ground bracket", typeof(RectTransform))
+                    .AddComponent<GroundBracketGraphic>();
+                bracket.transform.SetParent(_dotRoot, false);
+                bracket.raycastTarget = false;
+                var rect = bracket.rectTransform;
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = Vector2.one;
+                rect.offsetMin = Vector2.zero;
+                rect.offsetMax = Vector2.zero;
+                bracket.enabled = false;
+                _brackets.Add(bracket);
             }
         }
 
@@ -407,27 +435,31 @@ namespace RoadDemo
 
         DemoCrews.Unit PickAt(Vector2 screen)
         {
-            if (_cam == null) return null;
+            var index = PickManAt(screen);
+            return index >= 0 ? _menUnit[index] : null;
+        }
+
+        int PickManAt(Vector2 screen)
+        {
+            if (_cam == null) return -1;
             float radius = PickRadius * (_canvas != null ? _canvas.scaleFactor : 1f);
             float bestD = radius * radius;
-            DemoCrews.Unit best = null;
+            int best = -1;
             for (int i = 0; i < _men.Count; i++)
             {
                 var tf = _men[i].Tf;
                 if (tf == null || _men[i].Dead || _crews.IsAboard(_men[i])) continue;
                 var body = _cam.WorldToScreenPoint(tf.position + Vector3.up * 0.9f);
-                var dotP = _cam.WorldToScreenPoint(tf.position + Vector3.up * MarkerHeight(_men[i]));
+                var dotP = _cam.WorldToScreenPoint(tf.position + Vector3.up * _men[i].OverlayHeight);
                 foreach (var p in new[] { body, dotP })
                 {
                     if (p.z <= 0f) continue;
                     float d = ((Vector2)p - screen).sqrMagnitude;
-                    if (d < bestD) { bestD = d; best = _menUnit[i]; }
+                    if (d < bestD) { bestD = d; best = i; }
                 }
             }
             return best;
         }
-
-        static float MarkerHeight(CrewWalker man) => man.IsLieutenant ? 2.25f : 2.05f;
 
         /// <summary>The rival family's premises under the pointer: the nearest building
         /// the ray strikes that is somebody's front. Its own raycast rather than the
@@ -1016,6 +1048,17 @@ namespace RoadDemo
                         ShowMark(ride.Position + Vector3.up * 1.0f, MarkTint);
                 }
             }
+
+            var pointerBlocked = mouse == null || BookOpen || _ordersOpen || PointerOverUi();
+            if (pointerBlocked)
+            {
+                _hovered = -1;
+            }
+            else if (Time.unscaledTime >= _nextHoverAt)
+            {
+                _nextHoverAt = Time.unscaledTime + HoverInterval;
+                _hovered = PickManAt(mouse.position.ReadValue());
+            }
             _claimedThisFrame = false;
 
             var kb = Keyboard.current;
@@ -1036,11 +1079,13 @@ namespace RoadDemo
                 var img = _dots[i];
                 var tag = _tags[i];
                 var glyph = _glyphs[i];
+                var bracket = _brackets[i];
                 if (i >= _men.Count || _men[i].Tf == null || _men[i].Dead || _crews.IsAboard(_men[i]))
                 {
                     if (img.enabled) img.enabled = false;
                     if (tag != null && tag.enabled) tag.enabled = false;
                     if (glyph.enabled) glyph.enabled = false;
+                    if (bracket.enabled) bracket.enabled = false;
                     continue;
                 }
 
@@ -1049,16 +1094,22 @@ namespace RoadDemo
                 bool rival = _menUnit[i].Faction != 0;
                 bool police = _menUnit[i].IsPolice;
                 var screen = _cam.WorldToScreenPoint(
-                    man.Tf.position + Vector3.up * MarkerHeight(man));
+                    man.Tf.position + Vector3.up * man.OverlayHeight);
                 bool on = screen.z > 0f &&
                           screen.x >= 0f && screen.x <= w &&
                           screen.y >= 0f && screen.y <= h;
-                if (img.enabled != on) img.enabled = on;
                 bool lit = selected != null && _menUnit[i] == selected;
+                var own = _menUnit[i].Faction == 0;
+                var bracketOn = on && (_hovered == i || lit) &&
+                                UpdateGroundBracket(bracket, man, selected: lit, own: own);
+                if (!bracketOn && bracket.enabled)
+                    bracket.enabled = false;
+                var dotOn = on && !bracketOn;
+                if (img.enabled != dotOn) img.enabled = dotOn;
                 // the popup names a selected lieutenant; his tag stands down under it
-                bool tagOn = on && boss && tag != null && !lit;
+                bool tagOn = dotOn && boss && tag != null && !lit;
                 if (tag != null && tag.enabled != tagOn) tag.enabled = tagOn;
-                if (!on) { if (glyph.enabled) glyph.enabled = false; continue; }
+                if (!dotOn) { if (glyph.enabled) glyph.enabled = false; continue; }
 
                 float bob = Mathf.Sin(Time.time * (2f * Mathf.PI / BobPeriod) + i * 1.3f)
                     * BobAmplitude * scale;
@@ -1068,7 +1119,7 @@ namespace RoadDemo
                 img.color = police ? (boss ? PoliceBoss : PoliceHood)
                           : rival ? RivalInk(_menUnit[i].Faction, boss)
                           : (boss ? BossOn : HoodOn);
-                img.rectTransform.localScale = Vector3.one * (lit ? SelectedScale : 1f);
+                img.rectTransform.localScale = Vector3.one;
 
                 if (tagOn)
                 {
@@ -1105,6 +1156,34 @@ namespace RoadDemo
             UpdateMark();
             UpdatePopup(w, h, scale);
             UpdateBanner();
+        }
+
+        bool UpdateGroundBracket(
+            GroundBracketGraphic bracket,
+            CrewWalker man,
+            bool selected,
+            bool own)
+        {
+            if (!bracket || man == null || !man.Tf)
+                return false;
+
+            if (!HumanGroundBracket.TryProject(
+                    _cam, (RectTransform)_dotRoot, man.Tf,
+                    _bracketWorld, _bracketLocal,
+                    Screen.width, Screen.height))
+            {
+                if (bracket.enabled) bracket.enabled = false;
+                return false;
+            }
+
+            if (!bracket.enabled)
+                bracket.enabled = true;
+            bracket.Set(
+                _bracketLocal,
+                HumanGroundBracket.ArmLength(selected, selected && own, Time.unscaledTime),
+                HumanGroundBracket.Thickness,
+                HumanGroundBracket.Tint(own));
+            return true;
         }
 
         string MenTag(int i, CrewWalker man, DemoCrews.Unit unit, bool rival)
@@ -1256,7 +1335,7 @@ namespace RoadDemo
             }
 
             var screen = _cam.WorldToScreenPoint(
-                boss.Tf.position + Vector3.up * MarkerHeight(boss));
+                boss.Tf.position + Vector3.up * boss.OverlayHeight);
             if (screen.z <= 0f)
             {
                 _popup.SetActive(false);

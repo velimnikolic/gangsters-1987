@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using LivingCity.Gameplay;
+using LivingCity.Entities;
 using LivingCity.Personnel;
 using UnityEngine;
 
@@ -682,13 +683,17 @@ namespace RoadDemo
         Vector3 _outfitAnchor, _outfitFacing = Vector3.forward;
         float _outfitSpread = 9f;
         int _rivalIds = -1;
+        int _anonymousCharacterId = -100000;
+        int _anthropometrySeed = 1987;
         AudioSource _shots, _cracks;
 
         // ------------------------------------------------------------------ setup
 
         /// <summary>The city: crews dealt onto the sidewalk graph.</summary>
-        public void Init(List<PedLink> links, PedClips clips, List<GameObject> fallbackPrefabs)
+        public void Init(List<PedLink> links, PedClips clips, List<GameObject> fallbackPrefabs,
+            int citySeed = 1987)
         {
+            _anthropometrySeed = citySeed;
             _links = links;
             _sidewalks = links.FindAll(l => !l.Gated && l.Length >= MinSpawnLink);
             if (_sidewalks.Count == 0) _sidewalks = links.FindAll(l => !l.Gated);
@@ -701,8 +706,9 @@ namespace RoadDemo
         /// <summary>The empty floor: crews dealt in a row at the anchor, facing
         /// <paramref name="facing"/>, <paramref name="spread"/> metres apart.</summary>
         public void InitFree(PedClips clips, List<GameObject> fallbackPrefabs,
-            Vector3 anchor, Vector3 facing, float spread, float groundY)
+            Vector3 anchor, Vector3 facing, float spread, float groundY, int citySeed = 1987)
         {
+            _anthropometrySeed = citySeed;
             _clips = clips;
             _fallbackPrefabs = fallbackPrefabs;
             _outfitAnchor = anchor;
@@ -894,7 +900,12 @@ namespace RoadDemo
             unit.Root.SetParent(_root, false);
             var rot = Quaternion.LookRotation(facing.sqrMagnitude > 1e-4f ? facing.normalized : Vector3.back);
 
-            var boss = SpawnAt(bossPrefab, bossName, _rivalIds--, anchor, rot, BossPace);
+            var anthropometrySalt = faction == StreetAlarm.PoliceFaction
+                ? PedestrianAnthropometry.PoliceSalt
+                : PedestrianAnthropometry.GangSalt;
+
+            var boss = SpawnAt(bossPrefab, bossName, _rivalIds--, anchor, rot, BossPace,
+                anthropometrySalt: anthropometrySalt);
             if (boss != null)
             {
                 boss.IsLieutenant = true;
@@ -914,7 +925,8 @@ namespace RoadDemo
                 // a crew loafing on a pavement strings out along it rather than
                 // wedging back into the shopfront behind
                 var pos = anchor + rot * (lineUp ? LineOffset(unit.CrewId, k) : FormationOffset(unit.CrewId, k));
-                var hood = SpawnAt(prefab, hoodNames[k], _rivalIds--, pos, rot, HoodPace());
+                var hood = SpawnAt(prefab, hoodNames[k], _rivalIds--, pos, rot, HoodPace(),
+                    anthropometrySalt: anthropometrySalt);
                 if (hood == null) continue;
                 hood.Faction = faction;
                 hood.MaxHealth = hood.Health = HoodHealth;
@@ -1080,6 +1092,7 @@ namespace RoadDemo
                 var dir = world - boss.Tf.position;
                 dir.y = 0f;
                 var rot = Quaternion.LookRotation(dir.sqrMagnitude > 0.25f ? dir.normalized : boss.Tf.forward);
+                bool stagger = SettledTogether(Selected, boss);
                 boss.OrderToPoint(world);
                 boss.Urgent = run;   // asked for twice on the bare floor too
                 boss.Post = world;
@@ -1087,7 +1100,8 @@ namespace RoadDemo
                 {
                     var hood = Selected.Hoods[k];
                     hood.OrderToPoint(WalkObstacles.ClearSpot(
-                        world + rot * FormationOffset(Selected.CrewId, k), WalkObstacles.Radius), HoodBeat());
+                        world + rot * FormationOffset(Selected.CrewId, k), WalkObstacles.Radius),
+                        stagger ? HoodBeat() : 0f);
                     hood.Urgent = run;
                 }
                 destination = world;
@@ -1155,6 +1169,7 @@ namespace RoadDemo
             var dir = world - boss.Tf.position;
             dir.y = 0f;
             var rot = Quaternion.LookRotation(dir.sqrMagnitude > 0.25f ? dir.normalized : boss.Tf.forward);
+            bool stagger = SettledTogether(unit, boss);
             Reseat(boss);
             boss.OrderAcross(world);
             // A walk unless the player asked for it twice. The run exists (CrewWalker.
@@ -1170,7 +1185,8 @@ namespace RoadDemo
                 Reseat(man);
                 // spread behind him, so three men arrive as a crew and not as a column
                 man.OrderAcross(WalkObstacles.ClearSpot(
-                    world + rot * FormationOffset(unit.CrewId, k), WalkObstacles.Radius), HoodBeat());
+                    world + rot * FormationOffset(unit.CrewId, k), WalkObstacles.Radius),
+                    stagger ? HoodBeat() : 0f);
                 man.Urgent = run;
             }
             return true;
@@ -1304,6 +1320,7 @@ namespace RoadDemo
         /// is passed in rather than assumed to be the lieutenant.</summary>
         void Dispatch(Unit unit, CrewWalker lead, PedLink link, float t, bool run = false)
         {
+            bool stagger = SettledTogether(unit, lead);
             // a man who walked off his stretch (to a car door he never got into) sets
             // off from where he stands
             if (lead != null && !lead.Dead && !lead.Riding)
@@ -1325,7 +1342,8 @@ namespace RoadDemo
                 var man = unit.Hoods[k];
                 if (man == null || man == lead || man.Dead || man.Riding) continue;
                 Reseat(man);
-                man.OrderTo(link, FormationT(link, t, unit.CrewId, k), HoodBeat());
+                man.OrderTo(link, FormationT(link, t, unit.CrewId, k),
+                    stagger ? HoodBeat() : 0f);
                 man.Urgent = run;
             }
         }
@@ -1333,6 +1351,29 @@ namespace RoadDemo
         /// <summary>The beat a hood waits before he follows an order the boss got - each
         /// his own, so a crew steps off one man after another, not as one machine.</summary>
         static float HoodBeat() => Random.Range(0.15f, 0.9f);
+
+        /// <summary>A stagger belongs only to a crew setting off together. If the last
+        /// order has not finished for every man, or even one standing hood is still
+        /// outside the tether's definition of "back with his crew", the replacement
+        /// order moves everybody at once. Repeating clicks can therefore never keep
+        /// restarting the hoods' wait while the lieutenant walks away.</summary>
+        static bool SettledTogether(Unit unit, CrewWalker lead)
+        {
+            if (unit == null || lead == null || lead.Tf == null ||
+                lead.State != CrewWalker.Mode.Standing)
+                return false;
+            for (int k = 0; k < unit.Hoods.Count; k++)
+            {
+                var hood = unit.Hoods[k];
+                if (hood == null || hood == lead || hood.Dead || hood.Tf == null || hood.Riding)
+                    continue;
+                if (hood.State != CrewWalker.Mode.Standing) return false;
+                var gap = hood.Tf.position - lead.Tf.position;
+                gap.y = 0f;
+                if (gap.sqrMagnitude > TetherNear * TetherNear) return false;
+            }
+            return true;
+        }
 
         /// <summary>A man's own nudge off the formation's lattice, in -1..1, settled
         /// for the run: crew, his place in it, and which of his nudges is asked for.
@@ -2359,10 +2400,12 @@ namespace RoadDemo
         {
             var prefab = CastFor(member);
             if (prefab == null) return null;
-            var go = Body(prefab, member.FullName);
+            var go = Body(prefab, member.FullName, member.Id, PedestrianAnthropometry.GangSalt,
+                out var anthropometry);
             var man = new CrewWalker
                 { Speed = pace, CharacterId = member.Id, SourcePrefab = prefab,
-                  FirearmsHalfSteps = member.GetHalfSteps(CharacterAttribute.Firearms) };
+                  FirearmsHalfSteps = member.GetHalfSteps(CharacterAttribute.Firearms),
+                  Anthropometry = anthropometry };
             man.Init(go.transform, CrewKit.Draw(_clips, _variety), link, Mathf.Clamp(t, 0.3f, link.Length - 0.3f));
             man.Fired = OnFired;
             man.RangeFactor = Random.Range(0.55f, 0.85f);
@@ -2374,10 +2417,12 @@ namespace RoadDemo
         {
             var prefab = CastFor(member);
             if (prefab == null) return null;
-            var go = Body(prefab, member.FullName);
+            var go = Body(prefab, member.FullName, member.Id, PedestrianAnthropometry.GangSalt,
+                out var anthropometry);
             var man = new CrewWalker
                 { Speed = pace, CharacterId = member.Id, SourcePrefab = prefab,
-                  FirearmsHalfSteps = member.GetHalfSteps(CharacterAttribute.Firearms) };
+                  FirearmsHalfSteps = member.GetHalfSteps(CharacterAttribute.Firearms),
+                  Anthropometry = anthropometry };
             man.InitAt(go.transform, CrewKit.Draw(_clips, _variety), Clear(pos, member.FullName), rot);
             man.Fired = OnFired;
             man.RangeFactor = Random.Range(0.55f, 0.85f);
@@ -2386,12 +2431,16 @@ namespace RoadDemo
         }
 
         CrewWalker SpawnAt(GameObject prefab, string name, int id, Vector3 pos, Quaternion rot,
-            float pace, bool afoot = true)
+            float pace, bool afoot = true,
+            int anthropometrySalt = PedestrianAnthropometry.GangSalt)
         {
             if (prefab == null) return null;
-            var go = Body(prefab, name);
+            if (id == -1)
+                id = _anonymousCharacterId--;
+            var go = Body(prefab, name, id, anthropometrySalt, out var anthropometry);
             var man = new CrewWalker
-                { Speed = pace, CharacterId = id, SourcePrefab = prefab, DisplayName = name };
+                { Speed = pace, CharacterId = id, SourcePrefab = prefab, DisplayName = name,
+                  Anthropometry = anthropometry };
             man.InitAt(go.transform, CrewKit.Draw(_clips, _variety),
                 afoot ? Clear(pos, name) : pos, rot);
             man.Fired = OnFired;
@@ -2400,7 +2449,8 @@ namespace RoadDemo
             return man;
         }
 
-        GameObject Body(GameObject prefab, string name)
+        GameObject Body(GameObject prefab, string name, int localId, int anthropometrySalt,
+            out PedestrianAnthropometryStamp anthropometry)
         {
             var go = Instantiate(prefab, _root);
             go.name = name;
@@ -2411,6 +2461,12 @@ namespace RoadDemo
             // controller; the walker drives the body itself, so all of that goes
             foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>()) Destroy(mb);
             foreach (var nav in go.GetComponentsInChildren<UnityEngine.AI.NavMeshAgent>()) Destroy(nav);
+            anthropometry = PedestrianAnthropometry.Apply(
+                go,
+                PedestrianAnthropometry.Seed(_anthropometrySeed, localId, anthropometrySalt),
+                PedestrianIdentity.IsFemale(prefab.name),
+                PedestrianAgeCohort.Adult,
+                prefab.name);
             foreach (var animator in go.GetComponentsInChildren<Animator>())
                 animator.runtimeAnimatorController = null;
             return go;

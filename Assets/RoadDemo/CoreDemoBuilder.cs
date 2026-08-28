@@ -3,10 +3,10 @@ using UnityEngine;
 namespace RoadDemo
 {
     /// <summary>
-    /// The core's own scene: one component that stands <see cref="CoreDistrict"/> up at
-    /// the origin and hands it a <see cref="StandaloneDistrictHost"/> for the sun, the
-    /// camera, the pause keys and the perf pass. The quarter ITSELF is the same object
-    /// the city builds, so what is changed here is what the city gets.
+    /// The core's own scene: one thin component that hands <see cref="CoreDistrict"/>
+    /// to the game's <see cref="RoadDemoBuilder"/> as its city structure. The structure
+    /// is Core's; traffic, people, police, crews, combat, day/night, audio and the map
+    /// are the same runtime Game.unity uses.
     ///
     /// The fields are the district's own, out on the inspector for trying things - and
     /// for the play harness, which writes them before the scene wakes up.
@@ -21,6 +21,21 @@ namespace RoadDemo
         public float boulevardSpeed = 13f;
         public float alleySpeed = 5f;
 
+        [Header("Life (shared game systems)")]
+        [Min(0)] public int bikeCount = 4;
+        [Min(0)] public int pedestrianCount = 100;
+        public bool police = true;
+        [Min(0)] public int policeBeatPairs = 3;
+        [Range(0, 20)] public int rivalCrews = 6;
+        [Range(0, 4)] public int rivalHoods = 3;
+
+        [Header("Day")]
+        [Range(0f, 24f)] public float startHour = 16f;
+        public float realSecondsPerGameHour = 15f;
+
+        [Header("Round the core")]
+        [Min(20f)] public float greenBelt = 140f;
+
         void Awake()
         {
 #if UNITY_EDITOR
@@ -30,21 +45,61 @@ namespace RoadDemo
 
             var district = new CoreDistrict
             {
-                carCount = carCount,
+                // The district supplies roads, never its own copy of the traffic.
+                // RoadDemoBuilder.SpawnCars is the one car spawner in both scenes.
+                carCount = 0,
                 streetSpeed = streetSpeed,
                 boulevardSpeed = boulevardSpeed,
                 alleySpeed = alleySpeed,
             };
 
-            var host = gameObject.AddComponent<StandaloneDistrictHost>();
-            host.cameraDistance = 320f;
-            host.cameraYaw = 20f;
-            host.cameraPitch = 55f;
-            host.cameraFar = 2500f;
-            host.skyboxSky = true;
-            host.hint = "WASD/arrows: move   Q/E or right-drag: rotate   wheel: zoom   " +
-                        "Space: pause   , . : slower/faster";
-            host.HostSeeded(district, seed);
+            // Inactive while it is configured: RoadDemoBuilder.Awake must see Core as
+            // the primary structure before it chooses its build pass sequence.
+            var runtimeObject = new GameObject("Game Runtime (Core structure)");
+            runtimeObject.SetActive(false);
+            var runtime = runtimeObject.AddComponent<RoadDemoBuilder>();
+            runtime.ConfigurePrimaryStructure(district, seed);
+
+            runtime.citySeed = seed;
+            runtime.spacingSeed = seed;
+            runtime.cityLayoutSeed = seed;
+            runtime.carCount = Mathf.Max(0, carCount);
+            runtime.bikeCount = Mathf.Max(0, bikeCount);
+            runtime.pedestrianCount = Mathf.Max(0, pedestrianCount);
+            runtime.insideAtStart = 0f; // Core does not publish building doors yet
+            runtime.policeCarCount = 0; // no police forecourt in the structural core yet
+            runtime.policeOfficerCount = 0;
+            runtime.policeBeatPairs = police ? Mathf.Max(0, policeBeatPairs) : 0;
+            runtime.rivalCrewsInCity = Mathf.Max(0, rivalCrews);
+            runtime.rivalHoodsInCity = Mathf.Max(0, rivalHoods);
+            runtime.scaleLifeToCity = false;
+            runtime.updateProfile = false;
+
+            runtime.startHour = startHour;
+            runtime.realSecondsPerGameHour = realSecondsPerGameHour;
+            runtime.rollShoreline = false;
+            runtime.mainlandEdge = CityEdge.None;
+            float belt = Mathf.Max(20f, greenBelt);
+            runtime.islandWest = belt;
+            runtime.islandEast = belt;
+            runtime.islandNorth = belt;
+            runtime.islandSouth = belt;
+            runtime.coastWander = belt * 0.3f;
+            runtime.treesPerHectare = 14f;
+
+            runtimeObject.SetActive(true);
+
+            var rig = FindFirstObjectByType<DemoCamera>();
+            if (rig != null)
+            {
+                var bounds = runtime.PrimaryWorldBounds;
+                rig.FrameSpan(Mathf.Max(bounds.width, bounds.height), 0.95f);
+                rig.yaw = 20f;
+                rig.pitch = 55f;
+                rig.showHint = true;
+                rig.hint = "WASD/arrows: move   Q/E or right-drag: rotate   wheel: zoom   " +
+                           "click a building: card   Space: pause   , . : slower/faster";
+            }
 #else
             Debug.LogError("[CoreDemo] The core loads Synty prefabs through the AssetDatabase and only runs in the editor.");
 #endif

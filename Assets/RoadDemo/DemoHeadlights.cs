@@ -28,6 +28,7 @@ namespace RoadDemo
         class Rig
         {
             public Transform Car;
+            public RoadCar Vehicle;
             public Light L, R;
             public bool Burning;
         }
@@ -48,6 +49,25 @@ namespace RoadDemo
             };
             _rigs.Add(rig);
         }
+
+        /// <summary>Register a live traffic car so its engine/parking state can drive
+        /// the lamps. The transform-only overload remains for decorative highway cars.</summary>
+        public void Register(DemoVehicle car)
+        {
+            if (car == null || !car.Tf) return;
+            var rig = new Rig
+            {
+                Car = car.Tf,
+                Vehicle = car,
+                L = Attach(car.Tf, new Vector3(-0.55f, 0.7f, car.HalfLen - 0.5f)),
+                R = Attach(car.Tf, new Vector3(0.55f, 0.7f, car.HalfLen - 0.5f)),
+            };
+            _rigs.Add(rig);
+        }
+
+        static bool WantsLights(Rig rig) => rig.Vehicle == null ||
+            (!rig.Vehicle.Parked && !rig.Vehicle.EngineOff &&
+             !rig.Vehicle.Derelict && !rig.Vehicle.Wrecked);
 
         static Light Attach(Transform car, Vector3 localPos)
         {
@@ -108,16 +128,21 @@ namespace RoadDemo
                 for (int i = 0; i < _rigs.Count; i++)
                 {
                     var car = _rigs[i].Car;
-                    _key[i] = car ? (car.position - eye).sqrMagnitude : float.MaxValue;
+                    _key[i] = car && WantsLights(_rigs[i])
+                        ? (car.position - eye).sqrMagnitude
+                        : float.MaxValue;
                 }
                 DemoStreetLamps.Nearest(_key, _order, LitBeamBudget / 2);
             }
             else DemoStreetLamps.Prepare(ref _key, ref _order, _rigs.Count);
 
+            int litCars = 0;
             for (int rank = 0; rank < _order.Length; rank++)
             {
                 var rig = _rigs[_order[rank]];
-                bool burns = burn && rank * 2 < LitBeamBudget;
+                bool wants = WantsLights(rig);
+                bool burns = burn && wants && litCars * 2 < LitBeamBudget;
+                if (wants) litCars++;
                 // enabling a light re-registers it with the renderer: touched only on change
                 if (burns != rig.Burning)
                 {

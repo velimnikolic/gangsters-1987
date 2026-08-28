@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using LivingCity.Personnel;
+using LivingCity.Entities;
 using UnityEngine;
 
 namespace RoadDemo
@@ -41,6 +42,13 @@ namespace RoadDemo
         /// <summary>The pack prefab this body was cast from - the ledger recasts a man
         /// on promotion (a lieutenant wears a suit), and the street must follow.</summary>
         public GameObject SourcePrefab;
+
+        /// <summary>The shared city body sample applied to this visual body, if any.</summary>
+        public PedestrianAnthropometryStamp Anthropometry;
+
+        public float OverlayHeight => Anthropometry
+            ? Anthropometry.OverlayHeight
+            : IsLieutenant ? 2.25f : 2.05f;
 
         /// <summary>0 is the outfit; anything else is a rival mob.</summary>
         public int Faction;

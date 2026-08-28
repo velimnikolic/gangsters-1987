@@ -38,6 +38,10 @@ namespace RoadDemo
 
         public enum Klass { Corner, Row, Block, Court }
 
+        /// <summary>The job of each outside edge. The role is part of the deal, rather than
+        /// inferred later from whichever gap happened to be left there.</summary>
+        public enum EdgeRole { Closed, Main, Secondary, Service }
+
         /// <summary>South, east, north, west.</summary>
         public static readonly int[,] Step = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
         public static readonly string[] SideName = { "S", "E", "N", "W" };
@@ -71,6 +75,8 @@ namespace RoadDemo
             public int CW, CD;              // turned
             public int Side = -1;           // the street it fronts, if it was put on an edge
             public int SideB = -1;          // the other street, if it was put on a corner
+            public int AccessSide = -1;     // the active face used by pedestrians
+            public int EntranceAt = -1;     // cell along AccessSide kept clear as its approach
             public bool Shop;               // it carries the block's shopfronts
             public override string ToString() => $"{Unit.Name}@{Yaw} ({I},{J}) {CW}x{CD}";
         }
@@ -80,6 +86,8 @@ namespace RoadDemo
             public int Units, Doors, Shops, Cafes, Trees, Parks, Subways;
             public int Gaps, GapCells, Paved, Drives, Parking, AlleyCells, CourtCells, Verge;
             public int Empty, Pits, Repeats;
+            public int MainFrontage, CourtEnclosure, VehicleEntries, PedestrianEntries;
+            public int FunctionalGaps, RearParking;
             /// <summary>The biggest unit's box as a share of the inner ground, percent.</summary>
             public int Share;
             public double DoorsPerHa;
@@ -95,17 +103,29 @@ namespace RoadDemo
             public override string ToString() => $"{Use} {Run} cell(s) on {SideName[Side]} at {At}";
         }
 
+        public sealed class Access
+        {
+            public int Side, At;
+            public bool Vehicle;
+            public string Purpose = "";
+            public override string ToString() =>
+                $"{(Vehicle ? "vehicle" : "pedestrian")} {Purpose} on {SideName[Side]} at {At}";
+        }
+
         public sealed class Plan
         {
             public int W, D;                       // the whole block, pavement ring included
             public Klass Klass;
             public bool[] Street = new bool[4];    // which sides have a road along them
+            public EdgeRole[] Role = new EdgeRole[4];
             public int Artery = -1;                // the side the shops look at
             public int Seed;
             public List<Spot> Spots = new List<Spot>();
             public List<Gap> Gaps = new List<Gap>();
+            public List<Access> Accesses = new List<Access>();
             /// <summary>The gap the kit storefront stands in, if the block got one.</summary>
             public Gap Cafe;
+            public List<Gap> Cafes = new List<Gap>();
             /// <summary>This block is one lone house and nothing else - see <see
             /// cref="Alone"/>.</summary>
             public bool Lone;
@@ -188,7 +208,7 @@ namespace RoadDemo
             Klass.Corner => w >= 6 && w <= 9 && d >= 5 && d <= 8,
             Klass.Row => w >= 4 && w <= 6 && d >= 10,
             Klass.Block => w >= 10 && w <= 15 && d >= 11 && d <= 19,
-            Klass.Court => w >= 16 && d >= 16,
+            Klass.Court => w >= 14 && d >= 14,
             _ => false,
         };
 
@@ -202,17 +222,25 @@ namespace RoadDemo
 
         /// <summary>A block of this size, dealt from this seed. Streets on every side unless
         /// told otherwise; the artery is the side the shops are allowed to look at.</summary>
-        public static Plan Roll(int w, int d, int seed, int artery = 0, bool[] streets = null)
+        public static Plan Roll(int w, int d, int seed, int artery = 0, bool[] streets = null,
+                                Klass? forced = null)
         {
             var plan = new Plan { W = w, D = d, Seed = seed, Artery = artery };
             for (int s = 0; s < 4; s++) plan.Street[s] = streets == null || streets[s];
+            Roles(plan);
             plan.Ground = new Use[w, d];
 
-            var klass = Classify(plan.Inner, plan.InnerD);
+            var klass = forced ?? Classify(plan.Inner, plan.InnerD);
             if (klass == null)
             {
                 plan.Faults.Add($"NoRecipe: {plan.Inner}x{plan.InnerD} cells " +
                                 $"({plan.Inner * Cell}x{plan.InnerD * Cell} m) is no class this recipe knows");
+                return plan;
+            }
+            if (forced != null && !Sized(forced.Value, plan.Inner, plan.InnerD) &&
+                !Sized(forced.Value, plan.InnerD, plan.Inner))
+            {
+                plan.Faults.Add($"NoRecipe: forced {forced.Value} does not fit {plan.Inner}x{plan.InnerD} cells");
                 return plan;
             }
             plan.Klass = klass.Value;
@@ -231,12 +259,16 @@ namespace RoadDemo
             // house fits the ground but faces the wrong way for every corner it was offered,
             // so nothing stands at all; or an ordinary deal puts two small houses on a big
             // block and calls it done, which is the paving-with-a-shed-on-it the user threw
-            // out (2026-08-28). Three tries, then it stands as it is and the verdict says so.
-            for (int again = 1; again <= 2; again++)
+            // out (2026-08-28). Deterministic retries also give a weak principal frontage
+            // another deal; after that it stands as it is and the verdict says so.
+            for (int again = 1; again <= 12; again++)
             {
                 bool empty = plan.Lone && !Standing(plan);
                 bool bare = Fill(plan) < FillLeast;
-                if (!empty && !bare) break;
+                bool weakFront = (plan.Klass == Klass.Block || plan.Klass == Klass.Court) &&
+                                 EdgeCoverage(plan, plan.Artery) < 65;
+                bool strandedWay = Patches(plan).Any(patch => !patch.Out);
+                if (!empty && !bare && !weakFront && !strandedWay) break;
                 if (empty) plan.Lone = false;
                 Wipe(plan);
                 Deal(plan, new Random(unchecked(dice * 31 + 17 * again)));
@@ -253,6 +285,7 @@ namespace RoadDemo
             Declare(plan);
             Corners(plan, rng);
             Edges(plan, rng);
+            RearParking(plan, rng);
             Cafe(plan, rng);
             Subway(plan, rng);
             Parks(plan, rng);
@@ -286,12 +319,15 @@ namespace RoadDemo
         {
             plan.Spots.Clear();
             plan.Gaps.Clear();
+            plan.Accesses.Clear();
+            plan.Cafes.Clear();
             plan.Faults.Clear();
             plan.Refused.Clear();
             plan.Cafe = null;
             plan.Subway = null;
             plan.SubwayAt = -1;
             plan.M = new Measures();
+            Roles(plan);
             for (int i = 0; i < plan.W; i++)
                 for (int j = 0; j < plan.D; j++)
                     plan.Ground[i, j] = i < Walk || j < Walk || i >= plan.W - Walk || j >= plan.D - Walk
@@ -313,6 +349,7 @@ namespace RoadDemo
             // and an artery of -1 is an index off the end of it
             var plan = new Plan { W = w, D = d, Seed = seed, Artery = 0, Klass = Klass.Corner };
             for (int s = 0; s < 4; s++) plan.Street[s] = streets == null || streets[s];
+            Roles(plan);
             plan.Ground = new Use[w, d];
             for (int i = 0; i < w; i++)
                 for (int j = 0; j < d; j++)
@@ -384,6 +421,13 @@ namespace RoadDemo
             (plan.Klass != Klass.Block && plan.Klass != Klass.Court) ||
             turn.CW * turn.CD * 100 <= plan.Inner * plan.InnerD * ShareMost;
 
+        static void Roles(Plan plan)
+        {
+            for (int side = 0; side < 4; side++)
+                plan.Role[side] = !plan.Street[side] ? EdgeRole.Closed
+                    : side == plan.Artery ? EdgeRole.Main : EdgeRole.Secondary;
+        }
+
         /// <summary>
         /// The alley is declared before anything is built, right across the block.
         ///
@@ -395,6 +439,11 @@ namespace RoadDemo
         /// </summary>
         static void Declare(Plan plan)
         {
+            if (plan.Klass == Klass.Court)
+            {
+                DeclareCourtPassages(plan);
+                return;
+            }
             if (plan.Klass != Klass.Block) return;
 
             // The line has to leave a row of houses either side of it. Put down the middle
@@ -419,9 +468,19 @@ namespace RoadDemo
             // either side, but an east-west one across its depth fits - and the alley is
             // what makes the block class a block (a third of the first sweep's blocks gave
             // it up without trying the other way)
-            bool eastWest = plan.Inner >= plan.InnerD;
-            if (lo > Hi(eastWest ? plan.D : plan.W) && lo <= Hi(eastWest ? plan.W : plan.D))
-                eastWest = !eastWest;
+            bool canEastWest = lo <= Hi(plan.D);
+            bool canNorthSouth = lo <= Hi(plan.W);
+            bool eastWest;
+            if (canEastWest && canNorthSouth)
+            {
+                // Keep the principal frontage free of service mouths whenever the block's
+                // proportions allow either through direction.
+                bool arteryOnEastWestEnds = plan.Artery == 1 || plan.Artery == 3;
+                eastWest = arteryOnEastWestEnds ? false
+                         : plan.Artery == 0 || plan.Artery == 2 ? true
+                         : plan.Inner >= plan.InnerD;
+            }
+            else eastWest = canEastWest;
             int across = eastWest ? plan.D : plan.W;
             int hi = Hi(across);
             if (lo > hi)
@@ -451,11 +510,30 @@ namespace RoadDemo
             for (int end = 0; end < 2; end++)
             {
                 int side = eastWest ? (end == 0 ? 3 : 1) : (end == 0 ? 0 : 2);
-                int at = mid;
-                var (i, j) = EdgeCell(plan, side, at);
-                var (x, y) = (i + Step[side, 0], j + Step[side, 1]);
-                if (x >= 0 && y >= 0 && x < plan.W && y < plan.D && plan.Ground[x, y] == Use.Walkway)
-                    plan.Ground[x, y] = Use.Drive;
+                plan.Role[side] = side == plan.Artery ? EdgeRole.Main : EdgeRole.Service;
+                Mouth(plan, side, mid, "through alley");
+            }
+        }
+
+        static void DeclareCourtPassages(Plan plan)
+        {
+            for (int side = 0; side < 4; side++)
+            {
+                if (!plan.Street[side]) continue;
+                int length = side == 0 || side == 2 ? plan.W : plan.D;
+                int run = length >= 18 && side != plan.Artery ? 4 : 3;
+                int at = (length - run) / 2;
+                int depth = Math.Min(2, Depth(plan, side));
+                for (int n = 0; n < run; n++)
+                    for (int k = 0; k < depth; k++)
+                    {
+                        var (i, j) = Into(plan, side, at + n, k);
+                        if (plan.Ground[i, j] == Use.Empty) plan.Ground[i, j] = Use.Paved;
+                    }
+                plan.Gaps.Add(new Gap { Side = side, At = at, Run = run, Depth = depth, Use = Use.Paved });
+                plan.M.Gaps++;
+                plan.M.GapCells += run;
+                plan.M.Paved++;
             }
         }
 
@@ -628,6 +706,15 @@ namespace RoadDemo
                         Shop = unit.Shops.Sum() > 0, Side = a, SideB = b,
                     });
                 }
+            if (plan.Klass == Klass.Court)
+            {
+                int lengthA = a == 0 || a == 2 ? plan.Inner : plan.InnerD;
+                int lengthB = b == 0 || b == 2 ? plan.Inner : plan.InnerD;
+                var compact = spots.Where(spot =>
+                    (a == 0 || a == 2 ? spot.CW : spot.CD) * 100 <= lengthA * 45 &&
+                    (b == 0 || b == 2 ? spot.CW : spot.CD) * 100 <= lengthB * 45).ToList();
+                if (compact.Count > 0) spots = compact;
+            }
             if (spots.Count == 0) return null;
 
             var weight = new List<int>();
@@ -635,6 +722,16 @@ namespace RoadDemo
             foreach (var spot in spots)
             {
                 int w = Math.Max(1, spot.CW * spot.CD / Again(plan, spot.Unit));
+                if ((a == plan.Artery || b == plan.Artery) && spot.Unit.MaxH >= 17f) w *= 3;
+                if (plan.Klass == Klass.Court)
+                {
+                    int alongA = a == 0 || a == 2 ? spot.CW : spot.CD;
+                    int alongB = b == 0 || b == 2 ? spot.CW : spot.CD;
+                    int lengthA = a == 0 || a == 2 ? plan.Inner : plan.InnerD;
+                    int lengthB = b == 0 || b == 2 ? plan.Inner : plan.InnerD;
+                    bool compact = alongA * 100 <= lengthA * 45 && alongB * 100 <= lengthB * 45;
+                    w = compact ? w * 4 : Math.Max(1, w / 4);
+                }
                 weight.Add(w);
                 total += w;
             }
@@ -707,7 +804,47 @@ namespace RoadDemo
                 for (int v = 0; v < turn.CD; v++)
                     if (turn.Filled(u, v) && plan.Ground[i + u, j + v] != Use.Empty)
                         return false;
-            return Fronts(plan, turn, i, j);
+            return Fronts(plan, turn, i, j) && PrivateEnough(plan, turn, i, j);
+        }
+
+        /// <summary>Separate buildings are either joined on inactive party walls or have a
+        /// useful passage between them. Two active facades looking at each other get the
+        /// larger privacy distance.</summary>
+        static bool PrivateEnough(Plan plan, Turn turn, int i, int j)
+        {
+            foreach (var otherSpot in plan.Spots)
+            {
+                if (ResidentialUnits.IsLot(otherSpot.Unit)) continue;
+                var other = Turn.Of(otherSpot.Unit, otherSpot.Yaw);
+
+                bool overlapZ = j < otherSpot.J + other.CD && otherSpot.J < j + turn.CD;
+                if (overlapZ && (i + turn.CW <= otherSpot.I || otherSpot.I + other.CW <= i))
+                {
+                    bool newLeft = i + turn.CW <= otherSpot.I;
+                    int gap = newLeft ? otherSpot.I - (i + turn.CW) : i - (otherSpot.I + other.CW);
+                    int facing = newLeft ? 1 : 3, otherFacing = newLeft ? 3 : 1;
+                    if (!ClearBetween(turn, facing, other, otherFacing, gap)) return false;
+                }
+
+                bool overlapX = i < otherSpot.I + other.CW && otherSpot.I < i + turn.CW;
+                if (overlapX && (j + turn.CD <= otherSpot.J || otherSpot.J + other.CD <= j))
+                {
+                    bool newBelow = j + turn.CD <= otherSpot.J;
+                    int gap = newBelow ? otherSpot.J - (j + turn.CD) : j - (otherSpot.J + other.CD);
+                    int facing = newBelow ? 2 : 0, otherFacing = newBelow ? 0 : 2;
+                    if (!ClearBetween(turn, facing, other, otherFacing, gap)) return false;
+                }
+            }
+            return true;
+        }
+
+        static bool ClearBetween(Turn one, int side, Turn other, int otherSide, int gap)
+        {
+            bool activeOne = one.Face(side), activeOther = other.Face(otherSide);
+            if (gap == 0) return !activeOne && !activeOther;
+            if (gap < 3) return false;                 // 15 m functional passage
+            if (activeOne && activeOther && gap < 4) return false; // 20 m front-to-front
+            return true;
         }
 
         /// <summary>
@@ -756,6 +893,36 @@ namespace RoadDemo
                     if (pitted && plan.Ground[i, j] == Use.Empty) plan.Ground[i, j] = Use.Forecourt;
                 }
             plan.Spots.Add(spot);
+            PedestrianAccess(plan, spot, turn);
+        }
+
+        static void PedestrianAccess(Plan plan, Spot spot, Turn turn)
+        {
+            var offered = new[] { spot.Side, spot.SideB }
+                .Where(side => side >= 0 && side < 4 && plan.Street[side] && turn.Face(side))
+                .Distinct()
+                .OrderByDescending(side => side == plan.Artery)
+                .ThenByDescending(side => turn.Doors(side) + turn.Shops(side))
+                .ToList();
+            if (offered.Count == 0) return;
+
+            int side = offered[0];
+            int first = side == 0 || side == 2 ? spot.I : spot.J;
+            int last = first + (side == 0 || side == 2 ? spot.CW : spot.CD) - 1;
+            int centre = (first + last) / 2;
+            int length = side == 0 || side == 2 ? plan.W : plan.D;
+            int at = -1;
+            for (int step = 0; step <= last - first && at < 0; step++)
+                foreach (int candidate in step == 0 ? new[] { centre } : new[] { centre - step, centre + step })
+                {
+                    if (candidate < first || candidate > last || candidate < Walk || candidate >= length - Walk) continue;
+                    var (i, j) = RingCell(plan, side, candidate);
+                    if (plan.Ground[i, j] == Use.Walkway) { at = candidate; break; }
+                }
+            spot.AccessSide = side;
+            spot.EntranceAt = at;
+            if (at >= 0)
+                plan.Accesses.Add(new Access { Side = side, At = at, Purpose = spot.Unit.Name });
         }
 
         // ------------------------------------------------------------------ the edges
@@ -779,7 +946,9 @@ namespace RoadDemo
             // is what is left over, so it cannot be dealt before the thing it is left over
             // from.
             var sides = Enumerable.Range(0, 4).Where(s => plan.Street[s])
-                .OrderByDescending(s => s == 0 || s == 2 ? plan.W : plan.D)
+                .OrderByDescending(s => plan.Role[s] == EdgeRole.Main)
+                .ThenByDescending(s => plan.Role[s] == EdgeRole.Secondary)
+                .ThenByDescending(s => s == 0 || s == 2 ? plan.W : plan.D)
                 .ThenBy(s => rng.Next()).ToList();
 
             foreach (int side in sides) FreeRuns(plan, side, (at, run) => Units(plan, side, at, run, rng));
@@ -816,6 +985,26 @@ namespace RoadDemo
             _ => (Walk, at),
         };
 
+        static (int, int) RingCell(Plan plan, int side, int at) => side switch
+        {
+            0 => (at, 0),
+            2 => (at, plan.D - 1),
+            1 => (plan.W - 1, at),
+            _ => (0, at),
+        };
+
+        static int EdgeBuilt(Plan plan, int side)
+        {
+            int length = side == 0 || side == 2 ? plan.W : plan.D;
+            int built = 0;
+            for (int at = Walk; at < length - Walk; at++)
+            {
+                var (i, j) = EdgeCell(plan, side, at);
+                if (plan.Ground[i, j] == Use.Building || plan.Ground[i, j] == Use.Forecourt) built++;
+            }
+            return built;
+        }
+
         /// <summary>
         /// The houses along one free run of one side, with air between them.
         ///
@@ -835,6 +1024,11 @@ namespace RoadDemo
         static void Units(Plan plan, int side, int at, int run, Random rng)
         {
             int length = side == 0 || side == 2 ? plan.W : plan.D;
+            if (plan.Klass == Klass.Court)
+            {
+                int target = (length - 2 * Walk) * 80 / 100;
+                run = Math.Min(run, Math.Max(0, target - EdgeBuilt(plan, side)));
+            }
             // off the corner unit at either end of the run
             if (at > Walk && run > 0) { at++; run--; }
             if (at + run < length - Walk && run > 0) run--;
@@ -862,7 +1056,7 @@ namespace RoadDemo
                 // both its neighbours cannot fit in it: the cafes came out standing in the
                 // houses either side of them (the user, 2026-08-28: "kafici se dodaju tik uz
                 // zgrade... se preplicu uz zgrade").
-                int space = 2;
+                int space = 3;
                 if (!wide && run >= 9) { space = 4; wide = true; }
                 space = Math.Min(run, space);
                 at += space;
@@ -923,6 +1117,8 @@ namespace RoadDemo
                 // the square: long houses still win most runs - divided by how many of this
                 // house the block already carries, so the run does not repeat one of them
                 int w = Math.Max(1, along * along / Again(plan, spot.Unit));
+                if (side == plan.Artery && spot.Unit.MaxH >= 17f) w *= 3;
+                if (plan.Klass == Klass.Court && Turn.Of(spot.Unit, spot.Yaw).Face((side + 2) % 4)) w *= 3;
                 weight.Add(w);
                 total += w;
             }
@@ -947,6 +1143,17 @@ namespace RoadDemo
         {
             Use use = run == 1 ? Use.Drive : run <= 4 ? Use.Paved : Use.Parking;
             int depth = Math.Min(3, Depth(plan, side));
+            int entries = plan.Accesses.Count(a => a.Vehicle);
+            bool throughAlley = plan.Ground.Cast<Use>().Any(value => value == Use.Alley);
+
+            // Main streets keep a continuous building/pedestrian frontage. Blocks with a
+            // through alley use that service route for their rear bays instead of punching
+            // another driveway through a street row.
+            if (use == Use.Parking && (side == plan.Artery || throughAlley || entries >= 2))
+                use = Use.Paved;
+            if (use == Use.Drive && entries >= 2) use = Use.Paved;
+            if (use == Use.Drive && plan.Accesses.Any(a => !a.Vehicle && a.Side == side && a.At == at))
+                use = Use.Paved;
             // A car park is one row of bays behind the pavement and its aisle - two cells.
             // Three deep put a second row of bays with its noses against the backs of the
             // houses, and a car is longer than its stall (the user, 2026-08-27: "parking
@@ -998,7 +1205,8 @@ namespace RoadDemo
             if (use == Use.Parking)
             {
                 for (int n = 0; n < run && first < 0; n++)
-                    if (!Flanked(n, 0) && (depth < 2 || !Flanked(n, 1))) first = n;
+                    if (!plan.Accesses.Any(a => !a.Vehicle && a.Side == side && a.At == at + n) &&
+                        !Flanked(n, 0) && (depth < 2 || !Flanked(n, 1))) first = n;
                 if (first < 0) { use = Use.Paved; depth = Math.Min(2, depth); }
             }
 
@@ -1049,7 +1257,7 @@ namespace RoadDemo
 
             // the mouth: the ring cell in front of it stops being pavement and becomes road,
             // so a car comes off the street onto the block without ever crossing a kerb
-            if (cut >= 0) Mouth(plan, side, cut);
+            if (cut >= 0) Mouth(plan, side, cut, use == Use.Parking ? "parking" : "driveway");
 
             plan.Gaps.Add(new Gap { Side = side, At = at, Run = run, Depth = depth, Use = use });
             plan.M.Gaps++;
@@ -1057,6 +1265,64 @@ namespace RoadDemo
             if (use == Use.Paved) plan.M.Paved++;
             if (use == Use.Drive) plan.M.Drives++;
             if (use == Use.Parking) plan.M.Parking++;
+        }
+
+        /// <summary>Parking for a full block sits behind the street row and opens directly
+        /// onto its through alley. It replaces a short piece of alley verge, so no third or
+        /// fourth street mouth is needed and no bay occupies the principal frontage.</summary>
+        static void RearParking(Plan plan, Random rng)
+        {
+            var alley = new List<(int I, int J)>();
+            for (int i = Walk; i < plan.W - Walk; i++)
+                for (int j = Walk; j < plan.D - Walk; j++)
+                    if (plan.Ground[i, j] == Use.Alley) alley.Add((i, j));
+            if (alley.Count < 4) return;
+
+            bool eastWest = alley.Select(c => c.J).Distinct().Count() == 1;
+            var runs = new List<List<(int I, int J)>>();
+            foreach (int flank in new[] { -1, 1 }.OrderBy(_ => rng.Next()))
+            {
+                var run = new List<(int, int)>();
+                foreach (var road in eastWest ? alley.OrderBy(c => c.I) : alley.OrderBy(c => c.J))
+                {
+                    int i = road.I + (eastWest ? 0 : flank);
+                    int j = road.J + (eastWest ? flank : 0);
+                    bool clear = i >= Walk && j >= Walk && i < plan.W - Walk && j < plan.D - Walk &&
+                                 plan.Ground[i, j] == Use.Verge;
+                    if (clear)
+                        for (int side = 0; side < 4 && clear; side++)
+                        {
+                            int x = i + Step[side, 0], y = j + Step[side, 1];
+                            if (x < 0 || y < 0 || x >= plan.W || y >= plan.D) continue;
+                            if (plan.Ground[x, y] == Use.Building || plan.Ground[x, y] == Use.Forecourt)
+                                clear = false;
+                        }
+                    if (clear) run.Add((i, j));
+                    else if (run.Count > 0) { runs.Add(run); run = new List<(int, int)>(); }
+                }
+                if (run.Count > 0) runs.Add(run);
+            }
+
+            // Six cells on each side of the alley: three two-cell bay tiles per flank,
+            // eighteen marked stalls in the composer. The earlier eight-cell budget left
+            // one flank as a token pair and the rest as an unexplained paved strip.
+            int budget = 12;
+            foreach (var run in runs.Where(run => run.Count >= 2)
+                                    .OrderByDescending(run => run.Count)
+                                    .ThenBy(_ => rng.Next()))
+            {
+                int cells = Math.Min(budget, Math.Min(6, run.Count / 2 * 2));
+                if (cells < 2) continue;
+                int start = run.Count == cells ? 0 : rng.Next(run.Count - cells + 1);
+                for (int n = 0; n < cells; n++)
+                {
+                    var cell = run[start + n];
+                    plan.Ground[cell.I, cell.J] = Use.Parking;
+                    plan.M.RearParking++;
+                }
+                budget -= cells;
+                if (budget < 2) break;
+            }
         }
 
         // ------------------------------------------------------------------ the cafe
@@ -1078,7 +1344,7 @@ namespace RoadDemo
         /// <summary>How often a block gets the kit storefront in one of its gaps. It was one
         /// in three - and at that rate the user, walking the demo, saw none at all
         /// (2026-08-28: "ne vidim ni jedan kafic"). Three blocks in five now carry one.</summary>
-        const double CafeOdds = 0.60;
+        const double CafeOdds = 1.0;
 
         /// <summary>
         /// The brownstone's block, with nothing open on it.
@@ -1131,6 +1397,7 @@ namespace RoadDemo
                 .ThenBy(g => rng.Next())
                 .ToList();
 
+            int wanted = plan.Klass == Klass.Block || plan.Klass == Klass.Court ? 2 : 1;
             foreach (var gap in gaps)
             {
                 // the whole gap, CafeDeep in, has to be paved ground - a gap's columns stop
@@ -1150,9 +1417,10 @@ namespace RoadDemo
                         var (i, j) = Into(plan, gap.Side, gap.At + n, k);
                         plan.Ground[i, j] = Use.Cafe;
                     }
-                plan.Cafe = gap;
-                plan.M.Cafes = 1;
-                return;
+                if (plan.Cafe == null) plan.Cafe = gap;
+                plan.Cafes.Add(gap);
+                plan.M.Cafes = plan.Cafes.Count;
+                if (plan.Cafes.Count >= wanted) return;
             }
         }
 
@@ -1177,7 +1445,7 @@ namespace RoadDemo
         {
             if (rng.NextDouble() >= SubwayOdds) return;
             var gaps = plan.Gaps
-                .Where(g => g != plan.Cafe && g.Use == Use.Paved && g.Run >= 2 && g.Depth >= SubwayDeep)
+                .Where(g => !plan.Cafes.Contains(g) && g.Use == Use.Paved && g.Run >= 2 && g.Depth >= SubwayDeep)
                 .OrderBy(g => rng.Next())
                 .ToList();
             foreach (var gap in gaps)
@@ -1387,7 +1655,9 @@ namespace RoadDemo
                             if (!FitsLot(plan, turn, i, j, clear)) continue;
                             int seen = Seen(plan, turn, i, j, clear);
                             if (seen < 0) continue;
-                            int score = seen * 4 + rng.Next(4);
+                            int way = WayDistance(plan, turn, i, j);
+                            bool active = unit.Name == "gym" || unit.Name == "kosarkaskiteren";
+                            int score = seen * 4 + (active ? Math.Max(0, 10 - way) * 6 : way * 2) + rng.Next(4);
                             if (score <= bestScore) continue;
                             bestScore = score;
                             best = new Spot { Unit = unit, Yaw = yaw, I = i, J = j, CW = turn.CW, CD = turn.CD };
@@ -1443,6 +1713,22 @@ namespace RoadDemo
                 for (int y = j - clear; y < j + turn.CD + clear; y++)
                     if (plan.Ground[x, y] != Use.Empty) return false;
             return true;
+        }
+
+        static int WayDistance(Plan plan, Turn turn, int i, int j)
+        {
+            int best = plan.W + plan.D;
+            for (int u = 0; u < turn.CW; u++)
+                for (int v = 0; v < turn.CD; v++)
+                {
+                    if (!turn.Filled(u, v)) continue;
+                    for (int x = 0; x < plan.W; x++)
+                        for (int y = 0; y < plan.D; y++)
+                            if (plan.Ground[x, y] == Use.Alley || plan.Ground[x, y] == Use.Drive ||
+                                plan.Ground[x, y] == Use.Walkway)
+                                best = Math.Min(best, Math.Abs(i + u - x) + Math.Abs(j + v - y));
+            }
+            return best;
         }
 
         /// <summary>How many of the park's edge cells look at a street or an alley verge -
@@ -1534,12 +1820,18 @@ namespace RoadDemo
 
         /// <summary>Cuts the block's pavement ring at one cell of one side, so the way behind
         /// it opens straight onto the street.</summary>
-        static void Mouth(Plan plan, int side, int at)
+        static bool Mouth(Plan plan, int side, int at, string purpose)
         {
+            if (plan.Accesses.Any(a => !a.Vehicle && a.Side == side && a.At == at)) return false;
             var (i, j) = EdgeCell(plan, side, at);
             var (x, y) = (i + Step[side, 0], j + Step[side, 1]);
-            if (x < 0 || y < 0 || x >= plan.W || y >= plan.D) return;
-            if (plan.Ground[x, y] == Use.Walkway) plan.Ground[x, y] = Use.Drive;
+            if (x < 0 || y < 0 || x >= plan.W || y >= plan.D) return false;
+            if (plan.Ground[x, y] != Use.Walkway && plan.Ground[x, y] != Use.Drive) return false;
+            plan.Ground[x, y] = Use.Drive;
+            if (!plan.Accesses.Any(a => a.Vehicle && a.Side == side && a.At == at))
+                plan.Accesses.Add(new Access { Side = side, At = at, Vehicle = true, Purpose = purpose });
+            if (side != plan.Artery) plan.Role[side] = EdgeRole.Service;
+            return true;
         }
 
         /// <summary>How deep the inner ground is from this side.</summary>
@@ -1645,6 +1937,24 @@ namespace RoadDemo
                 }
             }
             m.Repeats = plan.Spots.Count - plan.Spots.Select(s => s.Unit.Name).Distinct().Count();
+            m.VehicleEntries = plan.Accesses.Count(a => a.Vehicle);
+            m.PedestrianEntries = plan.Accesses.Count(a => !a.Vehicle);
+            m.FunctionalGaps = plan.Gaps.Count(g => g.Use == Use.Paved || g.Use == Use.Drive ||
+                                                       g.Use == Use.Parking || g.Use == Use.Cafe ||
+                                                       g.Use == Use.Subway);
+            m.MainFrontage = EdgeCoverage(plan, plan.Artery);
+            if (plan.Klass == Klass.Court)
+            {
+                int covered = 0, length = 0;
+                for (int side = 0; side < 4; side++)
+                {
+                    if (!plan.Street[side]) continue;
+                    int along = side == 0 || side == 2 ? plan.Inner : plan.InnerD;
+                    covered += EdgeCoverage(plan, side) * along;
+                    length += along;
+                }
+                m.CourtEnclosure = length == 0 ? 0 : covered / length;
+            }
             int inner = Math.Max(1, plan.Inner * plan.InnerD);
             m.Share = plan.Spots.Count == 0 ? 0
                     : plan.Spots.Max(s => s.CW * s.CD * 100 / inner);
@@ -1673,6 +1983,20 @@ namespace RoadDemo
             m.DoorsPerHa = ha > 0 ? m.Doors / ha : 0;
         }
 
+        static int EdgeCoverage(Plan plan, int side)
+        {
+            if (side < 0 || side >= 4 || !plan.Street[side]) return 0;
+            int length = side == 0 || side == 2 ? plan.W : plan.D;
+            int built = 0;
+            for (int at = Walk; at < length - Walk; at++)
+            {
+                var (i, j) = EdgeCell(plan, side, at);
+                var use = plan.Ground[i, j];
+                if (use == Use.Building || use == Use.Forecourt || use == Use.Cafe) built++;
+            }
+            return built * 100 / Math.Max(1, length - 2 * Walk);
+        }
+
         static void Judge(Plan plan)
         {
             var seen = new Dictionary<(int, int), string>();
@@ -1694,12 +2018,27 @@ namespace RoadDemo
                         else seen[key] = spot.Unit.Name;
                     }
 
-                // the back of a unit never looks at a street; its end may
-                for (int s = 0; s < 4; s++)
+                // the back of a residential unit never looks at a street; an amenity lot
+                // may have a fenced or service side and is judged by its own access.
+                for (int s = 0; s < 4 && !ResidentialUnits.IsLot(spot.Unit); s++)
                 {
                     if (!plan.Street[s] || !Back(turn, s)) continue;
                     if (!Along(plan, spot, turn, s)) continue;
                     plan.Faults.Add($"BackToStreet: {spot.Unit.Name} shows its {SideName[s]} back to the street");
+                }
+
+                if (!ResidentialUnits.IsLot(spot.Unit))
+                {
+                    if (spot.AccessSide < 0 || spot.EntranceAt < 0)
+                        plan.Faults.Add($"NoPedAccess: {spot.Unit.Name} has no clear public approach");
+                    else if (!turn.Face(spot.AccessSide))
+                        plan.Faults.Add($"WrongFacade: {spot.Unit.Name} uses its {SideName[spot.AccessSide]} side as an entrance");
+                    else
+                    {
+                        var (x, y) = RingCell(plan, spot.AccessSide, spot.EntranceAt);
+                        if (plan.Ground[x, y] != Use.Walkway)
+                            plan.Faults.Add($"MixedAccess: {spot.Unit.Name}'s pedestrian approach is used by vehicles");
+                    }
                 }
             }
 
@@ -1744,6 +2083,35 @@ namespace RoadDemo
                 if (shops > ShopsPerStreet)
                     plan.Faults.Add($"TwoShops: {shops} units carry shopfronts on the {SideName[s]} street");
             }
+
+            if ((plan.Klass == Klass.Block || plan.Klass == Klass.Court) && plan.M.MainFrontage < 65)
+                plan.Faults.Add($"WeakFrontage: the {SideName[plan.Artery]} main edge is only " +
+                                $"{plan.M.MainFrontage}% built (target 70-85%)");
+            if (plan.Klass == Klass.Court && plan.M.CourtEnclosure < 55)
+                plan.Faults.Add($"OpenCourt: the building band encloses only {plan.M.CourtEnclosure}% of the court");
+
+            if (plan.M.VehicleEntries > 2)
+                plan.Faults.Add($"TooManyEntries: {plan.M.VehicleEntries} vehicle mouths fragment the frontage");
+            int alleyCells = plan.Ground.Cast<Use>().Count(use => use == Use.Alley);
+            int alleyMouths = plan.Accesses.Count(a => a.Vehicle && a.Purpose == "through alley");
+            if (alleyCells > 0 && alleyMouths != 2)
+                plan.Faults.Add($"BlindAlley: the service alley has {alleyMouths} street connection(s), not two");
+
+            if (plan.Artery >= 0)
+            {
+                int length = plan.Artery == 0 || plan.Artery == 2 ? plan.W : plan.D;
+                for (int at = Walk; at < length - Walk; at++)
+                {
+                    var (i, j) = EdgeCell(plan, plan.Artery, at);
+                    if (plan.Ground[i, j] == Use.Parking)
+                        plan.Faults.Add($"MainFrontParking: a bay occupies the main frontage at {at}");
+                }
+            }
+
+            foreach (var gap in plan.Gaps)
+                if (gap.Use != Use.Paved && gap.Use != Use.Drive && gap.Use != Use.Parking &&
+                    gap.Use != Use.Cafe && gap.Use != Use.Subway)
+                    plan.Faults.Add($"AnonymousGap: {gap}");
 
             // no one building is the block: the placer's share rule, measured back
             if ((plan.Klass == Klass.Block || plan.Klass == Klass.Court) && plan.M.Share > ShareMost)
@@ -1907,10 +2275,15 @@ namespace RoadDemo
             sb.Append($"{m.Units} unit(s) (biggest {m.Share}%), {m.Doors} door(s) ({m.DoorsPerHa:F0}/ha), ");
             sb.Append($"{m.Shops} shop(s), {m.Cafes} cafe(s), {m.Parks} park(s), {m.Subways} subway, ");
             sb.Append($"{m.Gaps} gap(s) over {m.GapCells} cell(s), {m.Trees} tree(s), ");
-            sb.Append($"alley {m.AlleyCells}, verge {m.Verge}, court {m.CourtCells}, empty {m.Empty}");
+            sb.Append($"main frontage {m.MainFrontage}%, access {m.PedestrianEntries} ped/{m.VehicleEntries} vehicle, ");
+            sb.Append($"alley {m.AlleyCells}, rear parking {m.RearParking}, verge {m.Verge}, ");
+            sb.Append($"court {m.CourtCells} ({m.CourtEnclosure}% enclosed), empty {m.Empty}");
             if (m.Empty > 0) sb.Append($" at {m.EmptyAt}");
             if (m.Repeats > 0) sb.Append($", {m.Repeats} repeat(s)");
             foreach (var gap in plan.Gaps) sb.Append($"\n    gap: {gap}, {gap.Depth} deep");
+            for (int side = 0; side < 4; side++)
+                if (plan.Role[side] != EdgeRole.Closed)
+                    sb.Append($"\n    edge {SideName[side]}: {plan.Role[side]}");
             foreach (var refused in plan.Refused) sb.Append($"\n    REFUSED: {refused}");
             foreach (var fault in plan.Faults) sb.Append($"\n    FAULT: {fault}");
             return sb.ToString();

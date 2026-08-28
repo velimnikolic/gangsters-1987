@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LivingCity.Entities;
 using UnityEngine;
 
 namespace RoadDemo
@@ -26,6 +27,9 @@ namespace RoadDemo
 
         /// <summary>1-based, set by the builder - "Officer 2" on the popup.</summary>
         public int UnitNumber;
+
+        /// <summary>The shared city body sample applied to this visual body, if any.</summary>
+        public PedestrianAnthropometryStamp Anthropometry;
 
         Vector3 _door;
         Quaternion _doorRot;
@@ -953,7 +957,10 @@ namespace RoadDemo
 
             var ring = new List<PedNode>();
             var link = first;
-            for (int step = 0; step < 64; step++)
+            // The grid's block faces close in a few dozen links. A raster-authored
+            // core may carry many short pavement stretches round one irregular block,
+            // so keep the same face walk but allow it to finish that longer ring.
+            for (int step = 0; step < 512; step++)
             {
                 ring.Add(link.From);
                 var at = link.To;
@@ -984,7 +991,7 @@ namespace RoadDemo
         // ------------------------------------------------------------ the marker
 
         Transform IPatrolMarker.MarkerTf => Tf;
-        float IPatrolMarker.MarkerHeight => 2.1f;
+        float IPatrolMarker.MarkerHeight => Anthropometry ? Anthropometry.OverlayHeight : 2.1f;
         bool IPatrolMarker.MarkerDimmed => State == Mode.Inside;
         string IPatrolMarker.MarkerTitle => "Officer " + UnitNumber;
 
