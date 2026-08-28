@@ -49,8 +49,8 @@ namespace LivingCity.EditorTools
             {
                 var unit = ResidentialUnits.All.FirstOrDefault(u => u.Name == name);
                 if (unit == null) continue;
-                int ring = 2 * ResidentialLot.Walk;
-                yield return (name, unit.CW + ring, unit.CD + ring, name);
+                int border = 2 * (ResidentialLot.Walk + ResidentialLot.Clearance(unit));
+                yield return (name, unit.CW + border, unit.CD + border, name);
             }
         }
 

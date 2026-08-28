@@ -28,6 +28,14 @@ namespace RoadDemo
         /// railings, and ten metres of pavement beside that is a boulevard.</summary>
         public const int Walk = 1;
 
+        /// <summary>A complete outdoor venue keeps one paved cell between its fence/props
+        /// and both the block pavement and any neighbouring building. Without this band the
+        /// gym fence landed on the pavement kerb and its equipment touched the next house.</summary>
+        public const int AmenityClear = 1;
+
+        public static int Clearance(ResidentialUnit unit) =>
+            unit != null && unit.Kind == ResidentialKind.Amenity ? AmenityClear : 0;
+
         public enum Klass { Corner, Row, Block, Court }
 
         /// <summary>South, east, north, west.</summary>
@@ -49,7 +57,7 @@ namespace RoadDemo
             Alley,       // 5 m one-way, bins on the verge against the backs
             Court,       // the paved court a big block keeps in the middle
             Cafe,        // a kit storefront in a gap, fronting the street
-            Park,        // a harvested park unit stands here: it brings its own grass
+            Park,        // a harvested park/amenity stands here; amenities get a backing floor
             Subway,      // the subway entrance's column: its stair, nothing laid over it
         }
 
@@ -269,7 +277,7 @@ namespace RoadDemo
         static bool Standing(Plan plan)
         {
             foreach (var spot in plan.Spots)
-                if (spot.Unit.Kind != ResidentialKind.Park) return true;
+                if (!ResidentialUnits.IsLot(spot.Unit)) return true;
             return false;
         }
 
@@ -319,28 +327,28 @@ namespace RoadDemo
             }
 
             var rng = new Random(unchecked(seed * 7919 + w * 104729 + d * 1299709));
-            // the turn that fits, and the lot in the middle of what is left over
+            // the turn that fits, and the lot in the middle of what is left over. An
+            // amenity keeps a full cell of paving inside the pavement ring: its fence and
+            // props never become the kerb itself.
             Spot best = null;
+            int clear = Clearance(unit);
             for (int yaw = 0; yaw < 360; yaw += 90)
             {
                 var turn = Turn.Of(unit, yaw);
-                if (turn.CW > plan.Inner || turn.CD > plan.InnerD) continue;
-                int i = Walk + (plan.Inner - turn.CW) / 2, j = Walk + (plan.InnerD - turn.CD) / 2;
+                if (turn.CW + 2 * clear > plan.Inner || turn.CD + 2 * clear > plan.InnerD) continue;
+                int i = Walk + clear + (plan.Inner - turn.CW - 2 * clear) / 2;
+                int j = Walk + clear + (plan.InnerD - turn.CD - 2 * clear) / 2;
                 var spot = new Spot { Unit = unit, Yaw = yaw, I = i, J = j, CW = turn.CW, CD = turn.CD };
                 if (best == null || rng.Next(2) == 0) best = spot;
             }
             if (best == null)
             {
-                plan.Faults.Add($"TooBig: {unitName} ({unit.CW}x{unit.CD} cells) does not fit " +
-                                $"{plan.Inner}x{plan.InnerD}");
+                plan.Faults.Add($"TooBig: {unitName} ({unit.CW}x{unit.CD} cells plus " +
+                                $"{clear}-cell clearance) does not fit {plan.Inner}x{plan.InnerD}");
                 return plan;
             }
 
-            var stand = Turn.Of(best.Unit, best.Yaw);
-            for (int u = 0; u < stand.CW; u++)
-                for (int v = 0; v < stand.CD; v++)
-                    if (stand.Filled(u, v)) plan.Ground[best.I + u, best.J + v] = Use.Park;
-            plan.Spots.Add(best);
+            OccupyLot(plan, best);
             plan.M.Parks++;
 
             // everything the lot does not stand on is paving, not yard: this is a public
@@ -1091,7 +1099,7 @@ namespace RoadDemo
             bool brownstone = false, shop = false;
             foreach (var spot in plan.Spots)
             {
-                if (spot.Unit.Kind == ResidentialKind.Park) continue;
+                if (ResidentialUnits.IsLot(spot.Unit)) continue;
                 if (spot.Unit.Name == "residential-05") brownstone = true;
                 if (spot.Unit.Shops.Sum() > 0) shop = true;
             }
@@ -1281,8 +1289,14 @@ namespace RoadDemo
             bool alone = StandsAlone(unit);
             if (!plan.Lone) return !alone;
             if (!alone) return false;
+            // Room(plan) proves that at least one lone house fills this plot; the particular
+            // house drawn must satisfy the same rule. Otherwise a small residential-04 can
+            // be accepted merely because residential-05 would have fitted, leaving a bare
+            // block which used to be disguised by squeezing the gym against its walls.
+            int inner = Math.Max(1, plan.Inner * plan.InnerD);
+            if (unit.CW * unit.CD * 100 < inner * FillLeast) return false;
             foreach (var spot in plan.Spots)
-                if (spot.Unit.Kind != ResidentialKind.Park) return false;
+                if (!ResidentialUnits.IsLot(spot.Unit)) return false;
             return true;
         }
 
@@ -1341,22 +1355,37 @@ namespace RoadDemo
             return most;
         }
 
-        /// <summary>One lot into the ground the houses left, if one fits.</summary>
+        /// <summary>How often a lot participates in the draw once it fits. The two Palm City
+        /// diners used to be effectively absent: one was an impossible two-cell storefront
+        /// and the other lost a global visibility contest to smaller parks. They are complete
+        /// venues with their own terraces, so they take part as lots and get a useful, finite
+        /// weight here. Parks remain common and every other amenity remains occasional.</summary>
+        static int LotWeight(ResidentialUnit unit) =>
+            unit.Name == "dinner" || unit.Name == "dinner2" ? 3
+          : unit.Kind == ResidentialKind.Amenity ? 1
+          : 2;
+
+        /// <summary>One lot into the ground the houses left, if one fits. A best visible
+        /// position is found independently for every unit, then the unit is drawn by weight;
+        /// a small park no longer wins merely because it had more candidate positions.</summary>
         static bool Lot(Plan plan, Random rng)
         {
-            Spot best = null;
-            int bestScore = -1;
+            var choices = new List<(Spot Spot, int Weight)>();
             foreach (var unit in ResidentialUnits.Parks
                          .Where(u => !Standalone(u) && !plan.Spots.Any(x => x.Unit == u))
                          .OrderBy(u => rng.Next()))
+            {
+                Spot best = null;
+                int bestScore = -1;
+                int clear = Clearance(unit);
                 for (int yaw = 0; yaw < 360; yaw += 90)
                 {
                     var turn = Turn.Of(unit, yaw);
                     for (int i = Walk; i + turn.CW <= plan.W - Walk; i++)
                         for (int j = Walk; j + turn.CD <= plan.D - Walk; j++)
                         {
-                            if (!Fits(plan, turn, i, j)) continue;
-                            int seen = Seen(plan, turn, i, j);
+                            if (!FitsLot(plan, turn, i, j, clear)) continue;
+                            int seen = Seen(plan, turn, i, j, clear);
                             if (seen < 0) continue;
                             int score = seen * 4 + rng.Next(4);
                             if (score <= bestScore) continue;
@@ -1364,21 +1393,83 @@ namespace RoadDemo
                             best = new Spot { Unit = unit, Yaw = yaw, I = i, J = j, CW = turn.CW, CD = turn.CD };
                         }
                 }
-            if (best == null) return false;
+                if (best != null) choices.Add((best, LotWeight(unit)));
+            }
+            if (choices.Count == 0) return false;
 
-            var t = Turn.Of(best.Unit, best.Yaw);
-            for (int u = 0; u < t.CW; u++)
-                for (int v = 0; v < t.CD; v++)
-                    if (t.Filled(u, v)) plan.Ground[best.I + u, best.J + v] = Use.Park;
-            plan.Spots.Add(best);
+            int draw = rng.Next(choices.Sum(c => c.Weight));
+            Spot picked = choices[choices.Count - 1].Spot;
+            foreach (var choice in choices)
+            {
+                draw -= choice.Weight;
+                if (draw >= 0) continue;
+                picked = choice.Spot;
+                break;
+            }
+
+            OccupyLot(plan, picked);
             plan.M.Parks++;
+            return true;
+        }
+
+        /// <summary>An amenity owns its whole measured rectangle, including the gaps between
+        /// its props, and reserves its paved clear band immediately so a later park cannot be
+        /// dealt into that band. A true park keeps its measured, possibly irregular mask.</summary>
+        static void OccupyLot(Plan plan, Spot spot)
+        {
+            var turn = Turn.Of(spot.Unit, spot.Yaw);
+            bool amenity = spot.Unit.Kind == ResidentialKind.Amenity;
+            for (int u = 0; u < turn.CW; u++)
+                for (int v = 0; v < turn.CD; v++)
+                    if (amenity || turn.Filled(u, v)) plan.Ground[spot.I + u, spot.J + v] = Use.Park;
+
+            int clear = Clearance(spot.Unit);
+            for (int i = spot.I - clear; i < spot.I + turn.CW + clear; i++)
+                for (int j = spot.J - clear; j < spot.J + turn.CD + clear; j++)
+                    if (i >= Walk && j >= Walk && i < plan.W - Walk && j < plan.D - Walk &&
+                        plan.Ground[i, j] == Use.Empty) plan.Ground[i, j] = Use.Paved;
+            plan.Spots.Add(spot);
+        }
+
+        /// <summary>A lot placement. Parks use their own occupied cells; amenities reserve a
+        /// complete rectangular footprint plus their clear band, all on untouched ground.</summary>
+        static bool FitsLot(Plan plan, Turn turn, int i, int j, int clear)
+        {
+            if (clear <= 0) return Fits(plan, turn, i, j);
+            if (i - clear < Walk || j - clear < Walk ||
+                i + turn.CW + clear > plan.W - Walk || j + turn.CD + clear > plan.D - Walk)
+                return false;
+            for (int x = i - clear; x < i + turn.CW + clear; x++)
+                for (int y = j - clear; y < j + turn.CD + clear; y++)
+                    if (plan.Ground[x, y] != Use.Empty) return false;
             return true;
         }
 
         /// <summary>How many of the park's edge cells look at a street or an alley verge -
         /// or -1 when any of them touches tarmac, which is not allowed.</summary>
-        static int Seen(Plan plan, Turn turn, int i, int j)
+        static int Seen(Plan plan, Turn turn, int i, int j, int clear)
         {
+            if (clear > 0)
+            {
+                int seenThroughBand = 0;
+                int x0 = i - clear, x1 = i + turn.CW + clear - 1;
+                int y0 = j - clear, y1 = j + turn.CD + clear - 1;
+                for (int x = x0; x <= x1; x++)
+                    for (int y = y0; y <= y1; y++)
+                    {
+                        if (x != x0 && x != x1 && y != y0 && y != y1) continue;
+                        for (int s = 0; s < 4; s++)
+                        {
+                            int a = x + Step[s, 0], b = y + Step[s, 1];
+                            if (a >= x0 && a <= x1 && b >= y0 && b <= y1) continue;
+                            if (a < 0 || b < 0 || a >= plan.W || b >= plan.D) continue;
+                            var use = plan.Ground[a, b];
+                            if (use == Use.Walkway || use == Use.Verge) seenThroughBand++;
+                        }
+                    }
+                return seenThroughBand;
+            }
+
             int seen = 0;
             for (int u = 0; u < turn.CW; u++)
                 for (int v = 0; v < turn.CD; v++)
@@ -1610,6 +1701,37 @@ namespace RoadDemo
                     if (!Along(plan, spot, turn, s)) continue;
                     plan.Faults.Add($"BackToStreet: {spot.Unit.Name} shows its {SideName[s]} back to the street");
                 }
+            }
+
+            // An amenity owns a complete backed rectangle and a full paved cell round it.
+            // This is the paper-side regression for the gym which touched a house and cut
+            // the outer kerb: the composer can only lay the promised floor and clearance if
+            // the deal has actually reserved them.
+            foreach (var spot in plan.Spots.Where(s => s.Unit.Kind == ResidentialKind.Amenity))
+            {
+                var turn = Turn.Of(spot.Unit, spot.Yaw);
+                for (int i = spot.I; i < spot.I + turn.CW; i++)
+                    for (int j = spot.J; j < spot.J + turn.CD; j++)
+                        if (plan.Ground[i, j] != Use.Park)
+                            plan.Faults.Add($"AmenityFloor: {spot.Unit.Name} has no reserved floor at ({i},{j})");
+
+                int clear = Clearance(spot.Unit);
+                for (int i = spot.I - clear; i < spot.I + turn.CW + clear; i++)
+                    for (int j = spot.J - clear; j < spot.J + turn.CD + clear; j++)
+                    {
+                        bool foot = i >= spot.I && i < spot.I + turn.CW &&
+                                    j >= spot.J && j < spot.J + turn.CD;
+                        if (foot) continue;
+                        if (i < Walk || j < Walk || i >= plan.W - Walk || j >= plan.D - Walk)
+                        {
+                            plan.Faults.Add($"AmenityEdge: {spot.Unit.Name} reaches the pavement at ({i},{j})");
+                            continue;
+                        }
+                        var use = plan.Ground[i, j];
+                        if (use == Use.Building || use == Use.Forecourt || use == Use.Walkway ||
+                            use == Use.Park || Drives(use))
+                            plan.Faults.Add($"AmenityClearance: {spot.Unit.Name} touches {use} at ({i},{j})");
+                    }
             }
 
             // A SHOPFRONT IS NOT A FAULT. It was judged one - at first one to a block, then
