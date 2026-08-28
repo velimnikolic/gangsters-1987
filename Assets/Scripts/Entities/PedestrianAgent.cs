@@ -83,6 +83,7 @@ namespace LivingCity.Entities
         Animator animator;
         Renderer[] renderers;
         PedestrianBody body;
+        PedestrianAnthropometryStamp anthropometry;
         PedestrianDeath death;
         bool hasSpeedParam;
         bool hasActivityParam;
@@ -201,6 +202,7 @@ namespace LivingCity.Entities
             human = GetComponent<HumanBehavior>();
             animator = GetComponent<Animator>();
             renderers = GetComponentsInChildren<Renderer>(true);
+            anthropometry = GetComponent<PedestrianAnthropometryStamp>();
 
             // Added by the spawner before this component (InteractableNpc pulls it in), so
             // it is there to find - but never assumed: a bare prefab has no death to report.
@@ -856,7 +858,7 @@ namespace LivingCity.Entities
         // subject and costs the overlay nothing until clicked.
 
         Transform UI.IOverlaySubject.OverlayAnchor => transform;
-        float UI.IOverlaySubject.OverlayHeight => 2.2f;
+        float UI.IOverlaySubject.OverlayHeight => anthropometry ? anthropometry.OverlayHeight : 2.2f;
 
         /// <summary>Inside a shop or a building: still a live subject, just nowhere to
         /// point at - and not pickable, which keeps the doorway click a move order.</summary>

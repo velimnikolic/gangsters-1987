@@ -149,7 +149,14 @@ namespace LivingCity.Entities
             if (!prefab)
                 return;
 
+            var prefabName = prefab.name;
             var person = Instantiate(prefab, position, Quaternion.Euler(0f, rng.Next(4) * 90f, 0f), transform);
+            PedestrianAnthropometry.Apply(
+                person,
+                PedestrianAnthropometry.Seed(config.seed, active.Count, PedestrianAnthropometry.CivilianSalt),
+                PedestrianIdentity.IsFemale(prefabName),
+                PedestrianAnthropometry.CohortFor(groupLabel, prefabName),
+                prefabName);
 
             SetLayerRecursively(person.transform, PedestrianLayer);
             PedestrianLodSystem.Register(person);
@@ -179,7 +186,7 @@ namespace LivingCity.Entities
                 var agent = person.AddComponent<PedestrianAgent>();
                 // Same single rng.Next() as before the identity existed - the pedestrian
                 // stream must not shift under an old seed.
-                agent.Configure(config, rng.Next(), groupLabel, prefab.name);
+                agent.Configure(config, rng.Next(), groupLabel, prefabName);
             }
             else if (behaviour && rng.NextDouble() < idlerFraction)
             {

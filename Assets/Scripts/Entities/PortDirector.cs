@@ -104,6 +104,13 @@ namespace LivingCity.Entities
                 var rotation = Quaternion.Euler(0f, rng.Next(4) * 90f, 0f);
 
                 var person = Instantiate(prefab, position, rotation, transform);
+                PedestrianAnthropometry.Apply(
+                    person,
+                    PedestrianAnthropometry.Seed(config.seed, i, PedestrianAnthropometry.DockWorkerSalt),
+                    PedestrianIdentity.IsFemale(prefab.name),
+                    PedestrianAgeCohort.Adult,
+                    prefab.name);
+
                 PedestrianSpawner.SetLayerRecursively(person.transform,
                                                       PedestrianSpawner.PedestrianLayer);
                 PedestrianLodSystem.Register(person);

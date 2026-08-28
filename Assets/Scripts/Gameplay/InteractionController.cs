@@ -5,8 +5,8 @@ using LivingCity.UI;
 namespace LivingCity.Gameplay
 {
     /// <summary>
-    /// The gameplay layer's ONE reader of the pointer. Click-to-move, hover highlight and
-    /// the context menu all race over the same mouse buttons, so exactly one Update owns
+    /// The gameplay layer's ONE reader of the pointer. Click-to-move and the context menu
+    /// race over the same mouse buttons, so exactly one Update owns
     /// the ordering: Esc closes, a click while the menu is open is consumed by the menu,
     /// UI clicks belong to the UI, the camera's Space chord belongs to the camera - and
     /// only what is left reaches the world.
@@ -14,8 +14,8 @@ namespace LivingCity.Gameplay
     /// Picking mirrors CityOverlayHud.Pick, traps and all: a SphereCast because a
     /// pedestrian's capsule is 0.2m wide, triggers ignored because the AI cars tow feeler
     /// boxes, subjects resolved through GetComponentInParent because the collider is a
-    /// child. Differences: NonAlloc (hover runs at 10Hz, not per click) and two answers
-    /// per cast - the nearest InteractableNpc for hover/menu, the nearest raw hit for
+    /// child. Differences: NonAlloc and two answers per cast - the nearest InteractableNpc
+    /// for menu work, the nearest raw hit for
     /// "where did the click land".
     ///
     /// A left click on anything that owns an overlay popup (the player, an officer, the
@@ -27,8 +27,6 @@ namespace LivingCity.Gameplay
         /// <summary>CityOverlayHud's pick constants, kept in lockstep.</summary>
         const float PickRadius = 0.35f;
         const float PickDistance = 600f;
-
-        const float HoverInterval = 0.1f;
 
         /// <summary>Casts everything except the UI layer; triggers are excluded per cast.</summary>
         static readonly int PickMask = ~(1 << 5);
@@ -47,8 +45,6 @@ namespace LivingCity.Gameplay
         readonly IInteractionInput input = new DesktopInteractionInput();
 
         Camera cam;
-        InteractableNpc hovered;
-        float nextHoverAt;
 
         struct Pick
         {
@@ -91,22 +87,15 @@ namespace LivingCity.Gameplay
         {
             // The personnel ledger is modal. Its full-page raycast target already blocks
             // the pointer through the overUi path below; this line covers the KEYS - H
-            // must not raise the player's hands while he is reading the books - and spares
-            // the 10Hz hover cast under a closed world.
+            // must not raise the player's hands while he is reading the books.
             if (PersonnelAlmanac.IsOpen)
-            {
-                SetHovered(null);
                 return;
-            }
 
             // The strategic map has no raycaster - InputBlocked IS its pointer shield,
             // and it holds through the closing frame so the click or Esc that shut the
             // map is never also a move order or a menu.
             if (StrategicMapHud.InputBlocked)
-            {
-                SetHovered(null);
                 return;
-            }
 
             // H = hands up. Harmless when nobody is pointing a gun at him; decisive when
             // somebody is - the engage window reads IsSurrendering.
@@ -123,8 +112,6 @@ namespace LivingCity.Gameplay
 
             if (menu && menu.IsOpen)
             {
-                SetHovered(null);
-
                 var clicked = input.PrimaryPressed || input.SecondaryPressed;
                 if (!clicked || overUi)
                     return; // Button clicks are the Button's; everything else waits.
@@ -138,10 +125,7 @@ namespace LivingCity.Gameplay
             }
 
             if (overUi || input.PanModifierHeld)
-            {
-                SetHovered(null);
                 return;
-            }
 
             if (input.PrimaryPressed)
             {
@@ -156,34 +140,10 @@ namespace LivingCity.Gameplay
                 var pick = PickAt(input.PointerPosition);
                 if (pick.Target != null && pick.Target.ContextAvailable && menu)
                 {
-                    SetHovered(null);
                     menu.Open(player, pick.Target, input.PointerPosition);
                 }
                 return;
             }
-
-            // Hover, throttled - a cast at 10Hz reads instant and costs a tenth of one
-            // per frame.
-            if (Time.unscaledTime >= nextHoverAt)
-            {
-                nextHoverAt = Time.unscaledTime + HoverInterval;
-                var pick = PickAt(input.PointerPosition);
-                SetHovered(pick.Npc && !pick.Npc.IsDead ? pick.Npc : null);
-            }
-        }
-
-        void OnDisable() => SetHovered(null);
-
-        void SetHovered(InteractableNpc npc)
-        {
-            if (hovered == npc)
-                return;
-
-            if (hovered)
-                HoverHighlight.Clear(hovered);
-            hovered = npc;
-            if (hovered)
-                HoverHighlight.Apply(hovered);
         }
 
         Pick PickAt(Vector2 screenPosition)
@@ -194,8 +154,7 @@ namespace LivingCity.Gameplay
                 ray, PickRadius, Hits, PickDistance, PickMask, QueryTriggerInteraction.Ignore);
 
             // Nearest first, so each of the three answers is settled by the FIRST hit that
-            // carries it and the parent walks stop there - unsorted, every hit paid up to
-            // four GetComponentInParent walks ten times a second.
+            // carries it and the parent walks stop there.
             SortByDistance(count);
 
             for (var k = 0; k < count; k++)

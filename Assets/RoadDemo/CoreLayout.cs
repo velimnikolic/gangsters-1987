@@ -246,6 +246,8 @@ namespace RoadDemo
             /// residential block): which of its sides the shops look at - the side facing
             /// the busiest street. South, east, north, west; -1 for none.</summary>
             public int Artery = -1;
+            /// <summary>For a yard block: the harvested lot that stands on it, by name.</summary>
+            public string Unit;
             public Bounds Ground;              // pivot-relative box of its paving, turned
             public int CW, CD;                 // the box in cells
             public bool[,] Mask;               // which cells of the box the block fills, [i along x, j along z]
@@ -464,6 +466,28 @@ namespace RoadDemo
         public const string ResPrefix = "res-";
 
         public static bool IsRes(Block block) => block != null && block.Name.StartsWith(ResPrefix);
+
+        // ------------------------------------------------------------------ the yards
+
+        /// <summary>What a yard block is called: a block that is ONE LOT - the skatepark, the
+        /// beach gym, the car yard - standing on its own plot in a residential quarter (the
+        /// user, 2026-08-28). Like a park and a residential block it has no prefab: the deal
+        /// gives it a rectangle and <c>ResidentialLot.Yard</c> lays it out.</summary>
+        public const string YardPrefix = "yard-";
+
+        public static bool IsYard(Block block) => block != null && block.Name.StartsWith(YardPrefix);
+
+        /// <summary>A yard block of a given size, carrying the name of the unit that stands
+        /// on it.</summary>
+        public static Block Yard(int index, int cw, int cd, string unit)
+        {
+            var mask = new bool[cw, cd];
+            for (int i = 0; i < cw; i++)
+                for (int j = 0; j < cd; j++) mask[i, j] = true;
+            var block = Describe($"{YardPrefix}{index:00}", Vector2.zero, cw, cd, mask);
+            block.Unit = unit;
+            return block;
+        }
 
         /// <summary>A residential block of a given size, measured from the origin like a
         /// park. <paramref name="artery"/> is the side its shops look at.</summary>

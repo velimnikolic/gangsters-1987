@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using LivingCity.Entities;
+using LivingCity.Gangs;
 using LivingCity.Gameplay;
 using TMPro;
 using UnityEngine;
@@ -34,9 +36,9 @@ namespace LivingCity.UI
     ///
     /// The no-GraphicRaycaster rule holds here too: nothing on this canvas is clickable
     /// (every Graphic raycastTarget false, no EventSystem). The popup closes on a click
-    /// that selects nothing, or on Escape. The marker is an Image with NO sprite - a
-    /// sprite-less Image draws a solid rectangle - rotated 45 degrees for an agent and left
-    /// square for a building; zero new art either way.
+    /// that selects nothing, or on Escape. Status markers stay cheap sprite-less Images;
+    /// human hover and selection use a screen-space bracket projected from the ground
+    /// square around the person.
     ///
     /// Picking is the project's only runtime physics query, and the two traps are real:
     /// Queries Hit Triggers is ON project-wide and the AI cars carry a trigger feeler box
@@ -60,6 +62,18 @@ namespace LivingCity.UI
         /// <summary>The selected subject's marker grows this much - the "you are here".</summary>
         const float SelectedScale = 1.4f;
 
+        const float HoverInterval = 0.1f;
+
+        /// <summary>Half the world-space square around a person, before authored scale.</summary>
+        const float HumanBracketHalfSize = 0.48f;
+
+        const float HumanBracketGroundLift = 0.04f;
+        const float HumanBracketArm = 14f;
+        const float HumanBracketSelectedArm = 18f;
+        const float HumanBracketPulseArm = 6f;
+        const float HumanBracketThickness = 2.5f;
+        const float HumanBracketPulsePeriod = 0.9f;
+
         /// <summary>Pick slack, metres. Enough to make a 0.2m child capsule clickable,
         /// small enough not to grab the car in the next lane.</summary>
         const float PickRadius = 0.35f;
@@ -76,13 +90,22 @@ namespace LivingCity.UI
         /// <summary>Reference pixels of margin an always-visible marker keeps off the edge.</summary>
         const float EdgeMargin = 18f;
 
+        static readonly Color OwnHumanBracket = new Color(0.16f, 0.95f, 0.35f, 0.96f);
+        static readonly Color OtherHumanBracket = new Color(0.24f, 0.58f, 1f, 0.94f);
+
+        enum MarkerKind { Status, Hover, SelectionBracket }
+
         sealed class Marker
         {
             public IOverlaySubject Subject;
             public Transform Target;
-            public Image Image;
+            public Graphic Graphic;
+            public GroundBracketGraphic Bracket;
             public Color Shown;
             public bool Selected;
+            public MarkerKind Kind;
+            public readonly Vector3[] WorldCorners = new Vector3[4];
+            public readonly Vector2[] LocalCorners = new Vector2[4];
 
             /// <summary>Cached at build time - styles are fixed for a subject's lifetime.</summary>
             public MarkerStyle Style;
@@ -92,6 +115,7 @@ namespace LivingCity.UI
         int registryVersion = -1;
 
         Camera cam;
+        ContextMenuUI menu;
         Canvas canvas;
         RectTransform markerRoot;
 
@@ -100,8 +124,11 @@ namespace LivingCity.UI
         TMP_Text popupTitle;
         TMP_Text popupLine;
         Marker selected;
+        Marker selectedBracket;
+        Marker hoverBracket;
         long shownPopupKey;
         bool popupDirty;
+        float nextHoverAt;
 
         /// <summary>
         /// The one marker that does not come from the registry: built when the selection is
@@ -123,6 +150,7 @@ namespace LivingCity.UI
 
             BuildCanvas();
             BuildPopup();
+            menu = FindAnyObjectByType<ContextMenuUI>();
         }
 
         void BuildCanvas()
@@ -146,6 +174,10 @@ namespace LivingCity.UI
             var root = new GameObject("Markers", typeof(RectTransform));
             root.transform.SetParent(go.transform, false);
             markerRoot = (RectTransform)root.transform;
+            markerRoot.anchorMin = Vector2.zero;
+            markerRoot.anchorMax = Vector2.one;
+            markerRoot.offsetMin = Vector2.zero;
+            markerRoot.offsetMax = Vector2.zero;
         }
 
         /// <summary>
@@ -157,7 +189,7 @@ namespace LivingCity.UI
             if (TMP_Settings.instance == null || TMP_Settings.defaultFontAsset == null)
             {
                 // TMP essentials not imported yet (the clock HUD's two-step). Markers still
-                // work - they are plain Images - the popup just has nothing to write with.
+                // work - they are plain UI Graphics - the popup just has nothing to write with.
                 Debug.LogWarning("[CityOverlayHud] No TMP default font - the overlay popup " +
                                  "is disabled until TMP essentials are imported.", this);
                 return;
@@ -215,7 +247,22 @@ namespace LivingCity.UI
             // The strategic map is modal: its Esc closes the map, its clicks pick blocks,
             // and neither may leak here - InputBlocked covers the closing frame too.
             if (StrategicMapHud.InputBlocked)
+            {
+                SetHover(null);
                 return;
+            }
+
+            if (PersonnelAlmanac.IsOpen)
+            {
+                SetHover(null);
+                return;
+            }
+
+            if (menu && menu.IsOpen)
+            {
+                SetHover(null);
+                return;
+            }
 
             // Polled Esc cannot be consumed, so every reader yields explicitly: while the
             // personnel ledger claims it (open, or closing on this very frame - Update
@@ -226,20 +273,41 @@ namespace LivingCity.UI
                 Select(null);
 
             var mouse = Mouse.current;
-            if (mouse == null || !mouse.leftButton.wasPressedThisFrame)
+            if (mouse == null)
+            {
+                SetHover(null);
                 return;
+            }
+
+            var pointer = mouse.position.ReadValue();
+            var pointerBlocked = keyboard != null && keyboard.spaceKey.isPressed;
 
             // Space+LMB is the camera's drag-pan - a pan must not open popups as it starts.
-            if (keyboard != null && keyboard.spaceKey.isPressed)
-                return;
+            if (pointerBlocked)
+                SetHover(null);
 
             // A click on the context menu (the one canvas with a GraphicRaycaster) belongs
             // to its button, not to the world behind it. Without this the pick punches
             // straight through the menu. No EventSystem means no clickable UI - carry on.
             if (EventSystem.current && EventSystem.current.IsPointerOverGameObject())
+            {
+                pointerBlocked = true;
+                SetHover(null);
+            }
+
+            if (!pointerBlocked && Time.unscaledTime >= nextHoverAt)
+            {
+                nextHoverAt = Time.unscaledTime + HoverInterval;
+                SetHover(Pick(pointer));
+            }
+
+            if (!mouse.leftButton.wasPressedThisFrame)
                 return;
 
-            Select(Pick(mouse.position.ReadValue()));
+            if (pointerBlocked)
+                return;
+
+            Select(Pick(pointer));
         }
 
         IOverlaySubject Pick(Vector2 screenPosition)
@@ -305,10 +373,16 @@ namespace LivingCity.UI
 
             // The outgoing selection may have owned the ephemeral - it goes with it.
             DropEphemeral();
+            DropSelectedBracket();
             if (offRegistry)
                 ephemeral = marker;
 
             selected = marker;
+            if (marker != null && IsHumanSubject(subject))
+                selectedBracket = BuildMarker(subject, marker.Target, MarkerKind.SelectionBracket);
+            if (hoverBracket != null && subject == hoverBracket.Subject)
+                DropHover();
+
             popupDirty = true;
             if (popup)
                 popup.SetActive(marker != null);
@@ -319,11 +393,51 @@ namespace LivingCity.UI
             if (ephemeral == null)
                 return;
 
-            if (ephemeral.Image)
-                Destroy(ephemeral.Image.gameObject);
+            DestroyMarker(ephemeral);
             if (selected == ephemeral)
                 selected = null;
             ephemeral = null;
+        }
+
+        void DropSelectedBracket()
+        {
+            if (selectedBracket == null)
+                return;
+
+            DestroyMarker(selectedBracket);
+            selectedBracket = null;
+        }
+
+        void SetHover(IOverlaySubject subject)
+        {
+            if (subject != null && (selected != null && subject == selected.Subject ||
+                                    !IsHumanSubject(subject)))
+                subject = null;
+
+            if (hoverBracket != null && hoverBracket.Subject == subject)
+                return;
+
+            DropHover();
+            var anchor = subject?.OverlayAnchor;
+            if (anchor)
+                hoverBracket = BuildMarker(subject, anchor, MarkerKind.Hover);
+        }
+
+        void DropHover()
+        {
+            if (hoverBracket == null)
+                return;
+
+            DestroyMarker(hoverBracket);
+            hoverBracket = null;
+        }
+
+        static void DestroyMarker(Marker marker)
+        {
+            if (marker == null || !marker.Graphic)
+                return;
+
+            Destroy(marker.Graphic.gameObject);
         }
 
         void LateUpdate()
@@ -335,10 +449,10 @@ namespace LivingCity.UI
             if (StrategicMapHud.IsOpen)
             {
                 foreach (var marker in markers)
-                    if (marker.Image && marker.Image.enabled)
-                        marker.Image.enabled = false;
-                if (ephemeral != null && ephemeral.Image && ephemeral.Image.enabled)
-                    ephemeral.Image.enabled = false;
+                    DisableMarker(marker);
+                DisableMarker(ephemeral);
+                DisableMarker(selectedBracket);
+                DisableMarker(hoverBracket);
                 if (popup && popup.activeSelf)
                     popup.SetActive(false);
                 return;
@@ -356,8 +470,21 @@ namespace LivingCity.UI
             // any other, just owned by the selection instead of the registry.
             if (ephemeral != null)
                 UpdateMarker(ephemeral, width, height);
+            if (selectedBracket != null)
+                UpdateMarker(selectedBracket, width, height);
+            if (hoverBracket != null)
+                UpdateMarker(hoverBracket, width, height);
 
             UpdatePopup(width, height);
+        }
+
+        static void DisableMarker(Marker marker)
+        {
+            if (marker == null || !marker.Graphic)
+                return;
+
+            if (marker.Graphic.enabled)
+                marker.Graphic.enabled = false;
         }
 
         void UpdateMarker(Marker marker, float width, float height)
@@ -365,13 +492,27 @@ namespace LivingCity.UI
             if (!marker.Target)
                 return;
 
+            if (marker.Kind == MarkerKind.Status &&
+                ((selectedBracket != null && selectedBracket.Subject == marker.Subject) ||
+                 (hoverBracket != null && hoverBracket.Subject == marker.Subject)))
+            {
+                DisableMarker(marker);
+                return;
+            }
+
             // A SelectedOnly marker earns its pixels only as the selection; unselected it
             // pays nothing either - the early-out is before the WorldToScreenPoint and the
             // OverlayColor read, so a hundred quiet businesses cost this loop nothing.
-            if (marker.Style.SelectedOnly && marker != selected)
+            if (marker.Style.SelectedOnly && marker != selected &&
+                marker.Kind == MarkerKind.Status)
             {
-                if (marker.Image.enabled)
-                    marker.Image.enabled = false;
+                DisableMarker(marker);
+                return;
+            }
+
+            if (marker.Bracket)
+            {
+                UpdateGroundBracket(marker, width, height);
                 return;
             }
 
@@ -398,20 +539,20 @@ namespace LivingCity.UI
                 on = true;
             }
 
-            if (marker.Image.enabled != on)
-                marker.Image.enabled = on;
+            if (marker.Graphic.enabled != on)
+                marker.Graphic.enabled = on;
 
             if (on)
             {
                 screen.z = 0f;
-                marker.Image.transform.position = screen;
+                marker.Graphic.transform.position = screen;
             }
 
             var colour = marker.Subject.OverlayColor;
             if (marker.Shown != colour)
             {
                 marker.Shown = colour;
-                marker.Image.color = colour;
+                marker.Graphic.color = colour;
             }
 
             var wantSelected = marker == selected;
@@ -419,7 +560,7 @@ namespace LivingCity.UI
             {
                 marker.Selected = wantSelected;
                 if (!marker.Style.Pulse)
-                    marker.Image.rectTransform.localScale =
+                    marker.Graphic.rectTransform.localScale =
                         Vector3.one * (wantSelected ? SelectedScale : 1f);
             }
 
@@ -430,9 +571,103 @@ namespace LivingCity.UI
                 // carries only the selection factor and the breath.
                 var beat = 1f + marker.Style.PulseAmplitude * Mathf.Sin(
                     Time.time * (2f * Mathf.PI / Mathf.Max(0.2f, marker.Style.PulsePeriod)));
-                marker.Image.rectTransform.localScale =
+                marker.Graphic.rectTransform.localScale =
                     Vector3.one * (beat * (wantSelected ? SelectedScale : 1f));
             }
+        }
+
+        void UpdateGroundBracket(Marker marker, float width, float height)
+        {
+            if (marker.Subject.OverlayHidden)
+            {
+                DisableMarker(marker);
+                return;
+            }
+
+            var centreScreen = cam.WorldToScreenPoint(
+                marker.Target.position + Vector3.up * HumanBracketGroundLift);
+            var on = centreScreen.z > 0f &&
+                     centreScreen.x >= 0f && centreScreen.x <= width &&
+                     centreScreen.y >= 0f && centreScreen.y <= height;
+            if (!on)
+            {
+                DisableMarker(marker);
+                return;
+            }
+
+            var half = HumanBracketHalfMetres(marker.Target);
+            var centre = marker.Target.position + Vector3.up * HumanBracketGroundLift;
+            marker.WorldCorners[0] = centre + new Vector3(-half, 0f, -half);
+            marker.WorldCorners[1] = centre + new Vector3(half, 0f, -half);
+            marker.WorldCorners[2] = centre + new Vector3(half, 0f, half);
+            marker.WorldCorners[3] = centre + new Vector3(-half, 0f, half);
+
+            for (var i = 0; i < marker.WorldCorners.Length; i++)
+            {
+                var screen = cam.WorldToScreenPoint(marker.WorldCorners[i]);
+                if (screen.z <= 0f ||
+                    !RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                        markerRoot, screen, null, out marker.LocalCorners[i]))
+                {
+                    DisableMarker(marker);
+                    return;
+                }
+            }
+
+            var arm = marker.Kind == MarkerKind.SelectionBracket
+                ? HumanBracketSelectedArm
+                : HumanBracketArm;
+            if (marker.Kind == MarkerKind.SelectionBracket && IsOwnHuman(marker.Subject))
+            {
+                var beat = Mathf.Sin(Time.unscaledTime *
+                                     (2f * Mathf.PI / HumanBracketPulsePeriod));
+                arm += beat * HumanBracketPulseArm;
+            }
+
+            var colour = HumanBracketColor(marker.Subject);
+            marker.Bracket.Set(marker.LocalCorners, arm, HumanBracketThickness, colour);
+
+            if (!marker.Graphic.enabled)
+                marker.Graphic.enabled = true;
+        }
+
+        static float HumanBracketHalfMetres(Transform target)
+        {
+            var scale = target.lossyScale;
+            var footprintScale = Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.z));
+            return Mathf.Clamp(HumanBracketHalfSize * footprintScale, 0.35f, 0.82f);
+        }
+
+        static Color HumanBracketColor(IOverlaySubject subject) =>
+            IsOwnHuman(subject) ? OwnHumanBracket : OtherHumanBracket;
+
+        static bool IsOwnHuman(IOverlaySubject subject)
+        {
+            var component = subject as Component;
+            if (!component)
+                return false;
+
+            if (component.GetComponentInParent<PlayerMafioso>())
+                return true;
+
+            var member = component.GetComponentInParent<GangMemberAgent>();
+            return member && member.GangId == GangCatalog.PlayerGangId;
+        }
+
+        static bool IsHumanSubject(IOverlaySubject subject)
+        {
+            var component = subject as Component;
+            if (!component)
+                return false;
+
+            return component.GetComponentInParent<PlayerMafioso>() ||
+                   component.GetComponentInParent<PedestrianAgent>() ||
+                   component.GetComponentInParent<PoliceOfficerAgent>() ||
+                   component.GetComponentInParent<SchoolChildAgent>() ||
+                   component.GetComponentInParent<GangMemberAgent>() ||
+                   component.GetComponentInParent<PoliceResponseOfficer>() ||
+                   component.GetComponentInParent<NpcWitness>() ||
+                   component.GetComponentInParent<InteractableNpc>();
         }
 
         void UpdatePopup(float width, float height)
@@ -509,8 +744,7 @@ namespace LivingCity.UI
             var wasSelected = selected?.Subject;
 
             foreach (var marker in markers)
-                if (marker.Image)
-                    Destroy(marker.Image.gameObject);
+                DestroyMarker(marker);
             markers.Clear();
             selected = null;
 
@@ -543,18 +777,30 @@ namespace LivingCity.UI
             if (popup)
                 popup.SetActive(selected != null);
 
-            // The Image is new even when the subject is not, so its colour and scale have to be
+            if (selected != null && IsHumanSubject(selected.Subject))
+            {
+                DropSelectedBracket();
+                selectedBracket = BuildMarker(
+                    selected.Subject, selected.Target, MarkerKind.SelectionBracket);
+            }
+            else
+            {
+                DropSelectedBracket();
+            }
+
+            // The graphic is new even when the subject is not, so its colour and scale have to be
             // written again - the next LateUpdate pass does both off Shown/Selected, which
             // BuildMarker leaves cleared.
             popupDirty = true;
         }
 
-        Marker BuildMarker(IOverlaySubject subject, Transform anchor)
+        Marker BuildMarker(IOverlaySubject subject, Transform anchor, MarkerKind kind = MarkerKind.Status)
         {
             var go = new GameObject("marker", typeof(RectTransform));
             go.transform.SetParent(markerRoot, false);
 
             var place = subject.MarkerShape == OverlayShape.Square;
+            var groundBracket = kind != MarkerKind.Status && IsHumanSubject(subject);
 
             // Styles are opt-in: everything that predates them keeps Default.
             var style = subject is IOverlayStyledSubject styled
@@ -565,23 +811,105 @@ namespace LivingCity.UI
 
             var size = (place ? PlaceMarkerSize : MarkerSize) * style.SizeScale;
 
-            var image = go.AddComponent<Image>();
-            image.sprite = null;
-            image.raycastTarget = false;
-            image.rectTransform.sizeDelta = new Vector2(size, size);
-            // The whole Sims trick: a square Image with no sprite, stood on its corner. A
-            // building keeps it square-on, which is the only difference between the two shapes.
-            image.rectTransform.localRotation = Quaternion.Euler(0f, 0f, place ? 0f : 45f);
-            image.enabled = false;
+            Graphic graphic;
+            GroundBracketGraphic bracket = null;
+            if (groundBracket)
+            {
+                bracket = go.AddComponent<GroundBracketGraphic>();
+                graphic = bracket;
+                var rect = graphic.rectTransform;
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = Vector2.one;
+                rect.offsetMin = Vector2.zero;
+                rect.offsetMax = Vector2.zero;
+            }
+            else
+            {
+                var image = go.AddComponent<Image>();
+                image.sprite = null;
+                image.rectTransform.sizeDelta = new Vector2(size, size);
+                // The whole Sims trick: a square Image with no sprite, stood on its corner. A
+                // building keeps it square-on, which is the only difference between the two shapes.
+                image.rectTransform.localRotation = Quaternion.Euler(0f, 0f, place ? 0f : 45f);
+                graphic = image;
+            }
+
+            graphic.raycastTarget = false;
+            graphic.enabled = false;
 
             return new Marker
             {
                 Subject = subject,
                 Target = anchor,
-                Image = image,
+                Graphic = graphic,
+                Bracket = bracket,
                 Shown = Color.clear,
+                Kind = kind,
                 Style = style,
             };
+        }
+
+        sealed class GroundBracketGraphic : MaskableGraphic
+        {
+            readonly Vector2[] corners = new Vector2[4];
+            float arm = HumanBracketArm;
+            float thickness = HumanBracketThickness;
+            bool hasGeometry;
+
+            public void Set(Vector2[] source, float armLength, float lineThickness, Color tint)
+            {
+                for (var i = 0; i < corners.Length; i++)
+                    corners[i] = source[i];
+
+                arm = Mathf.Max(1f, armLength);
+                thickness = Mathf.Max(1f, lineThickness);
+                color = tint;
+                hasGeometry = true;
+                SetVerticesDirty();
+            }
+
+            protected override void OnPopulateMesh(VertexHelper vh)
+            {
+                vh.Clear();
+                if (!hasGeometry)
+                    return;
+
+                for (var i = 0; i < corners.Length; i++)
+                {
+                    var corner = corners[i];
+                    AddArm(vh, corner, corners[(i + 1) % corners.Length]);
+                    AddArm(vh, corner, corners[(i + corners.Length - 1) % corners.Length]);
+                }
+            }
+
+            void AddArm(VertexHelper vh, Vector2 corner, Vector2 toward)
+            {
+                var delta = toward - corner;
+                var length = delta.magnitude;
+                if (length <= 0.001f)
+                    return;
+
+                var end = corner + delta / length * Mathf.Min(arm, length * 0.45f);
+                AddLine(vh, corner, end);
+            }
+
+            void AddLine(VertexHelper vh, Vector2 a, Vector2 b)
+            {
+                var delta = b - a;
+                var length = delta.magnitude;
+                if (length <= 0.001f)
+                    return;
+
+                var normal = new Vector2(-delta.y, delta.x) / length * (thickness * 0.5f);
+                var tint = (Color32)color;
+                var start = vh.currentVertCount;
+                vh.AddVert(a - normal, tint, Vector2.zero);
+                vh.AddVert(a + normal, tint, Vector2.zero);
+                vh.AddVert(b - normal, tint, Vector2.zero);
+                vh.AddVert(b + normal, tint, Vector2.zero);
+                vh.AddTriangle(start, start + 1, start + 2);
+                vh.AddTriangle(start + 2, start + 1, start + 3);
+            }
         }
     }
 }

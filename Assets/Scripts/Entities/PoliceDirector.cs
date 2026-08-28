@@ -220,6 +220,13 @@ namespace LivingCity.Entities
                 }
 
                 var person = Instantiate(prefabs.policeOfficerPrefab, position, rotation, transform);
+                PedestrianAnthropometry.Apply(
+                    person,
+                    PedestrianAnthropometry.Seed(config.seed, nextOfficerNumber, PedestrianAnthropometry.PoliceSalt),
+                    PedestrianIdentity.IsFemale(prefabs.policeOfficerPrefab.name),
+                    PedestrianAgeCohort.Adult,
+                    prefabs.policeOfficerPrefab.name);
+
                 PedestrianSpawner.SetLayerRecursively(person.transform, PedestrianSpawner.PedestrianLayer);
                 PedestrianLodSystem.Register(person);
 

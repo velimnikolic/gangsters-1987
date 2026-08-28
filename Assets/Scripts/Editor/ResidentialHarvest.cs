@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -52,6 +53,28 @@ namespace LivingCity.EditorTools
         public const string OutDir = "Assets/Prefabs/Residential";
         public const string TablePath = "Assets/RoadDemo/ResidentialUnits.cs";
 
+        /// <summary>The scenes the harvest reads, swept together. The houses, the parks and
+        /// the pizza pubs were laid in the harvest scene; the user laid the amenities - the
+        /// basketball court, the skatepark, the car yard, the gym, the two diners and the
+        /// three shops - in the Palm City demo (2026-08-28), and both are read at once
+        /// because the table is written whole: a bake that saw one scene would drop
+        /// everything in the other.</summary>
+        public static readonly string[] Sources =
+        {
+            "Assets/Scenes/CoreHarvest.unity",
+            "Assets/Scenes/PalmCityDemo.unity",
+        };
+
+        /// <summary>The groups the user asked for by name out of the Palm City demo
+        /// (2026-08-28). The demo is full of groups that are not ours - its own fairground
+        /// and its beach toilets are named the same way - so what comes out of it is asked
+        /// for, never swept up. A tenth amenity tomorrow is one line here.</summary>
+        static readonly string[] Amenities =
+        {
+            "kosarkaskiteren", "skatepark", "caryard", "gym",
+            "dinner", "dinner2", "radnja1", "radnja2", "radnja3",
+        };
+
         /// <summary>The city module. Same 5 m everything else in the core is laid on.</summary>
         const float Cell = 5f;
 
@@ -68,7 +91,7 @@ namespace LivingCity.EditorTools
         static readonly Regex ParkNamed = new Regex(@"^park(\d+)$", RegexOptions.IgnoreCase);
 
         /// <summary>Which contract a named group answers to.</summary>
-        enum Family { House, Park, Storefront }
+        enum Family { House, Park, Storefront, Amenity }
 
         // ------------------------------------------------------------------ what a unit is
 
@@ -110,6 +133,15 @@ namespace LivingCity.EditorTools
             /// <summary>How many cells of this side's outer line the unit stands on.</summary>
             public int[] Front = new int[4];
             public int Trees, Pieces;
+            /// <summary>Chairs, tables, umbrellas and benches the unit brings with it. A
+            /// diner that arrives with its own terrace is not given a second one.</summary>
+            public int Seats;
+            /// <summary>Cells its walls stand on, against <see cref="Cells"/>: what tells a
+            /// building from a lot.</summary>
+            public int Built;
+            /// <summary>The pieces themselves, in the scene they were found in - the bake
+            /// copies these rather than looking them up a second time.</summary>
+            public List<Transform> Parts;
             public float MaxH;
             /// <summary>The lowest the unit's own walls and stoops go: 0 for a house on
             /// the ground, -1.5 m for the brownstone whose whole footprint is sunk.</summary>
@@ -136,11 +168,12 @@ namespace LivingCity.EditorTools
         [MenuItem("Tools/City/Residential/Bake Named Buildings", priority = 40)]
         public static void BakeMenu()
         {
-            int wrote = Bake(SceneManager.GetActiveScene(), out var units, out string report);
+            int wrote = Bake(out var units, out string report);
             Debug.Log(report);
             EditorUtility.DisplayDialog("Harvest Residential",
                 units.Count == 0
-                    ? "No building in this scene is named residential1, residential2, ... (nor park1, ...)\n\n" +
+                    ? "Nothing in " + string.Join(" or ", Sources) + " is named residential1, " +
+                      "residential2, ... (nor park1, ...)\n\n" +
                       "Name every piece of a building after the building and try again."
                     : $"{units.Count} unit(s) measured, {wrote} prefab(s) written to {OutDir},\n" +
                       $"table written to {TablePath}.\n\nThe measurements are in the console.",
@@ -149,48 +182,89 @@ namespace LivingCity.EditorTools
 
         /// <summary>The same work with no dialog, for a pipeline command - a modal dialog
         /// from a command deadlocks the editor.</summary>
-        public static int Bake(Scene scene, out List<Unit> units, out string report)
+        public static int Bake(out List<Unit> units, out string report)
         {
-            units = Measure(scene);
-            int wrote = 0;
-            foreach (var unit in units) if (Write(unit, scene)) wrote++;
-            if (units.Count > 0)
+            var opened = new List<Scene>();
+            var scenes = new List<Scene>();
+            foreach (string path in Sources)
             {
-                WriteTable(units);
-                AssetDatabase.Refresh();
+                var scene = SceneManager.GetSceneByPath(path);
+                if (!scene.IsValid() || !scene.isLoaded)
+                {
+                    scene = EditorSceneManager.OpenScene(path, OpenSceneMode.Additive);
+                    opened.Add(scene);
+                }
+                scenes.Add(scene);
             }
-            report = Report(units, wrote);
-            return wrote;
+
+            try
+            {
+                units = Measure(scenes);
+                int wrote = 0;
+                foreach (var unit in units) if (Write(unit)) wrote++;
+                if (units.Count > 0)
+                {
+                    WriteTable(units);
+                    AssetDatabase.Refresh();
+                }
+                report = Report(units, wrote);
+                return wrote;
+            }
+            finally
+            {
+                // only what this bake opened is closed again: a scene the user was working
+                // in stays open, and nothing it holds is saved from here
+                foreach (var scene in opened)
+                    if (scene.IsValid() && scene.isLoaded) EditorSceneManager.CloseScene(scene, true);
+            }
         }
 
         // ------------------------------------------------------------------ the measure
 
-        /// <summary>Every named building in the scene, measured where it stands.</summary>
-        public static List<Unit> Measure(Scene scene)
+        /// <summary>Every named building in one scene, measured where it stands.</summary>
+        public static List<Unit> Measure(Scene scene) => Measure(new[] { scene });
+
+        /// <summary>Every named building in these scenes, measured where it stands. A name
+        /// is a name wherever it was typed, so a group split across two scenes would be one
+        /// unit - which is why the amenity roster names what comes out of the demo.</summary>
+        public static List<Unit> Measure(IList<Scene> scenes)
         {
             // every name that more than one piece carries, and the pieces that carry it -
             // the pack's own names (SM_...) and the tray labels are not a contract
             var named = new Dictionary<string, List<Transform>>();
-            foreach (var root in scene.GetRootGameObjects())
-                foreach (var t in root.GetComponentsInChildren<Transform>(true))
-                {
-                    if (t.name.StartsWith("SM_") || t.name.Contains(" ")) continue;
-                    if (!named.TryGetValue(t.name, out var list)) named[t.name] = list = new List<Transform>();
-                    list.Add(t);
-                }
+            foreach (var scene in scenes)
+            {
+                if (!scene.IsValid() || !scene.isLoaded) continue;
+                foreach (var root in scene.GetRootGameObjects())
+                    foreach (var t in root.GetComponentsInChildren<Transform>(true))
+                    {
+                        if (t.name.StartsWith("SM_") || t.name.Contains(" ")) continue;
+                        if (!named.TryGetValue(t.name, out var list)) named[t.name] = list = new List<Transform>();
+                        list.Add(t);
+                    }
+            }
 
             var houses = new SortedDictionary<int, List<Transform>>();
             var parks = new SortedDictionary<int, List<Transform>>();
             var fronts = new SortedDictionary<string, List<Transform>>(System.StringComparer.Ordinal);
+            var amenities = new SortedDictionary<string, List<Transform>>(System.StringComparer.Ordinal);
             foreach (var pair in named)
             {
                 var m = Named.Match(pair.Key);
                 if (m.Success) { houses[int.Parse(m.Groups[1].Value)] = pair.Value; continue; }
                 m = ParkNamed.Match(pair.Key);
                 if (m.Success) { parks[int.Parse(m.Groups[1].Value)] = pair.Value; continue; }
+                if (pair.Value.Count < 2) continue;
+                // an amenity the user asked for by name: a court, a yard or a shop out of
+                // the demo, which is neither a house nor a park and carries no shopfront
+                // module of the city pack
+                if (System.Array.IndexOf(Amenities, pair.Key.ToLowerInvariant()) >= 0)
+                {
+                    amenities[pair.Key.ToLowerInvariant()] = pair.Value;
+                    continue;
+                }
                 // a storefront: a group with a shopfront module in it. One piece with a
                 // fancy name is not a group, and a group with no shop is not a storefront
-                if (pair.Value.Count < 2) continue;
                 if (!pair.Value.Any(t => (Source(t) ?? "").StartsWith("SM_Bld_Shop"))) continue;
                 fronts[pair.Key.ToLowerInvariant()] = pair.Value;
             }
@@ -211,6 +285,11 @@ namespace LivingCity.EditorTools
                 var unit = Measure(pair.Key, pair.Value[0].name, pair.Value, Family.Storefront);
                 if (unit != null) units.Add(unit);
             }
+            foreach (var pair in amenities)
+            {
+                var unit = Measure(pair.Key, pair.Value[0].name, pair.Value, Family.Amenity);
+                if (unit != null) units.Add(unit);
+            }
             return units;
         }
 
@@ -218,10 +297,18 @@ namespace LivingCity.EditorTools
         {
             var read = pieces.Select(Read).ToList();
             // a house is read off its walls and stoops; a park has no walls, and is read
-            // off the ground it brings - its grass and its paths
-            var shell = family == Family.Park
-                ? read.Where(p => p.Kind == PieceKind.Ground).ToList()
-                : read.Where(p => p.Kind == PieceKind.Shell || p.Kind == PieceKind.Stoop).ToList();
+            // off the ground it brings - its grass and its paths. An amenity is read off
+            // BOTH: a car yard is a slab of tarmac with a hut on it, and a diner is a
+            // building with its deck, and neither is the whole of what stands there
+            var shell = family switch
+            {
+                Family.Park => read.Where(p => p.Kind == PieceKind.Ground).ToList(),
+                // a lot is the WHOLE of what the user arranged - its tarmac, its fence, its
+                // hut and the tables in front of it: the ground it takes is the ground the
+                // block has to keep clear for it
+                Family.Amenity => read,
+                _ => read.Where(p => p.Kind == PieceKind.Shell || p.Kind == PieceKind.Stoop).ToList(),
+            };
             if (shell.Count == 0)
             {
                 Debug.LogWarning($"{name}: nothing in it is a " +
@@ -231,9 +318,15 @@ namespace LivingCity.EditorTools
 
             // where the module grid this building was laid on actually sits. The demo did
             // not lay every building on our raster, so the drift is measured, taken out of
-            // both the reading and the bake, and reported rather than hidden
-            var drift = new Vector2(Drift(shell.Select(p => p.Go.position.x)),
-                                    Drift(shell.Select(p => p.Go.position.z)));
+            // both the reading and the bake, and reported rather than hidden.
+            //
+            // An amenity was never laid on a module grid at all - it is a lot the user
+            // arranged out of two-metre panels, ramps and tarmac - so its raster is put
+            // where its own south-west corner is, and its footprint reads from there.
+            var drift = family == Family.Amenity
+                ? Corner(shell)
+                : new Vector2(Drift(shell.Select(p => p.Go.position.x)),
+                              Drift(shell.Select(p => p.Go.position.z)));
 
             // Which cells a piece fills is read off the piece's own box, not off its pivot:
             // a shopfront that is two modules wide (Shop_03), a stoop that reaches a whole
@@ -244,12 +337,54 @@ namespace LivingCity.EditorTools
             var wall = new HashSet<Vector2Int>();
             var yard = new HashSet<Vector2Int>();
             var pits = new HashSet<Vector2Int>();
-            foreach (var p in shell)
-                foreach (var c in Covers(p.Box, drift))
+            // cells with a WALL on them, kept apart from the ground the unit brings: it is
+            // the share of the two that says whether an amenity is a building or a lot
+            var built = new HashSet<Vector2Int>();
+            // where a lot's own ground lies. The demo stands on a terrain and its lots sit
+            // at whatever height that terrain gave them - one of the shops is two metres
+            // under the water line - so the bake brings the lot's ground to zero and every
+            // height on it is read from there.
+            // (the LOWEST of everything it brought: the pack uses the same floor slab for a
+            // shop's floor and for the roof over it, so the ground tiles alone are not the
+            // ground - one shop read its roof as its floor and came out 0.9 m tall)
+            float floor = family != Family.Amenity ? 0f : read.Min(p => p.Box.min.y);
+            if (family == Family.Amenity)
+            {
+                // A lot's pieces are the pack's own two-metre panels and half-metre trims,
+                // and not one of them covers a five-metre cell centre: read that way, the
+                // 25 m diner came out as a single cell. So a lot is read by AREA - a cell
+                // is the unit's when what it brought covers a good share of it - and the
+                // same reading, taken of the walls alone, says how much of the lot is
+                // built on.
+                var cover = new Dictionary<Vector2Int, float>();
+                var walls = new Dictionary<Vector2Int, float>();
+                foreach (var p in shell)
                 {
-                    if (p.Kind == PieceKind.Shell || p.Kind == PieceKind.Ground) wall.Add(c); else yard.Add(c);
-                    if (p.Box.min.y < Sunk) pits.Add(c);
+                    Spread(cover, p.Box, drift);
+                    // What is BUILT on the lot is what it has OVERHEAD: a roof slab, an
+                    // upper floor, an awning - anything whose underside clears a man's
+                    // head. Walls were the obvious reading and the wrong one: the pack's
+                    // panels are a hand thick, so a shop walled on all four sides covered
+                    // three square metres of its own floor and read as a car park. A car
+                    // yard's tarmac and a skatepark's ramps have nothing over them at all,
+                    // and the yard's sales hut has its roof - which is the whole difference.
+                    if (p.Box.min.y - floor >= Overhead) Spread(walls, p.Box, drift);
                 }
+                float least = Share * Cell * Cell;
+                foreach (var pair in cover) if (pair.Value >= least) wall.Add(pair.Key);
+                foreach (var pair in walls) if (pair.Value >= least) built.Add(pair.Key);
+                built.IntersectWith(wall);
+            }
+            else
+            {
+                foreach (var p in shell)
+                    foreach (var c in Covers(p.Box, drift))
+                    {
+                        if (p.Kind == PieceKind.Shell || p.Kind == PieceKind.Ground) wall.Add(c); else yard.Add(c);
+                        if (p.Kind == PieceKind.Shell) built.Add(c);
+                        if (p.Box.min.y < Sunk) pits.Add(c);
+                    }
+            }
             yard.ExceptWith(wall);
             // A cell the building stands on is never a pit, whatever reaches into it. A
             // stoop's box runs a good way in UNDER the house it serves, and taking that
@@ -259,6 +394,11 @@ namespace LivingCity.EditorTools
             pits.ExceptWith(wall);
 
             var all = wall.Concat(yard).ToList();
+            if (all.Count == 0)
+            {
+                Debug.LogWarning($"{name}: nothing in it covers a cell of the raster - not measured");
+                return null;
+            }
             int minI = all.Min(c => c.x), maxI = all.Max(c => c.x);
             int minJ = all.Min(c => c.y), maxJ = all.Max(c => c.y);
 
@@ -270,6 +410,9 @@ namespace LivingCity.EditorTools
                 CD = maxJ - minJ + 1,
                 Drift = drift,
                 Pieces = pieces.Count,
+                Parts = pieces,
+                Built = built.Count,
+                Seats = read.Count(p => p.Seat),
             };
             unit.Wall = new bool[unit.CW, unit.CD];
             unit.Yard = new bool[unit.CW, unit.CD];
@@ -289,13 +432,21 @@ namespace LivingCity.EditorTools
             // Counting every door that merely pointed a way made all six buildings face
             // all four ways, which is how a courtyard full of doors reads if you do not
             // ask where they look.
+            // On a lot it is the ROOFED part that blocks a door, not the lot's own ground:
+            // a diner's door opens across its own deck to the street, and reading the deck
+            // as a wall left the diner with no frontage at all and nowhere it could stand.
+            var blocks = family == Family.Amenity ? built : wall;
+            var opens = family == Family.Amenity ? wall : yard;
             foreach (var p in shell)
             {
                 int side = Side(p.Yaw);
                 if (side < 0 || !(p.Door || p.Shop || p.Stoop)) continue;
                 bool open = false;
-                foreach (var c in Covers(p.Box, drift))
-                    if (Sees(c, Out[side], wall, yard, minI, maxI, minJ, maxJ)) { open = true; break; }
+                // a lot's door is a two-metre panel that covers no cell centre, so which
+                // cell it stands on is asked of the ground it OVERLAPS, the same way its
+                // footprint was read
+                foreach (var c in Standing(p.Box, drift, family))
+                    if (Sees(c, Out[side], blocks, opens, minI, maxI, minJ, maxJ)) { open = true; break; }
                 if (!open) continue;
                 if (p.Door) unit.Doors[side]++;
                 if (p.Shop) unit.Shops[side]++;
@@ -335,13 +486,23 @@ namespace LivingCity.EditorTools
             {
                 int n = unit.Doors[s] + unit.Shops[s];
                 // a storefront is a shop and a door: one shopfront on a side IS the front,
-                // and a corner shop fronts both its streets
-                unit.Face[s] = family == Family.Storefront ? unit.Shops[s] > 0 : n >= 2 && n * 3 >= best;
+                // and a corner shop fronts both its streets. An amenity is read the same
+                // way and off its doors as well: the demo's shops carry glass walls where
+                // the city pack carries shopfronts, and its gym opens through a gate
+                unit.Face[s] = family == Family.Storefront ? unit.Shops[s] > 0
+                             : family == Family.Amenity ? n > 0
+                             : n >= 2 && n * 3 >= best;
             }
+            // A building or a lot, measured rather than named: how much of the ground the
+            // unit takes has a roof or a wall over it. The demo's car yard is a slab of
+            // tarmac with one hut on it and its skatepark is all ramp; its diners and its
+            // three shops are built over most of what they stand on.
+            bool aLot = unit.Built * 2 < unit.Cells;
             unit.Klass = family switch
             {
                 Family.Park => Kind.Park,
                 Family.Storefront => Kind.Storefront,
+                Family.Amenity => aLot ? Kind.Park : Kind.Storefront,
                 _ => Classify(unit.Face),
             };
 
@@ -365,7 +526,16 @@ namespace LivingCity.EditorTools
             foreach (var p in shell)
                 if (p.Box.min.y < unit.Floor) unit.Floor = p.Box.min.y;
 
-            unit.Pivot = new Vector3(origin.x, 0f, origin.y);
+            // A lot is lifted onto the block's floor: it was arranged on the demo's terrain
+            // and everything on it is read, baked and reported from its own ground, not
+            // from whatever height that terrain happened to be at.
+            if (family == Family.Amenity)
+            {
+                unit.MaxH -= floor;
+                unit.Floor = 0f;
+            }
+
+            unit.Pivot = new Vector3(origin.x, family == Family.Amenity ? floor : 0f, origin.y);
             return unit;
         }
 
@@ -387,6 +557,53 @@ namespace LivingCity.EditorTools
         }
 
         static void Reach(ref float most, float much) { if (much > most) most = much; }
+
+        /// <summary>How much of a cell a lot has to cover to claim it. A third: a fence
+        /// post's rim of a cell is not a lot, and half a cell of tarmac is.</summary>
+        const float Share = 0.35f;
+
+        /// <summary>What a man walks under: a piece whose underside is this far over a
+        /// lot's own ground is a roof over it, not a thing standing on it.</summary>
+        const float Overhead = 2.2f;
+
+        /// <summary>Where a lot's own raster starts: its south-west corner, so the first
+        /// cell begins exactly where its ground does and nothing is lost to a half cell at
+        /// either end.</summary>
+        static Vector2 Corner(List<Piece> shell)
+        {
+            float x = shell.Min(p => p.Box.min.x), z = shell.Min(p => p.Box.min.z);
+            return new Vector2(Mathf.Repeat(x, Cell), Mathf.Repeat(z, Cell));
+        }
+
+        /// <summary>The cells a piece stands on: the ones whose centre is inside its box
+        /// for a building module, and every one it lies over at all for a lot's panels.</summary>
+        static IEnumerable<Vector2Int> Standing(Bounds box, Vector2 drift, Family family)
+        {
+            if (family != Family.Amenity) return Covers(box, drift);
+            var cover = new Dictionary<Vector2Int, float>();
+            Spread(cover, box, drift);
+            return cover.Keys;
+        }
+
+        /// <summary>Adds this box's floor area to every cell it lies over, in square metres
+        /// - the reading a lot's footprint is taken from.</summary>
+        static void Spread(Dictionary<Vector2Int, float> onto, Bounds box, Vector2 drift)
+        {
+            float x0 = box.min.x - drift.x, x1 = box.max.x - drift.x;
+            float z0 = box.min.z - drift.y, z1 = box.max.z - drift.y;
+            int i0 = Mathf.FloorToInt(x0 / Cell), i1 = Mathf.FloorToInt((x1 - 0.001f) / Cell);
+            int j0 = Mathf.FloorToInt(z0 / Cell), j1 = Mathf.FloorToInt((z1 - 0.001f) / Cell);
+            for (int i = i0; i <= i1; i++)
+                for (int j = j0; j <= j1; j++)
+                {
+                    float w = Mathf.Min(x1, (i + 1) * Cell) - Mathf.Max(x0, i * Cell);
+                    float d = Mathf.Min(z1, (j + 1) * Cell) - Mathf.Max(z0, j * Cell);
+                    if (w <= 0f || d <= 0f) continue;
+                    var cell = new Vector2Int(i, j);
+                    onto.TryGetValue(cell, out float had);
+                    onto[cell] = had + w * d;
+                }
+        }
 
         /// <summary>
         /// Can a piece on this cell see the street on this side?
@@ -486,7 +703,7 @@ namespace LivingCity.EditorTools
             public PieceKind Kind;
             public int Yaw;             // snapped to a right angle
             public Bounds Box;
-            public bool Door, Shop, Stoop, Tree;
+            public bool Door, Shop, Stoop, Tree, Seat;
         }
 
         static Piece Read(Transform t)
@@ -497,10 +714,31 @@ namespace LivingCity.EditorTools
 
             string src = Source(t);
             if (src == null) return piece;
-            piece.Tree = src.StartsWith("SM_Env_Tree");
+            piece.Tree = src.StartsWith("SM_Env_Tree") || src.StartsWith("SM_Env_Palm");
+            piece.Seat = src.StartsWith("SM_Prop_Chair") || src.StartsWith("SM_Prop_Table") ||
+                         src.StartsWith("SM_Prop_Bench") || src.StartsWith("SM_Prop_Umbrella");
             if (src.StartsWith("SM_Env_Grass")) { piece.Kind = PieceKind.Ground; return piece; }
             if (src.StartsWith("SM_Env_Fence")) { piece.Kind = PieceKind.Hung; return piece; }
+
+            // the ground an amenity brings with it: the demo's basketball court and its
+            // wooden ramps, the service road a car yard is surfaced with, and the generic
+            // base floor every one of its huts stands on
+            if (src.StartsWith("SM_Env_Court") || src.StartsWith("SM_Env_Ramp") ||
+                src.StartsWith("SM_Gen_Env_Road") || src.StartsWith("SM_Bld_Base_Floor"))
+            {
+                piece.Kind = PieceKind.Ground;
+                return piece;
+            }
             if (!src.StartsWith("SM_Bld_")) return piece;
+
+            // a fence and a railing are not walls: they stand on the edge of the ground and
+            // lean out, which is how a park's fence has always been read
+            if (src.StartsWith("SM_Bld_Fence") || src.StartsWith("SM_Bld_Wall_Railing") ||
+                src.StartsWith("SM_Bld_Deco_Awning"))
+            {
+                piece.Kind = PieceKind.Hung;
+                return piece;
+            }
 
             if (src.Contains("FireEscape") || src.Contains("Roof_Access") || src.Contains("Shop_Cover"))
             {
@@ -517,7 +755,10 @@ namespace LivingCity.EditorTools
 
             piece.Kind = PieceKind.Shell;
             piece.Door = src.Contains("_Door");
-            piece.Shop = src.StartsWith("SM_Bld_Shop");
+            // the city pack's shopfront, and the Palm City glass wall that is the same
+            // thing under another name - the demo's shops and diners are glazed with
+            // SM_Bld_Wall_Window, and a shop with no shopfront reads as a blind wall
+            piece.Shop = src.StartsWith("SM_Bld_Shop") || src.StartsWith("SM_Bld_Wall_Window");
             return piece;
         }
 
@@ -579,13 +820,10 @@ namespace LivingCity.EditorTools
 
         // ------------------------------------------------------------------ the bake
 
-        static bool Write(Unit unit, Scene scene)
+        static bool Write(Unit unit)
         {
-            var pieces = new List<Transform>();
-            foreach (var root in scene.GetRootGameObjects())
-                foreach (var t in root.GetComponentsInChildren<Transform>(true))
-                    if (t.name == unit.Source) pieces.Add(t);
-            if (pieces.Count == 0) return false;
+            var pieces = unit.Parts;
+            if (pieces == null || pieces.Count == 0) return false;
 
             EnsureFolder(OutDir);
             var go = new GameObject(unit.Name);
@@ -594,8 +832,10 @@ namespace LivingCity.EditorTools
             {
                 var p = t.position;
                 // x and z are moved onto the raster (the drift comes out here, once, for
-                // the whole unit); y is left exactly as the pack gave it, basements and all
-                var stand = new Vector3(p.x - unit.Pivot.x, p.y, p.z - unit.Pivot.z);
+                // the whole unit); y is left exactly as the pack gave it, basements and all -
+                // except for a lot off the demo's terrain, whose own ground is brought to
+                // zero (Pivot.y, nought for everything laid in the harvest scene)
+                var stand = new Vector3(p.x - unit.Pivot.x, p.y - unit.Pivot.y, p.z - unit.Pivot.z);
                 var copy = CoreBlockTray.Restand(t.gameObject, go.transform, stand, out bool linked);
                 if (!linked) copied++;
                 if (IsSquare(t.eulerAngles.y))
@@ -638,7 +878,8 @@ namespace LivingCity.EditorTools
             var sb = new StringBuilder();
             sb.AppendLine("// GENERATED by Tools/City/Residential/Bake Named Buildings.");
             sb.AppendLine("// Every figure here was measured off the buildings named residential1..N, the");
-            sb.AppendLine("// parks named park1..N and the named storefronts in Assets/Scenes/CoreHarvest.unity.");
+            sb.AppendLine("// parks named park1..N and the named storefronts in Assets/Scenes/CoreHarvest.unity,");
+            sb.AppendLine("// and off the amenities the user named in Assets/Scenes/PalmCityDemo.unity.");
             sb.AppendLine("// Do not edit by hand - re-run the harvest.");
             sb.AppendLine("//");
             sb.AppendLine("// A plan row reads west to east; the FIRST row is the NORTH edge, so the table");
@@ -667,6 +908,9 @@ namespace LivingCity.EditorTools
             sb.AppendLine("        /// <summary>What reaches out past the footprint on each side, metres.</summary>");
             sb.AppendLine("        public float[] Over;");
             sb.AppendLine("        public int Trees, Pieces;");
+            sb.AppendLine("        /// <summary>Chairs, tables, umbrellas and benches it brings with it: a unit");
+            sb.AppendLine("        /// that arrives with its own terrace is not given a second one.</summary>");
+            sb.AppendLine("        public int Seats;");
             sb.AppendLine("        public float MaxH;");
             sb.AppendLine("        /// <summary>The lowest its walls and stoops go: the level a pit's floor is laid at.</summary>");
             sb.AppendLine("        public float Floor;");
@@ -683,8 +927,11 @@ namespace LivingCity.EditorTools
             sb.AppendLine("    }");
             sb.AppendLine();
             sb.AppendLine("    /// <summary>Row, corner, through and island are houses. A park is a fenced square of");
-            sb.AppendLine("    /// grass with its own paths and benches; a storefront is a shop with living over it,");
-            sb.AppendLine("    /// which stands in a gap in the row and gets tables in front.</summary>");
+            sb.AppendLine("    /// grass with its own paths and benches - and so is any LOT: the basketball court,");
+            sb.AppendLine("    /// the skatepark, the car yard and the beach gym bring their own ground and stand");
+            sb.AppendLine("    /// where the houses left room. A storefront is a shop with living over it, which");
+            sb.AppendLine("    /// stands in a gap in the row and gets tables in front - unless it brought its");
+            sb.AppendLine("    /// own (Seats).</summary>");
             sb.AppendLine("    public enum ResidentialKind { Row, Corner, Through, Island, Park, Storefront }");
             sb.AppendLine();
             sb.AppendLine("    public static class ResidentialUnits");
@@ -704,7 +951,7 @@ namespace LivingCity.EditorTools
                 sb.AppendLine($"                Kind = ResidentialKind.{unit.Klass},");
                 sb.AppendLine($"                MaxH = {unit.MaxH.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)}f," +
                               $" Floor = {unit.Floor.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}f," +
-                              $" Trees = {unit.Trees}, Pieces = {unit.Pieces},");
+                              $" Trees = {unit.Trees}, Pieces = {unit.Pieces}, Seats = {unit.Seats},");
                 sb.AppendLine("                Plan = new[]");
                 sb.AppendLine("                {");
                 for (int j = unit.CD - 1; j >= 0; j--)
@@ -762,7 +1009,8 @@ namespace LivingCity.EditorTools
             foreach (var u in units)
             {
                 sb.AppendLine();
-                sb.AppendLine($"{u.Name}  {u.CW * Cell:F0} x {u.CD * Cell:F0} m, {u.Cells} cell(s), {u.Pieces} piece(s)");
+                sb.AppendLine($"{u.Name}  {u.CW * Cell:F0} x {u.CD * Cell:F0} m, {u.Cells} cell(s), {u.Pieces} piece(s), " +
+                              $"{u.Built} walled cell(s), {u.Seats} seat(s)");
                 for (int s = 0; s < 4; s++)
                     sb.AppendLine($"    {SideName[s]}: {u.Doors[s],2} door(s) {u.Shops[s],2} shop(s) " +
                                   $"{u.Stoops[s],2} stoop(s), frontage {u.Front[s]} cell(s)" +

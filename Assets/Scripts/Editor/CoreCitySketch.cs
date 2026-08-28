@@ -79,6 +79,8 @@ namespace LivingCity.EditorTools
             // not over the channels the leaves span
             CoreRoads.Lay(raster, (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent),
                           roads.transform, RiverBridge.Skip(plan, raster));
+            CorePowerlines.Stand(plan, raster, city.transform, seed,
+                                 (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent));
             var river = new GameObject("river");
             river.transform.SetParent(city.transform, false);
             RiverBridge.Dress(plan, river.transform, (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent));
@@ -164,7 +166,9 @@ namespace LivingCity.EditorTools
 
                 // composed at the ORIGIN and moved afterwards: every piece is placed by
                 // measuring where it lands in the world, so a root moved first is ignored
-                var lot = ResidentialLot.Roll(w, d, dice, Mathf.Max(0, block.Artery));
+                var lot = CoreLayout.IsYard(block)
+                    ? ResidentialLot.Yard(w, d, dice, block.Unit)
+                    : ResidentialLot.Roll(w, d, dice, Mathf.Max(0, block.Artery));
                 var stood = ResidentialBlocks.Compose(lot, root, new System.Random(dice),
                     (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent));
                 root.position = new Vector3(box.xMin, 0f, box.yMin);

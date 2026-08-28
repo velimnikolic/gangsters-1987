@@ -116,7 +116,7 @@ namespace LivingCity.Gameplay
                 var front = markers[picks[i]];
                 front.GangId = gangs[i].Id;
                 GangRegistry.SetFrontBusiness(gangs[i].Id, front);
-                spawned += SpawnCrew(gangs[i], front, builder.Prefabs);
+                spawned += SpawnCrew(gangs[i], front, builder.Prefabs, builder.Config.seed);
             }
 
             Debug.Log($"[Gangs] {gangs.Length} gangs seated, {spawned} members on the " +
@@ -174,7 +174,7 @@ namespace LivingCity.Gameplay
             return markers;
         }
 
-        int SpawnCrew(Gang gang, BusinessMarker front, PrefabDatabase prefabs)
+        int SpawnCrew(Gang gang, BusinessMarker front, PrefabDatabase prefabs, int citySeed)
         {
             // Every shopfront prefab this pass admits carries a ShopEntrance from
             // generation; a bare transform is the degrade path, not the design.
@@ -228,6 +228,13 @@ namespace LivingCity.Gameplay
                     post += facing * 0.4f;
 
                 var go = Instantiate(prefab, post, Quaternion.LookRotation(facing), transform);
+                PedestrianAnthropometry.Apply(
+                    go,
+                    PedestrianAnthropometry.Seed(citySeed, seed, PedestrianAnthropometry.GangSalt),
+                    PedestrianIdentity.IsFemale(prefab.name),
+                    PedestrianAgeCohort.Adult,
+                    prefab.name);
+
                 PedestrianSpawner.SetLayerRecursively(
                     go.transform, PedestrianSpawner.PedestrianLayer);
                 PedestrianLodSystem.Register(go);

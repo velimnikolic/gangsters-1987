@@ -98,6 +98,9 @@ namespace RoadDemo
             public List<Gap> Gaps = new List<Gap>();
             /// <summary>The gap the kit storefront stands in, if the block got one.</summary>
             public Gap Cafe;
+            /// <summary>This block is one lone house and nothing else - see <see
+            /// cref="Alone"/>.</summary>
+            public bool Lone;
             /// <summary>The gap the subway entrance goes down in, and which column of it.</summary>
             public Gap Subway;
             public int SubwayAt = -1;
@@ -211,8 +214,34 @@ namespace RoadDemo
                     if (i < Walk || j < Walk || i >= w - Walk || j >= d - Walk)
                         plan.Ground[i, j] = Use.Walkway;
 
-            var rng = new Random(unchecked(seed * 7919 + w * 104729 + d * 1299709));
+            int dice = unchecked(seed * 7919 + w * 104729 + d * 1299709);
+            var rng = new Random(dice);
+            plan.Lone = rng.NextDouble() < AloneOdds && Room(plan);
 
+            Deal(plan, rng);
+            // A DEAL THAT LEFT THE BLOCK BARE IS DEALT AGAIN. Two ways it happens: the lone
+            // house fits the ground but faces the wrong way for every corner it was offered,
+            // so nothing stands at all; or an ordinary deal puts two small houses on a big
+            // block and calls it done, which is the paving-with-a-shed-on-it the user threw
+            // out (2026-08-28). Three tries, then it stands as it is and the verdict says so.
+            for (int again = 1; again <= 2; again++)
+            {
+                bool empty = plan.Lone && !Standing(plan);
+                bool bare = Fill(plan) < FillLeast;
+                if (!empty && !bare) break;
+                if (empty) plan.Lone = false;
+                Wipe(plan);
+                Deal(plan, new Random(unchecked(dice * 31 + 17 * again)));
+            }
+
+            Measure(plan);
+            Judge(plan);
+            return plan;
+        }
+
+        /// <summary>One whole deal onto ground that is bare but for its pavement ring.</summary>
+        static void Deal(Plan plan, Random rng)
+        {
             Declare(plan);
             Corners(plan, rng);
             Edges(plan, rng);
@@ -220,6 +249,106 @@ namespace RoadDemo
             Subway(plan, rng);
             Parks(plan, rng);
             Inside(plan, rng);
+        }
+
+        /// <summary>How much of the block's inner ground its buildings, their forecourts and
+        /// its lot stand on, percent.</summary>
+        static int Fill(Plan plan)
+        {
+            int stands = 0;
+            for (int i = Walk; i < plan.W - Walk; i++)
+                for (int j = Walk; j < plan.D - Walk; j++)
+                {
+                    var use = plan.Ground[i, j];
+                    if (use == Use.Building || use == Use.Forecourt || use == Use.Park) stands++;
+                }
+            return stands * 100 / Math.Max(1, plan.Inner * plan.InnerD);
+        }
+
+        /// <summary>Does any house stand on this plan?</summary>
+        static bool Standing(Plan plan)
+        {
+            foreach (var spot in plan.Spots)
+                if (spot.Unit.Kind != ResidentialKind.Park) return true;
+            return false;
+        }
+
+        /// <summary>Back to bare ground and its pavement ring: a deal undone.</summary>
+        static void Wipe(Plan plan)
+        {
+            plan.Spots.Clear();
+            plan.Gaps.Clear();
+            plan.Faults.Clear();
+            plan.Refused.Clear();
+            plan.Cafe = null;
+            plan.Subway = null;
+            plan.SubwayAt = -1;
+            plan.M = new Measures();
+            for (int i = 0; i < plan.W; i++)
+                for (int j = 0; j < plan.D; j++)
+                    plan.Ground[i, j] = i < Walk || j < Walk || i >= plan.W - Walk || j >= plan.D - Walk
+                        ? Use.Walkway : Use.Empty;
+        }
+
+        /// <summary>
+        /// A block that IS one lot: the skatepark, the beach gym or the car yard standing on
+        /// its own ground with the block's pavement round it (the user, 2026-08-28). No
+        /// houses, no alley, no car park - the lot in the middle of the plot and paving to
+        /// the kerb, so the quarter reads it as the one thing it is.
+        ///
+        /// It is a <see cref="Plan"/> like any other, so <see cref="ResidentialBlocks"/>
+        /// stands it, kerbs it, plants its palms and lights it with no work of its own.
+        /// </summary>
+        public static Plan Yard(int w, int d, int seed, string unitName, bool[] streets = null)
+        {
+            // the artery is a side, never -1: the street furniture reads plan.Street[Artery]
+            // and an artery of -1 is an index off the end of it
+            var plan = new Plan { W = w, D = d, Seed = seed, Artery = 0, Klass = Klass.Corner };
+            for (int s = 0; s < 4; s++) plan.Street[s] = streets == null || streets[s];
+            plan.Ground = new Use[w, d];
+            for (int i = 0; i < w; i++)
+                for (int j = 0; j < d; j++)
+                    if (i < Walk || j < Walk || i >= w - Walk || j >= d - Walk)
+                        plan.Ground[i, j] = Use.Walkway;
+
+            var unit = ResidentialUnits.All.FirstOrDefault(u => u.Name == unitName);
+            if (unit == null)
+            {
+                plan.Faults.Add($"NoUnit: nothing in the table is called {unitName}");
+                return plan;
+            }
+
+            var rng = new Random(unchecked(seed * 7919 + w * 104729 + d * 1299709));
+            // the turn that fits, and the lot in the middle of what is left over
+            Spot best = null;
+            for (int yaw = 0; yaw < 360; yaw += 90)
+            {
+                var turn = Turn.Of(unit, yaw);
+                if (turn.CW > plan.Inner || turn.CD > plan.InnerD) continue;
+                int i = Walk + (plan.Inner - turn.CW) / 2, j = Walk + (plan.InnerD - turn.CD) / 2;
+                var spot = new Spot { Unit = unit, Yaw = yaw, I = i, J = j, CW = turn.CW, CD = turn.CD };
+                if (best == null || rng.Next(2) == 0) best = spot;
+            }
+            if (best == null)
+            {
+                plan.Faults.Add($"TooBig: {unitName} ({unit.CW}x{unit.CD} cells) does not fit " +
+                                $"{plan.Inner}x{plan.InnerD}");
+                return plan;
+            }
+
+            var stand = Turn.Of(best.Unit, best.Yaw);
+            for (int u = 0; u < stand.CW; u++)
+                for (int v = 0; v < stand.CD; v++)
+                    if (stand.Filled(u, v)) plan.Ground[best.I + u, best.J + v] = Use.Park;
+            plan.Spots.Add(best);
+            plan.M.Parks++;
+
+            // everything the lot does not stand on is paving, not yard: this is a public
+            // place, and its ground is walked on from every side
+            for (int i = Walk; i < w - Walk; i++)
+                for (int j = Walk; j < d - Walk; j++)
+                    if (plan.Ground[i, j] == Use.Empty) plan.Ground[i, j] = Use.Paved;
+
             Measure(plan);
             Judge(plan);
             return plan;
@@ -237,6 +366,11 @@ namespace RoadDemo
         /// is the through-row by definition, so the rule is not asked of those.
         /// </summary>
         public const int ShareMost = 50;
+
+        /// <summary>The least of a block's inner ground that its buildings, their forecourts
+        /// and its lot may stand on. Below this the block is paving with something in the
+        /// middle of it, which is what a gym given a whole quarter cell looked like.</summary>
+        public const int FillLeast = 30;
 
         static bool Modest(Plan plan, Turn turn) =>
             (plan.Klass != Klass.Block && plan.Klass != Klass.Court) ||
@@ -466,6 +600,7 @@ namespace RoadDemo
             foreach (var unit in units)
                 for (int yaw = 0; yaw < 360; yaw += 90)
                 {
+                    if (!Allowed(plan, unit)) continue;
                     var turn = Turn.Of(unit, yaw);
                     if (!turn.Face(a) || !turn.Face(b)) continue;
                     if (!Modest(plan, turn)) continue;
@@ -673,22 +808,63 @@ namespace RoadDemo
             _ => (Walk, at),
         };
 
+        /// <summary>
+        /// The houses along one free run of one side, with air between them.
+        ///
+        /// WALL TO WALL WAS WRONG. The row was packed tight from the corner unit to the far
+        /// corner unit, so a block read as one terrace forty metres long - and where two of
+        /// the units that carry shops met, their two shopfront corners were glued together
+        /// into a shop that does not exist (the user, 2026-08-28: "previse gusto napakovanih
+        /// zgrada... pakujes ih tik jedne uz druge a oni imaju radnje u coskovima koje
+        /// zalepis jednu na drugu").
+        ///
+        /// So: a cell or two between neighbours and off whatever already stands at either
+        /// end of the run, never the same house twice over, and never two shopfronts side by
+        /// side. The gaps are not waste - <see cref="Programme"/> makes them the ways in, the
+        /// paved gaps and the patio the cafe stands in, which is where the block's shops and
+        /// its cafes come from in the first place.
+        /// </summary>
         static void Units(Plan plan, int side, int at, int run, Random rng)
         {
+            int length = side == 0 || side == 2 ? plan.W : plan.D;
+            // off the corner unit at either end of the run
+            if (at > Walk && run > 0) { at++; run--; }
+            if (at + run < length - Walk && run > 0) run--;
+
+            Spot last = null;
+            bool wide = false;              // one wider gap to a run: the room a shop needs
             while (run > 0)
             {
-                var spot = Longest(plan, side, at, run, rng);
+                var spot = Longest(plan, side, at, run, rng, last);
                 if (spot == null) break;
                 Place(plan, spot);
                 int took = side == 0 || side == 2 ? spot.CW : spot.CD;
                 at += took;
                 run -= took;
+                last = spot;
+
+                // the gap to the next house: TWO cells, which is a paved gap - a cafe, a
+                // subway stair, a patio. One cell is a driveway, and a driveway wants
+                // something behind it to serve; left to the dice they came out as ways in
+                // that could only be reached across the pavement (NoWayIn, one block in
+                // three hundred), so the row leaves paving and lets Programme decide.
+                //
+                // ONE gap to a run is wider - four cells. Two cells is twenty metres of
+                // paving between two walls, and a storefront that has to stand clear of
+                // both its neighbours cannot fit in it: the cafes came out standing in the
+                // houses either side of them (the user, 2026-08-28: "kafici se dodaju tik uz
+                // zgrade... se preplicu uz zgrade").
+                int space = 2;
+                if (!wide && run >= 9) { space = 4; wide = true; }
+                space = Math.Min(run, space);
+                at += space;
+                run -= space;
             }
         }
 
         /// <summary>The longest unit that fits this run facing this street. Longest first,
         /// so the leftovers gather into one gap worth a programme instead of three slivers.</summary>
-        static Spot Longest(Plan plan, int side, int at, int run, Random rng)
+        static Spot Longest(Plan plan, int side, int at, int run, Random rng, Spot last = null)
         {
             // ONE OF THE UNITS THAT FIT, drawn by lot and weighted by how much of the run it
             // takes - not simply the longest. The longest is the same house every time, and a
@@ -700,6 +876,11 @@ namespace RoadDemo
             {
                 // one shopfront building to a STREET - see ShopRoom
                 if (unit.Shops.Sum() > 0 && !ShopRoom(plan, side)) continue;
+                if (!Allowed(plan, unit)) continue;
+                // never the same house next along the row, and never a second shopfront
+                // beside the last one (the user, 2026-08-28)
+                if (last != null && unit == last.Unit) continue;
+                if (last != null && last.Shop && unit.Shops.Sum() > 0) continue;
                 for (int yaw = 0; yaw < 360; yaw += 90)
                 {
                     var turn = Turn.Of(unit, yaw);
@@ -886,18 +1067,58 @@ namespace RoadDemo
         /// building stands in it is the composer's, by the length of the gap: a coffee shop
         /// in two or three cells, a diner in four.
         /// </summary>
-        /// <summary>How often a block gets the kit storefront in one of its gaps. It used to
-        /// be every block that had room for one, which in a quarter of a hundred blocks is a
-        /// hundred cafes with the same red umbrellas outside (the user, 2026-08-27). One in
-        /// three is a corner shop; every one is a high street.</summary>
-        const double CafeOdds = 0.34;
+        /// <summary>How often a block gets the kit storefront in one of its gaps. It was one
+        /// in three - and at that rate the user, walking the demo, saw none at all
+        /// (2026-08-28: "ne vidim ni jedan kafic"). Three blocks in five now carry one.</summary>
+        const double CafeOdds = 0.60;
+
+        /// <summary>
+        /// The brownstone's block, with nothing open on it.
+        ///
+        /// <c>residential-05</c> goes right through the block and carries no shopfront at
+        /// all, so a block whose houses are it and its like is a wall of doors and nothing
+        /// else. The user's rule (2026-08-28): "ako je samo residential-05 na placu uz njega
+        /// mora da ide neki od kafica sa stolovima u cosku" - the cafe is not rolled for
+        /// there, it is dealt, and it is dealt into a CORNER gap.
+        ///
+        /// Read as the letter says it - the brownstone and not one other house - it never
+        /// fires: a block that fits the 20 x 45 m through-unit fits something else beside
+        /// it. So it is read as what the user was looking at: the brownstone standing on a
+        /// block that has no shopfront on it anywhere.
+        /// </summary>
+        static bool Blind(Plan plan)
+        {
+            bool brownstone = false, shop = false;
+            foreach (var spot in plan.Spots)
+            {
+                if (spot.Unit.Kind == ResidentialKind.Park) continue;
+                if (spot.Unit.Name == "residential-05") brownstone = true;
+                if (spot.Unit.Shops.Sum() > 0) shop = true;
+            }
+            return brownstone && !shop;
+        }
+
+        /// <summary>Does this gap reach a corner of the block - the end of its own side?</summary>
+        static bool AtCorner(Plan plan, Gap gap)
+        {
+            int length = gap.Side == 0 || gap.Side == 2 ? plan.W : plan.D;
+            return gap.At == Walk || gap.At + gap.Run == length - Walk;
+        }
 
         static void Cafe(Plan plan, Random rng)
         {
-            if (rng.NextDouble() >= CafeOdds) return;
+            bool must = Blind(plan);
+            if (!must && rng.NextDouble() >= CafeOdds) return;
             var gaps = plan.Gaps
                 .Where(g => g.Use == Use.Paved && g.Run >= 2 && g.Depth >= CafeDeep)
-                .OrderByDescending(g => g.Side == plan.Artery)
+                // ROOM FIRST. The artery used to come first, and a two-cell gap on it beat
+                // a five-cell gap on the side street - which is how the cafe came to stand
+                // wedged between two houses with a quarter of the block empty behind it
+                // (the user, 2026-08-28). A gap of three cells or more can hold a shop AND
+                // the cell of air it has to keep off its neighbours.
+                .OrderByDescending(g => g.Run >= 3)
+                .ThenByDescending(g => must && AtCorner(plan, g))
+                .ThenByDescending(g => g.Side == plan.Artery)
                 .ThenByDescending(g => g.Run)
                 .ThenBy(g => rng.Next())
                 .ToList();
@@ -992,12 +1213,142 @@ namespace RoadDemo
         /// for every yard. Of the places it fits, the one that shows most of itself to a
         /// street or an alley is taken - a park nobody can see is a lawn.
         /// </summary>
+        /// <summary>
+        /// The lots that are a BLOCK OF THEIR OWN and never stand in the ground another
+        /// block's houses left over: the skatepark, the beach gym and the car yard (the
+        /// user, 2026-08-28: "skatepark, gym, caryard nek budu svoj zaseban tip bloka koji
+        /// se pojavljuju u residential kvartovima"). The little parks and the basketball
+        /// court still take a corner of a block, which is what a mini park is.
+        /// </summary>
+        public static readonly string[] OwnBlock = { "skatepark", "gym", "caryard" };
+
+        /// <summary>The lots that ONLY ever stand on a block of their own. The gym is not one
+        /// of them: it may turn up in the ground a block's houses left over as well as on its
+        /// own plot, and it turns up oftener than the other two (the user, 2026-08-28: "gym
+        /// moze da se potrefi u residential blokovima a moze i da ima svoj blok nek se desava
+        /// cesce od caryard i skatepark").</summary>
+        static readonly string[] OwnBlockOnly = { "skatepark", "caryard" };
+
+        public static bool Standalone(ResidentialUnit unit) =>
+            unit != null && Array.IndexOf(OwnBlockOnly, unit.Name) >= 0;
+
+        /// <summary>
+        /// The houses that stand ALONE on their block: the two the user will not have mixed
+        /// in with the others (2026-08-28: "residential-04 i residential-05 ne bi trebalo da
+        /// se slazu uz ostale residential zgrade, znaci ako blok sadrzi druge residential ova
+        /// dva ne stavljas"). Number 4 is a house and its sunken garden and number 5 is the
+        /// brownstone that goes right through the block; either one dealt into a row reads as
+        /// a terrace with something else stuck to it.
+        ///
+        /// So a block is one or the other: it takes ONE of these and nothing more, or it is
+        /// dealt from the rest of the catalogue and neither of them is in the pool.
+        /// </summary>
+        public static readonly string[] Alone = { "residential-04", "residential-05" };
+
+        public static bool StandsAlone(ResidentialUnit unit) =>
+            unit != null && Array.IndexOf(Alone, unit.Name) >= 0;
+
+        /// <summary>How many blocks are dealt as one of the two lone houses when one of them
+        /// fits. Not many: they are big, and a quarter of nothing but lone houses is a
+        /// suburb.</summary>
+        const double AloneOdds = 0.22;
+
+        /// <summary>Is there room on this block for either of the lone houses? Asked before
+        /// the deal, so a block is never sent down the lone road and left with nothing.</summary>
+        static bool Room(Plan plan)
+        {
+            int inner = Math.Max(1, plan.Inner * plan.InnerD);
+            foreach (var unit in ResidentialUnits.Houses)
+            {
+                if (!StandsAlone(unit)) continue;
+                bool fits = (unit.CW <= plan.Inner && unit.CD <= plan.InnerD) ||
+                            (unit.CD <= plan.Inner && unit.CW <= plan.InnerD);
+                // and it has to FILL the block it is alone on: one house of 25 x 25 m on a
+                // block of 60 x 65 is a house in a car park (see FillLeast)
+                if (fits && unit.CW * unit.CD * 100 >= inner * FillLeast) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// May this house be dealt into this block at all?
+        ///
+        /// A lone block takes ONE of the two houses that stand alone and nothing after it;
+        /// every other block is dealt without either of them in the pool.
+        /// </summary>
+        static bool Allowed(Plan plan, ResidentialUnit unit)
+        {
+            bool alone = StandsAlone(unit);
+            if (!plan.Lone) return !alone;
+            if (!alone) return false;
+            foreach (var spot in plan.Spots)
+                if (spot.Unit.Kind != ResidentialKind.Park) return false;
+            return true;
+        }
+
+        /// <summary>An empty middle this big is not a yard, it is a hole: it gets a lot
+        /// whatever the dice say, and twice that much ground gets two.</summary>
+        const int BigYard = 16;
+
+        /// <summary>
+        /// The lots a block's leftover ground takes.
+        ///
+        /// It used to be one lot, on a roll of <see cref="ParkOdds"/>, and an 80 x 80 m block
+        /// came out with eighty-seven cells of bare concrete in the middle of it while the
+        /// cafe was squeezed into a three-cell gap in the row (the user, 2026-08-28: "vidis
+        /// ovde kolko imas praznog prostora unutar bloka a ti si nabio kafic izmedju dva da
+        /// se preplicu"). So the roll now decides only the SMALL leftovers: a big empty
+        /// middle always takes a lot, and a very big one takes two.
+        /// </summary>
         static void Parks(Plan plan, Random rng)
         {
-            if (rng.NextDouble() >= ParkOdds) return;
+            int patch = Biggest(plan);
+            int want = patch >= BigYard * 2 ? 2
+                     : patch >= BigYard || rng.NextDouble() < ParkOdds ? 1 : 0;
+            for (int n = 0; n < want; n++)
+                if (!Lot(plan, rng)) break;
+        }
+
+        /// <summary>The biggest run of empty ground on the block, in cells - what a lot has
+        /// to fill.</summary>
+        static int Biggest(Plan plan)
+        {
+            var seen = new bool[plan.W, plan.D];
+            int most = 0;
+            var todo = new Queue<(int, int)>();
+            for (int i = Walk; i < plan.W - Walk; i++)
+                for (int j = Walk; j < plan.D - Walk; j++)
+                {
+                    if (seen[i, j] || plan.Ground[i, j] != Use.Empty) continue;
+                    int n = 0;
+                    todo.Enqueue((i, j));
+                    seen[i, j] = true;
+                    while (todo.Count > 0)
+                    {
+                        var (x, y) = todo.Dequeue();
+                        n++;
+                        for (int s = 0; s < 4; s++)
+                        {
+                            int a = x + Step[s, 0], b = y + Step[s, 1];
+                            if (a < Walk || b < Walk || a >= plan.W - Walk || b >= plan.D - Walk) continue;
+                            if (seen[a, b] || plan.Ground[a, b] != Use.Empty) continue;
+                            seen[a, b] = true;
+                            todo.Enqueue((a, b));
+                        }
+                    }
+                    if (n > most) most = n;
+                }
+            return most;
+        }
+
+        /// <summary>One lot into the ground the houses left, if one fits.</summary>
+        static bool Lot(Plan plan, Random rng)
+        {
             Spot best = null;
             int bestScore = -1;
-            foreach (var unit in ResidentialUnits.Parks.OrderBy(u => rng.Next()))
+            foreach (var unit in ResidentialUnits.Parks
+                         .Where(u => !Standalone(u) && !plan.Spots.Any(x => x.Unit == u))
+                         .OrderBy(u => rng.Next()))
                 for (int yaw = 0; yaw < 360; yaw += 90)
                 {
                     var turn = Turn.Of(unit, yaw);
@@ -1013,7 +1364,7 @@ namespace RoadDemo
                             best = new Spot { Unit = unit, Yaw = yaw, I = i, J = j, CW = turn.CW, CD = turn.CD };
                         }
                 }
-            if (best == null) return;
+            if (best == null) return false;
 
             var t = Turn.Of(best.Unit, best.Yaw);
             for (int u = 0; u < t.CW; u++)
@@ -1021,6 +1372,7 @@ namespace RoadDemo
                     if (t.Filled(u, v)) plan.Ground[best.I + u, best.J + v] = Use.Park;
             plan.Spots.Add(best);
             plan.M.Parks++;
+            return true;
         }
 
         /// <summary>How many of the park's edge cells look at a street or an alley verge -
@@ -1275,6 +1627,16 @@ namespace RoadDemo
             if ((plan.Klass == Klass.Block || plan.Klass == Klass.Court) && plan.M.Share > ShareMost)
                 plan.Faults.Add($"Monolith: one unit's box covers {plan.M.Share}% of the inner ground");
 
+            // AND NOTHING STANDS ON IT IS A FAULT TOO. A gym on a quarter's whole cell was
+            // one small thing and paving to the kerb in every direction (the user,
+            // 2026-08-28: "izgleda preglupo... dodaj pravilo da ne smes ovako da punis
+            // blokove"). What stands on a block - its houses, their forecourts, its lot -
+            // has to be a real share of the ground inside its pavement.
+            int fill = Fill(plan);
+            if (fill < FillLeast)
+                plan.Faults.Add($"Bare: what stands on the block covers {fill}% of its inner ground, " +
+                                "and a block is not a car park with a shed on it");
+
             // Every corner a block of this class is built on carries a building. A corner
             // block is one building and its garden, a row keeps its open ends: asking all
             // four of those is asking for a fault that is really a misreading of the class.
@@ -1287,7 +1649,9 @@ namespace RoadDemo
                 offered++;
                 bool on = plan.Ground[i, j] == Use.Building || plan.Ground[i, j] == Use.Forecourt;
                 if (on) { built++; continue; }
-                if (plan.Klass == Klass.Block || plan.Klass == Klass.Court)
+                // a lone house cannot man four corners, and is not asked to: its block is
+                // one house and its garden by construction (see Alone)
+                if (!plan.Lone && (plan.Klass == Klass.Block || plan.Klass == Klass.Court))
                     plan.Faults.Add($"BlankCorner: the {SideName[a]}{SideName[b]} corner carries nothing");
             }
             if (plan.Spots.Count == 0)

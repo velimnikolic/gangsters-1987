@@ -84,6 +84,27 @@ namespace RoadDemo
         const string ParkBench = CityProps + "SM_Prop_ParkBench_01.prefab";
         const float TableAlong = 2.6f, TableRows = 2.8f;
 
+        /// <summary>How many seats of its own a storefront has to bring before the block
+        /// stops laying a patio in front of it: a bench and a table are dressing, a dozen
+        /// chairs under umbrellas are a terrace already.</summary>
+        const int OwnSeats = 6;
+
+        /// <summary>How far a storefront stands off the wall of the house beside it, before
+        /// whatever that house hangs over the line is added.</summary>
+        const float Clear = 1.2f;
+
+        /// <summary>
+        /// Whether the block is DRESSED: the street furniture, the props in its yards and the
+        /// bench-and-billboard in its paved gaps.
+        ///
+        /// Off, on the user's word (2026-08-28: "nemoj da dodajes rucno props na ove blokove
+        /// za sad jer mi se cini da props zauzmu mesto gde bi mogao biti kafic recimo i onda
+        /// imam jedan kontenjer i prazan prostor"). Every prop books the ground it stands on,
+        /// so a bin dropped in a gap is a gap a shop can no longer have. The pavement's own
+        /// rhythm - the kerb, its lamps and its palms - is not props and stays.
+        /// </summary>
+        public static bool Dressed;
+
         /// <summary>
         /// The kit storefronts a gap can take, and every one of them is MEASURED against
         /// the gap at compose time rather than filed by size: the coffee shop (5.8 x 7.2 m)
@@ -204,16 +225,25 @@ namespace RoadDemo
             Subway(plan, root, stood);
             if (cafe != null && CafeStand(cafe, root, stood))
             {
-                Patio(plan, cafe, root, rng, standing, stood);
-                Terraces(plan, cafe, root, rng, standing, stood);
+                // a storefront that arrived with its own terrace is not given a second one:
+                // the demo's diner brings 87 chairs, tables and umbrellas of its own, and
+                // the patio's rows would stand in them
+                if ((cafe.Unit?.Seats ?? 0) < OwnSeats)
+                {
+                    Patio(plan, cafe, root, rng, standing, stood);
+                    Terraces(plan, cafe, root, rng, standing, stood);
+                }
             }
             Cars(stalls, root, rng, raise, stood);
-            Dress(plan, root, rng, stood);
-            Yards(plan, root, rng, stood);
-            Plazas(plan, root, rng, stood);
+            if (Dressed)
+            {
+                Dress(plan, root, rng, stood);
+                Yards(plan, root, rng, stood);
+                Plazas(plan, root, rng, stood);
+            }
 
             Lamps(plan, root, standing, stood);
-            Street(plan, root, rng, standing, stood);
+            if (Dressed) Street(plan, root, rng, standing, stood);
             Palms(kerbs, standing, root, raise, rng.Next(), stood);
 
             stood.Absent.AddRange(Missing);
@@ -774,8 +804,10 @@ namespace RoadDemo
             bool lowCorner = gap.At == ResidentialLot.Walk && plan.Street[alongX ? 3 : 0];
             bool highCorner = gap.At + gap.Run == length - ResidentialLot.Walk && plan.Street[alongX ? 1 : 2];
             bool low = lowCorner && highCorner ? rng.Next(2) == 0 : lowCorner || (!highCorner && rng.Next(2) == 0);
-            // a hand off the neighbour's wall, plus whatever the neighbour hangs out
-            float flankLow = 0.1f + Reach(plan, gap, true), flankHigh = 0.1f + Reach(plan, gap, false);
+            // clear of the neighbour's wall, plus whatever the neighbour hangs out. It was a
+            // hand's breadth (0.1 m) and that read as a shop glued to the house beside it
+            // (the user, 2026-08-28); it is a stride now
+            float flankLow = Clear + Reach(plan, gap, true), flankHigh = Clear + Reach(plan, gap, false);
             const float step = 0.3f;    // the front a step in from the pavement line
 
             var picks = new List<CafeSpot>();
@@ -892,9 +924,15 @@ namespace RoadDemo
         {
             bool alongX = gap.Side == 0 || gap.Side == 2;
             int cellsAlong = alongX ? turn.CW : turn.CD, cellsDeep = alongX ? turn.CD : turn.CW;
-            if (cellsAlong > gap.Run || cellsDeep > ResidentialLot.CafeDeep) return null;
+            // A WHOLE CELL OF AIR TO THE NEIGHBOUR. A storefront that filled its gap wall to
+            // wall stood in the houses either side of it - their eaves, their fire escapes
+            // and their stoops all reach past their own wall (the user, 2026-08-28: "kafici
+            // se dodaju tik uz zgrade... se preplicu uz zgrade").
+            if (cellsAlong > gap.Run - 1 || cellsDeep > ResidentialLot.CafeDeep) return null;
             if (reach > 0.7f) return null;
-            int start = low ? gap.At : gap.At + gap.Run - cellsAlong;
+            // the spare cell goes against the neighbour that hangs out furthest
+            int spare = gap.Run - cellsAlong;
+            int start = low ? gap.At + Mathf.Max(1, spare / 2) : gap.At + spare - Mathf.Max(1, spare / 2);
             int i, j;
             switch (gap.Side)
             {

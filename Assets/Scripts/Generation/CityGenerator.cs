@@ -205,6 +205,13 @@ namespace LivingCity.Generation
         /// have. Each job then mixes (seed, day, job id) - see OrderResolution.Mix.
         /// </summary>
         public const int Orders = 31_000;
+
+        /// <summary>
+        /// Read by PedestrianAnthropometry for per-person body proportions. Its own offset so
+        /// the visual height model can be tuned without moving civilian routes, police shifts
+        /// or any other agent state seeded from their subsystem streams.
+        /// </summary>
+        public const int Anthropometry = 32_000;
     }
 
     /// <summary>

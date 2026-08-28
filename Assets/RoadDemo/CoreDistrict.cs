@@ -143,7 +143,11 @@ namespace RoadDemo
                 int dice = unchecked(_seed * 7919 + Mathf.RoundToInt(box.xMin) * 104729 +
                                      Mathf.RoundToInt(box.yMin) * 1299709);
 
-                var lot = ResidentialLot.Roll(w, d, dice, Mathf.Max(0, block.Artery));
+                // a yard block is one lot on its own plot; every other one is divided into
+                // houses, gaps and yards
+                var lot = CoreLayout.IsYard(block)
+                    ? ResidentialLot.Yard(w, d, dice, block.Unit)
+                    : ResidentialLot.Roll(w, d, dice, Mathf.Max(0, block.Artery));
                 var stood = ResidentialBlocks.Compose(lot, root, new System.Random(dice),
                     (prefab, parent) => Object.Instantiate(prefab, parent));
                 root.position = new Vector3(box.xMin, 0f, box.yMin);
@@ -223,6 +227,7 @@ namespace RoadDemo
             // the channels the leaves span
             CoreRoads.Lay(_raster, (prefab, parent) => Object.Instantiate(prefab, parent), roads,
                           RiverBridge.Skip(_plan, _raster));
+            CorePowerlines.Stand(_plan, _raster, quarter, _seed);
             var river = new GameObject("River").transform;
             river.SetParent(quarter, false);
             RiverBridge.Dress(_plan, river, (prefab, parent) => Object.Instantiate(prefab, parent));

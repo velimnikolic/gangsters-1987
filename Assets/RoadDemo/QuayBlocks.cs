@@ -128,6 +128,17 @@ namespace RoadDemo
             PalmVeh + "SM_Veh_RIB_Boat_01.prefab",
         };
 
+        // the promenade's own ornament: the demo's curved archway, which its beach walk
+        // stands in a line down the middle (two of them 28.7 m apart, 2026-08-28), and the
+        // pavilion the user built out of the pack - a shelter with its two outdoor tables,
+        // its barbecue and a bench outside, laid out as he laid it (PalmCityDemo, the group
+        // named "paviljon", offsets measured off that group).
+        const string Arch = PalmBld + "SM_Bld_Wall_Curved_Large_Arch_02.prefab";
+        const string Pavilion = PalmProps + "SM_Prop_Pavilion_01.prefab";
+        const string PavilionTable = PalmProps + "SM_Prop_Table_Outdoor_01.prefab";
+        const string PavilionBBQ = PalmProps + "SM_Prop_BBQ_02.prefab";
+        const string PavilionBench = PalmProps + "SM_Prop_Bench_Seat_02.prefab";
+
         // the fairground
         const string Wheel = PalmProps + "SM_Prop_Ferris_Wheel_01.prefab";
         const string JuiceCart = PalmVeh + "SM_Veh_Juice_Cart_01.prefab";
@@ -157,6 +168,15 @@ namespace RoadDemo
         const float LadderEvery = 60f;
         /// <summary>Benches turned to the water, along the walk.</summary>
         const float BenchEvery = 9f;
+        /// <summary>The arches down the middle of the promenade, and the turn that opens
+        /// them along it. The piece is a quarter of a large curved wall - its arch is at the
+        /// middle of that arc, so at yaw 45 the opening looks along z and a walker goes
+        /// under it. 28 m apart, the demo's own spacing.</summary>
+        const float ArchEvery = 28f;
+        const float ArchYaw = 45f;
+        /// <summary>How many pavilions a stretch may have: the user asked for one at a
+        /// couple of places, not an avenue of them.</summary>
+        const int MostPavilions = 2;
         /// <summary>A fisherman's spot at the railing.</summary>
         const float FishingEvery = 48f;
         /// <summary>The pier's cafe: a table every two and a half metres along, in rows
@@ -189,6 +209,8 @@ namespace RoadDemo
             /// actually stood.</summary>
             public int OnWalk;
             public int Lamps, Benches, BinCount, TreeCount, PalmCount, Planters, Tables, Kiosks, Carts, Programmes, BoatCount, Rings, Ladders;
+            /// <summary>The archways down the middle of the promenade, and the pavilions.</summary>
+            public int ArchCount, PavilionCount;
             public bool Wheel, DinerStood;
             public string Refused = "";
             /// <summary>What was found in the way, by name - a count alone is a thing to
@@ -209,6 +231,7 @@ namespace RoadDemo
 
             BookTheWay(plan);
             Programmes(plan, root, rng, stood);
+            Ornament(plan, root, rng, stood);
             WaterLine(plan, root, rng, stood);
             Furniture(plan, root, rng, stood);
             Planting(plan, root, rng, stood);
@@ -297,6 +320,78 @@ namespace RoadDemo
                     default: break;       // the lawn and the grove are planted, the paving is left
                 }
             }
+        }
+
+        // ------------------------------------------------------------------ the ornament
+
+        /// <summary>
+        /// What the promenade is decorated with between the kerb and the walk: a line of the
+        /// pack's curved archways down the middle of the strip, and a pavilion or two where
+        /// a room has the ground for one - the user's word (2026-08-28: the arches "po
+        /// sredini kao ukras, vise njih", the pavilion "na par mesta na setalistu").
+        ///
+        /// It runs AFTER the programmes and before everything else, so a fountain, a
+        /// fairground or a diner keeps the ground it booked, and the benches, planters and
+        /// trees that come later go round what stands here. Nothing is crammed: what has no
+        /// room is refused and counted, the same bargain as every other piece on the strip.
+        /// </summary>
+        static void Ornament(QuayWalk.Plan plan, Transform root, System.Random rng, Stood stood)
+        {
+            var pen = new GameObject("Ornament").transform;
+            pen.SetParent(root, false);
+
+            // down the middle of the strip: halfway between the kerb band and the walk
+            float mid = (QuayWalk.Band + plan.WalkX) * 0.5f * Cell;
+            for (float z = ArchEvery * 0.5f; z < plan.Length * Cell - 2f; z += ArchEvery)
+            {
+                var ground = plan.At(QuayWalk.Band, Mathf.FloorToInt(z / Cell));
+                // never across a street's crossing, on a bridge's pavement, or in the yard
+                // the fairground fences off
+                if (ground == QuayWalk.Ground.Lane || ground == QuayWalk.Ground.Kerb) continue;
+                var room = RoomAt(plan, z);
+                if (room != null && room.Programme == QuayWalk.Programme.Fair) continue;
+                if (Prop(Arch, pen, mid, z, ArchYaw) != null) stood.ArchCount++;
+            }
+
+            // the pavilion stands on the grass, in a lawn or a grove with room enough for
+            // it to stand clear of the walk
+            var rooms = new List<QuayWalk.Room>(plan.Rooms);
+            for (int i = rooms.Count - 1; i > 0; i--)
+            {
+                int k = rng.Next(i + 1);
+                (rooms[i], rooms[k]) = (rooms[k], rooms[i]);
+            }
+            foreach (var room in rooms)
+            {
+                if (stood.PavilionCount >= MostPavilions) break;
+                if (room.Programme != QuayWalk.Programme.Lawn && room.Programme != QuayWalk.Programme.Grove) continue;
+                var box = Fit(plan, room);
+                if (box.width < 12f || box.height < 12f) continue;
+                if (StandPavilion(pen, box.center.x, box.center.y)) stood.PavilionCount++;
+            }
+        }
+
+        /// <summary>The pavilion and what the user set round it, kept in its own frame: its
+        /// two outdoor tables under the roof, the barbecue at one side, a bench outside.
+        /// Turned inland, so the bench looks back at the shelter and the walk stays clear.
+        /// </summary>
+        static bool StandPavilion(Transform pen, float x, float z)
+        {
+            const float yaw = 270f;
+            if (Prop(Pavilion, pen, x, z, yaw, 1.05f) == null) return false;
+            var turn = Quaternion.Euler(0f, yaw, 0f);
+            void Beside(string path, float ox, float oz, float own, float y)
+            {
+                var at = turn * new Vector3(ox, 0f, oz);
+                Sit(path, pen, x + at.x, z + at.z, yaw + own, y);
+            }
+            // the slab the shelter stands on is 0.18 m proud: what is under its roof sits
+            // on the slab, and the bench outside stands on the ground
+            Beside(PavilionTable, -0.89f, 1.84f, 90f, 0.18f);
+            Beside(PavilionTable, -0.89f, -1.32f, 90f, 0.18f);
+            Beside(PavilionBBQ, 2.77f, 0.11f, 270f, 0.18f);
+            Beside(PavilionBench, -0.22f, 5.92f, 0f, 0f);
+            return true;
         }
 
         /// <summary>The diner, its back a step off the kerb and its front to the water, with
@@ -833,6 +928,7 @@ namespace RoadDemo
                       $"{stood.Lamps} lamp(s), {stood.Rings} ring(s), {stood.Ladders} ladder(s), {stood.Benches} bench(es), " +
                       $"{stood.BinCount} bin(s), {stood.TreeCount} tree(s), {stood.PalmCount} palm(s), {stood.Planters} planter(s), " +
                       $"{stood.Kiosks} kiosk(s), {stood.Tables} table(s), {stood.Carts} cart(s), " +
+                      $"{stood.ArchCount} arch(es), {stood.PavilionCount} pavilion(s), " +
                       $"{stood.BoatCount} boat(s), {stood.Programmes} programme(s)" + (stood.Wheel ? ", the wheel" : "") +
                       (stood.DinerStood ? ", the diner" : ""));
             if (stood.InTheWay.Count > 0)

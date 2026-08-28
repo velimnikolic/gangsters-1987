@@ -46,6 +46,9 @@ namespace LivingCity.Tests
             CrowdWeightsAreTheSharesTheyClaim(failures);
             CrowdSkipsGroupsThatCannotDeal(failures);
             CrowdIsDeterministicForASeed(failures);
+            AnthropometryIsDeterministic(failures);
+            AnthropometryKeepsMiamiPopulationShares(failures);
+            AnthropometryProducesHumanScaleHeights(failures);
             PedestrianIntentionCoversEveryActivity(failures);
             IdentityIsDeterministicAndTotal(failures);
             TitleFitsThePopup(failures);
@@ -180,6 +183,124 @@ namespace LivingCity.Tests
                     failures.Add("Crowd rolls diverge between two pickers built on the same seed.");
                     break;
                 }
+        }
+
+        // ------------------------------------------------------------ anthropometry
+
+        static void AnthropometryIsDeterministic(List<string> failures)
+        {
+            for (var i = -100; i < 100; i++)
+            {
+                var seed = PedestrianAnthropometry.Seed(2468, i, PedestrianAnthropometry.CivilianSalt);
+                foreach (var cohort in new[]
+                         { PedestrianAgeCohort.Adult, PedestrianAgeCohort.SchoolChild })
+                    foreach (var female in new[] { false, true })
+                    {
+                        var a = PedestrianAnthropometry.Sample(seed, female, cohort);
+                        var b = PedestrianAnthropometry.Sample(seed, female, cohort);
+
+                        if (a.PopulationGroup != b.PopulationGroup || a.AgeYears != b.AgeYears ||
+                            !Mathf.Approximately(a.HeightMetres, b.HeightMetres))
+                            failures.Add("Anthropometry: the same seed produced two bodies.");
+                    }
+            }
+
+            if (PedestrianAnthropometry.Seed(42, 7, PedestrianAnthropometry.CivilianSalt) ==
+                PedestrianAnthropometry.Seed(42, 7, PedestrianAnthropometry.PoliceSalt))
+                failures.Add("Anthropometry: two spawn classes share the same height seed.");
+
+            if (PedestrianAnthropometry.CohortFor("Children", "SM_Chr_City_Male_01") !=
+                PedestrianAgeCohort.SchoolChild)
+                failures.Add("Anthropometry: the Children crowd group is not treated as children.");
+
+            if (PedestrianAnthropometry.CohortFor("Civilians", "girl_casual_01") !=
+                PedestrianAgeCohort.SchoolChild)
+                failures.Add("Anthropometry: girl/boy prefab names are not treated as children.");
+        }
+
+        static void AnthropometryKeepsMiamiPopulationShares(List<string> failures)
+        {
+            const int Rolls = 200000;
+            const float Tolerance = 0.01f;
+            var hits = new Dictionary<PedestrianPopulationGroup, int>();
+
+            foreach (PedestrianPopulationGroup group in
+                     System.Enum.GetValues(typeof(PedestrianPopulationGroup)))
+                hits[group] = 0;
+
+            for (var i = 0; i < Rolls; i++)
+            {
+                var seed = PedestrianAnthropometry.Seed(13579, i, PedestrianAnthropometry.CivilianSalt);
+                var sample = PedestrianAnthropometry.Sample(seed, (i & 1) == 0, PedestrianAgeCohort.Adult);
+                hits[sample.PopulationGroup]++;
+            }
+
+            foreach (PedestrianPopulationGroup group in
+                     System.Enum.GetValues(typeof(PedestrianPopulationGroup)))
+            {
+                var expected = PedestrianAnthropometry.MiamiPopulationShare(group) / 100f;
+                var actual = hits[group] / (float)Rolls;
+                if (Mathf.Abs(actual - expected) > Tolerance)
+                    failures.Add($"Anthropometry: Miami share for {group} expected " +
+                                 $"{expected:P1}, got {actual:P1}.");
+            }
+        }
+
+        static void AnthropometryProducesHumanScaleHeights(List<string> failures)
+        {
+            var maleAdultMin = float.PositiveInfinity;
+            var maleAdultMax = float.NegativeInfinity;
+            var femaleAdultMin = float.PositiveInfinity;
+            var femaleAdultMax = float.NegativeInfinity;
+            var childMin = float.PositiveInfinity;
+            var childMax = float.NegativeInfinity;
+            var maleAdultTotal = 0f;
+            var femaleAdultTotal = 0f;
+
+            const int Rolls = 5000;
+            for (var i = 0; i < Rolls; i++)
+            {
+                var male = PedestrianAnthropometry.Sample(
+                    PedestrianAnthropometry.Seed(97531, i, PedestrianAnthropometry.CivilianSalt),
+                    false,
+                    PedestrianAgeCohort.Adult);
+                var female = PedestrianAnthropometry.Sample(
+                    PedestrianAnthropometry.Seed(97531, i, PedestrianAnthropometry.PoliceSalt),
+                    true,
+                    PedestrianAgeCohort.Adult);
+                var child = PedestrianAnthropometry.Sample(
+                    PedestrianAnthropometry.Seed(97531, i, PedestrianAnthropometry.SchoolChildSalt),
+                    (i & 1) == 0,
+                    PedestrianAgeCohort.SchoolChild);
+
+                maleAdultMin = Mathf.Min(maleAdultMin, male.HeightMetres);
+                maleAdultMax = Mathf.Max(maleAdultMax, male.HeightMetres);
+                femaleAdultMin = Mathf.Min(femaleAdultMin, female.HeightMetres);
+                femaleAdultMax = Mathf.Max(femaleAdultMax, female.HeightMetres);
+                childMin = Mathf.Min(childMin, child.HeightMetres);
+                childMax = Mathf.Max(childMax, child.HeightMetres);
+                maleAdultTotal += male.HeightMetres;
+                femaleAdultTotal += female.HeightMetres;
+
+                if (child.AgeYears < 7 || child.AgeYears > 17)
+                    failures.Add($"Anthropometry: school child age {child.AgeYears} is outside 7..17.");
+            }
+
+            if (maleAdultMin < 1.52f || maleAdultMax > 1.93f)
+                failures.Add($"Anthropometry: adult male range {maleAdultMin:F2}..{maleAdultMax:F2}m " +
+                             "is outside the modeled CDC clamp.");
+            if (femaleAdultMin < 1.40f || femaleAdultMax > 1.78f)
+                failures.Add($"Anthropometry: adult female range {femaleAdultMin:F2}..{femaleAdultMax:F2}m " +
+                             "is outside the modeled CDC clamp.");
+            if (childMin < 1.14f || childMax > 1.88f)
+                failures.Add($"Anthropometry: school child range {childMin:F2}..{childMax:F2}m " +
+                             "is outside the modeled CDC child table.");
+
+            if (maleAdultMax - maleAdultMin < 0.25f || femaleAdultMax - femaleAdultMin < 0.20f)
+                failures.Add("Anthropometry: adult height spread is too narrow to be visible.");
+
+            if (maleAdultTotal / Rolls <= femaleAdultTotal / Rolls + 0.07f)
+                failures.Add("Anthropometry: adult male average is not clearly taller than female average.");
         }
 
         // ------------------------------------------------------------------ identity

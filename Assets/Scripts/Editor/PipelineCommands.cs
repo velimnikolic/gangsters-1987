@@ -465,6 +465,8 @@ namespace GangstersTools
                     benches = stood.Benches,
                     tables = stood.Tables,
                     kiosks = stood.Kiosks,
+                    arches = stood.ArchCount,
+                    pavilions = stood.PavilionCount,
                     trees = stood.TreeCount,
                     boats = stood.BoatCount,
                     wheel = stood.Wheel,
@@ -594,6 +596,47 @@ namespace GangstersTools
                 stockStanding = stood,
                 scene = EditorSceneManager.GetActiveScene().path,
             };
+        }
+
+        // ------------------------------------------------------------ the residential harvest
+
+        /// <summary>
+        /// The residential harvest, from the terminal: the units the user named in the
+        /// harvest scene and in the Palm City demo, measured, baked to prefabs and written
+        /// into the table the generator deals from.
+        ///
+        /// The menu item for the same job ends in a dialog, which stops the editor's main
+        /// thread dead when it is called from here. It opens the source scenes itself, so
+        /// it does not matter which one is in front.
+        /// </summary>
+        [CliCommand("gangsters_harvest",
+                    "Measure every named residential unit in the harvest scene and the Palm City demo, " +
+                    "bake a prefab for each and write ResidentialUnits.cs. Returns the measurements.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters" })]
+        public static object Harvest(
+            [CliArg("report", "Include the full measured report, plan by plan.")] bool report = false)
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("The editor is in play mode; leave it first.");
+
+            int wrote = ResidentialHarvest.Bake(out var units, out string text);
+            Debug.Log(text);
+            var rows = units.Select(u => new
+            {
+                name = u.Name,
+                kind = u.Klass.ToString(),
+                cells = $"{u.CW}x{u.CD}",
+                metres = $"{u.CW * 5}x{u.CD * 5}",
+                faces = string.Concat(new[] { "S", "E", "N", "W" }.Select((s, i) => u.Face[i] ? s : "-")),
+                doors = u.Doors.Sum(),
+                shops = u.Shops.Sum(),
+                walled = u.Built,
+                seats = u.Seats,
+                pieces = u.Pieces,
+                height = Mathf.Round(u.MaxH * 10f) / 10f,
+            }).ToArray();
+
+            return new { units = units.Count, wrote, rows, report = report ? text : null };
         }
     }
 }

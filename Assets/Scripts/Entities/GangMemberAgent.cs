@@ -51,6 +51,7 @@ namespace LivingCity.Entities
         HumanBehavior human;
         Animator animator;
         PedestrianBody body;
+        PedestrianAnthropometryStamp anthropometry;
         bool hasSpeedParam;
 
         System.Random rng;
@@ -65,6 +66,7 @@ namespace LivingCity.Entities
         {
             human = GetComponent<HumanBehavior>();
             animator = GetComponent<Animator>();
+            anthropometry = GetComponent<PedestrianAnthropometryStamp>();
         }
 
         void OnEnable()
@@ -144,7 +146,7 @@ namespace LivingCity.Entities
         // thousand markers would thrash SyncMarkers; a couple dozen gang members are
         // police-fleet scale, and registration is what tracks them onto the M-map.
         Transform UI.IOverlaySubject.OverlayAnchor => transform;
-        float UI.IOverlaySubject.OverlayHeight => MarkerHeight;
+        float UI.IOverlaySubject.OverlayHeight => anthropometry ? anthropometry.OverlayHeight : MarkerHeight;
         bool UI.IOverlaySubject.OverlayHidden => body != null && body.Hidden;
         UI.OverlayShape UI.IOverlaySubject.MarkerShape => UI.OverlayShape.Diamond;
         Color UI.IOverlaySubject.OverlayColor => UI.GangPalette.Of(GangId);

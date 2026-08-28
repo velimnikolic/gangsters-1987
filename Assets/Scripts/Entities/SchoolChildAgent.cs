@@ -57,6 +57,7 @@ namespace LivingCity.Entities
         Renderer[] renderers;
         Collider[] colliders;
         PedestrianBody body;
+        PedestrianAnthropometryStamp anthropometry;
         bool hasSpeedParam;
 
         State state;
@@ -92,6 +93,7 @@ namespace LivingCity.Entities
             animator = GetComponent<Animator>();
             renderers = GetComponentsInChildren<Renderer>(true);
             colliders = GetComponentsInChildren<Collider>(true);
+            anthropometry = GetComponent<PedestrianAnthropometryStamp>();
         }
 
         void Start()
@@ -119,7 +121,7 @@ namespace LivingCity.Entities
         // Explicit implementation - the HUD's plumbing, not the child's own API.
 
         Transform UI.IOverlaySubject.OverlayAnchor => transform;
-        float UI.IOverlaySubject.OverlayHeight => MarkerHeight;
+        float UI.IOverlaySubject.OverlayHeight => anthropometry ? anthropometry.OverlayHeight : MarkerHeight;
 
         /// <summary>Riding inside the bus or sat in class: still a live subject, just not
         /// anywhere to point at. Read off the body rather than off the state, because IsVisible

@@ -23,18 +23,36 @@ namespace LivingCity.EditorTools
         const string Root = "RESIDENTIAL";
         const string Bare = "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab";
 
-        /// <summary>The five blocks the demo scene stands: every class the recipe knows, and
-        /// the block class twice because it is the one a quarter is mostly made of. Kept to
-        /// the small end of each class - the user, 2026-08-27: "izbegavaj velike residential
-        /// blokove".</summary>
-        static readonly (string Name, int W, int D)[] Five =
+        /// <summary>The blocks the demo scene stands: every class the recipe knows, and the
+        /// block class twice because it is the one a quarter is mostly made of. Kept to the
+        /// small end of each class - the user, 2026-08-27: "izbegavaj velike residential
+        /// blokove".
+        ///
+        /// <c>Unit</c> names a YARD BLOCK - a block that is one lot, cut to the lot and its
+        /// pavement ring (the user, 2026-08-28: "dodaj u residential demo da mi iscrtava i te
+        /// gym caryard skatepark blokove"). Their sizes are not typed here: they are measured
+        /// off the units themselves, so a re-harvest moves the bench with them.</summary>
+        static readonly (string Name, int W, int D, string Unit)[] Five =
         {
-            ("block", 13, 15),
-            ("corner", 8, 7),
-            ("row", 6, 13),
-            ("court", 16, 16),
-            ("block", 12, 14),
+            ("block", 13, 15, null),
+            ("corner", 8, 7, null),
+            ("row", 6, 13, null),
+            ("court", 16, 16, null),
+            ("block", 12, 14, null),
         };
+
+        /// <summary>The bench's blocks, the yard blocks measured in after them.</summary>
+        static IEnumerable<(string Name, int W, int D, string Unit)> Bench()
+        {
+            foreach (var one in Five) yield return one;
+            foreach (string name in ResidentialLot.OwnBlock)
+            {
+                var unit = ResidentialUnits.All.FirstOrDefault(u => u.Name == name);
+                if (unit == null) continue;
+                int ring = 2 * ResidentialLot.Walk;
+                yield return (name, unit.CW + ring, unit.CD + ring, name);
+            }
+        }
 
         /// <summary>The street between two blocks: three cells, 15 m, the city street the
         /// core deals (CoreRoads.StreetCells).</summary>
@@ -100,9 +118,11 @@ namespace LivingCity.EditorTools
             int deepest = 0;
             int first = seed;
 
-            foreach (var (name, w, d) in Five)
+            foreach (var (name, w, d, unit) in Bench())
             {
-                var plan = ResidentialLot.Roll(w, d, seed++, artery: 0);
+                var plan = unit == null
+                    ? ResidentialLot.Roll(w, d, seed++, artery: 0)
+                    : ResidentialLot.Yard(w, d, seed++, unit);
                 var root = new GameObject($"{Root} {name} {w}x{d} seed {plan.Seed}");
 
                 // COMPOSED AT THE ORIGIN AND MOVED AFTERWARDS. Everything the composer sets

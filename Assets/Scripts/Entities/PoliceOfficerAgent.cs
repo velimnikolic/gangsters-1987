@@ -60,6 +60,7 @@ namespace LivingCity.Entities
         Animator animator;
         Renderer[] renderers;
         PedestrianBody body;
+        PedestrianAnthropometryStamp anthropometry;
         bool hasSpeedParam;
 
         State state;
@@ -116,6 +117,7 @@ namespace LivingCity.Entities
             human = GetComponent<HumanBehavior>();
             animator = GetComponent<Animator>();
             renderers = GetComponentsInChildren<Renderer>(true);
+            anthropometry = GetComponent<PedestrianAnthropometryStamp>();
         }
 
         void Start()
@@ -136,7 +138,7 @@ namespace LivingCity.Entities
         // Explicit implementation - the HUD's plumbing, not the officer's own API.
 
         Transform UI.IOverlaySubject.OverlayAnchor => transform;
-        float UI.IOverlaySubject.OverlayHeight => MarkerHeight;
+        float UI.IOverlaySubject.OverlayHeight => anthropometry ? anthropometry.OverlayHeight : MarkerHeight;
         bool UI.IOverlaySubject.OverlayHidden => Hidden;
         UI.OverlayShape UI.IOverlaySubject.MarkerShape => UI.OverlayShape.Diamond;
         Color UI.IOverlaySubject.OverlayColor => UI.PoliceIntention.OfficerColor(state);

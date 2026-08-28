@@ -61,6 +61,53 @@ namespace RoadDemo
         /// drive, which is the one thing the drawing may not do.</summary>
         const int ParkPercent = 10;
 
+        /// <summary>How many of a quarter's cells are a YARD BLOCK - the skatepark, the beach
+        /// gym, the car yard, each on a plot of its own (the user, 2026-08-28: "nek budu svoj
+        /// zaseban tip bloka koji se pojavljuju u residential kvartovima ali ne sad
+        /// precesto i treba lepo da su rasporedjeni, da ne budu jedan uz drugi"). One cell in
+        /// sixteen, never facing another yard and never facing a park - two open plots side
+        /// by side is a hole in the quarter, not a place.</summary>
+        const int YardPercent = 6;
+
+        /// <summary>How much likelier the gym is than the car yard or the skatepark when a
+        /// yard block is dealt (the user, 2026-08-28: "nek se desava cesce od caryard i
+        /// skatepark").</summary>
+        const int GymShare = 3;
+
+        /// <summary>
+        /// Which lot stands on a plot cut out of a cell this size - the gym oftener than the
+        /// other two, and only where the lot AND its pavement ring fit. Null when none of
+        /// them fits, and then the cell stays a block of houses.
+        /// </summary>
+        static string YardFor(int w, int d, System.Random dice)
+        {
+            var pool = new List<string>();
+            foreach (string name in ResidentialLot.OwnBlock)
+                for (int n = 0; n < (name == "gym" ? GymShare : 1); n++) pool.Add(name);
+            Dice.Shuffle(pool, dice);
+            foreach (string name in pool)
+                if (YardSize(name, w, d, out _, out _)) return name;
+            return null;
+        }
+
+        /// <summary>
+        /// How big the yard block itself is: the lot plus the pavement ring every block
+        /// carries, AND NO MORE (the user, 2026-08-28: "to treba da bude mali blokcic sa
+        /// standardnom sirinom pavementa"). A gym given a whole quarter cell was a paved
+        /// field with a bench in the middle of it.
+        /// </summary>
+        static bool YardSize(string name, int w, int d, out int yw, out int yd)
+        {
+            yw = yd = 0;
+            ResidentialUnit unit = null;
+            foreach (var u in ResidentialUnits.All) if (u.Name == name) { unit = u; break; }
+            if (unit == null) return false;
+            int ring = 2 * ResidentialLot.Walk;
+            if (unit.CW + ring <= w && unit.CD + ring <= d) { yw = unit.CW + ring; yd = unit.CD + ring; return true; }
+            if (unit.CD + ring <= w && unit.CW + ring <= d) { yw = unit.CD + ring; yd = unit.CW + ring; return true; }
+            return false;
+        }
+
         /// <summary>
         /// The belt on the land side and the five quarters beyond it, dealt into the plan
         /// the core is already in.
@@ -360,11 +407,59 @@ namespace RoadDemo
                 if (!touches) green.Add(k);
             }
 
+            // the yard blocks: a few cells of the quarter given whole to one lot, spread out
+            // - never facing each other and never facing a park. Which lot stands on which
+            // is by SIZE: the skatepark is 40 x 35 m and wants a big plot, the gym and the
+            // car yard fit a small one, and they are dealt in turn so a quarter does not get
+            // three of the same
+            int wantYards = cells.Count * YardPercent / 100;
+            var yards = new Dictionary<int, string>();
+            if (wantYards > 0)
+            {
+                var open = new List<int>();
+                for (int k = 0; k < cells.Count; k++) if (!rim[k] && !green.Contains(k)) open.Add(k);
+                Dice.Shuffle(open, dice);
+                foreach (int k in open)
+                {
+                    if (yards.Count >= wantYards) break;
+                    bool touches = false;
+                    foreach (int other in yards.Keys) if (Faces(cells[k], cells[other])) { touches = true; break; }
+                    foreach (int other in green) if (!touches && Faces(cells[k], cells[other])) touches = true;
+                    if (touches) continue;
+                    int w = Mathf.RoundToInt(cells[k].width / Cell), d = Mathf.RoundToInt(cells[k].height / Cell);
+                    string unit = YardFor(w, d, dice);
+                    if (unit == null) continue;
+                    yards[k] = unit;
+                }
+            }
+
             int stood = 0, lots = 0;
             for (int k = 0; k < cells.Count; k++)
             {
                 var box = cells[k];
                 int w = Mathf.RoundToInt(box.width / Cell), d = Mathf.RoundToInt(box.height / Cell);
+                if (yards.TryGetValue(k, out string yardUnit) && YardSize(yardUnit, w, d, out int yw, out int yd))
+                {
+                    // the little block itself in the cell's corner, and what the cell has
+                    // left over is a car park - the same answer the deal gives every other
+                    // odd corner of ground rather than leaving a hole in the quarter
+                    var yard = CoreLayout.Yard(plan.Residential.Count + 1, yw, yd, yardUnit);
+                    yard.Pivot = new Vector2(box.xMin, box.yMin);
+                    plan.Residential.Add(yard);
+                    stood++;
+                    float xCut = box.xMin + yw * Cell, zCut = box.yMin + yd * Cell;
+                    if (w - yw >= 2)
+                    {
+                        plan.Lots.Add(Rect.MinMaxRect(xCut, box.yMin, box.xMax, box.yMax));
+                        lots++;
+                    }
+                    if (d - yd >= 2)
+                    {
+                        plan.Lots.Add(Rect.MinMaxRect(box.xMin, zCut, xCut, box.yMax));
+                        lots++;
+                    }
+                    continue;
+                }
                 if (green.Contains(k))
                 {
                     var park = Park(plan.Parks.Count + 1, w, d);
@@ -392,7 +487,7 @@ namespace RoadDemo
                 }
             }
             plan.Rows.Add($"{name}: {cols.Count} column(s), {cells.Count} block(s) - {stood} of houses, " +
-                          $"{green.Count} green, {lots} car park(s)");
+                          $"{green.Count} green, {yards.Count} yard(s), {lots} car park(s)");
         }
 
         /// <summary>

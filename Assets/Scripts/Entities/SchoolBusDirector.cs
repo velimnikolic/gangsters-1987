@@ -355,6 +355,13 @@ namespace LivingCity.Entities
                 var person = Instantiate(prefab, slot,
                                          Quaternion.LookRotation(-stop.Direction, Vector3.up),
                                          transform);
+                PedestrianAnthropometry.Apply(
+                    person,
+                    PedestrianAnthropometry.Seed(config.seed, i, PedestrianAnthropometry.SchoolChildSalt),
+                    PedestrianIdentity.IsFemale(prefab.name),
+                    PedestrianAgeCohort.SchoolChild,
+                    prefab.name);
+
                 PedestrianSpawner.SetLayerRecursively(person.transform,
                                                       PedestrianSpawner.PedestrianLayer);
                 PedestrianLodSystem.Register(person);
