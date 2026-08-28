@@ -108,6 +108,9 @@ namespace LivingCity.EditorTools
             Island,
             /// <summary>A fenced square of grass: no faces, no doors, its own ground.</summary>
             Park,
+            /// <summary>A complete outdoor venue: it gets a backing floor and a clear band
+            /// from buildings and the block's pavement when the residential recipe stands it.</summary>
+            Amenity,
             /// <summary>A shop with living over it, for a gap in the row.</summary>
             Storefront,
         }
@@ -496,13 +499,15 @@ namespace LivingCity.EditorTools
             // A building or a lot, measured rather than named: how much of the ground the
             // unit takes has a roof or a wall over it. The demo's car yard is a slab of
             // tarmac with one hut on it and its skatepark is all ramp; its diners and its
-            // three shops are built over most of what they stand on.
+            // three shops are built over most of what they stand on. A venue which brings
+            // a full terrace is a lot too even when its dining room is roofed: squeezing it
+            // into the two-cell storefront strip made both Palm City diners impossible.
             bool aLot = unit.Built * 2 < unit.Cells;
             unit.Klass = family switch
             {
                 Family.Park => Kind.Park,
                 Family.Storefront => Kind.Storefront,
-                Family.Amenity => aLot ? Kind.Park : Kind.Storefront,
+                Family.Amenity => aLot || unit.Seats >= 6 ? Kind.Amenity : Kind.Storefront,
                 _ => Classify(unit.Face),
             };
 
@@ -926,20 +931,20 @@ namespace LivingCity.EditorTools
             sb.AppendLine("            i < 0 || j < 0 || i >= CW || j >= CD ? '.' : Plan[CD - 1 - j][i];");
             sb.AppendLine("    }");
             sb.AppendLine();
-            sb.AppendLine("    /// <summary>Row, corner, through and island are houses. A park is a fenced square of");
-            sb.AppendLine("    /// grass with its own paths and benches - and so is any LOT: the basketball court,");
-            sb.AppendLine("    /// the skatepark, the car yard and the beach gym bring their own ground and stand");
-            sb.AppendLine("    /// where the houses left room. A storefront is a shop with living over it, which");
-            sb.AppendLine("    /// stands in a gap in the row and gets tables in front - unless it brought its");
-            sb.AppendLine("    /// own (Seats).</summary>");
-            sb.AppendLine("    public enum ResidentialKind { Row, Corner, Through, Island, Park, Storefront }");
+            sb.AppendLine("    /// <summary>Row, corner, through and island are houses. A park brings its own grass;");
+            sb.AppendLine("    /// an amenity is a complete outdoor lot (court, gym, car yard or diner) which gets a");
+            sb.AppendLine("    /// quiet floor and a clear band from the pavement and neighbouring buildings. A");
+            sb.AppendLine("    /// storefront is a small shop which stands in a gap in the row.</summary>");
+            sb.AppendLine("    public enum ResidentialKind { Row, Corner, Through, Island, Park, Amenity, Storefront }");
             sb.AppendLine();
             sb.AppendLine("    public static class ResidentialUnits");
             sb.AppendLine("    {");
             sb.AppendLine("        public static IEnumerable<ResidentialUnit> Houses =>");
-            sb.AppendLine("            All.Where(u => u.Kind != ResidentialKind.Park && u.Kind != ResidentialKind.Storefront);");
-            sb.AppendLine("        public static IEnumerable<ResidentialUnit> Parks => All.Where(u => u.Kind == ResidentialKind.Park);");
+            sb.AppendLine("            All.Where(u => !IsLot(u) && u.Kind != ResidentialKind.Storefront);");
+            sb.AppendLine("        public static IEnumerable<ResidentialUnit> Parks => All.Where(IsLot);");
             sb.AppendLine("        public static IEnumerable<ResidentialUnit> Storefronts => All.Where(u => u.Kind == ResidentialKind.Storefront);");
+            sb.AppendLine("        public static bool IsLot(ResidentialUnit unit) => unit != null &&");
+            sb.AppendLine("            (unit.Kind == ResidentialKind.Park || unit.Kind == ResidentialKind.Amenity);");
             sb.AppendLine();
             sb.AppendLine("        public static readonly ResidentialUnit[] All =");
             sb.AppendLine("        {");

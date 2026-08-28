@@ -80,9 +80,17 @@ namespace RoadDemo
         const string PalmProps = "Assets/Synty/PolygonPalmCity/Prefabs/Props/";
         const string CafeTable = CityProps + "SM_Prop_Table_02.prefab";
         const string CafeChair = CoffeeProps + "SM_Prop_Chair_01.prefab";
-        const string Umbrella = PalmProps + "SM_Prop_Umbrella_02.prefab";
+        static readonly string[] Umbrellas =
+        {
+            PalmProps + "SM_Prop_Umbrella_01.prefab",
+            PalmProps + "SM_Prop_Umbrella_02.prefab",
+            PalmProps + "SM_Prop_Umbrella_03.prefab",
+        };
         const string ParkBench = CityProps + "SM_Prop_ParkBench_01.prefab";
-        const float TableAlong = 2.6f, TableRows = 2.8f;
+        const float TableAlongMin = 3.6f, TableAlongMax = 4.6f;
+        const float TableRowMin = 3.6f, TableRowMax = 4.5f;
+        const float TableJitter = 0.45f;
+        const double TableKeep = 0.84, ShadeOdds = 0.55;
 
         /// <summary>How many seats of its own a storefront has to bring before the block
         /// stops laying a patio in front of it: a bench and a table are dressing, a dozen
@@ -220,6 +228,7 @@ namespace RoadDemo
             var stalls = new List<Stall>();
             var standing = new List<Vector3>();
 
+            AmenityFloors(plan, root, stood);
             Ground(plan, root, cafe, ring, kerbs, stalls, stood);
             Stand(plan, root, stood);
             Subway(plan, root, stood);
@@ -250,6 +259,28 @@ namespace RoadDemo
             stood.Missing = Missing.Count;
             stood.Refused = Worst();
             return stood;
+        }
+
+        /// <summary>
+        /// Outdoor amenities were harvested from Palm City's terrain. Their ramps, fences,
+        /// machines and tables came across, but the terrain did not, so holes showed through
+        /// below the gym, car yard, basketball court and both diners. A quiet concrete backing
+        /// is laid one tile per cell under the complete amenity rectangle, just below zero:
+        /// its own court/tarmac stays visible and every gap still has a floor.
+        /// </summary>
+        static void AmenityFloors(ResidentialLot.Plan plan, Transform root, Stood stood)
+        {
+            const float below = -0.06f;
+            float cell = ResidentialLot.Cell;
+            foreach (var spot in plan.Spots)
+            {
+                if (spot.Unit.Kind != ResidentialKind.Amenity) continue;
+                var turn = ResidentialLot.Turn.Of(spot.Unit, spot.Yaw);
+                for (int u = 0; u < turn.CW; u++)
+                    for (int v = 0; v < turn.CD; v++)
+                        if (Lay(Paving, root, (spot.I + u) * cell, (spot.J + v) * cell,
+                                cell, cell, 0f, below) != null) stood.Tiles++;
+            }
         }
 
         // ------------------------------------------------------------------ the ring
@@ -610,7 +641,18 @@ namespace RoadDemo
             if (go == null) return;
             stood.Tiles++;
             if (tile.Tile == Drain) stood.Drains++;
-            if (tile.Tile == Dug) stood.Dug++;
+            if (tile.Tile == Dug)
+            {
+                stood.Dug++;
+                // This prefab is an OPEN HOLE with barriers, not decorative paving. Reserve
+                // both cells of it before tables, lamps and other props are offered so none
+                // can stand over the excavation.
+                bool alongX = j == 0 || j == plan.D - 1;
+                float across = Box(tile.Tile).size.z;
+                Claim(new Rect(i * cell, j * cell,
+                               alongX ? cell * tile.Cells : across,
+                               alongX ? across : cell * tile.Cells));
+            }
             if (!tile.Kerbed) return;
             kerbs.Add(new CorePavement.Kerbstone(new Vector3((i + 0.5f) * cell, 0f, (j + 0.5f) * cell), tile.Yaw));
         }
@@ -641,9 +683,9 @@ namespace RoadDemo
                                     (spot.I * 83492791) ^ (spot.J * 486187739) ^
                                     (nth++ * 2038074743));
                 var go = StandUnit(spot.Unit, spot.Yaw, spot.I, spot.J, root,
-                                   spot.Unit.Kind == ResidentialKind.Park ? 0 : ((mix % 3) + 3) % 3);
+                                   ResidentialUnits.IsLot(spot.Unit) ? 0 : ((mix % 3) + 3) % 3);
                 if (go == null) continue;
-                if (spot.Unit.Kind == ResidentialKind.Park) stood.Parks++;
+                if (ResidentialUnits.IsLot(spot.Unit)) stood.Parks++;
                 else stood.Units++;
             }
         }
@@ -1118,10 +1160,11 @@ namespace RoadDemo
             float toStreet = ToStreet(gap.Side);
 
             // The patio is the whole of the gap the storefront does not stand on - beside
-            // it and behind it - set out as a grid of tables, every one a step off the
+            // it and behind it - set out in loose rows, every one a step off the
             // storefront's walls (the user, 2026-08-27: "napuni ceo plato tim stolovima",
             // "odmakni stolove od kafica malo"). The room a table books is the table AND
-            // its chairs, so none lands with a chair in the wall
+            // its chairs, so none lands with a chair in the wall. Row phase, spacing and
+            // angle all vary; a cafe patio is not a parade ground.
             const float off = 0.8f;     // off the shop's walls
             var keepOut = new Rect(cafe.Foot.xMin - off, cafe.Foot.yMin - off,
                                    cafe.Foot.width + 2f * off, cafe.Foot.height + 2f * off);
@@ -1130,19 +1173,25 @@ namespace RoadDemo
             // from the middle to a chair's far edge - the spacing the patio was judged at
             float width = Box(CafeTable).size.x;
             float depth = Mathf.Abs(in1 - in0);
-            int rows = Mathf.Max(1, Mathf.FloorToInt((depth - 1.0f) / TableRows));
-            int n = 0;
+            float rowStep = Between(rng, TableRowMin, TableRowMax);
+            int rows = Mathf.Max(1, Mathf.FloorToInt((depth - 1.0f) / rowStep));
+            float firstIn = 1.8f + Between(rng, -0.15f, 0.45f);
+            int offered = 0;
             for (int r = 0; r < rows; r++)
             {
-                float @in = in0 + inward * (1.6f + r * TableRows);
-                for (float a = along0 + width; a + width <= along1 + 0.01f; a += TableAlong)
+                float @in = in0 + inward * (firstIn + r * rowStep + Between(rng, -TableJitter, TableJitter));
+                float a = along0 + width + Between(rng, 0f, 1.1f);
+                while (a + width <= along1 + 0.01f)
                 {
-                    var at = At(a, @in);
+                    float scattered = a + Between(rng, -TableJitter, TableJitter);
+                    a += Between(rng, TableAlongMin, TableAlongMax);
+                    var at = At(scattered, @in);
                     // on the plateau, table and chairs alike - and off the cafe's walls
                     if (!On(at.x - width, at.y - width) || !On(at.x + width, at.y - width) ||
                         !On(at.x - width, at.y + width) || !On(at.x + width, at.y + width)) continue;
                     if (keepOut.Overlaps(new Rect(at.x - width, at.y - width, 2f * width, 2f * width))) continue;
-                    if (!Table(pen, at.x, at.y, rng, n++ % 2 == 0, stood)) continue;
+                    if (offered++ > 0 && !Chance(rng, TableKeep)) continue;
+                    if (!Table(pen, at.x, at.y, rng, Chance(rng, ShadeOdds), stood)) continue;
                     standing.Add(new Vector3(at.x, 0f, at.y));
                 }
             }
@@ -1187,24 +1236,25 @@ namespace RoadDemo
             Terrace(plan, cafe.Perp, p0, p1, root, rng, standing, stood);
         }
 
-        /// <summary>A cafe table with its four chairs, and an umbrella if asked. The room
-        /// booked is the table AND the chairs.</summary>
+        /// <summary>A cafe table with its four chairs, and one of the three Palm City
+        /// umbrella colourways if asked. The room booked is the table AND the chairs.</summary>
         static bool Table(Transform pen, float x, float z, System.Random rng, bool shade, Stood stood,
                           float y = 0f)
         {
             const float room = 2f;
             float chair = Box(CafeChair).size.x * 0.5f + Box(CafeTable).size.x * 0.5f + 0.05f;
-            var table = Prop(CafeTable, pen, x, z, 90f * rng.Next(4), room, y);
+            float groupYaw = Between(rng, 0f, 360f);
+            var table = Prop(CafeTable, pen, x, z, groupYaw, room, y);
             if (table == null) return false;
             stood.Tables++;
             stood.Props++;
             for (int k = 0; k < 4; k++)
             {
-                float yaw = k * 90f;
+                float yaw = groupYaw + k * 90f;
                 var spot = Quaternion.Euler(0f, yaw, 0f) * new Vector3(0f, 0f, chair);
                 Sit(CafeChair, pen, x + spot.x, z + spot.z, yaw + 180f + Between(rng, -15f, 15f), y);
             }
-            if (shade) Sit(Umbrella, pen, x, z, Between(rng, 0f, 360f), y);
+            if (shade) Sit(Any(Umbrellas, rng), pen, x, z, Between(rng, 0f, 360f), y);
             return true;
         }
 
@@ -1237,11 +1287,16 @@ namespace RoadDemo
             // the table's whole width either side of its middle, as on the patio: the
             // table with its chairs, not the table alone
             float width = Box(CafeTable).size.x;
-            int n = 0;
-            for (float a = a0 + width + 0.2f; a + width <= a1 - 0.2f + 0.01f; a += TableAlong)
+            float a = a0 + width + 0.2f + Between(rng, 0f, 0.9f);
+            int offered = 0;
+            while (a + width <= a1 - 0.2f + 0.01f)
             {
-                float x = alongX ? a : @in, z = alongX ? @in : a;
-                if (!Table(pen, x, z, rng, n++ % 2 == 1, stood, Deck)) continue;
+                float scattered = Mathf.Clamp(a + Between(rng, -TableJitter, TableJitter),
+                                              a0 + width + 0.2f, a1 - width - 0.2f);
+                a += Between(rng, TableAlongMin, TableAlongMax);
+                if (offered++ > 0 && !Chance(rng, TableKeep)) continue;
+                float x = alongX ? scattered : @in, z = alongX ? @in : scattered;
+                if (!Table(pen, x, z, rng, Chance(rng, ShadeOdds), stood, Deck)) continue;
                 standing.Add(new Vector3(x, 0f, z));
             }
         }

@@ -48,20 +48,20 @@ namespace RoadDemo
             i < 0 || j < 0 || i >= CW || j >= CD ? '.' : Plan[CD - 1 - j][i];
     }
 
-    /// <summary>Row, corner, through and island are houses. A park is a fenced square of
-    /// grass with its own paths and benches - and so is any LOT: the basketball court,
-    /// the skatepark, the car yard and the beach gym bring their own ground and stand
-    /// where the houses left room. A storefront is a shop with living over it, which
-    /// stands in a gap in the row and gets tables in front - unless it brought its
-    /// own (Seats).</summary>
-    public enum ResidentialKind { Row, Corner, Through, Island, Park, Storefront }
+    /// <summary>Row, corner, through and island are houses. A park brings its own grass;
+    /// an amenity is a complete outdoor lot (court, gym, car yard or diner) which gets a
+    /// quiet floor and a clear band from the pavement and neighbouring buildings. A
+    /// storefront is a small shop which stands in a gap in the row.</summary>
+    public enum ResidentialKind { Row, Corner, Through, Island, Park, Amenity, Storefront }
 
     public static class ResidentialUnits
     {
         public static IEnumerable<ResidentialUnit> Houses =>
-            All.Where(u => u.Kind != ResidentialKind.Park && u.Kind != ResidentialKind.Storefront);
-        public static IEnumerable<ResidentialUnit> Parks => All.Where(u => u.Kind == ResidentialKind.Park);
+            All.Where(u => !IsLot(u) && u.Kind != ResidentialKind.Storefront);
+        public static IEnumerable<ResidentialUnit> Parks => All.Where(IsLot);
         public static IEnumerable<ResidentialUnit> Storefronts => All.Where(u => u.Kind == ResidentialKind.Storefront);
+        public static bool IsLot(ResidentialUnit unit) => unit != null &&
+            (unit.Kind == ResidentialKind.Park || unit.Kind == ResidentialKind.Amenity);
 
         public static readonly ResidentialUnit[] All =
         {
@@ -392,7 +392,7 @@ namespace RoadDemo
             new ResidentialUnit
             {
                 Name = "caryard", CW = 4, CD = 3,
-                Kind = ResidentialKind.Park,
+                Kind = ResidentialKind.Amenity,
                 MaxH = 9.1f, Floor = 0.00f, Trees = 0, Pieces = 208, Seats = 0,
                 Plan = new[]
                 {
@@ -409,7 +409,7 @@ namespace RoadDemo
             new ResidentialUnit
             {
                 Name = "dinner", CW = 5, CD = 3,
-                Kind = ResidentialKind.Storefront,
+                Kind = ResidentialKind.Amenity,
                 MaxH = 10.3f, Floor = 0.00f, Trees = 0, Pieces = 203, Seats = 87,
                 Plan = new[]
                 {
@@ -426,7 +426,7 @@ namespace RoadDemo
             new ResidentialUnit
             {
                 Name = "dinner2", CW = 6, CD = 5,
-                Kind = ResidentialKind.Park,
+                Kind = ResidentialKind.Amenity,
                 MaxH = 5.5f, Floor = 0.00f, Trees = 0, Pieces = 317, Seats = 131,
                 Plan = new[]
                 {
@@ -445,7 +445,7 @@ namespace RoadDemo
             new ResidentialUnit
             {
                 Name = "gym", CW = 3, CD = 3,
-                Kind = ResidentialKind.Park,
+                Kind = ResidentialKind.Amenity,
                 MaxH = 6.7f, Floor = 0.00f, Trees = 0, Pieces = 121, Seats = 3,
                 Plan = new[]
                 {
@@ -462,7 +462,7 @@ namespace RoadDemo
             new ResidentialUnit
             {
                 Name = "kosarkaskiteren", CW = 7, CD = 4,
-                Kind = ResidentialKind.Park,
+                Kind = ResidentialKind.Amenity,
                 MaxH = 5.1f, Floor = 0.00f, Trees = 0, Pieces = 85, Seats = 3,
                 Plan = new[]
                 {
@@ -528,7 +528,7 @@ namespace RoadDemo
             new ResidentialUnit
             {
                 Name = "skatepark", CW = 8, CD = 7,
-                Kind = ResidentialKind.Park,
+                Kind = ResidentialKind.Amenity,
                 MaxH = 7.3f, Floor = 0.00f, Trees = 0, Pieces = 269, Seats = 3,
                 Plan = new[]
                 {

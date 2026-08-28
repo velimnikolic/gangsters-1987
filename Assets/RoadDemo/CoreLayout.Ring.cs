@@ -91,10 +91,10 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// How big the yard block itself is: the lot plus the pavement ring every block
-        /// carries, AND NO MORE (the user, 2026-08-28: "to treba da bude mali blokcic sa
-        /// standardnom sirinom pavementa"). A gym given a whole quarter cell was a paved
-        /// field with a bench in the middle of it.
+        /// How big the yard block itself is: the lot, its one-cell internal clear band and
+        /// the pavement ring every block carries, AND NO MORE. A gym given a whole quarter
+        /// cell was a paved field with a bench in the middle of it; a gym without the inner
+        /// band cut its fence into the pavement kerb.
         /// </summary>
         static bool YardSize(string name, int w, int d, out int yw, out int yd)
         {
@@ -102,9 +102,11 @@ namespace RoadDemo
             ResidentialUnit unit = null;
             foreach (var u in ResidentialUnits.All) if (u.Name == name) { unit = u; break; }
             if (unit == null) return false;
-            int ring = 2 * ResidentialLot.Walk;
-            if (unit.CW + ring <= w && unit.CD + ring <= d) { yw = unit.CW + ring; yd = unit.CD + ring; return true; }
-            if (unit.CD + ring <= w && unit.CW + ring <= d) { yw = unit.CD + ring; yd = unit.CW + ring; return true; }
+            int border = 2 * (ResidentialLot.Walk + ResidentialLot.Clearance(unit));
+            if (unit.CW + border <= w && unit.CD + border <= d)
+            { yw = unit.CW + border; yd = unit.CD + border; return true; }
+            if (unit.CD + border <= w && unit.CW + border <= d)
+            { yw = unit.CD + border; yd = unit.CW + border; return true; }
             return false;
         }
 
