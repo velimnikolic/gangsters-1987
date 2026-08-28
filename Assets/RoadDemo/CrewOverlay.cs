@@ -8,9 +8,9 @@ using UnityEngine.UI;
 
 namespace RoadDemo
 {
-    // The indicators for the crews' men: status dots ride above unselected men,
-    // while hover and selection move to green/blue ground brackets around their
-    // feet. The two clicks that command them: a left click within PickRadius of any
+    // The indicators for the crews' men: state-coloured squares sit under their
+    // feet, while hover and selection add ground brackets and status dots ride
+    // above unselected men. The two clicks that command them: a left click within PickRadius of any
     // man of the outfit selects his crew (the popup names the lieutenant and words
     // what the crew is doing); a right click - a click, not the camera's right-drag
     // orbit - sends the selected lieutenant to the point (the sidewalk nearest it
@@ -30,6 +30,9 @@ namespace RoadDemo
         const float SelectedScale = 1.45f;
         const float TagLift = 12f;     // surname over the boss dot
         const float HoverInterval = 0.1f;
+        const float GroundSquareHalf = 0.5f;
+        const float GroundSquareLift = 0.05f;
+        const float GroundSquareThickness = 2.5f;
 
         const float PickRadius = 30f;
         const float PopupWidth = 360f;
@@ -45,6 +48,10 @@ namespace RoadDemo
         static readonly Color MarkTint = new Color(1f, 0.78f, 0.32f, 0.9f);
         static readonly Color RivalBoss = new Color(1f, 0.36f, 0.30f, 1f);
         static readonly Color RivalHood = new Color(1f, 0.36f, 0.30f, 0.6f);
+        static readonly Color FriendGround = new Color(0.1f, 0.95f, 0.28f, 0.95f);
+        static readonly Color SelectedGround = new Color(1f, 0.16f, 0.12f, 1f);
+        static readonly Color PoliceGround = new Color(0.2f, 0.55f, 1f, 0.95f);
+        static readonly Color EnemyGround = new Color(1f, 0.9f, 0.12f, 0.95f);
 
         /// <summary>A rival's dot in HIS FAMILY'S colour, boss solid and hoods faded -
         /// the alpha is what says rank, the hue what says whose men these are. One red
@@ -73,12 +80,15 @@ namespace RoadDemo
         Camera _cam;
         Transform _dotRoot;
         readonly List<Image> _dots = new List<Image>();
+        readonly List<GroundSquareGraphic> _groundSquares = new List<GroundSquareGraphic>();
         readonly List<TMP_Text> _tags = new List<TMP_Text>();
         readonly List<Image> _glyphs = new List<Image>(); // the activity sign beside a boss's dot
         readonly List<GroundBracketGraphic> _brackets = new List<GroundBracketGraphic>();
         readonly List<CrewWalker> _men = new List<CrewWalker>();
         readonly List<bool> _menBoss = new List<bool>();
         readonly List<DemoCrews.Unit> _menUnit = new List<DemoCrews.Unit>();
+        readonly Vector3[] _groundWorld = new Vector3[4];
+        readonly Vector2[] _groundLocal = new Vector2[4];
 
         GameObject _popup;
         RectTransform _popupRect;
@@ -156,13 +166,14 @@ namespace RoadDemo
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight = 1f;
 
-            _dotRoot = new GameObject("Dots", typeof(RectTransform)).transform;
-            _dotRoot.SetParent(root.transform, false);
-            var dotRect = (RectTransform)_dotRoot;
-            dotRect.anchorMin = Vector2.zero;
-            dotRect.anchorMax = Vector2.one;
-            dotRect.offsetMin = Vector2.zero;
-            dotRect.offsetMax = Vector2.zero;
+            var dotRootRect = new GameObject("Dots", typeof(RectTransform))
+                .GetComponent<RectTransform>();
+            dotRootRect.SetParent(root.transform, false);
+            dotRootRect.anchorMin = Vector2.zero;
+            dotRootRect.anchorMax = Vector2.one;
+            dotRootRect.offsetMin = Vector2.zero;
+            dotRootRect.offsetMax = Vector2.zero;
+            _dotRoot = dotRootRect;
 
             _mark = new GameObject("Order Mark", typeof(RectTransform)).AddComponent<Image>();
             _mark.transform.SetParent(root.transform, false);
@@ -351,6 +362,18 @@ namespace RoadDemo
         {
             while (_dots.Count < count)
             {
+                var ground = new GameObject("ground indicator", typeof(RectTransform))
+                    .AddComponent<GroundSquareGraphic>();
+                ground.transform.SetParent(_dotRoot, false);
+                var groundRect = ground.rectTransform;
+                groundRect.anchorMin = Vector2.zero;
+                groundRect.anchorMax = Vector2.one;
+                groundRect.offsetMin = Vector2.zero;
+                groundRect.offsetMax = Vector2.zero;
+                ground.raycastTarget = false;
+                ground.enabled = false;
+                _groundSquares.Add(ground);
+
                 var go = new GameObject("indicator", typeof(RectTransform));
                 go.transform.SetParent(_dotRoot, false);
                 var img = go.AddComponent<Image>();
@@ -459,6 +482,66 @@ namespace RoadDemo
                 }
             }
             return best;
+        }
+
+        void DrawGroundSquare(
+            GroundSquareGraphic square, CrewWalker man, Color colour, float width, float height)
+        {
+            if (square == null || man == null || man.Tf == null || _cam == null)
+                return;
+
+            var centre = man.Tf.position + Vector3.up * GroundSquareLift;
+            var centreScreen = _cam.WorldToScreenPoint(centre);
+            if (centreScreen.z <= 0f ||
+                centreScreen.x < 0f || centreScreen.x > width ||
+                centreScreen.y < 0f || centreScreen.y > height)
+            {
+                if (square.enabled)
+                    square.enabled = false;
+                return;
+            }
+
+            var half = GroundSquareHalf;
+            _groundWorld[0] = centre + new Vector3(-half, 0f, -half);
+            _groundWorld[1] = centre + new Vector3(half, 0f, -half);
+            _groundWorld[2] = centre + new Vector3(half, 0f, half);
+            _groundWorld[3] = centre + new Vector3(-half, 0f, half);
+
+            var root = _dotRoot as RectTransform;
+            if (!root)
+            {
+                if (square.enabled)
+                    square.enabled = false;
+                return;
+            }
+
+            for (var n = 0; n < _groundWorld.Length; n++)
+            {
+                var screen = _cam.WorldToScreenPoint(_groundWorld[n]);
+                if (screen.z <= 0f ||
+                    !RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                        root, screen, null, out _groundLocal[n]))
+                {
+                    if (square.enabled)
+                        square.enabled = false;
+                    return;
+                }
+            }
+
+            square.Set(_groundLocal, GroundSquareThickness, colour);
+            if (!square.enabled)
+                square.enabled = true;
+        }
+
+        static Color GroundColour(DemoCrews.Unit unit, bool selected)
+        {
+            if (selected)
+                return SelectedGround;
+            if (unit != null && unit.IsPolice)
+                return PoliceGround;
+            if (unit != null && unit.Faction != 0)
+                return EnemyGround;
+            return FriendGround;
         }
 
         /// <summary>The rival family's premises under the pointer: the nearest building
@@ -1077,11 +1160,13 @@ namespace RoadDemo
             for (int i = 0; i < _dots.Count; i++)
             {
                 var img = _dots[i];
+                var ground = _groundSquares[i];
                 var tag = _tags[i];
                 var glyph = _glyphs[i];
                 var bracket = _brackets[i];
                 if (i >= _men.Count || _men[i].Tf == null || _men[i].Dead || _crews.IsAboard(_men[i]))
                 {
+                    if (ground.enabled) ground.enabled = false;
                     if (img.enabled) img.enabled = false;
                     if (tag != null && tag.enabled) tag.enabled = false;
                     if (glyph.enabled) glyph.enabled = false;
@@ -1093,13 +1178,14 @@ namespace RoadDemo
                 bool boss = _menBoss[i];
                 bool rival = _menUnit[i].Faction != 0;
                 bool police = _menUnit[i].IsPolice;
+                bool lit = selected != null && _menUnit[i] == selected;
                 var screen = _cam.WorldToScreenPoint(
                     man.Tf.position + Vector3.up * man.OverlayHeight);
                 bool on = screen.z > 0f &&
                           screen.x >= 0f && screen.x <= w &&
                           screen.y >= 0f && screen.y <= h;
-                bool lit = selected != null && _menUnit[i] == selected;
                 var own = _menUnit[i].Faction == 0;
+                DrawGroundSquare(ground, man, GroundColour(_menUnit[i], lit), w, h);
                 var bracketOn = on && (_hovered == i || lit) &&
                                 UpdateGroundBracket(bracket, man, selected: lit, own: own);
                 if (!bracketOn && bracket.enabled)
@@ -1182,7 +1268,7 @@ namespace RoadDemo
                 _bracketLocal,
                 HumanGroundBracket.ArmLength(selected, selected && own, Time.unscaledTime),
                 HumanGroundBracket.Thickness,
-                HumanGroundBracket.Tint(own));
+                selected ? SelectedGround : HumanGroundBracket.Tint(own));
             return true;
         }
 
@@ -1273,6 +1359,52 @@ namespace RoadDemo
             if (string.IsNullOrEmpty(fullName)) return string.Empty;
             int cut = fullName.LastIndexOf(' ');
             return (cut >= 0 ? fullName.Substring(cut + 1) : fullName).ToUpperInvariant();
+        }
+
+        sealed class GroundSquareGraphic : MaskableGraphic
+        {
+            readonly Vector2[] _corners = new Vector2[4];
+            float _thickness = GroundSquareThickness;
+            bool _hasGeometry;
+
+            public void Set(Vector2[] source, float lineThickness, Color tint)
+            {
+                for (var i = 0; i < _corners.Length; i++)
+                    _corners[i] = source[i];
+
+                _thickness = Mathf.Max(1f, lineThickness);
+                color = tint;
+                _hasGeometry = true;
+                SetVerticesDirty();
+            }
+
+            protected override void OnPopulateMesh(VertexHelper vh)
+            {
+                vh.Clear();
+                if (!_hasGeometry)
+                    return;
+
+                for (var i = 0; i < _corners.Length; i++)
+                    AddLine(vh, _corners[i], _corners[(i + 1) % _corners.Length]);
+            }
+
+            void AddLine(VertexHelper vh, Vector2 a, Vector2 b)
+            {
+                var delta = b - a;
+                var length = delta.magnitude;
+                if (length <= 0.001f)
+                    return;
+
+                var normal = new Vector2(-delta.y, delta.x) / length * (_thickness * 0.5f);
+                var tint = (Color32)color;
+                var start = vh.currentVertCount;
+                vh.AddVert(a - normal, tint, Vector2.zero);
+                vh.AddVert(a + normal, tint, Vector2.zero);
+                vh.AddVert(b - normal, tint, Vector2.zero);
+                vh.AddVert(b + normal, tint, Vector2.zero);
+                vh.AddTriangle(start, start + 1, start + 2);
+                vh.AddTriangle(start + 2, start + 1, start + 3);
+            }
         }
 
         void UpdateMark()
