@@ -14,6 +14,8 @@ namespace LivingCity.Tests
             ShallowPocketStillWorks(failures);
             BuildingFootprintIsRespected(failures);
             CentralDriveStaysOpen(failures);
+            GateThroatIsStraight(failures);
+            UrbanBlockUsesCorePavement(failures);
             return failures;
         }
 
@@ -68,6 +70,32 @@ namespace LivingCity.Tests
             foreach (var stall in plan.Stalls)
                 if (Mathf.Abs(stall.Stand.x - centre) < ParkingBlockPlan.GateWidth * 0.5f)
                     failures.Add("Parking block: a bay overlaps the central entry drive");
+        }
+
+        static void GateThroatIsStraight(List<string> failures)
+        {
+            var plan = ParkingBlockPlan.Generate(65f, 45f);
+            var curve = PatrolDocking.Sweep(
+                plan.GateOutside, Vector3.forward, plan.GateInside, Vector3.forward);
+            for (int i = 0; i <= 100; i++)
+            {
+                var point = PatrolDocking.Point(curve, i / 100f);
+                if (Mathf.Abs(point.x - plan.Gate.x) <= 0.001f) continue;
+                failures.Add("Parking block: a car drifts sideways through the payment gate");
+                break;
+            }
+        }
+
+        static void UrbanBlockUsesCorePavement(List<string> failures)
+        {
+            var block = new Rect(10f, 20f, 70f, 50f);
+            var surface = ParkingBlockSite.Surface(block, ParkingBlockStyle.UrbanBlock);
+            float want = CoreBlockMetrics.PavementWidth;
+            if (Mathf.Abs(surface.xMin - block.xMin - want) > 0.001f ||
+                Mathf.Abs(surface.yMin - block.yMin - want) > 0.001f ||
+                Mathf.Abs(block.xMax - surface.xMax - want) > 0.001f ||
+                Mathf.Abs(block.yMax - surface.yMax - want) > 0.001f)
+                failures.Add("Parking block: urban pavement is not the shared 10 m CoreDemo width");
         }
     }
 }

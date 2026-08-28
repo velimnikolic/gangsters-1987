@@ -687,6 +687,10 @@ namespace RoadDemo
         int _anthropometrySeed = 1987;
         AudioSource _shots, _cracks;
 
+        /// <summary>The shared view of targeting and cover decisions. It is attached
+        /// wherever DemoCrews is used and toggled with I.</summary>
+        public CombatIntentOverlay IntentOverlay { get; private set; }
+
         // ------------------------------------------------------------------ setup
 
         /// <summary>The city: crews dealt onto the sidewalk graph.</summary>
@@ -736,6 +740,8 @@ namespace RoadDemo
             // last onto the click chain, so the front card is asked first and hands the
             // click straight back to the crews if a man was standing in front of the door
             gameObject.AddComponent<FrontOverlay>().Init();
+            IntentOverlay = gameObject.AddComponent<CombatIntentOverlay>();
+            IntentOverlay.Init(this);
             CrewWalker.FindCover = CoverNear;
         }
 

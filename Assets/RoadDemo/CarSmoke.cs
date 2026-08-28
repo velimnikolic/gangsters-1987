@@ -5,14 +5,13 @@ namespace RoadDemo
     /// <summary>
     /// What comes out of a car: the wisp off a tailpipe while the engine is turning, and
     /// the plume off a bonnet once it has been shot through. Both are the particle pack's
-    /// smoke, re-tuned here, and the tuning is the whole of this class.
+    /// smoke, re-tuned here, and the tuning is the whole of this class. Exhaust uses the
+    /// pack's soft billboard trail; bonnet smoke keeps the heavier low-poly smoke mesh.
     ///
-    /// THE PACK'S SIZES ARE NOT METRES. Its smoke is a MESH particle - SM_Particle_Smoke_01,
-    /// measured 0.191m across - and a ParticleSystem's start size MULTIPLIES that mesh. The
-    /// pack ships its "Small" preset at three to six, which is a puff a metre wide: right
-    /// for a burning car, absurd for an exhaust. So nothing here writes a start size
-    /// directly; it writes the width it wants IN METRES and Puffs() divides it by the mesh.
-    /// Every number below can then be read as what it looks like on the street.
+    /// THE PACK'S MESH SIZES ARE NOT METRES. SM_Particle_Smoke_01 is 0.191m across and a
+    /// ParticleSystem's start size MULTIPLIES that mesh. Billboards, including the exhaust
+    /// trail, do use world units. Tuned() distinguishes the two renderer types so every
+    /// caller still asks for the width it wants in metres.
     /// </summary>
     public static class CarSmoke
     {
@@ -25,11 +24,12 @@ namespace RoadDemo
 
         /// <summary>Take the pack's smoke and make it the size, life and speed asked for.
         /// The prefab keeps everything the tuning does not name - its material, its colour
-        /// over life, its shape - so the smoke still looks like the pack's smoke.
+        /// and size over life, its shape - so exhaust remains a soft fading trail while
+        /// bonnet smoke remains a heavier plume.
         ///
-        /// The simulation space is left as the prefab has it (world): a puff belongs to the
-        /// air it was left in, not to the car that left it, and a car pulling away from its
-        /// own smoke is the point of drawing any.</summary>
+        /// A puff belongs to the air it was left in, not to the car that left it, so the
+        /// simulation space is made world-space even when the source prefab was authored
+        /// locally.</summary>
         public static ParticleSystem Tuned(GameObject prefab, Transform under, Vector3 at,
                                            float wide, float grow, float lifeLo, float lifeHi,
                                            float speed, float rate)
@@ -44,10 +44,16 @@ namespace RoadDemo
             var ps = go.GetComponentInChildren<ParticleSystem>();
             if (ps == null) { Object.Destroy(go); return null; }
 
+            var renderer = ps.GetComponent<ParticleSystemRenderer>();
+            float authoredMetres = renderer != null && renderer.renderMode == ParticleSystemRenderMode.Mesh
+                ? PuffMesh
+                : 1f;
             var main = ps.main;
-            main.startSize = new ParticleSystem.MinMaxCurve(Puffs(wide), Puffs(wide * grow));
+            main.startSize = new ParticleSystem.MinMaxCurve(wide / authoredMetres,
+                                                            wide * grow / authoredMetres);
             main.startLifetime = new ParticleSystem.MinMaxCurve(lifeLo, lifeHi);
             main.startSpeed = speed;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
             // prewarm fills a system with a whole lifetime of smoke on its first frame,
             // which is a puff of exhaust appearing round a car that has only just started
             main.prewarm = false;

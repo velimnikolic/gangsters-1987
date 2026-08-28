@@ -58,7 +58,7 @@ namespace RoadDemo
     /// </summary>
     public static class CorePavement
     {
-        public const float Cell = 5f;
+        public const float Cell = CoreBlockMetrics.Cell;
         const string CityEnv = "Assets/Synty/PolygonCity/Prefabs/Environments/";
 
         const string Kerb = "SM_Env_Sidewalk_Straight_01";
@@ -352,8 +352,8 @@ namespace RoadDemo
 
         /// <summary>
         /// The block the buildings make: their footprint on the 5 m raster, grown by
-        /// <paramref name="band"/> tiles of pavement - one, unless the caller knows better,
-        /// because one is what the demo does.
+        /// <paramref name="band"/> tiles of pavement. CoreDemo's shared default is two
+        /// tiles (10 m); callers only override it for a deliberately special block.
         ///
         /// Grown on the DIAGONAL as well as the square, so a rectangular building comes out
         /// with square corners; growing on the square alone cuts every corner off and the
@@ -363,7 +363,8 @@ namespace RoadDemo
         /// through), and any dent with three of its four sides already in joins it too, so
         /// the kerb runs straight instead of stepping in and out round every bay window.
         /// </summary>
-        public static Plan Around(IEnumerable<Bounds> buildings, int band = 1,
+        public static Plan Around(IEnumerable<Bounds> buildings,
+                                  int band = CoreBlockMetrics.PavementTiles,
                                   IEnumerable<Bounds> sinks = null,
                                   IEnumerable<Bounds> roofs = null,
                                   IEnumerable<Bounds> gates = null,
@@ -977,8 +978,9 @@ namespace RoadDemo
         /// the blocks this class had grown and none on the blocks it had only copied
         /// (2026-08-26, the user: "ovi stari blokovi nemaju palme, dodaj i na njih da bude
         /// uniformno"). Same rhythm and same lane as <see cref="Furnish"/> uses - one palm
-        /// per <see cref="PalmEvery"/> kerb tiles - so a harvested block and a grown one are
-        /// planted alike.
+        /// per <see cref="PalmEvery"/> kerb tiles by default - so a harvested block and a
+        /// grown one are planted alike. A caller may request a denser rhythm for a special
+        /// block without changing the city-wide default.
         ///
         /// <paramref name="standing"/> is whatever the block already has on it: no palm is
         /// put within <see cref="PalmRoom"/> of one, which is what keeps a tree out of the
@@ -988,7 +990,7 @@ namespace RoadDemo
         /// </summary>
         public static int Plant(IReadOnlyList<Kerbstone> kerbs, IReadOnlyList<Vector3> standing,
                                 Func<GameObject, Transform, GameObject> stand, Transform parent,
-                                int seed)
+                                int seed, int kerbsPerPalm = PalmEvery)
         {
             if (kerbs == null || kerbs.Count == 0) return 0;
 
@@ -999,7 +1001,8 @@ namespace RoadDemo
             for (int i = 0; i < kerbs.Count; i++) order.Add(i);
             Dice.Shuffle(order, dice);
 
-            int planted = 0, want = Mathf.RoundToInt(kerbs.Count / (float)PalmEvery);
+            int every = Mathf.Max(1, kerbsPerPalm);
+            int planted = 0, want = Mathf.RoundToInt(kerbs.Count / (float)every);
             foreach (int i in order)
             {
                 if (planted >= want) break;

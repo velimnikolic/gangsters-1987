@@ -30,9 +30,10 @@ namespace RoadDemo
     /// </summary>
     public static class QuayWalk
     {
-        public const float Cell = 5f;
-        /// <summary>The kerb along the quay street: one cell, the pavement any block has.</summary>
-        public const int Band = 1;
+        public const float Cell = CoreBlockMetrics.Cell;
+        /// <summary>The kerbside band along the quay street: the same ten metres used by
+        /// every generated CoreDemo block.</summary>
+        public const int Band = CoreBlockMetrics.PavementTiles;
         /// <summary>The walk along the wall, in cells: a metre of railing and lamps, five
         /// of clear way, and the benches facing the water.</summary>
         public const int WalkDeep = 2;
@@ -119,15 +120,15 @@ namespace RoadDemo
         /// <summary>The smallest room a programme takes: cells along the line, and the
         /// strip's whole depth in cells. Measured, not guessed: a terrace is a kiosk of
         /// 4.5 x 3.3 m by the kerb and two rows of tables under 3.25 m umbrellas before the
-        /// walk; the fairground is the demo's own 30 x 40 m yard with the 31 m wheel in it.</summary>
+        /// walk; PalmBlock_07 is 37.7 x 45.4 m and keeps the demo's complete fairground.</summary>
         static void Least(Programme what, out int along, out int deep)
         {
             switch (what)
             {
-                case Programme.Fair: along = 8; deep = 7; break;
-                case Programme.Diner: along = 5; deep = 7; break;      // 16.3 x 8.8 m, and its tables
+                case Programme.Fair: along = 10; deep = 10 + Band; break;
+                case Programme.Diner: along = 5; deep = 6 + Band; break; // 16.3 x 8.8 m, and its tables
                 case Programme.Fountain: along = 4; deep = DeepMin; break;
-                case Programme.Terrace: along = 4; deep = 6; break;
+                case Programme.Terrace: along = 4; deep = 5 + Band; break;
                 case Programme.Landing: along = 4; deep = DeepMin; break;
                 case Programme.Grove: along = 3; deep = DeepMin; break;
                 default: along = 0; deep = 0; break;
@@ -230,7 +231,7 @@ namespace RoadDemo
             {
                 var end = plan.Wanted.FairAtStart ? rooms[0] : rooms[rooms.Count - 1];
                 if (Fits(Programme.Fair, end, plan.Depth)) { end.Programme = Programme.Fair; taken.Add(end); }
-                else plan.Refused.Add($"no room for the fair: the end room is {end.Length} cells long and the strip {plan.Depth} deep, it wants 8 x 7");
+                else plan.Refused.Add($"no room for the fair: the end room is {end.Length} cells long and the strip {plan.Depth} deep, it wants 10 x 11");
             }
 
             foreach (var (boulevard, room) in new[] { (plan.South == End.Boulevard, rooms[0]), (plan.North == End.Boulevard, rooms[rooms.Count - 1]) })

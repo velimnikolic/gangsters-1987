@@ -147,7 +147,7 @@ MonoBehaviour:
   m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::RoadDemo.ParkingDemoBuilder
   seed: 1987
-  carsPerLot: 3
+  carsPerLot: 12
 --- !u!4 &948370212
 Transform:
   m_ObjectHideFlags: 0

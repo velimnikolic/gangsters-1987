@@ -46,7 +46,8 @@ namespace RoadDemo
 
         /// <summary>The belt on the land side is an ordinary strip of green, 30-40 m: the one
         /// big park of the city is already on the north or the south (<see cref="Belt"/>).</summary>
-        const int LandBeltMin = 6, LandBeltMax = 8;
+        const int LandBeltGrowth = 2 * (ParkWalk.Band - 1);
+        const int LandBeltMin = 6 + LandBeltGrowth, LandBeltMax = 8 + LandBeltGrowth;
 
         /// <summary>How deep a quarter's blocks are dealt, and how wide, in cells, street
         /// included. A block of 60-85 m across and 65-105 m deep is what the recipe's
@@ -91,10 +92,9 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// How big the yard block itself is: the lot, its one-cell internal clear band and
-        /// the pavement ring every block carries, AND NO MORE. A gym given a whole quarter
-        /// cell was a paved field with a bench in the middle of it; a gym without the inner
-        /// band cut its fence into the pavement kerb.
+        /// How big the yard block itself is: the lot and the pavement ring every block
+        /// carries, AND NO MORE. These complete venues do not need the extra clear band
+        /// used to separate an amenity from houses in a mixed block.
         /// </summary>
         static bool YardSize(string name, int w, int d, out int yw, out int yd)
         {
@@ -102,11 +102,11 @@ namespace RoadDemo
             ResidentialUnit unit = null;
             foreach (var u in ResidentialUnits.All) if (u.Name == name) { unit = u; break; }
             if (unit == null) return false;
-            int border = 2 * (ResidentialLot.Walk + ResidentialLot.Clearance(unit));
-            if (unit.CW + border <= w && unit.CD + border <= d)
-            { yw = unit.CW + border; yd = unit.CD + border; return true; }
-            if (unit.CD + border <= w && unit.CW + border <= d)
-            { yw = unit.CD + border; yd = unit.CW + border; return true; }
+            ResidentialLot.YardDimensions(unit, out int needW, out int needD);
+            if (needW <= w && needD <= d)
+            { yw = needW; yd = needD; return true; }
+            if (needD <= w && needW <= d)
+            { yw = needD; yd = needW; return true; }
             return false;
         }
 

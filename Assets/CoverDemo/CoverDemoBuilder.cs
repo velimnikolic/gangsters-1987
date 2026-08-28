@@ -27,7 +27,7 @@ namespace CoverDemo
     // the bench.
     //
     // Left-click one of ours to select his crew, right-click a rival's man to send
-    // the crew at him, C draws what the cover code can see. Editor only, like the
+    // the crew at him, I draws what the combat code can see. Editor only, like the
     // demos it is built from: bodies, clips, guns and props come through the
     // AssetDatabase.
     public class CoverDemoBuilder : MonoBehaviour
@@ -96,7 +96,7 @@ namespace CoverDemo
 
         [Header("Watch")]
         [Tooltip("Draw what the cover code sees: the boxes it counts as cover, and a line " +
-                 "from every man to whatever he is behind. C toggles it in Play.")]
+                 "from every man to whatever he is behind. I toggles it in Play.")]
         public bool coverLines = true;
 
         // ------------------------------------------------------------ the ground plan
@@ -175,7 +175,8 @@ namespace CoverDemo
             SpawnRivals();
 
             _watch = gameObject.AddComponent<CoverWatch>();
-            _watch.Init(_crews, _camera, coverLines);
+            _crews.IntentOverlay.SetVisible(coverLines);
+            _watch.Init(_crews, _camera);
 
             if (missionAfter > 0f)
             {
@@ -567,7 +568,7 @@ namespace CoverDemo
         const string _hint =
             "WASD/arrows: move   Q/E or right-drag: rotate   wheel: zoom   " +
             "left-click one of ours: select his crew   right-click the road: walk there   " +
-            "right-click a rival: attack   C: cover lines   Space: hold   P: ledger";
+            "right-click a rival: attack   I: combat indicators   Space: hold   P: ledger";
 
         void BuildCamera()
         {

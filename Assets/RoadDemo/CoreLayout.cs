@@ -416,8 +416,9 @@ namespace RoadDemo
         /// misdiagnosis moves numbers and fixes nothing.
         /// </remarks>
         const int ParksMin = 1, ParksMax = 2;
-        const int PocketMin = 6, PocketMax = 7;
-        const int SquareMin = 8, SquareMax = 12;
+        const int ParkGrowth = 2 * (ParkWalk.Band - 1);
+        const int PocketMin = 6 + ParkGrowth, PocketMax = 7 + ParkGrowth;
+        const int SquareMin = 8 + ParkGrowth, SquareMax = 12 + ParkGrowth;
         const double PocketOdds = 0.7;
 
         /// <summary>
@@ -696,8 +697,8 @@ namespace RoadDemo
         /// looks like: a ring belongs to Vienna and Savannah. A big park on one side, a
         /// parkway along another, and car parks on the rest, is the 1987 picture.
         /// </summary>
-        const int BeltDeepMin = 6, BeltDeepMax = 8;
-        const int BeltBigMin = 15, BeltBigMax = 22;
+        const int BeltDeepMin = 6 + ParkGrowth, BeltDeepMax = 8 + ParkGrowth;
+        const int BeltBigMin = 15 + ParkGrowth, BeltBigMax = 22 + ParkGrowth;
         /// <summary>
         /// THE BELT IS ONE PARK TO A SIDE, unbroken.
         ///
@@ -787,11 +788,11 @@ namespace RoadDemo
         /// comes back over another; and a kerb beyond it. Nothing else stands on the far
         /// bank until a quarter is dealt there (Docs/river-plan.md).
         /// </summary>
-        /// <summary>The promenade, in cells across: 35 or 40 m. The kerb takes one, the walk
-        /// along the wall two, and the rooms between want four for a fairground - the
-        /// demo's own yard is 30 m deep with the wheel in it. Synty's city meets its water
-        /// in 16-20 m, but that strip carries nothing; this one carries the cafes.</summary>
-        const int QuayDeepMin = 7, QuayDeepMax = 8;
+        /// <summary>The promenade, in cells across: 60 or 65 m. The pavement takes two, the
+        /// walk along the wall two, and the room between keeps at least 40 m for PalmCityDemo's
+        /// complete 37.7 m-deep Fairground block. Synty's ordinary city meets its water in
+        /// 16-20 m, but that strip carries nothing; this one carries the fair and cafes.</summary>
+        const int QuayDeepMin = 12, QuayDeepMax = 13;
         /// <summary>The water, in cells: 70 m. A bascule's two leaves open a channel of 40 m
         /// and the fixed approaches make up the rest; wider than this and every bridge is
         /// mostly approach, narrower and the far bank is the near one's pavement.</summary>

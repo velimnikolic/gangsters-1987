@@ -392,7 +392,8 @@ namespace LivingCity.EditorTools
             foreach (char letter in tray.name) seed = seed * 31 + letter;
 
             var panel = tray.GetComponent<RoadDemo.CoreTray>();
-            int band = panel ? Mathf.Clamp(panel.pavementTiles, 1, 4) : 2;
+            int band = panel ? Mathf.Clamp(panel.pavementTiles, 1, 4)
+                             : RoadDemo.CoreBlockMetrics.PavementTiles;
             Ground(tray, rect, already, pieces, out var open, out var roofed, out var gates,
                    out var parks, out int parkYaw, out var fleet);
             var plan = RoadDemo.CorePavement.Around(walls, band, open, roofed, gates,

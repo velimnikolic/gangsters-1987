@@ -420,7 +420,7 @@ namespace GangstersTools
         public static object Quays(
             [CliArg("seed", "First seed.")] int seed = 1987,
             [CliArg("count", "How many consecutive seeds to lay out.")] int count = 1,
-            [CliArg("depth", "The strip across, in cells (the core deals 7 or 8).")] int depth = 8,
+            [CliArg("depth", "The strip across, in cells (the core deals 12 or 13).")] int depth = 12,
             [CliArg("length", "The strip along the river, in cells.")] int length = 32,
             [CliArg("draw", "Stand the first one in the open scene, as Tools/City/River/Sketch The Quay would.")] bool draw = false,
             [CliArg("map", "Include each stretch's map in the answer.")] bool map = false)

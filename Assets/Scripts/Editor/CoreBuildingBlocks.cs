@@ -107,7 +107,8 @@ namespace LivingCity.EditorTools
             /// room for something.</summary>
             public readonly int Band;
 
-            public Recipe(string block, string building, bool ownGround = false, int band = 2)
+            public Recipe(string block, string building, bool ownGround = false,
+                          int band = RoadDemo.CoreBlockMetrics.PavementTiles)
             {
                 Block = block;
                 Building = building;

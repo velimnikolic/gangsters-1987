@@ -8,8 +8,8 @@ using UnityEngine.UI;
 
 namespace RoadDemo
 {
-    // The indicators for the crews' men: state-coloured squares sit under their
-    // feet, while hover and selection add ground brackets and status dots ride
+    // The indicators for the crews' men: equal-sized state-coloured square corners sit on
+    // the ground around their feet, while hover and selection add ground brackets and status dots ride
     // above unselected men. The two clicks that command them: a left click within PickRadius of any
     // man of the outfit selects his crew (the popup names the lieutenant and words
     // what the crew is doing); a right click - a click, not the camera's right-drag
@@ -30,9 +30,13 @@ namespace RoadDemo
         const float SelectedScale = 1.45f;
         const float TagLift = 12f;     // surname over the boss dot
         const float HoverInterval = 0.1f;
-        const float GroundSquareHalf = 0.5f;
-        const float GroundSquareLift = 0.05f;
-        const float GroundSquareThickness = 2.5f;
+        const float ReferenceBodyWidth = 0.5f;
+        const float StateSquareSize = ReferenceBodyWidth * 1.8f;
+        const float StateSquareHalfMetres = StateSquareSize * 0.5f;
+        const float StateSquareGroundLift = 0.05f;
+        const float StateSquareLineWidth = 0.045f;
+        const float StateSquareCornerArm = StateSquareSize * 0.24f;
+        const float SelectedCornerPulsePeriod = 1.4f;
 
         const float PickRadius = 30f;
         const float PopupWidth = 360f;
@@ -48,10 +52,15 @@ namespace RoadDemo
         static readonly Color MarkTint = new Color(1f, 0.78f, 0.32f, 0.9f);
         static readonly Color RivalBoss = new Color(1f, 0.36f, 0.30f, 1f);
         static readonly Color RivalHood = new Color(1f, 0.36f, 0.30f, 0.6f);
-        static readonly Color FriendGround = new Color(0.1f, 0.95f, 0.28f, 0.95f);
-        static readonly Color SelectedGround = new Color(1f, 0.16f, 0.12f, 1f);
-        static readonly Color PoliceGround = new Color(0.2f, 0.55f, 1f, 0.95f);
-        static readonly Color EnemyGround = new Color(1f, 0.9f, 0.12f, 0.95f);
+        static readonly Color OwnGround = new Color(0.92f, 0.72f, 0.20f, 0.86f);
+        static readonly Color SelectedGround = new Color(0.24f, 0.82f, 0.34f, 0.90f);
+        static readonly Color PoliceGround = new Color(0.27f, 0.59f, 0.82f, 0.82f);
+        static readonly Color EnemyGround = new Color(0.84f, 0.28f, 0.24f, 0.86f);
+        static readonly Color GroundShadow = new Color(0.02f, 0.025f, 0.03f, 0.22f);
+        static readonly Vector3 GroundShadowOffset = new Vector3(0.018f, -0.014f, -0.018f);
+
+        static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        static readonly int ColorId = Shader.PropertyToID("_Color");
 
         /// <summary>A rival's dot in HIS FAMILY'S colour, boss solid and hoods faded -
         /// the alpha is what says rank, the hue what says whose men these are. One red
@@ -79,16 +88,21 @@ namespace RoadDemo
         Canvas _canvas;
         Camera _cam;
         Transform _dotRoot;
-        readonly List<Image> _dots = new List<Image>();
-        readonly List<GroundSquareGraphic> _groundSquares = new List<GroundSquareGraphic>();
-        readonly List<TMP_Text> _tags = new List<TMP_Text>();
-        readonly List<Image> _glyphs = new List<Image>(); // the activity sign beside a boss's dot
-        readonly List<GroundBracketGraphic> _brackets = new List<GroundBracketGraphic>();
-        readonly List<CrewWalker> _men = new List<CrewWalker>();
-        readonly List<bool> _menBoss = new List<bool>();
-        readonly List<DemoCrews.Unit> _menUnit = new List<DemoCrews.Unit>();
-        readonly Vector3[] _groundWorld = new Vector3[4];
-        readonly Vector2[] _groundLocal = new Vector2[4];
+        List<Image> _dots = new List<Image>();
+        List<MeshRenderer> _groundSquares = new List<MeshRenderer>();
+        List<MeshRenderer> _groundShadows = new List<MeshRenderer>();
+        List<TMP_Text> _tags = new List<TMP_Text>();
+        List<Image> _glyphs = new List<Image>(); // the activity sign beside a boss's dot
+        List<GroundBracketGraphic> _brackets = new List<GroundBracketGraphic>();
+        List<CrewWalker> _men = new List<CrewWalker>();
+        List<bool> _menBoss = new List<bool>();
+        List<DemoCrews.Unit> _menUnit = new List<DemoCrews.Unit>();
+        MaterialPropertyBlock _groundTint;
+        Mesh _groundSquareMesh;
+        Mesh _selectedGroundSquareMesh;
+        Vector3[] _selectedGroundVertices;
+        int _selectedGroundMeshFrame = -1;
+        Material _groundSquareMaterial;
 
         GameObject _popup;
         RectTransform _popupRect;
@@ -97,12 +111,12 @@ namespace RoadDemo
 
         Image _mark;
         (string text, float until) _refusal;
-        readonly List<Image> _carDots = new List<Image>();
-        readonly List<TMP_Text> _carTags = new List<TMP_Text>();
+        List<Image> _carDots = new List<Image>();
+        List<TMP_Text> _carTags = new List<TMP_Text>();
         // tag text per marker slot, kept until the thing in the slot changes: cut and
         // upper-cased afresh it was a string or three per visible marker per frame
-        readonly List<(CrewWalker man, string name, DemoCrews.Unit unit, string gang, string text)> _menTag = new();
-        readonly List<(CrewCar car, bool civic, string name, DemoCrews.Unit owner, string ownerName, string text)> _carTag = new();
+        List<(CrewWalker man, string name, DemoCrews.Unit unit, string gang, string text)> _menTag = new();
+        List<(CrewCar car, bool civic, string name, DemoCrews.Unit owner, string ownerName, string text)> _carTag = new();
         // what the popup last said and everything it said it about
         (CrewWalker boss, string name, int standing, int size, string status, bool boarding, bool orderHint,
             (bool carHint, bool exitHint, bool bail, string refusal) hints) _popupKey;
@@ -121,8 +135,8 @@ namespace RoadDemo
         bool _rightPending;
         int _hovered = -1;
         float _nextHoverAt;
-        readonly Vector3[] _bracketWorld = new Vector3[4];
-        readonly Vector2[] _bracketLocal = new Vector2[4];
+        Vector3[] _bracketWorld = new Vector3[4];
+        Vector2[] _bracketLocal = new Vector2[4];
 
         /// <summary>The last right click that became a walk order: when, and where on
         /// the screen. A second one on the same spot inside <see cref="DoubleClick"/>
@@ -132,12 +146,15 @@ namespace RoadDemo
         float _lastOrderAt = -10f;
         Vector2 _lastOrderAtPx;
 
-        const float DoubleClick = 0.4f;
-        const float DoubleSlackPx = 40f;
+        // Release-to-release, so leave a little more room than the usual press
+        // interval and for the tiny camera shift between the two clicks.
+        const float DoubleClick = 0.55f;
+        const float DoubleSlackPx = 60f;
 
         public void Init(DemoCrews crews)
         {
             _crews = crews;
+            _groundTint = new MaterialPropertyBlock();
             var dot = DemoUi.Dot;
             if (dot == null)
             {
@@ -194,6 +211,9 @@ namespace RoadDemo
         {
             if (BuildingCardPicker.ClickVeto == (System.Func<Vector2, bool>)ClaimsClick)
                 BuildingCardPicker.ClickVeto = _previousVeto;
+            if (_groundSquareMaterial != null) Destroy(_groundSquareMaterial);
+            if (_groundSquareMesh != null) Destroy(_groundSquareMesh);
+            if (_selectedGroundSquareMesh != null) Destroy(_selectedGroundSquareMesh);
         }
 
         // ------------------------------------------------------------------ chrome
@@ -362,17 +382,30 @@ namespace RoadDemo
         {
             while (_dots.Count < count)
             {
-                var ground = new GameObject("ground indicator", typeof(RectTransform))
-                    .AddComponent<GroundSquareGraphic>();
-                ground.transform.SetParent(_dotRoot, false);
-                var groundRect = ground.rectTransform;
-                groundRect.anchorMin = Vector2.zero;
-                groundRect.anchorMax = Vector2.one;
-                groundRect.offsetMin = Vector2.zero;
-                groundRect.offsetMax = Vector2.zero;
-                ground.raycastTarget = false;
+                var groundGo = new GameObject("ground indicator", typeof(MeshFilter), typeof(MeshRenderer));
+                groundGo.transform.SetParent(transform, false);
+                var ground = groundGo.GetComponent<MeshRenderer>();
+                groundGo.GetComponent<MeshFilter>().sharedMesh = GroundSquareMesh();
+                ground.sharedMaterial = GroundSquareMaterial();
+                ground.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                ground.receiveShadows = false;
+                ground.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
                 ground.enabled = false;
                 _groundSquares.Add(ground);
+
+                var shadowGo = new GameObject(
+                    "indicator shadow", typeof(MeshFilter), typeof(MeshRenderer));
+                shadowGo.transform.SetParent(groundGo.transform, false);
+                shadowGo.transform.localPosition = GroundShadowOffset;
+                shadowGo.GetComponent<MeshFilter>().sharedMesh = GroundSquareMesh();
+                var shadow = shadowGo.GetComponent<MeshRenderer>();
+                shadow.sharedMaterial = GroundSquareMaterial();
+                shadow.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                shadow.receiveShadows = false;
+                shadow.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
+                shadow.sortingOrder = -1;
+                shadow.enabled = false;
+                _groundShadows.Add(shadow);
 
                 var go = new GameObject("indicator", typeof(RectTransform));
                 go.transform.SetParent(_dotRoot, false);
@@ -484,13 +517,14 @@ namespace RoadDemo
             return best;
         }
 
-        void DrawGroundSquare(
-            GroundSquareGraphic square, CrewWalker man, Color colour, float width, float height)
+        void DrawGroundStateSquare(
+            MeshRenderer square, MeshRenderer shadow, CrewWalker man, Color colour,
+            bool pulse, float width, float height)
         {
             if (square == null || man == null || man.Tf == null || _cam == null)
                 return;
 
-            var centre = man.Tf.position + Vector3.up * GroundSquareLift;
+            var centre = man.Tf.position + Vector3.up * StateSquareGroundLift;
             var centreScreen = _cam.WorldToScreenPoint(centre);
             if (centreScreen.z <= 0f ||
                 centreScreen.x < 0f || centreScreen.x > width ||
@@ -498,50 +532,63 @@ namespace RoadDemo
             {
                 if (square.enabled)
                     square.enabled = false;
+                if (shadow != null && shadow.enabled)
+                    shadow.enabled = false;
                 return;
             }
 
-            var half = GroundSquareHalf;
-            _groundWorld[0] = centre + new Vector3(-half, 0f, -half);
-            _groundWorld[1] = centre + new Vector3(half, 0f, -half);
-            _groundWorld[2] = centre + new Vector3(half, 0f, half);
-            _groundWorld[3] = centre + new Vector3(-half, 0f, half);
-
-            var root = _dotRoot as RectTransform;
-            if (!root)
+            // A real world-space ring: ordinary depth testing lets the body stand
+            // in front of it instead of a HUD line cutting across the character.
+            square.transform.SetPositionAndRotation(centre, Quaternion.identity);
+            var filter = square.GetComponent<MeshFilter>();
+            if (filter == null)
             {
-                if (square.enabled)
-                    square.enabled = false;
+                square.enabled = false;
+                if (shadow != null)
+                    shadow.enabled = false;
                 return;
             }
+            var wantedMesh = pulse ? SelectedGroundSquareMesh() : GroundSquareMesh();
+            if (filter.sharedMesh != wantedMesh)
+                filter.sharedMesh = wantedMesh;
+            // Existing play-mode components can survive a script hot reload with a
+            // newly added non-serialized reference left at null.
+            if (_groundTint == null)
+                _groundTint = new MaterialPropertyBlock();
 
-            for (var n = 0; n < _groundWorld.Length; n++)
+            if (shadow != null)
             {
-                var screen = _cam.WorldToScreenPoint(_groundWorld[n]);
-                if (screen.z <= 0f ||
-                    !RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                        root, screen, null, out _groundLocal[n]))
+                var shadowFilter = shadow.GetComponent<MeshFilter>();
+                if (shadowFilter != null)
                 {
-                    if (square.enabled)
-                        square.enabled = false;
-                    return;
+                    if (shadowFilter.sharedMesh != wantedMesh)
+                        shadowFilter.sharedMesh = wantedMesh;
+                    _groundTint.Clear();
+                    _groundTint.SetColor(BaseColorId, GroundShadow);
+                    _groundTint.SetColor(ColorId, GroundShadow);
+                    shadow.SetPropertyBlock(_groundTint);
+                    if (!shadow.enabled)
+                        shadow.enabled = true;
                 }
+                else if (shadow.enabled)
+                    shadow.enabled = false;
             }
 
-            square.Set(_groundLocal, GroundSquareThickness, colour);
+            _groundTint.Clear();
+            _groundTint.SetColor(BaseColorId, colour);
+            _groundTint.SetColor(ColorId, colour);
+            square.SetPropertyBlock(_groundTint);
             if (!square.enabled)
                 square.enabled = true;
         }
 
-        static Color GroundColour(DemoCrews.Unit unit, bool selected)
+        static Color GroundColour(DemoCrews.Unit unit, bool ownSelected)
         {
-            if (selected)
-                return SelectedGround;
             if (unit != null && unit.IsPolice)
                 return PoliceGround;
             if (unit != null && unit.Faction != 0)
                 return EnemyGround;
-            return FriendGround;
+            return ownSelected ? SelectedGround : OwnGround;
         }
 
         /// <summary>The rival family's premises under the pointer: the nearest building
@@ -720,7 +767,7 @@ namespace RoadDemo
         }
 
         RectTransform _cardRect;
-        readonly List<OrderRow> _cardRows = new List<OrderRow>();
+        List<OrderRow> _cardRows = new List<OrderRow>();
         int _cardShown;
         DemoCrews.Unit _cardTarget, _cardCrew;
         GangFront _cardFront;
@@ -1085,8 +1132,100 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ frame
 
+        void RemoveRuntimeChildren(Transform parent, params string[] names)
+        {
+            if (parent == null)
+                return;
+
+            for (var i = parent.childCount - 1; i >= 0; i--)
+            {
+                var child = parent.GetChild(i);
+                var remove = false;
+                for (var n = 0; n < names.Length; n++)
+                    if (child.name == names[n])
+                    {
+                        remove = true;
+                        break;
+                    }
+                if (!remove)
+                    continue;
+
+                child.gameObject.SetActive(false);
+                Destroy(child.gameObject);
+            }
+        }
+
+        void EnsureTransientCaches()
+        {
+            // Unity hot reload can restore only part of this code-built overlay. Restore
+            // complete groups, not individual lists: their indices must remain aligned.
+            var manSlotsLost = _dots == null || _groundSquares == null || _groundShadows == null ||
+                               _tags == null ||
+                               _glyphs == null || _brackets == null ||
+                               _groundSquares.Count != _dots.Count ||
+                               _groundShadows.Count != _dots.Count ||
+                               _tags.Count != _dots.Count || _glyphs.Count != _dots.Count ||
+                               _brackets.Count != _dots.Count;
+            if (manSlotsLost)
+            {
+                RemoveRuntimeChildren(_dotRoot, "indicator", "tag", "glyph", "ground bracket");
+                RemoveRuntimeChildren(transform, "ground indicator");
+                _dots = new List<Image>();
+                _groundSquares = new List<MeshRenderer>();
+                _groundShadows = new List<MeshRenderer>();
+                _tags = new List<TMP_Text>();
+                _glyphs = new List<Image>();
+                _brackets = new List<GroundBracketGraphic>();
+            }
+
+            if (_men == null || _menBoss == null || _menUnit == null)
+            {
+                _men = new List<CrewWalker>();
+                _menBoss = new List<bool>();
+                _menUnit = new List<DemoCrews.Unit>();
+            }
+
+            var carSlotsLost = _carDots == null || _carTags == null ||
+                               (_carDots != null && _carTags != null &&
+                                _carDots.Count != _carTags.Count);
+            if (carSlotsLost)
+            {
+                RemoveRuntimeChildren(_dotRoot, "car", "car tag");
+                _carDots = new List<Image>();
+                _carTags = new List<TMP_Text>();
+            }
+
+            if (_bracketWorld == null || _bracketWorld.Length != 4)
+                _bracketWorld = new Vector3[4];
+            if (_bracketLocal == null || _bracketLocal.Length != 4)
+                _bracketLocal = new Vector2[4];
+            if (_groundTint == null)
+                _groundTint = new MaterialPropertyBlock();
+            if (_menTag == null)
+                _menTag = new List<(CrewWalker, string, DemoCrews.Unit, string, string)>();
+            if (_carTag == null)
+                _carTag = new List<(CrewCar, bool, string, DemoCrews.Unit, string, string)>();
+
+            var cardRowsLost = _cardRows == null || _cardShown < 0 ||
+                               (_cardRows != null && _cardShown > _cardRows.Count);
+            if (!cardRowsLost && _ordersOpen)
+                for (var i = 0; i < _cardShown; i++)
+                    if (_cardRows[i] == null || _cardRows[i].Rect == null)
+                    {
+                        cardRowsLost = true;
+                        break;
+                    }
+            if (cardRowsLost)
+            {
+                _cardRows = new List<OrderRow>();
+                _cardShown = 0;
+                CloseOrders();
+            }
+        }
+
         void LateUpdate()
         {
+            EnsureTransientCaches();
             if (_crews == null) return;
 
             // The strategic map raises its own top-down camera and drops the iso rig's
@@ -1161,12 +1300,14 @@ namespace RoadDemo
             {
                 var img = _dots[i];
                 var ground = _groundSquares[i];
+                var groundShadow = _groundShadows[i];
                 var tag = _tags[i];
                 var glyph = _glyphs[i];
                 var bracket = _brackets[i];
                 if (i >= _men.Count || _men[i].Tf == null || _men[i].Dead || _crews.IsAboard(_men[i]))
                 {
                     if (ground.enabled) ground.enabled = false;
+                    if (groundShadow.enabled) groundShadow.enabled = false;
                     if (img.enabled) img.enabled = false;
                     if (tag != null && tag.enabled) tag.enabled = false;
                     if (glyph.enabled) glyph.enabled = false;
@@ -1179,13 +1320,16 @@ namespace RoadDemo
                 bool rival = _menUnit[i].Faction != 0;
                 bool police = _menUnit[i].IsPolice;
                 bool lit = selected != null && _menUnit[i] == selected;
+                bool own = _menUnit[i].Faction == 0;
+                bool ownSelected = lit && own && !police;
                 var screen = _cam.WorldToScreenPoint(
                     man.Tf.position + Vector3.up * man.OverlayHeight);
                 bool on = screen.z > 0f &&
                           screen.x >= 0f && screen.x <= w &&
                           screen.y >= 0f && screen.y <= h;
-                var own = _menUnit[i].Faction == 0;
-                DrawGroundSquare(ground, man, GroundColour(_menUnit[i], lit), w, h);
+                DrawGroundStateSquare(
+                    ground, groundShadow, man, GroundColour(_menUnit[i], ownSelected),
+                    ownSelected, w, h);
                 var bracketOn = on && (_hovered == i || lit) &&
                                 UpdateGroundBracket(bracket, man, selected: lit, own: own);
                 if (!bracketOn && bracket.enabled)
@@ -1304,7 +1448,14 @@ namespace RoadDemo
         // book has given it to nobody yet - and a tag naming it and whose it is.
         void DrawCars(float w, float h, float scale)
         {
+            if (_crews == null || _dotRoot == null || _carDots == null || _carTags == null)
+                return;
             var cars = _crews.Cars;
+            // DemoCrews.Cars is itself a runtime-only readonly list; an in-place Unity
+            // reload can temporarily leave it null. Men markers must keep running even
+            // while that unrelated car registry is unavailable.
+            if (cars == null)
+                return;
             while (_carDots.Count < cars.Count)
             {
                 var img = DemoUi.Icon(_dotRoot, "car", DemoUi.Dot, BossSize, BossOn);
@@ -1361,50 +1512,162 @@ namespace RoadDemo
             return (cut >= 0 ? fullName.Substring(cut + 1) : fullName).ToUpperInvariant();
         }
 
-        sealed class GroundSquareGraphic : MaskableGraphic
+        static void PutGroundQuad(
+            Vector3[] vertices, int quad, Vector3 a, Vector3 b, Vector3 c, Vector3 d)
         {
-            readonly Vector2[] _corners = new Vector2[4];
-            float _thickness = GroundSquareThickness;
-            bool _hasGeometry;
+            var vertex = quad * 4;
+            vertices[vertex] = a;
+            vertices[vertex + 1] = b;
+            vertices[vertex + 2] = c;
+            vertices[vertex + 3] = d;
+        }
 
-            public void Set(Vector2[] source, float lineThickness, Color tint)
+        static void FillGroundCornerVertices(Vector3[] vertices, float armLength)
+        {
+            var half = StateSquareHalfMetres;
+            var inner = Mathf.Max(0f, half - StateSquareLineWidth);
+            var tip = half - Mathf.Clamp(armLength, StateSquareCornerArm, half);
+
+            PutGroundQuad(vertices, 0,
+                new Vector3(-half, 0f, inner), new Vector3(-tip, 0f, inner),
+                new Vector3(-tip, 0f, half), new Vector3(-half, 0f, half));
+            PutGroundQuad(vertices, 1,
+                new Vector3(tip, 0f, inner), new Vector3(half, 0f, inner),
+                new Vector3(half, 0f, half), new Vector3(tip, 0f, half));
+            PutGroundQuad(vertices, 2,
+                new Vector3(-half, 0f, -half), new Vector3(-tip, 0f, -half),
+                new Vector3(-tip, 0f, -inner), new Vector3(-half, 0f, -inner));
+            PutGroundQuad(vertices, 3,
+                new Vector3(tip, 0f, -half), new Vector3(half, 0f, -half),
+                new Vector3(half, 0f, -inner), new Vector3(tip, 0f, -inner));
+            PutGroundQuad(vertices, 4,
+                new Vector3(-half, 0f, -half), new Vector3(-inner, 0f, -half),
+                new Vector3(-inner, 0f, -tip), new Vector3(-half, 0f, -tip));
+            PutGroundQuad(vertices, 5,
+                new Vector3(-half, 0f, tip), new Vector3(-inner, 0f, tip),
+                new Vector3(-inner, 0f, half), new Vector3(-half, 0f, half));
+            PutGroundQuad(vertices, 6,
+                new Vector3(inner, 0f, -half), new Vector3(half, 0f, -half),
+                new Vector3(half, 0f, -tip), new Vector3(inner, 0f, -tip));
+            PutGroundQuad(vertices, 7,
+                new Vector3(inner, 0f, tip), new Vector3(half, 0f, tip),
+                new Vector3(half, 0f, half), new Vector3(inner, 0f, half));
+        }
+
+        static int[] GroundCornerTriangles()
+        {
+            var triangles = new int[96];
+            for (var quad = 0; quad < 8; quad++)
             {
-                for (var i = 0; i < _corners.Length; i++)
-                    _corners[i] = source[i];
+                var vertex = quad * 4;
+                // Both windings keep the flat line visible from either side of the
+                // ground plane without needing a special double-sided shader.
+                var index = quad * 12;
+                triangles[index] = vertex;
+                triangles[index + 1] = vertex + 1;
+                triangles[index + 2] = vertex + 2;
+                triangles[index + 3] = vertex;
+                triangles[index + 4] = vertex + 2;
+                triangles[index + 5] = vertex + 3;
+                triangles[index + 6] = vertex;
+                triangles[index + 7] = vertex + 2;
+                triangles[index + 8] = vertex + 1;
+                triangles[index + 9] = vertex;
+                triangles[index + 10] = vertex + 3;
+                triangles[index + 11] = vertex + 2;
+            }
+            return triangles;
+        }
 
-                _thickness = Mathf.Max(1f, lineThickness);
-                color = tint;
-                _hasGeometry = true;
-                SetVerticesDirty();
+        static Vector3[] GroundCornerNormals()
+        {
+            var normals = new Vector3[32];
+            for (var i = 0; i < normals.Length; i++)
+                normals[i] = Vector3.up;
+            return normals;
+        }
+
+        /// <summary>A single shared set of 0.9 m square corners. It lives in the world instead of
+        /// on the overlay canvas, so the normal scene depth buffer lets each character
+        /// occlude the part of the marker that is behind them.</summary>
+        Mesh GroundSquareMesh()
+        {
+            if (_groundSquareMesh != null)
+                return _groundSquareMesh;
+
+            var vertices = new Vector3[32];
+            FillGroundCornerVertices(vertices, StateSquareCornerArm);
+            _groundSquareMesh = new Mesh { name = "Crew State Corner Marker 0.9m" };
+            _groundSquareMesh.vertices = vertices;
+            _groundSquareMesh.triangles = GroundCornerTriangles();
+            _groundSquareMesh.normals = GroundCornerNormals();
+            _groundSquareMesh.RecalculateBounds();
+            _groundSquareMesh.UploadMeshData(true);
+            return _groundSquareMesh;
+        }
+
+        Mesh SelectedGroundSquareMesh()
+        {
+            if (_selectedGroundVertices == null || _selectedGroundVertices.Length != 32)
+                _selectedGroundVertices = new Vector3[32];
+
+            if (_selectedGroundSquareMesh == null)
+            {
+                FillGroundCornerVertices(_selectedGroundVertices, StateSquareCornerArm);
+                _selectedGroundSquareMesh = new Mesh { name = "Selected Crew Pulsing Corners 0.9m" };
+                _selectedGroundSquareMesh.MarkDynamic();
+                _selectedGroundSquareMesh.vertices = _selectedGroundVertices;
+                _selectedGroundSquareMesh.triangles = GroundCornerTriangles();
+                _selectedGroundSquareMesh.normals = GroundCornerNormals();
+                _selectedGroundSquareMesh.bounds = new Bounds(
+                    Vector3.zero, new Vector3(StateSquareSize, 0.1f, StateSquareSize));
             }
 
-            protected override void OnPopulateMesh(VertexHelper vh)
+            if (_selectedGroundMeshFrame != Time.frameCount)
             {
-                vh.Clear();
-                if (!_hasGeometry)
-                    return;
-
-                for (var i = 0; i < _corners.Length; i++)
-                    AddLine(vh, _corners[i], _corners[(i + 1) % _corners.Length]);
+                _selectedGroundMeshFrame = Time.frameCount;
+                var phase = Mathf.PingPong(
+                    Time.unscaledTime * (2f / SelectedCornerPulsePeriod), 1f);
+                phase = phase * phase * (3f - 2f * phase);
+                var arm = Mathf.Lerp(StateSquareCornerArm, StateSquareHalfMetres, phase);
+                FillGroundCornerVertices(_selectedGroundVertices, arm);
+                _selectedGroundSquareMesh.vertices = _selectedGroundVertices;
             }
 
-            void AddLine(VertexHelper vh, Vector2 a, Vector2 b)
-            {
-                var delta = b - a;
-                var length = delta.magnitude;
-                if (length <= 0.001f)
-                    return;
+            return _selectedGroundSquareMesh;
+        }
 
-                var normal = new Vector2(-delta.y, delta.x) / length * (_thickness * 0.5f);
-                var tint = (Color32)color;
-                var start = vh.currentVertCount;
-                vh.AddVert(a - normal, tint, Vector2.zero);
-                vh.AddVert(a + normal, tint, Vector2.zero);
-                vh.AddVert(b - normal, tint, Vector2.zero);
-                vh.AddVert(b + normal, tint, Vector2.zero);
-                vh.AddTriangle(start, start + 1, start + 2);
-                vh.AddTriangle(start + 2, start + 1, start + 3);
-            }
+        Material GroundSquareMaterial()
+        {
+            if (_groundSquareMaterial != null)
+                return _groundSquareMaterial;
+
+            var shader = Shader.Find("Universal Render Pipeline/Unlit") ??
+                         Shader.Find("Unlit/Transparent") ??
+                         Shader.Find("Unlit/Color");
+            if (shader == null)
+                return null;
+
+            _groundSquareMaterial = new Material(shader) { name = "Crew State Marker" };
+            if (_groundSquareMaterial.HasProperty(BaseColorId))
+                _groundSquareMaterial.SetColor(BaseColorId, Color.white);
+            if (_groundSquareMaterial.HasProperty(ColorId))
+                _groundSquareMaterial.SetColor(ColorId, Color.white);
+            if (_groundSquareMaterial.HasProperty("_Surface"))
+                _groundSquareMaterial.SetFloat("_Surface", 1f);
+            if (_groundSquareMaterial.HasProperty("_Blend"))
+                _groundSquareMaterial.SetFloat("_Blend", 0f);
+            if (_groundSquareMaterial.HasProperty("_ZWrite"))
+                _groundSquareMaterial.SetFloat("_ZWrite", 0f);
+            if (_groundSquareMaterial.HasProperty("_SrcBlend"))
+                _groundSquareMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (_groundSquareMaterial.HasProperty("_DstBlend"))
+                _groundSquareMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            _groundSquareMaterial.SetOverrideTag("RenderType", "Transparent");
+            _groundSquareMaterial.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            _groundSquareMaterial.renderQueue = 3000;
+            _groundSquareMaterial.enableInstancing = true;
+            return _groundSquareMaterial;
         }
 
         void UpdateMark()

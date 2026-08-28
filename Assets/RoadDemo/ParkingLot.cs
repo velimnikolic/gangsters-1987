@@ -84,6 +84,7 @@ namespace RoadDemo
         internal Vector3 World(Vector3 local) => _site.Root.TransformPoint(local);
         internal Vector3 Direction(Vector3 local) => _site.Root.TransformDirection(local).normalized;
         internal Vector3 Join => _join;
+        internal Vector3 GateOutside => World(_site.Plan.GateOutside);
         internal Vector3 GateInside => World(_site.Plan.GateInside);
         internal float JoinProgress => _joinProgress;
         internal RoadEdge Home => _home;
@@ -118,6 +119,20 @@ namespace RoadDemo
         public void Tick(float dt)
         {
             for (int i = 0; i < _cars.Count; i++) _cars[i].TickParking(dt);
+
+            // Each lot boom is real scene state, not a permanently lowered prop. It opens
+            // only while the car holding the shared driveway is at the entrance and
+            // closes again once that car is safely on either side of it.
+            if (_site.GateArm != null)
+            {
+                float open = 0f;
+                if (_moving != null && _moving.Tf != null)
+                {
+                    var gate = World(_site.Plan.Gate);
+                    if (Vector3.Distance(_moving.Tf.position, gate) < 11f) open = 1f;
+                }
+                _site.GateArm.Toward(open, dt);
+            }
         }
 
         public void Dispose()
@@ -229,13 +244,15 @@ namespace RoadDemo
             var mouth = _lot.World(_stall.Mouth);
             var junction = _lot.World(_stall.Junction);
             var gateInside = _lot.GateInside;
+            var gateOutside = _lot.GateOutside;
             var aisle = Flat(junction - mouth).normalized;
             var outward = _lot.Direction(Vector3.back);
 
             Add(PatrolDocking.Undock(stand, forward, mouth, aisle), true, Quaternion.identity);
             AddSweep(mouth, aisle, junction, outward);
             AddSweep(junction, outward, gateInside, outward);
-            AddSweep(gateInside, outward, _lot.Join, _lot.Home.Dir);
+            AddSweep(gateInside, outward, gateOutside, outward);
+            AddSweep(gateOutside, outward, _lot.Join, _lot.Home.Dir);
             StartMotions();
         }
 
@@ -274,6 +291,7 @@ namespace RoadDemo
             EngineOff = false;
             _motions.Clear();
 
+            var gateOutside = _lot.GateOutside;
             var gateInside = _lot.GateInside;
             var junction = _lot.World(_stall.Junction);
             var mouth = _lot.World(_stall.Mouth);
@@ -282,7 +300,8 @@ namespace RoadDemo
             var aisle = Flat(mouth - junction).normalized;
             var forward = _lot.Direction(_stall.Forward);
 
-            AddSweep(Tf.position, Tf.forward, gateInside, inward);
+            AddSweep(Tf.position, Tf.forward, gateOutside, inward);
+            AddSweep(gateOutside, inward, gateInside, inward);
             AddSweep(gateInside, inward, junction, aisle);
             AddSweep(junction, aisle, mouth, aisle);
             Add(PatrolDocking.Dock(mouth, stand, forward), false, Quaternion.LookRotation(forward));

@@ -75,6 +75,16 @@ namespace RoadDemo
         public bool Carrying => WeaponPrefab != null;
         public CrewArms.Stats Ballistics { get; private set; }
 
+        /// <summary>The pieces held with both hands while running. Sidearms, including
+        /// the machine pistol, keep the locomotion clip's ordinary arm swing.</summary>
+        static bool LongGun(EquipmentKind kind) => kind switch
+        {
+            EquipmentKind.Rifle => true,
+            EquipmentKind.Shotgun => true,
+            EquipmentKind.TommyGun => true,
+            _ => false,
+        };
+
         public int Health = 3;
 
         /// <summary>His hands are up. Set by the crew giving itself up to the law
@@ -226,11 +236,11 @@ namespace RoadDemo
         /// somewhere else (TryRoam) sets off without this, and walks the whole way.</summary>
         public bool Urgent;
 
-        /// <summary>How much ground still to cover before a walk stops being worth it.
-        /// Below it a man walks the errand; above it he breaks into a run and walks the
-        /// last <see cref="RunSettle"/> metres in, so he arrives at his crew's pace
-        /// instead of skidding to a halt on the spot.</summary>
-        const float RunBeyond = 25f, RunSettle = 8f;
+        /// <summary>How much ground still to cover before a double-click run starts,
+        /// and how close to the mark it settles back to a walk. The old 25 m gate made
+        /// most visible orders ignore the double click entirely; the click is the
+        /// player's explicit pace order, so only the final couple of steps are walked.</summary>
+        const float RunBeyond = 3f, RunSettle = 1.2f;
 
         /// <summary>The crowd's brake as the GAIT reads it - the raw figure smoothed,
         /// so a man decides to break stride rather than dithering at every shoulder.</summary>
@@ -374,6 +384,70 @@ namespace RoadDemo
                 if (_destFwd == null) return Tf.position;
                 return Vector3.Lerp(_destFwd.From.Pos, _destFwd.To.Pos, _destT / _destFwd.Length);
             }
+        }
+
+        /// <summary>The place this whole order ends. <see cref="Destination"/> is the
+        /// current corner while a free-ground route is being walked; an intent overlay
+        /// needs the final formation spot instead.</summary>
+        public Vector3 OrderDestination => State == Mode.Striding ? _legEnd : Destination;
+
+        /// <summary>Copies the remaining route of the current foot order into a
+        /// caller-owned buffer. The list follows the same sidewalk route table or
+        /// obstacle-route corners the walker is already using; it never replans or
+        /// changes the order.</summary>
+        public bool CopyPlannedRoute(List<Vector3> into)
+        {
+            if (into == null) return false;
+            into.Clear();
+            if (Tf == null || !HasOrder || Riding || Dead) return false;
+
+            AddPreviewPoint(into, Tf.position);
+
+            if (State == Mode.Striding)
+            {
+                if (_legs.Count > 0)
+                    for (int i = Mathf.Clamp(_legAt, 0, _legs.Count - 1); i < _legs.Count; i++)
+                        AddPreviewPoint(into, _legs[i]);
+                else
+                    AddPreviewPoint(into, _legTo);
+                AddPreviewPoint(into, _legEnd);
+                return into.Count > 1;
+            }
+
+            var final = OrderDestination;
+            if (_link == null || State == Mode.Homing || _link == _destFwd || _link == _destBack)
+            {
+                AddPreviewPoint(into, final);
+                return into.Count > 1;
+            }
+
+            // The live walker is already travelling along _link toward its To node.
+            // From there the same node->link table used by ChooseLink says every turn.
+            var node = _link.To;
+            AddPreviewPoint(into, node.Pos);
+            for (int leg = 0; leg < 256 && node != null; leg++)
+            {
+                if (_destFwd != null && (node == _destFwd.From || node == _destFwd.To))
+                {
+                    AddPreviewPoint(into, final);
+                    return into.Count > 1;
+                }
+                if (_route == null || !_route.TryGetValue(node, out var toward) || toward == null)
+                    break;
+                AddPreviewPoint(into, toward.To.Pos);
+                node = toward.To;
+            }
+
+            // A malformed or temporarily stale graph still shows the honest part it
+            // knows. The final marker is drawn separately, so no fake straight line is
+            // drawn through whatever made the graph stop.
+            return into.Count > 1;
+        }
+
+        static void AddPreviewPoint(List<Vector3> into, Vector3 point)
+        {
+            if (into.Count == 0 || (into[into.Count - 1] - point).sqrMagnitude > 0.01f)
+                into.Add(point);
         }
 
         public PedLink DestinationLink => _destFwd;
@@ -548,10 +622,6 @@ namespace RoadDemo
         public void Engage(CrewWalker target)
         {
             if (Dead || Riding || !Carrying || Panicked || target == null || target.Dead || target == this) return;
-            // the gun comes out on the order, not on the next frame's tick: TickEngage
-            // drops a fight the moment it finds a man with nothing in his hand, so a
-            // draw a frame late is a fight that never starts.
-            DrawGun();
             if (Target != target) { _coverLooked = false; _underFire = 0; _coverRecheckAt = 0f; }
             Target = target;
             EndChat();
@@ -691,7 +761,32 @@ namespace RoadDemo
         /// gap between one exchange and the next, short enough that a street settles.</summary>
         const float ArmsQuiet = 8f;
 
+        /// <summary>Metres before his gun's reach at which a man draws on the way into
+        /// a fight. At the crew's fight jog this is about a second's warning: enough
+        /// time for the piece to appear and the arm to rise, but not a whole walk across
+        /// the quarter with a rifle already in his fist.</summary>
+        const float DrawBeforeRange = 3f;
+
         float _armsQuiet;
+
+        /// <summary>Has the approach reached the point where this fight needs a gun in
+        /// hand? A man on a moving machine is never closed on, so its passing-shot reach
+        /// is his effective range; everybody else uses the piece's own reach.</summary>
+        bool FightCloseEnoughToDraw
+        {
+            get
+            {
+                if (State != Mode.Engaging || Target == null || !Target.Tf || Target.Dead || Tf == null)
+                    return false;
+                float range = Target.Riding || Target.Astride
+                    ? Mathf.Max(Ballistics.Range * 1.35f, PassingShot)
+                    : Ballistics.Range;
+                var to = Target.Tf.position - Tf.position;
+                to.y = 0f;
+                float draw = range + DrawBeforeRange;
+                return to.sqrMagnitude <= draw * draw;
+            }
+        }
 
         /// <summary>Is there anything for a gun to be out FOR? This is the whole of the
         /// concealment rule, and it is deliberately about the moment rather than the
@@ -703,7 +798,8 @@ namespace RoadDemo
         /// whoever is driving the machine the moment it has a mark on its flank.</summary>
         public bool WantsGunOut =>
             !Dead && Carrying && !Surrendered &&
-            (State == Mode.Engaging ||   // a fight of his own, or a car he is emptying into
+            (FightCloseEnoughToDraw ||  // a fight, once he is about to enter its reach
+             CarMark != null ||         // a car he was explicitly told to shoot up
              State == Mode.Fleeing ||    // running from one, which is still one
              Alert ||                    // shooting within earshot, twelve seconds of it
              RidingAim ||                // out of a window, or off the back of a machine
@@ -751,7 +847,9 @@ namespace RoadDemo
         public void AimGun(float dt)
         {
             bool onCar = Target == null && CarMark != null && CarMark.Tf != null && !CarMark.Wrecked;
+            bool carryingLongGunAtRun = _runningLeg && LongGun(WeaponKind);
             bool aiming = !Dead && Armed && State == Mode.Engaging && _flinch <= 0f &&
+                          !carryingLongGunAtRun &&
                           (onCar || (Target != null && Target.Tf && !Target.Dead)) &&
                           !(InCover && _ducked);
             // what the arm is turned at: a man's chest, or the flank of a machine
@@ -784,7 +882,8 @@ namespace RoadDemo
                     ? Mathf.Max(Ballistics.Range * 1.35f, PassingShot)
                     : Ballistics.Range * 1.35f;
                 aiming = flat.magnitude <= reach &&
-                         Vector3.Angle(Tf.forward, flat) < 70f;
+                         Vector3.Angle(Tf.forward, flat) < 70f &&
+                         StrideAllowsAim(flat);
             }
             _aimBlend = Mathf.MoveTowards(_aimBlend, aiming ? 1f : 0f, 6f * dt);
             if (_aimBlend <= 0.001f || _aimArm == null || Weapon == null) return;
@@ -874,6 +973,7 @@ namespace RoadDemo
         {
             if (DriveTrace.On) TracePed(dt);
             TickArms(dt);
+            BlendLongGunRun(!Dead && !Spilling && Armed && _runningLeg && LongGun(WeaponKind), dt);
             // KEEPING LOW IS THIS FRAME'S DECISION, NOT A STATE. It is set by the one
             // branch that wants it - the last few metres to a flank with rounds in the
             // air - and that branch re-decides it every frame, so it is cleared here
@@ -1548,7 +1648,7 @@ namespace RoadDemo
             // the same reason - a round let off while the gun is still coming up goes
             // into the pavement
             if (_fireTimer <= 0f && dist <= range && Vector3.Angle(Tf.forward, to) < 25f &&
-                _aimBlend >= 0.5f && BarrelOn(CarAim(car)))
+                StrideAllowsAim(to) && _aimBlend >= 0.5f && BarrelOn(CarAim(car)))
             {
                 _fireTimer = Ballistics.Interval;
                 if (HasPose(PoseShoot))
@@ -1571,7 +1671,7 @@ namespace RoadDemo
             // thing that walks, no waiting for it to stand up
             if (Target == null && CarMark != null) { TickShootUp(dt); return; }
 
-            if (Target == null || !Target.Tf || Target.Dead || !Armed)
+            if (Target == null || !Target.Tf || Target.Dead || !Carrying)
             {
                 Target = null;
                 State = Mode.Standing;
@@ -1583,6 +1683,21 @@ namespace RoadDemo
             toTarget.y = 0f;
             float dist = toTarget.magnitude;
             float range = Ballistics.Range;
+
+            // TickArms normally draws before this branch. Keep the combat state safe
+            // when Engage is called between ticks, and still fail honestly if this
+            // body's rig cannot put the carried piece in its hand.
+            if (!Armed && FightCloseEnoughToDraw)
+            {
+                DrawGun();
+                if (!Armed)
+                {
+                    Target = null;
+                    State = Mode.Standing;
+                    Loco(dt, false);
+                    return;
+                }
+            }
 
             // out of range: close in (to a little inside it, so a man who backs off
             // a step does not restart the walk); in range: square up and shoot
@@ -1728,9 +1843,17 @@ namespace RoadDemo
                 // does not fire at all. He fires from the hurried WALK the approach
                 // drops him into (RunOffFight hysteresis), which is the answering-fire
                 // the closing shot exists for.
+                //
+                // Take this frame's step BEFORE judging the trigger. Obstacle and crowd
+                // steering choose the real direction inside TickStride; judging first
+                // would let one last round leave on the frame the step turns sideways.
+                TickStride(dt, Target.Tf.position, range * RangeFactor, hurry: true,
+                    run: RunWhile(dist > range * (_runningLeg ? RunOffFight : RunToFight)),
+                    keepOffRoad: !OnCarriageway(Target.Tf.position));
                 if (dist <= range && !_runningLeg && _fireTimer <= 0f && _flinch <= 0f &&
                     _aimBlend >= 0.5f &&
-                    Vector3.Angle(Tf.forward, toTarget) < 40f && BarrelOn(Target))
+                    Vector3.Angle(Tf.forward, toTarget) < 40f &&
+                    StrideAllowsAim(toTarget) && BarrelOn(Target))
                 {
                     _fireTimer = Ballistics.Interval * OnTheMove;
                     if (HasPose(PoseShoot))
@@ -1748,9 +1871,6 @@ namespace RoadDemo
                 // reads as a puppet being placed. The two figures are apart on purpose,
                 // so a mark backing off a metre does not switch him between the two
                 // every second.
-                TickStride(dt, Target.Tf.position, range * RangeFactor, hurry: true,
-                    run: RunWhile(dist > range * (_runningLeg ? RunOffFight : RunToFight)),
-                    keepOffRoad: !OnCarriageway(Target.Tf.position));
                 return;
             }
 
@@ -1781,7 +1901,8 @@ namespace RoadDemo
             // duck, or fresh out of a flinch, the barrel spends a beat coming up, and a
             // round let off during it goes into the ground the clip was authored at
             float off = Vector3.Angle(Tf.forward, toTarget);
-            if (_fireTimer <= 0f && off < 25f && _aimBlend >= 0.5f && BarrelOn(Target))
+            if (_fireTimer <= 0f && off < 25f && StrideAllowsAim(toTarget) &&
+                _aimBlend >= 0.5f && BarrelOn(Target))
             {
                 _fireTimer = Ballistics.Interval;
                 if (HasPose(PoseShoot))

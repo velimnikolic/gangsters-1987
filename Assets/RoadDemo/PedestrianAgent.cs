@@ -169,6 +169,11 @@ namespace RoadDemo
         // The run a man breaks into closing on a fight. Optional: without it he walks.
         public AnimationClip Jog;
 
+        // A two-handed still hold laid over a run for long guns. It is not another
+        // gait: the legs keep Jog/Sprint and only the arms come from this clip.
+        // Optional, and unused by ordinary pedestrians and sidearms.
+        public AnimationClip LongGunRunUpper;
+
         // Flat out, arms pumping - the gait of a man genuinely running for his life,
         // a step above the jog. Optional: without it a bolting man jogs, as he always
         // did. Never dealt as a crew's marching gait (see CrewKit.Runs).
@@ -329,6 +334,7 @@ namespace RoadDemo
 
         PlayableGraph _graph;
         AnimationMixerPlayable _mixer;
+        AnimationLayerMixerPlayable _layers;
         readonly AnimationClipPlayable[] _poses = new AnimationClipPlayable[PoseCount];
         readonly float[] _weights = new float[PoseCount];
         // clip lengths and paces read once at wiring: TickBlend runs for every
@@ -455,9 +461,55 @@ namespace RoadDemo
                     HoldWalkRate(Speed);
                 _weights[PoseWalk] = 1f;
                 _mixer.SetInputWeight(PoseWalk, 1f);
-                output.SetSourcePlayable(_mixer);
+                if (clips.LongGunRunUpper != null)
+                {
+                    // The base mixer keeps the gait whole. A masked override above it
+                    // replaces only the arms with the pack's two-handed long-gun hold,
+                    // so the feet, hips, run cadence and root all stay exactly as they
+                    // were. One shared graph layer is cheaper and cleaner than a second
+                    // Animator/controller on every armed man.
+                    _layers = AnimationLayerMixerPlayable.Create(_graph, 2);
+                    _graph.Connect(_mixer, 0, _layers, 0);
+                    _layers.SetInputWeight(0, 1f);
+                    var upper = AnimationClipPlayable.Create(_graph, clips.LongGunRunUpper);
+                    _graph.Connect(upper, 0, _layers, 1);
+                    _layers.SetInputWeight(1, 0f);
+                    _layers.SetLayerMaskFromAvatarMask(1, LongGunRunMask());
+                    output.SetSourcePlayable(_layers);
+                }
+                else output.SetSourcePlayable(_mixer);
                 _graph.Play();
             }
+        }
+
+        static AvatarMask _longGunRunMask;
+
+        /// <summary>Only the two arms belong to the weapon hold. In particular the
+        /// body and legs remain the gait's: replacing those with a one-frame idle is
+        /// how an upper-body overlay turns a running man into a sliding statue.</summary>
+        static AvatarMask LongGunRunMask()
+        {
+            if (_longGunRunMask != null) return _longGunRunMask;
+            var mask = new AvatarMask { name = "Long gun run - arms only" };
+            foreach (AvatarMaskBodyPart part in System.Enum.GetValues(typeof(AvatarMaskBodyPart)))
+                if (part != AvatarMaskBodyPart.LastBodyPart)
+                    mask.SetHumanoidBodyPartActive(part, false);
+            mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.LeftArm, true);
+            mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.RightArm, true);
+            mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.LeftFingers, true);
+            mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.RightFingers, true);
+            return _longGunRunMask = mask;
+        }
+
+        float _longGunRunWeight;
+
+        /// <summary>Blend the two-handed carry over the current gait. The graph is
+        /// absent on walkers whose wardrobe did not bring the optional clip.</summary>
+        protected void BlendLongGunRun(bool carrying, float dt)
+        {
+            if (!_layers.IsValid()) return;
+            _longGunRunWeight = Mathf.MoveTowards(_longGunRunWeight, carrying ? 1f : 0f, 8f * dt);
+            _layers.SetInputWeight(1, _longGunRunWeight);
         }
 
         public void Dispose()

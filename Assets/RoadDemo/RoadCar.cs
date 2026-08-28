@@ -3590,6 +3590,220 @@ namespace RoadDemo
             OnPlaced(dt, Speed, 0f);
         }
 
+        /// <summary>Copies the route this driver currently means to take into a caller-owned
+        /// buffer. This is a read-only view for overlays: it follows the same lane table,
+        /// junction connectors, lane shifts and turn-round decision as the driver, and
+        /// allocates nothing while it is being redrawn.</summary>
+        public bool CopyPlannedRoute(List<Vector3> into, float spacing = 4f)
+        {
+            if (into == null) return false;
+            into.Clear();
+            if (Tf == null) return false;
+
+            spacing = Mathf.Clamp(spacing, 1f, 12f);
+            PreviewAdd(into, PreviewCurrent());
+
+            if (_freeGoal.HasValue)
+            {
+                var free = _freeGoal.Value;
+                free.y = RoadY + PreviewLift;
+                PreviewAdd(into, free);
+                return into.Count > 1;
+            }
+            if (!_hasGoal || _goalRoad == null || _goalLane == null) return false;
+
+            RoadEdge edge;
+            float startS, startD;
+            if (Via != null)
+            {
+                PreviewConnector(into, Via, ViaS, Via.Length, spacing);
+                edge = Via.To;
+                startS = edge != null ? edge.S0 : 0f;
+                startD = edge != null ? edge.Offset : 0f;
+            }
+            else
+            {
+                if (Road == null) return false;
+                edge = Lane ?? Road.LaneFor(Heading, D);
+                startS = S;
+                startD = D;
+
+                // The route table deliberately stays alive while a driver waits for a
+                // chance to turn round. The preview must show the intended turn, not the
+                // longer fallback that table represents.
+                if (_man == Manoeuvre.UTurn)
+                {
+                    PreviewUTurn(into, Road, _arcS0, _arcR, _arcSide, _arcHeading0,
+                        _arcAng, spacing);
+                    edge = Road.LaneFor(-_arcHeading0, -_arcSide * _arcR);
+                    startS = _arcS0;
+                    startD = edge != null ? edge.Offset : -_arcSide * _arcR;
+                }
+                else if (_turnFirst || PlansTurnRoundToGoal())
+                {
+                    float radius = UTurnRadius();
+                    int side = D >= 0f ? 1 : -1;
+                    int heading = Heading;
+                    float centreS = S + heading;
+                    PreviewUTurn(into, Road, centreS, radius, side, heading, 0f, spacing);
+                    edge = Road.LaneFor(-heading, -side * radius);
+                    startS = centreS;
+                    startD = edge != null ? edge.Offset : -side * radius;
+                }
+            }
+
+            // A route search is acyclic (each edge gets closer to the goal), but keep a
+            // hard guard because this is diagnostic code and must never hang a frame if
+            // a malformed hand-built bench supplies a cyclic table.
+            for (int leg = 0; leg < 128 && edge != null && edge.Road != null; leg++)
+            {
+                var road = edge.Road;
+                if (road == _goalRoad && (edge.Heading == _goalHeading || Route == null))
+                {
+                    PreviewGoal(into, road, edge, startS, startD, spacing);
+                    return into.Count > 1;
+                }
+
+                var routeEdge = edge;
+                float laneD = edge.Offset;
+                if (RouteShift != null && RouteShift.TryGetValue(edge, out var shifted) &&
+                    shifted != null && shifted.Road == road && shifted.Heading == edge.Heading)
+                {
+                    routeEdge = shifted;
+                    laneD = shifted.Offset;
+                }
+
+                float endS = road.EndS(routeEdge.Heading);
+                PreviewRoadToLane(into, road, startS, endS, startD, laneD,
+                    routeEdge.Heading, spacing);
+
+                RoadEdge next = null;
+                if (Route != null) Route.TryGetValue(routeEdge, out next);
+                if (next == null) break;
+                var connector = routeEdge.To?.ConnectorFor(routeEdge, next);
+                if (connector == null) break;
+                PreviewConnector(into, connector, 0f, connector.Length, spacing);
+
+                edge = next;
+                startS = edge.S0;
+                startD = edge.Offset;
+            }
+
+            into.Clear();
+            return false;
+        }
+
+        const float PreviewLift = 0.14f;
+
+        Vector3 PreviewCurrent()
+        {
+            float y = Tf != null ? Tf.position.y : RoadY + SurfaceLift();
+            return new Vector3(Position.x, y + PreviewLift, Position.z);
+        }
+
+        Vector3 PreviewRoadPoint(Carriageway road, float s, float d)
+        {
+            var point = road.Pose(s, d);
+            point.y = RoadY + road.SurfaceOn(s) + PreviewLift;
+            return point;
+        }
+
+        bool PlansTurnRoundToGoal()
+        {
+            if (!_hasGoal || Road == null || Road != _goalRoad || NoTurnBack ||
+                !Road.TwoWay || !Profile.UTurnsInRoad || Road.MedianHalf > 0f ||
+                _turnBackFor >= TurnBackPatience) return false;
+            return Heading != _goalHeading || (_goalS - S) * Heading < -3f;
+        }
+
+        void PreviewGoal(List<Vector3> into, Carriageway road, RoadEdge edge,
+            float fromS, float fromD, float spacing)
+        {
+            float distance = Mathf.Max(0f, (_goalS - fromS) * edge.Heading);
+            float settle = Mathf.Min(_goalPark ? 18f : 10f, distance);
+            float settleS = _goalS - edge.Heading * settle;
+
+            float settledD = fromD;
+            if (distance > settle + 0.1f)
+            {
+                PreviewRoadToLane(into, road, fromS, settleS, fromD, edge.Offset,
+                    edge.Heading, spacing);
+                settledD = edge.Offset;
+            }
+            else
+                settleS = fromS;
+            PreviewRoad(into, road, settleS, _goalS, settledD, _goalD, spacing);
+        }
+
+        void PreviewRoadToLane(List<Vector3> into, Carriageway road, float fromS,
+            float toS, float fromD, float laneD, int heading, float spacing)
+        {
+            float distance = Mathf.Abs(toS - fromS);
+            if (Mathf.Abs(fromD - laneD) < 0.05f || distance < 0.1f)
+            {
+                PreviewRoad(into, road, fromS, toS, fromD, laneD, spacing);
+                return;
+            }
+
+            float shift = Mathf.Min(18f, distance);
+            float shiftedAt = fromS + heading * shift;
+            PreviewRoad(into, road, fromS, shiftedAt, fromD, laneD, spacing);
+            if (distance > shift + 0.1f)
+                PreviewRoad(into, road, shiftedAt, toS, laneD, laneD, spacing);
+        }
+
+        void PreviewRoad(List<Vector3> into, Carriageway road, float fromS, float toS,
+            float fromD, float toD, float spacing)
+        {
+            float distance = Mathf.Abs(toS - fromS);
+            int count = Mathf.Max(1, Mathf.CeilToInt(distance / spacing));
+            for (int i = 1; i <= count; i++)
+            {
+                float t = i / (float)count;
+                float across = Mathf.Lerp(fromD, toD, Mathf.SmoothStep(0f, 1f, t));
+                PreviewAdd(into, PreviewRoadPoint(road, Mathf.Lerp(fromS, toS, t), across));
+            }
+        }
+
+        void PreviewConnector(List<Vector3> into, Connector connector, float fromS,
+            float toS, float spacing)
+        {
+            if (connector == null) return;
+            float distance = Mathf.Abs(toS - fromS);
+            int count = Mathf.Max(1, Mathf.CeilToInt(distance / spacing));
+            float fromLift = EndLift(connector.From, leaving: true);
+            float toLift = EndLift(connector.To, leaving: false);
+            for (int i = 1; i <= count; i++)
+            {
+                float t = i / (float)count;
+                float s = Mathf.Lerp(fromS, toS, t);
+                var point = connector.Point(s);
+                float along = connector.Length > 0.01f ? Mathf.Clamp01(s / connector.Length) : 1f;
+                point.y = RoadY + Mathf.Lerp(fromLift, toLift, along) + PreviewLift;
+                PreviewAdd(into, point);
+            }
+        }
+
+        void PreviewUTurn(List<Vector3> into, Carriageway road, float centreS, float radius,
+            int side, int heading, float fromAngle, float spacing)
+        {
+            float distance = Mathf.Max(0f, Mathf.PI - fromAngle) * radius;
+            int count = Mathf.Max(2, Mathf.CeilToInt(distance / spacing));
+            for (int i = 1; i <= count; i++)
+            {
+                float angle = Mathf.Lerp(fromAngle, Mathf.PI, i / (float)count);
+                float s = centreS + heading * radius * Mathf.Sin(angle);
+                float d = side * radius * Mathf.Cos(angle);
+                PreviewAdd(into, PreviewRoadPoint(road, s, d));
+            }
+        }
+
+        static void PreviewAdd(List<Vector3> into, Vector3 point)
+        {
+            if (into.Count == 0 || (into[into.Count - 1] - point).sqrMagnitude > 0.01f)
+                into.Add(point);
+        }
+
         public Vector3? FreeGoal => _freeGoal;
     }
 }

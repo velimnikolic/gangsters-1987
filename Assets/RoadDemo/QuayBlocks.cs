@@ -14,9 +14,9 @@ namespace RoadDemo
     /// EVERY NUMBER BELOW IS MEASURED - off the POLYGON Palm City demo's own waterfront
     /// (Docs/river-plan.md 0.4) and off the pieces themselves. Their pier has its lamps in
     /// pairs every ten to fifteen metres, its cafe puts four tables on ten metres of deck
-    /// under 3.25 m umbrellas, its shops stand by the root; their fairground is a 30 x 40 m
-    /// yard fenced with barriers, the 31 m wheel in it at full size; their marina floats its
-    /// docks 0.45 m above the water. The grid city's river (RoadDemoBuilder.BuildRiver)
+    /// under 3.25 m umbrellas, its shops stand by the root; their fairground is kept as the
+    /// complete PalmBlock_07 extracted from that scene, including its separately animated
+    /// 31 m wheel; their marina floats its docks 0.45 m above the water. The grid city's river (RoadDemoBuilder.BuildRiver)
     /// lays the same wall at the same height and its lamps at sixteen metres, and the
     /// harbour's water line hangs a life ring at every third lamp and a ladder every sixty
     /// metres - all of it kept, so the water reads the same wherever the city meets it.
@@ -139,11 +139,11 @@ namespace RoadDemo
         const string PavilionBBQ = PalmProps + "SM_Prop_BBQ_02.prefab";
         const string PavilionBench = PalmProps + "SM_Prop_Bench_Seat_02.prefab";
 
-        // the fairground
-        const string Wheel = PalmProps + "SM_Prop_Ferris_Wheel_01.prefab";
-        const string JuiceCart = PalmVeh + "SM_Veh_Juice_Cart_01.prefab";
-        const string FairTable = PalmProps + "SM_Prop_Table_Outdoor_01.prefab";
-        const string FairFence = PalmProps + "SM_Prop_Barrier_Fence_01.prefab";
+        // the fairground: PalmBlock_07 is the source scene's complete Fairground block,
+        // not the shell-only Catalog/Fairground bake. The block deliberately leaves the
+        // ferris wheel as a hierarchy, so its rotate pivot can still move at runtime.
+        const string Fairground = "Assets/CityKit/Blocks/PalmBlock_07.prefab";
+        const float FairAir = 1f;
 
         // ------------------------------------------------------------------- the levels
 
@@ -315,7 +315,7 @@ namespace RoadDemo
                     case QuayWalk.Programme.Fountain: Plaza(under, box, rng, stood); break;
                     case QuayWalk.Programme.Terrace: Terrace(plan, under, box, rng, stood); break;
                     case QuayWalk.Programme.Landing: Landing(plan, under, room, rng, stood); break;
-                    case QuayWalk.Programme.Fair: Fair(plan, under, box, rng, stood); break;
+                    case QuayWalk.Programme.Fair: Fair(under, box, stood); break;
                     case QuayWalk.Programme.Diner: DinerStand(under, box, rng, stood); break;
                     default: break;       // the lawn and the grove are planted, the paving is left
                 }
@@ -562,67 +562,43 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// The fairground: the demo's own yard - barriers round it with the gate onto the
-        /// walk, the wheel at full size with its plane along the river, the juice cart and
-        /// the outdoor tables by the gate.
+        /// The PalmCity demo's complete fairground block, at its authored scale and
+        /// orientation. Its wheel stays separate from the baked shell and receives the
+        /// same rotator used by every other fairground wheel in the core.
         /// </summary>
-        static void Fair(QuayWalk.Plan plan, Transform under, Rect box, System.Random rng, Stood stood)
+        static void Fair(Transform under, Rect box, Stood stood)
         {
-            var wheel = Box(Wheel).size;
-            // the wheel's plane is its own x; along the river it is turned a quarter
-            float across = wheel.z, along = wheel.x;
-            if (along + 4f > box.height || across + 3f > box.width)
+            const float yaw = 0f; // the extracted block already faces the river as in PalmCityDemo
+            var foot = Foot(Fairground, yaw);
+            if (foot.x + FairAir > box.width || foot.y + FairAir > box.height)
             {
-                Refused["SM_Prop_Ferris_Wheel_01"] = 1;
+                Refused["PalmBlock_07"] = 1;
                 return;
             }
-            var pen = new GameObject("fairground").transform;
-            pen.SetParent(under, false);
 
-            // the wheel toward the kerb end of the yard, the tables and the cart toward
-            // the walk; nobody scales a wheel
-            float wx = box.xMin + across * 0.5f + 1.2f, wz = box.center.y;
-            var go = Stand(Wheel, pen, wx, wz, 90f);
+            var go = Stand(Fairground, under, box.center.x, box.center.y, yaw);
             if (go == null) return;
-            Claim(new Rect(wx - across * 0.5f - 0.5f, wz - along * 0.5f - 0.5f, across + 1f, along + 1f));
-            stood.Wheel = true;
+            go.name = "Fairground";
+            Claim(new Rect(box.center.x - (foot.x + FairAir) * 0.5f,
+                           box.center.y - (foot.y + FairAir) * 0.5f,
+                           foot.x + FairAir, foot.y + FairAir));
+
+            bool wheel = false;
+            foreach (var t in go.GetComponentsInChildren<Transform>(true))
+            {
+                if (!t.name.Contains("Ferris") || !t.name.Contains("_Rotate")) continue;
+                wheel = true;
+                if (t.GetComponent<DemoFerrisWheel>() == null)
+                    t.gameObject.AddComponent<DemoFerrisWheel>();
+            }
+            foreach (Transform child in go.transform)
+            {
+                if (child.name.StartsWith("SM_Prop_Table_Outdoor")) stood.Tables++;
+                if (child.name.StartsWith("SM_Veh_Juice_Cart")) stood.Carts++;
+            }
+
+            stood.Wheel = wheel;
             stood.Programmes++;
-
-            // the barriers round the yard, the gate in the middle of the walk side
-            float panel = Box(FairFence).size.x;
-            if (panel < 0.8f) panel = 2f;
-            var yard = box;
-            for (int k = 0; k < 4; k++)
-            {
-                bool alongZ = k >= 2;                       // the two long sides run along the river
-                float line = k == 0 ? yard.yMin : k == 1 ? yard.yMax : k == 2 ? yard.xMin : yard.xMax;
-                float run = alongZ ? yard.height : yard.width;
-                // whole panels at their own size, never one scaled down to fit: what is
-                // left over is split between the two ends of the side
-                int panels = Mathf.Max(1, Mathf.FloorToInt(run / panel + 0.01f));
-                float from = (alongZ ? yard.yMin : yard.xMin) + (run - panels * panel) * 0.5f;
-                int gate0 = k == 3 ? panels / 2 - 1 : -1;   // two panels out on the walk side
-                for (int p = 0; p < panels; p++)
-                {
-                    if (gate0 >= 0 && (p == gate0 || p == gate0 + 1)) continue;
-                    float at = from + p * panel;
-                    if (alongZ) Lay(FairFence, pen, line - 0.1f, at, 0.2f, panel, 90f);
-                    else Lay(FairFence, pen, at, line - 0.1f, panel, 0.2f, 0f);
-                }
-            }
-
-            // the cart by the gate, the tables between the wheel and the walk
-            float tx0 = wx + across * 0.5f + 1.5f, tx1 = yard.xMax - 1f;
-            if (Prop(JuiceCart, pen, tx1 - 2.2f, yard.yMax - 3.5f, 180f, 1.1f) != null) stood.Programmes++;
-            int want = 6;
-            for (int guard = 0; want > 0 && guard < 40 && tx1 - tx0 > 2f; guard++)
-            {
-                float x = Between(rng, tx0 + 1f, tx1 - 1f), z = Between(rng, yard.yMin + 1.5f, yard.yMax - 6f);
-                if (Prop(FairTable, pen, x, z, Between(rng, 0f, 360f), 1.3f) == null) continue;
-                stood.Tables++;
-                want--;
-            }
-            Sit(Any(Bins, rng), pen, tx1 - 0.8f, yard.yMin + 1f, Between(rng, 0f, 360f));
         }
 
         // ----------------------------------------------------------------- the water line

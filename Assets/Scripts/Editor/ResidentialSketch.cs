@@ -21,7 +21,6 @@ namespace LivingCity.EditorTools
     {
         public const string DemoScene = "Assets/Scenes/ResidentialDemo.unity";
         const string Root = "RESIDENTIAL";
-        const string Bare = "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Road_Bare_01.prefab";
 
         /// <summary>The blocks the demo scene stands. The large Court recipe is intentionally
         /// absent here: at its minimum 80 x 80 m it needs a dedicated courtyard programme,
@@ -34,26 +33,35 @@ namespace LivingCity.EditorTools
         /// <c>Unit</c> names a YARD BLOCK - a block that is one lot, cut to the lot and its
         /// pavement ring (the user, 2026-08-28: "dodaj u residential demo da mi iscrtava i te
         /// gym caryard skatepark blokove"). Their sizes are not typed here: they are measured
-        /// off the units themselves, so a re-harvest moves the bench with them.</summary>
-        static readonly (string Name, int W, int D, string Unit)[] Five =
+        /// off the units themselves, so a re-harvest moves the bench with them.
+        ///
+        /// <c>Diner</c> is different: it reserves that complete Palm City venue in the middle
+        /// programme of an ordinary block, after the four corner houses. It is deliberately
+        /// present on two of the five mixed blocks rather than appended as another yard block.</summary>
+        // The named recipes below were measured with a one-cell pavement. When the shared
+        // CoreDemo pavement grows, grow the whole block by the same amount on both sides so
+        // the usable interior -- and therefore the recipe and its seed -- stay unchanged.
+        const int PavementGrowth = 2 * (ResidentialLot.Walk - 1);
+
+        static readonly (string Name, int W, int D, string Unit, string Diner)[] Five =
         {
-            ("block", 13, 15, null),
-            ("corner", 8, 7, null),
-            ("row", 6, 13, null),
-            ("block", 13, 15, null),
-            ("block", 14, 15, null),
+            ("block", 13 + PavementGrowth, 15 + PavementGrowth, null, "dinner"),
+            ("corner", 8 + PavementGrowth, 7 + PavementGrowth, null, null),
+            ("row", 6 + PavementGrowth, 13 + PavementGrowth, null, null),
+            ("block", 13 + PavementGrowth, 15 + PavementGrowth, null, null),
+            ("block", 14 + PavementGrowth, 15 + PavementGrowth, null, "dinner2"),
         };
 
         /// <summary>The bench's blocks, the yard blocks measured in after them.</summary>
-        static IEnumerable<(string Name, int W, int D, string Unit)> Bench()
+        static IEnumerable<(string Name, int W, int D, string Unit, string Diner)> Bench()
         {
             foreach (var one in Five) yield return one;
             foreach (string name in ResidentialLot.OwnBlock)
             {
                 var unit = ResidentialUnits.All.FirstOrDefault(u => u.Name == name);
                 if (unit == null) continue;
-                int border = 2 * (ResidentialLot.Walk + ResidentialLot.Clearance(unit));
-                yield return (name, unit.CW + border, unit.CD + border, name);
+                ResidentialLot.YardDimensions(unit, out int w, out int d);
+                yield return (name, w, d, name, null);
             }
         }
 
@@ -74,7 +82,7 @@ namespace LivingCity.EditorTools
             Debug.Log(said);
         }
 
-        [MenuItem("Tools/City/Residential/Demo Scene (five blocks)", priority = 42)]
+        [MenuItem("Tools/City/Residential/Demo Scene (eight blocks)", priority = 42)]
         public static void DemoMenu()
         {
             string said = Demo(FreshSeed());
@@ -96,10 +104,12 @@ namespace LivingCity.EditorTools
 
         /// <summary>
         /// The demo scene: the residential recipes and yard blocks in two compact rows,
-        /// with a proper street band between them, saved to <see cref="DemoScene"/>. A long
+        /// with open editor ground between them, saved to <see cref="DemoScene"/>. A long
         /// single row left a full block-depth of dead test ground behind every shallow lot.
-        /// The scene is made fresh every time - it is generated, so there is nothing in it
-        /// worth keeping.
+        /// The road carpet is intentionally absent: this bench is for dragging and judging
+        /// residential blocks, and thousands of selectable asphalt tiles only get in the
+        /// way. Production streets remain the core road system's responsibility. The scene
+        /// is made fresh every time - it is generated, so there is nothing in it worth keeping.
         /// </summary>
         public static string Demo(int seed)
         {
@@ -122,15 +132,13 @@ namespace LivingCity.EditorTools
             int atX = Street;
             int atZ = Street;
             int rowDepth = 0;
-            int widest = 0;
             int first = seed;
             int index = 0;
 
-            foreach (var (name, w, d, unit) in Bench())
+            foreach (var (name, w, d, unit, diner) in Bench())
             {
                 if (index > 0 && index % 4 == 0)
                 {
-                    widest = Mathf.Max(widest, atX);
                     atX = Street;
                     atZ += rowDepth + Street;
                     rowDepth = 0;
@@ -144,19 +152,21 @@ namespace LivingCity.EditorTools
                             "row" => ResidentialLot.Klass.Row,
                             "court" => ResidentialLot.Klass.Court,
                             _ => null,
-                        })
+                        },
+                        featuredDiner: diner)
                     : ResidentialLot.Yard(w, d, seed++, unit);
-                var root = new GameObject($"{Root} {name} {w}x{d} seed {plan.Seed}");
+                string label = diner == null ? name : $"{name}+{diner}";
+                var root = new GameObject($"{Root} {label} {w}x{d} seed {plan.Seed}");
 
                 // COMPOSED AT THE ORIGIN AND MOVED AFTERWARDS. Everything the composer sets
                 // down is placed by measuring where it lands in the world, not by its parent,
                 // so a root moved first is a root whose children ignore it: the first run of
-                // this scene stood all five blocks on top of one another.
+                // this scene stood all blocks on top of one another.
                 var stood = ResidentialBlocks.Compose(plan, root.transform, new System.Random(seed), Raise);
                 root.transform.position = new Vector3(atX * ResidentialLot.Cell, 0f,
                                                       atZ * ResidentialLot.Cell);
 
-                said.AppendLine($"{name,-7} {ResidentialLot.Report(plan)}");
+                said.AppendLine($"{label,-14} {ResidentialLot.Report(plan)}");
                 said.AppendLine($"        {stood}");
                 plans.Add((plan, atX, atZ));
                 atX += w + Street;
@@ -164,57 +174,12 @@ namespace LivingCity.EditorTools
                 index++;
             }
 
-            widest = Mathf.Max(widest, atX);
-            int deepest = atZ + rowDepth;
-            Asphalt(widest + Street, deepest + Street, plans);
-
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, DemoScene);
 
             int faults = plans.Sum(p => p.Plan.Faults.Count);
             said.Insert(0, $"{plans.Count} block(s) in {DemoScene} from seed {first}, {faults} fault(s)\n");
             return said.ToString();
-        }
-
-        /// <summary>A carpet of bare asphalt everywhere no block stands - the streets between
-        /// them and the ground round the edge. It is a bench, not a city: the roads a quarter
-        /// gets are dealt by <c>CoreRoads</c> and are not this tool's business.</summary>
-        static void Asphalt(int w, int d, List<(ResidentialLot.Plan Plan, int X, int Z)> plans)
-        {
-            var road = new GameObject("STREETS");
-            var taken = new HashSet<Vector2Int>();
-            foreach (var (plan, x, z) in plans)
-                for (int i = 0; i < plan.W; i++)
-                    for (int j = 0; j < plan.D; j++)
-                        taken.Add(new Vector2Int(x + i, z + j));
-
-            var asset = AssetDatabase.LoadAssetAtPath<GameObject>(Bare);
-            if (asset == null) return;
-
-            // The tile is laid by MEASURING where it lands, not by its pivot: the pack's road
-            // tile hangs from its far corner, so laid by pivot every tile sat one cell off and
-            // the carpet ran under the east and north pavements of every block (the user,
-            // 2026-08-27: "preplice se put s necime").
-            var probe = (GameObject)PrefabUtility.InstantiatePrefab(asset, road.transform);
-            probe.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-            var shift = Vector3.zero;
-            var renderers = probe.GetComponentsInChildren<Renderer>();
-            if (renderers.Length > 0)
-            {
-                var box = renderers[0].bounds;
-                foreach (var r in renderers) box.Encapsulate(r.bounds);
-                shift = new Vector3(-box.min.x, 0f, -box.min.z);
-            }
-            Object.DestroyImmediate(probe);
-
-            for (int i = 0; i < w; i++)
-                for (int j = 0; j < d; j++)
-                {
-                    if (taken.Contains(new Vector2Int(i, j))) continue;
-                    var go = (GameObject)PrefabUtility.InstantiatePrefab(asset, road.transform);
-                    go.transform.position = new Vector3(i * ResidentialLot.Cell, -0.06f,
-                                                        j * ResidentialLot.Cell) + shift;
-                }
         }
 
         /// <summary>How the editor raises a prefab: a linked instance, so a block can be

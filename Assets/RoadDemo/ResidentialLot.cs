@@ -21,16 +21,15 @@ namespace RoadDemo
     /// </summary>
     public static class ResidentialLot
     {
-        public const int Cell = 5;
+        public const int Cell = CoreBlockMetrics.Cell;
 
-        /// <summary>The pavement the block carries round itself, in cells. One tile, 5 m -
-        /// the user's call of 2026-08-26: a brownstone already keeps a garden behind its
-        /// railings, and ten metres of pavement beside that is a boulevard.</summary>
-        public const int Walk = 1;
+        /// <summary>The pavement the block carries round itself, in cells. Residential
+        /// blocks follow CoreDemo's shared ten-metre pavement rule.</summary>
+        public const int Walk = CoreBlockMetrics.PavementTiles;
 
-        /// <summary>A complete outdoor venue keeps one paved cell between its fence/props
-        /// and both the block pavement and any neighbouring building. Without this band the
-        /// gym fence landed on the pavement kerb and its equipment touched the next house.</summary>
+        /// <summary>An outdoor venue mixed into a residential block keeps one paved cell
+        /// between its fence/props and every neighbouring building. Complete venue blocks
+        /// use only the ordinary street pavement ring; see <see cref="YardClearance"/>.</summary>
         public const int AmenityClear = 1;
 
         public static int Clearance(ResidentialUnit unit) =>
@@ -116,10 +115,16 @@ namespace RoadDemo
         {
             public int W, D;                       // the whole block, pavement ring included
             public Klass Klass;
+            /// <summary>This plan is one complete gym/car-yard/skatepark lot rather than a
+            /// mixed residential block. Those lots keep only the street pavement ring.</summary>
+            public bool YardBlock;
             public bool[] Street = new bool[4];    // which sides have a road along them
             public EdgeRole[] Role = new EdgeRole[4];
             public int Artery = -1;                // the side the shops look at
             public int Seed;
+            /// <summary>A full diner reserved inside this mixed block, if requested by the
+            /// demo. It still shares the block with houses; it is never a yard block.</summary>
+            public string FeaturedDiner;
             public List<Spot> Spots = new List<Spot>();
             public List<Gap> Gaps = new List<Gap>();
             public List<Access> Accesses = new List<Access>();
@@ -223,9 +228,13 @@ namespace RoadDemo
         /// <summary>A block of this size, dealt from this seed. Streets on every side unless
         /// told otherwise; the artery is the side the shops are allowed to look at.</summary>
         public static Plan Roll(int w, int d, int seed, int artery = 0, bool[] streets = null,
-                                Klass? forced = null)
+                                Klass? forced = null, string featuredDiner = null)
         {
-            var plan = new Plan { W = w, D = d, Seed = seed, Artery = artery };
+            var plan = new Plan
+            {
+                W = w, D = d, Seed = seed, Artery = artery,
+                FeaturedDiner = featuredDiner,
+            };
             for (int s = 0; s < 4; s++) plan.Street[s] = streets == null || streets[s];
             Roles(plan);
             plan.Ground = new Use[w, d];
@@ -250,9 +259,16 @@ namespace RoadDemo
                     if (i < Walk || j < Walk || i >= w - Walk || j >= d - Walk)
                         plan.Ground[i, j] = Use.Walkway;
 
-            int dice = unchecked(seed * 7919 + w * 104729 + d * 1299709);
+            // The same seed and the same buildable ground deal the same block even when the
+            // city's pavement standard changes. The +2 preserves the sequence from the old
+            // one-cell ring while making the ring itself irrelevant to the interior deal.
+            int diceW = plan.Inner + 2, diceD = plan.InnerD + 2;
+            int dice = unchecked(seed * 7919 + diceW * 104729 + diceD * 1299709);
             var rng = new Random(dice);
-            plan.Lone = rng.NextDouble() < AloneOdds && Room(plan);
+            // A featured diner is part of a mixed block, so this block cannot also take the
+            // one-house-only programme.
+            plan.Lone = string.IsNullOrEmpty(featuredDiner) &&
+                        rng.NextDouble() < AloneOdds && Room(plan);
 
             Deal(plan, rng);
             // A DEAL THAT LEFT THE BLOCK BARE IS DEALT AGAIN. Two ways it happens: the lone
@@ -268,7 +284,9 @@ namespace RoadDemo
                 bool weakFront = (plan.Klass == Klass.Block || plan.Klass == Klass.Court) &&
                                  EdgeCoverage(plan, plan.Artery) < 65;
                 bool strandedWay = Patches(plan).Any(patch => !patch.Out);
-                if (!empty && !bare && !weakFront && !strandedWay) break;
+                bool missingDiner = !string.IsNullOrEmpty(plan.FeaturedDiner) &&
+                                    !plan.Spots.Any(s => s.Unit.Name == plan.FeaturedDiner);
+                if (!empty && !bare && !weakFront && !strandedWay && !missingDiner) break;
                 if (empty) plan.Lone = false;
                 Wipe(plan);
                 Deal(plan, new Random(unchecked(dice * 31 + 17 * again)));
@@ -282,14 +300,60 @@ namespace RoadDemo
         /// <summary>One whole deal onto ground that is bare but for its pavement ring.</summary>
         static void Deal(Plan plan, Random rng)
         {
-            Declare(plan);
+            // A full diner takes the middle programme of this mixed block. The compact demo
+            // blocks cannot hold its measured venue, one-cell clear band, four corner houses
+            // AND the normal through alley. The diner replaces only that alley; it does not
+            // replace the surrounding residential buildings.
+            if (string.IsNullOrEmpty(plan.FeaturedDiner)) Declare(plan);
             Corners(plan, rng);
+            Diner(plan, rng);
             Edges(plan, rng);
             RearParking(plan, rng);
             Cafe(plan, rng);
             Subway(plan, rng);
             Parks(plan, rng);
             Inside(plan, rng);
+        }
+
+        /// <summary>
+        /// Reserves one of the two complete Palm City diners in the middle of an otherwise
+        /// ordinary residential block, after its four corner houses and before edge rows fill
+        /// the remaining ground. Reserving it in the old leftover-lot pass was too late: in a
+        /// thousand generated demo benches neither diner had one legal rectangle left.
+        /// </summary>
+        static void Diner(Plan plan, Random rng)
+        {
+            if (string.IsNullOrEmpty(plan.FeaturedDiner)) return;
+            var unit = ResidentialUnits.All.FirstOrDefault(u =>
+                u.Name == plan.FeaturedDiner && u.Kind == ResidentialKind.Amenity &&
+                (u.Name == "dinner" || u.Name == "dinner2"));
+            if (unit == null) return;
+
+            Spot best = null;
+            float bestScore = float.MaxValue;
+            int clear = Clearance(unit);
+            for (int yaw = 0; yaw < 360; yaw += 90)
+            {
+                var turn = Turn.Of(unit, yaw);
+                for (int i = Walk; i + turn.CW <= plan.W - Walk; i++)
+                    for (int j = Walk; j + turn.CD <= plan.D - Walk; j++)
+                    {
+                        if (!FitsLot(plan, turn, i, j, clear)) continue;
+                        float score = Math.Abs(i + turn.CW * 0.5f - plan.W * 0.5f) +
+                                      Math.Abs(j + turn.CD * 0.5f - plan.D * 0.5f) +
+                                      (float)rng.NextDouble() * 0.1f;
+                        if (score >= bestScore) continue;
+                        bestScore = score;
+                        best = new Spot
+                        {
+                            Unit = unit, Yaw = yaw, I = i, J = j,
+                            CW = turn.CW, CD = turn.CD,
+                        };
+                    }
+            }
+            if (best == null) return;
+            OccupyLot(plan, best);
+            plan.M.Parks++;
         }
 
         /// <summary>How much of the block's inner ground its buildings, their forecourts and
@@ -347,7 +411,11 @@ namespace RoadDemo
         {
             // the artery is a side, never -1: the street furniture reads plan.Street[Artery]
             // and an artery of -1 is an index off the end of it
-            var plan = new Plan { W = w, D = d, Seed = seed, Artery = 0, Klass = Klass.Corner };
+            var plan = new Plan
+            {
+                W = w, D = d, Seed = seed, Artery = 0, Klass = Klass.Corner,
+                YardBlock = true,
+            };
             for (int s = 0; s < 4; s++) plan.Street[s] = streets == null || streets[s];
             Roles(plan);
             plan.Ground = new Use[w, d];
@@ -364,29 +432,38 @@ namespace RoadDemo
             }
 
             var rng = new Random(unchecked(seed * 7919 + w * 104729 + d * 1299709));
-            // the turn that fits, and the lot in the middle of what is left over. An
-            // amenity keeps a full cell of paving inside the pavement ring: its fence and
-            // props never become the kerb itself.
+            // The turn that fits, centred in whatever ground remains. A yard-block amenity
+            // meets the inner edge of its one-cell street pavement; mixed-block amenities
+            // still keep their full clear band away from neighbouring houses.
             Spot best = null;
-            int clear = Clearance(unit);
+            int clear = YardClearance(unit);
+            int parking = YardParkingDepth(unit);
             for (int yaw = 0; yaw < 360; yaw += 90)
             {
                 var turn = Turn.Of(unit, yaw);
-                if (turn.CW + 2 * clear > plan.Inner || turn.CD + 2 * clear > plan.InnerD) continue;
+                if (turn.CW + 2 * clear > plan.Inner ||
+                    turn.CD + 2 * clear + parking > plan.InnerD) continue;
                 int i = Walk + clear + (plan.Inner - turn.CW - 2 * clear) / 2;
-                int j = Walk + clear + (plan.InnerD - turn.CD - 2 * clear) / 2;
+                int j = Walk + clear + (plan.InnerD - turn.CD - 2 * clear - parking) / 2;
                 var spot = new Spot { Unit = unit, Yaw = yaw, I = i, J = j, CW = turn.CW, CD = turn.CD };
                 if (best == null || rng.Next(2) == 0) best = spot;
             }
             if (best == null)
             {
                 plan.Faults.Add($"TooBig: {unitName} ({unit.CW}x{unit.CD} cells plus " +
-                                $"{clear}-cell clearance) does not fit {plan.Inner}x{plan.InnerD}");
+                                $"{clear}-cell clearance" +
+                                (parking > 0 ? $" and {parking}-cell parking" : "") +
+                                $") does not fit {plan.Inner}x{plan.InnerD}");
                 return plan;
             }
 
             OccupyLot(plan, best);
             plan.M.Parks++;
+            if (parking > 0)
+            {
+                CaryardParking(plan, best);
+                CaryardVenueEntry(plan, best);
+            }
 
             // everything the lot does not stand on is paving, not yard: this is a public
             // place, and its ground is walked on from every side
@@ -397,6 +474,57 @@ namespace RoadDemo
             Measure(plan);
             Judge(plan);
             return plan;
+        }
+
+        /// <summary>Reserves the existing ParkingDemo attended-lot footprint along the
+        /// caryard's north edge. This is only the paper plan; <c>ResidentialBlocks</c>
+        /// transfers the real ParkingDemo composer into these cells.</summary>
+        static void CaryardParking(Plan plan, Spot spot)
+        {
+            int firstJ = spot.J + spot.CD;
+            int first = Walk;
+            int run = plan.Inner;
+            int depth = YardParkingDepth(spot.Unit);
+            if (run < 2 || depth < 1 || firstJ < Walk || firstJ + depth > plan.D - Walk)
+            {
+                plan.Faults.Add("CaryardParking: no room for the ParkingDemo attended lot");
+                return;
+            }
+
+            for (int i = first; i < first + run; i++)
+                for (int j = firstJ; j < firstJ + depth; j++)
+                    plan.Ground[i, j] = Use.Parking;
+
+            // ParkingDemo's entrance is seven metres wide. Two five-metre grid columns
+            // carry that central drive cleanly through the pavement and the whole lot.
+            int entry = first + run / 2 - 1;
+            for (int i = entry; i <= entry + 1; i++)
+                for (int j = firstJ; j < firstJ + depth; j++)
+                    plan.Ground[i, j] = Use.Drive;
+            if (!Mouth(plan, 2, entry, "caryard parking"))
+                plan.Faults.Add("CaryardParking: the parking aisle has no street mouth");
+            if (!CutPavement(plan, 2, entry + 1))
+                plan.Faults.Add("CaryardParking: the second parking entry cell is blocked");
+
+            plan.Gaps.Add(new Gap { Side = 2, At = first, Run = run, Depth = depth, Use = Use.Parking });
+            plan.M.Gaps++;
+            plan.M.GapCells += run;
+            plan.M.Parking++;
+        }
+
+        /// <summary>The car yard itself keeps the broad south gate drawn in the user's
+        /// reference block, independently of the attended public lot on its north side.
+        /// Two cells cut the pavement at the venue's centre; the ring composer turns the
+        /// neighbouring kerbs into the two corners of that opening.</summary>
+        static void CaryardVenueEntry(Plan plan, Spot spot)
+        {
+            if (spot?.Unit == null || spot.Unit.Name != "caryard") return;
+            int first = Math.Max(Walk, Math.Min(spot.I + spot.CW / 2 - 1,
+                                                plan.W - Walk - 2));
+            if (!Mouth(plan, 0, first, "caryard venue"))
+                plan.Faults.Add("CaryardEntry: the venue gate has no south street mouth");
+            if (!CutPavement(plan, 0, first + 1))
+                plan.Faults.Add("CaryardEntry: the second venue entry cell is blocked");
         }
 
         /// <summary>Does this unit drop below the ground anywhere - a pit, a sunken floor?</summary>
@@ -1498,6 +1626,47 @@ namespace RoadDemo
         /// </summary>
         public static readonly string[] OwnBlock = { "skatepark", "gym", "caryard" };
 
+        public static bool OwnBlockUnit(ResidentialUnit unit) =>
+            unit != null && Array.IndexOf(OwnBlock, unit.Name) >= 0;
+
+        /// <summary>The three complete venue blocks keep only the ordinary street pavement
+        /// around their measured footprint. Amenities mixed with houses retain their extra
+        /// one-cell safety band.</summary>
+        public static int YardClearance(ResidentialUnit unit) =>
+            OwnBlockUnit(unit) ? 0 : Clearance(unit);
+
+        /// <summary>The caryard carries the shallow 15-metre ParkingDemo attended lot. The
+        /// gym and skatepark need no vehicle strip.</summary>
+        public static int YardParkingDepth(ResidentialUnit unit) =>
+            unit != null && unit.Name == "caryard" ? 3 : 0;
+
+        /// <summary>Thirty metres is the smallest ParkingDemo attended lot that keeps six
+        /// real bays beside its central entrance instead of reading as a gate with no lot.</summary>
+        public static int YardParkingWidth(ResidentialUnit unit) =>
+            unit != null && unit.Name == "caryard" ? 6 : 0;
+
+        public static void YardDimensions(ResidentialUnit unit, out int w, out int d)
+        {
+            if (unit == null) { w = d = 0; return; }
+            int border = 2 * (Walk + YardClearance(unit));
+            w = Math.Max(unit.CW, YardParkingWidth(unit)) + border;
+            d = unit.CD + border + YardParkingDepth(unit);
+        }
+
+        /// <summary>The cells whose surface and furniture come from ParkingDemo rather than
+        /// the residential pavement/bay-tile composer.</summary>
+        public static bool CaryardParkingCell(Plan plan, int i, int j)
+        {
+            if (plan == null || !plan.YardBlock) return false;
+            var spot = plan.Spots.FirstOrDefault(s => s.Unit != null && s.Unit.Name == "caryard");
+            if (spot == null) return false;
+            return i >= Walk && i < plan.W - Walk &&
+                   j >= spot.J + spot.CD && j < plan.D - Walk;
+        }
+
+        static int LotClearance(Plan plan, ResidentialUnit unit) =>
+            plan != null && plan.YardBlock ? YardClearance(unit) : Clearance(unit);
+
         /// <summary>The lots that ONLY ever stand on a block of their own. The gym is not one
         /// of them: it may turn up in the ground a block's houses left over as well as on its
         /// own plot, and it turns up oftener than the other two (the user, 2026-08-28: "gym
@@ -1683,8 +1852,8 @@ namespace RoadDemo
         }
 
         /// <summary>An amenity owns its whole measured rectangle, including the gaps between
-        /// its props, and reserves its paved clear band immediately so a later park cannot be
-        /// dealt into that band. A true park keeps its measured, possibly irregular mask.</summary>
+        /// its props, and reserves any required clear band immediately so a later park cannot
+        /// be dealt into it. A true park keeps its measured, possibly irregular mask.</summary>
         static void OccupyLot(Plan plan, Spot spot)
         {
             var turn = Turn.Of(spot.Unit, spot.Yaw);
@@ -1693,7 +1862,7 @@ namespace RoadDemo
                 for (int v = 0; v < turn.CD; v++)
                     if (amenity || turn.Filled(u, v)) plan.Ground[spot.I + u, spot.J + v] = Use.Park;
 
-            int clear = Clearance(spot.Unit);
+            int clear = LotClearance(plan, spot.Unit);
             for (int i = spot.I - clear; i < spot.I + turn.CW + clear; i++)
                 for (int j = spot.J - clear; j < spot.J + turn.CD + clear; j++)
                     if (i >= Walk && j >= Walk && i < plan.W - Walk && j < plan.D - Walk &&
@@ -1818,16 +1987,31 @@ namespace RoadDemo
         public static bool Drives(Use use) =>
             use == Use.Drive || use == Use.Alley || use == Use.Parking;
 
-        /// <summary>Cuts the block's pavement ring at one cell of one side, so the way behind
-        /// it opens straight onto the street.</summary>
+        /// <summary>Cuts every pavement cell between the block interior and the street.
+        /// A ten-metre pavement must not leave its outer kerb standing across a drive.</summary>
+        static bool CutPavement(Plan plan, int side, int at)
+        {
+            var (i, j) = EdgeCell(plan, side, at);
+            for (int step = 1; step <= Walk; step++)
+            {
+                int x = i + Step[side, 0] * step;
+                int y = j + Step[side, 1] * step;
+                if (x < 0 || y < 0 || x >= plan.W || y >= plan.D) return false;
+                var use = plan.Ground[x, y];
+                if (use != Use.Walkway && use != Use.Drive) return false;
+            }
+            for (int step = 1; step <= Walk; step++)
+                plan.Ground[i + Step[side, 0] * step,
+                            j + Step[side, 1] * step] = Use.Drive;
+            return true;
+        }
+
+        /// <summary>Cuts the block's full pavement band at one cell of one side, so the way
+        /// behind it opens straight onto the street.</summary>
         static bool Mouth(Plan plan, int side, int at, string purpose)
         {
             if (plan.Accesses.Any(a => !a.Vehicle && a.Side == side && a.At == at)) return false;
-            var (i, j) = EdgeCell(plan, side, at);
-            var (x, y) = (i + Step[side, 0], j + Step[side, 1]);
-            if (x < 0 || y < 0 || x >= plan.W || y >= plan.D) return false;
-            if (plan.Ground[x, y] != Use.Walkway && plan.Ground[x, y] != Use.Drive) return false;
-            plan.Ground[x, y] = Use.Drive;
+            if (!CutPavement(plan, side, at)) return false;
             if (!plan.Accesses.Any(a => a.Vehicle && a.Side == side && a.At == at))
                 plan.Accesses.Add(new Access { Side = side, At = at, Vehicle = true, Purpose = purpose });
             if (side != plan.Artery) plan.Role[side] = EdgeRole.Service;
@@ -1999,6 +2183,10 @@ namespace RoadDemo
 
         static void Judge(Plan plan)
         {
+            if (!string.IsNullOrEmpty(plan.FeaturedDiner) &&
+                !plan.Spots.Any(s => s.Unit.Name == plan.FeaturedDiner))
+                plan.Faults.Add($"MissingDiner: {plan.FeaturedDiner} did not fit beside the residential buildings");
+
             var seen = new Dictionary<(int, int), string>();
             foreach (var spot in plan.Spots)
             {
@@ -2042,10 +2230,9 @@ namespace RoadDemo
                 }
             }
 
-            // An amenity owns a complete backed rectangle and a full paved cell round it.
-            // This is the paper-side regression for the gym which touched a house and cut
-            // the outer kerb: the composer can only lay the promised floor and clearance if
-            // the deal has actually reserved them.
+            // An amenity owns a complete backed rectangle. Mixed-block amenities also own a
+            // full paved cell round it; the three complete yard blocks intentionally meet
+            // the inner edge of their ordinary street pavement.
             foreach (var spot in plan.Spots.Where(s => s.Unit.Kind == ResidentialKind.Amenity))
             {
                 var turn = Turn.Of(spot.Unit, spot.Yaw);
@@ -2054,7 +2241,7 @@ namespace RoadDemo
                         if (plan.Ground[i, j] != Use.Park)
                             plan.Faults.Add($"AmenityFloor: {spot.Unit.Name} has no reserved floor at ({i},{j})");
 
-                int clear = Clearance(spot.Unit);
+                int clear = LotClearance(plan, spot.Unit);
                 for (int i = spot.I - clear; i < spot.I + turn.CW + clear; i++)
                     for (int j = spot.J - clear; j < spot.J + turn.CD + clear; j++)
                     {

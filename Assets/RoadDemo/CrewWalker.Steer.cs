@@ -16,9 +16,25 @@ namespace RoadDemo
 
         int _steerSide;      // which way round the last thing in his way he went (WalkObstacles)
         Vector3 _strideDir;  // the line he stepped along last frame; zero at the start of a leg
+        int _strideMoveFrame = -1000; // last frame on which that line actually carried him
         float _blockedFor;   // seconds stood on this leg with nowhere to step
         bool _detouring;     // this frame's step was off the line to the spot, round something
         bool _strideJog;     // was he jogging the stride last frame (the gait's own hysteresis)
+
+        /// <summary>A moving shooter may aim only into the forward sixty-degree cone
+        /// of his actual stride. His body can still be facing the mark for a frame while
+        /// obstacle steering carries him sideways or back round a car; that is precisely
+        /// when keeping the arm on the mark reads as looking and firing the other way.</summary>
+        bool StrideAllowsAim(Vector3 toMark)
+        {
+            // TickEngage asks before this frame's TickStride, while AimGun asks after
+            // it in LateUpdate. Accept both the current and immediately previous frame
+            // so the trigger and the rendered arm judge the same completed stride.
+            if (Time.frameCount - _strideMoveFrame > 1) return true;
+            toMark.y = 0f;
+            if (_strideDir.sqrMagnitude < 1e-4f || toMark.sqrMagnitude < 1e-4f) return true;
+            return Vector3.Dot(_strideDir.normalized, toMark.normalized) >= 0.5f;
+        }
 
         // The stride: at the point, turning as it goes - at a walk, at the hurried
         // walk when there is a fight to get to, or flat out when he is running from
@@ -203,6 +219,7 @@ namespace RoadDemo
             {
                 Tf.position += dir * step;
                 _strideDir = dir;
+                _strideMoveFrame = Time.frameCount;
                 _blockedFor = 0f;
             }
             else _blockedFor += dt;

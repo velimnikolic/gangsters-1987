@@ -25,10 +25,10 @@ namespace LivingCity.EditorTools
         internal static string LastMap = "";
 
         [MenuItem("Tools/City/River/Sketch The Quay", priority = 4)]
-        public static void Sketch() => Draw(Random.Range(1, 1000000), 8, 32, true);
+        public static void Sketch() => Draw(Random.Range(1, 1000000), 12, 32, true);
 
         [MenuItem("Tools/City/River/Sketch A Short Quay", priority = 5)]
-        public static void SketchShort() => Draw(1987, 7, 14, true);
+        public static void SketchShort() => Draw(1987, 12, 18, true);
 
         [MenuItem("Tools/City/River/Clear The Sketch", priority = 20)]
         public static void Clear()

@@ -205,7 +205,7 @@ mostova, svaka isečena na sobe od 6–16 ćelija duž vode. Dve trake su **fiks
 | **Terasa (kafe)** | 4 × 3 | kiosk `Beach_Shop_01/02/03` ili `Shop_Stand_0x` uz ivičnjak, stolovi `Table_02` + 4 `Chair_01` pod `Umbrella_02` (3,25 m), **4 stola na 10 m** (mera Wharf-a), `Menu_Stand`, neon | 1–3 po šetalištu; nikad dve u susednim sobama |
 | **Gaj** | 3 × 3 | travnato ostrvo, 3–5 `SM_Env_Tree_01..03`, klupe okrenute vodi | |
 | **Pristan** | 4 × 2 uz zid | stepenice `Dock_Stairs` (1,56 m po kraku → **dva kraka** do −2,2), plutajući dok `Dock_Platform` + `Dock_Pole` + `Dock_Railing`, bitve s lancem gore, 1–2 čamca uz dok (`Party_Boat` = turistički) | 1 obavezan; ispod mosta nikad |
-| **Vašar (ringišpil)** | **8 × 6** | ograđeno dvorište kao u demou: `Barrier_Fence` + `Bld_Fence`, `Ferris_Wheel_01` u **1×** (nikad ispod 1), `Juice_Cart`, 6 `Table_Outdoor_01`, suncobrani, kante | **jednom po gradu**, u **krajnjoj sobi** (uz park pojasa); ako soba nije dovoljno duboka — **nema ga i to se prijavi** (dubina D=8 se dela tako da bar jedan kraj stane) |
+| **Vašar (ringišpil)** | **10 × 11** | kompletan `PalmBlock_07`, izvučen iz `PalmCityDemo/Fairground`: njegov spojeni Fairground shell, originalni dressing i zaseban `Ferris_Wheel_01` u autorskoj skali | **jednom po gradu**, u **krajnjoj sobi**; `_Rotate` pivot dobija isti `DemoFerrisWheel` kao vašarski blok u grid gradu |
 | **Pecaroši** | 0 (traka ograde) | `Binoculars_01`, `Fishing_Rod_01`, kofa | na 40–60 m, ne kod terase |
 | **Travnjak** | ostatak | trava, po koja klupa | |
 

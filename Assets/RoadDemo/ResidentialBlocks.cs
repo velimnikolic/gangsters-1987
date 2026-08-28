@@ -162,7 +162,9 @@ namespace RoadDemo
         {
             public readonly Vector3 At;
             public readonly int Into;
-            public Stall(Vector3 at, int into) { At = at; Into = into; }
+            public readonly float Depth;
+            public Stall(Vector3 at, int into, float depth = ResidentialLot.Cell)
+            { At = at; Into = into; Depth = depth; }
         }
 
         /// <summary>How many of the stalls have a car in them. One in two is what the pack's
@@ -248,6 +250,8 @@ namespace RoadDemo
 
             AmenityFloors(plan, root, stood);
             Ground(plan, root, cafes.Select(c => c.Spot).ToList(), ring, kerbs, stalls, stood);
+            CaryardParking(plan, root, raise, stalls);
+            CaryardVenueArrow(plan, root);
             Stand(plan, root, stood);
             Subway(plan, root, stood);
             foreach (var placed in cafes)
@@ -270,9 +274,11 @@ namespace RoadDemo
                 Plazas(plan, root, rng, stood);
             }
 
+            MainPlazaTables(plan, root, standing, stood);
+
             Lamps(plan, root, standing, stood);
             if (Dressed) Street(plan, root, rng, standing, stood);
-            Palms(kerbs, standing, root, raise, rng.Next(), stood);
+            Palms(plan, kerbs, standing, root, raise, rng.Next(), stood);
             SurfaceDetails(plan, root, stood);
 
             stood.Absent.AddRange(Missing);
@@ -345,6 +351,10 @@ namespace RoadDemo
                 {
                     if (plan.Ground[i, j] != ResidentialLot.Use.Walkway) continue;
                     bool west = i == 0, east = i == plan.W - 1, south = j == 0, north = j == plan.D - 1;
+                    // A wide pavement has flat cells between its buildings and its outside
+                    // kerb. Without this guard every inner cell falls through to the west
+                    // yaw below and draws a row of kerbs through the middle of the pavement.
+                    if (!west && !east && !south && !north) continue;
                     if ((west || east) && (south || north))
                     {
                         float turn = KerbYaw.Corner(north, east);
@@ -420,6 +430,7 @@ namespace RoadDemo
                 for (int j = 0; j < plan.D; j++)
                 {
                     if (laid[i, j]) continue;
+                    if (ResidentialLot.CaryardParkingCell(plan, i, j)) continue;
                     string tile;
                     float yaw = 0f;
                     switch (plan.Ground[i, j])
@@ -590,9 +601,52 @@ namespace RoadDemo
                 var car = raise(prefab, under);
                 if (car == null) continue;
                 car.transform.SetPositionAndRotation(stall.At, Quaternion.Euler(0f, stall.Into, 0f));
-                CoreRoads.InBay(car, stall.At, stall.Into, ResidentialLot.Cell);
+                CoreRoads.InBay(car, stall.At, stall.Into, stall.Depth);
                 stood.Cars++;
             }
+        }
+
+        /// <summary>Transfers ParkingDemo's attended public-lot option into the caryard's
+        /// reserved cells. It is an embedded lot on the same residential root, not another
+        /// urban block and therefore adds no second pavement ring.</summary>
+        static void CaryardParking(ResidentialLot.Plan plan, Transform root,
+                                   System.Func<GameObject, Transform, GameObject> raise,
+                                   List<Stall> stalls)
+        {
+            if (!plan.YardBlock) return;
+            var spot = plan.Spots.FirstOrDefault(s => s.Unit != null && s.Unit.Name == "caryard");
+            if (spot == null) return;
+
+            float cell = ResidentialLot.Cell;
+            var box = new Rect(
+                ResidentialLot.Walk * cell,
+                (spot.J + spot.CD) * cell,
+                plan.Inner * cell,
+                ResidentialLot.YardParkingDepth(spot.Unit) * cell);
+            var site = ParkingBlockSite.Build(
+                box, ParkingEntrySide.North, root, raise,
+                style: ParkingBlockStyle.Attended);
+            site.Root.name = "Caryard Parking - ParkingDemo attended lot";
+
+            foreach (var bay in site.Plan.Stalls)
+            {
+                var at = site.Root.TransformPoint(bay.Stand);
+                var forward = site.Root.TransformDirection(bay.Forward);
+                int into = Mathf.RoundToInt(Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg);
+                into = ((into % 360) + 360) % 360;
+                stalls.Add(new Stall(at, into, ParkingBlockPlan.StallDepth));
+            }
+        }
+
+        /// <summary>The user's car-yard reference keeps a second arrow at the venue's broad
+        /// south gate. The north arrow still belongs to the embedded ParkingDemo lot; this
+        /// one points through the pavement opening cut by <c>ResidentialLot</c>.</summary>
+        static void CaryardVenueArrow(ResidentialLot.Plan plan, Transform root)
+        {
+            if (!plan.YardBlock || !plan.Spots.Any(s => s.Unit?.Name == "caryard")) return;
+            var arrow = Sit(Arrow, root, plan.W * ResidentialLot.Cell * 0.5f,
+                            ResidentialLot.Cell, 180f, 0.08f);
+            if (arrow != null) arrow.name = "caryard venue entry arrow";
         }
 
         /// <summary>
@@ -646,7 +700,15 @@ namespace RoadDemo
                              Dictionary<(int, int), RingTile> ring,
                              List<CorePavement.Kerbstone> kerbs, Stood stood)
         {
-            if (!ring.TryGetValue((i, j), out var tile)) return;    // covered by a longer tile
+            // Only the outside row carries the kerb pieces in Ring. Every deeper row in the
+            // shared ten-metre band is ordinary paving; an absent outside entry can still
+            // mean that a two-cell construction tile already covers this cell.
+            if (!ring.TryGetValue((i, j), out var tile))
+            {
+                bool outside = i == 0 || j == 0 || i == plan.W - 1 || j == plan.D - 1;
+                if (!outside && Tile(Paving, root, i, j, 0f) != null) stood.Tiles++;
+                return;
+            }
             float cell = ResidentialLot.Cell;
             GameObject go;
             if (tile.Cells == 1) go = Tile(tile.Tile, root, i, j, tile.Yaw);
@@ -916,7 +978,13 @@ namespace RoadDemo
                     Name = System.IO.Path.GetFileNameWithoutExtension(path),
                     Path = path, X = x, Z = z, YawF = yaw,
                     Foot = new Rect(x - foot.x * 0.5f, z - foot.y * 0.5f, foot.x, foot.y),
-                    Sunk = Box(path).min.y < SunkFloor,
+                    // The burger-joint and diner meshes reach below zero, but they still
+                    // need the pavement slab under their whole footprint. Treating those
+                    // bounds as pits left visible holes under otherwise ordinary cafes.
+                    // True sunken storefronts keep the old opening.
+                    Sunk = Box(path).min.y < SunkFloor &&
+                           path.IndexOf("burger-joint", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                           path.IndexOf("diner", System.StringComparison.OrdinalIgnoreCase) < 0,
                     Perp = kitCorner && plan.Street[kitPerp] ? kitPerp : -1,
                     CornerLow = low,
                 });
@@ -982,7 +1050,38 @@ namespace RoadDemo
                 p.Name.IndexOf("burger", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
                 p.Name.IndexOf("pizza", System.StringComparison.OrdinalIgnoreCase) >= 0).ToList();
             if (restaurants.Count > 0) picks = restaurants;
-            return picks[rng.Next(picks.Count)];
+            var chosen = picks[rng.Next(picks.Count)];
+            RetreatNorthDiner(plan, gap, chosen);
+            return chosen;
+        }
+
+        /// <summary>The north diner in the user's reference block is pulled one pavement
+        /// bay into the paved back band. That leaves a real two-row terrace between its
+        /// doors and the street instead of chairs squeezed against the kerb. The move is a
+        /// rule, not a demo coordinate: it is only accepted when every cell behind it is
+        /// already cafe, paving, yard or court.</summary>
+        static void RetreatNorthDiner(ResidentialLot.Plan plan, ResidentialLot.Gap gap, CafeSpot cafe)
+        {
+            if (cafe?.Path == null || gap.Side != 2 ||
+                cafe.Name.IndexOf("building-diner", System.StringComparison.OrdinalIgnoreCase) < 0) return;
+
+            const float retreat = ResidentialLot.Cell + 1f;
+            var moved = new Rect(cafe.Foot.x, cafe.Foot.y - retreat,
+                                 cafe.Foot.width, cafe.Foot.height);
+            int i0 = Mathf.FloorToInt(moved.xMin / ResidentialLot.Cell);
+            int i1 = Mathf.CeilToInt(moved.xMax / ResidentialLot.Cell) - 1;
+            int j0 = Mathf.FloorToInt(moved.yMin / ResidentialLot.Cell);
+            int j1 = Mathf.CeilToInt(moved.yMax / ResidentialLot.Cell) - 1;
+            if (i0 < 0 || j0 < 0 || i1 >= plan.W || j1 >= plan.D) return;
+            for (int i = i0; i <= i1; i++)
+                for (int j = j0; j <= j1; j++)
+                {
+                    var use = plan.Ground[i, j];
+                    if (use != ResidentialLot.Use.Cafe && use != ResidentialLot.Use.Paved &&
+                        use != ResidentialLot.Use.Yard && use != ResidentialLot.Use.Court) return;
+                }
+            cafe.Z -= retreat;
+            cafe.Foot = moved;
         }
 
         /// <summary>
@@ -1680,6 +1779,53 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>The hand-edited corner and row references turn the small paved main-
+        /// street gap into a compact public seating apron: two loose tables across, two
+        /// rows deep. This stays when generic dressing is off because it is the programme
+        /// of that empty paved gap, not incidental bins, skips or billboards.</summary>
+        static void MainPlazaTables(ResidentialLot.Plan plan, Transform root,
+                                    List<Vector3> standing, Stood stood)
+        {
+            if (plan.Klass != ResidentialLot.Klass.Corner &&
+                plan.Klass != ResidentialLot.Klass.Row) return;
+
+            float cell = ResidentialLot.Cell;
+            var rng = new System.Random(unchecked(plan.Seed * 486187739 + plan.W * 7919 + plan.D));
+            foreach (var gap in plan.Gaps)
+            {
+                if (gap.Side != plan.Artery || plan.Cafes.Contains(gap) ||
+                    gap.Use != ResidentialLot.Use.Paved || gap.Depth < 2) continue;
+
+                bool alongX = gap.Side == 0 || gap.Side == 2;
+                float along0 = gap.At * cell;
+                float inward = gap.Side == 0 || gap.Side == 3 ? 1f : -1f;
+                float edge = gap.Side switch
+                {
+                    0 => ResidentialLot.Walk * cell,
+                    2 => (plan.D - ResidentialLot.Walk) * cell,
+                    1 => (plan.W - ResidentialLot.Walk) * cell,
+                    _ => ResidentialLot.Walk * cell,
+                };
+
+                // A one-column corner gap deliberately borrows the inner half of its
+                // pavement cell for the second table, exactly as the edited reference did.
+                const float firstAlong = 2.8f;
+                const float betweenAlong = 4.1f;
+                const float firstIn = 1.6f;
+                const float betweenRows = 4f;
+                for (int row = 0; row < 2; row++)
+                    for (int column = 0; column < 2; column++)
+                    {
+                        float along = along0 + firstAlong + column * betweenAlong;
+                        float into = edge + inward * (firstIn + row * betweenRows);
+                        float x = alongX ? along : into;
+                        float z = alongX ? into : along;
+                        if (!Table(root, x, z, rng, Chance(rng, ShadeOdds), stood)) continue;
+                        standing.Add(new Vector3(x, 0f, z));
+                    }
+            }
+        }
+
         /// <summary>A billboard: the pack's pole with its panel on top, the panel's face
         /// (its +z) turned the way asked. The panel stands on its own legs, so it is set
         /// down on the pole's top.</summary>
@@ -1841,15 +1987,22 @@ namespace RoadDemo
             }
         }
 
-        /// <summary>The palms on the pavement ring, one to ten kerb tiles in the core's own
-        /// lane and rhythm (<see cref="CorePavement.Plant"/>), so a residential block and a
-        /// core block are planted alike - the only trees the block gets outside its parks.</summary>
-        static void Palms(List<CorePavement.Kerbstone> kerbs, List<Vector3> standing, Transform root,
+        /// <summary>The palms on the pavement ring. Ordinary residential blocks use the
+        /// core's one-to-ten rhythm; complete gym, car-yard and skatepark blocks use one to
+        /// four because their open venues can carry more trees without crowding houses.</summary>
+        const int YardPalmEvery = 4;
+
+        static void Palms(ResidentialLot.Plan plan, List<CorePavement.Kerbstone> kerbs,
+                          List<Vector3> standing, Transform root,
                           System.Func<GameObject, Transform, GameObject> raise, int seed, Stood stood)
         {
             var under = new GameObject("Palms").transform;
             under.SetParent(root, false);
-            stood.Palms = CorePavement.Plant(kerbs, standing, raise, under, seed);
+            bool leafyYard = plan.YardBlock &&
+                             plan.Spots.Any(s => ResidentialLot.OwnBlockUnit(s.Unit));
+            stood.Palms = leafyYard
+                ? CorePavement.Plant(kerbs, standing, raise, under, seed, YardPalmEvery)
+                : CorePavement.Plant(kerbs, standing, raise, under, seed);
             stood.Props += stood.Palms;
         }
     }

@@ -12,6 +12,7 @@ namespace RoadDemo
     public static class CrewKit
     {
         const string UalPath = "Assets/Animations/UAL1_Standard.fbx";
+        const string AirportAnimationPath = "Assets/SimpleAirport/Animations/Animations_IK.fbx";
         const string PeopleDir = "Assets/Animations/People/";
         // The Synty animation packs: locomotion (walk/run/idle/crouch) and the idle
         // fidgets. RootMotion takes are used for the gaits ON PURPOSE - nobody applies
@@ -26,7 +27,7 @@ namespace RoadDemo
         const string ImpactPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Impact_Small_01.prefab";
         const string FirePath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Fire_Big_01.prefab";
         const string FireBurstPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Fire_Explosion_01.prefab";
-        const string ExhaustPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Smoke_White_Small_01.prefab";
+        const string ExhaustPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Trail_Exhaust_01.prefab";
         const string EngineSmokePath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Smoke_Black_Small_01.prefab";
         const string ShotDir = "Assets/Audio/Weapons/";
 
@@ -49,6 +50,7 @@ namespace RoadDemo
                 // brisker Death01 - a death has to read, and the longer one does
                 Death = PeopleClip("Death") ?? UalClip("Death01"),
                 Jog = StockRun,
+                LongGunRunUpper = AirportClip("Character_Auto_Idle"),
                 Sprint = StockSprint,
                 Crouch = Crouch,
                 CrouchWalk = CrouchWalk,
@@ -71,6 +73,7 @@ namespace RoadDemo
             crowd.Hit = arms.Hit;
             crowd.Death = arms.Death;
             crowd.Jog = arms.Jog;
+            crowd.LongGunRunUpper = arms.LongGunRunUpper;
             crowd.Sprint = arms.Sprint;
             crowd.Crouch = arms.Crouch;
             crowd.CrouchWalk = arms.CrouchWalk;
@@ -433,10 +436,9 @@ namespace RoadDemo
         public static GameObject FireBurst => _fireBurst != null ? _fireBurst : _fireBurst = Load<GameObject>(FireBurstPath);
         static GameObject _fire, _fireBurst;
 
-        /// <summary>The two smokes a car makes. Both are the pack's mesh puffs, whose
-        /// mesh measures 0.19m across, so every size in CarSmoke is read against that
-        /// and not against a metre - the pack's own "Small" preset starts them at three
-        /// to six, which is a bonfire, not a tailpipe.
+        /// <summary>The two smokes a car makes. Exhaust is the pack's soft billboard trail;
+        /// engine damage uses its heavier smoke mesh. CarSmoke normalizes both renderer
+        /// types so their requested sizes are read in metres.
         ///
         /// White for what a running engine puts out of the back, black for what a shot
         /// one puts out of the front.</summary>
@@ -593,6 +595,20 @@ namespace RoadDemo
                 if (!(asset is AnimationClip clip) || clip.name.StartsWith("__preview__")) continue;
                 if (clip.name == name || clip.name.EndsWith("|" + name))
                     return clip;
+            }
+#endif
+            return null;
+        }
+
+        /// <summary>The airport pack's one-frame automatic-rifle hold. It is used as
+        /// an arms-only layer over the locomotion pack's run, not as a full-body idle.</summary>
+        static AnimationClip AirportClip(string name)
+        {
+#if UNITY_EDITOR
+            foreach (var asset in UnityEditor.AssetDatabase.LoadAllAssetRepresentationsAtPath(AirportAnimationPath))
+            {
+                if (!(asset is AnimationClip clip) || clip.name.StartsWith("__preview__")) continue;
+                if (clip.name == name) return clip;
             }
 #endif
             return null;

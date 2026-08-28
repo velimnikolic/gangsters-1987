@@ -123,13 +123,14 @@ namespace LivingCity.EditorTools
             if (at > 0 && int.TryParse(size.Substring(0, at), out nx) &&
                 int.TryParse(size.Substring(at + 1), out nz)) return;
 
+            int growth = 2 * (ParkWalk.Band - 1);
             switch (size)
             {
-                case "pocket": nx = dice.Next(5, 8); nz = dice.Next(5, 8); return;
-                case "square": nx = dice.Next(8, 13); nz = dice.Next(8, 13); return;
-                case "park": nx = dice.Next(13, 31); nz = dice.Next(13, 31); return;
-                case "strip": nx = dice.Next(20, 61); nz = dice.Next(6, 9); return;
-                default: nx = dice.Next(5, 31); nz = dice.Next(5, 31); return;
+                case "pocket": nx = dice.Next(5 + growth, 8 + growth); nz = dice.Next(5 + growth, 8 + growth); return;
+                case "square": nx = dice.Next(8 + growth, 13 + growth); nz = dice.Next(8 + growth, 13 + growth); return;
+                case "park": nx = dice.Next(13 + growth, 31 + growth); nz = dice.Next(13 + growth, 31 + growth); return;
+                case "strip": nx = dice.Next(20 + growth, 61 + growth); nz = dice.Next(6 + growth, 9 + growth); return;
+                default: nx = dice.Next(5 + growth, 31 + growth); nz = dice.Next(5 + growth, 31 + growth); return;
             }
         }
 

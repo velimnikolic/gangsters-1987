@@ -27,7 +27,7 @@ namespace RoadDemo
         /// little more room on the pavement than the pack takes, and a squarer block.
         /// </summary>
         [Range(1, 4)]
-        public int pavementTiles = 2;
+        public int pavementTiles = CoreBlockMetrics.PavementTiles;
 
         /// <summary>
         /// Does what stands on this tray bring its OWN ground?

@@ -346,10 +346,13 @@ static class Program
             var classes = new Dictionary<ParkWalk.Klass, int>();
             // up to 60 cells - 300 m - because the belt round the core is one unbroken park
             // the whole width of it, and that is bigger than anything the first sweep tried
-            for (int w = 5; w <= 60; w += w < 30 ? 1 : 3)
-                for (int d = 5; d <= 60; d += d < 30 ? 1 : 3)
+            int growth = 2 * (ParkWalk.Band - 1);
+            for (int innerW = 5; innerW <= 60; innerW += innerW < 30 ? 1 : 3)
+                for (int innerD = 5; innerD <= 60; innerD += innerD < 30 ? 1 : 3)
                 {
-                    var plan = ParkWalk.Lay(w, d, ParkWalk.Edge.Alone(), new Random(seed * 7919 + w * 131 + d));
+                    int w = innerW + growth, d = innerD + growth;
+                    var plan = ParkWalk.Lay(w, d, ParkWalk.Edge.Alone(),
+                                            new Random(seed * 7919 + innerW * 131 + innerD));
                     string said = ParkWalk.Report(plan, out int faults);
                     tried++;
                     classes[plan.Klass] = classes.TryGetValue(plan.Klass, out var c) ? c + 1 : 1;
@@ -404,7 +407,7 @@ static class Program
             var faulty = new Dictionary<string, int>();
             var cast = new Dictionary<string, int>();
             var ends = new[] { QuayWalk.End.Line, QuayWalk.End.Bridge, QuayWalk.End.Boulevard };
-            for (int depth = QuayWalk.DeepMin; depth <= 8; depth++)
+            for (int depth = QuayWalk.DeepMin; depth <= 12 + (QuayWalk.Band - 1); depth++)
                 for (int length = 1; length <= 160; length += length < 40 ? 1 : 3)
                     for (int e = 0; e < 4; e++)
                     {
@@ -419,7 +422,8 @@ static class Program
                         // mouths leave a room for them is what the sweep then measures
                         var wants = new QuayWalk.Wants
                         {
-                            Fair = e % 2 == 0 && length >= 14, FairAtStart = e < 2,
+                            Fair = e % 2 == 0 && depth >= 10 + QuayWalk.Band && length >= 16,
+                            FairAtStart = e < 2,
                             Landing = e != 1 && length >= 8, Diner = e != 2 && length >= 10,
                             Terraces = dice.Next(0, 4),
                         };
@@ -491,13 +495,14 @@ static class Program
         if (at > 0 && int.TryParse(size.Substring(0, at), out nx) &&
             int.TryParse(size.Substring(at + 1), out nz)) return;
 
+        int growth = 2 * (ParkWalk.Band - 1);
         switch (size)
         {
-            case "pocket": nx = dice.Next(5, 8); nz = dice.Next(5, 8); return;
-            case "square": nx = dice.Next(8, 13); nz = dice.Next(8, 13); return;
-            case "park": nx = dice.Next(13, 31); nz = dice.Next(13, 31); return;
-            case "strip": nx = dice.Next(20, 61); nz = dice.Next(6, 9); return;
-            default: nx = dice.Next(5, 31); nz = dice.Next(5, 31); return;
+            case "pocket": nx = dice.Next(5 + growth, 8 + growth); nz = dice.Next(5 + growth, 8 + growth); return;
+            case "square": nx = dice.Next(8 + growth, 13 + growth); nz = dice.Next(8 + growth, 13 + growth); return;
+            case "park": nx = dice.Next(13 + growth, 31 + growth); nz = dice.Next(13 + growth, 31 + growth); return;
+            case "strip": nx = dice.Next(20 + growth, 61 + growth); nz = dice.Next(6 + growth, 9 + growth); return;
+            default: nx = dice.Next(5 + growth, 31 + growth); nz = dice.Next(5 + growth, 31 + growth); return;
         }
     }
 

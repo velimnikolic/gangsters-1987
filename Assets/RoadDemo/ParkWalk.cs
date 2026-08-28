@@ -36,7 +36,7 @@ namespace RoadDemo
     public static class ParkWalk
     {
         /// <summary>The pack's module, and the city's.</summary>
-        public const float Cell = 5f;
+        public const float Cell = CoreBlockMetrics.Cell;
 
         /// <summary>
         /// The biggest a room may be before the walk is asked to cut it in two, in cells.
@@ -53,9 +53,9 @@ namespace RoadDemo
         /// starts reading as ground the park happens to own.</summary>
         public const int ReachMax = 5;
 
-        /// <summary>How thick the pavement ring is, in cells. One, which is what every
-        /// pavement in the pack's own demo is (Docs/synty-demo-anatomy.md).</summary>
-        public const int Band = 1;
+        /// <summary>How thick the pavement ring is, in cells. CoreDemo uses the same
+        /// ten-metre band around parks as it does around every other generated block.</summary>
+        public const int Band = CoreBlockMetrics.PavementTiles;
 
         // ------------------------------------------------------------------- the pieces
 
@@ -384,7 +384,7 @@ namespace RoadDemo
         ///
         /// <paramref name="nx"/> and <paramref name="nz"/> are the WHOLE block, pavement ring
         /// and all, because that is what a quarter deals: a block of ground with roads round
-        /// it. The ring is a cell on every side that has a kerb.
+        /// it. The ring uses the shared CoreDemo pavement width on every side that has a kerb.
         /// </summary>
         public static Plan Lay(int nx, int nz, Edge[] sides, System.Random rng)
         {

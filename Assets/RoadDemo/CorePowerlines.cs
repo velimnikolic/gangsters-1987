@@ -116,8 +116,13 @@ namespace RoadDemo
             });
         }
 
+        /// <summary>
+        /// The pole line sits through the middle of the core's five-metre pavement.
+        /// Do not use the wider city frontage setback here: that puts the crossarm and
+        /// the outer cable strand through the buildings behind the pavement.
+        /// </summary>
         static float PowerlineLateral(int width) =>
-            width * CoreRoads.Cell * 0.5f + RoadDemoBuilder.PavementWidth - 0.7f;
+            width * CoreRoads.Cell * 0.5f + CoreRoads.Cell * 0.5f;
 
         static void PoleRun(PowerRun run, Transform parent, GameObject pole, List<GameObject> wires,
                             System.Random dice, System.Func<GameObject, Transform, GameObject> stand,
