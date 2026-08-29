@@ -1,6 +1,7 @@
 using UnityEngine;
 using LivingCity.Generation;
 using LivingCity.Personnel;
+using RoadDemo;
 
 namespace LivingCity.Gameplay
 {
@@ -51,12 +52,15 @@ namespace LivingCity.Gameplay
         void Start()
         {
             var builder = FindAnyObjectByType<CityBuilder>();
-            seed = builder && builder.Config ? builder.Config.seed : FallbackSeed;
+            var roadDemo = FindAnyObjectByType<RoadDemoBuilder>();
+            seed = builder && builder.Config ? builder.Config.seed
+                : roadDemo ? roadDemo.BuiltFromSeed
+                : FallbackSeed;
             // In the standalone Ledger menu the missing city is the DESIGN, not a
             // fault - the warning would cry wolf on every single Play there.
-            if ((!builder || !builder.Config) &&
+            if ((!builder || !builder.Config) && !roadDemo &&
                 !FindAnyObjectByType<UI.LedgerMenuScene>())
-                Debug.LogWarning("[Personnel] No CityBuilder config in the scene - the " +
+                Debug.LogWarning("[Personnel] No city generator in the scene - the " +
                                  "roster runs on the fallback seed.", this);
 
             Roster = RosterSeeder.Generate(seed);

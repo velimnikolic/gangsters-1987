@@ -45,7 +45,8 @@ namespace RoadDemo
         /// which is the district contract's rule (Docs/city-districts-plan.md 1.1).
         /// </summary>
         public static List<Stood> Stand(IndustrialLayout.Plan plan, CoreRoads.Raster raster,
-                                        Transform parent, Func<GameObject, Transform, GameObject> raise)
+                                        Transform parent, Func<GameObject, Transform, GameObject> raise,
+                                        Func<int, int, bool> skipRoad = null)
         {
             IndustrialBlocks.ForgetMissing();
             var stood = new List<Stood>();
@@ -106,7 +107,7 @@ namespace RoadDemo
 
             var roads = new GameObject("Roads").transform;
             roads.SetParent(parent, false);
-            CoreRoads.Lay(raster, (prefab, under) => raise(prefab, under), roads);
+            CoreRoads.Lay(raster, (prefab, under) => raise(prefab, under), roads, skipRoad);
 
             return stood;
         }

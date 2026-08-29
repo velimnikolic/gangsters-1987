@@ -36,6 +36,16 @@ namespace RoadDemo
         [Header("Round the core")]
         [Min(20f)] public float greenBelt = 140f;
 
+        [Header("Generated amenities")]
+        [Tooltip("Independent parking parcels kept in the generated core. The remaining " +
+                 "block-sized parcels become residential or complete park blocks.")]
+        [Range(0, 8)] public int parkingLots = 3;
+        [Tooltip("Live ParkingDemo cars cycling through each retained lot.")]
+        [Range(0, 12)] public int parkingCarsPerLot = 5;
+        [Tooltip("PumpDemo filling stations placed on suitable former parking parcels. " +
+                 "Each station contains the demo's two-pump forecourt.")]
+        [Range(0, 8)] public int fuelStations = 5;
+
         void Awake()
         {
 #if UNITY_EDITOR
@@ -51,6 +61,9 @@ namespace RoadDemo
                 streetSpeed = streetSpeed,
                 boulevardSpeed = boulevardSpeed,
                 alleySpeed = alleySpeed,
+                parkingLotCount = Mathf.Max(0, parkingLots),
+                parkingCarsPerLot = Mathf.Max(0, parkingCarsPerLot),
+                fuelStationCount = Mathf.Max(0, fuelStations),
             };
 
             // Inactive while it is configured: RoadDemoBuilder.Awake must see Core as
@@ -96,9 +109,7 @@ namespace RoadDemo
                 rig.FrameSpan(Mathf.Max(bounds.width, bounds.height), 0.95f);
                 rig.yaw = 20f;
                 rig.pitch = 55f;
-                rig.showHint = true;
-                rig.hint = "WASD/arrows: move   Q/E or right-drag: rotate   wheel: zoom   " +
-                           "click a building: card   Space: pause   , . : slower/faster";
+                rig.showHint = false;
             }
 #else
             Debug.LogError("[CoreDemo] The core loads Synty prefabs through the AssetDatabase and only runs in the editor.");

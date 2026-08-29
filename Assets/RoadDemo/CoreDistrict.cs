@@ -36,6 +36,12 @@ namespace RoadDemo
         public float boulevardSpeed = 13f;
         /// <summary>An alley is one way and slow: nobody hurries down five metres of it.</summary>
         public float alleySpeed = 5f;
+        /// <summary>How many of the deal's left-over parcels remain public car parks.</summary>
+        public int parkingLotCount = 3;
+        /// <summary>Live ParkingDemo cars assigned to each retained car park.</summary>
+        public int parkingCarsPerLot = 5;
+        /// <summary>How many suitable left-over parcels become PumpDemo filling stations.</summary>
+        public int fuelStationCount = 5;
 
         public string Name => "Core";
         public DistrictFrame Frame { get; set; } = DistrictFrame.Identity;
@@ -55,16 +61,37 @@ namespace RoadDemo
         readonly List<PedLink> _walks = new List<PedLink>();
         readonly List<DistrictPortal> _portals = new List<DistrictPortal>();
         readonly ResidentialBlockModel _homes = new ResidentialBlockModel();
+        readonly List<CoreAmenityLayout.Site> _parkingSites = new List<CoreAmenityLayout.Site>();
+        readonly List<CoreAmenityLayout.Site> _fuelSites = new List<CoreAmenityLayout.Site>();
+        readonly List<CoreAmenityLayout.Site> _developmentSites = new List<CoreAmenityLayout.Site>();
+        readonly List<ParkingLot> _parkingLots = new List<ParkingLot>();
 
         CoreRoads.Raster _raster;
         Rect _bounds;
         Transform _yard;          // made only in Build; Plan owns data, never a hidden scene
         CityBlockRecycler _recycler;
+        Material _fuelAsphalt;
         int _seed = 1987;
 
         /// <summary>The generated residential data, independent of whichever views are
         /// currently on camera. Future generator edits replace/invalidate recipes here.</summary>
         public ResidentialBlockModel ResidentialBlocks => _homes;
+        /// <summary>Immutable quarters and named blocks produced by the accepted layout.</summary>
+        public CoreTerritoryPlan Territory => _plan?.Territory;
+        /// <summary>The seed used by every pure sub-plan, exposed for shared read-only adapters.</summary>
+        public int LayoutSeed => _seed;
+        /// <summary>Plan-owned public car parks, available to shared map/gameplay adapters
+        /// without inspecting their composed scene objects.</summary>
+        public IReadOnlyList<CoreAmenityLayout.Site> ParkingSites => _parkingSites;
+        /// <summary>Plan-owned filling stations, kept stable even if their 3D views change.</summary>
+        public IReadOnlyList<CoreAmenityLayout.Site> FuelSites => _fuelSites;
+        /// <summary>Former parking parcels reassigned to generated housing. Exposed as
+        /// read-only plan data so map adapters and regression tests can prove that none of
+        /// the accepted ground was silently left without a programme.</summary>
+        public IReadOnlyList<CoreAmenityLayout.Site> DevelopmentSites => _developmentSites;
+        /// <summary>Fault count of the accepted road drawing before amenity/residential
+        /// programming. Adding views on former parking ground must never worsen it.</summary>
+        public int AcceptedRoadFaults { get; private set; }
 
         // ------------------------------------------------------------------ plan
 
@@ -82,9 +109,93 @@ namespace RoadDemo
             // the seed deals the rows and the drawing is judged before it is taken; the
             // Synty seed asks for the demo's own arrangement instead
             _plan = CoreLayout.Arrange(_blocks, seed, out _raster);
+            AcceptedRoadFaults = _raster != null ? _raster.Faults : 0;
+            PlanAmenities();
+            DevelopRemainders();
             PlanHomes();
             _bounds = Rect.MinMaxRect(_raster.X0, _raster.Z0,
                                       _raster.X(_raster.NX), _raster.Z(_raster.NZ));
+        }
+
+        /// <summary>
+        /// CoreLayout keeps odd-sized remainder parcels as parking because the road raster
+        /// needs accounted-for ground. That does not mean every one should be rendered as a
+        /// car park. Keep a small, deterministic city-wide set and give the configured number
+        /// of larger road-facing parcels to filling stations; every remaining block-sized
+        /// parcel becomes housing.
+        /// </summary>
+        void PlanAmenities()
+        {
+            var candidates = new List<Rect>(_plan.Lots);
+            foreach (var block in CoreLayout.WithGround(_blocks, _plan))
+                if (block.Lot.width > 0.01f && block.Lot.height > 0.01f)
+                    candidates.Add(block.Lot);
+
+            CoreAmenityLayout.Select(
+                _raster, candidates, _seed,
+                Mathf.Max(0, parkingLotCount), Mathf.Max(0, fuelStationCount),
+                _parkingSites, _fuelSites, _developmentSites);
+        }
+
+        /// <summary>
+        /// Put every unclaimed block-sized remainder back into the structural plan before the
+        /// road raster is final. The original deal already owns the city's proper parks; these
+        /// former parking rectangles are residential infill. Thin bays belonging to an
+        /// existing prefab become modular apartment frontages instead of anonymous asphalt.
+        /// </summary>
+        void DevelopRemainders()
+        {
+            if (_developmentSites.Count == 0) return;
+
+            int residentialIndex = _plan.Residential.Count + 1;
+            for (int i = 0; i < _developmentSites.Count; i++)
+            {
+                var site = _developmentSites[i];
+                int w = Mathf.RoundToInt(site.Box.width / CoreLayout.Cell);
+                int d = Mathf.RoundToInt(site.Box.height / CoreLayout.Cell);
+                int innerW = w - 2 * ResidentialLot.Walk;
+                int innerD = d - 2 * ResidentialLot.Walk;
+                bool ordinary = ResidentialLot.Classify(innerW, innerD) != null;
+                bool frontage = ResidentialLot.CanFrontage(w, d, (int)site.Entry);
+                if (!ordinary && !frontage)
+                    continue;
+
+                var block = CoreLayout.Res(residentialIndex++, w, d, (int)site.Entry);
+                block.Pivot = site.Box.min;
+                block.QuarterId = QuarterFor(site.Box.center);
+                block.Turn(0);
+                _plan.Residential.Add(block);
+            }
+
+            // These rectangles were already classified as non-road parking ground by the
+            // accepted raster. Keep that raster: rebuilding it with thin view-only blocks
+            // closes nearby street mouths, merges crossings and removes the opaque backing
+            // whenever a streamed residential view is out of range. Territory and maps need
+            // the new logical blocks, but traffic must keep the accepted road drawing and
+            // CoreRoads must keep laying plain hardstanding below the streamed buildings.
+            var ground = CoreLayout.WithGround(_blocks, _plan);
+            _plan.Territory = CoreTerritoryPlan.Build(_seed, ground);
+        }
+
+        CoreQuarterId QuarterFor(Vector2 local)
+        {
+            var territory = _plan.Territory;
+            var direct = territory?.QuarterAt(local);
+            if (direct.HasValue) return direct.Value;
+            if (territory == null || territory.Quarters.Count == 0)
+                return CoreQuarterId.Downtown;
+
+            CoreQuarterId best = CoreQuarterId.Downtown;
+            float nearest = float.MaxValue;
+            for (int i = 0; i < territory.Quarters.Count; i++)
+            {
+                var quarter = territory.Quarters[i];
+                float distance = (quarter.LocalAnchor - local).sqrMagnitude;
+                if (distance >= nearest) continue;
+                nearest = distance;
+                best = quarter.Id;
+            }
+            return best;
         }
 
         /// <summary>
@@ -100,7 +211,7 @@ namespace RoadDemo
             for (int q = 0; q < _plan.Quays.Count; q++)
             {
                 var block = _plan.Quays[q];
-                var root = new GameObject(block.Name).transform;
+                var root = new GameObject(block.Label).transform;
                 root.SetParent(_yard, false);
                 var box = block.Box;
                 int dice = unchecked(_seed * 7919 + Mathf.RoundToInt(box.xMin) * 104729 + Mathf.RoundToInt(box.yMin) * 1299709);
@@ -110,7 +221,7 @@ namespace RoadDemo
                 QuayBlocks.Pave(walk, root, out _, (prefab, parent) => Object.Instantiate(prefab, parent), dice);
                 CoreLayout.PlaceQuay(_plan, block, root);
                 if (stood.Gaps > 0 || stood.RailGap > 0.5f || stood.OnWalk > 0)
-                    Debug.LogWarning($"[Core] {block.Name}: {stood.Gaps} cell(s) with no floor, " +
+                    Debug.LogWarning($"[Core] {block.Label}: {stood.Gaps} cell(s) with no floor, " +
                                      $"{stood.RailGap:F1} m of railing missing, {stood.OnWalk} thing(s) in the way.");
             }
         }
@@ -125,8 +236,11 @@ namespace RoadDemo
             foreach (var block in _plan.Residential)
             {
                 var box = block.Box;
-                int w = Mathf.Max(3, Mathf.RoundToInt(box.width / CoreLayout.Cell));
-                int d = Mathf.Max(3, Mathf.RoundToInt(box.height / CoreLayout.Cell));
+                int actualW = Mathf.Max(1, Mathf.RoundToInt(box.width / CoreLayout.Cell));
+                int actualD = Mathf.Max(1, Mathf.RoundToInt(box.height / CoreLayout.Cell));
+                bool frontage = ResidentialLot.CanFrontage(actualW, actualD, block.Artery);
+                int w = frontage ? actualW : Mathf.Max(3, actualW);
+                int d = frontage ? actualD : Mathf.Max(3, actualD);
                 int dice = unchecked(_seed * 7919 + Mathf.RoundToInt(box.xMin) * 104729 +
                                      Mathf.RoundToInt(box.yMin) * 1299709);
 
@@ -134,11 +248,13 @@ namespace RoadDemo
                 // houses, gaps and yards
                 var lot = CoreLayout.IsYard(block)
                     ? ResidentialLot.Yard(w, d, dice, block.Unit)
-                    : ResidentialLot.Roll(w, d, dice, Mathf.Max(0, block.Artery));
-                string id = $"{block.Name}@{Mathf.RoundToInt(box.xMin)},{Mathf.RoundToInt(box.yMin)}";
-                _homes.Add(new ResidentialBlockRecipe(id, block.Name, box, lot, dice));
+                    : frontage
+                        ? ResidentialLot.Frontage(w, d, dice, block.Artery)
+                        : ResidentialLot.Roll(w, d, dice, Mathf.Max(0, block.Artery));
+                _homes.Add(new ResidentialBlockRecipe(
+                    block.StableId, block.Label, box, lot, dice, block.BlockId, block.QuarterId));
                 if (lot.Faults.Count > 0)
-                    Debug.LogWarning($"[Core] {block.Name} ({w}x{d} cells, {lot.Klass}): " +
+                    Debug.LogWarning($"[Core] {block.Label} ({w}x{d} cells, {lot.Klass}): " +
                                      string.Join("; ", lot.Faults));
             }
         }
@@ -174,7 +290,7 @@ namespace RoadDemo
 
             foreach (var block in _plan.Parks)
             {
-                var root = new GameObject(block.Name).transform;
+                var root = new GameObject(block.Label).transform;
                 root.SetParent(_yard, false);
 
                 var box = block.Box;
@@ -192,7 +308,7 @@ namespace RoadDemo
                 root.position = new Vector3(box.xMin, 0f, box.yMin);
 
                 if (stood.Gaps > 0 || stood.FenceGap > 0.5f)
-                    Debug.LogWarning($"[Core] {block.Name}: {stood.Gaps} cell(s) with no floor, " +
+                    Debug.LogWarning($"[Core] {block.Label}: {stood.Gaps} cell(s) with no floor, " +
                                      $"{stood.FenceGap:F1} m of fence missing.");
             }
         }
@@ -215,6 +331,9 @@ namespace RoadDemo
 
         public void Build(IDistrictHost host)
         {
+            if (host is ICityTerritoryHost territoryHost)
+                territoryHost.Territories.Load(Territory, Frame);
+
             var quarter = new GameObject("Core Quarter").transform;
             quarter.SetParent(host.StaticRoot("Core"), false);
             _yard = new GameObject("Blocks").transform;
@@ -231,8 +350,10 @@ namespace RoadDemo
                 streamed.RegisterResidentialModel(_homes, Frame);
                 var views = streamed.StreamRoot("Core Residential Views");
                 views.SetPositionAndRotation(Frame.origin, Frame.Rotation);
+                var fallbacks = views.gameObject.AddComponent<ResidentialFallbackLayer>();
+                fallbacks.Init(_homes);
                 _recycler = views.gameObject.AddComponent<CityBlockRecycler>();
-                _recycler.Init(_homes, Frame, streamed.ViewConfig);
+                _recycler.Init(_homes, Frame, streamed.ViewConfig, fallbacks: fallbacks);
                 streamed.RegisterBlockRecycler(_recycler);
             }
             else StandHomes();
@@ -240,9 +361,11 @@ namespace RoadDemo
             var roads = new GameObject("Roads").transform;
             roads.SetParent(quarter, false);
             // the road's tiles go down over the water too - the bridge's deck - but not over
-            // the channels the leaves span
+            // the channels the leaves span. Parking is composed below by the same generator
+            // ParkingDemo uses; the raster's old painted-row renderer is deliberately off.
             CoreRoads.Lay(_raster, (prefab, parent) => Object.Instantiate(prefab, parent), roads,
-                          RiverBridge.Skip(_plan, _raster));
+                          RiverBridge.Skip(_plan, _raster), layCarParks: false,
+                          skipPlainParking: AmenitySurfaceAt);
             CorePowerlines.Stand(_plan, _raster, quarter, _seed);
             var river = new GameObject("River").transform;
             river.SetParent(quarter, false);
@@ -257,6 +380,7 @@ namespace RoadDemo
             quarter.SetPositionAndRotation(Frame.origin, Frame.Rotation);
 
             BuildLaneGraph();
+            StandAmenities(quarter, host);
             BuildPavementGraph();
             InstallBascules(host, river);
             SpawnCars(host.LiveRoot("Core Traffic"));
@@ -269,8 +393,92 @@ namespace RoadDemo
 
             Debug.Log($"[Core] {_plan.Name}: {_blocks.Count} blocks, {_raster.Junctions.Count} junctions, " +
                       $"{_raster.Stretches.Count} stretches of road, {_edges.Count} lanes, " +
-                      $"{_vehicles.Count} cars, {_raster.Faults} faults.{System.Environment.NewLine}" +
+                      $"{_vehicles.Count} traffic cars, {_parkingSites.Count} ParkingDemo lots, " +
+                      $"{_fuelSites.Count} PumpDemo station(s), {_raster.Faults} faults.{System.Environment.NewLine}" +
                       string.Join(System.Environment.NewLine, _plan.Rows) + System.Environment.NewLine + _raster.Report);
+        }
+
+        /// <summary>The shared parking and filling-station composers bring their own surface.
+        /// Every other raster parking cell receives plain asphalt in <see cref="CoreRoads.Lay"/>;
+        /// skipping only these footprints prevents two coplanar grounds from flickering.</summary>
+        bool AmenitySurfaceAt(int i, int j)
+        {
+            var centre = new Vector2(_raster.X(i) + CoreRoads.Cell * 0.5f,
+                                     _raster.Z(j) + CoreRoads.Cell * 0.5f);
+            if (CoreAmenityLayout.Contains(_parkingSites, centre)) return true;
+            for (int k = 0; k < _fuelSites.Count; k++)
+                if (CoreAmenityLayout.FuelSurface(_fuelSites[k]).Contains(centre)) return true;
+            return false;
+        }
+
+        /// <summary>Stand the shared ParkingDemo and PumpDemo composers on the parcels the
+        /// paper plan retained. This happens after the lane graph exists so parking cars can
+        /// join the actual Core road beside their gate.</summary>
+        void StandAmenities(Transform quarter, IDistrictHost host)
+        {
+            System.Func<GameObject, Transform, GameObject> stand =
+                (prefab, parent) => Object.Instantiate(prefab, parent);
+
+            Transform live = null;
+            for (int i = 0; i < _parkingSites.Count; i++)
+            {
+                var planned = _parkingSites[i];
+                var style = CoreAmenityLayout.ParkingStyle(planned, i);
+                var site = ParkingBlockSite.Build(
+                    planned.Box, planned.Entry, quarter, stand, style: style);
+                site.Root.name = $"Core Parking {i + 1:00} - {style}";
+
+                if (live == null) live = host.LiveRoot("Core Parking Traffic");
+                // The gate is animated by ParkingLot and must not be folded into the host's
+                // static geometry together with the surface and booth.
+                if (site.GateRoot != null) site.GateRoot.SetParent(live, true);
+                var lot = new ParkingLot(
+                    site, Net, Mathf.Max(0, parkingCarsPerLot),
+                    unchecked(_seed * 7919 + i * 104729), live);
+                if (lot.CarCount > 0) _parkingLots.Add(lot);
+            }
+
+            if (_fuelSites.Count == 0) return;
+            _fuelAsphalt = ForecourtSet.Asphalt();
+            for (int i = 0; i < _fuelSites.Count; i++)
+            {
+                var planned = _fuelSites[i];
+                CoreAmenityLayout.FuelPose(planned, out var localAnchor, out int localYaw);
+                var root = new GameObject($"Core Filling Station {i + 1:00} (PumpDemo)").transform;
+                root.SetParent(quarter, false);
+
+                var anchor = Frame.ToWorld(localAnchor);
+                var rotation = Frame.Rotation * Quaternion.Euler(0f, localYaw, 0f);
+                // Core's odd parcels are smaller than the full wayside/PumpDemo programme.
+                // Keep the recognisable authored station, but scale its visual cluster around
+                // the canopy and give the exact retained rectangle its own opaque road surface.
+                var visual = new GameObject("Compact PumpDemo Visuals").transform;
+                visual.SetParent(root, false);
+                visual.SetPositionAndRotation(anchor, rotation);
+                float edge = CoreAmenityLayout.FuelSetBack;
+                var station = FuelStation.Stand(
+                    visual, anchor, rotation, Frame.origin.y, edge, blockWalkers: false);
+                visual.localScale = Vector3.one * CoreAmenityLayout.FuelVisualScale;
+
+                // The city water plane lies beneath every district. Pave the entire assigned
+                // rectangle independently of the smaller prop cluster so there is no rear gap.
+                float padBack = edge - CoreAmenityLayout.FuelParcelDepth(planned);
+                float halfWidth = CoreAmenityLayout.FuelParcelFrontage(planned) * 0.5f;
+                ForecourtSet.LayParcel(station, root, _fuelAsphalt, halfWidth, edge, padBack);
+                if (TryRendererBounds(visual, out var visualBounds))
+                    host.Blocked(visualBounds, $"Filling Station {i + 1}");
+            }
+        }
+
+        static bool TryRendererBounds(Transform root, out Bounds bounds)
+        {
+            bounds = default;
+            if (root == null) return false;
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0) return false;
+            bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
+            return true;
         }
 
         void StandCoreBlocks(IDistrictHost host)
@@ -285,7 +493,7 @@ namespace RoadDemo
                     continue;
                 }
                 block.Go = Object.Instantiate(prefab, Vector3.zero, Quaternion.identity, _yard);
-                block.Go.name = block.Name;
+                block.Go.name = block.Label;
                 CoreLayout.Place(block);
             }
         }
@@ -444,7 +652,7 @@ namespace RoadDemo
                         if (!any) { box = renderer.bounds; any = true; }
                         else box.Encapsulate(renderer.bounds);
                     }
-                    if (any) host.Blocked(box, block.Name);
+                    if (any) host.Blocked(box, block.Label);
                 }
             }
         }
@@ -476,19 +684,493 @@ namespace RoadDemo
             }
         }
 
-        public void Tick(float dt) { }
+        public void Tick(float dt)
+        {
+            for (int i = 0; i < _parkingLots.Count; i++) _parkingLots[i].Tick(dt);
+        }
 
         public void Dispose()
         {
+            for (int i = 0; i < _parkingLots.Count; i++) _parkingLots[i].Dispose();
+            _parkingLots.Clear();
             // the cars went on the street's list so the men on foot and the outfit's
             // drivers could see them; off it again, or the next quarter dodges ghosts
             foreach (var car in _vehicles) StreetTraffic.Users.Remove(car);
             _vehicles.Clear();
             _walks.Clear();
             _homes.Clear();
+            _parkingSites.Clear();
+            _fuelSites.Clear();
+            _developmentSites.Clear();
+            if (_fuelAsphalt != null) Object.Destroy(_fuelAsphalt);
+            _fuelAsphalt = null;
             // Build-time geometry normally dies with its host. A detached compatibility
             // yard is still ours to clean explicitly.
             if (_yard != null && _yard.parent == null) Object.Destroy(_yard.gameObject);
+        }
+    }
+
+    /// <summary>
+    /// Pure paper-side choice of which generated remainder parcels become amenities. The
+    /// layout is deliberately separate from the scene composition: the same seed and raster
+    /// always choose the same bounded set, and tests can judge the cap without loading a
+    /// prefab. CoreRoads still owns every cell for topology; this class only assigns its view.
+    /// </summary>
+    public static class CoreAmenityLayout
+    {
+        const int MinimumParkingBays = 6;
+        // Core uses the recognisable PumpDemo composition at five-eighths scale. Twenty metres
+        // is four road-grid cells and still leaves the canopy, shop and two pumps legible; the
+        // full 30 m wayside programme was too large for most generated remnants.
+        public const float FuelVisualScale = 0.625f;
+        public const float FuelFrontage = 20f;
+        public const float FuelDepth = 20f;
+        public const float FuelSetBack = FuelStation.SetBack * FuelVisualScale;
+        // A compact station may own a modest urban lot when cropping it would create a fake
+        // unusable sliver. Anything wider is split only when the remainder is real housing.
+        const float FuelWholeParcelMaxFrontage = 50f;
+        /// <summary>The forecourt may have a short service strip behind it, but never the
+        /// depth of a city block. Fifty metres admits one additional real Core parcel when a
+        /// fifth station is requested; the whole assigned pad is paved below.</summary>
+        const float FuelParcelMaxDepth = 50f;
+
+        public sealed class Site
+        {
+            public readonly Rect Box;
+            public readonly ParkingEntrySide Entry;
+            public readonly int Cells;
+
+            public Site(Rect box, ParkingEntrySide entry, int cells)
+            {
+                Box = box;
+                Entry = entry;
+                Cells = cells;
+            }
+        }
+
+        /// <summary>Select fuel first so a parking cap cannot consume the only parcel deep
+        /// enough for PumpDemo's store, canopy and back-of-house dressing.</summary>
+        public static void Select(
+            CoreRoads.Raster raster, IEnumerable<Rect> plannedLots, int seed,
+            int parkingCount, int fuelCount,
+            List<Site> parking, List<Site> fuel, List<Site> development = null)
+        {
+            parking.Clear();
+            fuel.Clear();
+            development?.Clear();
+            if (raster == null || plannedLots == null) return;
+
+            // Keep the original, whole-lot candidates for amenity selection. Their order
+            // and scores determine the established five filling-station locations.
+            var lots = new List<Rect>(plannedLots);
+            var candidates = Candidates(raster, lots);
+            // Some residential-yard remainders are described as an L made from two
+            // rectangles. A cross street cuts through that L in the accepted raster, so
+            // neither source rectangle is entirely Parking and the old all-or-nothing
+            // candidate filter silently discarded both. Recover the actual rectangular
+            // parking runs, but reserve them for housing: they are the large blank blocks
+            // players reported, not additional amenity choices.
+            var supplementalDevelopment = SupplementalDevelopment(raster, lots, candidates);
+            var used = new HashSet<Site>();
+            var fuelRemainders = development != null ? new List<Site>() : null;
+            for (int i = 0; i < fuelCount; i++)
+            {
+                var next = Pick(candidates, used, fuel, parking, seed + i * 104729, wantsFuel: true);
+                if (next == null) break;
+                used.Add(next);
+                var station = CropFuelParcel(next, seed + i * 104729, out var remainder);
+                fuel.Add(station);
+                if (remainder != null) fuelRemainders?.Add(remainder);
+            }
+            for (int i = 0; i < parkingCount; i++)
+            {
+                var next = Pick(candidates, used, fuel, parking, seed + i * 7919, wantsFuel: false);
+                if (next == null) break;
+                used.Add(next);
+                parking.Add(next);
+            }
+
+            if (development != null)
+            {
+                for (int i = 0; i < candidates.Count; i++)
+                    if (!used.Contains(candidates[i])) development.Add(candidates[i]);
+                development.AddRange(fuelRemainders);
+                development.AddRange(supplementalDevelopment);
+            }
+        }
+
+        readonly struct Run : System.IEquatable<Run>
+        {
+            public readonly int I0;
+            public readonly int I1;
+
+            public Run(int i0, int i1) { I0 = i0; I1 = i1; }
+            public bool Equals(Run other) => I0 == other.I0 && I1 == other.I1;
+            public override bool Equals(object obj) => obj is Run other && Equals(other);
+            public override int GetHashCode() => unchecked(I0 * 397 ^ I1);
+        }
+
+        /// <summary>
+        /// Returns the real parking rectangles inside planned lots which the legacy
+        /// whole-rectangle filter could not see. Horizontal runs with the same span are
+        /// joined vertically, so a 75 x 40 m city block remains one residential parcel
+        /// instead of eight five-metre strips.
+        /// </summary>
+        static List<Site> SupplementalDevelopment(
+            CoreRoads.Raster raster, IReadOnlyList<Rect> plannedLots,
+            IReadOnlyList<Site> wholeCandidates)
+        {
+            var parking = new bool[raster.NX, raster.NZ];
+            for (int n = 0; n < plannedLots.Count; n++)
+            {
+                CellBounds(raster, plannedLots[n], out int i0, out int j0,
+                           out int i1, out int j1);
+                for (int i = i0; i < i1; i++)
+                    for (int j = j0; j < j1; j++)
+                        if (raster.At(i, j) == CoreRoads.Kind.Parking)
+                            parking[i, j] = true;
+            }
+
+            // Whole candidates are already assigned below to fuel, retained parking or
+            // ordinary development. Only recover ground not owned by one of them.
+            for (int n = 0; n < wholeCandidates.Count; n++)
+            {
+                CellBounds(raster, wholeCandidates[n].Box, out int i0, out int j0,
+                           out int i1, out int j1);
+                for (int i = i0; i < i1; i++)
+                    for (int j = j0; j < j1; j++)
+                        parking[i, j] = false;
+            }
+
+            var found = new List<Site>();
+            var active = new Dictionary<Run, int>();
+            var row = new List<Run>();
+            var close = new List<Run>();
+            for (int j = 0; j <= raster.NZ; j++)
+            {
+                row.Clear();
+                if (j < raster.NZ)
+                {
+                    int i = 0;
+                    while (i < raster.NX)
+                    {
+                        while (i < raster.NX && !parking[i, j]) i++;
+                        int i0 = i;
+                        while (i < raster.NX && parking[i, j]) i++;
+                        if (i0 < i) row.Add(new Run(i0, i));
+                    }
+                }
+
+                close.Clear();
+                foreach (var pair in active)
+                    if (!row.Contains(pair.Key)) close.Add(pair.Key);
+                close.Sort((a, b) => a.I0 != b.I0 ? a.I0.CompareTo(b.I0) : a.I1.CompareTo(b.I1));
+                for (int n = 0; n < close.Count; n++)
+                {
+                    var run = close[n];
+                    AddSupplement(raster, run.I0, active[run], run.I1, j, found);
+                    active.Remove(run);
+                }
+                foreach (var run in row)
+                    if (!active.ContainsKey(run)) active.Add(run, j);
+            }
+            return found;
+        }
+
+        static void AddSupplement(CoreRoads.Raster raster, int i0, int j0, int i1, int j1,
+                                  List<Site> into)
+        {
+            if (i1 <= i0 || j1 <= j0) return;
+            // RoadEntry still chooses the best side even when an unusual one-cell remnant
+            // only reaches the street through its adjoining parcel. Residential frontage
+            // has a deterministic direction in either case, and no planned asphalt is
+            // silently abandoned again.
+            RoadEntry(raster, i0, j0, i1, j1, out var entry);
+            var box = Rect.MinMaxRect(raster.X(i0), raster.Z(j0),
+                                      raster.X(i1), raster.Z(j1));
+            into.Add(new Site(box, entry, (i1 - i0) * (j1 - j0)));
+        }
+
+        static void CellBounds(CoreRoads.Raster raster, Rect requested,
+                               out int i0, out int j0, out int i1, out int j1)
+        {
+            i0 = Mathf.Clamp(Mathf.RoundToInt((requested.xMin - raster.X0) / CoreRoads.Cell),
+                             0, raster.NX);
+            i1 = Mathf.Clamp(Mathf.RoundToInt((requested.xMax - raster.X0) / CoreRoads.Cell),
+                             0, raster.NX);
+            j0 = Mathf.Clamp(Mathf.RoundToInt((requested.yMin - raster.Z0) / CoreRoads.Cell),
+                             0, raster.NZ);
+            j1 = Mathf.Clamp(Mathf.RoundToInt((requested.yMax - raster.Z0) / CoreRoads.Cell),
+                             0, raster.NZ);
+        }
+
+        static List<Site> Candidates(CoreRoads.Raster raster, IEnumerable<Rect> plannedLots)
+        {
+            var found = new List<Site>();
+            var seen = new HashSet<string>();
+            foreach (var requested in plannedLots)
+            {
+                int i0 = Mathf.RoundToInt((requested.xMin - raster.X0) / CoreRoads.Cell);
+                int i1 = Mathf.RoundToInt((requested.xMax - raster.X0) / CoreRoads.Cell);
+                int j0 = Mathf.RoundToInt((requested.yMin - raster.Z0) / CoreRoads.Cell);
+                int j1 = Mathf.RoundToInt((requested.yMax - raster.Z0) / CoreRoads.Cell);
+                if (i0 < 0 || j0 < 0 || i1 > raster.NX || j1 > raster.NZ || i1 <= i0 || j1 <= j0)
+                    continue;
+
+                bool parking = true;
+                for (int i = i0; i < i1 && parking; i++)
+                    for (int j = j0; j < j1; j++)
+                        if (raster.At(i, j) != CoreRoads.Kind.Parking) { parking = false; break; }
+                if (!parking) continue;
+
+                string key = $"{i0}:{j0}:{i1}:{j1}";
+                if (!seen.Add(key)) continue;
+                if (!RoadEntry(raster, i0, j0, i1, j1, out var entry)) continue;
+                var box = Rect.MinMaxRect(raster.X(i0), raster.Z(j0),
+                                          raster.X(i1), raster.Z(j1));
+                found.Add(new Site(box, entry, (i1 - i0) * (j1 - j0)));
+            }
+            return found;
+        }
+
+        static bool RoadEntry(
+            CoreRoads.Raster raster, int i0, int j0, int i1, int j1,
+            out ParkingEntrySide entry)
+        {
+            int south = 0, east = 0, north = 0, west = 0;
+            for (int i = i0; i < i1; i++)
+            {
+                if (ServedByRoad(raster.At(i, j0 - 1))) south++;
+                if (ServedByRoad(raster.At(i, j1))) north++;
+            }
+            for (int j = j0; j < j1; j++)
+            {
+                if (ServedByRoad(raster.At(i1, j))) east++;
+                if (ServedByRoad(raster.At(i0 - 1, j))) west++;
+            }
+
+            entry = ParkingEntrySide.South;
+            int best = south;
+            if (east > best) { best = east; entry = ParkingEntrySide.East; }
+            if (north > best) { best = north; entry = ParkingEntrySide.North; }
+            if (west > best) { best = west; entry = ParkingEntrySide.West; }
+            return best > 0;
+        }
+
+        static bool ServedByRoad(CoreRoads.Kind kind)
+        {
+            switch (kind)
+            {
+                case CoreRoads.Kind.Bare:
+                case CoreRoads.Kind.LaneEW:
+                case CoreRoads.Kind.LaneNS:
+                case CoreRoads.Kind.NarrowEW:
+                case CoreRoads.Kind.NarrowNS:
+                case CoreRoads.Kind.StreetEW:
+                case CoreRoads.Kind.StreetNS:
+                case CoreRoads.Kind.BlvdEW:
+                case CoreRoads.Kind.BlvdNS:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        static Site Pick(
+            List<Site> candidates, HashSet<Site> used,
+            List<Site> fuel, List<Site> parking, int seed, bool wantsFuel)
+        {
+            Site best = null;
+            double bestScore = double.MinValue;
+            foreach (var site in candidates)
+            {
+                if (used.Contains(site)) continue;
+                if (wantsFuel ? !FitsFuel(site) : !FitsParking(site)) continue;
+
+                // Area favours useful parcels; distance spreads the few retained amenities
+                // across the large core instead of keeping three adjacent remnants.
+                double score = site.Box.width * site.Box.height;
+                double distance = NearestDistance(site, fuel, parking);
+                if (distance > 0d) score += distance * 0.04d;
+                uint tie = unchecked((uint)(seed * 486187739 ^
+                    Mathf.RoundToInt(site.Box.xMin) * 73856093 ^
+                    Mathf.RoundToInt(site.Box.yMin) * 19349663));
+                score += tie / (double)uint.MaxValue;
+                if (score <= bestScore) continue;
+                best = site;
+                bestScore = score;
+            }
+            return best;
+        }
+
+        static double NearestDistance(Site site, List<Site> fuel, List<Site> parking)
+        {
+            double nearest = double.MaxValue;
+            foreach (var other in fuel)
+                nearest = System.Math.Min(nearest, (site.Box.center - other.Box.center).sqrMagnitude);
+            foreach (var other in parking)
+                nearest = System.Math.Min(nearest, (site.Box.center - other.Box.center).sqrMagnitude);
+            return nearest == double.MaxValue ? 0d : nearest;
+        }
+
+        static bool FitsFuel(Site site)
+        {
+            Dimensions(site.Box, site.Entry, out float frontage, out float depth);
+            if (frontage < FuelFrontage || depth < FuelDepth || depth > FuelParcelMaxDepth)
+                return false;
+
+            float remainderFrontage = frontage - FuelFrontage;
+            if (remainderFrontage < CoreLayout.Cell) return true;
+            return RemainderFitsResidential(site, remainderFrontage) ||
+                   frontage <= FuelWholeParcelMaxFrontage;
+        }
+
+        static bool RemainderFitsResidential(Site site, float remainderFrontage)
+        {
+            bool side = site.Entry == ParkingEntrySide.East ||
+                        site.Entry == ParkingEntrySide.West;
+            return FitsResidential(side ? site.Box.width : remainderFrontage,
+                                   side ? remainderFrontage : site.Box.height);
+        }
+
+        static bool FitsResidential(float width, float depth)
+        {
+            int w = Mathf.RoundToInt(width / CoreLayout.Cell);
+            int d = Mathf.RoundToInt(depth / CoreLayout.Cell);
+            return ResidentialLot.Classify(
+                w - 2 * ResidentialLot.Walk, d - 2 * ResidentialLot.Walk) != null;
+        }
+
+        static Site CropFuelParcel(Site source, int seed, out Site remainder)
+        {
+            Rect box = source.Box;
+            Dimensions(box, source.Entry, out float frontage, out _);
+            float remainderFrontage = frontage - FuelFrontage;
+            if (remainderFrontage >= CoreLayout.Cell &&
+                !RemainderFitsResidential(source, remainderFrontage))
+            {
+                // Do not manufacture a 5-15 m strip that can be neither a building nor a
+                // street. On a modest parcel that ground is the station's service forecourt.
+                remainder = null;
+                return source;
+            }
+
+            bool farEnd = (unchecked(seed * 486187739 + Mathf.RoundToInt(box.center.x) * 7919 +
+                                     Mathf.RoundToInt(box.center.y) * 104729) & 1) != 0;
+            Rect station;
+            Rect rest;
+            if (source.Entry == ParkingEntrySide.South || source.Entry == ParkingEntrySide.North)
+            {
+                float stationX = farEnd ? box.xMax - FuelFrontage : box.xMin;
+                station = new Rect(stationX, box.yMin, FuelFrontage, box.height);
+                rest = farEnd
+                    ? new Rect(box.xMin, box.yMin, box.width - FuelFrontage, box.height)
+                    : new Rect(box.xMin + FuelFrontage, box.yMin, box.width - FuelFrontage, box.height);
+            }
+            else
+            {
+                float stationY = farEnd ? box.yMax - FuelFrontage : box.yMin;
+                station = new Rect(box.xMin, stationY, box.width, FuelFrontage);
+                rest = farEnd
+                    ? new Rect(box.xMin, box.yMin, box.width, box.height - FuelFrontage)
+                    : new Rect(box.xMin, box.yMin + FuelFrontage, box.width, box.height - FuelFrontage);
+            }
+
+            remainder = rest.width >= CoreLayout.Cell && rest.height >= CoreLayout.Cell
+                ? new Site(rest, source.Entry,
+                    Mathf.RoundToInt(rest.width / CoreLayout.Cell) *
+                    Mathf.RoundToInt(rest.height / CoreLayout.Cell))
+                : null;
+            return new Site(station, source.Entry,
+                Mathf.RoundToInt(station.width / CoreLayout.Cell) *
+                Mathf.RoundToInt(station.height / CoreLayout.Cell));
+        }
+
+        static bool FitsParking(Site site)
+        {
+            Dimensions(site.Box, site.Entry, out float width, out float depth);
+            return ParkingBlockPlan.Generate(width, depth).Stalls.Count >= MinimumParkingBays;
+        }
+
+        static void Dimensions(Rect box, ParkingEntrySide entry, out float width, out float depth)
+        {
+            bool side = entry == ParkingEntrySide.East || entry == ParkingEntrySide.West;
+            width = side ? box.height : box.width;
+            depth = side ? box.width : box.height;
+        }
+
+        public static bool Contains(IReadOnlyList<Site> sites, Vector2 point)
+        {
+            if (sites == null) return false;
+            for (int i = 0; i < sites.Count; i++)
+                if (sites[i].Box.Contains(point)) return true;
+            return false;
+        }
+
+        /// <summary>The complete opaque pad reserved for this PumpDemo station. Selection has
+        /// already cropped the road frontage to thirty metres; keeping the available depth
+        /// here covers the store, service rear and the global water plane beneath the city.</summary>
+        public static Rect FuelSurface(Site site) => site.Box;
+
+        public static float FuelParcelDepth(Site site)
+        {
+            Dimensions(site.Box, site.Entry, out _, out float depth);
+            return depth;
+        }
+
+        public static float FuelParcelFrontage(Site site)
+        {
+            Dimensions(site.Box, site.Entry, out float frontage, out _);
+            return frontage;
+        }
+
+        /// <summary>Cycle through all three accepted ParkingDemo programmes where their
+        /// parcel fits: public, urban-block, then long-stay.</summary>
+        public static ParkingBlockStyle ParkingStyle(Site site, int index)
+        {
+            var first = index % 3 == 0 ? ParkingBlockStyle.Attended
+                      : index % 3 == 1 ? ParkingBlockStyle.UrbanBlock
+                                       : ParkingBlockStyle.LongStay;
+            foreach (var style in new[]
+            {
+                first,
+                ParkingBlockStyle.Attended,
+                ParkingBlockStyle.LongStay,
+                ParkingBlockStyle.UrbanBlock,
+            })
+            {
+                var surface = ParkingBlockSite.Surface(site.Box, style);
+                Dimensions(surface, site.Entry, out float width, out float depth);
+                if (ParkingBlockPlan.Generate(width, depth).Stalls.Count >= MinimumParkingBays)
+                    return style;
+            }
+            return ParkingBlockStyle.Attended;
+        }
+
+        /// <summary>FuelStation's local +Z faces the road. The compact Core visual stands its
+        /// scaled setback inside the parcel; PumpDemo and wayside retain their full size.</summary>
+        public static void FuelPose(Site site, out Vector3 anchor, out int yaw)
+        {
+            var box = site.Box;
+            switch (site.Entry)
+            {
+                case ParkingEntrySide.North:
+                    anchor = new Vector3(box.center.x, 0f, box.yMax - FuelSetBack);
+                    yaw = 0;
+                    break;
+                case ParkingEntrySide.East:
+                    anchor = new Vector3(box.xMax - FuelSetBack, 0f, box.center.y);
+                    yaw = 90;
+                    break;
+                case ParkingEntrySide.West:
+                    anchor = new Vector3(box.xMin + FuelSetBack, 0f, box.center.y);
+                    yaw = 270;
+                    break;
+                default:
+                    anchor = new Vector3(box.center.x, 0f, box.yMin + FuelSetBack);
+                    yaw = 180;
+                    break;
+            }
         }
     }
 }

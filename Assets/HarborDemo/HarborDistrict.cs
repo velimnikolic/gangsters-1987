@@ -140,6 +140,10 @@ namespace HarborDemo
         /// if the sheds want more.</summary>
         const float PlannedStreetZ = 120f;
 
+        /// <summary>The back road's measured centre in district contract coordinates.
+        /// Valid after <see cref="Build"/> has measured the warehouse depth.</summary>
+        internal float BackStreetContractZ => _streetZ - PlannedStreetZ;
+
         /// <summary>Halfway between the two gates: the point the city's links are
         /// measured from, so the port sits square under the road lines it hangs off.</summary>
         float GateSpanCentre => _links != null && _links.Length > 1

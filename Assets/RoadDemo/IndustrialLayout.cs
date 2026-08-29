@@ -234,6 +234,15 @@ namespace RoadDemo
             public string Name;
             public int Seed;
             public int Attempt;
+            /// <summary>
+            /// This is one roadside half of an estate. Its first road band belongs to the
+            /// district hosting it, so the industrial quarter must join that road instead
+            /// of laying its usual divided artery over the top.
+            /// </summary>
+            public bool ExternalArtery;
+            /// <summary>The shared road's local Z band, after the raster has clipped it
+            /// to the blocks which remain.</summary>
+            public Vector2 ExternalRoad;
             public readonly List<Island> Islands = new List<Island>();
             public readonly List<Parcel> Parcels = new List<Parcel>();
             /// <summary>What <see cref="CoreRoads.Build"/> is handed: the artery and the
@@ -672,6 +681,85 @@ namespace RoadDemo
             }
             raster = bestRaster;
             return best;
+        }
+
+        /// <summary>
+        /// Deals the landward half of an industrial estate for a host which already owns
+        /// the road along its front. The ordinary estate's south half and its 35 m divided
+        /// artery are discarded; the surviving service streets still terminate in the
+        /// shared road band, but <see cref="IndustrialDistrict"/> does not tile that band.
+        /// </summary>
+        public static Plan ArrangeRoadside(int seed, out CoreRoads.Raster raster)
+        {
+            Plan best = null;
+            CoreRoads.Raster bestRaster = null;
+            for (int attempt = 0; attempt < Deals; attempt++)
+            {
+                int rolled = unchecked(seed * 1000003 + attempt * 7919);
+                var plan = Roll(rolled);
+                KeepRoadsideHalf(plan);
+                Cast(plan, new System.Random(unchecked(rolled ^ 0x51f15e)));
+                plan.Seed = seed;
+                plan.Attempt = attempt;
+                plan.Name = $"roadside seed {seed}" + (attempt > 0 ? $" (deal {attempt + 1})" : "");
+
+                var drawn = CoreRoads.Build(Blocks(plan), plan.Roads);
+                MarkExternalRoad(plan, drawn);
+                if (drawn.Faults == 0)
+                {
+                    raster = drawn;
+                    return plan;
+                }
+                if (bestRaster != null && drawn.Faults >= bestRaster.Faults) continue;
+                best = plan;
+                bestRaster = drawn;
+            }
+            MarkExternalRoad(best, bestRaster);
+            raster = bestRaster;
+            return best;
+        }
+
+        static void KeepRoadsideHalf(Plan plan)
+        {
+            int arteryTo = ArteryGap;
+            plan.Islands.RemoveAll(island => island.J0 < arteryTo);
+            plan.Parcels.RemoveAll(parcel => parcel.J0 < arteryTo);
+            plan.Rows.RemoveAll(row => row.StartsWith("south", System.StringComparison.Ordinal));
+
+            // Bands[0] is the artery. Of the rest keep only the streets behind the north
+            // tiers; CoreRoads clips the first band to the 15 m edge road the blocks need.
+            for (int k = plan.Roads.Bands.Count - 1; k >= 1; k--)
+            {
+                if (plan.Roads.Bands[k].yMin < arteryTo * Cell)
+                {
+                    plan.Roads.Bands.RemoveAt(k);
+                    continue;
+                }
+                // Roll gives every tier road one extra street-width beyond its two edge
+                // junctions so neighbouring full-estate tiers can meet. In the roadside
+                // zone those lengths are visible as purposeless arms. End the road at the
+                // outside edge of each edge junction instead.
+                var band = plan.Roads.Bands[k];
+                float trim = StreetGap * Cell;
+                plan.Roads.Bands[k] = Rect.MinMaxRect(
+                    band.xMin + trim, band.yMin,
+                    band.xMax - trim, band.yMax);
+            }
+
+            for (int k = 0; k < plan.Islands.Count; k++)
+            {
+                var island = plan.Islands[k];
+                island.Name = $"island-{k + 1:00}";
+                foreach (var parcel in island.Parcels) parcel.Island = k;
+            }
+            for (int k = 0; k < plan.Parcels.Count; k++) plan.Parcels[k].Index = k + 1;
+        }
+
+        static void MarkExternalRoad(Plan plan, CoreRoads.Raster raster)
+        {
+            if (plan == null || raster == null) return;
+            plan.ExternalArtery = true;
+            plan.ExternalRoad = new Vector2(raster.Z0, ArteryGap * Cell);
         }
 
         /// <summary>The islands as blocks the road reader understands: a solid rectangle

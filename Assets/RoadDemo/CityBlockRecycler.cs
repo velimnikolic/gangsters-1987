@@ -155,6 +155,7 @@ namespace RoadDemo
         ResidentialBlockModel _model;
         DistrictFrame _frame;
         CityViewConfig _config;
+        ResidentialFallbackLayer _fallbacks;
         ResidentialPrefabPool _prefabPool;
         DemoCamera _rig;
         Camera _camera;
@@ -220,6 +221,8 @@ namespace RoadDemo
         public string LargestRuntimeMissPrefab => _prefabPool?.LargestRuntimeMissPrefab;
         public int LargestRuntimeMissRenderers => _prefabPool?.LargestRuntimeMissRenderers ?? 0;
         public string RuntimeMissSummary => _prefabPool?.RuntimeMissSummary ?? string.Empty;
+        public int FallbackBlocks => _fallbacks?.BlockCount ?? 0;
+        public int VisibleFallbackBlocks => _fallbacks?.VisibleBlocks ?? 0;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
@@ -229,12 +232,13 @@ namespace RoadDemo
         }
 
         public void Init(ResidentialBlockModel model, DistrictFrame frame, CityViewConfig config,
-                         bool mapHandoff = true)
+                         bool mapHandoff = true, ResidentialFallbackLayer fallbacks = null)
         {
             if (_model != null) _model.Changed -= OnModelChanged;
             _model = model ?? throw new ArgumentNullException(nameof(model));
             _frame = frame;
             _config = CityViewConfig.Resolve(config);
+            _fallbacks = fallbacks != null ? fallbacks : GetComponent<ResidentialFallbackLayer>();
             _prefabPool?.SetRetainedLimit(_config.PrewarmPartLimit);
             _mapHandoff = mapHandoff;
             _model.Changed += OnModelChanged;
@@ -683,6 +687,7 @@ namespace RoadDemo
             if (!view.Active) return;
             view.Active = false;
             view.LastUsed = Time.frameCount;
+            if (view.Recipe != null) _fallbacks?.ShowFallback(view.Recipe.Id);
             CancelAttachment(view);
             _lamps?.Unregister(view.Content);
             view.Holder.SetActive(false);
@@ -698,6 +703,7 @@ namespace RoadDemo
         void BeginAttachment(View view)
         {
             CancelAttachment(view);
+            if (view.Recipe != null) _fallbacks?.ShowFallback(view.Recipe.Id);
             view.AttachCursor = 0;
             for (int i = 0; i < view.AttachRenderers.Count; i++)
             {
@@ -733,6 +739,8 @@ namespace RoadDemo
                 if (view.AttachCursor >= view.AttachRenderers.Count)
                 {
                     view.Attaching = false;
+                    if (view.Active && view.Recipe != null)
+                        _fallbacks?.HideFallback(view.Recipe.Id);
                     _attachments.RemoveAt(index);
                     continue;
                 }
@@ -847,6 +855,7 @@ namespace RoadDemo
 
         void DestroyPayload(View view, bool countEviction)
         {
+            if (view?.Recipe != null) _fallbacks?.ShowFallback(view.Recipe.Id);
             CancelAttachment(view);
             // Disable one common ancestor before returning hundreds of nested prefab
             // roots. This turns renderer detachment into one hierarchy transition and
@@ -926,6 +935,7 @@ namespace RoadDemo
         {
             int recipes = 0, active = 0, cached = 0, pooled = 0, pending = 0, composing = 0;
             int objects = 0, renderers = 0, built = 0, evicted = 0, merged = 0;
+            int fallbacks = 0, visibleFallbacks = 0;
             int partCapacity = 0, partReady = 0, partQueued = 0, partRetiring = 0;
             int partReused = 0, partMisses = 0;
             long last = 0, worst = 0, lastStep = 0, worstStep = 0;
@@ -938,6 +948,7 @@ namespace RoadDemo
                 recipes += one.RecipeCount; active += one.ActiveViews; cached += one.CachedViews;
                 pooled += one.PooledHolders; pending += one.PendingViews; composing += one.ComposingViews;
                 objects += one.SourceObjects; renderers += one.SourceRenderers;
+                fallbacks += one.FallbackBlocks; visibleFallbacks += one.VisibleFallbackBlocks;
                 built += one._built; evicted += one._evicted; merged += one._merged;
                 partCapacity += one.PrefabPoolCapacity; partReady += one.AvailablePrefabParts;
                 partQueued += one.PendingPrewarmParts;
@@ -950,6 +961,7 @@ namespace RoadDemo
             if (!report || recipes == 0) return;
             into.AppendLine($"block recycler  recipes {recipes}  active {active}  cached {cached}  pooled {pooled}  " +
                             $"pending {pending} composing {composing}  source objects {objects} renderers {renderers}  " +
+                            $"fallbacks {visibleFallbacks}/{fallbacks} visible/total  " +
                             $"parts capacity/ready/queued/retiring/reused/missed {partCapacity}/{partReady}/{partQueued}/{partRetiring}/{partReused}/{partMisses}  " +
                             $"built/merged/evicted {built}/{merged}/{evicted}  " +
                             $"build ms total {last}/{worst} step {lastStep}/{worstStep}");

@@ -330,14 +330,18 @@ namespace RoadDemo
             var bandsAbove = Deal(j1 - boulHi - StreetGap, BandMin, BandMax, dice, out int skirtAbove);
 
             int landWide = landHi - landLo, midWide = midHi - midLo;
-            Lay(plan, dice, "NW", landLo, landWide, colsLand, skirtLand, j1, deep, bandsNorth, skirtNorth);
-            Lay(plan, dice, "SW", landLo, landWide, colsLand, skirtLand, j0 - deep, deep, bandsSouth, skirtSouth);
-            Lay(plan, dice, "W below the boulevard", landLo, landWide, colsLand, skirtLand,
+            Lay(plan, dice, CoreQuarterId.NorthLandward, "NW", landLo, landWide, colsLand, skirtLand,
+                j1, deep, bandsNorth, skirtNorth);
+            Lay(plan, dice, CoreQuarterId.SouthLandward, "SW", landLo, landWide, colsLand, skirtLand,
+                j0 - deep, deep, bandsSouth, skirtSouth);
+            Lay(plan, dice, CoreQuarterId.Landward, "W below the boulevard", landLo, landWide, colsLand, skirtLand,
                 j0 + StreetGap, boulLo - j0 - StreetGap, bandsBelow, skirtBelow);
-            Lay(plan, dice, "W above the boulevard", landLo, landWide, colsLand, skirtLand,
+            Lay(plan, dice, CoreQuarterId.Landward, "W above the boulevard", landLo, landWide, colsLand, skirtLand,
                 boulHi, j1 - boulHi - StreetGap, bandsAbove, skirtAbove);
-            Lay(plan, dice, "N", midLo, midWide, colsMid, skirtMid, j1, deep, bandsNorth, skirtNorth);
-            Lay(plan, dice, "S", midLo, midWide, colsMid, skirtMid, j0 - deep, deep, bandsSouth, skirtSouth);
+            Lay(plan, dice, CoreQuarterId.NorthRiverside, "N", midLo, midWide, colsMid, skirtMid,
+                j1, deep, bandsNorth, skirtNorth);
+            Lay(plan, dice, CoreQuarterId.SouthRiverside, "S", midLo, midWide, colsMid, skirtMid,
+                j0 - deep, deep, bandsSouth, skirtSouth);
 
             var boulevard = plan.Bands[0];
             float edge = (riverEast ? landLo : landHi) * Cell;
@@ -350,7 +354,7 @@ namespace RoadDemo
         /// One quarter, or one part of one: a column of blocks for every width, each column
         /// taking the bands one or two at a time.
         /// </summary>
-        static void Lay(Plan plan, System.Random dice, string name, int i0, int wide,
+        static void Lay(Plan plan, System.Random dice, CoreQuarterId quarterId, string name, int i0, int wide,
                         List<int> cols, int skirtX, int j0, int deep, List<int> bands, int skirtZ)
         {
             if (cols == null || bands == null || cols.Count == 0 || bands.Count == 0)
@@ -447,6 +451,7 @@ namespace RoadDemo
                     // odd corner of ground rather than leaving a hole in the quarter
                     var yard = CoreLayout.Yard(plan.Residential.Count + 1, yw, yd, yardUnit);
                     yard.Pivot = new Vector2(box.xMin, box.yMin);
+                    yard.QuarterId = quarterId;
                     plan.Residential.Add(yard);
                     stood++;
                     float xCut = box.xMin + yw * Cell, zCut = box.yMin + yd * Cell;
@@ -466,6 +471,7 @@ namespace RoadDemo
                 {
                     var park = Park(plan.Parks.Count + 1, w, d);
                     park.Pivot = new Vector2(box.xMin, box.yMin);
+                    park.QuarterId = quarterId;
                     plan.Parks.Add(park);
                     continue;
                 }
@@ -478,6 +484,7 @@ namespace RoadDemo
                     // one block (the user, 2026-08-27: "vrtis i dalje iste blokove")
                     var block = Res(plan.Residential.Count + 1, w, d, dice.Next(4));
                     block.Pivot = new Vector2(box.xMin, box.yMin);
+                    block.QuarterId = quarterId;
                     plan.Residential.Add(block);
                     stood++;
                 }

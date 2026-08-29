@@ -4202,8 +4202,8 @@ namespace RoadDemo
         // advances the hour and owns pause/speed, DemoSky swings the sun and moon
         // under a procedural skybox with the PalmCity cloud ring, DemoStreetLamps
         // and DemoHeadlights light the street after dark, DemoNightWindows lights
-        // the window panes and signage on the facades, and DemoTopBar puts the
-        // clock and the time controls across the top of the screen.
+        // the window panes and signage on the facades, and DemoClockHud keeps the
+        // clock and its time controls visible in every city view.
         void BuildDayNight()
         {
             var go = new GameObject("DayNight");
@@ -4261,9 +4261,8 @@ namespace RoadDemo
                 foreach (var car in traffic.Cars())
                     headlights.Register(car, 2.3f);
 
-            var barGo = new GameObject("TopBar");
-            var bar = barGo.AddComponent<DemoTopBar>();
-            bar.clock = clock;
+            var hudGo = new GameObject("Clock HUD");
+            hudGo.AddComponent<DemoClockHud>().Init(clock);
 
             _clock = clock;
         }
@@ -4293,13 +4292,13 @@ namespace RoadDemo
         {
             var turf = new GameObject("Turf Map");
             turf.AddComponent<TurfMapHud>().Init(this, _blocks, _picker, _rig, _crews,
-                _clock, _vehicles, _policeCars);
+                _vehicles, _policeCars);
         }
 
         // ------------------------------------------------------- the lot overlay
         //
-        // The O key's answer to "what is this block, and what was it built for":
-        // the plan BuildBlocks just worked from, printed over the lots themselves.
+        // The O key's answer to "what is this block": Core prints its permanent block
+        // names and quarters; the ordinary generator prints its lot diagnostics.
         void BuildLotOverlay()
         {
             var go = new GameObject("Lot Overlay");

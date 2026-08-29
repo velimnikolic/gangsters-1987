@@ -7,9 +7,9 @@ using UnityEngine.UI;
 namespace RoadDemo
 {
     /// <summary>
-    /// Press O and a card floats over the middle of every block: the catalog pad the
-    /// lot answers to ("B2"), its size in metres and in 5 m kit cells, and what the
-    /// builder ended up standing on it. Press O again and they go.
+    /// Press O and a card floats over the middle of every block. In Core this is the
+    /// block's permanent territory name and quarter; in the ordinary RoadDemo it keeps
+    /// the generator's catalog diagnostics. Press O again and they go.
     ///
     /// The numbers come off RoadDemoBuilder.LotPlans - the plan BuildBlocks worked
     /// from - and are never measured back off the geometry: a bake is allowed a metre
@@ -54,7 +54,10 @@ namespace RoadDemo
 
         void Start()
         {
-            if (_builder == null || _builder.LotPlans.Count == 0)
+            bool hasCoreBlocks = _builder != null &&
+                                 _builder.Territories.Plan != null &&
+                                 _builder.Territories.Plan.Blocks.Count > 0;
+            if (_builder == null || (!hasCoreBlocks && _builder.LotPlans.Count == 0))
             {
                 // No plan to print - an overlay of nothing is worse than no overlay.
                 Destroy(this);
@@ -89,8 +92,17 @@ namespace RoadDemo
             _root = new GameObject("Lot Cards", typeof(RectTransform));
             _root.transform.SetParent(transform, false);
 
-            foreach (var lot in _builder.LotPlans)
-                _cards.Add(BuildCard(lot));
+            var territory = _builder.Territories.Plan;
+            if (territory != null && territory.Blocks.Count > 0)
+            {
+                for (int i = 0; i < territory.Blocks.Count; i++)
+                    _cards.Add(BuildCard(territory.Blocks[i]));
+            }
+            else
+            {
+                foreach (var lot in _builder.LotPlans)
+                    _cards.Add(BuildCard(lot));
+            }
 
             _root.SetActive(false);
             _shown = false;
@@ -136,6 +148,47 @@ namespace RoadDemo
             contents.text = lot.Contents;
 
             return new Card { Centre = Middle(lot), Rect = rect };
+        }
+
+        /// <summary>A compact 3D-city indicator sourced from the same immutable block
+        /// definition combat and both maps use.</summary>
+        Card BuildCard(CoreBlockDefinition block)
+        {
+            var bounds = _builder.Territories.WorldBounds(block.Id);
+            var rect = DemoUi.NewRect($"Block {block.Id}", _root.transform);
+            rect.sizeDelta = new Vector2(250f, 58f);
+
+            var face = rect.gameObject.AddComponent<Image>();
+            face.raycastTarget = false;
+            DemoUi.Dress(face, DemoUi.Box, 14f, DemoUi.Panel);
+
+            var stripe = DemoUi.Block(rect, "Quarter", DemoUi.Gold);
+            var stripeRect = stripe.rectTransform;
+            stripeRect.anchorMin = new Vector2(0f, 0f);
+            stripeRect.anchorMax = new Vector2(0f, 1f);
+            stripeRect.pivot = new Vector2(0f, 0.5f);
+            stripeRect.anchoredPosition = new Vector2(13f, 0f);
+            stripeRect.sizeDelta = new Vector2(3f, -16f);
+
+            var title = Row(rect, "Name", 16f, DemoUi.Gold,
+                top: -7f, height: 23f, display: true);
+            title.characterSpacing = 2f;
+            title.overflowMode = TextOverflowModes.Ellipsis;
+            title.text = block.Name.ToUpperInvariant();
+
+            var quarter = _builder.Territories.Quarter(block.QuarterId);
+            var subtitle = Row(rect, "Quarter Name", 12f, DemoUi.InkDim,
+                top: -31f, height: 18f);
+            subtitle.characterSpacing = 8f;
+            subtitle.text = quarter != null
+                ? quarter.Name.ToUpperInvariant() + " QUARTER"
+                : "CORE BLOCK";
+
+            return new Card
+            {
+                Centre = new Vector3(bounds.center.x, 0f, bounds.center.y),
+                Rect = rect,
+            };
         }
 
         /// <summary>A line of the card, hung from its top edge and inset past the

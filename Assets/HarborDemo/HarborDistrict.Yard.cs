@@ -682,49 +682,100 @@ namespace HarborDemo
         }
 
         StreetKit _street, _yardStreet;
+        readonly List<float> _standaloneBackStreetNorthLinks = new List<float>();
+
+        sealed class BackStreetCrossing
+        {
+            public float X;
+            public bool North;
+            public bool South;
+        }
+
+        /// <summary>Contract X positions where a neighbouring standalone district's
+        /// streets enter the north side of the harbor road.</summary>
+        internal void SetStandaloneBackStreetNorthLinks(IEnumerable<float> contractXs)
+        {
+            _standaloneBackStreetNorthLinks.Clear();
+            if (contractXs == null) return;
+            foreach (float contractX in contractXs)
+            {
+                float ownX = contractX - GateSpanCentre;
+                bool duplicate = false;
+                foreach (float present in _standaloneBackStreetNorthLinks)
+                    if (Mathf.Abs(present - ownX) < 0.1f) { duplicate = true; break; }
+                if (!duplicate) _standaloneBackStreetNorthLinks.Add(ownX);
+            }
+            _standaloneBackStreetNorthLinks.Sort();
+        }
 
         /// <summary>The road the port is reached by: a two-way street outside the wire,
         /// running well past both ends of the quay so the lorries come on and go off it
         /// out of sight, dressed the road demo's way but for the palms - nobody plants
-        /// a boulevard along a container port. Laid in three lengths with a T-junction
-        /// square at each gate, so the gate roads come off it through its kerb and not
-        /// over it.</summary>
+        /// a boulevard along a container port. Laid in lengths around every gate and
+        /// landward service junction, so all of those roads open through its kerb rather
+        /// than being drawn over it.</summary>
         void BuildBackStreet()
         {
             // a hair above the land: the kit's carriageway lies at its own y and the
             // heightfield at LandY, and a road laid level with the grass is under it
             _street = new StreetKit(_streetRoot, y: LandY + 0.03f) { Palms = false };
             float gW = _gateWestX, gE = _gateEastX;
-            // three dressed lengths, and either side of each gate one bare cell with no
-            // south pavement: the kerb splayed back where the lorries swing in and out
-            // the gate junction squares are as wide as the street (half either side of
-            // the gate's centre line), with a cell of splayed kerb flanking each
+            var gates = new[] { gW, gE };
+            int linked = _links != null ? _links.Length : 0;
+            var crossings = new List<BackStreetCrossing>();
+            void AddCrossing(float x, bool north, bool south)
+            {
+                foreach (var present in crossings)
+                {
+                    if (Mathf.Abs(present.X - x) >= 0.1f) continue;
+                    present.North |= north;
+                    present.South |= south;
+                    return;
+                }
+                crossings.Add(new BackStreetCrossing { X = x, North = north, South = south });
+            }
+            for (int k = 0; k < gates.Length; k++) AddCrossing(gates[k], k < linked, true);
+            foreach (float x in _standaloneBackStreetNorthLinks) AddCrossing(x, true, false);
+            crossings.Sort((one, other) => one.X.CompareTo(other.X));
+
+            // Dressed lengths between crossings; beside each square the sidewalk is
+            // omitted only on the side where another road actually arrives.
             const float H = StreetKit.StreetHalf;
             const float C = StreetKit.Cell;
-            bool ok = _street.LayAlongX(_streetZ, -QuayHalf - 130f, gW - H - C)
-                      && _street.LayAlongX(_streetZ, gW - H - C, gW - H, southWalk: false, dress: false)
-                      && _street.LayAlongX(_streetZ, gW + H, gW + H + C, southWalk: false, dress: false)
-                      && _street.LayAlongX(_streetZ, gW + H + C, gE - H - C)
-                      && _street.LayAlongX(_streetZ, gE - H - C, gE - H, southWalk: false, dress: false)
-                      && _street.LayAlongX(_streetZ, gE + H, gE + H + C, southWalk: false, dress: false)
-                      && _street.LayAlongX(_streetZ, gE + H + C, QuayHalf + 130f);
+            float cursor = -QuayHalf - 130f;
+            float end = QuayHalf + 130f;
+            bool ok = true;
+            void Along(float from, float to, bool southWalk = true, bool northWalk = true, bool dress = true)
+            {
+                if (to <= from + 0.05f) return;
+                if (!_street.LayAlongX(_streetZ, from, to, southWalk, northWalk, dress)) ok = false;
+            }
+            foreach (var crossing in crossings)
+            {
+                if (crossing.X - H <= cursor || crossing.X + H >= end) continue;
+                Along(cursor, crossing.X - H - C);
+                Along(Mathf.Max(cursor, crossing.X - H - C), crossing.X - H,
+                      southWalk: !crossing.South, northWalk: !crossing.North, dress: false);
+                Along(crossing.X + H, Mathf.Min(end, crossing.X + H + C),
+                      southWalk: !crossing.South, northWalk: !crossing.North, dress: false);
+                cursor = Mathf.Max(cursor, crossing.X + H + C);
+            }
+            Along(cursor, end);
             if (!ok)
             {
                 Debug.LogWarning("[HarborDemo] the street kit did not load - no approach road.");
                 return;
             }
-            // A gate the CITY drives into is not capped: the cap is a pavement laid
-            // across the mouth of the junction, and with a street arriving from the
-            // north it puts a kerb through the road - the port read as unreachable, the
-            // approach broken off by a footpath. A gate with no street of its own to
-            // meet (the port in its own demo scene, or a second gate the city did not
-            // link) keeps the cap, or the junction opens onto grass.
-            var gates = new[] { gW, gE };
-            int linked = _links != null ? _links.Length : 0;
-            for (int k = 0; k < gates.Length; k++)
+            foreach (var crossing in crossings)
             {
-                float gx = gates[k];
-                _street.LayJunction(gx, _streetZ, capNorth: k >= linked, splaySouth: 1);
+                _street.LayJunction(crossing.X, _streetZ,
+                                    capNorth: !crossing.North,
+                                    capSouth: !crossing.South,
+                                    splaySouth: crossing.South ? 1 : 0,
+                                    splayNorth: crossing.North ? 1 : 0);
+            }
+            foreach (float gx in gates)
+            {
                 // the gate road outside the wire, at the street's own level, up to the T
                 _street.LayRoadAlongZ(gx, _fenceZ, _streetZ - StreetKit.StreetHalf);
             }

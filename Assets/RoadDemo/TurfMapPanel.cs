@@ -40,7 +40,6 @@ namespace RoadDemo
     {
         // ------------------------------------------------------------- the paper
 
-        static readonly Color Plate = new Color32(244, 236, 214, 240);
         static readonly Color PlateSolid = new Color32(244, 236, 214, 250);
         static readonly Color Hairline = new Color32(43, 36, 24, 140);
         static readonly Color Rule = new Color32(43, 36, 24, 90);
@@ -54,7 +53,7 @@ namespace RoadDemo
         static readonly Color Well = new Color32(43, 36, 24, 16);
         static readonly Color MugField = new Color32(224, 212, 182, 255);
 
-        const float PanelLeft = 18f, DateTop = 14f, PanelTop = 52f, PanelFoot = 24f;
+        const float PanelLeft = 0f, PanelTop = DemoClockHud.Height, PanelFoot = 24f;
         const float PanelWidthFraction = 0.18f;
         const float Pad = 10f, HeadPad = 11f;
 
@@ -69,28 +68,53 @@ namespace RoadDemo
         /// roster line, a button - is this tall, and everything inside one is centred on
         /// its middle. One number instead of a y per element is the whole of what keeps
         /// a column looking like a column.</summary>
-        const float StatHeight = 17f, ButtonHeight = 22f, RosterHeight = 36f;
+        const float StatHeight = 17f, ButtonHeight = 22f, RosterHeight = 42f;
 
         TurfMapHud _hud;
-        DemoClock _clock;
+        Canvas _canvas;
+        bool _showPanel, _showMapChrome;
 
-        RectTransform _datePlate, _panelRect, _viewport, _content, _keyRect, _placesRoot, _menuRect;
-        TextMeshProUGUI _dateText, _clockText;
+        RectTransform _panelRect, _viewport, _content, _keyRect, _placesRoot, _menuRect;
 
         RectTransform _dossierRect;
         RawImage _mugImage;
 
+        /// <summary>Connects a roster thumbnail to the CrewBar's one shared, rotating
+        /// camera feed. It deliberately owns no camera or RenderTexture: moving the
+        /// picture into the permanent paper panel must not double the cost of filming
+        /// the same lieutenant.</summary>
+        sealed class LieutenantLiveFeed : MonoBehaviour
+        {
+            public DemoCrews.Unit Unit;
+            RawImage _image;
+
+            void Awake() => _image = GetComponent<RawImage>();
+
+            void LateUpdate()
+            {
+                if (CrewBar.Instance != null &&
+                    CrewBar.Instance.TryGetFeed(Unit, out var feed))
+                {
+                    if (_image.texture != feed)
+                        _image.texture = feed;
+                    _image.enabled = true;
+                    return;
+                }
+
+                _image.enabled = false;
+            }
+        }
+
         int _paintedStamp = -1;
+        float _paintedPanelWidth = -1f;
         float _scroll;
 
-        /// <summary>The minute and day the date plate last printed, so the two
-        /// readings are rebuilt when the clock moves and not every frame.</summary>
-        int _shownMinute = -1, _shownDay = -1;
-
-        public void Init(TurfMapHud owner, DemoClock cityClock)
+        public void Init(TurfMapHud owner, bool showPanel, bool showMapChrome)
         {
             _hud = owner;
-            _clock = cityClock;
+            _canvas = GetComponent<Canvas>();
+            _showPanel = showPanel;
+            _showMapChrome = showMapChrome;
             Build();
         }
 
@@ -99,7 +123,8 @@ namespace RoadDemo
         /// scaled canvas is how the panel ended up a third of its intended size on a
         /// small game view.</summary>
         float PanelWidth =>
-            Screen.width / _hud.UiScale * PanelWidthFraction;
+            Screen.width / (_canvas != null ? Mathf.Max(0.01f, _canvas.scaleFactor) : _hud.UiScale) *
+            PanelWidthFraction;
 
         // ------------------------------------------------------------------ build
 
@@ -108,20 +133,15 @@ namespace RoadDemo
             var root = (RectTransform)transform;
             BuildRuler(root);
 
-            const float dateTall = 24f;
-            _datePlate = Paper("Date Plate", root, Plate);
-            Anchor(_datePlate, 0f, 1f, PanelLeft, -DateTop);
-            _datePlate.sizeDelta = new Vector2(PanelWidth, dateTall);
+            if (_showPanel)
+                BuildPanel(root);
+            if (_showMapChrome)
+                BuildMapChrome(root);
+        }
 
-            // Both readings centred on the plate's own middle line. Handing each a y of
-            // its own is what left the date sitting two units under the clock beside it.
-            _dateText = Caps(_datePlate, HeadPad, Mid(dateTall, LedgerKit.LineBox(11f)),
-                160f, "MON 5 JAN 1987", 11f, Ink, LedgerStyle.Condensed);
-            _clockText = LedgerKit.Line(_datePlate, LedgerStyle.Mono, 11f, Red,
-                HeadPad, Mid(dateTall, LedgerKit.LineBox(11f)), 0f, LedgerKit.LineBox(11f),
-                "00:00", TextAlignmentOptions.MidlineRight);
-
-            _panelRect = Paper("Panel", root, PlateSolid);
+        void BuildPanel(RectTransform root)
+        {
+            _panelRect = Paper("Panel", root, PlateSolid, borderThickness: 0.5f);
             Anchor(_panelRect, 0f, 1f, PanelLeft, -PanelTop);
 
             _viewport = DemoUi.NewRect("Viewport", _panelRect);
@@ -134,7 +154,10 @@ namespace RoadDemo
             _content.pivot = new Vector2(0f, 1f);
             _content.offsetMin = new Vector2(0f, 0f);
             _content.offsetMax = new Vector2(0f, 0f);
+        }
 
+        void BuildMapChrome(RectTransform root)
+        {
             _placesRoot = DemoUi.NewRect("Places", root);
             DemoUi.Fill(_placesRoot);
             _placesRoot.SetAsFirstSibling();
@@ -191,11 +214,14 @@ namespace RoadDemo
             return image;
         }
 
-        static RectTransform Paper(string name, Transform parent, Color face)
+        /// <summary>A sheet edge is a single physical-pixel rule at the map's normal
+        /// scale. Heavier rules are reserved for controls inside the sheet.</summary>
+        static RectTransform Paper(string name, Transform parent, Color face,
+            float borderThickness = 1f)
         {
             var rect = DemoUi.NewRect(name, parent);
             LedgerKit.Fill(rect, face);
-            LedgerKit.Frame(rect, 1f, Hairline);
+            LedgerKit.Frame(rect, borderThickness, Hairline);
             return rect;
         }
 
@@ -342,47 +368,34 @@ namespace RoadDemo
 
         public void Refresh()
         {
-            float width = PanelWidth;
-            _datePlate.sizeDelta = new Vector2(width, _datePlate.sizeDelta.y);
-            _clockText.rectTransform.sizeDelta =
-                new Vector2(width - HeadPad * 2f, _clockText.rectTransform.sizeDelta.y);
-
-            // Both readings are set only when they change: a string built and handed
-            // to TMP every frame is a mesh rebuild for a clock that moves once a minute.
-            if (_clock != null)
+            if (_showPanel)
             {
-                int minute = Mathf.FloorToInt(_clock.Hour * 60f);
-                if (minute != _shownMinute)
+                float width = PanelWidth;
+                if (Mathf.Abs(width - _paintedPanelWidth) > 0.1f)
                 {
-                    _shownMinute = minute;
-                    _clockText.SetText("{0:00}:{1:00}", (minute / 60) % 24, minute % 60);
+                    _paintedPanelWidth = width;
+                    _paintedStamp = -1;
                 }
+
+                int stamp = Stamp();
+                if (stamp != _paintedStamp)
+                {
+                    _paintedStamp = stamp;
+                    Repaint();
+                }
+                Scroll();
             }
 
-            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
-            int day = outfit != null ? outfit.Campaign.Day : 1;
-            if (day != _shownDay)
+            if (_showMapChrome)
             {
-                _shownDay = day;
-                _dateText.text = LivingCity.News.NewsDate.FromClockDay(day - 1).Stamped();
+                int key = KeyStamp();
+                if (key != _paintedKey)
+                {
+                    _paintedKey = key;
+                    BuildKey((RectTransform)transform);
+                }
+                Places();
             }
-
-            int stamp = Stamp();
-            if (stamp != _paintedStamp)
-            {
-                _paintedStamp = stamp;
-                Repaint();
-            }
-
-            int key = KeyStamp();
-            if (key != _paintedKey)
-            {
-                _paintedKey = key;
-                BuildKey((RectTransform)transform);
-            }
-
-            Scroll();
-            Places();
         }
 
         /// <summary>What the panel is showing. Changing it repaints; a frame that
@@ -757,11 +770,11 @@ namespace RoadDemo
 
         // ----------------------------------------------------------------- roster
 
-        /// <summary>The roster's three columns, as ONE set of numbers read by both the
-        /// heading and every row under it. Two copies of them is how the numbers drifted
-        /// apart in the first place.</summary>
-        const float NumberColumn = 10f, NumberWide = 20f;
-        const float NameColumn = 34f, MenWide = 34f;
+        /// <summary>The roster's columns are shared by heading and every row. The
+        /// first column is the lieutenant's existing street camera, not a duplicate
+        /// block of crew information.</summary>
+        const float FeedColumn = 6f, FeedWide = 36f;
+        const float NameColumn = FeedColumn + FeedWide + 8f, MenWide = 34f;
 
         float BuildRoster(float width, float top)
         {
@@ -772,7 +785,7 @@ namespace RoadDemo
             var head = DemoUi.NewRect("Columns", _content);
             LedgerKit.PlaceTopLeft(head, 0f, y, width, headH);
             LedgerKit.Rule(head, 0f, -headH + 1f, width, RuleFaint, 1f);
-            Caps(head, NumberColumn, Mid(headH, box), NumberWide, "NO", 9f, Label,
+            Caps(head, FeedColumn, Mid(headH, box), FeedWide, "LIVE", 8f, Label,
                 LedgerStyle.Condensed);
             Caps(head, NameColumn, Mid(headH, box), 120f, "LIEUTENANT", 9f, Label,
                 LedgerStyle.Condensed);
@@ -780,15 +793,14 @@ namespace RoadDemo
                 LedgerStyle.Condensed, TextAlignmentOptions.MidlineRight);
             y -= headH;
 
-            int number = 0, men = 0;
+            int men = 0;
             foreach (var crew in _hud.Units)
             {
                 if (!crew.Mine || !crew.Alive)
                     continue;
 
-                number++;
                 men += crew.MenStanding;
-                y -= RosterRow(crew, number, width, y);
+                y -= RosterRow(crew, width, y);
             }
 
             y -= 10f;
@@ -807,11 +819,10 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// One lieutenant. The number, the name and the count all sit on the SAME line -
-        /// the three of them used to be given a y each and read as three columns that
-        /// had slipped past one another - with the standing order set small underneath.
+        /// One lieutenant. His current street view replaces the old ordinal number;
+        /// name, men and order stay here because this is already their compact dossier.
         /// </summary>
-        float RosterRow(TurfCrew crew, int number, float width, float top)
+        float RosterRow(TurfCrew crew, float width, float top)
         {
             bool on = _hud.IsGathered(crew.Id);
 
@@ -835,9 +846,17 @@ namespace RoadDemo
             const float nameLine = -13f, orderLine = -26f;
             float wide = width - HeadPad - MenWide - 6f - NameColumn;
 
-            LedgerKit.Line(row, LedgerStyle.Mono, 9f, Dim, NumberColumn,
-                On(nameLine, LedgerKit.LineBox(9f)), NumberWide, LedgerKit.LineBox(9f),
-                number.ToString("00"));
+            var live = DemoUi.NewRect("Live", row);
+            LedgerKit.PlaceTopLeft(live, FeedColumn, -3f, FeedWide, FeedWide);
+            LedgerKit.Fill(live, new Color32(30, 29, 25, 255));
+            LedgerKit.Frame(live, 0.5f, Hairline);
+            var feed = DemoUi.NewRect("Feed", live);
+            DemoUi.Fill(feed);
+            var picture = feed.gameObject.AddComponent<RawImage>();
+            picture.raycastTarget = false;
+            picture.enabled = false;
+            var stream = picture.gameObject.AddComponent<LieutenantLiveFeed>();
+            stream.Unit = crew.Unit;
 
             var name = LedgerKit.Line(row, LedgerStyle.Mono, 13f, Ink, NameColumn,
                 On(nameLine, LedgerKit.LineBox(13f)), wide, LedgerKit.LineBox(13f),

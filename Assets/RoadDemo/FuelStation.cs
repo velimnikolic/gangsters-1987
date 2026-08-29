@@ -766,6 +766,16 @@ namespace RoadDemo
         public static FuelStation Stand(Transform under, Vector3 anchor, Quaternion rot,
                                         float groundY, float crossZ)
         {
+            return Stand(under, anchor, rot, groundY, crossZ, blockWalkers: true);
+        }
+
+        /// <summary>Stand and wire the shared station, optionally leaving obstacle ownership
+        /// to the caller. CoreDemo uses a uniformly scaled visual cluster and therefore
+        /// registers its measured, scaled bounds after composition; the full-size PumpDemo
+        /// and wayside stations keep the precise authored blockers above.</summary>
+        public static FuelStation Stand(Transform under, Vector3 anchor, Quaternion rot,
+                                        float groundY, float crossZ, bool blockWalkers)
+        {
             var station = Wire(anchor, rot, groundY, crossZ);
 #if UNITY_EDITOR
             var seat = anchor;
@@ -795,7 +805,7 @@ namespace RoadDemo
             }
             station.Footprint = Measure(under);
 #endif
-            station.BlockWalkers();
+            if (blockWalkers) station.BlockWalkers();
             return station;
         }
 

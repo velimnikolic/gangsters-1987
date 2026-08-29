@@ -256,6 +256,102 @@ namespace RoadDemo
     }
 
     /// <summary>
+    /// A place whose purpose matters more on the tactical map than the outline of its
+    /// individual props. Houses and parks deliberately do not appear here: houses keep
+    /// their surveyed footprints and parks keep their real lawn geometry.
+    /// </summary>
+    public enum TurfLandmarkKind
+    {
+        Generic,
+        Gym,
+        FuelStation,
+        CarYard,
+        Skatepark,
+        Diner,
+        SportsCourt,
+        Parking,
+        Police,
+        Nightclub,
+        Warehouse,
+        Fairground,
+        Cafe,
+        Transit,
+        Landing,
+    }
+
+    /// <summary>One vocabulary for generated units, fixed Core blocks and future
+    /// amenities. The source plans keep their own names; this adapter only decides which
+    /// stable map glyph represents them.</summary>
+    public static class TurfLandmarkKinds
+    {
+        public static string Label(TurfLandmarkKind kind)
+        {
+            switch (kind)
+            {
+                case TurfLandmarkKind.Gym: return "GYM";
+                case TurfLandmarkKind.FuelStation: return "GAS";
+                case TurfLandmarkKind.CarYard: return "CAR YARD";
+                case TurfLandmarkKind.Skatepark: return "SKATE";
+                case TurfLandmarkKind.Diner: return "DINER";
+                case TurfLandmarkKind.SportsCourt: return "COURT";
+                case TurfLandmarkKind.Parking: return "PARKING";
+                case TurfLandmarkKind.Police: return "POLICE";
+                case TurfLandmarkKind.Nightclub: return "CLUB";
+                case TurfLandmarkKind.Warehouse: return "WAREHOUSE";
+                case TurfLandmarkKind.Fairground: return "FAIR";
+                case TurfLandmarkKind.Cafe: return "CAFE";
+                case TurfLandmarkKind.Transit: return "METRO";
+                case TurfLandmarkKind.Landing: return "DOCK";
+                default: return "SITE";
+            }
+        }
+
+        public static TurfLandmarkKind From(string source)
+        {
+            string name = (source ?? "").Trim().ToLowerInvariant();
+            if (name.Contains("caryard") || name.Contains("car-yard") ||
+                name.Contains("car yard")) return TurfLandmarkKind.CarYard;
+            if (name.Contains("skate")) return TurfLandmarkKind.Skatepark;
+            if (name.Contains("gym")) return TurfLandmarkKind.Gym;
+            if (name.Contains("fuel") || name.Contains("filling") ||
+                name.Contains("gas-pump") || name.Contains("gas pump") ||
+                name.Contains("gas-station") || name.Contains("gas station"))
+                return TurfLandmarkKind.FuelStation;
+            if (name.Contains("diner") || name.Contains("dinner"))
+                return TurfLandmarkKind.Diner;
+            if (name.Contains("kosarka") || name.Contains("basket") ||
+                name.Contains("court")) return TurfLandmarkKind.SportsCourt;
+            if (name.Contains("parking") || name.Contains("car-park") ||
+                name.Contains("car park")) return TurfLandmarkKind.Parking;
+            if (name.Contains("police")) return TurfLandmarkKind.Police;
+            if (name.Contains("nightclub") || name.Contains("night-club") ||
+                name.Contains("night club")) return TurfLandmarkKind.Nightclub;
+            if (name.Contains("warehouse")) return TurfLandmarkKind.Warehouse;
+            if (name.Contains("fair")) return TurfLandmarkKind.Fairground;
+            if (name.Contains("cafe") || name.Contains("coffee") ||
+                name.Contains("terrace")) return TurfLandmarkKind.Cafe;
+            if (name.Contains("subway") || name.Contains("metro"))
+                return TurfLandmarkKind.Transit;
+            if (name.Contains("landing") || name.Contains("marina") ||
+                name.Contains("dock")) return TurfLandmarkKind.Landing;
+            return TurfLandmarkKind.Generic;
+        }
+    }
+
+    /// <summary>A plan-owned icon on the survey. It contains no Unity object so the
+    /// worker-thread draw remains independent of streamed/recycled scene views.</summary>
+    public sealed class TurfLandmark
+    {
+        public TurfLandmarkKind Kind;
+        public string Name = "";
+        public string Label = "";
+        public Rect World;
+        public Rect Plan;
+        public int BlockId = -1;
+        public bool ReplacesFootprints;
+    }
+
+    /// <summary>
     /// One building on the plate, and the SAME building in the world. Tf is the very
     /// transform the street's own picker raycasts and Business is the very marker the
     /// ownership layer writes - the map holds references, never copies, so a
@@ -415,6 +511,13 @@ namespace RoadDemo
         public string Name = "";
         public Rect Plan;
         public Rect World;
+
+        /// <summary>Set only for Core's logical territory. None keeps the ordinary
+        /// RoadDemo rule where ownership is scored from premises inside the district.</summary>
+        public CoreQuarterId TerritoryId;
+
+        /// <summary>Main-thread snapshot of Core campaign state, read by the worker draw.</summary>
+        public int TerritoryGangId = -1;
 
         /// <summary>Recomputed from the holdings whenever ownership changes: the
         /// family holding most footprints here, -1 for nobody, -2 for a tie.</summary>

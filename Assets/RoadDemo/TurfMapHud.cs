@@ -42,11 +42,11 @@ namespace RoadDemo
     /// continuous while the paper keeps up at its own pace.
     ///
     /// The plate is 960 x 600 and is fitted over the viewport the way an image with
-    /// object-fit: cover is: scaled by the LARGER of the two ratios and centred, so it
-    /// always fills the screen and the overflow is cropped. Every pointer position has
-    /// to undo that crop before it means anything - see <see cref="ToPlan"/>. Getting
-    /// it wrong silently offsets every click on the map, which is the single easiest
-    /// bug to ship here.
+    /// object-fit: cover is, then turned to the street camera's heading. It always fills
+    /// the screen and the overflow is cropped. Every pointer position has to undo that
+    /// crop and turn before it means anything - see <see cref="ToPlan"/>. Getting it
+    /// wrong silently offsets every click on the map, which is the single easiest bug
+    /// to ship here.
     ///
     /// Everything the player ORDERS is remembered in world metres, never in the plate's
     /// authored units. A survey publishes a new projection whenever the boom moves, and
@@ -61,10 +61,10 @@ namespace RoadDemo
     /// where the player is looking.
     ///
     /// Because it IS the boom, the camera rig stays live the whole time: the wheel is
-    /// the only way back down, WASD pans (DemoCamera already pans by the compass and
-    /// refuses to orbit while the map is out), and the boom between the map line and
-    /// the ceiling drives the plate's own scale - cover at the line, the whole sheet in
-    /// frame at the top of the wheel.
+    /// the only way back down, the street camera's yaw carries straight into the plan,
+    /// WASD pans by that same heading, and the boom between the map line and the ceiling
+    /// drives the plate's own scale - cover at the line, the whole sheet in frame at the
+    /// top of the wheel.
     ///
     /// Sizes and line weights all come off <see cref="TurfPlate.S"/> rather than being
     /// written per element, so the same code draws the corner minimap.
@@ -155,7 +155,6 @@ namespace RoadDemo
         RoadDemoBuilder _builder;
         Transform _blockRoot;
         DemoCrews _crews;
-        DemoClock _clock;
         BuildingCardPicker _picker;
         DemoCamera _rig;
         List<DemoVehicle> _traffic;
@@ -167,9 +166,10 @@ namespace RoadDemo
 
         Texture2D _groundTex, _turfTex, _builtTex, _liveTex;
         RawImage _groundImage, _turfImage, _builtImage, _liveImage;
-        RectTransform _sheet;
+        RectTransform _sheetPose, _sheet;
         Canvas _canvas;
-        TurfMapPanel _panel;
+        TurfMapPanel _mapChrome;
+        TurfMapPanel _crewPanel;
 
         readonly List<TurfCrew> _units = new List<TurfCrew>();
         readonly List<Marker> _markers = new List<Marker>();
@@ -182,6 +182,10 @@ namespace RoadDemo
         TurfDistrict _inspectedDistrict;
 
         bool _dragging, _dragMoved;
+
+        /// <summary>The ground chosen by the wheel event that crossed back into the
+        /// street. Banked for the following Update, when Show(false) takes the map down.</summary>
+        Vector2? _landingTarget;
 
         /// <summary>The marquee's two corners, in WORLD METRES. A survey landing
         /// mid-drag republishes the projection; a box held in authored units would jump
@@ -214,7 +218,7 @@ namespace RoadDemo
         public TurfDistrict InspectedDistrict => _inspectedDistrict;
 
         public void Init(RoadDemoBuilder city, Transform blocks, BuildingCardPicker cardPicker,
-            DemoCamera camera, DemoCrews streetCrews, DemoClock cityClock,
+            DemoCamera camera, DemoCrews streetCrews,
             List<DemoVehicle> cars, List<PolicePatrolCar> patrols)
         {
             _builder = city;
@@ -222,7 +226,6 @@ namespace RoadDemo
             _picker = cardPicker;
             _rig = camera;
             _crews = streetCrews;
-            _clock = cityClock;
             _traffic = cars;
             _policeCars = patrols;
         }
@@ -239,12 +242,15 @@ namespace RoadDemo
             }
 
             BuildCanvas();
+            BuildCrewPanel();
 
             // The ruler has to exist before the first draw: the crossings pass steers
             // around the street names, and it runs where the face cannot be asked
             // anything.
             _survey.MeasureNames(_lettering.Measure);
             CollectCrews();
+            _crewPanel.SelectionChanged();
+            _crewPanel.Refresh();
 
             // One draw of the whole city, here and not on a worker: the first frame the
             // wheel opens has to have paper on it, and thirty milliseconds inside a
@@ -374,6 +380,10 @@ namespace RoadDemo
             if (want != IsOpen)
                 Show(want);
 
+            // The dossier is the street's standing desk: it persists when the survey
+            // closes, while the sheet's key, names and context menu do not.
+            _crewPanel.Refresh();
+
             if (!IsOpen)
                 return;
 
@@ -390,10 +400,11 @@ namespace RoadDemo
             PumpSurvey();
             FitSheet();
             Pointer();
+            Zoom();
             Steer();
             DrawLive();
 
-            _panel.Refresh();
+            _mapChrome.Refresh();
         }
 
         void Show(bool on)
@@ -417,7 +428,9 @@ namespace RoadDemo
 
             if (on)
             {
+                _landingTarget = null;
                 CollectCrews();
+                _crewPanel.SelectionChanged();
 
                 // The live layer still carries the last frame it was drawn on, in a
                 // projection that is about to be thrown away - crews and cars would
@@ -441,7 +454,7 @@ namespace RoadDemo
                 // the same camera rather than a second one.
                 Land();
                 _dragging = false;
-                _panel.CloseMenu();
+                _mapChrome.CloseMenu();
                 PointerOverChrome = false;
             }
         }
@@ -456,16 +469,85 @@ namespace RoadDemo
 
         void Land()
         {
-            var mouse = Mouse.current;
-            if (_rig == null || mouse == null)
+            if (_rig == null)
                 return;
 
-            var plan = ToPlan(mouse.position.ReadValue());
-            if (plan.x < 0f || plan.y < 0f || plan.x > TurfPlate.AW || plan.y > TurfPlate.AH)
-                return;
+            Vector2 ground;
+            if (_landingTarget.HasValue)
+            {
+                ground = _landingTarget.Value;
+            }
+            else
+            {
+                var mouse = Mouse.current;
+                if (mouse == null || !TryGroundAt(mouse.position.ReadValue(), out ground))
+                    return;
+            }
 
-            var ground = _survey.Plan.ToWorld(plan);
             _rig.pivot = new Vector3(ground.x, _rig.pivot.y, ground.y);
+            _rig.Drop();
+            _landingTarget = null;
+        }
+
+        /// <summary>
+        /// The turf map owns the wheel while it is visible. Every intermediate step
+        /// keeps the same ground under the pointer; the step that crosses mapAt banks
+        /// that ground as the street camera's new centre. Letting DemoCamera also read
+        /// the wheel here would apply the distance twice in one frame.
+        /// </summary>
+        void Zoom()
+        {
+            var mouse = Mouse.current;
+            if (_rig == null || mouse == null || PointerOverChrome)
+                return;
+
+            float scroll = mouse.scroll.ReadValue().y;
+            if (Mathf.Abs(scroll) < 0.01f)
+                return;
+
+            float previous = _rig.distance;
+            float next = _rig.DistanceAfterWheel(scroll);
+            if (Mathf.Approximately(previous, next))
+                return;
+
+            if (!TryGroundAt(mouse.position.ReadValue(), out var anchor))
+            {
+                _rig.distance = next;
+                return;
+            }
+
+            var pivot = new Vector2(_rig.pivot.x, _rig.pivot.z);
+            bool enteringStreet = previous > _rig.mapAt && next <= _rig.mapAt;
+            if (enteringStreet)
+            {
+                // The old sheet remains on screen for this final frame. The next frame
+                // opens the street already centred on exactly what the cursor named.
+                pivot = anchor;
+                _landingTarget = anchor;
+            }
+            else
+            {
+                pivot = PinnedZoomPivot(pivot, anchor, previous, next);
+                _landingTarget = null;
+            }
+
+            _rig.pivot = new Vector3(pivot.x, _rig.pivot.y, pivot.y);
+            _rig.distance = next;
+            _rig.Drop();
+        }
+
+        bool TryGroundAt(Vector2 screen, out Vector2 ground)
+        {
+            var plan = ToPlan(screen);
+            if (plan.x < 0f || plan.y < 0f ||
+                plan.x > TurfPlate.AW || plan.y > TurfPlate.AH)
+            {
+                ground = default;
+                return false;
+            }
+
+            ground = _survey.Plan.ToWorld(plan);
+            return true;
         }
 
         // ------------------------------------------------------------------ canvas
@@ -511,7 +593,15 @@ namespace RoadDemo
             // That is what lets the street names be children of it: a name positioned
             // in plate pixels and set at a size in plate pixels then rides the boom
             // with the paper, and neither has to be told the wheel moved.
-            _sheet = DemoUi.NewRect("Sheet", go.transform);
+            // Pose is separate from the sheet because pitch squashes SCREEN vertical
+            // after heading has turned the ground. A single RectTransform would scale
+            // the map's north axis before rotating it and tilt around the wrong line.
+            _sheetPose = DemoUi.NewRect("Sheet Pose", go.transform);
+            _sheetPose.anchorMin = _sheetPose.anchorMax = new Vector2(0.5f, 0.5f);
+            _sheetPose.pivot = new Vector2(0.5f, 0.5f);
+            _sheetPose.sizeDelta = Vector2.zero;
+
+            _sheet = DemoUi.NewRect("Sheet", _sheetPose);
             _sheet.anchorMin = _sheet.anchorMax = new Vector2(0.5f, 0.5f);
             _sheet.pivot = new Vector2(0.5f, 0.5f);
             _sheet.sizeDelta = new Vector2(TurfPlate.RW, TurfPlate.RH);
@@ -538,8 +628,27 @@ namespace RoadDemo
             _lettering = go.AddComponent<TurfMapLabels>();
             _lettering.Attach(_sheet);
 
-            _panel = go.AddComponent<TurfMapPanel>();
-            _panel.Init(this, _clock);
+            _mapChrome = go.AddComponent<TurfMapPanel>();
+            _mapChrome.Init(this, showPanel: false, showMapChrome: true);
+        }
+
+        void BuildCrewPanel()
+        {
+            var go = new GameObject("Crew File Canvas");
+            go.transform.SetParent(transform, false);
+            var canvas = go.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 115;
+
+            var scaler = go.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1280f, 720f);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 1f;
+            go.AddComponent<GraphicRaycaster>();
+
+            _crewPanel = go.AddComponent<TurfMapPanel>();
+            _crewPanel.Init(this, showPanel: true, showMapChrome: false);
         }
 
         RawImage Layer(string name, Texture2D texture, Material material)
@@ -578,8 +687,11 @@ namespace RoadDemo
         /// has drifted far enough to be worth replacing.</summary>
         const float EasyZoom = 1.06f, EasyPan = 0.035f;
 
-        float _sheetScale = 1f;
+        float _sheetScale = 1f, _sheetHeading, _sheetTilt = 1f;
         Vector2 _sheetAt;
+
+        float Heading => _rig != null ? _rig.yaw : 0f;
+        float Tilt => _rig != null ? PitchTilt(_rig.pitch) : 1f;
 
         /// <summary>
         /// What rectangle of ground the plate ought to be drawn for right now.
@@ -595,7 +707,8 @@ namespace RoadDemo
                 return _survey.CityView;
 
             float down = Mathf.Max(40f, _rig.distance * DemoCamera.BoomToMetres);
-            float metresPerPixel = down * Cover * Overscan / Mathf.Max(1f, Screen.height);
+            float cover = ViewCover(Heading, Tilt, Screen.width, Screen.height);
+            float metresPerPixel = down * cover * Overscan / Mathf.Max(1f, Screen.height);
             var span = new Vector2(TurfPlate.RW * metresPerPixel, TurfPlate.RH * metresPerPixel);
             var centre = new Vector2(_rig.pivot.x, _rig.pivot.z);
             return new Rect(centre - span * 0.5f, span);
@@ -643,7 +756,7 @@ namespace RoadDemo
         void SnapshotOwners()
         {
             _survey.ReadOwners();
-            _kickOwnership = OwnershipStamp();
+            _kickOwnership = OwnershipStamp(_builder);
             _ownershipStale = false;
         }
 
@@ -722,7 +835,7 @@ namespace RoadDemo
                 return;
             }
 
-            if (_ownershipStale || _paintedOwnership != OwnershipStamp())
+            if (_ownershipStale || _paintedOwnership != OwnershipStamp(_builder))
             {
                 Kick(want);
                 return;
@@ -761,7 +874,11 @@ namespace RoadDemo
         void FitSheet()
         {
             var drawn = _survey.DrawnView;
-            if (drawn.height <= 0f)
+            if (drawn.height <= 0f || _sheet == null)
+                return;
+
+            EnsureSheetPose();
+            if (_sheetPose == null)
                 return;
 
             float down = _rig != null
@@ -777,11 +894,52 @@ namespace RoadDemo
             // plate pixels, and rides the boom for free.
             _sheet.localScale = Vector3.one * (_sheetScale / ui);
 
+            // The turf plan is the same camera flattened onto paper: yaw turns it and
+            // pitch foreshortens the camera-forward ground axis. The outer pose applies
+            // that screen-vertical squash after the inner sheet has turned.
+            _sheetHeading = Heading;
+            _sheetTilt = Tilt;
+            _sheetPose.localScale = new Vector3(1f, _sheetTilt, 1f);
+            _sheet.localRotation = Quaternion.Euler(0f, 0f, _sheetHeading);
+
             var pivot = _rig != null
                 ? new Vector2(_rig.pivot.x, _rig.pivot.z)
                 : drawn.center;
-            _sheetAt = (drawn.center - pivot) * screenPerMetre;
-            _sheet.anchoredPosition = _sheetAt / ui;
+            var uncompressedAt = RotateForHeading(
+                drawn.center - pivot, _sheetHeading) * screenPerMetre;
+            _sheetAt = ApplyTilt(uncompressedAt, _sheetTilt);
+            _sheet.anchoredPosition = uncompressedAt / ui;
+        }
+
+        /// <summary>Adopts a sheet built before this field existed when scripts reload
+        /// during Play. A fresh map already has the pose from BuildCanvas.</summary>
+        void EnsureSheetPose()
+        {
+            if (_sheetPose != null || _sheet == null)
+                return;
+
+            var oldParent = _sheet.parent;
+            if (oldParent == null)
+                return;
+            int sheetSibling = _sheet.GetSiblingIndex();
+
+            _sheetPose = oldParent.name == "Sheet Pose"
+                ? oldParent as RectTransform
+                : oldParent.Find("Sheet Pose") as RectTransform;
+            if (_sheetPose == null)
+            {
+                _sheetPose = DemoUi.NewRect("Sheet Pose", oldParent);
+                _sheetPose.anchorMin = _sheetPose.anchorMax = new Vector2(0.5f, 0.5f);
+                _sheetPose.pivot = new Vector2(0.5f, 0.5f);
+                _sheetPose.sizeDelta = Vector2.zero;
+                _sheetPose.SetSiblingIndex(sheetSibling);
+            }
+
+            if (_sheet.parent != _sheetPose)
+                _sheet.SetParent(_sheetPose, false);
+            _sheet.anchorMin = _sheet.anchorMax = new Vector2(0.5f, 0.5f);
+            _sheet.pivot = new Vector2(0.5f, 0.5f);
+            _sheet.sizeDelta = new Vector2(TurfPlate.RW, TurfPlate.RH);
         }
 
         /// <summary>Canvas units per screen pixel. Anything positioned from a screen
@@ -790,33 +948,83 @@ namespace RoadDemo
         /// </summary>
         public float UiScale => _canvas != null ? Mathf.Max(0.01f, _canvas.scaleFactor) : 1f;
 
-        static float Cover => Mathf.Max(
-            (float)Screen.width / TurfPlate.RW, (float)Screen.height / TurfPlate.RH);
+        /// <summary>The scale an axis-aligned survey plate needs to cover a window after
+        /// it is turned by the camera heading. Without the sine terms a diagonal view
+        /// exposes the paper backdrop through two corners while a new survey is drawn.</summary>
+        internal static float HeadingCover(float degrees, float screenWidth, float screenHeight)
+            => ViewCover(degrees, 1f, screenWidth, screenHeight);
 
-        /// <summary>The sheet's bottom-left corner in screen pixels - where every
-        /// pointer read starts and every floating label lands.</summary>
-        Vector2 SheetOrigin => new Vector2(
-            (Screen.width - TurfPlate.RW * _sheetScale) * 0.5f + _sheetAt.x,
-            (Screen.height - TurfPlate.RH * _sheetScale) * 0.5f + _sheetAt.y);
+        /// <summary>The cover scale after the camera pitch has foreshortened screen Y.
+        /// Inverse-transforming the window first gives the exact local rectangle the
+        /// rotated survey sheet must carry.</summary>
+        internal static float ViewCover(float degrees, float tilt,
+            float screenWidth, float screenHeight)
+        {
+            tilt = Mathf.Max(0.01f, tilt);
+            float radians = degrees * Mathf.Deg2Rad;
+            float cosine = Mathf.Abs(Mathf.Cos(radians));
+            float sine = Mathf.Abs(Mathf.Sin(radians));
+            float untiltedHeight = screenHeight / tilt;
+            return Mathf.Max(
+                (cosine * screenWidth + sine * untiltedHeight) / TurfPlate.RW,
+                (sine * screenWidth + cosine * untiltedHeight) / TurfPlate.RH);
+        }
 
-        /// <summary>Screen point to authored units on the sheet AS DRAWN. Y is up on
-        /// both sides - the plate is drawn north-up and the screen is y-up, so there is
-        /// deliberately no flip anywhere in this map.</summary>
+        /// <summary>Orthographic ground-plane foreshortening for the street camera's
+        /// pitch: horizontal at zero, top-down at ninety degrees.</summary>
+        internal static float PitchTilt(float pitch) => Mathf.Max(0.01f,
+            Mathf.Sin(Mathf.Clamp(pitch, 0f, 90f) * Mathf.Deg2Rad));
+
+        /// <summary>World east/north into screen right/up at the camera's heading.</summary>
+        internal static Vector2 RotateForHeading(Vector2 value, float degrees)
+        {
+            float radians = degrees * Mathf.Deg2Rad;
+            float cosine = Mathf.Cos(radians);
+            float sine = Mathf.Sin(radians);
+            return new Vector2(
+                cosine * value.x - sine * value.y,
+                sine * value.x + cosine * value.y);
+        }
+
+        internal static Vector2 ApplyTilt(Vector2 value, float tilt) =>
+            new Vector2(value.x, value.y * Mathf.Max(0.01f, tilt));
+
+        internal static Vector2 RemoveTilt(Vector2 value, float tilt) =>
+            new Vector2(value.x, value.y / Mathf.Max(0.01f, tilt));
+
+        /// <summary>Moves the camera pivot just enough for an anchor to retain the same
+        /// screen position when the boom changes length.</summary>
+        internal static Vector2 PinnedZoomPivot(Vector2 pivot, Vector2 anchor,
+            float previousDistance, float nextDistance)
+        {
+            if (previousDistance <= 0.0001f)
+                return pivot;
+            return pivot + (anchor - pivot) * (1f - nextDistance / previousDistance);
+        }
+
+        /// <summary>The rotated sheet's pivot in screen pixels.</summary>
+        Vector2 SheetCenter => new Vector2(Screen.width * 0.5f, Screen.height * 0.5f) + _sheetAt;
+
+        /// <summary>Screen point to authored units on the sheet AS DRAWN. Undoing the
+        /// camera tilt and heading here keeps picking, orders and landing on the same
+        /// ground the transformed pixels show.</summary>
         public Vector2 ToPlan(Vector2 screen)
         {
-            var origin = SheetOrigin;
-            return new Vector2(
-                (screen.x - origin.x) / _sheetScale / TurfPlate.S,
-                (screen.y - origin.y) / _sheetScale / TurfPlate.S);
+            var local = RotateForHeading(
+                RemoveTilt(screen - SheetCenter, _sheetTilt), -_sheetHeading) / _sheetScale;
+            return new Vector2(local.x / TurfPlate.S + TurfPlate.AW * 0.5f,
+                local.y / TurfPlate.S + TurfPlate.AH * 0.5f);
         }
 
         /// <summary>The same conversion the other way, for the labels that float over
         /// the plate as real type rather than as pixels.</summary>
         public Vector2 ToScreen(Vector2 plan)
         {
-            var origin = SheetOrigin;
-            return new Vector2(origin.x + plan.x * TurfPlate.S * _sheetScale,
-                origin.y + plan.y * TurfPlate.S * _sheetScale);
+            var local = new Vector2(
+                (plan.x - TurfPlate.AW * 0.5f) * TurfPlate.S,
+                (plan.y - TurfPlate.AH * 0.5f) * TurfPlate.S) * _sheetScale;
+            return SheetCenter + ApplyTilt(
+                RotateForHeading(local, _sheetHeading), _sheetTilt);
         }
 
         /// <summary>World metres straight to the screen, for the chrome that labels
@@ -835,12 +1043,14 @@ namespace RoadDemo
         /// and redrawing the plate is not - so the plate is redrawn when this number
         /// moves and never on a timer. Shared with the corner minimap, which has the
         /// same question and must not grow a second answer to it.</summary>
-        internal static int OwnershipStamp()
+        internal static int OwnershipStamp(RoadDemoBuilder builder = null)
         {
             int stamp = 17;
             var held = PropertyRegistry.Businesses;
             for (int i = 0; i < held.Count; i++)
                 stamp = stamp * 31 + (held[i] != null ? held[i].GangId + 2 : 0);
+            if (builder != null)
+                stamp = stamp * 31 + builder.Territories.StateStamp;
             return stamp;
         }
 
@@ -988,19 +1198,20 @@ namespace RoadDemo
                 return;
 
             var screen = mouse.position.ReadValue();
-            bool overChrome = _panel.ClaimsPointer(screen);
+            bool overChrome = _mapChrome.ClaimsPointer(screen) ||
+                              _crewPanel.ClaimsPointer(screen);
             PointerOverChrome = overChrome;
 
             if (mouse.rightButton.wasPressedThisFrame && !overChrome)
             {
                 var plan = ToPlan(screen);
-                _panel.OpenMenu(screen, plan, _survey.BuildingAt(plan), _survey.DistrictAtPlan(plan));
+                _mapChrome.OpenMenu(screen, plan, _survey.BuildingAt(plan), _survey.DistrictAtPlan(plan));
                 return;
             }
 
             if (mouse.leftButton.wasPressedThisFrame)
             {
-                _panel.CloseMenu();
+                _mapChrome.CloseMenu();
                 if (overChrome)
                     return;
                 _dragging = true;
@@ -1145,7 +1356,8 @@ namespace RoadDemo
         /// </summary>
         void Changed()
         {
-            _panel.SelectionChanged();
+            _mapChrome.SelectionChanged();
+            _crewPanel.SelectionChanged();
             if (_crews == null)
                 return;
 

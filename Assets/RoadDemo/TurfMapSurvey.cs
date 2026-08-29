@@ -156,6 +156,18 @@ namespace RoadDemo
             }
         }
 
+        readonly struct ParkSurface
+        {
+            public readonly Rect World;
+            public readonly ParkWalk.Ground Kind;
+
+            public ParkSurface(Rect world, ParkWalk.Ground kind)
+            {
+                World = world;
+                Kind = kind;
+            }
+        }
+
         /// <summary>What ground the plate ON SCREEN covers, and the scale that goes
         /// with it. Every hit test runs through this, so it must be the projection the
         /// uploaded pixels were actually drawn with - never the one the camera wants
@@ -178,6 +190,7 @@ namespace RoadDemo
         public readonly TurfPlate Built = new TurfPlate();
 
         public readonly List<TurfBuilding> Buildings = new List<TurfBuilding>();
+        public readonly List<TurfLandmark> Landmarks = new List<TurfLandmark>();
         public readonly List<TurfDistrict> Districts = new List<TurfDistrict>();
         public readonly List<Street> Streets = new List<Street>();
 
@@ -227,6 +240,7 @@ namespace RoadDemo
         RoadDemoBuilder _builder;
         Transform _blockRoot;
         readonly List<Rect> _residentialGreens = new List<Rect>();
+        readonly List<ParkSurface> _parkSurfaces = new List<ParkSurface>();
         int _residentialGeometryVersion = -1;
 
         /// <summary>The whole city and a margin - what the map shows when the wheel is
@@ -240,6 +254,8 @@ namespace RoadDemo
 
         /// <summary>Generated parks represented directly by recipe data.</summary>
         public int ResidentialGreenCount => _residentialGreens.Count;
+        /// <summary>Real kerb, walk and plaza cells published by composed Core park plans.</summary>
+        public int ParkSurfaceCount => _parkSurfaces.Count;
 
         /// <summary>Refreshes model-derived footprints on the main thread when a future
         /// generator replaces a recipe. A worker draw is never mutated underneath.</summary>
@@ -338,6 +354,10 @@ namespace RoadDemo
             foreach (var street in Streets)
                 if (!string.IsNullOrEmpty(street.Name) && !_nameWide.ContainsKey(street.Name))
                     _nameWide[street.Name] = ruler(street.Name, At) / At;
+            foreach (var landmark in Landmarks)
+                if (!string.IsNullOrEmpty(landmark.Label) &&
+                    !_nameWide.ContainsKey(landmark.Label))
+                    _nameWide[landmark.Label] = ruler(landmark.Label, At) / At;
         }
 
         /// <summary>
@@ -349,6 +369,19 @@ namespace RoadDemo
         {
             for (int i = 0; i < Buildings.Count; i++)
                 Buildings[i].Owner = Buildings[i].GangId;
+
+            // Core territory is campaign data, not an average of building markers. Snapshot it
+            // here on the main thread before the survey is handed to its worker.
+            for (int i = 0; i < Districts.Count; i++)
+            {
+                var district = Districts[i];
+                if (district.TerritoryId == CoreQuarterId.None)
+                    continue;
+                var state = _builder.Territories.State(district.TerritoryId);
+                district.TerritoryGangId = state == null ? -1
+                    : state.Conflict == QuarterConflictState.Contested ? -2
+                    : state.OwnerGangId;
+            }
         }
 
         /// <summary>Grows a world rectangle to the plate's own 8:5, so a draw of it
@@ -440,14 +473,18 @@ namespace RoadDemo
             SampleWater();
             DrawGround();
             DrawSeams();
-            DrawGreen();
             DrawQuarters();
+            // Concrete district ground is the base; intentional parks are printed over it.
+            // The old order erased every Core park under the primary district rectangle.
+            DrawGreen();
             LayRoads();
             InkKerbs();
+            DrawTerritoryLines();
 
             // The names are placed AND measured before the road markings, because the
             // crossings pass refuses to lay a zebra across one.
             NameStreets();
+            NameLandmarks();
             Crossings();
             LaneLines();
             SurveyGrid();
@@ -489,6 +526,8 @@ namespace RoadDemo
                 street.Plan = _plan.ToPlan(street.World);
             foreach (var building in Buildings)
                 building.Plan = _plan.ToPlan(building.World);
+            foreach (var landmark in Landmarks)
+                landmark.Plan = _plan.ToPlan(landmark.World);
             foreach (var district in Districts)
                 district.Plan = _plan.ToPlan(district.World);
         }
@@ -656,6 +695,23 @@ namespace RoadDemo
                 if (OnSheet(plan))
                     Ground.Fill(plan, TurfInk.Grass);
             }
+
+            // Core park blocks use their exact accepted ParkWalk cells. Their pavement
+            // ring, paths and plazas therefore agree with the 3D composition instead of
+            // reducing every park to an anonymous green rectangle.
+            for (int i = 0; i < _parkSurfaces.Count; i++)
+            {
+                var surface = _parkSurfaces[i];
+                var plan = _plan.ToPlan(surface.World);
+                if (!OnSheet(plan))
+                    continue;
+                var colour = surface.Kind == ParkWalk.Ground.Kerb
+                    ? TurfInk.Kerb
+                    : surface.Kind == ParkWalk.Ground.Plaza
+                        ? TurfInk.Concrete2
+                        : TurfInk.Concrete;
+                Ground.Fill(plan, colour);
+            }
         }
 
         /// <summary>The quarters that hang off the grid - the harbour, the airfield,
@@ -674,6 +730,35 @@ namespace RoadDemo
 
                 Ground.Fill(plan, TurfInk.Concrete);
                 Scatter(plan, 0x51B7, 20, TurfInk.Concrete2, TurfInk.Concrete2);
+            }
+        }
+
+        /// <summary>
+        /// Core's conquerable quarters remain legible before anybody owns them. The line is
+        /// printed into the shared survey, so the full map and corner minimap cannot disagree.
+        /// Ordinary RoadDemo districts keep their existing borderless wash treatment.
+        /// </summary>
+        void DrawTerritoryLines()
+        {
+            for (int i = 0; i < Districts.Count; i++)
+            {
+                var district = Districts[i];
+                if (district.TerritoryId == CoreQuarterId.None || !OnSheet(district.Plan))
+                    continue;
+
+                int x0 = PxX(district.Plan.xMin);
+                int x1 = PxX(district.Plan.xMax);
+                int y0 = PxY(district.Plan.yMin);
+                int y1 = PxY(district.Plan.yMax);
+                int wide = Mathf.Max(1, x1 - x0);
+                int tall = Mathf.Max(1, y1 - y0);
+
+                // Two raster pixels survive the minimap's reduction without turning the
+                // full plate into a heavy diagram.
+                Ground.Px(x0, y0, wide, 2, TurfInk.Red);
+                Ground.Px(x0, y1 - 2, wide, 2, TurfInk.Red);
+                Ground.Px(x0, y0, 2, tall, TurfInk.Red);
+                Ground.Px(x1 - 2, y0, 2, tall, TurfInk.Red);
             }
         }
 
@@ -1034,6 +1119,39 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>The semantic word sits inside the landmark's real map footprint.
+        /// Its point size never changes: zoom changes the building shape around it, not
+        /// the type itself.</summary>
+        void NameLandmarks()
+        {
+            const float Size = 10f;
+            for (int i = 0; i < Landmarks.Count; i++)
+            {
+                var landmark = Landmarks[i];
+                if (string.IsNullOrEmpty(landmark.Label) || !OnSheet(landmark.Plan))
+                    continue;
+
+                bool vertical = landmark.Plan.height > landmark.Plan.width * 1.35f;
+                _nameWide.TryGetValue(landmark.Label, out float perPoint);
+                float wide = (perPoint * Size + Size) / TurfPlate.S;
+                float tall = (Size + 4f) / TurfPlate.S;
+                var at = landmark.Plan.center;
+                var box = vertical
+                    ? new Rect(at.x - tall * 0.5f, at.y - wide * 0.5f, tall, wide)
+                    : new Rect(at.x - wide * 0.5f, at.y - tall * 0.5f, wide, tall);
+
+                _drawLabels.Add(new TurfLabel
+                {
+                    Text = landmark.Label,
+                    Plan = at,
+                    Vertical = vertical,
+                    Size = Size,
+                    Box = box,
+                });
+                _labelBoxes.Add(box);
+            }
+        }
+
         // ------------------------------------------------------------- crossings
 
         /// <summary>
@@ -1236,7 +1354,9 @@ namespace RoadDemo
         void CollectBuildings(Transform blockRoot)
         {
             Buildings.Clear();
+            Landmarks.Clear();
             _residentialGreens.Clear();
+            _parkSurfaces.Clear();
             int id = 0;
             var seen = new HashSet<FootprintKey>();
 
@@ -1244,6 +1364,16 @@ namespace RoadDemo
             // rendering of this data; if it is recycled the footprint remains here.
             foreach (var source in _builder.ResidentialMapSources)
                 CollectResidential(source, seen, ref id);
+
+            // Core's composed park blocks have no residential recipe and no stable live
+            // GameObject contract. Publish their plan rectangles directly, exactly like
+            // the residential model publishes its own park cells.
+            var core = _builder.PrimaryCore;
+            if (core?.Layout != null)
+                for (int i = 0; i < core.Layout.Parks.Count; i++)
+                    CollectCorePark(core, core.Layout.Parks[i]);
+
+            CollectCoreLandmarks(core);
 
             if (blockRoot != null)
             {
@@ -1275,10 +1405,37 @@ namespace RoadDemo
                 Add(++id, null, area, rise, null, seen, name);
             }
 
+            FitLandmarksToBuildings();
+
             // Biggest first, so a shed against a tower block still takes its own click:
             // the picker walks the list backwards and the small footprint is on top.
             Buildings.Sort((a, b) =>
                 (b.World.width * b.World.height).CompareTo(a.World.width * a.World.height));
+        }
+
+        void CollectCorePark(CoreDistrict core, CoreLayout.Block block)
+        {
+            var box = block.Box;
+            _residentialGreens.Add(core.Frame.ToWorldRect(box));
+
+            int nx = Mathf.Max(3, Mathf.RoundToInt(box.width / CoreLayout.Cell));
+            int nz = Mathf.Max(3, Mathf.RoundToInt(box.height / CoreLayout.Cell));
+            int dice = unchecked(core.LayoutSeed * 7919 +
+                Mathf.RoundToInt(box.xMin) * 104729 +
+                Mathf.RoundToInt(box.yMin) * 1299709);
+            var park = ParkWalk.Lay(nx, nz, ParkWalk.Edge.Alone(), new System.Random(dice));
+            for (int j = 0; j < park.NZ; j++)
+                for (int i = 0; i < park.NX; i++)
+                {
+                    var kind = park.Cells[i, j];
+                    if (kind == ParkWalk.Ground.Grass)
+                        continue;
+                    var local = new Rect(
+                        box.xMin + i * ParkWalk.Cell,
+                        box.yMin + j * ParkWalk.Cell,
+                        ParkWalk.Cell, ParkWalk.Cell);
+                    _parkSurfaces.Add(new ParkSurface(core.Frame.ToWorldRect(local), kind));
+                }
         }
 
         void CollectResidential(ResidentialMapSource source, HashSet<FootprintKey> seen,
@@ -1314,19 +1471,28 @@ namespace RoadDemo
                             continue;
                         }
 
-                        TurfType? type = unit.Kind == ResidentialKind.Amenity
-                            ? TurfType.Civic
-                            : unit.Kind == ResidentialKind.Storefront || spot.Shop
+                        if (unit.Kind == ResidentialKind.Amenity)
+                        {
+                            // A complete gym/car-yard/skatepark owns the block, so its mark
+                            // belongs at the block centre. An amenity mixed among houses uses
+                            // its own footprint and leaves the surrounding residential survey.
+                            seen.Add(new FootprintKey(world));
+                            AddLandmark(world, unit.Name, recipe.BlockId,
+                                replacesFootprints: true);
+                            if (plan.YardBlock)
+                                break;
+                            continue;
+                        }
+
+                        TurfType? type = unit.Kind == ResidentialKind.Storefront || spot.Shop
                                 ? TurfType.Shop
                                 : (TurfType?)null;
                         Add(++id, null, world, Mathf.Max(2f, unit.MaxH), null, seen,
                             recipe.Name + ": " + unit.Name, type);
                     }
 
-                CollectGroundFeatures(source.Frame, recipe, ResidentialLot.Use.Cafe,
-                    "CAFE", TurfType.Shop, 4f, seen, ref id);
-                CollectGroundFeatures(source.Frame, recipe, ResidentialLot.Use.Subway,
-                    "SUBWAY", TurfType.Civic, 3.5f, seen, ref id);
+                CollectGroundFeatures(source.Frame, recipe, ResidentialLot.Use.Cafe, "CAFE");
+                CollectGroundFeatures(source.Frame, recipe, ResidentialLot.Use.Subway, "SUBWAY");
             }
         }
 
@@ -1334,8 +1500,7 @@ namespace RoadDemo
         /// Plan.Spots. Connected cells are one map footprint, so every generated detail
         /// appears even when its recycled holder is nowhere near the camera.</summary>
         void CollectGroundFeatures(DistrictFrame frame, ResidentialBlockRecipe recipe,
-                                   ResidentialLot.Use use, string label, TurfType type,
-                                   float rise, HashSet<FootprintKey> seen, ref int id)
+                                   ResidentialLot.Use use, string label)
         {
             var plan = recipe.Plan;
             if (plan?.Ground == null)
@@ -1374,7 +1539,8 @@ namespace RoadDemo
                         (maxI - minI + 1) * cell,
                         (maxJ - minJ + 1) * cell);
                     string name = recipe.Name + ": " + label + (++group > 1 ? " " + group : "");
-                    Add(++id, null, frame.ToWorldRect(local), rise, null, seen, name, type);
+                    AddLandmark(frame.ToWorldRect(local), name, recipe.BlockId,
+                        replacesFootprints: true);
 
                     void Visit(int x, int y)
                     {
@@ -1386,6 +1552,134 @@ namespace RoadDemo
                     }
                 }
         }
+
+        /// <summary>Core's fixed and generated amenities are read from their accepted
+        /// plans. No icon depends on a collider, renderer or currently streamed view.</summary>
+        void CollectCoreLandmarks(CoreDistrict core)
+        {
+            if (core == null)
+                return;
+
+            var territory = core.Territory;
+            if (territory != null)
+                for (int i = 0; i < territory.Blocks.Count; i++)
+                {
+                    var block = territory.Blocks[i];
+                    string source = block.SourceName ?? "";
+                    if (!source.Contains("warehouse") && !source.Contains("police") &&
+                        !source.Contains("nightclub"))
+                        continue;
+                    AddLandmark(core.Frame.ToWorldRect(block.LocalBounds), source,
+                        block.Id, replacesFootprints: true);
+                }
+
+            for (int i = 0; i < core.ParkingSites.Count; i++)
+                AddLandmark(core.Frame.ToWorldRect(core.ParkingSites[i].Box),
+                    "PARKING", BlockAt(core.Frame.ToWorldRect(core.ParkingSites[i].Box).center),
+                    replacesFootprints: true);
+
+            for (int i = 0; i < core.FuelSites.Count; i++)
+            {
+                var local = CoreAmenityLayout.FuelSurface(core.FuelSites[i]);
+                AddLandmark(core.Frame.ToWorldRect(local), "FILLING STATION",
+                    BlockAt(core.Frame.ToWorldRect(local).center), replacesFootprints: true);
+            }
+
+            CollectQuayLandmarks(core);
+        }
+
+        void CollectQuayLandmarks(CoreDistrict core)
+        {
+            var layout = core.Layout;
+            if (layout == null || layout.Quays.Count == 0)
+                return;
+
+            var wants = QuayWalk.Cast(layout);
+            for (int q = 0; q < layout.Quays.Count; q++)
+            {
+                var block = layout.Quays[q];
+                var box = block.Box;
+                int dice = unchecked(core.LayoutSeed * 7919 +
+                    Mathf.RoundToInt(box.xMin) * 104729 +
+                    Mathf.RoundToInt(box.yMin) * 1299709);
+                var walk = QuayWalk.ForQuay(layout, block, wants[q], new System.Random(dice));
+                for (int r = 0; r < walk.Rooms.Count; r++)
+                {
+                    var room = walk.Rooms[r];
+                    string label;
+                    switch (room.Programme)
+                    {
+                        case QuayWalk.Programme.Fair: label = "FAIRGROUND"; break;
+                        case QuayWalk.Programme.Diner: label = "DINER"; break;
+                        case QuayWalk.Programme.Terrace: label = "CAFE TERRACE"; break;
+                        case QuayWalk.Programme.Landing: label = "LANDING"; break;
+                        default: continue;
+                    }
+
+                    float z0 = layout.River.East
+                        ? box.yMin + room.Z0 * QuayWalk.Cell
+                        : box.yMax - room.Z1 * QuayWalk.Cell;
+                    var local = new Rect(box.xMin, z0, box.width,
+                        room.Length * QuayWalk.Cell);
+                    AddLandmark(core.Frame.ToWorldRect(local), label, block.BlockId,
+                        replacesFootprints: true);
+                }
+            }
+        }
+
+        int BlockAt(Vector2 world)
+        {
+            var block = _builder?.Territories?.BlockAt(new Vector3(world.x, 0f, world.y));
+            return block != null ? block.Id : -1;
+        }
+
+        void AddLandmark(Rect world, string name, int blockId, bool replacesFootprints)
+        {
+            if (world.width <= 0.01f || world.height <= 0.01f)
+                return;
+            var kind = TurfLandmarkKinds.From(name);
+            Landmarks.Add(new TurfLandmark
+            {
+                Kind = kind,
+                Name = string.IsNullOrEmpty(name) ? "LANDMARK" : name.ToUpperInvariant(),
+                Label = TurfLandmarkKinds.Label(kind),
+                World = world,
+                BlockId = blockId,
+                ReplacesFootprints = replacesFootprints,
+            });
+        }
+
+        /// <summary>Fixed Core and quay programmes begin with stable plan rectangles.
+        /// Once the ordinary survey has collected their real building footprints, tighten
+        /// those semantic shapes to the same bounds the map would otherwise draw.</summary>
+        void FitLandmarksToBuildings()
+        {
+            for (int i = 0; i < Landmarks.Count; i++)
+            {
+                var landmark = Landmarks[i];
+                if (landmark.BlockId < 0 || landmark.Kind == TurfLandmarkKind.Parking ||
+                    landmark.Kind == TurfLandmarkKind.FuelStation)
+                    continue;
+
+                Rect fit = default;
+                bool found = false;
+                for (int b = 0; b < Buildings.Count; b++)
+                {
+                    var building = Buildings[b];
+                    if (building.BlockId != landmark.BlockId ||
+                        !landmark.World.Contains(building.World.center))
+                        continue;
+                    fit = found ? Encapsulate(fit, building.World) : building.World;
+                    found = true;
+                }
+                if (found)
+                    landmark.World = fit;
+            }
+        }
+
+        static Rect Encapsulate(Rect one, Rect other) => Rect.MinMaxRect(
+            Mathf.Min(one.xMin, other.xMin), Mathf.Min(one.yMin, other.yMin),
+            Mathf.Max(one.xMax, other.xMax), Mathf.Max(one.yMax, other.yMax));
 
         static bool IsResidentialRoof(string name)
         {
@@ -1414,6 +1708,7 @@ namespace RoadDemo
             int floors = Mathf.Max(1, Mathf.RoundToInt(rise / 3.2f));
             var type = reportedType ?? TypeOf(world, rise, floors, business);
             var district = DistrictAt(world.center);
+            int coreBlock = BlockAt(world.center);
 
             Buildings.Add(new TurfBuilding
             {
@@ -1431,7 +1726,8 @@ namespace RoadDemo
                 District = district.HasValue
                     ? district.Value.Name.ToUpperInvariant()
                     : "OUTSKIRTS",
-                BlockId = business != null ? business.BlockId : LotOf(world.center),
+                BlockId = business != null ? business.BlockId
+                    : coreBlock >= 0 ? coreBlock : LotOf(world.center),
                 // Only a business the city has priced has a figure; nothing else on
                 // this map is rolled, so a footprint without one prints no row.
                 Rent = business != null ? Mathf.Max(0, business.WeeklyIncome) : 0,
@@ -1517,6 +1813,8 @@ namespace RoadDemo
             {
                 if (!OnSheet(building.Plan))
                     continue;
+                if (FootprintReplaced(building))
+                    continue;
 
                 var style = TurfTypeStyle.Of(building.Type);
                 int rx = PxX(building.Plan.xMin), ry = PxY(building.Plan.yMin);
@@ -1550,6 +1848,43 @@ namespace RoadDemo
 
                 Built.Px(rx + 1, ry + rh - 4, 3, 3, TurfHouses.For(gang).Ink);
             }
+
+            PaintLandmarks();
+        }
+
+        bool FootprintReplaced(TurfBuilding building)
+        {
+            for (int i = 0; i < Landmarks.Count; i++)
+            {
+                var landmark = Landmarks[i];
+                if (!landmark.ReplacesFootprints)
+                    continue;
+                if (landmark.World.Contains(building.World.center))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>The outer mark is the landmark's real surveyed footprint, exactly like
+        /// every ordinary building on the plate. Only the TMP word floating over it has a
+        /// fixed screen size; the footprint grows and shrinks truthfully with map scale.</summary>
+        void PaintLandmarks()
+        {
+            for (int i = 0; i < Landmarks.Count; i++)
+            {
+                var landmark = Landmarks[i];
+                if (!OnSheet(landmark.Plan))
+                    continue;
+
+                int rx = PxX(landmark.Plan.xMin), ry = PxY(landmark.Plan.yMin);
+                int rw = Mathf.Max(2, PxW(landmark.Plan.width));
+                int rh = Mathf.Max(2, PxW(landmark.Plan.height));
+                Built.Px(rx, ry, rw, rh, TurfInk.BlockD);
+                Built.Px(rx, ry, rw, 1, TurfInk.Ink);
+                Built.Px(rx, ry + rh - 1, rw, 1, TurfInk.Ink);
+                Built.Px(rx, ry, 1, rh, TurfInk.Ink);
+                Built.Px(rx + rw - 1, ry, 1, rh, TurfInk.Ink);
+            }
         }
 
         // ------------------------------------------------------------- districts
@@ -1564,37 +1899,55 @@ namespace RoadDemo
         {
             Districts.Clear();
 
-            foreach (var district in _builder.DistrictPlans)
-                Districts.Add(new TurfDistrict
+            var territory = _builder.Territories.Plan;
+            if (territory != null)
+            {
+                // Core already owns its six logical, conquerable quarters. The primary
+                // DistrictPlan is one full-city rectangle and must not mask these specifics.
+                for (int i = 0; i < territory.Quarters.Count; i++)
                 {
-                    Name = string.IsNullOrEmpty(district.Name)
-                        ? district.Kind.ToString().ToUpperInvariant()
-                        : district.Name.ToUpperInvariant(),
-                    World = district.World,
-                });
-
-            // the town, in thirds across and halves up: six neighbourhoods, as many
-            // names as a city this size carries and few enough that each wash is a
-            // shape rather than a stripe
-            const int Across = 3, Deep = 2;
-            var town = TownWorld();
-            var names = _builder.Streets;
-            for (int i = 0; i < Across; i++)
-                for (int j = 0; j < Deep; j++)
-                {
-                    var world = new Rect(
-                        town.xMin + town.width * i / Across,
-                        town.yMin + town.height * j / Deep,
-                        town.width / Across, town.height / Deep);
-
+                    var quarter = territory.Quarters[i];
                     Districts.Add(new TurfDistrict
                     {
-                        Name = names != null
-                            ? names.Quarter(j * Across + i).ToUpperInvariant()
-                            : "QUARTER " + (j * Across + i + 1),
-                        World = world,
+                        Name = quarter.Name.ToUpperInvariant(),
+                        World = _builder.Territories.WorldBounds(quarter.Id),
+                        TerritoryId = quarter.Id,
                     });
                 }
+            }
+            else
+            {
+                foreach (var district in _builder.DistrictPlans)
+                    Districts.Add(new TurfDistrict
+                    {
+                        Name = string.IsNullOrEmpty(district.Name)
+                            ? district.Kind.ToString().ToUpperInvariant()
+                            : district.Name.ToUpperInvariant(),
+                        World = district.World,
+                    });
+
+                // the ordinary town, in thirds across and halves up: six neighbourhoods,
+                // as many names as a city this size carries and few enough to read
+                const int Across = 3, Deep = 2;
+                var town = TownWorld();
+                var names = _builder.Streets;
+                for (int i = 0; i < Across; i++)
+                    for (int j = 0; j < Deep; j++)
+                    {
+                        var world = new Rect(
+                            town.xMin + town.width * i / Across,
+                            town.yMin + town.height * j / Deep,
+                            town.width / Across, town.height / Deep);
+
+                        Districts.Add(new TurfDistrict
+                        {
+                            Name = names != null
+                                ? names.Quarter(j * Across + i).ToUpperInvariant()
+                                : "QUARTER " + (j * Across + i + 1),
+                            World = world,
+                        });
+                    }
+            }
 
             foreach (var building in Buildings)
             {
@@ -1625,6 +1978,12 @@ namespace RoadDemo
             var tally = new Dictionary<int, int>();
             foreach (var district in Districts)
             {
+                if (district.TerritoryId != CoreQuarterId.None)
+                {
+                    district.GangId = district.TerritoryGangId;
+                    continue;
+                }
+
                 tally.Clear();
                 foreach (var building in Buildings)
                 {

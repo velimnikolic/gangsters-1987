@@ -43,6 +43,10 @@ namespace RoadDemo
         /// of the wheel always showed.</summary>
         public const float BoomToMetres = 1.15f;
 
+        /// <summary>Proportional boom change per wheel event. Sign-only keeps a mouse
+        /// wheel and a trackpad on the same zoom cadence.</summary>
+        internal const float WheelZoomStep = 0.09f;
+
         /// <summary>Open the boom on something of a given SPAN - the widest side of
         /// what has to be in frame - and stay on the street side of the map line.
         ///
@@ -73,6 +77,12 @@ namespace RoadDemo
 
         /// <summary>Whether the map should be up: the boom is past the threshold.</summary>
         public bool MapOut => distance > mapAt;
+
+        /// <summary>The shared wheel rule, including the street floor and map ceiling.
+        /// TurfMapHud asks before moving its cursor anchor; the street applies it directly.</summary>
+        internal float DistanceAfterWheel(float scroll) => Mathf.Clamp(
+            distance * (1f - Mathf.Sign(scroll) * WheelZoomStep),
+            Mathf.Max(0.5f, minDistance), Mathf.Max(mapAt + 40f, mapCeiling));
 
         /// <summary>Where the thing the camera is riding is now, or null when there is
         /// nothing left of it to watch. Null itself while the camera is the player's
@@ -141,30 +151,28 @@ namespace RoadDemo
                 if (kb.aKey.isPressed || kb.leftArrowKey.isPressed) pan.x -= 1f;
                 if (pan != Vector2.zero)
                 {
-                    // The map is printed north up and never turns, so panning it must
-                    // go by the compass; in the street the keys go by the picture.
-                    var flat = Quaternion.Euler(0f, MapOut ? 0f : yaw, 0f);
+                    // Both the street and the turf plan turn with this heading, so the
+                    // keys always move by the picture the player is looking at.
+                    var flat = Quaternion.Euler(0f, yaw, 0f);
                     pivot += (flat * Vector3.forward * pan.y + flat * Vector3.right * pan.x)
                              * (distance * 0.55f * dt);
                     _ride = null; // the player moved the camera himself: the ride is over
                 }
-                if (!MapOut)
-                {
-                    if (kb.qKey.isPressed) yaw -= 70f * dt;
-                    if (kb.eKey.isPressed) yaw += 70f * dt;
-                }
+                // Q/E turn the one shared camera at every zoom level. On the turf map
+                // the paper follows this yaw; the right button stays reserved for orders.
+                if (kb.qKey.isPressed) yaw -= 70f * dt;
+                if (kb.eKey.isPressed) yaw += 70f * dt;
             }
 
             var mouse = BookOpen ? null : Mouse.current;
             if (mouse != null)
             {
-                // The wheel over the map's paper panel scrolls the roster, and a
-                // boom that also moved would drop under the map line and close the
-                // map mid-scroll.
+                // While the turf map is visible it owns the wheel: it has to pin the
+                // ground below the cursor and hand that exact point back to this camera.
+                // In the street the ordinary centre-based boom remains ours.
                 float scroll = mouse.scroll.ReadValue().y;
-                bool panelHasWheel = TurfMapHud.IsOpen && TurfMapHud.PointerOverChrome;
-                if (scroll != 0f && !panelHasWheel)
-                    distance *= 1f - Mathf.Sign(scroll) * 0.09f;
+                if (scroll != 0f && !TurfMapHud.IsOpen)
+                    distance = DistanceAfterWheel(scroll);
                 if (mouse.rightButton.isPressed && !MapOut)
                 {
                     Vector2 d = mouse.delta.ReadValue();

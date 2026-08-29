@@ -33,6 +33,19 @@ by `TurfMapHud` at build from the survey's own city view - the grid with a margi
 fitted to the plate's 8:5 - times a quarter of country, so the last click of the wheel
 is the town filling the frame and not the whole island.
 
+The full-screen plate is heading-up and pitch-matched: the 3D camera's yaw turns the
+turf map, while its pitch foreshortens the camera-forward ground axis as if the paper
+were tilted by the same amount. WASD keeps moving by that same screen-relative heading.
+`FitSheet`, `ToPlan` and `ToScreen` all use the same rotation and tilt, so the paper,
+live marks, place chips, clicks, orders and the ground the player lands on cannot
+disagree. The survey crop expands for diagonal headings and pitch so transforming an
+8:5 plate never exposes an empty corner at the map line. Q/E can keep turning the shared
+camera while the plan is out; right-click remains the map's order menu.
+
+While the full map is visible it owns the wheel. Every inward zoom step moves the camera
+pivot just enough to keep the same ground under the cursor; the step that crosses back
+below `mapAt` centres the 3D camera on that ground and ends any previous camera ride.
+
 While the map is up the world camera renders nothing (`Blank`), so the frame costs a
 clear rather than the whole city. The wheel over the paper panel scrolls the roster and
 does NOT move the boom (`TurfMapHud.PointerOverChrome`), so a scroll cannot drop under
@@ -46,6 +59,11 @@ survey on the thread pool and uploaded on the frame they come back; while the bo
 moving the sheet already on screen is scaled and slid to stand in. The turf wash is a
 multiply material, so TURF ON/OFF in the panel is one `SetActive`. Only the live layer
 (crews, traffic, order markers, the picked footprint, the marquee) is redrawn per frame.
+
+The corner minimap draws an overscanned local plate. Between worker redraws that plate
+is translated against the live camera pivot every frame, and its UI markers use the
+same current view, so WASD movement scrolls continuously instead of jumping whenever a
+replacement texture is published.
 
 ## Where the data comes from
 
@@ -94,9 +112,10 @@ has the screen.
 
 ## Things that bit
 
-- The plate is fitted to the window as `object-fit: cover`, so every pointer position
-  has to undo the crop (`ToPlan`) before it means anything. Getting it wrong offsets
-  every click silently.
+- The plate is fitted to the window as `object-fit: cover`, then turned and
+  foreshortened by the camera's yaw and pitch, so every pointer position has to undo the
+  crop, tilt and rotation (`ToPlan`) before it means anything. Getting any of them wrong
+  offsets every click silently.
 - A RectMask2D on the sheet would re-materialise the turf wash and lose the multiply;
   names are placed along the run of street on the sheet instead and overhang half a
   word at most.

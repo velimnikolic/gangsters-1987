@@ -16,6 +16,8 @@ namespace LivingCity.Tests
             CentralDriveStaysOpen(failures);
             GateThroatIsStraight(failures);
             UrbanBlockUsesCorePavement(failures);
+            CoreAmenityCountIsCapped(failures);
+            CoreFuelSurfaceStaysInsideParcel(failures);
             return failures;
         }
 
@@ -96,6 +98,91 @@ namespace LivingCity.Tests
                 Mathf.Abs(block.xMax - surface.xMax - want) > 0.001f ||
                 Mathf.Abs(block.yMax - surface.yMax - want) > 0.001f)
                 failures.Add("Parking block: urban pavement is not the shared 10 m CoreDemo width");
+        }
+
+        static void CoreAmenityCountIsCapped(List<string> failures)
+        {
+            var raster = new CoreRoads.Raster
+            {
+                X0 = 0f,
+                Z0 = 0f,
+                NX = 40,
+                NZ = 24,
+                Kinds = new CoreRoads.Kind[40, 24],
+            };
+            var boxes = new[]
+            {
+                new Rect(10f, 10f, 90f, 35f),
+                new Rect(110f, 10f, 70f, 40f),
+                new Rect(10f, 80f, 70f, 40f),
+            };
+            foreach (var box in boxes)
+            {
+                int i0 = Mathf.RoundToInt(box.xMin / CoreRoads.Cell);
+                int i1 = Mathf.RoundToInt(box.xMax / CoreRoads.Cell);
+                int j0 = Mathf.RoundToInt(box.yMin / CoreRoads.Cell);
+                int j1 = Mathf.RoundToInt(box.yMax / CoreRoads.Cell);
+                for (int i = i0; i < i1; i++)
+                {
+                    raster.Kinds[i, j0 - 1] = CoreRoads.Kind.StreetEW;
+                    for (int j = j0; j < j1; j++)
+                        raster.Kinds[i, j] = CoreRoads.Kind.Parking;
+                }
+            }
+
+            var parking = new List<CoreAmenityLayout.Site>();
+            var fuel = new List<CoreAmenityLayout.Site>();
+            var development = new List<CoreAmenityLayout.Site>();
+            CoreAmenityLayout.Select(raster, boxes, 1987, 1, 1,
+                parking, fuel, development);
+            if (parking.Count != 1 || fuel.Count != 1)
+                failures.Add($"Core amenities: cap 1+1 selected {parking.Count} parking and {fuel.Count} fuel");
+            if (development.Count != 2)
+                failures.Add($"Core amenities: expected unused parcel plus cropped fuel remainder, got {development.Count}");
+            if (parking.Count > 0 && fuel.Count > 0 && parking[0].Box.Overlaps(fuel[0].Box))
+                failures.Add("Core amenities: one remainder parcel was assigned to parking and fuel");
+            if (fuel.Count > 0)
+            {
+                if (Mathf.Abs(fuel[0].Box.width - CoreAmenityLayout.FuelFrontage) > 0.01f &&
+                    Mathf.Abs(fuel[0].Box.height - CoreAmenityLayout.FuelFrontage) > 0.01f)
+                    failures.Add($"Core amenities: fuel parcel did not crop to a " +
+                                 $"{CoreAmenityLayout.FuelFrontage:F0} m road frontage");
+                CoreAmenityLayout.FuelPose(fuel[0], out var anchor, out _);
+                if (!fuel[0].Box.Contains(new Vector2(anchor.x, anchor.z)))
+                    failures.Add("Core amenities: PumpDemo anchor falls outside its assigned parcel");
+            }
+            foreach (var site in development)
+            {
+                if (parking.Contains(site) || fuel.Contains(site))
+                    failures.Add("Core amenities: a parcel is both developed and retained as an amenity");
+                int w = Mathf.RoundToInt(site.Box.width / CoreLayout.Cell);
+                int d = Mathf.RoundToInt(site.Box.height / CoreLayout.Cell);
+                if (ResidentialLot.Classify(
+                        w - 2 * ResidentialLot.Walk,
+                        d - 2 * ResidentialLot.Walk) == null)
+                    failures.Add($"Core amenities: fuel left an undevelopable {w}x{d} cell remainder");
+            }
+        }
+
+        static void CoreFuelSurfaceStaysInsideParcel(List<string> failures)
+        {
+            var box = new Rect(10f, 20f, 80f, 60f);
+            foreach (var entry in new[]
+            {
+                ParkingEntrySide.South,
+                ParkingEntrySide.East,
+                ParkingEntrySide.North,
+                ParkingEntrySide.West,
+            })
+            {
+                var surface = CoreAmenityLayout.FuelSurface(
+                    new CoreAmenityLayout.Site(box, entry, 1));
+                if (Mathf.Abs(surface.xMin - box.xMin) > 0.001f ||
+                    Mathf.Abs(surface.xMax - box.xMax) > 0.001f ||
+                    Mathf.Abs(surface.yMin - box.yMin) > 0.001f ||
+                    Mathf.Abs(surface.yMax - box.yMax) > 0.001f)
+                    failures.Add($"Core amenities: {entry} PumpDemo does not cover its whole assigned parcel");
+            }
         }
     }
 }

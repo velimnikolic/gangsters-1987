@@ -165,6 +165,26 @@ namespace UnityEditor
 
 namespace RoadDemo
 {
+    // CoreSim judges layout geometry only. Runtime territory naming and ownership live in
+    // CoreTerritory.cs, so the simulator needs only the ids carried by generated blocks and
+    // the no-op plan hook CoreLayout invokes after accepting a deal.
+    public enum CoreQuarterId
+    {
+        None = 0,
+        Downtown = 1,
+        NorthLandward = 2,
+        NorthRiverside = 3,
+        Landward = 4,
+        SouthLandward = 5,
+        SouthRiverside = 6,
+    }
+
+    public sealed class CoreTerritoryPlan
+    {
+        internal static CoreTerritoryPlan Build(int seed, List<CoreLayout.Block> source) =>
+            new CoreTerritoryPlan();
+    }
+
     public static class RoadDemoBuilder
     {
         public static float RoadHalf(bool boulevard) => boulevard ? 17.5f : 7.5f;

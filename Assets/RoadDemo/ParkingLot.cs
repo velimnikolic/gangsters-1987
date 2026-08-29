@@ -28,7 +28,11 @@ namespace RoadDemo
                 return;
 
             var gate = site.Root.TransformPoint(site.Plan.Gate);
-            _home = net.NearestLane(gate, out float joinProgress, 20f);
+            // ParkingDemo's road is close to every gate. CoreDemo's urban option adds its
+            // ten-metre pavement inside the parcel and a boulevard can put the nearest lane
+            // another seventeen metres outside it, so the shared lot needs the full city
+            // frontage reach here as well.
+            _home = net.NearestLane(gate, out float joinProgress, 35f);
             if (_home == null)
             {
                 Debug.LogWarning("[Parking] No usable road lane beside the generated block.");

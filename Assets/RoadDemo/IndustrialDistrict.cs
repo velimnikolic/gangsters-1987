@@ -59,6 +59,10 @@ namespace RoadDemo
         /// junctions are nothing but lorries waiting for each other.</summary>
         public float lorryShare = 0.5f;
 
+        /// <summary>Use only the landward half of the estate and join the road already
+        /// supplied by the host, rather than standing IndustrialDemo's boulevard.</summary>
+        public bool externalArtery;
+
         public string Name => "Industry";
         public DistrictFrame Frame { get; set; } = DistrictFrame.Identity;
         public Rect LocalBounds => _bounds;
@@ -67,10 +71,16 @@ namespace RoadDemo
         public LaneNet Net { get; private set; }
         public CoreRoads.Raster Raster => _raster;
         public IndustrialLayout.Plan Layout => _plan;
+        public Vector2 ExternalRoad => _plan != null ? _plan.ExternalRoad : Vector2.zero;
+        public IReadOnlyList<float> ExternalJunctionXs => _externalJunctionXs;
+        public Rect LocalSurfaceBounds => _plan != null && _plan.ExternalArtery
+            ? Rect.MinMaxRect(_bounds.xMin, _plan.ExternalRoad.y, _bounds.xMax, _bounds.yMax)
+            : _bounds;
 
         readonly List<DemoVehicle> _vehicles = new List<DemoVehicle>();
         readonly List<RoadEdge> _edges = new List<RoadEdge>();
         readonly List<DistrictPortal> _portals = new List<DistrictPortal>();
+        readonly List<float> _externalJunctionXs = new List<float>();
 
         IndustrialLayout.Plan _plan;
         CoreRoads.Raster _raster;
@@ -89,13 +99,24 @@ namespace RoadDemo
         public void Plan(float[] links, int seed)
         {
             _seed = seed;
-            _plan = IndustrialLayout.Arrange(seed, out _raster);
+            _plan = externalArtery
+                ? IndustrialLayout.ArrangeRoadside(seed, out _raster)
+                : IndustrialLayout.Arrange(seed, out _raster);
             _bounds = IndustrialLayout.Bounds(_raster);
+            _externalJunctionXs.Clear();
+            if (_plan.ExternalArtery)
+            {
+                var road = _plan.ExternalRoad;
+                foreach (var junction in _raster.Junctions)
+                    if (junction.yMin < road.y && junction.yMax > road.x)
+                        _externalJunctionXs.Add(junction.center.x);
+                _externalJunctionXs.Sort();
+            }
         }
 
         public void Reserve(DistrictReservations into)
         {
-            var world = Frame.ToWorldRect(_bounds);
+            var world = Frame.ToWorldRect(LocalSurfaceBounds);
             into.Pave(world);
             into.Level(Rect.MinMaxRect(world.xMin - 20f, world.yMin - 20f,
                                        world.xMax + 20f, world.yMax + 20f), RoadDemoBuilder.RoadBed);
@@ -110,8 +131,20 @@ namespace RoadDemo
             quarter.SetParent(host.StaticRoot("Industry"), false);
             _yard = quarter;
 
+            System.Func<int, int, bool> skipRoad = null;
+            if (_plan.ExternalArtery)
+            {
+                var road = _plan.ExternalRoad;
+                skipRoad = (i, j) =>
+                {
+                    float z0 = _raster.Z(j);
+                    float z1 = z0 + IndustrialLayout.Cell;
+                    return z0 >= road.x - 0.01f && z1 <= road.y + 0.01f;
+                };
+            }
             _stood = IndustrialQuarter.Stand(_plan, _raster, quarter,
-                                             (prefab, under) => Object.Instantiate(prefab, under));
+                                             (prefab, under) => Object.Instantiate(prefab, under),
+                                             skipRoad);
 
             // everything above was laid in the quarter's own coordinates; the frame is where
             // the city put it, and the lane graph below is built in world ones

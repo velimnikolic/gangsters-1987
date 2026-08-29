@@ -29,6 +29,10 @@ namespace RoadDemo
 
         public string Id { get; private set; }
         public string Name { get; private set; }
+        /// <summary>Logical city block id; -1 for a standalone/demo recipe.</summary>
+        public int BlockId { get; private set; }
+        /// <summary>Conquerable Core quarter; None outside a Core territory plan.</summary>
+        public CoreQuarterId QuarterId { get; private set; }
         public Rect LocalBounds { get; private set; }
         public int Seed { get; private set; }
         public ResidentialLot.Plan Plan { get; private set; }
@@ -53,10 +57,14 @@ namespace RoadDemo
         public event Action<ResidentialBlockRecipe, ResidentialBlockChange> Changed;
 
         public ResidentialBlockRecipe(string id, string name, Rect localBounds,
-                                      ResidentialLot.Plan plan, int seed)
+                                      ResidentialLot.Plan plan, int seed,
+                                      int blockId = -1,
+                                      CoreQuarterId quarterId = CoreQuarterId.None)
         {
             Id = string.IsNullOrEmpty(id) ? name : id;
             Name = string.IsNullOrEmpty(name) ? Id : name;
+            BlockId = blockId;
+            QuarterId = quarterId;
             Replace(localBounds, plan, seed, notify: false);
         }
 

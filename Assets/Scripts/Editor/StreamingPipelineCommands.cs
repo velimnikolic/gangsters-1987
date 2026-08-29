@@ -57,6 +57,8 @@ namespace GangstersTools
                     one.PendingPrewarmParts,
                     one.PendingPoolRetirements,
                     one.PendingAssetWarm,
+                    one.FallbackBlocks,
+                    one.VisibleFallbackBlocks,
                     one.ReusedPrefabParts,
                     one.RuntimePrefabMisses,
                     one.RuntimePrefabMissTypes,
@@ -141,9 +143,22 @@ namespace GangstersTools
                 uncoveredRoadEndpoints = uncoveredEndpoints,
                 intersections,
                 buildings = survey?.Buildings.Count ?? 0,
-                cafes = survey?.Buildings.Count(building => building.Name.Contains("CAFE")) ?? 0,
-                subways = survey?.Buildings.Count(building => building.Name.Contains("SUBWAY")) ?? 0,
+                landmarks = survey?.Landmarks.Count ?? 0,
+                gyms = survey?.Landmarks.Count(mark => mark.Kind == TurfLandmarkKind.Gym) ?? 0,
+                fuelStations = survey?.Landmarks.Count(mark =>
+                    mark.Kind == TurfLandmarkKind.FuelStation) ?? 0,
+                carYards = survey?.Landmarks.Count(mark =>
+                    mark.Kind == TurfLandmarkKind.CarYard) ?? 0,
+                skateparks = survey?.Landmarks.Count(mark =>
+                    mark.Kind == TurfLandmarkKind.Skatepark) ?? 0,
+                parking = survey?.Landmarks.Count(mark =>
+                    mark.Kind == TurfLandmarkKind.Parking) ?? 0,
+                cafes = survey?.Landmarks.Count(mark =>
+                    mark.Kind == TurfLandmarkKind.Cafe) ?? 0,
+                subways = survey?.Landmarks.Count(mark =>
+                    mark.Kind == TurfLandmarkKind.Transit) ?? 0,
                 residentialGreens = survey?.ResidentialGreenCount ?? 0,
+                parkSurfaces = survey?.ParkSurfaceCount ?? 0,
                 labels = survey?.Labels.Count ?? 0,
                 minimapInstalled = minimap != null,
                 minimapPrinted = minimap != null && minimap.Printed,

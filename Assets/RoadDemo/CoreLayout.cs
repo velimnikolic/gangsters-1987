@@ -235,6 +235,15 @@ namespace RoadDemo
         public sealed class Block
         {
             public string Name;
+            /// <summary>Stable runtime id within this generated city. Unlike Name, this is
+            /// not an asset key and may be handed to territory/save systems.</summary>
+            public int BlockId = -1;
+            /// <summary>Seed + quarter + position identity used by saves and streamed data.</summary>
+            public string StableId;
+            /// <summary>Unique player-facing name. Name remains the prefab/recipe key.</summary>
+            public string DisplayName;
+            /// <summary>The conquerable quarter this block belongs to.</summary>
+            public CoreQuarterId QuarterId = CoreQuarterId.Downtown;
             public GameObject Go;
             public Vector2 Pivot;              // where the plan stood it
             public Vector2 Shift;              // what the demo cuts add (the Synty plan only)
@@ -264,6 +273,7 @@ namespace RoadDemo
             public Rect Box => new Rect(Pivot.x + Shift.x + Ground.min.x, Pivot.y + Shift.y + Ground.min.z, CW * Cell, CD * Cell);
             public Vector3 Position => new Vector3(Pivot.x + Shift.x, 0f, Pivot.y + Shift.y);
             public Quaternion Rotation => Quaternion.Euler(0f, Yaw, 0f);
+            public string Label => string.IsNullOrEmpty(DisplayName) ? Name : DisplayName;
 
             /// <summary>The unturned ground box turned by a yaw, about the pivot.</summary>
             public Rect Footprint(int yaw)
@@ -1061,6 +1071,10 @@ namespace RoadDemo
             /// <summary>The rows the blocks were dealt into, for the log.</summary>
             public readonly List<string> Rows = new List<string>();
 
+            /// <summary>Logical block names, quarter membership and adjacency for gameplay.
+            /// Built only after Arrange has accepted the final deterministic deal.</summary>
+            public CoreTerritoryPlan Territory;
+
             /// <summary>
             /// The park blocks this deal made, in the order it made them.
             ///
@@ -1269,6 +1283,16 @@ namespace RoadDemo
             var dice = new System.Random(seed);
             var plan = new Plan { Name = $"seed {seed}", Seed = seed, MainRoad = MainRoad };
             plan.Bands.Add(Rect.MinMaxRect(-Any, plan.MainRoad.x, Any, plan.MainRoad.y));
+
+            // The caller's harvested blocks are the downtown. Arrange reuses these objects
+            // across rejected deals, so clear every piece of derived territory identity here.
+            foreach (var block in blocks)
+            {
+                block.QuarterId = CoreQuarterId.Downtown;
+                block.BlockId = -1;
+                block.StableId = null;
+                block.DisplayName = null;
+            }
 
             // the units: the nested pairs, then everything else on its own
             var units = new List<Unit>();
@@ -1792,6 +1816,7 @@ namespace RoadDemo
                 var stood = Stood(blocks);
                 var synty = Synty(stood);
                 Aside(blocks, stood);
+                synty.Territory = CoreTerritoryPlan.Build(seed, stood);
                 raster = CoreRoads.Build(stood, synty);
                 return synty;
             }
@@ -1809,7 +1834,9 @@ namespace RoadDemo
                 // of them - and a park left out of the raster is a hole: the deal spaces the
                 // row for it, nothing fills the ground, and the verdict calls it bare. That
                 // alone took the share of clean deals from 72 % to 24 %.
-                var drawn = CoreRoads.Build(WithGround(blocks, plan), plan);
+                var ground = WithGround(blocks, plan);
+                plan.Territory = CoreTerritoryPlan.Build(seed, ground);
+                var drawn = CoreRoads.Build(ground, plan);
                 // A RUN OF PARKS IS A FAULT LIKE ANY OTHER. It is the plan's fault rather
                 // than the drawing's - the roads come out perfectly well - so it is added
                 // here, where a deal is accepted or thrown away, and not smuggled into the
@@ -1834,7 +1861,9 @@ namespace RoadDemo
             again.Seed = best.Seed;
             again.Attempt = best.Attempt;
             again.Name = best.Name;
-            raster = CoreRoads.Build(WithGround(blocks, again), again);
+            var finalGround = WithGround(blocks, again);
+            again.Territory = CoreTerritoryPlan.Build(seed, finalGround);
+            raster = CoreRoads.Build(finalGround, again);
             return again;
         }
 

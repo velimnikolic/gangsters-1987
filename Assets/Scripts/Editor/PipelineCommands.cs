@@ -29,6 +29,20 @@ namespace GangstersTools
     /// </summary>
     public static class PipelineCommands
     {
+        [CliCommand("gangsters_core_vacancy_tests",
+                    "Run seed-1987 contracts for every Core residential parcel and its no-water fallback.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "core", "tests" })]
+        public static object CoreVacancyAudit()
+        {
+            var failures = LivingCity.Tests.CoreVacancyTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+                seed = 1987,
+            };
+        }
+
         // ---------------------------------------------------------------- the plan
 
         /// <summary>The district roll for a seed, without building anything. This is the
@@ -313,6 +327,15 @@ namespace GangstersTools
             {
                 int s = seed == CoreLayout.SyntySeed ? (i == 0 ? seed : i) : seed + i;
                 var plan = CoreLayout.Arrange(blocks, s, out var raster);
+                var amenityCandidates = new List<Rect>(plan.Lots);
+                foreach (var block in CoreLayout.WithGround(blocks, plan))
+                    if (block.Lot.width > 0.01f && block.Lot.height > 0.01f)
+                        amenityCandidates.Add(block.Lot);
+                var parking = new List<CoreAmenityLayout.Site>();
+                var fuel = new List<CoreAmenityLayout.Site>();
+                var development = new List<CoreAmenityLayout.Site>();
+                CoreAmenityLayout.Select(raster, amenityCandidates, s, 3, 5,
+                    parking, fuel, development);
                 if (raster.Faults == 0) clean++;
                 if (plan.Attempt == 0) firstDeal++;
                 results.Add(new
@@ -324,6 +347,41 @@ namespace GangstersTools
                     blocksM2 = raster.BlockArea,
                     roadM2 = raster.RoadArea,
                     parkingM2 = raster.ParkingArea,
+                    fuelStations = fuel.Count,
+                    fuelSites = fuel.Select(site => new
+                    {
+                        x = site.Box.xMin,
+                        z = site.Box.yMin,
+                        width = site.Box.width,
+                        depth = site.Box.height,
+                        entry = site.Entry.ToString(),
+                    }).ToArray(),
+                    parkingSites = parking.Select(site => new
+                    {
+                        x = site.Box.xMin,
+                        z = site.Box.yMin,
+                        width = site.Box.width,
+                        depth = site.Box.height,
+                        entry = site.Entry.ToString(),
+                    }).ToArray(),
+                    developmentSites = development.Select(site => new
+                    {
+                        x = site.Box.xMin,
+                        z = site.Box.yMin,
+                        width = site.Box.width,
+                        depth = site.Box.height,
+                        entry = site.Entry.ToString(),
+                        programme = ResidentialLot.Classify(
+                            Mathf.RoundToInt(site.Box.width / CoreLayout.Cell) - 2 * ResidentialLot.Walk,
+                            Mathf.RoundToInt(site.Box.height / CoreLayout.Cell) - 2 * ResidentialLot.Walk) != null
+                                ? "residential"
+                                : ResidentialLot.CanFrontage(
+                                    Mathf.RoundToInt(site.Box.width / CoreLayout.Cell),
+                                    Mathf.RoundToInt(site.Box.height / CoreLayout.Cell),
+                                    (int)site.Entry)
+                                    ? "residential-frontage"
+                                    : "unresolved",
+                    }).ToArray(),
                     spareM2 = raster.SpareArea,
                     size = $"{raster.NX * 5}x{raster.NZ * 5}",
                     rows = plan.Rows.ToArray(),

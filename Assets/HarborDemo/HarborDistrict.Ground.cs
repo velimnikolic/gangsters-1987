@@ -15,13 +15,40 @@ namespace HarborDemo
         const float GroundStep = 3f;   // fine enough that the shore shelf is a slope and not two facets
         const float SeaReach = 450f;    // the water and land run this far east and west
         const float SeaSouth = -300f;   // and the water this far out
-        const float LandNorth = 330f;
+        const float DefaultLandNorth = 330f;
+
+        float _standaloneLandNorth = DefaultLandNorth;
+        float _standaloneFlatNorth;
+        Rect _standaloneGroundPad;
 
         GameObject _waterPrefab, _quayStraight, _quayWorn, _quayPipe, _shoreRock, _paveTile;
         GameObject _bollard1, _bollard3, _pierLamp, _buoy, _buoyBall;
         Material _grassMat, _sandMat;
 
         bool _groundKitLoaded;
+
+        /// <summary>
+        /// Makes room in the harbor's own demo heightfield for a neighbouring district.
+        /// The area arrives in the harbor contract frame (the frame used by
+        /// <see cref="LocalBounds"/>); the ground itself is authored in quay coordinates,
+        /// whose street origin is <see cref="PlannedStreetZ"/> farther north.
+        /// </summary>
+        internal void PrepareStandaloneGround(Rect contractArea)
+        {
+            const float Surround = 60f;
+            // Keep the pad in contract coordinates. BuildWarehouses measures the exact
+            // harbor road later; BuildGround shifts it onto that measured line and lowers
+            // the land beneath the industrial surfaces instead of cutting a water-filled
+            // hole through the heightfield.
+            _standaloneGroundPad = Rect.MinMaxRect(
+                contractArea.xMin - GroundStep,
+                contractArea.yMin - GroundStep,
+                contractArea.xMax + GroundStep,
+                contractArea.yMax + GroundStep);
+            float plannedOwnNorth = contractArea.yMax + PlannedStreetZ;
+            _standaloneFlatNorth = plannedOwnNorth + 20f;
+            _standaloneLandNorth = Mathf.Max(DefaultLandNorth, plannedOwnNorth + Surround);
+        }
 
         void LoadGroundKit()
         {
@@ -49,7 +76,7 @@ namespace HarborDemo
         {
             LoadGroundKit();
             if (_waterPrefab == null) return;
-            float x0 = -SeaReach, x1 = SeaReach, z0 = SeaSouth, z1 = LandNorth;
+            float x0 = -SeaReach, x1 = SeaReach, z0 = SeaSouth, z1 = _standaloneLandNorth;
             var b = HarborKit.PrefabBounds(_waterPrefab);
             float sx = Mathf.Max(0.01f, b.size.x), sz = Mathf.Max(0.01f, b.size.z);
             var water = Instantiate(_waterPrefab, Vector3.zero, Quaternion.identity, _groundRoot);
@@ -99,9 +126,18 @@ namespace HarborDemo
             {
                 if (mat.HasProperty(prop)) mat.SetFloat(prop, mat.GetFloat(prop) * by);
             }
-            void ScaleVec(string prop, float bx, float bz)
+            void ScaleNoise(string prop, float bx, float bz)
             {
-                if (!mat.HasProperty(prop)) return;
+                if (!mat.HasProperty(prop) || mat.shader == null) return;
+                int index = mat.shader.FindPropertyIndex(prop);
+                if (index < 0) return;
+                var type = mat.shader.GetPropertyType(index);
+                if (type == ShaderPropertyType.Float || type == ShaderPropertyType.Range)
+                {
+                    mat.SetFloat(prop, mat.GetFloat(prop) * Mathf.Max(1f, (bx + bz) * 0.5f));
+                    return;
+                }
+                if (type != ShaderPropertyType.Vector) return;
                 var v = mat.GetVector(prop);
                 mat.SetVector(prop, new Vector4(v.x * bx, v.y * bz, v.z, v.w));
             }
@@ -116,8 +152,8 @@ namespace HarborDemo
             }
 
             // the breakup noise, re-tiled by however far the plane was stretched
-            ScaleVec("_Shore_Foam_Noise_Scale", kx, kz);
-            ScaleVec("_Shore_Wave_Foam_Noise_Scale", kx, kz);
+            ScaleNoise("_Shore_Foam_Noise_Scale", kx, kz);
+            ScaleNoise("_Shore_Wave_Foam_Noise_Scale", kx, kz);
             Scale("_Shore_Small_Foam_Tiling", k);
             Scale("_Shore_Edge_Noise_Scale", k);
             Scale("_Ocean_Foam_Breakup_Tiling", k);
@@ -204,7 +240,7 @@ namespace HarborDemo
         /// it to, so the road is never laid up a slope it cannot follow.</summary>
         float NorthHills(float x, float z)
         {
-            float foot = _streetZ + 30f;
+            float foot = Mathf.Max(_streetZ + 30f, _standaloneFlatNorth);
             if (z < foot) return 0f;
             float k = Mathf.InverseLerp(foot, foot + 70f, z);
             return k * (Mathf.PerlinNoise(x * 0.006f, z * 0.006f) * 3.5f);
@@ -214,14 +250,23 @@ namespace HarborDemo
         {
             // the seabed runs out as far as the water does: a bed that stopped short of
             // the sea's edge showed its own edge through the water as a line along the coast
-            float x0 = -SeaReach, x1 = SeaReach, z0 = SeaSouth, z1 = LandNorth;
+            float x0 = -SeaReach, x1 = SeaReach, z0 = SeaSouth, z1 = _standaloneLandNorth;
             int nx = Mathf.CeilToInt((x1 - x0) / GroundStep), nz = Mathf.CeilToInt((z1 - z0) / GroundStep);
+            var standalonePad = new Rect(
+                _standaloneGroundPad.x,
+                _standaloneGroundPad.y + _streetZ,
+                _standaloneGroundPad.width,
+                _standaloneGroundPad.height);
             var verts = new Vector3[(nx + 1) * (nz + 1)];
             for (int j = 0; j <= nz; j++)
                 for (int i = 0; i <= nx; i++)
                 {
                     float x = x0 + i * GroundStep, z = z0 + j * GroundStep;
-                    verts[j * (nx + 1) + i] = new Vector3(x, LandHeight(x, z), z);
+                    float y = LandHeight(x, z);
+                    if (standalonePad.width > 0f && standalonePad.height > 0f &&
+                        standalonePad.Contains(new Vector2(x, z)))
+                        y = RoadDemo.RoadDemoBuilder.RoadBed;
+                    verts[j * (nx + 1) + i] = new Vector3(x, y, z);
                 }
             var grass = new List<int>();
             var sand = new List<int>();

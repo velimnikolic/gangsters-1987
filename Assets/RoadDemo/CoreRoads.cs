@@ -1228,7 +1228,8 @@ namespace RoadDemo
         /// <param name="skip">Cells that get no tile although they are road: the channel a
         /// bascule's leaves span carries the leaves' own deck, not the road's.</param>
         public static void Lay(Raster r, Func<GameObject, Transform, GameObject> stand, Transform parent,
-                               Func<int, int, bool> skip = null)
+                               Func<int, int, bool> skip = null, bool layCarParks = true,
+                               Func<int, int, bool> skipPlainParking = null)
         {
             int sc = StreetCells, bc = BlvdCells;
             var kinds = r.Kinds;
@@ -1242,7 +1243,10 @@ namespace RoadDemo
             var blvdNear = Band(-BlvdHalf, -MedianHalf);
             var blvdFar = Band(MedianHalf, BlvdHalf);
             var kit = new Kit(stand, parent);
-            LayCarParks(r, kit);
+            if (layCarParks) LayCarParks(r, kit);
+            else LayPlainParking(r, kit, (i, j) =>
+                (skip != null && skip(i, j)) ||
+                (skipPlainParking != null && skipPlainParking(i, j)));
             // a length of road whose cells are not all of one kind is laid bare across its
             // whole width - it is a drawing that has gone wrong, but no cell of it is left
             // without a tile
@@ -1269,6 +1273,9 @@ namespace RoadDemo
 
                         case Kind.Spare:
                             break;      // left bare on purpose: the report says where it is
+
+                        case Kind.Parking:
+                            break;      // laid lot-wise above, painted or plain
 
                         case Kind.Water:
                             break;      // one plane of water beneath everything, stood by the host
@@ -1424,6 +1431,31 @@ namespace RoadDemo
         static void LayCarParks(Raster r, Kit kit)
         {
             foreach (var lot in Lots(r, Kind.Parking)) LayLot(r, kit, lot);
+        }
+
+        /// <summary>Opaque, unmarked hardstanding for parking-classified remainder ground
+        /// that Core did not retain as an amenity. Contiguous X runs share one stretched
+        /// tile so removing parking decoration does not replace it with thousands of
+        /// individual ground objects.</summary>
+        static void LayPlainParking(Raster r, Kit kit, Func<int, int, bool> skip)
+        {
+            for (int j = 0; j < r.NZ; j++)
+            {
+                int i = 0;
+                while (i < r.NX)
+                {
+                    if (r.At(i, j) != Kind.Parking || (skip != null && skip(i, j)))
+                    {
+                        i++;
+                        continue;
+                    }
+
+                    int from = i++;
+                    while (i < r.NX && r.At(i, j) == Kind.Parking &&
+                           (skip == null || !skip(i, j))) i++;
+                    kit.Tile(Bare, r.X(from), r.Z(j), 0, (i - from) * Cell, Cell);
+                }
+            }
         }
 
         static void LayLot(Raster r, Kit kit, List<Vector2Int> lot)

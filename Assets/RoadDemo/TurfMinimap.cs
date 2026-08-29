@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -43,6 +44,7 @@ namespace RoadDemo
         /// </summary>
         const float CardWide = 256f, CardTall = 160f;
         const float Inset = 16f, Border = 5f;
+        const float ViewOverscan = 1.25f;
         const float RedrawPanShare = 0.07f;
 
         /// <summary>How much bigger a crew's dot is drawn here than the plate's own
@@ -55,6 +57,7 @@ namespace RoadDemo
 
         DemoCamera _rig;
         DemoCrews _crews;
+        RoadDemoBuilder _builder;
         float _viewHeight = CityViewConfig.DefaultMinimapViewHeight;
 
         readonly TurfMapSurvey _survey = new TurfMapSurvey();
@@ -65,13 +68,21 @@ namespace RoadDemo
         readonly TurfPlate _sheet = new TurfPlate();
 
         Canvas _canvas;
-        RectTransform _card, _view;
+        RectTransform _card, _view, _sheetRect;
         Texture2D _paper;
 
         /// <summary>The crew markers, pooled as Images: the Image carries its own
         /// RectTransform, so one list serves both the placing and the tinting.</summary>
         readonly List<Image> _dots = new List<Image>();
         readonly RectTransform[] _frame = new RectTransform[4];
+
+        struct DistrictTag
+        {
+            public TurfDistrict District;
+            public RectTransform Rect;
+        }
+
+        readonly List<DistrictTag> _districtTags = new List<DistrictTag>();
 
         /// <summary>Baked once and shared by every marker on the card. Static state
         /// outlives Play when domain reload is off, so it is dropped at play start
@@ -119,6 +130,7 @@ namespace RoadDemo
         public void Init(RoadDemoBuilder city, Transform blocks, DemoCamera camera,
             DemoCrews streetCrews, TurfMapSurvey shareHeight)
         {
+            _builder = city;
             _rig = camera;
             _crews = streetCrews;
             if (city != null)
@@ -178,11 +190,14 @@ namespace RoadDemo
             // one place on the map where the paper is read smaller than it was printed.
             _paper.filterMode = FilterMode.Bilinear;
 
-            var sheet = DemoUi.NewRect("Sheet", _view);
-            DemoUi.Fill(sheet);
-            var paperImage = sheet.gameObject.AddComponent<RawImage>();
+            _sheetRect = DemoUi.NewRect("Sheet", _view);
+            _sheetRect.anchorMin = _sheetRect.anchorMax = new Vector2(0.5f, 0.5f);
+            _sheetRect.pivot = new Vector2(0.5f, 0.5f);
+            var paperImage = _sheetRect.gameObject.AddComponent<RawImage>();
             paperImage.texture = _paper;
             paperImage.raycastTarget = false;
+
+            BuildDistrictTags();
 
             for (int i = 0; i < _frame.Length; i++)
             {
@@ -193,6 +208,36 @@ namespace RoadDemo
             }
 
             _canvas.gameObject.SetActive(false);
+        }
+
+        /// <summary>Quarter names are live UI rather than baked type, so they stay readable
+        /// on the small card while the shared plate underneath keeps their exact borders.</summary>
+        void BuildDistrictTags()
+        {
+            for (int i = 0; i < _survey.Districts.Count; i++)
+            {
+                var district = _survey.Districts[i];
+                if (district.TerritoryId == CoreQuarterId.None)
+                    continue;
+
+                var rect = DemoUi.NewRect("Quarter " + district.Name, _view);
+                rect.anchorMin = rect.anchorMax = new Vector2(0f, 0f);
+                rect.pivot = new Vector2(0.5f, 0.5f);
+                rect.sizeDelta = new Vector2(92f, 14f);
+
+                var face = rect.gameObject.AddComponent<Image>();
+                face.color = new Color32(239, 229, 200, 205);
+                face.raycastTarget = false;
+
+                var text = DemoUi.Text(rect, "Name", 7.5f, TurfInk.Red,
+                    TextAlignmentOptions.Center, display: true);
+                DemoUi.Fill(text.rectTransform);
+                text.characterSpacing = 8f;
+                text.overflowMode = TextOverflowModes.Ellipsis;
+                text.text = district.Name;
+
+                _districtTags.Add(new DistrictTag { District = district, Rect = rect });
+            }
         }
 
         /// <summary>The crew dot, drawn once into a texture and shared by every marker
@@ -248,7 +293,7 @@ namespace RoadDemo
                 return;
 
             _survey.ReadOwners();
-            _painted = TurfMapHud.OwnershipStamp();
+            _painted = TurfMapHud.OwnershipStamp(_builder);
             _kickView = view;
             _fault = null;
             _state = Drawing;
@@ -302,7 +347,7 @@ namespace RoadDemo
                 var wanted = WantedView();
                 if (_survey.RefreshGeometryIfNeeded())
                     Kick(wanted);
-                else if (_painted != TurfMapHud.OwnershipStamp())
+                else if (_painted != TurfMapHud.OwnershipStamp(_builder))
                     Kick(wanted);
                 else
                 {
@@ -315,11 +360,28 @@ namespace RoadDemo
                 }
             }
 
+            FitSheet();
             DrawCrews();
+            DrawDistrictTags();
             DrawFrame();
         }
 
-        Rect WantedView()
+        void DrawDistrictTags()
+        {
+            for (int i = 0; i < _districtTags.Count; i++)
+            {
+                var tag = _districtTags[i];
+                bool on = OnCard(tag.District.World.center, out var at);
+                if (tag.Rect.gameObject.activeSelf != on)
+                    tag.Rect.gameObject.SetActive(on);
+                if (on)
+                    tag.Rect.anchoredPosition = at;
+            }
+        }
+
+        /// <summary>The ground visible inside the card right now. Unlike the survey's
+        /// larger redraw request, this follows the camera every frame.</summary>
+        Rect VisibleView()
         {
             if (_rig == null)
                 return _survey.CityView;
@@ -331,14 +393,58 @@ namespace RoadDemo
                 new Vector2(width, height));
         }
 
-        /// <summary>A world point on the local card, in the published survey view.</summary>
+        /// <summary>The worker draws beyond the card edges. That spare paper lets the
+        /// published texture slide every frame while the next survey is in flight,
+        /// instead of standing still and snapping when the replacement arrives.</summary>
+        Rect WantedView()
+        {
+            var visible = VisibleView();
+            var size = visible.size * ViewOverscan;
+            return new Rect(visible.center - size * 0.5f, size);
+        }
+
+        void FitSheet()
+        {
+            var drawn = _survey.DrawnView;
+            var visible = VisibleView();
+            if (drawn.width <= 0f || drawn.height <= 0f ||
+                visible.width <= 0f || visible.height <= 0f)
+                return;
+
+            // A script reload can add this field while the already-running card still
+            // owns the old child. Adopt it in place so Play does not need restarting.
+            if (_sheetRect == null && _view != null)
+            {
+                _sheetRect = _view.Find("Sheet") as RectTransform;
+                if (_sheetRect != null)
+                {
+                    _sheetRect.anchorMin = _sheetRect.anchorMax = new Vector2(0.5f, 0.5f);
+                    _sheetRect.pivot = new Vector2(0.5f, 0.5f);
+                }
+            }
+            if (_sheetRect == null)
+                return;
+
+            var pixelsPerMetre = new Vector2(
+                _view.rect.width / visible.width,
+                _view.rect.height / visible.height);
+            _sheetRect.sizeDelta = new Vector2(
+                drawn.width * pixelsPerMetre.x,
+                drawn.height * pixelsPerMetre.y);
+            _sheetRect.anchoredPosition = Vector2.Scale(
+                drawn.center - visible.center, pixelsPerMetre);
+        }
+
+        /// <summary>A world point on the local card, in the camera's current view.</summary>
         bool OnCard(Vector2 worldXZ, out Vector2 at)
         {
-            var plan = _survey.Plan.ToPlan(worldXZ);
-            at = new Vector2(plan.x / TurfPlate.AW * _view.rect.width,
-                plan.y / TurfPlate.AH * _view.rect.height);
-            return plan.x >= 0f && plan.y >= 0f &&
-                   plan.x <= TurfPlate.AW && plan.y <= TurfPlate.AH;
+            var visible = VisibleView();
+            var relative = worldXZ - visible.min;
+            at = new Vector2(
+                relative.x / visible.width * _view.rect.width,
+                relative.y / visible.height * _view.rect.height);
+            return relative.x >= 0f && relative.y >= 0f &&
+                   relative.x <= visible.width && relative.y <= visible.height;
         }
 
         /// <summary>The crews, every one the same size and in its family's ink - the

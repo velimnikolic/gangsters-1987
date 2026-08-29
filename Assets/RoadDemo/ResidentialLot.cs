@@ -210,8 +210,11 @@ namespace RoadDemo
         /// ground inside the pavement ring. Straight out of the approved plan §2.2.</summary>
         public static bool Sized(Klass klass, int w, int d) => klass switch
         {
-            Klass.Corner => w >= 6 && w <= 9 && d >= 5 && d <= 8,
-            Klass.Row => w >= 4 && w <= 6 && d >= 10,
+            // Compact urban infill can be only fifteen metres deep inside its pavement.
+            // The harvested catalogue has several 2-3 cell-deep houses, and the same
+            // placer/verdict is clean on these small corner plots.
+            Klass.Corner => w >= 3 && w <= 9 && d >= 3 && d <= 8,
+            Klass.Row => w >= 2 && w <= 6 && d >= 10,
             Klass.Block => w >= 10 && w <= 15 && d >= 11 && d <= 19,
             Klass.Court => w >= 14 && d >= 14,
             _ => false,
@@ -473,6 +476,103 @@ namespace RoadDemo
 
             Measure(plan);
             Judge(plan);
+            return plan;
+        }
+
+        /// <summary>
+        /// Can a road-facing remainder too shallow for the ordinary ten-metre pavement
+        /// ring become a real apartment frontage? The strip is one or two cells deep and
+        /// at least three cells long. <paramref name="streetSide"/> follows the shared
+        /// south/east/north/west numbering.
+        /// </summary>
+        public static bool CanFrontage(int w, int d, int streetSide)
+        {
+            streetSide = ((streetSide % 4) + 4) % 4;
+            bool horizontal = streetSide == 0 || streetSide == 2;
+            int along = horizontal ? w : d;
+            int deep = horizontal ? d : w;
+            return along >= 3 && deep >= 1 && deep <= 2;
+        }
+
+        /// <summary>
+        /// A solid 5-10 m deep apartment ribbon for an authored Core block's shallow rear
+        /// parcel. It has no invented lawn and no squeezed pavement ring: every cell is a
+        /// genuine modular building cell. A two-cell strip is two facades back-to-back,
+        /// making one ten-metre-deep building rather than leaving another asphalt sliver.
+        /// </summary>
+        public static Plan Frontage(int w, int d, int seed, int streetSide)
+        {
+            streetSide = ((streetSide % 4) + 4) % 4;
+            var plan = new Plan
+            {
+                W = Math.Max(1, w),
+                D = Math.Max(1, d),
+                Seed = seed,
+                Artery = streetSide,
+                Klass = Klass.Row,
+            };
+            plan.Street[streetSide] = true;
+            Roles(plan);
+            plan.Ground = new Use[plan.W, plan.D];
+
+            if (!CanFrontage(plan.W, plan.D, streetSide))
+            {
+                plan.Faults.Add($"NoFrontage: {plan.W}x{plan.D} cells do not make a shallow " +
+                                $"residential strip on {SideName[streetSide]}");
+                return plan;
+            }
+
+            bool horizontal = streetSide == 0 || streetSide == 2;
+            for (int i = 0; i < plan.W; i++)
+                for (int j = 0; j < plan.D; j++)
+                {
+                    // On a ten-metre strip the second module faces the other way. The two
+                    // backs meet in the middle, exactly like a double-fronted apartment bar.
+                    int face = streetSide;
+                    if (horizontal)
+                    {
+                        bool streetRow = streetSide == 0 ? j == 0 : j == plan.D - 1;
+                        if (!streetRow) face = (streetSide + 2) % 4;
+                    }
+                    else
+                    {
+                        bool streetColumn = streetSide == 3 ? i == 0 : i == plan.W - 1;
+                        if (!streetColumn) face = (streetSide + 2) % 4;
+                    }
+
+                    int style = unchecked(seed * 486187739 + i * 73856093 + j * 19349663);
+                    style = (style % ResidentialUnits.Frontages.Length +
+                             ResidentialUnits.Frontages.Length) % ResidentialUnits.Frontages.Length;
+                    var unit = ResidentialUnits.Frontages[style];
+                    // The source module faces north (side 2). Rotate that face onto the
+                    // requested side: S=180, E=90, N=0, W=270.
+                    int yaw = ((2 - face + 4) % 4) * 90;
+                    int along = horizontal ? i : j;
+                    plan.Spots.Add(new Spot
+                    {
+                        Unit = unit,
+                        Yaw = yaw,
+                        I = i,
+                        J = j,
+                        CW = 1,
+                        CD = 1,
+                        Side = face,
+                        AccessSide = face,
+                        EntranceAt = along,
+                    });
+                    plan.Ground[i, j] = Use.Building;
+                }
+
+            plan.M.Units = plan.Spots.Count;
+            plan.M.Doors = plan.Spots.Sum(spot =>
+            {
+                var turn = Turn.Of(spot.Unit, spot.Yaw);
+                return plan.Street[spot.Side] ? turn.Doors(spot.Side) : 0;
+            });
+            plan.M.MainFrontage = 100;
+            plan.M.Share = 100 / Math.Max(1, plan.W * plan.D);
+            double ha = plan.W * plan.D * Cell * Cell / 10000.0;
+            plan.M.DoorsPerHa = ha > 0d ? plan.M.Doors / ha : 0d;
             return plan;
         }
 

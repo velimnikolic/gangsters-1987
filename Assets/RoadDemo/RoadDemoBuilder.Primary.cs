@@ -19,6 +19,10 @@ namespace RoadDemo
         /// <summary>The whole structural town in world XZ, valid after its plan pass.</summary>
         public Rect PrimaryWorldBounds => _primaryWorld;
 
+        /// <summary>Core-specific plan access for shared read-only adapters such as the
+        /// survey map. Gameplay still talks to the generic territory/streaming interfaces.</summary>
+        internal CoreDistrict PrimaryCore => _primaryStructure as CoreDistrict;
+
         /// <summary>
         /// Select a district as the whole city structure. Call while the builder's
         /// GameObject is inactive, before Awake runs.

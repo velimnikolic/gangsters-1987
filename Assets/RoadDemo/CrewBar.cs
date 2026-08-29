@@ -210,6 +210,25 @@ namespace RoadDemo
             return false;
         }
 
+        /// <summary>The permanent crew file uses the bar's low-resolution camera
+        /// texture directly. The visual bar itself stays retired, so this exposes only
+        /// the one thing the file does not already contain: where the lieutenant is.
+        /// </summary>
+        public bool TryGetFeed(DemoCrews.Unit unit, out RenderTexture feed)
+        {
+            foreach (var block in _blocks)
+            {
+                if (block.Unit != unit || block.Target == null)
+                    continue;
+
+                feed = block.Target;
+                return true;
+            }
+
+            feed = null;
+            return false;
+        }
+
         // ------------------------------------------------------------------ chrome
 
         Block BuildBlock()
@@ -459,7 +478,9 @@ namespace RoadDemo
         void LateUpdate()
         {
             if (_crews == null || _row == null) return;
-            bool show = !PersonnelAlmanac.IsOpen && !TurfMapHud.IsOpen;
+            // The old wide CrewBar is retired. Its one useful subsystem is still the
+            // rotating street camera, now printed in the permanent paper roster.
+            bool show = false;
             if (_row.gameObject.activeSelf != show) _row.gameObject.SetActive(show);
 
             // the outfit's crews, in book order; blocks pooled and re-bound
@@ -508,7 +529,7 @@ namespace RoadDemo
                 var block = _blocks[i];
                 bool live = i < _shown.Count;
                 if (block.Rect.gameObject.activeSelf != live) block.Rect.gameObject.SetActive(live);
-                bool film = live && show && i == _turn;
+                bool film = live && i == _turn;
                 if (block.Cam.enabled != film) block.Cam.enabled = film;
                 if (!live) continue;
                 block.Rect.anchoredPosition = new Vector2(head + i * (BlockWidth + Gap), 0f);

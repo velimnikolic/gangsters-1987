@@ -128,8 +128,20 @@ namespace RoadDemo
         public static void LayApron(FuelStation station, Transform under, Material fallback,
                                     float frontZ, float kerbZ)
         {
+            LayApron(station, under, fallback, frontZ, kerbZ, float.NaN);
+        }
+
+        /// <summary>Lay the shared apron while guaranteeing an assigned parcel's back edge is
+        /// opaque. CoreDemo uses this because its city-wide water plane sits below all land;
+        /// PumpDemo and wayside stations keep the measured-cluster overload above.</summary>
+        public static void LayApron(FuelStation station, Transform under, Material fallback,
+                                    float frontZ, float kerbZ, float assignedBackZ)
+        {
             if (station == null) return;
-            float back = station.BackEdge() - 2.5f;
+            float measuredBack = station.BackEdge() - 2.5f;
+            float back = float.IsNaN(assignedBackZ)
+                ? measuredBack
+                : Mathf.Min(measuredBack, assignedBackZ);
             Pave(station, under, "Forecourt", -FuelStation.ApronHalfX, back,
                  FuelStation.ApronHalfX, frontZ, fallback);
 
@@ -141,6 +153,18 @@ namespace RoadDemo
                      mouth + FuelStation.MouthHalf, kerbZ + Overlap, fallback);
             }
             LayArrows(station, under);
+        }
+
+        /// <summary>Fill an exact road-facing parcel for a compact urban station. Unlike the
+        /// full PumpDemo apron this has no separate footway to cross: Core's retained lot
+        /// touches the carriageway, so one continuous asphalt rectangle is the honest ground
+        /// and also guarantees that the city-wide water plane can never show through.</summary>
+        public static void LayParcel(FuelStation station, Transform under, Material fallback,
+                                     float halfWidth, float frontZ, float backZ)
+        {
+            if (station == null || halfWidth <= 0f) return;
+            Pave(station, under, "Compact Forecourt", -halfWidth, backZ,
+                 halfWidth, frontZ, fallback);
         }
 
         /// <summary>Two lane arrows, and only two: one in the mouth a car turns in at,
