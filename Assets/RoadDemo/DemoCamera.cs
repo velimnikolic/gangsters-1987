@@ -221,6 +221,30 @@ namespace RoadDemo
             if (at.HasValue) pivot = at.Value;
         }
 
+        /// <summary>Focus one street crew using the same rule everywhere: its car while
+        /// the lieutenant is riding, otherwise the lieutenant, otherwise the first man
+        /// still represented on the street. Distance is deliberately preserved, so the
+        /// focus works at both the 3D and turf-map zoom levels.</summary>
+        public void Ride(DemoCrews.Unit unit)
+        {
+            if (unit == null)
+            {
+                Drop();
+                return;
+            }
+            Ride(() => FocusOf(unit));
+        }
+
+        static Vector3? FocusOf(DemoCrews.Unit unit)
+        {
+            if (unit == null) return null;
+            if (unit.Car != null && unit.Car.Tf != null) return unit.Car.Position;
+            if (unit.Boss != null && unit.Boss.Tf != null) return unit.Boss.Tf.position;
+            foreach (var man in unit.All())
+                if (man != null && man.Tf != null) return man.Tf.position;
+            return null;
+        }
+
         /// <summary>Let go - the camera is the player's again.</summary>
         public void Drop() => _ride = null;
 

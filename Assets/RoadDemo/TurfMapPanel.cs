@@ -366,6 +366,10 @@ namespace RoadDemo
 
         // ---------------------------------------------------------------- refresh
 
+        // Bump when the runtime-built row shape changes, so an in-Play script reload
+        // rebuilds existing paper instead of leaving the pre-change controls standing.
+        const int PanelLayoutVersion = 2;
+
         public void Refresh()
         {
             if (_showPanel)
@@ -402,7 +406,8 @@ namespace RoadDemo
         /// changed nothing costs one integer.</summary>
         int Stamp()
         {
-            int stamp = _hud.TurfOn ? 1 : 0;
+            int stamp = PanelLayoutVersion;
+            stamp = stamp * 31 + (_hud.TurfOn ? 1 : 0);
             stamp = stamp * 31 + (_hud.InspectedCrew != null ? _hud.InspectedCrew.Id + 7 : 0);
             stamp = stamp * 31 + (_hud.InspectedBuilding != null ? _hud.InspectedBuilding.Id + 11 : 0);
             stamp = stamp * 31 + (_hud.InspectedDistrict != null
@@ -875,6 +880,7 @@ namespace RoadDemo
             under.overflowMode = TextOverflowModes.Ellipsis;
 
             LedgerKit.RowButton(row, face, () => _hud.SelectOnly(crew));
+            RightClick.Add(row, () => _hud.Focus(crew));
             return RosterHeight;
         }
 
@@ -1231,6 +1237,27 @@ namespace RoadDemo
                     _label.color = over ? _inkOver : _inkRest;
                 if (_mark != null)
                     _mark.color = over ? _inkOver : _inkRest;
+            }
+        }
+
+        /// <summary>A Button deliberately owns only the row's left click. This small
+        /// companion gives the right button its camera verb without changing selection.</summary>
+        sealed class RightClick : MonoBehaviour, IPointerClickHandler
+        {
+            System.Action _run;
+
+            public static void Add(RectTransform rect, System.Action run)
+            {
+                var click = rect.gameObject.AddComponent<RightClick>();
+                click._run = run;
+            }
+
+            public void OnPointerClick(PointerEventData eventData)
+            {
+                if (eventData.button != PointerEventData.InputButton.Right)
+                    return;
+                _run?.Invoke();
+                eventData.Use();
             }
         }
     }

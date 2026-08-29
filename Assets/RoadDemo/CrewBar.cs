@@ -802,21 +802,7 @@ namespace RoadDemo
         {
             var cam = Object.FindAnyObjectByType<DemoCamera>();
             if (cam == null || unit == null) return;
-            cam.Ride(() => Where(unit));
-        }
-
-        /// <summary>Where a crew is for the camera: the car while it is riding in one,
-        /// else its lieutenant, else the first man of it still on his feet - and null
-        /// when there is nobody left, so the camera holds instead of swinging to the
-        /// world's origin.</summary>
-        static Vector3? Where(DemoCrews.Unit unit)
-        {
-            if (unit == null) return null;
-            if (unit.Car != null && unit.Car.Tf != null) return unit.Car.Position;
-            if (unit.Boss != null && unit.Boss.Tf != null) return unit.Boss.Tf.position;
-            foreach (var man in unit.All())
-                if (man != null && man.Tf != null) return man.Tf.position;
-            return null;
+            cam.Ride(unit);
         }
 
         /// <summary>"Bernie Hayes" fits; a name wider than the line, measured in the

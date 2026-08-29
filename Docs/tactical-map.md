@@ -45,6 +45,8 @@ camera while the plan is out; right-click remains the map's order menu.
 While the full map is visible it owns the wheel. Every inward zoom step moves the camera
 pivot just enough to keep the same ground under the cursor; the step that crosses back
 below `mapAt` centres the 3D camera on that ground and ends any previous camera ride.
+Right-clicking a lieutenant's persistent roster row focuses the shared camera on him
+(or on the car he is riding) without changing the current zoom or roster selection.
 
 While the map is up the world camera renders nothing (`Blank`), so the frame costs a
 clear rather than the whole city. The wheel over the paper panel scrolls the roster and

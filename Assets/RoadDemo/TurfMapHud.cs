@@ -1334,6 +1334,15 @@ namespace RoadDemo
             Inspect(crew);
         }
 
+        /// <summary>Put the shared camera on this lieutenant without changing the map's
+        /// selection or zoom. Used by the roster's right click at every zoom level.</summary>
+        public void Focus(TurfCrew crew)
+        {
+            if (_rig == null || crew == null || !crew.Alive || crew.Unit == null)
+                return;
+            _rig.Ride(crew.Unit);
+        }
+
         public void GatherAll()
         {
             _selected.Clear();
