@@ -452,7 +452,7 @@ namespace LivingCity.UI
             staged = Instantiate(job.Prefab, stand);
             staged.transform.localPosition = Vector3.zero;
             staged.transform.localRotation = Quaternion.identity;
-            Strip(staged);
+            StripForDisplay(staged);
 
             // The showroom machine gets a colour like any other, so the page does not
             // sell three motorcycles in the one shade the pack shipped. The roll is
@@ -567,7 +567,7 @@ namespace LivingCity.UI
         /// subject is inactive and must have nothing left to Awake when the stand
         /// reactivates.
         /// </summary>
-        static void Strip(GameObject subject)
+        internal static void StripForDisplay(GameObject subject)
         {
             var scripts = new List<MonoBehaviour>(subject.GetComponentsInChildren<MonoBehaviour>(true));
             while (scripts.Count > 0)

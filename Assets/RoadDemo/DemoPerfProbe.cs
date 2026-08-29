@@ -199,6 +199,7 @@ namespace RoadDemo
             }
             sb.AppendLine($"draw calls {(_drawCalls.Valid ? _drawCalls.LastValue : 0)}  batches {(_batches.Valid ? _batches.LastValue : 0)}  " +
                           $"setpass {(_setPass.Valid ? _setPass.LastValue : 0)}  tris {(_tris.Valid ? _tris.LastValue / 1000 : 0)}k  verts {(_verts.Valid ? _verts.LastValue / 1000 : 0)}k");
+            CityBlockRecycler.AppendStats(sb);
             foreach (var (label, _) in _recs)
             {
                 if (!_acc.TryGetValue(label, out var a) || a.max < 0.05) continue;

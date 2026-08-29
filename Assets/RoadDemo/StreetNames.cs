@@ -126,5 +126,36 @@ namespace RoadDemo
         /// <summary>The name of horizontal road line <paramref name="j"/> (east-west).</summary>
         public string Horizontal(int j) =>
             _horizontal != null && j >= 0 && j < _horizontal.Length ? _horizontal[j] : null;
+
+        /// <summary>A primary structure may publish more axes than the host's ordinary
+        /// inspector grid. Keep its map named without inventing another name source:
+        /// use the seeded city name where one exists, then conventional numbered avenues.
+        /// </summary>
+        public string VerticalAny(int i, bool boulevard)
+        {
+            var named = Vertical(i);
+            return !string.IsNullOrEmpty(named)
+                ? named
+                : Ordinal(i + 1) + (boulevard ? " BLVD" : " AVE");
+        }
+
+        /// <summary>Horizontal counterpart to <see cref="VerticalAny"/>.</summary>
+        public string HorizontalAny(int i, bool boulevard)
+        {
+            var named = Horizontal(i);
+            return !string.IsNullOrEmpty(named)
+                ? named
+                : Ordinal(i + 1) + (boulevard ? " BLVD" : " ST");
+        }
+
+        static string Ordinal(int number)
+        {
+            int hundred = Mathf.Abs(number) % 100;
+            string suffix = hundred >= 11 && hundred <= 13 ? "TH" :
+                Mathf.Abs(number) % 10 == 1 ? "ST" :
+                Mathf.Abs(number) % 10 == 2 ? "ND" :
+                Mathf.Abs(number) % 10 == 3 ? "RD" : "TH";
+            return number + suffix;
+        }
     }
 }

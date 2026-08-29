@@ -6,7 +6,7 @@ namespace RoadDemo
     /// The core's own scene: one thin component that hands <see cref="CoreDistrict"/>
     /// to the game's <see cref="RoadDemoBuilder"/> as its city structure. The structure
     /// is Core's; traffic, people, police, crews, combat, day/night, audio and the map
-    /// are the same runtime Game.unity uses.
+    /// come from the shared RoadDemo runtime rather than a demo-only fork.
     ///
     /// The fields are the district's own, out on the inspector for trying things - and
     /// for the play harness, which writes them before the scene wakes up.

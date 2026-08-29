@@ -3,8 +3,9 @@ using UnityEngine.InputSystem;
 
 namespace RoadDemo
 {
-    // Free-look demo camera: WASD/arrows pan, Q/E rotate, mouse wheel zoom,
-    // right-drag orbit. Uses the new Input System (the project runs InputSystem-only).
+    // Demo camera: WASD/arrows pan, Q/E rotate, mouse wheel zoom and right-drag
+    // yaw. The shared CityViewConfig decides whether right-drag may also change pitch.
+    // Uses the new Input System (the project runs InputSystem-only).
     public class DemoCamera : MonoBehaviour
     {
         public Vector3 pivot;
@@ -12,12 +13,29 @@ namespace RoadDemo
         public float yaw = 35f;
         public float pitch = 52f;
 
+        [SerializeField, HideInInspector] float _minimumPitch = CityViewConfig.MinimumStreetPitch;
+        [SerializeField, HideInInspector] float _maximumPitch = CityViewConfig.MaximumStreetPitch;
+
+        public float MinimumPitch => _minimumPitch;
+        public float MaximumPitch => _maximumPitch;
+        public bool PitchLocked => Mathf.Abs(_maximumPitch - _minimumPitch) < 0.01f;
+
+        /// <summary>Apply the shared street-camera policy. Zero freedom fixes pitch at
+        /// the configured angle while right-drag and Q/E continue to rotate yaw.</summary>
+        public void ConfigurePitch(float centre, float freedom)
+        {
+            Vector2 range = CityViewConfig.ResolvePitchRange(centre, freedom);
+            _minimumPitch = range.x;
+            _maximumPitch = range.y;
+            pitch = Mathf.Clamp(centre, _minimumPitch, _maximumPitch);
+        }
+
         /// <summary>The boom at which the city stops being a place and becomes a
         /// PLAN: pull back past this and the printed map takes the screen, push in
         /// past it and the streets come back exactly where they were. The map is the
         /// same camera - same pivot, same wheel - drawn another way, so the two never
         /// disagree about where the player is looking.</summary>
-        public float mapAt = 180f;
+        public float mapAt = CityViewConfig.DefaultMax3DDistance;
 
         /// <summary>Metres of ground down the view per metre of boom once the map is
         /// up. The one number the plate's scale, the minimap's frame and the ceiling
@@ -151,7 +169,8 @@ namespace RoadDemo
                 {
                     Vector2 d = mouse.delta.ReadValue();
                     yaw += d.x * 0.25f;
-                    pitch -= d.y * 0.2f;
+                    if (!PitchLocked)
+                        pitch -= d.y * 0.2f;
                 }
             }
 
@@ -173,7 +192,7 @@ namespace RoadDemo
             // screenful of sea.
             distance = Mathf.Clamp(distance, Mathf.Max(0.5f, minDistance),
                 Mathf.Max(mapAt + 40f, mapCeiling));
-            pitch = Mathf.Clamp(pitch, 22f, 82f);
+            pitch = Mathf.Clamp(pitch, _minimumPitch, _maximumPitch);
 
             var rot = Quaternion.Euler(pitch, yaw, 0f);
             transform.SetPositionAndRotation(pivot + rot * new Vector3(0f, 0f, -distance), rot);
@@ -263,6 +282,44 @@ namespace RoadDemo
                 GUI.Label(at, _zoomLine, _zoomStyle);
                 GUI.color = was;
             }
+        }
+    }
+
+    /// <summary>Transient play-mode harness for measuring streaming under the same
+    /// continuous pivot speed as one held WASD key. It is created only by the editor
+    /// performance command and destroys itself after one route.</summary>
+    public sealed class DemoCameraStreamingStress : MonoBehaviour
+    {
+        DemoCamera _rig;
+        Vector3[] _route;
+        int _next;
+
+        public void Begin(DemoCamera rig)
+        {
+            _rig = rig;
+            var start = rig.pivot;
+            _route = new[]
+            {
+                new Vector3(300f, start.y, 700f),
+                new Vector3(700f, start.y, 700f),
+                new Vector3(700f, start.y, 1100f),
+                new Vector3(300f, start.y, 1100f),
+                start,
+            };
+            _next = 0;
+        }
+
+        void Update()
+        {
+            if (_rig == null || _route == null || _next >= _route.Length)
+            {
+                Destroy(gameObject);
+                return;
+            }
+            float metresPerSecond = Mathf.Max(10f, _rig.distance * 0.55f);
+            _rig.pivot = Vector3.MoveTowards(
+                _rig.pivot, _route[_next], metresPerSecond * Time.unscaledDeltaTime);
+            if ((_rig.pivot - _route[_next]).sqrMagnitude < 0.01f) _next++;
         }
     }
 }

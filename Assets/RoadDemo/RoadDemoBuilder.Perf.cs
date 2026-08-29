@@ -59,7 +59,11 @@ namespace RoadDemo
             if (_mergeSteps == null)
             {
                 _mergedRoot = new GameObject("Merged").transform;
-                _mergeSteps = ScenePerf.MergeSteps(BuildMergeRoots(), _mergedRoot, "RoadDemo");
+                // A streamed composer may instantiate the same imported mesh again later.
+                // Keep source CPU data readable in that host; the one-shot city keeps the
+                // old memory release when it owns no recycler.
+                _mergeSteps = ScenePerf.MergeSteps(BuildMergeRoots(), _mergedRoot, "RoadDemo",
+                    releaseSourceCpu: _blockRecyclers.Count == 0);
             }
             // pump the fold-in for a bounded slice of this frame; the sim ticks as usual
             // around it, on geometry that is only ever whole (merged or its own pieces)

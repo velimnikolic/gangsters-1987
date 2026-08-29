@@ -49,6 +49,7 @@ namespace LivingCity.EditorTools
             changed |= Wire(ref set.shotgun, GangWarfare + "SM_Wep_Shotgun_01.prefab");
             changed |= Wire(ref set.rifle, PalmCity + "SM_Wep_Rifle_01.prefab");
             changed |= Wire(ref set.tommyGun, GangWarfare + "SM_Wep_SubMachineGun_01.prefab");
+            changed |= Wire(ref set.grenade, PalmCity + "SM_Wep_Grenade_01.prefab");
             changed |= WireWeapons(set);
             changed |= WireMotorcycles(set);
             changed |= WireVehicles(set);
@@ -70,8 +71,8 @@ namespace LivingCity.EditorTools
         }
 
         /// <summary>
-        /// The arsenal the ledger may photograph, named the way ArmoryCatalog names it.
-        /// Guns only: the pack's bats and blades are not stock, so baking them would put
+        /// The hand-held merchandise the ledger may show, named the way ArmoryCatalog
+        /// names it. The pack's bats and blades are not stock, so baking them would put
         /// bodies in the asset that no listing can ever ask for. A piece the counter
         /// starts selling is one line here and one in the catalogue.
         /// </summary>
@@ -82,6 +83,7 @@ namespace LivingCity.EditorTools
             GangWarfare + "SM_Wep_SubMachineGun_01.prefab",
             GangWarfare + "SM_Wep_Shotgun_01.prefab",
             PalmCity + "SM_Wep_Rifle_01.prefab",
+            PalmCity + "SM_Wep_Grenade_01.prefab",
         };
 
         /// <summary>Fills set.weapons with every WeaponPaths prefab it does not already
@@ -217,7 +219,6 @@ namespace LivingCity.EditorTools
             "Assets/Synty/PolygonPalmCity/Prefabs/Characters/SM_Chr_Gang_Male_02.prefab",
             "Assets/Synty/PolygonPalmCity/Prefabs/Characters/SM_Chr_Gang_Female_01.prefab",
             "Assets/Synty/PolygonPalmCity/Prefabs/Characters/SM_Chr_Goon_01.prefab",
-            "Assets/Synty/PolygonPalmCity/Prefabs/Characters/SM_Chr_Kingpin_01.prefab",
             "Assets/Synty/PolygonPalmCity/Prefabs/Characters/SM_Chr_Detective_Male_01.prefab",
             "Assets/Synty/PolygonPalmCity/Prefabs/Characters/SM_Chr_SeaCaptain_Male_01.prefab",
             "Assets/Synty/PolygonPoliceStation/Prefabs/Characters/SM_Chr_Criminal_Male_01.prefab",
@@ -249,7 +250,7 @@ namespace LivingCity.EditorTools
             var people = new System.Collections.Generic.List<GameObject>();
             if (set.people != null)
                 foreach (var prefab in set.people)
-                    if (prefab)
+                    if (prefab && !LivingCity.Gangs.GangLooks.IsRetired(prefab.name))
                         people.Add(prefab);
 
             var before = people.Count;

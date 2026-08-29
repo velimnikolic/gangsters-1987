@@ -394,7 +394,9 @@ namespace RoadDemo
         /// file in the roster and the dossier falls back to an empty frame.</summary>
         public string Look = "";
 
-        public int Nerve = 3, Gunplay = 3, Respect = 3;
+        /// <summary>The lieutenant's actual ledger ratings, in half steps. The map
+        /// only carries the three that matter while directing a crew here.</summary>
+        public int Intelligence = 3, Organization = 3, Firearms = 3;
         public int Heat, Loyal, Take;
 
         /// <summary>Ours to command. Only ours can be selected, marqueed or ordered.

@@ -19,6 +19,14 @@ namespace LivingCity.UI
     /// </summary>
     public static class LedgerKit
     {
+        // Screen-space overlay canvases do not multisample their geometry. The ledger's
+        // paper is deliberately a fraction off square, so a hard one-unit quad turns
+        // into a staircase (and, below 1080p, intermittent pixels) once that paper is
+        // rotated. Give every rule a transparent skirt perpendicular to its length;
+        // LedgerRuleImage interpolates that skirt into the ink and keeps the authored
+        // line itself at exactly the requested thickness.
+        const float RuleFeather = 1.5f;
+
         // -------------------------------------------------------------- rect basics
 
         public static RectTransform NewRect(string name, Transform parent)
@@ -126,13 +134,30 @@ namespace LivingCity.UI
 
         /// <summary>A hairline rule across w units at (x, y).</summary>
         public static Image Rule(Transform parent, float x, float y, float w, Color color,
-            float thickness = 1f) =>
-            Block("Rule", parent, x, y, w, thickness, color);
+            float thickness = 1f)
+        {
+            var rect = NewRect("Rule", parent);
+            PlaceTopLeft(rect, x, y + RuleFeather, w, thickness + RuleFeather * 2f);
+            return RuleImage(rect, color, vertical: false);
+        }
 
         /// <summary>A vertical rule h units tall from (x, y) downwards.</summary>
         public static Image VRule(Transform parent, float x, float y, float h, Color color,
-            float thickness = 1f) =>
-            Block("VRule", parent, x, y, thickness, h, color);
+            float thickness = 1f)
+        {
+            var rect = NewRect("VRule", parent);
+            PlaceTopLeft(rect, x - RuleFeather, y, thickness + RuleFeather * 2f, h);
+            return RuleImage(rect, color, vertical: true);
+        }
+
+        static Image RuleImage(RectTransform rect, Color color, bool vertical)
+        {
+            var image = rect.gameObject.AddComponent<LedgerRuleImage>();
+            image.Configure(vertical, RuleFeather);
+            image.color = color;
+            image.raycastTarget = false;
+            return image;
+        }
 
         /// <summary>A dotted leader - two units on, two off - between a label and the
         /// figure that answers it. One tiled quad, not a hundred squares.</summary>
@@ -174,11 +199,22 @@ namespace LivingCity.UI
             edge.anchorMax = anchorMax;
             var horizontal = anchorMin.y == anchorMax.y;
             edge.pivot = new Vector2(anchorMin.x, anchorMin.y);
-            edge.anchoredPosition = Vector2.zero;
-            edge.sizeDelta = horizontal
-                ? new Vector2(0f, thickness)
-                : new Vector2(thickness, 0f);
-            Fill(edge, color);
+            if (horizontal)
+            {
+                // Top edges used to grow down and bottom edges up. Move the padded
+                // rect out by the feather so its opaque core keeps those exact bounds.
+                edge.anchoredPosition = new Vector2(0f,
+                    anchorMin.y > 0.5f ? RuleFeather : -RuleFeather);
+                edge.sizeDelta = new Vector2(0f, thickness + RuleFeather * 2f);
+            }
+            else
+            {
+                // Likewise, left edges grow right and right edges grow left.
+                edge.anchoredPosition = new Vector2(
+                    anchorMin.x > 0.5f ? RuleFeather : -RuleFeather, 0f);
+                edge.sizeDelta = new Vector2(thickness + RuleFeather * 2f, 0f);
+            }
+            RuleImage(edge, color, vertical: !horizontal);
         }
 
         /// <summary>The paper grain laid over a sheet - a tiling dark speckle at low
@@ -215,7 +251,8 @@ namespace LivingCity.UI
         /// Positions are fractions of the sheet, which is what lets the same call dress
         /// a printout, a dossier and a newsprint page without three sets of numbers.
         /// </summary>
-        public static void Aging(RectTransform sheet, float w, float h)
+        public static void Aging(RectTransform sheet, float w, float h,
+            bool includeCrease = true)
         {
             // Light from the top right - the same lamp the folder's shadow agrees with.
             // Kept INSIDE the sheet: these marks are drawn on unmasked Card rects, so
@@ -230,13 +267,16 @@ namespace LivingCity.UI
 
             // The fold: one crease, at two fifths down, where a sheet folded to fit an
             // envelope creases.
-            const float creaseBand = 14f;
-            var crease = NewRect("Crease", sheet);
-            PlaceTopLeft(crease, 0f, -h * 0.41f + creaseBand * 0.5f, w, creaseBand);
-            var fold = crease.gameObject.AddComponent<RawImage>();
-            fold.texture = LedgerStyle.Crease;
-            fold.color = Color.white;
-            fold.raycastTarget = false;
+            if (includeCrease)
+            {
+                const float creaseBand = 14f;
+                var crease = NewRect("Crease", sheet);
+                PlaceTopLeft(crease, 0f, -h * 0.41f + creaseBand * 0.5f, w, creaseBand);
+                var fold = crease.gameObject.AddComponent<RawImage>();
+                fold.texture = LedgerStyle.Crease;
+                fold.color = Color.white;
+                fold.raycastTarget = false;
+            }
 
             // Three blotches, at the design's own spots, each pulled in far enough that
             // the whole bloom lands on the paper. Fixed rather than random: the same
@@ -956,6 +996,16 @@ namespace LivingCity.UI
         public static void StepBar(Transform parent, float x, float centreY, int steps,
             int filled, Color fill, float blockW = 5f, float blockH = 11f, float pitch = 7f)
         {
+            // The ledger canvas often runs at a fractional scale. Independent quads
+            // otherwise alternate by one physical pixel even though their authored
+            // widths match. Quantise the repeated measurements once so every mark is
+            // rasterised to the same width, height and rhythm.
+            var canvas = parent.GetComponentInParent<Canvas>();
+            var scale = canvas ? Mathf.Max(0.01f, canvas.scaleFactor) : 1f;
+            blockW = Mathf.Max(1f / scale, Mathf.Round(blockW * scale) / scale);
+            blockH = Mathf.Max(1f / scale, Mathf.Round(blockH * scale) / scale);
+            pitch = Mathf.Max(blockW, Mathf.Round(pitch * scale) / scale);
+
             var empty = new Color(fill.r, fill.g, fill.b, 0.22f);
             for (var i = 0; i < steps; i++)
             {
@@ -1034,6 +1084,101 @@ namespace LivingCity.UI
             Stretch(paper);
             Fill(paper, LedgerStyle.StickyNote);
             return rect;
+        }
+    }
+
+    /// <summary>
+    /// A flat-colour UI rule with antialiased long edges. Its rect includes transparent
+    /// padding, while the opaque centre remains the thickness requested by LedgerKit.
+    /// Keeping this as an Image preserves Rule/VRule's public API and the default UI
+    /// material, batching and RectMask2D behaviour.
+    /// </summary>
+    sealed class LedgerRuleImage : Image
+    {
+        bool vertical;
+        float feather;
+
+        public void Configure(bool isVertical, float edgeFeather)
+        {
+            vertical = isVertical;
+            feather = Mathf.Max(0f, edgeFeather);
+            SetVerticesDirty();
+        }
+
+        protected override void OnPopulateMesh(VertexHelper mesh)
+        {
+            mesh.Clear();
+            var rect = rectTransform.rect;
+            var solid = (Color32)color;
+            var clear = solid;
+            clear.a = 0;
+
+            if (vertical)
+            {
+                var coreLeft = Mathf.Min(rect.xMin + feather, rect.xMax);
+                var coreRight = Mathf.Max(rect.xMax - feather, coreLeft);
+                AddVerticalBand(mesh, rect.xMin, coreLeft, rect.yMin, rect.yMax,
+                    clear, solid);
+                AddVerticalBand(mesh, coreLeft, coreRight, rect.yMin, rect.yMax,
+                    solid, solid);
+                AddVerticalBand(mesh, coreRight, rect.xMax, rect.yMin, rect.yMax,
+                    solid, clear);
+            }
+            else
+            {
+                var coreBottom = Mathf.Min(rect.yMin + feather, rect.yMax);
+                var coreTop = Mathf.Max(rect.yMax - feather, coreBottom);
+                AddHorizontalBand(mesh, rect.xMin, rect.xMax, rect.yMin, coreBottom,
+                    clear, solid);
+                AddHorizontalBand(mesh, rect.xMin, rect.xMax, coreBottom, coreTop,
+                    solid, solid);
+                AddHorizontalBand(mesh, rect.xMin, rect.xMax, coreTop, rect.yMax,
+                    solid, clear);
+            }
+        }
+
+        static void AddHorizontalBand(VertexHelper mesh, float xMin, float xMax,
+            float yMin, float yMax, Color32 bottom, Color32 top)
+        {
+            AddQuad(mesh,
+                new Vector2(xMin, yMin), bottom,
+                new Vector2(xMin, yMax), top,
+                new Vector2(xMax, yMax), top,
+                new Vector2(xMax, yMin), bottom);
+        }
+
+        static void AddVerticalBand(VertexHelper mesh, float xMin, float xMax,
+            float yMin, float yMax, Color32 left, Color32 right)
+        {
+            AddQuad(mesh,
+                new Vector2(xMin, yMin), left,
+                new Vector2(xMin, yMax), left,
+                new Vector2(xMax, yMax), right,
+                new Vector2(xMax, yMin), right);
+        }
+
+        static void AddQuad(VertexHelper mesh,
+            Vector2 bottomLeft, Color32 bottomLeftColor,
+            Vector2 topLeft, Color32 topLeftColor,
+            Vector2 topRight, Color32 topRightColor,
+            Vector2 bottomRight, Color32 bottomRightColor)
+        {
+            var first = mesh.currentVertCount;
+            AddVertex(mesh, bottomLeft, bottomLeftColor);
+            AddVertex(mesh, topLeft, topLeftColor);
+            AddVertex(mesh, topRight, topRightColor);
+            AddVertex(mesh, bottomRight, bottomRightColor);
+            mesh.AddTriangle(first, first + 1, first + 2);
+            mesh.AddTriangle(first + 2, first + 3, first);
+        }
+
+        static void AddVertex(VertexHelper mesh, Vector2 position, Color32 tint)
+        {
+            var vertex = UIVertex.simpleVert;
+            vertex.position = position;
+            vertex.color = tint;
+            vertex.uv0 = Vector2.zero;
+            mesh.AddVert(vertex);
         }
     }
 }

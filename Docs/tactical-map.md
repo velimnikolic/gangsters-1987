@@ -49,11 +49,12 @@ multiply material, so TURF ON/OFF in the panel is one `SetActive`. Only the live
 
 ## Where the data comes from
 
-Nothing is generated. A field the city does not keep is left off the file, not rolled.
+The map reads the shared city model, never the camera's current set of materialised
+ViewHolders. A field the city does not keep is left off the file, not rolled.
 
 | field | source |
 |---|---|
-| footprint | `Renderer.bounds` of every collider under the Blocks root, plus `RoadDemoBuilder.QuarterRoofs` |
+| footprint | static district geometry from the Blocks root plus every generated residential recipe registered through `IStreamedDistrictHost.RegisterResidentialModel` |
 | name | `BusinessMarker.BusinessName`, else the type's label and an index |
 | who holds a building | **`BusinessMarker.GangId`**, the project's single source for ownership; read on the main thread (`ReadOwners`) before a plate is handed to a worker |
 | who holds a district | the majority of held fronts inside it; a tie is contested |
@@ -83,11 +84,13 @@ selected crew in the game, not two. The map opens on whatever the street had pic
 
 ## The minimap
 
-`TurfMinimap` is the same survey, one whole-city plate, redrawn only when ownership
-changes hands (`TurfMapHud.OwnershipStamp`). Crews are pooled UI `Image`s in the
+`TurfMinimap` is the same survey cropped to a local 360 m-high view centred on the
+camera pivot (the height is `CityViewConfig.minimapViewHeight`). It redraws when
+ownership or generated residential geometry changes, and after the camera moves far
+enough that the current crop would become stale. Crews are pooled UI `Image`s in the
 family's ink; the camera's frame is four hairlines. It borrows the full map's
-heightfield rather than sampling the island twice. Off while the map, the book or the
-strategic map has the screen.
+heightfield rather than sampling the island twice. Off while the full map or the book
+has the screen.
 
 ## Things that bit
 

@@ -46,7 +46,8 @@ namespace RoadDemo
         /// <summary>Shadow pass over the roots that are going to be merged, plus the
         /// ones already combined (<paramref name="flatOnly"/>: only their flat pieces
         /// are looked at). Returns how many renderers are waiting for the merge.</summary>
-        public static int Optimise(IList<Transform> roots, IList<Transform> flatOnly, string tag)
+        public static int Optimise(IList<Transform> roots, IList<Transform> flatOnly, string tag,
+                                   bool log = true)
         {
             int batched = 0, flat = 0, kept = 0;
             var toBatch = new List<Renderer>();
@@ -92,8 +93,9 @@ namespace RoadDemo
                     flat++;
                 }
 
-            Debug.Log($"[{tag}] {batched} renderers to merge, {kept} foliage left to the wind, " +
-                      $"{flat} flat renderers cast no shadow");
+            if (log)
+                Debug.Log($"[{tag}] {batched} renderers to merge, {kept} foliage left to the wind, " +
+                          $"{flat} flat renderers cast no shadow");
             return batched;
         }
 
@@ -116,7 +118,7 @@ namespace RoadDemo
         /// <summary>The small things onto the layers the camera drops at a range. A piece
         /// is classified by its top-level parent under the root, so a prop's parts travel
         /// together.</summary>
-        public static void AssignCullLayers(IList<Transform> roots, string tag)
+        public static void AssignCullLayers(IList<Transform> roots, string tag, bool log = true)
         {
             int props = 0, mid = 0;
             for (int r = 0; roots != null && r < roots.Count; r++)
@@ -139,8 +141,9 @@ namespace RoadDemo
                     else if (h <= 12f && w <= 12f) { mr.gameObject.layer = MidLayer; mid++; }
                 }
             }
-            Debug.Log($"[{tag}] distance culling: {props} small props to {PropCullDistance:F0} m, " +
-                      $"{mid} trees/lamps/poles to {MidCullDistance:F0} m, the crowd to {CrowdCullDistance:F0} m");
+            if (log)
+                Debug.Log($"[{tag}] distance culling: {props} small props to {PropCullDistance:F0} m, " +
+                          $"{mid} trees/lamps/poles to {MidCullDistance:F0} m, the crowd to {CrowdCullDistance:F0} m");
         }
 
         /// <summary>The camera's per-layer cull distances, the same for every host.</summary>
@@ -151,7 +154,9 @@ namespace RoadDemo
             cull[CrowdLayer] = CrowdCullDistance;
             cull[MidLayer] = MidCullDistance;
             cam.layerCullDistances = cull;
-            cam.layerCullSpherical = true;
+            if (GraphicsSettings.defaultRenderPipeline == null &&
+                QualitySettings.renderPipeline == null)
+                cam.layerCullSpherical = true;
         }
 
         // --------------------------------------------------------------- merge
@@ -178,9 +183,10 @@ namespace RoadDemo
         /// <summary>Fold the still geometry under these roots into merged meshes, one per
         /// (chunk, material, layer, shadow mode), and switch the originals' renderers off.
         /// Everything lands under <paramref name="mergedRoot"/>.</summary>
-        public static void Merge(IList<MergeRoot> roots, Transform mergedRoot, string tag)
+        public static void Merge(IList<MergeRoot> roots, Transform mergedRoot, string tag,
+                                 bool releaseSourceCpu = true, bool log = true)
         {
-            var steps = MergeSteps(roots, mergedRoot, tag);
+            var steps = MergeSteps(roots, mergedRoot, tag, releaseSourceCpu, log);
             while (steps.MoveNext()) { }
         }
 
@@ -209,20 +215,22 @@ namespace RoadDemo
         /// calls. Drain it in one frame (<see cref="Merge"/>) for the old behaviour, or
         /// pump it against a millisecond budget to fold the city in over a second of play
         /// instead of one locked frame.</summary>
-        public static IEnumerator MergeSteps(IList<MergeRoot> roots, Transform mergedRoot, string tag)
+        public static IEnumerator MergeSteps(IList<MergeRoot> roots, Transform mergedRoot, string tag,
+                                             bool releaseSourceCpu = true, bool log = true)
         {
             // the count comes back down in the finally: a step that throws must not
             // leave Merging true, or the cutaway stands down for the rest of the run
             _merging++;
             try
             {
-                var steps = MergeBody(roots, mergedRoot, tag);
+                var steps = MergeBody(roots, mergedRoot, tag, releaseSourceCpu, log);
                 while (steps.MoveNext()) yield return steps.Current;
             }
             finally { _merging = Mathf.Max(0, _merging - 1); }
         }
 
-        static IEnumerator MergeBody(IList<MergeRoot> roots, Transform mergedRoot, string tag)
+        static IEnumerator MergeBody(IList<MergeRoot> roots, Transform mergedRoot, string tag,
+                                     bool releaseSourceCpu, bool log)
         {
             var groups = new Dictionary<MergeKey, List<CombineInstance>>();
             // which renderers fed each group, and how many groups each renderer still has
@@ -299,7 +307,10 @@ namespace RoadDemo
                                                  && mr.TryGetComponent<Collider>(out _));
 
                     var mats = mr.sharedMaterials;
-                    var matrix = mr.transform.localToWorldMatrix;
+                    // CombineMeshes writes vertices in the receiving mesh's local space.
+                    // The old city-wide target sits at world identity; a recycled block's
+                    // target sits under its ViewHolder, so carry world back into that root.
+                    var matrix = mergedRoot.worldToLocalMatrix * mr.transform.localToWorldMatrix;
                     int subs = Mathf.Min(mats.Length, mesh.subMeshCount);
                     mrKeys.Clear();
                     for (int i = 0; i < subs; i++)
@@ -332,7 +343,7 @@ namespace RoadDemo
                     // only bounds how long one frame spends walking a big root
                     if (++walked >= GatherYieldEvery) { walked = 0; yield return null; }
                 }
-                if (rootPieces > 0)
+                if (log && rootPieces > 0)
                     Debug.Log($"[{tag}] merge: {root.name} is {rootPieces} renderers, {rootVerts / 1000}k verts");
                 yield return null;
             }
@@ -440,22 +451,26 @@ namespace RoadDemo
             // to the input instead of the output. The one consumer that would notice is
             // PlayerOcclusionHider's stub cutter, and it asks isReadable first and caches
             // the refusal, so it degrades to "no stub" rather than breaking. (In this scene
-            // it never even runs: it needs a CityBuilder and Game.unity has none.)
+            // it never even runs here: the RoadDemo runtime has no CityBuilder.)
             // Every group is built, so each chunk now stands for exactly what it
             // swallowed and may be taken apart on demand. Before this line it is half
             // folded and pulling it apart would leave a hole, which is what Ready says.
             foreach (var kv in chunks) kv.Value.Ready = true;
 
             int freed = 0;
-            foreach (var mesh in sources)
-            {
-                if (!mesh || !mesh.isReadable) continue;
-                mesh.UploadMeshData(true);
-                freed++;
-            }
-            Debug.Log($"[{tag}] released the CPU copy of {freed} source meshes ({sources.Count} consumed)");
+            if (releaseSourceCpu)
+                foreach (var mesh in sources)
+                {
+                    if (!mesh || !mesh.isReadable) continue;
+                    mesh.UploadMeshData(true);
+                    freed++;
+                }
+            if (log)
+                Debug.Log(releaseSourceCpu
+                    ? $"[{tag}] released the CPU copy of {freed} source meshes ({sources.Count} consumed)"
+                    : $"[{tag}] kept {sources.Count} source meshes readable for streamed rebinding");
 
-            if (unreadable.Count > 0)
+            if (log && unreadable.Count > 0)
             {
                 var dir = System.IO.Path.Combine(Application.dataPath, "..", "Logs");
                 System.IO.Directory.CreateDirectory(dir);
@@ -470,10 +485,13 @@ namespace RoadDemo
                                  "reading) and stay as their own renderers - the list is in Logs/unreadable-meshes.txt; " +
                                  "the editor opens them up on its next reload (MeshReadAccess), after which they merge too.");
             }
-            Debug.Log($"[{tag}] merged {pieces} pieces ({verts / 1000}k verts) into {made} meshes");
-            Debug.Log($"[{tag}] merge vertex buffers: {mergedBytes / 1048576} MB -> {mergedBytesLean / 1048576} MB " +
-                      $"({(mergedBytes - mergedBytesLean) / 1048576} MB of dead channels dropped: " +
-                      $"tangents from {strippedGroups}/{made} groups, lightmap UVs from all)");
+            if (log)
+            {
+                Debug.Log($"[{tag}] merged {pieces} pieces ({verts / 1000}k verts) into {made} meshes");
+                Debug.Log($"[{tag}] merge vertex buffers: {mergedBytes / 1048576} MB -> {mergedBytesLean / 1048576} MB " +
+                          $"({(mergedBytes - mergedBytesLean) / 1048576} MB of dead channels dropped: " +
+                          $"tangents from {strippedGroups}/{made} groups, lightmap UVs from all)");
+            }
 
             // What is left, channel by channel, dearest first. Position, normal and uv0
             // are the job; anything else on this list is a candidate for the same
@@ -483,7 +501,7 @@ namespace RoadDemo
             order.Sort((a, b) => b.Value.CompareTo(a.Value));
             foreach (var kv in order)
                 channels.Append($" {kv.Key} {kv.Value / 1048576} MB;");
-            Debug.Log(channels.ToString());
+            if (log) Debug.Log(channels.ToString());
         }
 
         /// <summary>Per-channel bytes across the merged set, straight off the vertex

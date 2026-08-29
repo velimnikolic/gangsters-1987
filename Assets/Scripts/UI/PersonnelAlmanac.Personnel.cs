@@ -192,9 +192,12 @@ namespace LivingCity.UI
         void BuildPersonalFile(RectTransform root)
         {
             var card = Card("File", root, CardLeft, PageTop, PaneW, PaneH,
-                LedgerStyle.Card, tiltDegrees: 0.35f, shadowSpread: 14f,
+                LedgerStyle.Card, tiltDegrees: 0f, shadowSpread: 14f,
                 low: LedgerStyle.CardLow);
-            Aging(card, PaneW, PaneH);
+            // A horizontal fold reads as clipped text in this dense, scrollable file.
+            // Keep the paper lighting and foxing here; reserve the crease for loose
+            // sheets such as the newspaper and roster.
+            Aging(card, PaneW, PaneH, includeCrease: false);
 
             // The file is BOTH clipped and stapled - it was assembled twice, which is
             // what a personal file in a working office looks like.
@@ -905,7 +908,9 @@ namespace LivingCity.UI
             y -= 14f;
 
             // ---- the trades ----
-            Caps(cardContent, 0f, y, CardInner, "TRAITS · AS TYPED", 11f,
+            const float traitTextInset = 3f;
+            Caps(cardContent, traitTextInset, y, CardInner - traitTextInset,
+                "TRAITS · AS TYPED", 11f,
                 LedgerStyle.InkMid, 5f);
             y -= 22f;
             for (var a = 0; a < AttributeScale.Count; a++)
@@ -1117,8 +1122,10 @@ namespace LivingCity.UI
         /// he is toward the next half step.</summary>
         float BuildAttributeRow(Character member, CharacterAttribute attribute, float y)
         {
+            const float textInset = 3f;
             var label = Line(cardContent, LedgerStyle.Mono, 12.5f, LedgerStyle.InkSoft,
-                0f, y, 140f, 20f, LedgerText.AttributeLabel(attribute));
+                textInset, y, 140f - textInset, 20f,
+                LedgerText.AttributeLabel(attribute));
             label.overflowMode = TextOverflowModes.Ellipsis;
 
             var halfSteps = member.GetHalfSteps(attribute);

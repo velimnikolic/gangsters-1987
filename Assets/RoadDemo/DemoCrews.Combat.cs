@@ -11,6 +11,11 @@ namespace RoadDemo
     /// nothing changed in the move.</summary>
     public partial class DemoCrews
     {
+        // A KILL is dealt across the crew one man at a time. Kept here and cleared for
+        // every deal/retarget pass: no per-frame HashSet garbage, and no ownership of
+        // combat policy in whichever overlay happened to issue the order.
+        readonly HashSet<CrewWalker> _orderedMarks = new HashSet<CrewWalker>();
+
         void SetTarget(Unit unit, Unit target) => SetTarget(unit, target, ordered: false);
 
         /// <summary>How far round an ordered job the traffic is thinned, and for how
@@ -39,12 +44,34 @@ namespace RoadDemo
             // up only on what it can SEE - handing every man the nearest of them at any
             // range was how one pass of a drive-by put a mob on a car it had lost.
             float reach = ordered ? float.MaxValue : SightRange;
+            if (ordered) _orderedMarks.Clear();
             foreach (var man in unit.All())
+            {
                 // riding - in a car's seat or on a machine's saddle - is not a man who
                 // walks up to somebody and opens fire; his gun is the vehicle's business
                 // (TickRiders, CrewBike.TickGuns)
-                if (!man.Dead && !IsAboard(man) && !man.Riding)
-                    man.Engage(BestMark(target, man.Tf.position, reach, sighted: !ordered));
+                if (!CanEngageOnFoot(man)) continue;
+                var mark = ordered
+                    ? ClaimOrderedMark(target, man.Tf.position, reach, sighted: false)
+                    : BestMark(target, man.Tf.position, reach, sighted: true);
+                if (mark != null) man.Engage(mark);
+            }
+        }
+
+        bool CanEngageOnFoot(CrewWalker man) =>
+            man != null && man.Tf != null && !man.Dead && man.Carrying && !man.Panicked &&
+            !IsAboard(man) && !man.Riding;
+
+        /// <summary>Give this shooter an enemy nobody in the ordered crew has yet,
+        /// while one exists. Once every valid enemy already has a gun on him, fall back
+        /// to the ordinary nearest-man rule: that is the end of the fight, when all of
+        /// ours are allowed to close on the one or two still standing.</summary>
+        CrewWalker ClaimOrderedMark(Unit target, Vector3 from, float within, bool sighted)
+        {
+            var mark = BestMark(target, from, within, sighted, _orderedMarks);
+            if (mark == null) mark = BestMark(target, from, within, sighted);
+            if (mark != null) _orderedMarks.Add(mark);
+            return mark;
         }
 
         static CrewWalker NearestStanding(Unit unit, Vector3 from) =>
@@ -65,10 +92,13 @@ namespace RoadDemo
         /// job the PLAYER ordered: the crew was given an address and closes on it, and
         /// asking a man to see through the block he is walking round would cancel the
         /// order at the first corner.</summary>
-        static CrewWalker BestMark(Unit unit, Vector3 from, float within, bool sighted)
+        static CrewWalker BestMark(Unit unit, Vector3 from, float within, bool sighted,
+                                   HashSet<CrewWalker> excluded = null)
         {
             CrewWalker fighting = null, running = null;
-            float fd = within * within, rd = within * within;
+            float limit = within * within;
+            float fd = limit, rd = limit;
+            bool fightingAvailable = false;
             foreach (var m in unit.All())
             {
                 if (m.Dead || !m.Tf) continue;
@@ -76,12 +106,18 @@ namespace RoadDemo
                 bool runner = m.Panicked || m.Retreating;
                 // the range first and the walls after: a look down the sight line is
                 // several cells of the ground walked, and most men are out of range
-                if (d >= (runner ? rd : fd)) continue;
+                if (d >= limit) continue;
                 if (sighted && !InSight(from, m.Tf.position)) continue;
+                if (!runner) fightingAvailable = true;
+                if (excluded != null && excluded.Contains(m)) continue;
+                if (d >= (runner ? rd : fd)) continue;
                 if (runner) { rd = d; running = m; }
                 else { fd = d; fighting = m; }
             }
-            return fighting ?? running;
+            // Do not take an unclaimed runner while somebody still fighting is already
+            // claimed. The old combat priority stands: duplicate a live threat before
+            // streaming off after a man who has broken.
+            return fighting ?? (fightingAvailable ? null : running);
         }
 
         /// <summary>Is there anything but air between these two - can the first see the
@@ -240,10 +276,17 @@ namespace RoadDemo
                 // Fights a crew picked up by WATCHING keep SightRange: that drop is
                 // what stopped a man tracking a motorcycle three streets off.
                 float reach = unit.OrderedFight ? float.MaxValue : SightRange;
+                if (unit.OrderedFight)
+                {
+                    _orderedMarks.Clear();
+                    foreach (var man in unit.All())
+                        if (CanEngageOnFoot(man) && man.Target != null &&
+                            !man.Target.Dead && man.Target.Tf != null)
+                            _orderedMarks.Add(man.Target);
+                }
                 foreach (var man in unit.All())
                 {
-                    if (man.Dead || !man.Carrying || man.Panicked || IsAboard(man) ||
-                        man.Riding) continue;
+                    if (!CanEngageOnFoot(man)) continue;
                     var mark = BestMark(unit.TargetUnit, man.Tf.position, reach,
                                         sighted: !unit.OrderedFight);
                     if (mark != null && mark.Tf != null)
@@ -284,7 +327,11 @@ namespace RoadDemo
                     if (man.Target == null || man.Target.Dead ||
                         (chasingRunner && mark != null && !mark.Panicked && !mark.Retreating))
                     {
-                        if (mark != null) man.Engage(mark);
+                        var next = unit.OrderedFight
+                            ? ClaimOrderedMark(unit.TargetUnit, man.Tf.position, reach,
+                                               sighted: false)
+                            : mark;
+                        if (next != null) man.Engage(next);
                         else man.Disengage();
                     }
                 }

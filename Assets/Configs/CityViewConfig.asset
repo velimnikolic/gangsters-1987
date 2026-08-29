@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 98f8b1bc4c424e279a3d8d4910a94401, type: 3}
+  m_Name: CityViewConfig
+  m_EditorClassIdentifier: Assembly-CSharp::RoadDemo.CityViewConfig
+  max3DDistance: 180
+  streetPitch: 55
+  streetPitchFreedom: 0
+  streetCutaway: 0
+  minimapViewHeight: 360
+  prefetchMetres: 25
+  recycleHysteresisMetres: 45
+  renderHysteresisMetres: 15
+  warmupViews: 3
+  maxBuildsPerFrame: 1
+  compositionStepsPerFrame: 12
+  rendererAttachBudget: 64
+  workBudgetMs: 6
+  cachedViews: 4
+  prewarmViewCapacity: 0
+  heavyUnitPieceThreshold: 0
+  prewarmPartLimit: 5600
+  prewarmVariantReserve: 0
+  prewarmPartsPerFrame: 2
+  groundRayBooms: 2.35
+  mergeVisibleBlocks: 0
+  profileStreaming: 1

@@ -254,21 +254,20 @@ namespace LivingCity.UI
                 (char)('A' + Mathf.Clamp(index, 0, 25)), 9f, LedgerStyle.InkLabel, 2f,
                 TextAlignmentOptions.MidlineRight);
 
-            // The merchandise itself, photographed by PortraitStudio and screened to
-            // newsprint - a catalogue cut, not a colour photo. The hatched plate under
-            // it IS the placeholder: no model, no print, and the hatch simply stays.
+            // The merchandise itself: the real street prefab in a live, colour display
+            // case. The turntable studio owns the render rig and stops it whenever this
+            // card or page is inactive. The hatched plate is only the honest fallback
+            // while a model cannot be resolved.
             var raw = Plate(card, pad, -36f, inner, 86f,
                 item.DisplayName.ToUpperInvariant());
-            raw.uvRect = new Rect(0f, 0.25f, 1f, 0.5f);
             var vehicle = item.Kind == EquipmentKind.Vehicle ||
                           item.Kind == EquipmentKind.Motorcycle;
             var model = vehicle
                 ? PortraitStudio.FindVehiclePrefab(
                     PortraitStudio.VehicleModelFor(item.DisplayName))
                 : LedgerModelSet.WeaponModelFor(item.Kind, item.ModelName);
-            PortraitStudio.Request(model,
-                vehicle ? PortraitStudio.Framing.Vehicle : PortraitStudio.Framing.Item,
-                raw, PortraitStudio.Treatment.Newsprint);
+            CatalogueTurntableStudio.Show(model, vehicle, raw,
+                item.Kind == EquipmentKind.TwinPistols ? 2 : 1);
 
             var blurb = Paragraph(card, LedgerStyle.Serif, 13f, LedgerStyle.InkSoft, pad,
                 -130f, inner, 40f, item.Note, lineSpacing: 2f);

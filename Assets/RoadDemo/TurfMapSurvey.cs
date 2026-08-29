@@ -110,6 +110,52 @@ namespace RoadDemo
             public Rect Plan;
         }
 
+        readonly struct PrimarySegment
+        {
+            public readonly bool Vertical;
+            public readonly float Axis, From, To, Half;
+
+            public PrimarySegment(bool vertical, float axis, float from, float to, float half)
+            {
+                Vertical = vertical;
+                Axis = axis;
+                From = from;
+                To = to;
+                Half = half;
+            }
+        }
+
+        readonly struct FootprintKey : System.IEquatable<FootprintKey>
+        {
+            readonly int _x0, _y0, _x1, _y1;
+
+            public FootprintKey(Rect world)
+            {
+                const float precision = 100f;
+                _x0 = Mathf.RoundToInt(world.xMin * precision);
+                _y0 = Mathf.RoundToInt(world.yMin * precision);
+                _x1 = Mathf.RoundToInt(world.xMax * precision);
+                _y1 = Mathf.RoundToInt(world.yMax * precision);
+            }
+
+            public bool Equals(FootprintKey other) =>
+                _x0 == other._x0 && _y0 == other._y0 &&
+                _x1 == other._x1 && _y1 == other._y1;
+
+            public override bool Equals(object obj) => obj is FootprintKey other && Equals(other);
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    int hash = _x0;
+                    hash = hash * 397 ^ _y0;
+                    hash = hash * 397 ^ _x1;
+                    return hash * 397 ^ _y1;
+                }
+            }
+        }
+
         /// <summary>What ground the plate ON SCREEN covers, and the scale that goes
         /// with it. Every hit test runs through this, so it must be the projection the
         /// uploaded pixels were actually drawn with - never the one the camera wants
@@ -179,6 +225,9 @@ namespace RoadDemo
         Rect _heightArea;
 
         RoadDemoBuilder _builder;
+        Transform _blockRoot;
+        readonly List<Rect> _residentialGreens = new List<Rect>();
+        int _residentialGeometryVersion = -1;
 
         /// <summary>The whole city and a margin - what the map shows when the wheel is
         /// all the way back, and the ground the heightfield was cached over.</summary>
@@ -188,6 +237,22 @@ namespace RoadDemo
         public string CityName { get; private set; } = "";
 
         public bool Ready { get; private set; }
+
+        /// <summary>Generated parks represented directly by recipe data.</summary>
+        public int ResidentialGreenCount => _residentialGreens.Count;
+
+        /// <summary>Refreshes model-derived footprints on the main thread when a future
+        /// generator replaces a recipe. A worker draw is never mutated underneath.</summary>
+        public bool RefreshGeometryIfNeeded()
+        {
+            if (!Ready || _builder == null ||
+                _residentialGeometryVersion == _builder.ResidentialGeometryVersion)
+                return false;
+
+            CollectBuildings(_blockRoot);
+            _residentialGeometryVersion = _builder.ResidentialGeometryVersion;
+            return true;
+        }
 
         // ---------------------------------------------------------------- prepare
 
@@ -205,6 +270,7 @@ namespace RoadDemo
             TurfMapSurvey shareHeight = null)
         {
             _builder = city;
+            _blockRoot = blockRoot;
             if (_builder == null)
                 return;
 
@@ -241,6 +307,7 @@ namespace RoadDemo
 
             CollectStreets();
             CollectBuildings(blockRoot);
+            _residentialGeometryVersion = _builder.ResidentialGeometryVersion;
             CollectDistricts();
 
             // Every family's ink mixed here, on the main thread, so no drawing pass has
@@ -580,6 +647,15 @@ namespace RoadDemo
 
                 Ground.Fill(plan, TurfInk.Grass);
             }
+
+            // Core's residential parks are recipe data. Their GameObjects may be
+            // detached or recycled, but the plan still owes the paper their lawns.
+            for (int i = 0; i < _residentialGreens.Count; i++)
+            {
+                var plan = _plan.ToPlan(_residentialGreens[i]);
+                if (OnSheet(plan))
+                    Ground.Fill(plan, TurfInk.Grass);
+            }
         }
 
         /// <summary>The quarters that hang off the grid - the harbour, the airfield,
@@ -666,23 +742,133 @@ namespace RoadDemo
             // stays on its existing path; only a primary structure substitutes these
             // registered roads for that grid.
             if (_builder.HasPrimaryStructure)
+                CollectPrimaryStreets();
+        }
+
+        /// <summary>Core publishes one carriageway per junction-to-junction run. Fold
+        /// collinear runs into named streets for the paper, while leaving different
+        /// widths separate so their true kerbs and lane markings survive.</summary>
+        void CollectPrimaryStreets()
+        {
+            const float AxisTolerance = 0.25f;
+            const float JoinTolerance = 0.75f;
+            var segments = new List<PrimarySegment>();
+
+            foreach (var road in _builder.QuarterRoads)
             {
-                foreach (var road in _builder.QuarterRoads)
+                float dx = Mathf.Abs(road.b.x - road.a.x);
+                float dy = Mathf.Abs(road.b.y - road.a.y);
+                if (Mathf.Max(dx, dy) <= 0.05f)
+                    continue;
+
+                bool vertical = dy > dx;
+                float axis = vertical
+                    ? (road.a.x + road.b.x) * 0.5f
+                    : (road.a.y + road.b.y) * 0.5f;
+                float from = vertical
+                    ? Mathf.Min(road.a.y, road.b.y)
+                    : Mathf.Min(road.a.x, road.b.x);
+                float to = vertical
+                    ? Mathf.Max(road.a.y, road.b.y)
+                    : Mathf.Max(road.a.x, road.b.x);
+                segments.Add(new PrimarySegment(
+                    vertical, axis, from, to, Mathf.Max(0.5f, road.half)));
+            }
+
+            var verticalAxes = PrimaryAxes(segments, true, AxisTolerance);
+            var horizontalAxes = PrimaryAxes(segments, false, AxisTolerance);
+
+            segments.Sort((a, b) =>
+            {
+                int order = a.Vertical == b.Vertical ? 0 : (a.Vertical ? -1 : 1);
+                if (order != 0) return order;
+                order = a.Axis.CompareTo(b.Axis);
+                if (order != 0) return order;
+                order = a.Half.CompareTo(b.Half);
+                return order != 0 ? order : a.From.CompareTo(b.From);
+            });
+
+            bool have = false;
+            PrimarySegment run = default;
+            for (int i = 0; i < segments.Count; i++)
+            {
+                var next = segments[i];
+                bool joins = have && next.Vertical == run.Vertical &&
+                    Mathf.Abs(next.Axis - run.Axis) <= AxisTolerance &&
+                    Mathf.Abs(next.Half - run.Half) <= AxisTolerance &&
+                    next.From <= run.To + JoinTolerance;
+
+                if (joins)
                 {
-                    bool vertical = Mathf.Abs(road.b.y - road.a.y) > Mathf.Abs(road.b.x - road.a.x);
-                    float half = Mathf.Max(0.5f, road.half);
-                    Streets.Add(new Street
-                    {
-                        World = Rect.MinMaxRect(
-                            Mathf.Min(road.a.x, road.b.x) - (vertical ? half : 0f),
-                            Mathf.Min(road.a.y, road.b.y) - (vertical ? 0f : half),
-                            Mathf.Max(road.a.x, road.b.x) + (vertical ? half : 0f),
-                            Mathf.Max(road.a.y, road.b.y) + (vertical ? 0f : half)),
-                        Vertical = vertical,
-                        Boulevard = half > 10f,
-                    });
+                    run = new PrimarySegment(run.Vertical, run.Axis,
+                        Mathf.Min(run.From, next.From), Mathf.Max(run.To, next.To), run.Half);
+                    continue;
+                }
+
+                if (have)
+                    AddPrimaryStreet(run, verticalAxes, horizontalAxes);
+                run = next;
+                have = true;
+            }
+            if (have)
+                AddPrimaryStreet(run, verticalAxes, horizontalAxes);
+        }
+
+        static List<float> PrimaryAxes(
+            List<PrimarySegment> segments, bool vertical, float tolerance)
+        {
+            var axes = new List<float>();
+            for (int i = 0; i < segments.Count; i++)
+                if (segments[i].Vertical == vertical)
+                    axes.Add(segments[i].Axis);
+            axes.Sort();
+
+            int write = 0;
+            for (int read = 0; read < axes.Count; read++)
+            {
+                if (write > 0 && Mathf.Abs(axes[read] - axes[write - 1]) <= tolerance)
+                    continue;
+                axes[write++] = axes[read];
+            }
+            if (write < axes.Count)
+                axes.RemoveRange(write, axes.Count - write);
+            return axes;
+        }
+
+        void AddPrimaryStreet(PrimarySegment run, List<float> verticalAxes,
+                              List<float> horizontalAxes)
+        {
+            var axes = run.Vertical ? verticalAxes : horizontalAxes;
+            int axisIndex = 0;
+            float nearest = float.MaxValue;
+            for (int i = 0; i < axes.Count; i++)
+            {
+                float distance = Mathf.Abs(axes[i] - run.Axis);
+                if (distance < nearest)
+                {
+                    nearest = distance;
+                    axisIndex = i;
                 }
             }
+
+            bool boulevard = run.Half > 10f;
+            string name = "";
+            if (_builder.Streets != null)
+                name = run.Vertical
+                    ? _builder.Streets.VerticalAny(axisIndex, boulevard)
+                    : _builder.Streets.HorizontalAny(axisIndex, boulevard);
+
+            Streets.Add(new Street
+            {
+                World = run.Vertical
+                    ? new Rect(run.Axis - run.Half, run.From,
+                        run.Half * 2f, Mathf.Max(0.01f, run.To - run.From))
+                    : new Rect(run.From, run.Axis - run.Half,
+                        Mathf.Max(0.01f, run.To - run.From), run.Half * 2f),
+                Vertical = run.Vertical,
+                Boulevard = boulevard,
+                Name = Named(name),
+            });
         }
 
         static string Named(string name) =>
@@ -1050,7 +1236,14 @@ namespace RoadDemo
         void CollectBuildings(Transform blockRoot)
         {
             Buildings.Clear();
+            _residentialGreens.Clear();
             int id = 0;
+            var seen = new HashSet<FootprintKey>();
+
+            // Model first. If a view is currently alive its colliders are merely one
+            // rendering of this data; if it is recycled the footprint remains here.
+            foreach (var source in _builder.ResidentialMapSources)
+                CollectResidential(source, seen, ref id);
 
             if (blockRoot != null)
             {
@@ -1067,12 +1260,20 @@ namespace RoadDemo
 
                     Add(++id, tf,
                         Rect.MinMaxRect(bounds.min.x, bounds.min.z, bounds.max.x, bounds.max.z),
-                        bounds.size.y, tf.GetComponentInParent<BusinessMarker>());
+                        bounds.size.y, tf.GetComponentInParent<BusinessMarker>(), seen);
                 }
             }
 
-            foreach (var (area, rise, _) in _builder.QuarterRoofs)
-                Add(++id, null, area, rise, null);
+            bool hasResidentialModel = _builder.ResidentialMapSources.Count > 0;
+            foreach (var (area, rise, name) in _builder.QuarterRoofs)
+            {
+                // Core reported these to WalkObstacles before the model/map adapter
+                // existed. Keep them as blockers, but do not let that build-time copy
+                // survive beside a future replacement recipe as a ghost building.
+                if (hasResidentialModel && IsResidentialRoof(name))
+                    continue;
+                Add(++id, null, area, rise, null, seen, name);
+            }
 
             // Biggest first, so a shed against a tower block still takes its own click:
             // the picker walks the list backwards and the small footprint is on top.
@@ -1080,13 +1281,139 @@ namespace RoadDemo
                 (b.World.width * b.World.height).CompareTo(a.World.width * a.World.height));
         }
 
-        void Add(int id, Transform tf, Rect world, float rise, BusinessMarker business)
+        void CollectResidential(ResidentialMapSource source, HashSet<FootprintKey> seen,
+                                ref int id)
+        {
+            if (source.Model == null)
+                return;
+
+            foreach (var recipe in source.Model.Blocks)
+            {
+                var plan = recipe?.Plan;
+                if (plan == null)
+                    continue;
+
+                if (plan.Spots != null)
+                    foreach (var spot in plan.Spots)
+                    {
+                        var unit = spot?.Unit;
+                        if (unit == null)
+                            continue;
+
+                        float cell = ResidentialLot.Cell;
+                        var local = new Rect(
+                            recipe.LocalBounds.xMin + spot.I * cell,
+                            recipe.LocalBounds.yMin + spot.J * cell,
+                            Mathf.Max(1, spot.CW) * cell,
+                            Mathf.Max(1, spot.CD) * cell);
+                        var world = source.Frame.ToWorldRect(local);
+
+                        if (unit.Kind == ResidentialKind.Park)
+                        {
+                            _residentialGreens.Add(world);
+                            continue;
+                        }
+
+                        TurfType? type = unit.Kind == ResidentialKind.Amenity
+                            ? TurfType.Civic
+                            : unit.Kind == ResidentialKind.Storefront || spot.Shop
+                                ? TurfType.Shop
+                                : (TurfType?)null;
+                        Add(++id, null, world, Mathf.Max(2f, unit.MaxH), null, seen,
+                            recipe.Name + ": " + unit.Name, type);
+                    }
+
+                CollectGroundFeatures(source.Frame, recipe, ResidentialLot.Use.Cafe,
+                    "CAFE", TurfType.Shop, 4f, seen, ref id);
+                CollectGroundFeatures(source.Frame, recipe, ResidentialLot.Use.Subway,
+                    "SUBWAY", TurfType.Civic, 3.5f, seen, ref id);
+            }
+        }
+
+        /// <summary>Cafes and subway stairs are generated into empty gaps rather than
+        /// Plan.Spots. Connected cells are one map footprint, so every generated detail
+        /// appears even when its recycled holder is nowhere near the camera.</summary>
+        void CollectGroundFeatures(DistrictFrame frame, ResidentialBlockRecipe recipe,
+                                   ResidentialLot.Use use, string label, TurfType type,
+                                   float rise, HashSet<FootprintKey> seen, ref int id)
+        {
+            var plan = recipe.Plan;
+            if (plan?.Ground == null)
+                return;
+
+            int width = plan.Ground.GetLength(0);
+            int depth = plan.Ground.GetLength(1);
+            var visited = new bool[width, depth];
+            var open = new Queue<Vector2Int>();
+            int group = 0;
+
+            for (int j = 0; j < depth; j++)
+                for (int i = 0; i < width; i++)
+                {
+                    if (visited[i, j] || plan.Ground[i, j] != use)
+                        continue;
+
+                    int minI = i, maxI = i, minJ = j, maxJ = j;
+                    visited[i, j] = true;
+                    open.Enqueue(new Vector2Int(i, j));
+                    while (open.Count > 0)
+                    {
+                        var at = open.Dequeue();
+                        minI = Mathf.Min(minI, at.x); maxI = Mathf.Max(maxI, at.x);
+                        minJ = Mathf.Min(minJ, at.y); maxJ = Mathf.Max(maxJ, at.y);
+                        Visit(at.x - 1, at.y);
+                        Visit(at.x + 1, at.y);
+                        Visit(at.x, at.y - 1);
+                        Visit(at.x, at.y + 1);
+                    }
+
+                    float cell = ResidentialLot.Cell;
+                    var local = new Rect(
+                        recipe.LocalBounds.xMin + minI * cell,
+                        recipe.LocalBounds.yMin + minJ * cell,
+                        (maxI - minI + 1) * cell,
+                        (maxJ - minJ + 1) * cell);
+                    string name = recipe.Name + ": " + label + (++group > 1 ? " " + group : "");
+                    Add(++id, null, frame.ToWorldRect(local), rise, null, seen, name, type);
+
+                    void Visit(int x, int y)
+                    {
+                        if (x < 0 || y < 0 || x >= width || y >= depth || visited[x, y] ||
+                            plan.Ground[x, y] != use)
+                            return;
+                        visited[x, y] = true;
+                        open.Enqueue(new Vector2Int(x, y));
+                    }
+                }
+        }
+
+        static bool IsResidentialRoof(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+            int split = name.LastIndexOf(": ", System.StringComparison.Ordinal);
+            if (split < 0 || split + 2 >= name.Length)
+                return false;
+            string unit = name.Substring(split + 2);
+            var known = ResidentialUnits.All;
+            for (int i = 0; i < known.Length; i++)
+                if (known[i] != null && known[i].Name == unit)
+                    return true;
+            return false;
+        }
+
+        void Add(int id, Transform tf, Rect world, float rise, BusinessMarker business,
+                 HashSet<FootprintKey> seen = null, string reportedName = null,
+                 TurfType? reportedType = null)
         {
             if (world.width <= 0.01f || world.height <= 0.01f)
                 return;
+            if (seen != null && !seen.Add(new FootprintKey(world)))
+                return;
 
             int floors = Mathf.Max(1, Mathf.RoundToInt(rise / 3.2f));
-            var type = TypeOf(world, rise, floors, business);
+            var type = reportedType ?? TypeOf(world, rise, floors, business);
+            var district = DistrictAt(world.center);
 
             Buildings.Add(new TurfBuilding
             {
@@ -1098,8 +1425,12 @@ namespace RoadDemo
                 Floors = floors,
                 Name = business != null && !string.IsNullOrEmpty(business.BusinessName)
                     ? business.BusinessName.ToUpperInvariant()
+                    : !string.IsNullOrEmpty(reportedName)
+                        ? reportedName.ToUpperInvariant()
                     : TurfTypeStyle.Of(type).Label + " " + (100 + id % 900),
-                District = "OUTSKIRTS",
+                District = district.HasValue
+                    ? district.Value.Name.ToUpperInvariant()
+                    : "OUTSKIRTS",
                 BlockId = business != null ? business.BlockId : LotOf(world.center),
                 // Only a business the city has priced has a figure; nothing else on
                 // this map is rolled, so a footprint without one prints no row.

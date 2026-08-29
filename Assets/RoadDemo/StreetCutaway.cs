@@ -64,8 +64,11 @@ namespace RoadDemo
         /// moment it goes, which reads far worse than the missing wall.</summary>
         public bool keepShadows = true;
 
-        /// <summary>H toggles the whole thing while a scene is being looked at.</summary>
-        public bool on = true;
+        /// <summary>H toggles the whole thing while a scene is being looked at. Off by
+        /// default: the current residential prefabs are exterior shells, so removing a
+        /// facade exposes no interior and leaves roofs/windows floating. The shared city
+        /// view config may enable it again once interior-capable views exist.</summary>
+        public bool on = false;
 
         const float Chest = 1.2f;              // sample height: what a man on the pavement is
         const float Radius = 0.9f;             // fat enough that the cast is a person, not a pin

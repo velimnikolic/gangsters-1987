@@ -185,43 +185,58 @@ namespace RoadDemo
         /// crossfade, which is what every walker in the town had before.</summary>
         public static AnimationClip StartMove(bool walk, float signedAngle)
         {
-            var set = walk
-                ? toWalk ??= new[]
+            var set = StartSet(walk);
+            return set[Quadrant(signedAngle)] ?? set[0];
+        }
+
+        static AnimationClip[] StartSet(bool walk) => walk
+                ? (toWalk ??= new[]
                 {
                     Loco(TransDir + "Idle_ToWalk/A_Idle_ToWalkFRootMotion_Masc"),
                     Loco(TransDir + "Idle_ToWalk/A_Idle_ToWalk90LRootMotion_Masc"),
                     Loco(TransDir + "Idle_ToWalk/A_Idle_ToWalk90RRootMotion_Masc"),
                     Loco(TransDir + "Idle_ToWalk/A_Idle_ToWalk180LRootMotion_Masc"),
                     Loco(TransDir + "Idle_ToWalk/A_Idle_ToWalk180RRootMotion_Masc"),
-                }
-                : toRun ??= new[]
+                })
+                : (toRun ??= new[]
                 {
                     Loco(TransDir + "Idle_ToRun/A_Idle_ToRunFRootMotion_Masc"),
                     Loco(TransDir + "Idle_ToRun/A_Idle_ToRun90LRootMotion_Masc"),
                     Loco(TransDir + "Idle_ToRun/A_Idle_ToRun90RRootMotion_Masc"),
                     Loco(TransDir + "Idle_ToRun/A_Idle_ToRun180LRootMotion_Masc"),
                     Loco(TransDir + "Idle_ToRun/A_Idle_ToRun180RRootMotion_Masc"),
-                };
-            return set[Quadrant(signedAngle)] ?? set[0];
-        }
+                });
 
         /// <summary>Pulling up out of the gait onto a stand - either foot's plant,
         /// dealt at random so a queue does not halt on one leg together.</summary>
         public static AnimationClip StopMove(bool walk)
         {
-            var set = walk
-                ? walkStop ??= new[]
+            var set = StopSet(walk);
+            return set[Random.value < 0.5f ? 0 : 1] ?? set[0];
+        }
+
+        /// <summary>The same stop, with the planted foot chosen explicitly. Runtime
+        /// callers normally use the random overload above; animation benches and tests
+        /// use this one so both authored takes can be inspected without changing the
+        /// global random stream.</summary>
+        public static AnimationClip StopMove(bool walk, bool leftFoot)
+        {
+            var set = StopSet(walk);
+            int pick = leftFoot ? 0 : 1;
+            return set[pick] ?? set[1 - pick];
+        }
+
+        static AnimationClip[] StopSet(bool walk) => walk
+                ? (walkStop ??= new[]
                 {
                     Loco(TransDir + "Walk_ToIdle/A_Walk_ToIdleF_LFootRootMotion_Masc"),
                     Loco(TransDir + "Walk_ToIdle/A_Walk_ToIdleF_RFootRootMotion_Masc"),
-                }
-                : runStop ??= new[]
+                })
+                : (runStop ??= new[]
                 {
                     Loco(TransDir + "Run_ToIdle/A_Run_ToIdleF_LFootRootMotion_Masc"),
                     Loco(TransDir + "Run_ToIdle/A_Run_ToIdleF_RFootRootMotion_Masc"),
-                };
-            return set[Random.value < 0.5f ? 0 : 1] ?? set[0];
-        }
+                });
 
         /// <summary>Turning on the spot, this many signed degrees (negative left):
         /// stepping feet under a turn the code is already making. 90 or 180.</summary>

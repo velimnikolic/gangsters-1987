@@ -31,6 +31,7 @@ namespace RoadDemo
         static Func<GameObject, Transform, GameObject> _raise;
         static readonly Dictionary<string, Bounds> Measured = new Dictionary<string, Bounds>();
         static readonly List<string> Absent = new List<string>();
+        static readonly List<Renderer> RendererScratch = new List<Renderer>();
 
         /// <summary>Prefabs the project has not got, gathered while composing so a caller can
         /// say so once rather than a hundred times.</summary>
@@ -81,10 +82,13 @@ namespace RoadDemo
         internal static bool WorldBox(GameObject go, out Bounds box)
         {
             box = default;
-            var renderers = go.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0) return false;
-            box = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++) box.Encapsulate(renderers[i].bounds);
+            RendererScratch.Clear();
+            go.GetComponentsInChildren(true, RendererScratch);
+            if (RendererScratch.Count == 0) return false;
+            box = RendererScratch[0].bounds;
+            for (int i = 1; i < RendererScratch.Count; i++)
+                box.Encapsulate(RendererScratch[i].bounds);
+            RendererScratch.Clear();
             return true;
         }
 

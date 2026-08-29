@@ -16,6 +16,25 @@ set of built-in commands, and `Assets/Scripts/Editor/PipelineCommands.cs` adds t
 The whole thing needs the editor **open**. With no editor up, `unity command` fails with
 "No Unity Editor instances found" — that is when the batch harness is still the right tool.
 
+## Opening Gangsters without the CoreDemo graphics stall
+
+Open this project through `Tools/unity/open-gangsters.command` (it is also safe to double-click
+from Finder). The launcher reads the checked-in Unity version and starts the project with a
+64 MiB graphics command ring:
+
+    Tools/unity/open-gangsters.command
+
+CoreDemo incrementally composes generated blocks and registers at most 64 renderers per frame,
+but the Editor can still submit a large first-traverse command burst while its Game view and URP
+are active. Unity's default ring for this editor version is 16 MiB; exhausting it can freeze the
+scene, not merely print a harmless warning. The launcher passes
+`-gfx-ring-buffer-size 67108864` as an Editor safety margin. It does not increase the number of
+resident city blocks or replace the recycler's per-frame limits.
+
+Launching this project directly from Unity Hub bypasses that argument. Close an already-open
+Gangsters Editor before using the launcher; it refuses to start a second instance over the same
+project lock.
+
 ## What it is good for here
 
 **A compile verdict in seconds, with no harness of our own.**
@@ -98,7 +117,7 @@ editor through Roslyn, which answers most one-off questions without a file being
 | `gangsters_industrial` | four industrial block candidates on the lab bench, and the bake of the ones worth keeping |
 | `gangsters_industry` | a whole industrial QUARTER dealt from a seed and judged; `--draw` draws the first in the open scene |
 
-    unity command gangsters_layout --scene Assets/Scenes/Game.unity --seed 7 --json
+    unity command gangsters_layout --scene Assets/Scenes/CoreDemo.unity --seed 7 --json
     unity command gangsters_layout --seed 1 --count 20 --json     # sweep seeds
     unity command gangsters_measure --name building-bank --json
     unity command gangsters_core --seed 1 --count 30 --json      # thirty seeds: is every one clean?
@@ -110,9 +129,9 @@ editor through Roslyn, which answers most one-off questions without a file being
         --step 0.05 --out Temp/play/cli --sets "BlockDemoBuilder.rivalCrews=2"
     python Tools/play/analyze.py Temp/play/cli --verdict
 
-`gangsters_layout` reads the road axes off the `RoadDemoBuilder` in the open scene, so it needs
-a scene that has one (every demo scene does). Passing `--scene` **opens that scene in the
-editor** — the person at the keyboard will see their scene change.
+`gangsters_layout` reads road axes from a `RoadDemoBuilder` when the open scene has one; otherwise
+it uses a hidden component carrying the canonical field defaults. Passing `--scene` **opens that
+scene in the editor** — the person at the keyboard will see their scene change.
 
 `gangsters_measure` measures an instance, not the asset: a prefab asset's renderers report
 bounds in their own local space, and the scaling the Synty packs rely on only applies once the

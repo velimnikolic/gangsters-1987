@@ -10,6 +10,10 @@
 > temena, 8,5 GB u Play-u, i kamera svakog frejma šalje 33 miliona temena jer se **zgrade crtaju
 > do daljine od 2.500 m, bez ijednog LOD-a**. Najveći deo se dobija bez ijedne promene u izgledu.
 
+> **L6 je implementiran 2026-08-28 za generisane residential blokove.** RecyclerView-style
+> model, camera window, LRU/pool, 180 m handoff postojećoj 2D mapi i runtime invalidacija opisani
+> su sa merenjima u `Docs/core-streaming.md`. Brojke ispod ostaju pre-streaming baseline.
+
 ---
 
 ## 0. Mera: šta grad danas košta
@@ -49,8 +53,8 @@
   žetva je i od palmi uzela `LOD0` i ostalo bacila.
 - **Zgrade nemaju daljinu.** Sitnica se gasi na 230 m, drveće i banderi na 480 m — a zgrade su na
   sloju 0 i crtaju se **do far plane-a na 2.500 m**. Ceo grad, svaki frejm.
-- **URP jede pola kulinga.** Konzola: `Camera.layerCullSpherical` radi samo u built-in-u; ostaje
-  `layerCullDistances` (kutijasto, ne sferno).
+- **URP koristi samo kutijasti layer cull.** `layerCullDistances` ostaje aktivan, dok se
+  `layerCullSpherical` sada postavlja samo u built-in pipeline-u, bez SRP warning-a.
 - **156 vrsta mreža se uopšte ne spaja** jer im import zabranjuje čitanje — svaka ostaje sopstveni
   renderer (`Logs/unreadable-meshes.txt`).
 - Trotoar je 19.000 pločica za 2 M temena — od svega **4 različite mreže**.

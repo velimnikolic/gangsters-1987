@@ -13,7 +13,7 @@ namespace LivingCity.EditorTools
     /// first, scene wiring second, both idempotent.
     ///
     /// "Create or Refresh Gameplay Assets" makes the two config assets (GetOrCreate, so
-    /// tuned values survive every refresh) and AUTHORS the player prefab from SM_Chr_Kingpin_01
+    /// tuned values survive every refresh) and AUTHORS the player prefab from SM_Chr_Gang_Male_01
     /// - the plain Synty character, which carries no behaviour to strip at all. The grip
     /// constants in WeaponSocket were calibrated on the OLD rig and need re-doing in-editor.
     ///
@@ -38,13 +38,13 @@ namespace LivingCity.EditorTools
 
         const string ControllerPath = "Assets/Configs/People Interaction Controller.controller";
         const string RevolverPath = "Assets/Weapons/Revolver.obj";
-        // The Kingpin: the one Synty character that reads as the playable mafioso. A
-        // plain character prefab (Humanoid, Avatar, no controller), which suits this pass
-        // even better than the old rig did - nothing to strip but the modular-part toggles.
+        // A plain Palm City gangster prefab (Humanoid, Avatar, no controller), which
+        // suits this pass even better than the old rig did - nothing to strip but the
+        // modular-part toggles. The oversized Kingpin is deliberately retired globally.
         // NOTE: WeaponSocket's grip constants were calibrated on the man-mafia skeleton;
         // the Synty hand bone is oriented differently, so the grip needs the in-editor
         // gizmo pass again (WeaponSocket.cs doc) - flagged, cannot be derived offline.
-        const string RigPath = "Assets/Synty/PolygonPalmCity/Prefabs/Characters/SM_Chr_Kingpin_01.prefab";
+        const string RigPath = "Assets/Synty/PolygonPalmCity/Prefabs/Characters/SM_Chr_Gang_Male_01.prefab";
 
         [MenuItem("Tools/City/Create or Refresh Gameplay Assets", priority = 21)]
         public static void CreateAssets()
@@ -74,7 +74,7 @@ namespace LivingCity.EditorTools
             var rig = AssetDatabase.LoadAssetAtPath<GameObject>(RigPath);
             if (!rig)
             {
-                Debug.LogError($"[GameplaySetup] No Kingpin prefab at {RigPath} - is the " +
+                Debug.LogError($"[GameplaySetup] No player gangster prefab at {RigPath} - is the " +
                                "PolygonPalmCity pack imported?");
                 return;
             }

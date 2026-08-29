@@ -77,14 +77,6 @@ namespace RoadDemo
 
         /// <summary>The pieces held with both hands while running. Sidearms, including
         /// the machine pistol, keep the locomotion clip's ordinary arm swing.</summary>
-        static bool LongGun(EquipmentKind kind) => kind switch
-        {
-            EquipmentKind.Rifle => true,
-            EquipmentKind.Shotgun => true,
-            EquipmentKind.TommyGun => true,
-            _ => false,
-        };
-
         public int Health = 3;
 
         /// <summary>His hands are up. Set by the crew giving itself up to the law
@@ -734,6 +726,18 @@ namespace RoadDemo
             var animator = Tf.GetComponentInChildren<Animator>();
             Weapon = CrewArms.Attach(animator, WeaponPrefab);
             _aimArm = animator != null ? animator.GetBoneTransform(HumanBodyBones.RightUpperArm) : null;
+            _aimForearm = animator != null ? animator.GetBoneTransform(HumanBodyBones.RightLowerArm) : null;
+            _aimHand = animator != null ? animator.GetBoneTransform(HumanBodyBones.RightHand) : null;
+            _supportArm = animator != null ? animator.GetBoneTransform(HumanBodyBones.LeftUpperArm) : null;
+            _supportForearm = animator != null ? animator.GetBoneTransform(HumanBodyBones.LeftLowerArm) : null;
+            _supportHand = animator != null ? animator.GetBoneTransform(HumanBodyBones.LeftHand) : null;
+            if (animator != null && _supportHand != null)
+            {
+                var inv = Quaternion.Inverse(CrewArms.TPoseRotation(animator, _supportHand));
+                _supportFingers = inv * Vector3.left;
+                _supportThumb = inv * Vector3.forward;
+            }
+            _longGunGripBlend = 0f;
         }
 
         /// <summary>Away it goes; he still carries it. The model is destroyed rather
@@ -751,7 +755,13 @@ namespace RoadDemo
             Object.Destroy(Weapon.gameObject);
             Weapon = null;
             _aimArm = null;
+            _aimForearm = null;
+            _aimHand = null;
+            _supportArm = null;
+            _supportForearm = null;
+            _supportHand = null;
             _aimBlend = 0f;
+            _longGunGripBlend = 0f;
         }
 
         /// <summary>How long the gun stays out after the last reason for it has gone.
@@ -827,9 +837,12 @@ namespace RoadDemo
         // aim where they were authored to aim - at the horizon of the rig they were
         // made on - and on the pack bodies that lands the barrel in the pavement a
         // few strides out. The clip cannot know where the other man stands; this does.
-        Transform _aimArm;
+        Transform _aimArm, _aimForearm, _aimHand;
         float _aimBlend;
         Vector3 _aimDir;
+        Transform _supportArm, _supportForearm, _supportHand;
+        Vector3 _supportFingers, _supportThumb;
+        float _longGunGripBlend;
 
         /// <summary>How far off a man will still put his gun up at somebody riding past
         /// - on a saddle or behind a windscreen. Further than any gun in the town shoots
@@ -847,7 +860,7 @@ namespace RoadDemo
         public void AimGun(float dt)
         {
             bool onCar = Target == null && CarMark != null && CarMark.Tf != null && !CarMark.Wrecked;
-            bool carryingLongGunAtRun = _runningLeg && LongGun(WeaponKind);
+            bool carryingLongGunAtRun = _runningLeg && CrewArms.TwoHanded(WeaponKind);
             bool aiming = !Dead && Armed && State == Mode.Engaging && _flinch <= 0f &&
                           !carryingLongGunAtRun &&
                           (onCar || (Target != null && Target.Tf && !Target.Dead)) &&
@@ -886,6 +899,18 @@ namespace RoadDemo
                          StrideAllowsAim(flat);
             }
             _aimBlend = Mathf.MoveTowards(_aimBlend, aiming ? 1f : 0f, 6f * dt);
+            if (CrewArms.TwoHanded(WeaponKind))
+                PoseLongGunFire(aiming ? markAim : MuzzlePosition + _aimDir * 10f,
+                    _aimBlend);
+            else
+                AimRightArm(aiming, markAim);
+            if (!aiming && CurrentPose == PosePistolIdle)
+                PoseGunLow(1f - _aimBlend);
+            PoseLongGun(dt);
+        }
+
+        void AimRightArm(bool aiming, Vector3 markAim)
+        {
             if (_aimBlend <= 0.001f || _aimArm == null || Weapon == null) return;
             var muzzle = CrewArms.MuzzleOf(Weapon);
             var mp = muzzle != null ? muzzle.position : Weapon.position;
@@ -899,6 +924,110 @@ namespace RoadDemo
             angle = Mathf.Clamp(angle, -70f, 70f) * _aimBlend;
             if (Mathf.Abs(angle) < 0.05f) return;
             _aimArm.rotation = Quaternion.AngleAxis(angle, axis) * _aimArm.rotation;
+        }
+
+        /// <summary>Shoulder a long gun after the pistol-authored aim or shoot clip has
+        /// posed the body. The trigger hand is brought back to the chest, the elbow is
+        /// kept outside the ribs, and the weapon is turned onto the mark before the
+        /// support-hand solve runs. The Hood demo calls this same production pose.</summary>
+        public void PoseLongGunFire(Vector3 aimAt, float weight)
+        {
+            weight = Mathf.Clamp01(weight);
+            if (weight <= 0.001f || Tf == null || Weapon == null ||
+                !CrewArms.TwoHanded(WeaponKind) || _aimArm == null ||
+                _aimForearm == null || _aimHand == null) return;
+
+            var muzzle = CrewArms.MuzzleOf(Weapon);
+            if (muzzle == null) return;
+            var aim = aimAt - muzzle.position;
+            if (aim.sqrMagnitude < 1e-5f) aim = Tf.forward;
+            aim.Normalize();
+            var flat = Vector3.ProjectOnPlane(aim, Tf.up);
+            if (flat.sqrMagnitude < 1e-5f) flat = Tf.forward;
+            flat.Normalize();
+
+            // A pistol clip leaves the trigger fist at full extension. A stock-fired
+            // piece keeps that fist close to the right breast and lets the forearm and
+            // shoulder carry the aim instead.
+            var hold = _aimArm.position + flat * 0.24f -
+                       Tf.right * 0.13f - Tf.up * 0.11f;
+            var target = Vector3.Lerp(_aimHand.position, hold, weight);
+            var pole = _aimArm.position + Tf.right * 0.42f -
+                       Tf.up * 0.16f + flat * 0.12f;
+
+            // Remember the hand turn before solving the arm: the gun is parented to
+            // this bone, so this is also the exact turn that puts the barrel on aim.
+            var handTurn = Quaternion.FromToRotation(muzzle.forward, aim) * _aimHand.rotation;
+            BikePose.TwoBone(_aimArm, _aimForearm, _aimHand, target, pole);
+            _aimHand.rotation = Quaternion.Slerp(_aimHand.rotation, handTurn, weight);
+        }
+
+        /// <summary>Turn the armed idle into an actual low-ready pose. The animation
+        /// pack calls its clip Pistol_Idle, but authors both fists at presentation
+        /// height; without this shared overlay every gun points ahead while the state
+        /// and HUD say it is low. Sidearms settle by the right hip. A stock-fired gun
+        /// stays against the chest, with its muzzle safely down and its left hand then
+        /// solved onto the fore-end by <see cref="PoseLongGun"/>.</summary>
+        public void PoseGunLow(float weight)
+        {
+            weight = Mathf.Clamp01(weight);
+            if (weight <= 0.001f || Tf == null || Weapon == null || _aimArm == null ||
+                _aimForearm == null || _aimHand == null) return;
+
+            var muzzle = CrewArms.MuzzleOf(Weapon);
+            if (muzzle == null) return;
+            bool longGun = CrewArms.TwoHanded(WeaponKind);
+            var low = (Tf.forward * (longGun ? 0.9f : 0.65f) -
+                       Tf.up * (longGun ? 0.42f : 0.76f)).normalized;
+            var hold = longGun
+                ? _aimArm.position + Tf.forward * 0.18f - Tf.right * 0.1f - Tf.up * 0.18f
+                : _aimArm.position + Tf.forward * 0.1f + Tf.right * 0.12f - Tf.up * 0.34f;
+            var target = Vector3.Lerp(_aimHand.position, hold, weight);
+            var pole = _aimArm.position + Tf.right * 0.42f -
+                       Tf.up * 0.2f + Tf.forward * 0.08f;
+            var handTurn = Quaternion.FromToRotation(muzzle.forward, low) * _aimHand.rotation;
+
+            BikePose.TwoBone(_aimArm, _aimForearm, _aimHand, target, pole);
+            _aimHand.rotation = Quaternion.Slerp(_aimHand.rotation, handTurn, weight);
+        }
+
+        /// <summary>Put the left hand on the actual fore-end of a long gun after the
+        /// animation graph has posed the body. The authored pistol clips and the
+        /// airport run overlay provide the broad shoulder pose; this shared two-bone
+        /// solve provides the missing contract they cannot know: where this particular
+        /// rifle, shotgun or Tommy gun sits in this particular rig's right fist.</summary>
+        public void PoseLongGun(float dt)
+        {
+            bool holding = !Dead && !Spilling && Tf != null && Weapon != null &&
+                           CrewArms.TwoHanded(WeaponKind);
+            if (!holding)
+            {
+                _longGunGripBlend = 0f;
+                return;
+            }
+            _longGunGripBlend = Mathf.MoveTowards(_longGunGripBlend,
+                1f, Mathf.Max(0f, dt) * 10f);
+            if (_longGunGripBlend <= 0.001f || _supportArm == null ||
+                _supportForearm == null || _supportHand == null) return;
+
+            var grip = CrewArms.SupportGripOf(Weapon);
+            if (grip == null) return;
+
+            // The marker is the middle of the fore-end. All three long-gun models put
+            // it a shade too far towards the muzzle for this shared pose, so bring the
+            // man's left wrist a few centimetres back towards the trigger.
+            var wrist = grip.position - grip.forward * 0.035f -
+                        grip.right * 0.045f - grip.up * 0.018f;
+            var target = Vector3.Lerp(_supportHand.position, wrist, _longGunGripBlend);
+            var pole = _supportArm.position - Tf.right * 0.38f - Tf.up * 0.22f +
+                       Tf.forward * 0.12f;
+            BikePose.TwoBone(_supportArm, _supportForearm, _supportHand, target, pole);
+
+            var hand = Quaternion.LookRotation(grip.right, grip.forward) *
+                       Quaternion.Inverse(Quaternion.LookRotation(
+                           _supportFingers, _supportThumb));
+            _supportHand.rotation = Quaternion.Slerp(
+                _supportHand.rotation, hand, _longGunGripBlend);
         }
 
         public Vector3 MuzzlePosition
@@ -973,7 +1102,8 @@ namespace RoadDemo
         {
             if (DriveTrace.On) TracePed(dt);
             TickArms(dt);
-            BlendLongGunRun(!Dead && !Spilling && Armed && _runningLeg && LongGun(WeaponKind), dt);
+            BlendLongGunRun(!Dead && !Spilling && Armed && _runningLeg &&
+                            CrewArms.TwoHanded(WeaponKind), dt);
             // KEEPING LOW IS THIS FRAME'S DECISION, NOT A STATE. It is set by the one
             // branch that wants it - the last few metres to a flank with rounds in the
             // air - and that branch re-decides it every frame, so it is cleared here

@@ -108,32 +108,32 @@ namespace LivingCity.Gangs
 
         /// <summary>Indexed by gang id, out of the approved capo stock
         /// (<see cref="GangLooks.Lieutenants"/>) and never the model that gang's soldiers
-        /// wear - rank has to read across a street. Seven suits over twenty-one mobs, so
+        /// wear - rank has to read across a street. Six looks over twenty-one mobs, so
         /// the table cycles on a different period from the staples above: no two
         /// families are the same PAIR of bodies.</summary>
         public static readonly string[] LieutenantModels =
         {
             "SM_Chr_Italian_Gangster_01_AI",  // 0  The Outfit
-            "SM_Chr_Kingpin_01_AI",           // 1  Falcone
+            "SM_Chr_Goon_01_AI",              // 1  Falcone
             "SM_Gen_Chr_Business_Male_01_AI", // 2  Santoro
             "SM_Chr_Goon_01_AI",              // 3  Lucchese
             "SM_Chr_Criminal_Male_01_AI",     // 4  DeMarco
             "SM_Chr_Goon_01_AI",              // 5  Corvetti
             "SM_Chr_Criminal_Male_01_AI",     // 6  Barzini
             "SM_Chr_Italian_Gangster_01_AI",  // 7  Moretti
-            "SM_Chr_Kingpin_01_AI",           // 8  Rinaldi
+            "SM_Chr_Italian_Gangster_01_AI",  // 8  Rinaldi
             "SM_Gen_Chr_Business_Male_01_AI", // 9  Castellano
             "Character_BusinessMan_Suit",     // 10 Vitelli
             "SM_Chr_GangBoss_01_AI",          // 11 Marchetti
             "SM_Chr_GangBoss_01_AI",          // 12 Greco
             "SM_Chr_Criminal_Male_01_AI",     // 13 Ferraro
             "SM_Chr_Italian_Gangster_01_AI",  // 14 Serrano
-            "SM_Chr_Kingpin_01_AI",           // 15 Delgado
+            "Character_BusinessMan_Suit",     // 15 Delgado
             "SM_Gen_Chr_Business_Male_01_AI", // 16 O'Shea
             "Character_BusinessMan_Suit",     // 17 Doyle
             "SM_Chr_GangBoss_01_AI",          // 18 Kowalski
             "SM_Chr_Goon_01_AI",              // 19 Volkov
-            "SM_Chr_Kingpin_01_AI",           // 20 Petrov
+            "SM_Gen_Chr_Business_Male_01_AI", // 20 Petrov
         };
     }
 }

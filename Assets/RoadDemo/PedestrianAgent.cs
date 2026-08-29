@@ -1166,6 +1166,22 @@ namespace RoadDemo
         /// (`A_Idle_ToRun*RootMotion_Masc` measures 0.00 m/s and is refused by this.)</summary>
         const float JoinCarriesAtLeast = 0.3f;
 
+        /// <summary>Whether a start, stop or sidestep take can carry the body it is
+        /// joining. Kept here beside the runtime gate so animation benches can list
+        /// only transitions a walker can really enter, rather than every similarly
+        /// named take present in an imported pack.</summary>
+        internal static bool CanCarryLinearJoin(AnimationClip clip) =>
+            clip != null && clip.length >= 0.05f &&
+            clip.averageSpeed.magnitude >= JoinCarriesAtLeast;
+
+        /// <summary>Whether a turning take carries enough root yaw for the code-driven
+        /// turn that uses it. An in-place take would turn the hips as well as the root
+        /// and is deliberately refused by the live walker.</summary>
+        internal static bool CanCarryTurn(AnimationClip clip, float degrees) =>
+            clip != null && clip.length >= 0.05f &&
+            clip.averageAngularSpeed * clip.length * Mathf.Rad2Deg >=
+                NearestAuthored(degrees) * 0.4f;
+
         /// <summary>Is a join holding the body this frame? A derived agent that
         /// steers by hand reads it: while a turn is being taken, the turn owns his
         /// rotation and nothing else may write it.</summary>
@@ -1312,7 +1328,7 @@ namespace RoadDemo
             if (kind != Join.Stopping && Mathf.Abs(degrees) >= TurnStepAbove)
             {
                 float baked = clip.averageAngularSpeed * clip.length * Mathf.Rad2Deg;
-                if (baked < NearestAuthored(degrees) * 0.4f)
+                if (!CanCarryTurn(clip, degrees))
                 {
                     if (!_saidInPlace)
                     {
@@ -1329,7 +1345,7 @@ namespace RoadDemo
             // A start, a stop or a sidestep has to CARRY him; a turn must carry
             // nothing at all.
             float carries = clip.averageSpeed.magnitude;
-            if (kind != Join.Turning && carries < JoinCarriesAtLeast) return false;
+            if (kind != Join.Turning && !CanCarryLinearJoin(clip)) return false;
             _stepPace = kind == Join.Stepping ? carries : 0f;
 
             if (!PutClip(PoseJoin, clip)) return false;

@@ -64,7 +64,7 @@ namespace RoadDemo
             else HideLines();
 
             if (announce)
-                CrewOverlay.Announce("COMBAT INDICATORS " + (_visible ? "ON" : "OFF"),
+                CrewOverlay.Announce("INDICATORS ARE " + (_visible ? "ON" : "OFF"),
                     2f, _visible ? Going : Color.white);
         }
 

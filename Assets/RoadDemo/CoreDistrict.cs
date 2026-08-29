@@ -54,43 +54,35 @@ namespace RoadDemo
         readonly List<RoadEdge> _edges = new List<RoadEdge>();
         readonly List<PedLink> _walks = new List<PedLink>();
         readonly List<DistrictPortal> _portals = new List<DistrictPortal>();
+        readonly ResidentialBlockModel _homes = new ResidentialBlockModel();
 
         CoreRoads.Raster _raster;
         Rect _bounds;
-        Transform _yard;          // the blocks stand here between Plan and Build
+        Transform _yard;          // made only in Build; Plan owns data, never a hidden scene
+        CityBlockRecycler _recycler;
         int _seed = 1987;
+
+        /// <summary>The generated residential data, independent of whichever views are
+        /// currently on camera. Future generator edits replace/invalidate recipes here.</summary>
+        public ResidentialBlockModel ResidentialBlocks => _homes;
 
         // ------------------------------------------------------------------ plan
 
         /// <summary>
-        /// Stands the blocks up and reads the roads off them. The blocks have to BE
-        /// somewhere to be measured - a prefab's renderers only report their real size
-        /// once the thing is in a scene - so they go up here, off to one side and out of
-        /// everyone's way, and <see cref="Build"/> hands them to the host.
+        /// Reads the roads off baked block descriptions and deals every generated block as
+        /// data. No scene object is made here: the host still needs these bounds before it
+        /// can lay the island, camera and map.
         /// </summary>
         public void Plan(float[] links, int seed)
         {
             _seed = seed;
-            // a second plan before Build would leave the first yard standing where the
-            // first plan put it; it goes the way Dispose sends it
-            if (_yard != null && _yard.parent == null) Object.Destroy(_yard.gameObject);
-            _yard = new GameObject("Core (unplaced)").transform;
             _blocks.Clear();
-            foreach (var stand in CoreLayout.Blocks)
-            {
-                var prefab = DemoAssetLoad.Load<GameObject>(CoreLayout.BlocksDir + stand.Prefab + ".prefab");
-                if (prefab == null) continue;
-                var go = Object.Instantiate(prefab, Vector3.zero, Quaternion.identity, _yard);
-                go.name = stand.Prefab;
-                _blocks.Add(CoreLayout.Measure(stand.Prefab, go));
-            }
+            _blocks.AddRange(CoreBlockCatalog.CreateBlocks());
+            _homes.Clear();
             // the seed deals the rows and the drawing is judged before it is taken; the
             // Synty seed asks for the demo's own arrangement instead
             _plan = CoreLayout.Arrange(_blocks, seed, out _raster);
-            foreach (var block in _blocks) CoreLayout.Place(block);
-            StandParks();
-            StandHomes();
-            StandQuays();
+            PlanHomes();
             _bounds = Rect.MinMaxRect(_raster.X0, _raster.Z0,
                                       _raster.X(_raster.NX), _raster.Z(_raster.NZ));
         }
@@ -98,7 +90,7 @@ namespace RoadDemo
         /// <summary>
         /// The promenade, stretch by stretch - the river's ground the deal cut, composed to
         /// its plan (<see cref="QuayWalk.ForQuay"/>) the way the parks are: at the origin,
-        /// then moved to the stretch's corner, under the same unplaced yard.
+        /// then moved to the stretch's corner, under the Build-time yard.
         /// </summary>
         void StandQuays()
         {
@@ -124,20 +116,14 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// The deal's residential blocks - the made-up ends of the short rows - composed into
-        /// the rectangles it gave them, the way the parks are: at the origin, then moved to
-        /// the block's corner, under the same unplaced yard.
+        /// The deal's residential blocks as recipes only. ResidentialLot is the adapter's
+        /// data source; ResidentialBlocks.Compose is called later by a visible ViewHolder.
         /// </summary>
-        void StandHomes()
+        void PlanHomes()
         {
             if (_plan == null || _plan.Residential.Count == 0) return;
-            Composer.ForgetMissing();
-
             foreach (var block in _plan.Residential)
             {
-                var root = new GameObject(block.Name).transform;
-                root.SetParent(_yard, false);
-
                 var box = block.Box;
                 int w = Mathf.Max(3, Mathf.RoundToInt(box.width / CoreLayout.Cell));
                 int d = Mathf.Max(3, Mathf.RoundToInt(box.height / CoreLayout.Cell));
@@ -149,14 +135,26 @@ namespace RoadDemo
                 var lot = CoreLayout.IsYard(block)
                     ? ResidentialLot.Yard(w, d, dice, block.Unit)
                     : ResidentialLot.Roll(w, d, dice, Mathf.Max(0, block.Artery));
-                var stood = ResidentialBlocks.Compose(lot, root, new System.Random(dice),
-                    (prefab, parent) => Object.Instantiate(prefab, parent));
-                root.position = new Vector3(box.xMin, 0f, box.yMin);
-
-                if (lot.Faults.Count > 0 || stood.Missing > 0)
+                string id = $"{block.Name}@{Mathf.RoundToInt(box.xMin)},{Mathf.RoundToInt(box.yMin)}";
+                _homes.Add(new ResidentialBlockRecipe(id, block.Name, box, lot, dice));
+                if (lot.Faults.Count > 0)
                     Debug.LogWarning($"[Core] {block.Name} ({w}x{d} cells, {lot.Klass}): " +
-                                     string.Join("; ", lot.Faults) +
-                                     (stood.Missing > 0 ? $" {stood.Missing} piece(s) missing" : ""));
+                                     string.Join("; ", lot.Faults));
+            }
+        }
+
+        /// <summary>Compatibility path for a host that does not provide streamed views.</summary>
+        void StandHomes()
+        {
+            Composer.ForgetMissing();
+            foreach (var recipe in _homes.Blocks)
+            {
+                var root = new GameObject(recipe.Name).transform;
+                root.SetParent(_yard, false);
+                var stood = recipe.Compose(root);
+                root.localPosition = new Vector3(recipe.LocalBounds.xMin, 0f, recipe.LocalBounds.yMin);
+                if (stood.Missing > 0)
+                    Debug.LogWarning($"[Core] {recipe.Name}: {stood.Missing} piece(s) missing");
             }
         }
 
@@ -219,8 +217,25 @@ namespace RoadDemo
         {
             var quarter = new GameObject("Core Quarter").transform;
             quarter.SetParent(host.StaticRoot("Core"), false);
+            _yard = new GameObject("Blocks").transform;
             _yard.SetParent(quarter, false);
-            _yard.name = "Blocks";
+            StandCoreBlocks(host);
+            StandParks();
+            StandQuays();
+
+            if (host is IStreamedDistrictHost streamed)
+            {
+                // The recipe catalogue is the truth for both map and views. Register it
+                // before any holder exists so a recycled/off-screen block never vanishes
+                // from the survey plate.
+                streamed.RegisterResidentialModel(_homes, Frame);
+                var views = streamed.StreamRoot("Core Residential Views");
+                views.SetPositionAndRotation(Frame.origin, Frame.Rotation);
+                _recycler = views.gameObject.AddComponent<CityBlockRecycler>();
+                _recycler.Init(_homes, Frame, streamed.ViewConfig);
+                streamed.RegisterBlockRecycler(_recycler);
+            }
+            else StandHomes();
 
             var roads = new GameObject("Roads").transform;
             roads.SetParent(quarter, false);
@@ -250,11 +265,29 @@ namespace RoadDemo
             host.RegisterPavement(_walks);
             for (int i = 0; i < _vehicles.Count; i++) host.RegisterVehicle(_vehicles[i]);
             BlockTheBuildings(host);
+            BlockTheResidential(host);
 
             Debug.Log($"[Core] {_plan.Name}: {_blocks.Count} blocks, {_raster.Junctions.Count} junctions, " +
                       $"{_raster.Stretches.Count} stretches of road, {_edges.Count} lanes, " +
                       $"{_vehicles.Count} cars, {_raster.Faults} faults.{System.Environment.NewLine}" +
                       string.Join(System.Environment.NewLine, _plan.Rows) + System.Environment.NewLine + _raster.Report);
+        }
+
+        void StandCoreBlocks(IDistrictHost host)
+        {
+            for (int i = 0; i < _blocks.Count; i++)
+            {
+                var block = _blocks[i];
+                var prefab = DemoAssetLoad.Load<GameObject>(CoreLayout.BlocksDir + block.Name + ".prefab");
+                if (prefab == null)
+                {
+                    host.ReportMissing(CoreLayout.BlocksDir + block.Name + ".prefab");
+                    continue;
+                }
+                block.Go = Object.Instantiate(prefab, Vector3.zero, Quaternion.identity, _yard);
+                block.Go.name = block.Name;
+                CoreLayout.Place(block);
+            }
         }
 
         /// <summary>
@@ -416,6 +449,33 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>Residential footprints come from the recipe, not from whichever views
+        /// happen to be alive. The map and walkers therefore keep the whole city while the
+        /// renderer owns only the camera's small window into it.</summary>
+        void BlockTheResidential(IDistrictHost host)
+        {
+            foreach (var recipe in _homes.Blocks)
+            {
+                foreach (var spot in recipe.Plan.Spots)
+                {
+                    var unit = spot?.Unit;
+                    if (unit == null || ResidentialUnits.IsLot(unit)) continue;
+                    float cell = ResidentialLot.Cell;
+                    var local = new Rect(
+                        recipe.LocalBounds.xMin + spot.I * cell,
+                        recipe.LocalBounds.yMin + spot.J * cell,
+                        Mathf.Max(1, spot.CW) * cell,
+                        Mathf.Max(1, spot.CD) * cell);
+                    var world = Frame.ToWorldRect(local);
+                    float height = Mathf.Max(2f, unit.MaxH);
+                    var box = new Bounds(
+                        new Vector3(world.center.x, Frame.origin.y + height * 0.5f, world.center.y),
+                        new Vector3(world.width, height, world.height));
+                    host.Blocked(box, $"{recipe.Name}: {unit.Name}");
+                }
+            }
+        }
+
         public void Tick(float dt) { }
 
         public void Dispose()
@@ -425,8 +485,9 @@ namespace RoadDemo
             foreach (var car in _vehicles) StreetTraffic.Users.Remove(car);
             _vehicles.Clear();
             _walks.Clear();
-            // the yard is the blocks' home between Plan and Build; if Build never came,
-            // it is still standing where Plan left it
+            _homes.Clear();
+            // Build-time geometry normally dies with its host. A detached compatibility
+            // yard is still ours to clean explicitly.
             if (_yard != null && _yard.parent == null) Object.Destroy(_yard.gameObject);
         }
     }

@@ -26,6 +26,15 @@ namespace RoadDemo
         /// pitch, yaw, roll) for taste; zero is the derived hold.</summary>
         public static Vector3 GripTilt = Vector3.zero;
 
+        /// <summary>The Thompson's prefab pivot puts its trigger too close to the
+        /// wrist when it shares the sidearm nudge. Move only that weapon farther along
+        /// the fingers, so its stock clears the torso and the grip sits in the palm.</summary>
+        static Vector3 GripNudgeFor(EquipmentKind kind) => kind switch
+        {
+            EquipmentKind.TommyGun => GripNudge + new Vector3(0.05f, 0f, 0f),
+            _ => GripNudge,
+        };
+
         /// <summary>The revolver every man carries when the scene says "everyone
         /// armed" and the ledger gave him nothing.</summary>
         public const string DefaultSidearm = "SM_Wep_Pistol_Revolver_01";
@@ -54,6 +63,17 @@ namespace RoadDemo
             EquipmentKind.Rifle => true,
             EquipmentKind.TommyGun => true,
             EquipmentKind.MachinePistol => true,
+            _ => false,
+        };
+
+        /// <summary>Weapons whose visible pose needs a supporting left hand. This is
+        /// shared by the walker's run overlay, its procedural foregrip solve and demo
+        /// catalogues, so adding a long gun cannot quietly update only one of them.</summary>
+        public static bool TwoHanded(EquipmentKind kind) => kind switch
+        {
+            EquipmentKind.Shotgun => true,
+            EquipmentKind.Rifle => true,
+            EquipmentKind.TommyGun => true,
             _ => false,
         };
 
@@ -200,6 +220,8 @@ namespace RoadDemo
             foreach (var col in gun.GetComponentsInChildren<Collider>()) Object.Destroy(col);
             foreach (var rb in gun.GetComponentsInChildren<Rigidbody>()) Object.Destroy(rb);
 
+            var kind = KindOfModel(prefab.name);
+
             // the gun's own frame: barrel along the longest axis of its mesh, toward
             // the end that reaches furthest from the grip pivot; the pack authors its
             // pieces barrel +Z, top +Y, and the measure only confirms which way is which
@@ -218,17 +240,32 @@ namespace RoadDemo
 
             gun.SetParent(hand, false);
             gun.localRotation = handLocal;
-            gun.localPosition = Quaternion.Inverse(tPose) * GripNudge;
+            gun.localPosition = Quaternion.Inverse(tPose) * GripNudgeFor(kind);
             // the trim: the piece cut down to its cap (LengthCap), never up - and about
             // the pack's own pivot, which sits at the grip, so the fist keeps its hold
-            gun.localScale = Vector3.one * (length > 1e-4f
-                ? Mathf.Min(1f, LengthCap(KindOfModel(prefab.name)) / length)
-                : 1f);
+            float scale = length > 1e-4f
+                ? Mathf.Min(1f, LengthCap(kind) / length)
+                : 1f;
+            gun.localScale = Vector3.one * scale;
 
             var muzzle = new GameObject("Muzzle").transform;
             muzzle.SetParent(gun, false);
             muzzle.localPosition = muzzleLocal;
             muzzle.localRotation = Quaternion.LookRotation(barrelLocal, upLocal);
+
+            // A long gun is held by two hands. The pack models carry no foregrip
+            // marker, so derive one from the same measured barrel used for the muzzle:
+            // a little under, and just short of halfway from the trigger hand to the
+            // bore. CrewWalker solves the left arm onto this after animation evaluation.
+            if (TwoHanded(kind))
+            {
+                var support = new GameObject("SupportGrip").transform;
+                support.SetParent(gun, false);
+                float along = Mathf.Max(0.12f,
+                    Vector3.Dot(muzzleLocal, barrelLocal) * 0.44f);
+                support.localPosition = barrelLocal * along - upLocal * 0.025f;
+                support.localRotation = Quaternion.LookRotation(barrelLocal, upLocal);
+            }
             return gun;
         }
 
@@ -239,6 +276,11 @@ namespace RoadDemo
             var m = gun.Find("Muzzle");
             return m ? m : gun;
         }
+
+        /// <summary>The derived point under a long gun's fore-end, or null for a
+        /// sidearm/legacy attachment.</summary>
+        public static Transform SupportGripOf(Transform gun) =>
+            gun ? gun.Find("SupportGrip") : null;
 
         /// <summary>THE PELVIS, and not whatever the avatar calls the pelvis.
         ///

@@ -183,6 +183,30 @@ namespace LivingCity.EditorTools
                 "OK");
         }
 
+        [MenuItem("Tools/City/Residential/Sanitise Baked Colliders", priority = 43)]
+        public static void SanitiseBakedCollidersMenu()
+        {
+            int changed = 0;
+            foreach (var unit in RoadDemo.ResidentialUnits.All)
+            {
+                if (unit == null) continue;
+                string path = $"{OutDir}/{unit.Name}.prefab";
+                if (AssetDatabase.LoadAssetAtPath<GameObject>(path) == null) continue;
+                var root = PrefabUtility.LoadPrefabContents(path);
+                try
+                {
+                    PreparePhysics(root, unit.CW * Cell, unit.CD * Cell,
+                                   unit.Floor, unit.MaxH);
+                    PrefabUtility.SaveAsPrefabAsset(root, path);
+                    changed++;
+                }
+                finally { PrefabUtility.UnloadPrefabContents(root); }
+            }
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[ResidentialHarvest] {changed} baked units now use one positive " +
+                      "footprint collider; nested Synty colliders are disabled.");
+        }
+
         /// <summary>The same work with no dialog, for a pipeline command - a modal dialog
         /// from a command deadlocks the editor.</summary>
         public static int Bake(out List<Unit> units, out string report)
@@ -851,11 +875,34 @@ namespace LivingCity.EditorTools
             tag.lotWidth = unit.CW * Cell;
             tag.lotDepth = unit.CD * Cell;
 
+            // These units are visual recipes. Their nested Synty modules contain many
+            // colliders, including mirrored BoxColliders that Unity rejects whenever a
+            // pooled instance is reparented. One positive lot box is cheaper, stable under
+            // all four unit rotations, and is the footprint BuildingCardPicker expects.
+            PreparePhysics(go, unit.CW * Cell, unit.CD * Cell, unit.Floor, unit.MaxH);
+
             PrefabUtility.SaveAsPrefabAsset(go, $"{OutDir}/{unit.Name}.prefab");
             Object.DestroyImmediate(go);
             if (copied > 0)
                 Debug.Log($"{unit.Name}: {copied} piece(s) deep-copied - rebuilt or unlinked");
             return true;
+        }
+
+        static void PreparePhysics(GameObject root, float width, float depth,
+                                   float floor, float top)
+        {
+            foreach (var collider in root.GetComponentsInChildren<Collider>(true))
+                collider.enabled = false;
+
+            var footprint = root.GetComponent<BoxCollider>();
+            if (footprint == null) footprint = root.AddComponent<BoxCollider>();
+            float low = Mathf.Min(floor, 0f);
+            float high = Mathf.Max(low + 1f, top);
+            footprint.center = new Vector3(width * 0.5f, (low + high) * 0.5f, depth * 0.5f);
+            footprint.size = new Vector3(Mathf.Max(0.1f, width), high - low,
+                                         Mathf.Max(0.1f, depth));
+            footprint.isTrigger = false;
+            footprint.enabled = true;
         }
 
         static void EnsureFolder(string path)

@@ -744,8 +744,14 @@ namespace RoadDemo
                 if (road != null)
                 {
                     if (!_quarterRoadSeen.Add(road)) continue;
-                    _quarterRoads.Add((new Vector2(road.A.x, road.A.z),
-                        new Vector2(road.B.x, road.B.z), Mathf.Max(3f, road.HalfRoad)));
+                    // Carriageway.A/B stop at the EDGE of each junction box because
+                    // connectors own the asphalt inside it. A survey has no connector
+                    // meshes to photograph: its road strips must meet at the junction
+                    // CENTRES or every crossing becomes a rectangular hole on the map.
+                    var a = road.NodeA != null ? road.NodeA.Centre : road.A;
+                    var b = road.NodeB != null ? road.NodeB.Centre : road.B;
+                    _quarterRoads.Add((new Vector2(a.x, a.z),
+                        new Vector2(b.x, b.z), Mathf.Max(3f, road.HalfRoad)));
                 }
                 else
                 {
@@ -761,8 +767,8 @@ namespace RoadDemo
         readonly List<(Vector2 a, Vector2 b, float half)> _quarterRoads =
             new List<(Vector2, Vector2, float)>();
 
-        /// <summary>Every street the quarters laid, as a line and a half width in world
-        /// metres. The map prints them.</summary>
+        /// <summary>Every street the quarters laid, centre of junction to centre of
+        /// junction, as a line and half width in world metres. The map prints them.</summary>
         public IReadOnlyList<(Vector2 a, Vector2 b, float half)> QuarterRoads => _quarterRoads;
 
         void IDistrictHost.RegisterPavement(IReadOnlyList<PedLink> links)

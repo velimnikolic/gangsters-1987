@@ -30,6 +30,8 @@ namespace LivingCity.Entities
         ///   SeaCaptain_* a peaked cap and full merchant uniform, thirty streets inland.
         ///                The harbor names this body itself (HarborKit.SeaCaptain), which
         ///                is where a captain in uniform makes sense
+        ///   Kingpin_01   retired from the cast: the oversized boss silhouette does
+        ///                not belong in either a crew or the civilian crowd
         ///   *_Police     the city pack's own two coppers. THE FORCE IS ONE UNIFORM -
         ///                the police station pack, the same way the patrols are one fleet
         ///                (VehicleCatalog.PoliceCars) - so these are neither crowd nor
@@ -44,6 +46,7 @@ namespace LivingCity.Entities
             "SM_Gen_Chr_Peasent_Female_01",
             "SM_Chr_SeaCaptain_Male_01",
             "SM_Chr_SeaCaptain_Female_01",
+            "SM_Chr_Kingpin_01",
             "Character_Male_Police",
             "Character_Female_Police",
         };

@@ -1621,38 +1621,49 @@ namespace RoadDemo
                 "bot", "steering", "wheel", "trailer", "monster", "quad", "attach", "bus", "truck",
             };
             static List<GameObject> _pool;
+            static List<GameObject> _prefabs;
+
+            static void Ensure()
+            {
+                if (_pool != null) return;
+                _pool = new List<GameObject>();
+                _prefabs = new List<GameObject>();
+#if UNITY_EDITOR
+                // in path order, not the index's: FindAssets answers in whatever order
+                // the asset database holds its entries, which is not the same on two
+                // machines, and the dice index into this list - so the list is sorted
+                // before it is weighted, and one seed picks one car anywhere
+                var paths = new List<string>();
+                foreach (var guid in DemoAssetLoad.Find("t:Prefab", Folders))
+                    paths.Add(UnityEditor.AssetDatabase.GUIDToAssetPath(guid));
+                paths.Sort(string.CompareOrdinal);
+                foreach (var path in paths)
+                {
+                    string low = path.ToLowerInvariant();
+                    bool denied = false;
+                    foreach (var deny in Deny)
+                        if (low.Contains(deny)) { denied = true; break; }
+                    if (denied) continue;
+                    if (LivingCity.Gameplay.VehicleCatalog.IsBarred(path)) continue;
+                    if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(path)) continue;
+                    var prefab = DemoAssetLoad.Load<GameObject>(path);
+                    if (prefab == null) continue;
+                    _prefabs.Add(prefab);
+                    for (int seat = 0, seats = LivingCity.Gameplay.VehicleCatalog.PoolWeight(path); seat < seats; seat++)
+                        _pool.Add(prefab);
+                }
+#endif
+                if (_pool.Count == 0) Debug.LogWarning("[CoreRoads] no cars for the car parks: the vehicle folders came up empty.");
+            }
+
+            public static IReadOnlyList<GameObject> Prefabs
+            {
+                get { Ensure(); return _prefabs; }
+            }
 
             public static GameObject Pick(System.Random dice)
             {
-                if (_pool == null)
-                {
-                    _pool = new List<GameObject>();
-#if UNITY_EDITOR
-                    // in path order, not the index's: FindAssets answers in whatever order
-                    // the asset database holds its entries, which is not the same on two
-                    // machines, and the dice index into this list - so the list is sorted
-                    // before it is weighted, and one seed picks one car anywhere
-                    var paths = new List<string>();
-                    foreach (var guid in DemoAssetLoad.Find("t:Prefab", Folders))
-                        paths.Add(UnityEditor.AssetDatabase.GUIDToAssetPath(guid));
-                    paths.Sort(string.CompareOrdinal);
-                    foreach (var path in paths)
-                    {
-                        string low = path.ToLowerInvariant();
-                        bool denied = false;
-                        foreach (var deny in Deny)
-                            if (low.Contains(deny)) { denied = true; break; }
-                        if (denied) continue;
-                        if (LivingCity.Gameplay.VehicleCatalog.IsBarred(path)) continue;
-                        if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(path)) continue;
-                        var prefab = DemoAssetLoad.Load<GameObject>(path);
-                        if (prefab == null) continue;
-                        for (int seat = 0, seats = LivingCity.Gameplay.VehicleCatalog.PoolWeight(path); seat < seats; seat++)
-                            _pool.Add(prefab);
-                    }
-#endif
-                    if (_pool.Count == 0) Debug.LogWarning("[CoreRoads] no cars for the car parks: the vehicle folders came up empty.");
-                }
+                Ensure();
                 return _pool.Count == 0 ? null : _pool[dice.Next(_pool.Count)];
             }
         }
@@ -1661,6 +1672,11 @@ namespace RoadDemo
         /// draw on - the catalogue's road cars, the wrong decade and the marked liveries
         /// left out, weighted as the city weights its own pool.</summary>
         public static GameObject PickCar(System.Random dice) => Cars.Pick(dice);
+
+        /// <summary>Distinct members of the same filtered car pool, for the residential
+        /// recycler's background prewarm. Keeping this catalogue here prevents its visual
+        /// adapter from duplicating vehicle eligibility rules.</summary>
+        internal static IReadOnlyList<GameObject> CarPrefabs => Cars.Prefabs;
 
         /// <summary>The road kit, stood through whatever the host stands prefabs with.</summary>
         sealed class Kit

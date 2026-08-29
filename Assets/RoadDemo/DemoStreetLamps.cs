@@ -49,20 +49,47 @@ namespace RoadDemo
         const float ResortInterval = 0.4f;
 
         readonly List<Light> _lamps = new List<Light>();
+        readonly HashSet<Transform> _wired = new HashSet<Transform>();
+        readonly List<Transform> _transformScratch = new List<Transform>();
         // the lamps never move: their positions are read once, and each resort
         // ranks an index table by plain arithmetic - no transform reads, no closure
-        Vector3[] _at;
-        float[] _key;
-        int[] _order;
-        bool[] _burning;
+        Vector3[] _at = System.Array.Empty<Vector3>();
+        float[] _key = System.Array.Empty<float>();
+        int[] _order = System.Array.Empty<int>();
+        bool[] _burning = System.Array.Empty<bool>();
         float _nextResort;
         float _lit = -1f;
 
         void Start()
         {
             var clock = System.Diagnostics.Stopwatch.StartNew();
-            foreach (var transform in FindObjectsByType<Transform>(FindObjectsSortMode.None))
+            Register(null);
+
+            Debug.Log($"[RoadDemo] {_lamps.Count} street lamp bulbs wired.", this);
+            clock.Stop();
+            // whole-scene sweep at Start: this walks EVERY transform in the city
+            // (~376,000 of them) to find lamp roots. Timed because the first frames
+            // of Play cost tens of seconds and Start-phase work is invisible to the
+            // frame probe - it samples Update, not ScriptRunDelayedStartupFrame.
+            Debug.Log($"[DemoStreetLamps] Start took {clock.ElapsedMilliseconds} ms");
+        }
+
+        /// <summary>Wire all lamp prefabs under one newly materialised block. Null keeps
+        /// the original whole-scene Start pass. Idempotent across either call order.</summary>
+        public void Register(Transform root)
+        {
+            IList<Transform> transforms;
+            if (root != null)
             {
+                _transformScratch.Clear();
+                root.GetComponentsInChildren(true, _transformScratch);
+                transforms = _transformScratch;
+            }
+            else transforms = FindObjectsByType<Transform>(FindObjectsSortMode.None);
+            bool added = false;
+            for (int t = 0; t < transforms.Count; t++)
+            {
+                var transform = transforms[t];
                 Vector3 bulb = default;
                 bool match = false;
                 foreach (var kind in LampKinds)
@@ -77,31 +104,64 @@ namespace RoadDemo
                     match = true;
                     break;
                 }
-                if (!match)
-                    continue;
+                if (!match || !_wired.Add(transform)) continue;
 
-                var holder = new GameObject("lamp-light");
-                holder.transform.SetParent(transform, false);
-                holder.transform.localPosition = bulb;
-                holder.transform.localRotation = Quaternion.Euler(90f, 0f, 0f); // straight down
+                // A cached block unregisters its bulbs without destroying its hierarchy.
+                // Rebinding that same payload must reuse the old bulb, not hang another
+                // lamp-light child under the post every time it crosses the cache edge.
+                var holder = transform.Find("lamp-light")?.gameObject;
+                var light = holder != null ? holder.GetComponent<Light>() : null;
+                if (light == null)
+                {
+                    holder = new GameObject("lamp-light");
+                    holder.transform.SetParent(transform, false);
+                    holder.transform.localPosition = bulb;
+                    holder.transform.localRotation = Quaternion.Euler(90f, 0f, 0f); // straight down
 
-                var light = holder.AddComponent<Light>();
-                light.type = LightType.Spot;
-                light.spotAngle = SpotOuterAngle;
-                light.innerSpotAngle = SpotInnerAngle;
-                light.color = LampColour;
-                light.range = Range;
-                light.intensity = 0f;
-                light.shadows = LightShadows.None;
-                light.enabled = false;
-                light.lightmapBakeType = LightmapBakeType.Realtime;
-                light.renderMode = LightRenderMode.ForcePixel;
-                holder.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalLightData>()
-                      .usePipelineSettings = true;
+                    light = holder.AddComponent<Light>();
+                    light.type = LightType.Spot;
+                    light.spotAngle = SpotOuterAngle;
+                    light.innerSpotAngle = SpotInnerAngle;
+                    light.color = LampColour;
+                    light.range = Range;
+                    light.intensity = 0f;
+                    light.shadows = LightShadows.None;
+                    light.enabled = false;
+                    light.lightmapBakeType = LightmapBakeType.Realtime;
+                    light.renderMode = LightRenderMode.ForcePixel;
+                    holder.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalLightData>()
+                          .usePipelineSettings = true;
+                }
 
                 _lamps.Add(light);
+                added = true;
             }
+            if (root != null) _transformScratch.Clear();
+            if (added) Reindex();
+        }
 
+        /// <summary>Drop identities belonging to an evicted ViewHolder before Unity destroys it.</summary>
+        public void Unregister(Transform root)
+        {
+            if (root == null || _wired.Count == 0) return;
+            bool removed = false;
+            _transformScratch.Clear();
+            root.GetComponentsInChildren(true, _transformScratch);
+            for (int i = 0; i < _transformScratch.Count; i++)
+            {
+                var transform = _transformScratch[i];
+                if (!_wired.Remove(transform)) continue;
+                var holder = transform.Find("lamp-light");
+                var light = holder != null ? holder.GetComponent<Light>() : null;
+                if (light != null) _lamps.Remove(light);
+                removed = true;
+            }
+            _transformScratch.Clear();
+            if (removed) Reindex();
+        }
+
+        void Reindex()
+        {
             _at = new Vector3[_lamps.Count];
             _key = new float[_lamps.Count];
             _order = new int[_lamps.Count];
@@ -110,15 +170,8 @@ namespace RoadDemo
             {
                 _at[i] = _lamps[i].transform.position;
                 _order[i] = i;
+                _burning[i] = _lamps[i].enabled;
             }
-
-            Debug.Log($"[RoadDemo] {_lamps.Count} street lamp bulbs wired.", this);
-            clock.Stop();
-            // whole-scene sweep at Start: this walks EVERY transform in the city
-            // (~376,000 of them) to find lamp roots. Timed because the first frames
-            // of Play cost tens of seconds and Start-phase work is invisible to the
-            // frame probe - it samples Update, not ScriptRunDelayedStartupFrame.
-            Debug.Log($"[DemoStreetLamps] Start took {clock.ElapsedMilliseconds} ms");
         }
 
         void LateUpdate()

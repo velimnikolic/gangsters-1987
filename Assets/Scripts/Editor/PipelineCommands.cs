@@ -36,12 +36,12 @@ namespace GangstersTools
         /// does seed N give me" in a second instead of a ninety-second run.</summary>
         [CliCommand("gangsters_layout",
                     "Roll the city district layout for a seed and return it, without building or playing. " +
-                    "Reads the RoadDemoBuilder in the open scene for the road axes.",
+                    "Reads a RoadDemoBuilder in the open scene, or uses its canonical defaults.",
                     MainThreadRequired = true, Tags = new[] { "gangsters" })]
         public static object Layout(
             [CliArg("seed", "City layout seed. Omit to use the one the open scene carries.")] int seed = int.MinValue,
             [CliArg("count", "Roll this many consecutive seeds starting at 'seed' and return a summary of each.")] int count = 1,
-            [CliArg("scene", "Scene to open first, e.g. Assets/Scenes/Game.unity. Omit to use the scene already open.")] string scene = "")
+            [CliArg("scene", "Scene to open first, e.g. Assets/Scenes/CoreDemo.unity. Omit to use the scene already open.")] string scene = "")
         {
             if (!string.IsNullOrEmpty(scene))
             {
@@ -52,47 +52,63 @@ namespace GangstersTools
             }
 
             var city = UnityEngine.Object.FindAnyObjectByType<RoadDemoBuilder>();
+            GameObject fallback = null;
             if (city == null)
-                throw new InvalidOperationException(
-                    "No RoadDemoBuilder in the open scene. Pass --scene Assets/Scenes/Game.unity (every demo scene carries one).");
-
-            int first = seed == int.MinValue ? city.cityLayoutSeed : seed;
-            int rolls = Mathf.Clamp(count, 1, 500);
-            var grid = city.LayoutGrid();
-            var results = new List<object>(rolls);
-
-            for (int i = 0; i < rolls; i++)
             {
-                int s = first + i;
-                var slots = CityLayout.Roll(grid, s, city.suburbsMin, city.suburbsMax,
-                                            city.harborDistrict, city.airportDistrict);
-                results.Add(new
-                {
-                    seed = s,
-                    districts = slots.Count,
-                    harbor = slots.Any(d => d != null && d.kind == DistrictKind.Harbor),
-                    airport = slots.Any(d => d != null && d.kind == DistrictKind.Airport),
-                    suburbs = slots.Count(d => d != null && d.kind == DistrictKind.Suburb),
-                    slots = slots.Where(d => d != null).Select(d => new
-                    {
-                        kind = d.kind.ToString(),
-                        name = d.name,
-                        edge = d.edge.ToString(),
-                        lines = d.pinLines,
-                        strip = Mathf.Round(d.strip),
-                        seed = d.seed,
-                        size = $"{d.sizeAcross}x{d.sizeDeep}",
-                    }).ToArray(),
-                });
+                // CoreDemo creates the shared runtime only when Play starts. The layout
+                // command is edit-time and needs no scene objects, so a hidden component
+                // provides the same serialized field defaults without keeping a retired
+                // full-city harness solely for this tool.
+                fallback = new GameObject("RoadDemoBuilder layout defaults")
+                    { hideFlags = HideFlags.HideAndDontSave };
+                city = fallback.AddComponent<RoadDemoBuilder>();
             }
 
-            return new
+            try
             {
-                scene = UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().path,
-                rollDistricts = city.rollDistricts,
-                suburbs = $"{city.suburbsMin}-{city.suburbsMax}",
-                rolls = results,
-            };
+                int first = seed == int.MinValue ? city.cityLayoutSeed : seed;
+                int rolls = Mathf.Clamp(count, 1, 500);
+                var grid = city.LayoutGrid();
+                var results = new List<object>(rolls);
+
+                for (int i = 0; i < rolls; i++)
+                {
+                    int s = first + i;
+                    var slots = CityLayout.Roll(grid, s, city.suburbsMin, city.suburbsMax,
+                                                city.harborDistrict, city.airportDistrict);
+                    results.Add(new
+                    {
+                        seed = s,
+                        districts = slots.Count,
+                        harbor = slots.Any(d => d != null && d.kind == DistrictKind.Harbor),
+                        airport = slots.Any(d => d != null && d.kind == DistrictKind.Airport),
+                        suburbs = slots.Count(d => d != null && d.kind == DistrictKind.Suburb),
+                        slots = slots.Where(d => d != null).Select(d => new
+                        {
+                            kind = d.kind.ToString(),
+                            name = d.name,
+                            edge = d.edge.ToString(),
+                            lines = d.pinLines,
+                            strip = Mathf.Round(d.strip),
+                            seed = d.seed,
+                            size = $"{d.sizeAcross}x{d.sizeDeep}",
+                        }).ToArray(),
+                    });
+                }
+
+                return new
+                {
+                    scene = UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().path,
+                    source = fallback == null ? "scene" : "RoadDemoBuilder defaults",
+                    rollDistricts = city.rollDistricts,
+                    suburbs = $"{city.suburbsMin}-{city.suburbsMax}",
+                    rolls = results,
+                };
+            }
+            finally
+            {
+                if (fallback != null) UnityEngine.Object.DestroyImmediate(fallback);
+            }
         }
 
         // ---------------------------------------------------------------- the stock
@@ -289,37 +305,31 @@ namespace GangstersTools
             int rolls = Mathf.Clamp(count, 1, 200);
             var results = new List<object>(rolls);
             int clean = 0, firstDeal = 0;
-            var yard = new GameObject("core (dealing)");
-            try
+            // The runtime plans from the baked catalogue too. Keeping this command on
+            // that exact data path makes a 30-seed verdict test the implementation, not
+            // an editor-only replica that secretly instantiates every prefab first.
+            var blocks = CoreBlockCatalog.CreateBlocks();
+            for (int i = 0; i < rolls; i++)
             {
-                var blocks = LivingCity.EditorTools.CoreCitySketch.Stand(
-                    yard.transform, (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent));
-                for (int i = 0; i < rolls; i++)
+                int s = seed == CoreLayout.SyntySeed ? (i == 0 ? seed : i) : seed + i;
+                var plan = CoreLayout.Arrange(blocks, s, out var raster);
+                if (raster.Faults == 0) clean++;
+                if (plan.Attempt == 0) firstDeal++;
+                results.Add(new
                 {
-                    int s = seed == CoreLayout.SyntySeed ? (i == 0 ? seed : i) : seed + i;
-                    var plan = CoreLayout.Arrange(blocks, s, out var raster);
-                    if (raster.Faults == 0) clean++;
-                    if (plan.Attempt == 0) firstDeal++;
-                    results.Add(new
-                    {
-                        seed = s,
-                        plan = plan.Name,
-                        deals = plan.Attempt + 1,
-                        faults = raster.Faults,
-                        blocksM2 = raster.BlockArea,
-                        roadM2 = raster.RoadArea,
-                        parkingM2 = raster.ParkingArea,
-                        spareM2 = raster.SpareArea,
-                        size = $"{raster.NX * 5}x{raster.NZ * 5}",
-                        rows = plan.Rows.ToArray(),
-                        report = raster.Report.Split('\n').Select(line => line.Trim()).ToArray(),
-                        map = map ? raster.Map : null,
-                    });
-                }
-            }
-            finally
-            {
-                UnityEngine.Object.DestroyImmediate(yard);
+                    seed = s,
+                    plan = plan.Name,
+                    deals = plan.Attempt + 1,
+                    faults = raster.Faults,
+                    blocksM2 = raster.BlockArea,
+                    roadM2 = raster.RoadArea,
+                    parkingM2 = raster.ParkingArea,
+                    spareM2 = raster.SpareArea,
+                    size = $"{raster.NX * 5}x{raster.NZ * 5}",
+                    rows = plan.Rows.ToArray(),
+                    report = raster.Report.Split('\n').Select(line => line.Trim()).ToArray(),
+                    map = map ? raster.Map : null,
+                });
             }
             if (draw) LivingCity.EditorTools.CoreCitySketch.Draw(seed, quiet: true);
             return new

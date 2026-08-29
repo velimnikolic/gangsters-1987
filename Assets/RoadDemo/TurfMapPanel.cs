@@ -55,7 +55,7 @@ namespace RoadDemo
         static readonly Color MugField = new Color32(224, 212, 182, 255);
 
         const float PanelLeft = 18f, DateTop = 14f, PanelTop = 52f, PanelFoot = 24f;
-        const float MaxPanelWidth = 248f, PanelWidthFraction = 0.24f;
+        const float PanelWidthFraction = 0.18f;
         const float Pad = 10f, HeadPad = 11f;
 
         /// <summary>The design's floor for panel type. Anything under it stops being
@@ -94,12 +94,12 @@ namespace RoadDemo
             Build();
         }
 
-        /// <summary>A quarter of the window, capped - in CANVAS units, which is what a
-        /// sizeDelta is. Screen.width is a count of real pixels, and handing one
-        /// straight to a scaled canvas is how the panel ended up a third of its
-        /// intended size on a small game view.</summary>
+        /// <summary>Eighteen percent of the window in CANVAS units, which is what a sizeDelta
+        /// is. Screen.width is a count of real pixels, and handing one straight to a
+        /// scaled canvas is how the panel ended up a third of its intended size on a
+        /// small game view.</summary>
         float PanelWidth =>
-            Mathf.Min(Screen.width / _hud.UiScale * PanelWidthFraction, MaxPanelWidth);
+            Screen.width / _hud.UiScale * PanelWidthFraction;
 
         // ------------------------------------------------------------------ build
 
@@ -503,8 +503,9 @@ namespace RoadDemo
                 ? null
                 : PortraitStudio.FindPeoplePrefab(crew.Look);
             if (body != null)
-                PortraitStudio.Request(body, PortraitStudio.Framing.Bust, _mugImage,
-                    PortraitStudio.Treatment.Newsprint);
+                // The map dossier is the same personnel file viewed from the plan:
+                // use the ledger's full-colour bust, not the newspaper halftone.
+                PortraitStudio.Request(body, PortraitStudio.Framing.Bust, _mugImage);
             else
                 Caps(mugFrame, 0f, Mid(MugHeight, LedgerKit.LineBox(MicroType)), inner,
                     "NO PRINT ON FILE", MicroType, Dim, LedgerStyle.Condensed,
@@ -530,10 +531,13 @@ namespace RoadDemo
             sub.overflowMode = TextOverflowModes.Ellipsis;
             y -= LedgerKit.LineBox(9f) + 6f;
 
-            y -= StatRow(_dossierRect, Pad, y, inner, "NERVE", crew.Nerve, null);
-            y -= StatRow(_dossierRect, Pad, y, inner, "GUNPLAY", crew.Gunplay, null);
-            y -= StatRow(_dossierRect, Pad, y, inner, "RESPECT", crew.Respect, null);
-            y -= StatRow(_dossierRect, Pad, y, inner, "MEN", 0, crew.MenStanding + " / 6");
+            // These are the very same half-step ratings shown in the ledger, in the
+            // ledger's block meter. The map is a view onto that book, not a second
+            // character sheet with its own invented stat names.
+            y -= SkillRow(_dossierRect, Pad, y, inner, "Intelligence", crew.Intelligence);
+            y -= SkillRow(_dossierRect, Pad, y, inner, "Organization", crew.Organization);
+            y -= SkillRow(_dossierRect, Pad, y, inner, "Firearms", crew.Firearms);
+            y -= CountRow(_dossierRect, Pad, y, inner, "MEN", crew.MenStanding + " / 6");
 
             y -= 5f;
             Caps(_dossierRect, Pad, y, inner, "CARRYING", MicroType, Label,
@@ -590,29 +594,39 @@ namespace RoadDemo
             return tall;
         }
 
-        float StatRow(Transform parent, float x, float y, float w, string key,
-            int halfSteps, string value)
+        /// <summary>One of the dossier's three ledger skills. It deliberately uses the
+        /// exact ten-mark half-step meter found on the personnel file, rather than a
+        /// map-only star rating.</summary>
+        float SkillRow(Transform parent, float x, float y, float w, string label, int halfSteps)
         {
-            // The value's right edge and the stars' right edge are the SAME edge: a
-            // reader runs his eye down a column, and two units of disagreement between
-            // the two kinds of row is what he sees rather than the numbers.
+            const float labelWide = 126f;
+            float meter = LedgerKit.StepBarWidth(10, 5f, 7f);
+            var row = DemoUi.NewRect("Stat", parent);
+            LedgerKit.PlaceTopLeft(row, x, y, w, StatHeight);
+            var text = LedgerKit.Line(row, LedgerStyle.Mono, 9f, Body, 0f,
+                Mid(StatHeight, LedgerKit.LineBox(9f)), Mathf.Min(labelWide, w - meter - 8f),
+                LedgerKit.LineBox(9f), label);
+            text.overflowMode = TextOverflowModes.Ellipsis;
+            LedgerKit.StepBar(row, w - meter, -StatHeight * 0.5f, 10,
+                Mathf.Clamp(halfSteps, 0, 10), Red, 5f, 9f, 7f);
+
+            return StatHeight;
+        }
+
+        /// <summary>The crew's headcount belongs below the three personal ratings,
+        /// because it describes the crew rather than the lieutenant.</summary>
+        float CountRow(Transform parent, float x, float y, float w, string key, string value)
+        {
             const float inset = 6f;
             var row = DemoUi.NewRect("Stat", parent);
             LedgerKit.PlaceTopLeft(row, x, y, w, StatHeight);
             LedgerKit.Fill(row, Well);
             LedgerKit.Frame(row, 1f, RuleFaint);
-
             Caps(row, inset, Mid(StatHeight, LedgerKit.LineBox(MicroType)), 60f, key,
                 MicroType, Label, LedgerStyle.Condensed);
-
-            if (value != null)
-                LedgerKit.Line(row, LedgerStyle.Mono, 11f, Red, 0f,
-                    Mid(StatHeight, LedgerKit.LineBox(11f)), w - inset,
-                    LedgerKit.LineBox(11f), value, TextAlignmentOptions.MidlineRight);
-            else
-                LedgerKit.Stars(row, w - inset - LedgerKit.StepBarWidth(5, 9f, 10f),
-                    -StatHeight * 0.5f, halfSteps, 9f, 10f);
-
+            LedgerKit.Line(row, LedgerStyle.Mono, 11f, Red, 0f,
+                Mid(StatHeight, LedgerKit.LineBox(11f)), w - inset,
+                LedgerKit.LineBox(11f), value, TextAlignmentOptions.MidlineRight);
             return StatHeight + 4f;
         }
 

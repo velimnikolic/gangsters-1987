@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using LivingCity.Entities;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 
 namespace RoadDemo
@@ -524,7 +525,7 @@ namespace RoadDemo
             if (HasPrimaryStructure)
             {
                 // CoreDemo supplies only WHERE the city stands. Everything after this
-                // branch is the same runtime pass sequence Game.unity uses.
+                // branch remains the shared city runtime pass sequence.
                 Pass("PlanPrimaryStructure", PlanPrimaryStructure);
                 Pass("BuildPrimaryStructure", BuildPrimaryStructure);
                 Pass("BuildWalkClearance", BuildWalkClearance);
@@ -667,6 +668,7 @@ namespace RoadDemo
         {
             for (int i = 0; i < _pedestrians.Count; i++) _pedestrians[i].Dispose();
             for (int i = 0; i < _policeOfficers.Count; i++) _policeOfficers[i].Dispose();
+            DisposeStreaming();
             DisposeWayside();
             DisposeDistricts();
         }
@@ -4139,7 +4141,12 @@ namespace RoadDemo
             cull[CrowdLayer] = CrowdCullDistance;
             cull[MidLayer] = MidCullDistance;
             cam.layerCullDistances = cull;
-            cam.layerCullSpherical = true;
+            // URP ignores spherical layer culling and logs on every scene start.
+            // Keep the built-in-renderer optimisation without feeding the Editor a
+            // warning in this project's Scriptable Render Pipeline.
+            if (GraphicsSettings.defaultRenderPipeline == null &&
+                QualitySettings.renderPipeline == null)
+                cam.layerCullSpherical = true;
 
             // without this the DemoGrade volume renders to nothing: a URP camera
             // opts into post-processing per camera. SMAA rather than MSAA because
@@ -4154,12 +4161,12 @@ namespace RoadDemo
             // ear on the camera's FOCUS instead.
             var dc = camGo.AddComponent<DemoCamera>();
             dc.pivot = centre;
+            dc.yaw = 33f;
+            ConfigureCityView(dc);
             // In the street, not over it: past dc.mapAt the printed map takes the
             // screen, so the city has to open on THIS side of that line - a few
             // blocks in the frame, the map one pull of the wheel away.
             dc.distance = Mathf.Min(165f, dc.mapAt - 15f);
-            dc.yaw = 33f;
-            dc.pitch = 52f;
 
             // the project's pipeline asset stops shadows 50 m from the camera -
             // which is inside the boom, so from up here nothing cast one at all
@@ -4170,6 +4177,7 @@ namespace RoadDemo
             // the street kit's own colliders stay mute
             _picker = camGo.AddComponent<LivingCity.CameraRig.BuildingCardPicker>();
             _picker.pickRoot = _blocks;
+            _picker.additionalPickRoots = _streamRoots.ToArray();
 
             // and down in the street, the near facades get out of the way of it: the
             // block bakes and the quarters are what may be seen through, and nothing
@@ -4177,8 +4185,10 @@ namespace RoadDemo
             // where they stand, not something between the player and a pavement.
             var cutaway = camGo.AddComponent<StreetCutaway>();
             cutaway.rig = dc;
+            cutaway.on = ResolvedCityView.StreetCutaway;
             var seeThrough = new List<Transform> { _blocks };
             seeThrough.AddRange(_districtStatic);
+            seeThrough.AddRange(_streamRoots);
             cutaway.roots = seeThrough.ToArray();
         }
 

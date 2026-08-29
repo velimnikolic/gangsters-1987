@@ -26,6 +26,9 @@ namespace LivingCity.CameraRig
     {
         public Transform pickRoot;
 
+        [Tooltip("Other generated-view roots that may answer without widening pickRoot to every street collider.")]
+        public Transform[] additionalPickRoots;
+
         /// <summary>
         /// A same-click veto: another overlay (the road demo's police popup) registers
         /// itself here, and any click it claims never reaches the building raycast -
@@ -132,7 +135,7 @@ namespace LivingCity.CameraRig
             foreach (var hit in hits)
             {
                 var t = hit.collider.transform;
-                if (pickRoot != null && !t.IsChildOf(pickRoot))
+                if (!CanPick(t))
                     continue;
                 // A facade the cutaway is currently seeing through is still solid to
                 // physics - the wall has not moved - but it must not answer a click
@@ -179,6 +182,16 @@ namespace LivingCity.CameraRig
                     .Append($"height  {bounds.size.y:F0} m")
                     .ToString();
             cardAnchor = new Vector3(bounds.center.x, bounds.max.y, bounds.center.z);
+        }
+
+        bool CanPick(Transform candidate)
+        {
+            if (pickRoot == null) return true;
+            if (candidate.IsChildOf(pickRoot)) return true;
+            if (additionalPickRoots == null) return false;
+            for (int i = 0; i < additionalPickRoots.Length; i++)
+                if (additionalPickRoots[i] != null && candidate.IsChildOf(additionalPickRoots[i])) return true;
+            return false;
         }
 
         void OnGUI()

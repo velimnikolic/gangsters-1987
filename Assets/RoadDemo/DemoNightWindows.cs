@@ -170,6 +170,9 @@ namespace RoadDemo
 
         enum Kind { Home, Trade, Landmark }
 
+        [System.Flags]
+        enum SurfaceKind { None = 0, Pane = 1, Emissive = 2 }
+
         // A driven material and the colour it burns at full night.
         readonly struct Lamp
         {
@@ -186,77 +189,22 @@ namespace RoadDemo
         Lot[] _lots;
         readonly List<Lamp>[] _lamps = new List<Lamp>[Lots];
         readonly float[] _applied = new float[Lots];
+        readonly Dictionary<(Material, int), Material> _clones =
+            new Dictionary<(Material, int), Material>(256);
+        readonly Dictionary<Material, SurfaceKind> _surfaceKinds =
+            new Dictionary<Material, SurfaceKind>(128);
+        readonly HashSet<Renderer> _registered = new HashSet<Renderer>(32768);
+        readonly List<Renderer> _rendererScratch = new List<Renderer>();
+        readonly List<Material> _materialScratch = new List<Material>();
+        int _paneMaterials, _signMaterials, _darkBuildings;
 
         void Start()
         {
             var clock = System.Diagnostics.Stopwatch.StartNew();
-            _lots = BuildLots();
-            for (int i = 0; i < Lots; i++)
-            {
-                _lamps[i] = new List<Lamp>();
-                _applied[i] = -1f;
-            }
+            EnsureReady();
+            Register(null);
 
-            // one clone per (pack material, lot) - buildings on the same lot share
-            // it, so the whole city costs a few hundred materials, all on the one
-            // Synty shader and so all still batched by the SRP batcher
-            var clones = new Dictionary<(Material, int), Material>();
-            int panes = 0, signs = 0, dark = 0;
-
-            foreach (var renderer in FindObjectsByType<Renderer>(FindObjectsSortMode.None))
-            {
-                bool facade = !facadeRoot || renderer.transform.IsChildOf(facadeRoot);
-                var materials = renderer.sharedMaterials;
-                int lot = -2; // not worked out yet
-                bool touched = false;
-
-                for (int i = 0; i < materials.Length; i++)
-                {
-                    var original = materials[i];
-                    if (!original)
-                        continue;
-
-                    bool pane = facade && IsUnlitPane(original);
-                    if (!pane && !UnlitEmissionMap(original))
-                        continue;
-
-                    if (lot == -2)
-                    {
-                        var kind = KindOf(renderer.transform);
-                        lot = LotOf(renderer.transform.position, kind);
-                        if (lot < 0)
-                            dark++;
-                    }
-
-                    // a home nobody is home in: left on the pack's own materials,
-                    // never lights, costs nothing
-                    if (lot < 0)
-                        break;
-
-                    if (!clones.TryGetValue((original, lot), out var clone))
-                    {
-                        clone = MakeNightMaterial(original, pane);
-                        clones[(original, lot)] = clone;
-
-                        float intensity = pane
-                            ? PaneIntensity / PaneCoverage(original)
-                            : AtlasIntensity;
-                        _lamps[lot].Add(new Lamp(clone, _lots[lot].Tint * intensity));
-
-                        if (pane) panes++; else signs++;
-                    }
-
-                    materials[i] = clone;
-                    touched = true;
-                }
-
-                if (touched)
-                    // never the shared array in place - assigning it back is what
-                    // actually swaps the materials on the renderer
-                    renderer.sharedMaterials = materials;
-            }
-
-            if (panes + signs == 0)
+            if (_paneMaterials + _signMaterials == 0)
             {
                 enabled = false;
                 Debug.LogWarning("[RoadDemo] Nothing to light after dark - no glass and no unlit " +
@@ -265,14 +213,113 @@ namespace RoadDemo
                 return;
             }
 
-            Debug.Log($"[RoadDemo] Night windows: {panes} pane materials and {signs} emissive " +
-                      $"atlases across {Lots} lots, {dark} buildings left dark.", this);
+            Debug.Log($"[RoadDemo] Night windows: {_paneMaterials} pane materials and {_signMaterials} emissive " +
+                      $"atlases across {Lots} lots, {_darkBuildings} buildings left dark.", this);
             clock.Stop();
             // one pass over EVERY renderer in the city, cloning each emissive
             // material. Timed for the same reason as DemoStreetLamps: the first
             // frames of Play cost tens of seconds and the frame probe cannot see
             // Start-phase work at all.
             Debug.Log($"[DemoNightWindows] Start took {clock.ElapsedMilliseconds} ms");
+        }
+
+        void EnsureReady()
+        {
+            if (_lots != null) return;
+            _lots = BuildLots();
+            for (int i = 0; i < Lots; i++)
+            {
+                _lamps[i] = new List<Lamp>();
+                _applied[i] = -1f;
+            }
+        }
+
+        /// <summary>
+        /// Wire renderers that arrived after the scene build. A null root performs the old
+        /// whole-scene pass; the block recycler passes one newly bound ViewHolder subtree.
+        /// Calling twice is harmless, which also removes any Start-order dependency.
+        /// </summary>
+        public void Register(Transform root)
+        {
+            EnsureReady();
+            IList<Renderer> renderers;
+            if (root != null)
+            {
+                _rendererScratch.Clear();
+                root.GetComponentsInChildren(true, _rendererScratch);
+                renderers = _rendererScratch;
+            }
+            else renderers = FindObjectsByType<Renderer>(FindObjectsSortMode.None);
+
+            int before = _paneMaterials + _signMaterials;
+            for (int r = 0; r < renderers.Count; r++)
+            {
+                var renderer = renderers[r];
+                if (renderer == null || !_registered.Add(renderer)) continue;
+                // A streamed root only contains residential-view renderers, so every one
+                // is a facade candidate and belongs to the same Home policy its res-
+                // ancestor would have selected. Avoid walking/naming that hierarchy again
+                // for every pooled bind.
+                bool facade = root != null || !facadeRoot ||
+                              renderer.transform.IsChildOf(facadeRoot);
+                _materialScratch.Clear();
+                renderer.GetSharedMaterials(_materialScratch);
+                int lot = -2;
+                bool touched = false;
+
+                for (int i = 0; i < _materialScratch.Count; i++)
+                {
+                    var original = _materialScratch[i];
+                    if (!original) continue;
+
+                    var surface = SurfaceOf(original);
+                    bool pane = facade && (surface & SurfaceKind.Pane) != 0;
+                    if (!pane && (surface & SurfaceKind.Emissive) == 0) continue;
+                    if (lot == -2)
+                    {
+                        lot = LotOf(renderer.transform.position,
+                                    root != null ? Kind.Home : KindOf(renderer.transform));
+                        if (lot < 0) _darkBuildings++;
+                    }
+                    if (lot < 0) break;
+
+                    if (!_clones.TryGetValue((original, lot), out var clone))
+                    {
+                        clone = MakeNightMaterial(original, pane);
+                        _clones[(original, lot)] = clone;
+                        float intensity = pane ? PaneIntensity / PaneCoverage(original) : AtlasIntensity;
+                        _lamps[lot].Add(new Lamp(clone, _lots[lot].Tint * intensity));
+                        if (pane) _paneMaterials++; else _signMaterials++;
+                    }
+                    _materialScratch[i] = clone;
+                    touched = true;
+                }
+                if (touched) renderer.SetSharedMaterials(_materialScratch);
+            }
+            _materialScratch.Clear();
+            if (root != null) _rendererScratch.Clear();
+            if (_paneMaterials + _signMaterials > before) enabled = true;
+        }
+
+        SurfaceKind SurfaceOf(Material material)
+        {
+            if (_surfaceKinds.TryGetValue(material, out var known)) return known;
+            var found = SurfaceKind.None;
+            if (IsUnlitPane(material)) found |= SurfaceKind.Pane;
+            if (UnlitEmissionMap(material)) found |= SurfaceKind.Emissive;
+            _surfaceKinds[material] = found;
+            return found;
+        }
+
+        /// <summary>Forget destroyed renderer identities while keeping the shared night materials cached.</summary>
+        public void Unregister(Transform root)
+        {
+            if (root == null || _registered.Count == 0) return;
+            _rendererScratch.Clear();
+            root.GetComponentsInChildren(true, _rendererScratch);
+            for (int i = 0; i < _rendererScratch.Count; i++)
+                if (!ReferenceEquals(_rendererScratch[i], null)) _registered.Remove(_rendererScratch[i]);
+            _rendererScratch.Clear();
         }
 
         /// <summary>

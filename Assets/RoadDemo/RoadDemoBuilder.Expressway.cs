@@ -21,7 +21,7 @@ namespace RoadDemo
     //    to move over into (RoadCar's lane changing) - and an entrance is a lane that
     //    runs out, so a car that joins has to merge.
     //
-    // Nothing here is switched on in Game.unity. The demo scene sets the route.
+    // Nothing here is switched on in the normal city runtime. The demo scene sets the route.
     public partial class RoadDemoBuilder
     {
         [Header("The expressway")]

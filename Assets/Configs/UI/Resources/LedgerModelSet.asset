@@ -36,10 +36,12 @@ MonoBehaviour:
   - {fileID: 1385130642457456, guid: ca07a6b6b8de5a342b05180f1b7b0b10, type: 3}
   - {fileID: 1581917972199768, guid: 9ac3cf6361c8bce4b911947355e579de, type: 3}
   - {fileID: 1592597363156974, guid: 1410f1cba8074a1429937abe0289a307, type: 3}
+  - {fileID: 8870920554223276652, guid: e7dbab8766e70a6498bddd65bc37b31c, type: 3}
   pistol: {fileID: 1306635022288864, guid: 484dc341396335f458d85c68df5cb481, type: 3}
   shotgun: {fileID: 1885697736387182, guid: 358a1c79df7b3a74b814f7d567fcd80a, type: 3}
   rifle: {fileID: 460027325451119689, guid: 7125fc83fb52d7047b90d962ddfb6eb7, type: 3}
   tommyGun: {fileID: 1666002281291458, guid: 578e1fec3c2104a49a1a065ed6b63b77, type: 3}
+  grenade: {fileID: 8870920554223276652, guid: e7dbab8766e70a6498bddd65bc37b31c, type: 3}
   database: {fileID: 11400000, guid: 337c66643e8054699b6b171150f619c0, type: 2}
   motorcycles:
   - {fileID: 4001005343886489682, guid: 6800e238fdd1d481eaea0dd2666dfffb, type: 3}
@@ -62,7 +64,6 @@ MonoBehaviour:
   - {fileID: 7497542262271402650, guid: af080066a01b52448aab135531a5d425, type: 3}
   - {fileID: 5265465914950777859, guid: 39e460e712018824ab4cf01e2a847aa9, type: 3}
   - {fileID: 754221384861170517, guid: 783c3c2763248b34b972caad3363867c, type: 3}
-  - {fileID: 4611404166197480059, guid: 1ccc8cc5c213673419c945a4740bd995, type: 3}
   - {fileID: 3206094246704859920, guid: 3c711ecf6f44fb540af9b9b7ba0342c2, type: 3}
   - {fileID: 7704138152661050924, guid: e4e03530469c80c4fb2be41ec63bfb18, type: 3}
   - {fileID: 1063393051760435145, guid: 46f70e9e433764b42b0b033bbc9fee04, type: 3}

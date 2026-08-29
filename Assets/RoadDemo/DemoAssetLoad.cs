@@ -22,13 +22,22 @@ namespace RoadDemo
         const long ReportMs = 50;
 
         static readonly System.Diagnostics.Stopwatch Clock = new System.Diagnostics.Stopwatch();
+        static readonly System.Collections.Generic.Dictionary<(System.Type, string), Object> PlayAssets =
+            new System.Collections.Generic.Dictionary<(System.Type, string), Object>();
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetPlayCache() => PlayAssets.Clear();
 
         public static T Load<T>(string path) where T : Object
         {
 #if UNITY_EDITOR
+            var key = (typeof(T), path);
+            if (Application.isPlaying && PlayAssets.TryGetValue(key, out var cached))
+                return cached as T;
             Clock.Restart();
             var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<T>(path);
             Clock.Stop();
+            if (Application.isPlaying && asset != null) PlayAssets[key] = asset;
             if (Clock.ElapsedMilliseconds > ReportMs)
                 Debug.Log($"[assetload] {Clock.ElapsedMilliseconds} ms  {typeof(T).Name}  {path}");
             return asset;

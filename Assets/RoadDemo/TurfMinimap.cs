@@ -14,17 +14,15 @@ namespace RoadDemo
     /// which meant the postcard in the corner and the plate the wheel opened were two
     /// different cities, and a player who learned one had to learn the other. So this
     /// class owns no drawing of its own at all: it asks <see cref="TurfMapSurvey"/> for
-    /// one whole-city plate and shows it.
+    /// one local plate around the camera pivot and shows it.
     ///
-    /// What it does NOT show is the design's own list: no street names, no lane lines,
-    /// no crossings, no order markers. At this size they are illegible and all they do
-    /// is fill the paper in. Those marks are drawn on the plate regardless - the survey
-    /// has one way of working - and are simply too small to read here, which is the
-    /// right kind of wrong: the corner and the full sheet stay the same document.
+    /// Street lettering remains full-map UI, but lane lines, crossings, parks and every
+    /// model footprint are baked by the same survey and become readable at this local
+    /// scale. The corner and the full sheet stay the same document.
     ///
-    /// Two costs and both are paid rarely. The plate is a whole-city survey, drawn on a
-    /// WORKER THREAD like every other, and it is only redrawn when ground changes
-    /// hands. The live marks on top - the crews and the camera's own frame - are a
+    /// The local plate is drawn on a WORKER THREAD like every other, and follows the
+    /// camera in measured steps rather than uploading a texture every frame. The live
+    /// marks on top - the crews and the camera's own frame - are a
     /// handful of pooled UI images rather than a raster layer, because a per-frame
     /// upload of a 960 x 600 buffer to fill a postcard is most of a millisecond for
     /// nothing.
@@ -45,6 +43,7 @@ namespace RoadDemo
         /// </summary>
         const float CardWide = 256f, CardTall = 160f;
         const float Inset = 16f, Border = 5f;
+        const float RedrawPanShare = 0.07f;
 
         /// <summary>How much bigger a crew's dot is drawn here than the plate's own
         /// scale would make it. The design's own MinimapScaleBoost: a marker that is
@@ -56,6 +55,7 @@ namespace RoadDemo
 
         DemoCamera _rig;
         DemoCrews _crews;
+        float _viewHeight = CityViewConfig.DefaultMinimapViewHeight;
 
         readonly TurfMapSurvey _survey = new TurfMapSurvey();
 
@@ -112,11 +112,17 @@ namespace RoadDemo
         /// until there is paper under it.</summary>
         bool _printed;
 
+        public TurfMapSurvey Survey => _survey;
+        public bool Printed => _printed;
+        public Rect RequestedView => WantedView();
+
         public void Init(RoadDemoBuilder city, Transform blocks, DemoCamera camera,
             DemoCrews streetCrews, TurfMapSurvey shareHeight)
         {
             _rig = camera;
             _crews = streetCrews;
+            if (city != null)
+                _viewHeight = city.MinimapViewHeight;
 
             _survey.Prepare(city, blocks, shareHeight);
             if (!_survey.Ready)
@@ -126,7 +132,7 @@ namespace RoadDemo
             }
 
             Build();
-            Kick();
+            Kick(WantedView());
         }
 
         void OnDestroy()
@@ -232,16 +238,18 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------- draw
 
-        /// <summary>One whole-city plate, on the thread pool. The card is only redrawn
-        /// when ground changes hands - the view never moves, so nothing else can make
-        /// the paper wrong.</summary>
-        void Kick()
+        Rect _kickView;
+
+        /// <summary>One local plate on the thread pool. It is redrawn after meaningful
+        /// camera travel, ownership changes, or a generated recipe replacement.</summary>
+        void Kick(Rect view)
         {
             if (_state != Idle)
                 return;
 
             _survey.ReadOwners();
             _painted = TurfMapHud.OwnershipStamp();
+            _kickView = view;
             _fault = null;
             _state = Drawing;
 
@@ -249,7 +257,7 @@ namespace RoadDemo
             {
                 try
                 {
-                    _survey.Draw(_survey.CityView);
+                    _survey.Draw(_kickView);
                     _sheet.Compose(_survey.Ground, _survey.Turf, _survey.Built);
                 }
                 catch (System.Exception fault)
@@ -289,16 +297,41 @@ namespace RoadDemo
             if (!want || !_printed)
                 return;
 
-            if (_state == Idle && _painted != TurfMapHud.OwnershipStamp())
-                Kick();
+            if (_state == Idle)
+            {
+                var wanted = WantedView();
+                if (_survey.RefreshGeometryIfNeeded())
+                    Kick(wanted);
+                else if (_painted != TurfMapHud.OwnershipStamp())
+                    Kick(wanted);
+                else
+                {
+                    var drawn = _survey.DrawnView;
+                    float pan = drawn.height > 0f
+                        ? (wanted.center - drawn.center).magnitude / drawn.height
+                        : float.MaxValue;
+                    if (pan >= RedrawPanShare)
+                        Kick(wanted);
+                }
+            }
 
             DrawCrews();
             DrawFrame();
         }
 
-        /// <summary>A world point on the card, in the view's own units. The survey drew
-        /// the whole city onto the plate, so the plate's authored space IS the card.
-        /// </summary>
+        Rect WantedView()
+        {
+            if (_rig == null)
+                return _survey.CityView;
+
+            float height = Mathf.Max(120f, _viewHeight);
+            float width = height * TurfPlate.AW / TurfPlate.AH;
+            var centre = new Vector2(_rig.pivot.x, _rig.pivot.z);
+            return new Rect(centre - new Vector2(width, height) * 0.5f,
+                new Vector2(width, height));
+        }
+
+        /// <summary>A world point on the local card, in the published survey view.</summary>
         bool OnCard(Vector2 worldXZ, out Vector2 at)
         {
             var plan = _survey.Plan.ToPlan(worldXZ);

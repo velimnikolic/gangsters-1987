@@ -164,7 +164,8 @@ namespace LivingCity.Outfit
         public static readonly ArmoryItem[] Explosives =
         {
             new ArmoryItem(EquipmentKind.Grenade, "Grenade", 175,
-                "One pineapple - thrown at a man or a shopfront, or laid under a car."),
+                "One pineapple - thrown at a man or a shopfront, or laid under a car.",
+                "SM_Wep_Grenade_01"),
         };
 
         /// <summary>The pack body that PLAYS a listing, by exact prefab name. One table,

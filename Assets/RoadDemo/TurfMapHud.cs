@@ -54,7 +54,7 @@ namespace RoadDemo
     /// ground it was put on.
     ///
     /// It comes up the way the old plan did and on the same line: pull the wheel back
-    /// past <see cref="DemoCamera.mapAt"/> (180 m) and the city stops being a place and
+    /// past the configured <see cref="DemoCamera.mapAt"/> threshold and the city stops being a place and
     /// becomes a PLAN; push in past it and the streets come back exactly where they
     /// were. There is no key for it and there must not be one - the map is a zoom
     /// level, not a screen, and a key that opened it would be a second truth about
@@ -706,6 +706,15 @@ namespace RoadDemo
                 return;
 
             var want = TurfMapSurvey.FitToPlate(WantedView());
+            if (_survey.RefreshGeometryIfNeeded())
+            {
+                if (_inspectedBuilding != null &&
+                    !_survey.Buildings.Contains(_inspectedBuilding))
+                    _inspectedBuilding = null;
+                Kick(want);
+                return;
+            }
+
             var drawn = _survey.DrawnView;
             if (drawn.height <= 0f)
             {
@@ -917,11 +926,9 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// The lieutenant's file, off the outfit's own roster. NERVE, GUNPLAY and
-        /// RESPECT are the three the map prints and the three the game already keeps:
-        /// gunplay is Firearms and respect is Intimidation outright; nerve is Fists -
-        /// the willingness to go in, which is what nerve means on this map and the
-        /// nearest thing the attribute table holds.
+        /// The lieutenant's file, off the outfit's own roster. The map prints the
+        /// same Intelligence, Organization and Firearms ratings the personnel ledger
+        /// owns; it does not translate them into map-only stats.
         /// </summary>
         static void ReadDossier(TurfCrew crew, LivingCity.Personnel.Roster roster)
         {
@@ -939,9 +946,12 @@ namespace RoadDemo
             crew.Name = lieutenant.FullName;
             crew.Rank = lieutenant.Rank.ToString().ToUpperInvariant();
             crew.Look = lieutenant.Look;
-            crew.Nerve = Stars(lieutenant, LivingCity.Personnel.CharacterAttribute.Fists);
-            crew.Gunplay = Stars(lieutenant, LivingCity.Personnel.CharacterAttribute.Firearms);
-            crew.Respect = Stars(lieutenant, LivingCity.Personnel.CharacterAttribute.Intimidation);
+            crew.Intelligence = Stars(lieutenant,
+                LivingCity.Personnel.CharacterAttribute.Intelligence);
+            crew.Organization = Stars(lieutenant,
+                LivingCity.Personnel.CharacterAttribute.Organization);
+            crew.Firearms = Stars(lieutenant,
+                LivingCity.Personnel.CharacterAttribute.Firearms);
             crew.Loyal = lieutenant.Loyalty;
         }
 

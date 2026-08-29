@@ -31,7 +31,7 @@ namespace RoadDemo
     {
         const string CityEnv = "Assets/Synty/PolygonCity/Prefabs/Environments/";
         const string CityProps = "Assets/Synty/PolygonCity/Prefabs/Props/";
-        const string Units = "Assets/Prefabs/Residential/";
+        internal const string Units = "Assets/Prefabs/Residential/";
         const string KitBld = "Assets/CityKit/Buildings/";
 
         const string Kerb = CityEnv + "SM_Env_Sidewalk_Straight_01.prefab";
@@ -216,6 +216,75 @@ namespace RoadDemo
                     (Absent.Count > 0 ? $", MISSING {string.Join(", ", Absent)}" : "") +
                     (Refused.Length > 0 ? $", refused {Refused}" : "");
             }
+        }
+
+        /// <summary>
+        /// Queue the low-frequency choices that two visible warmup blocks may not happen
+        /// to draw: palm/paper variants, dug pavement, cafe shade and parked-car bodies.
+        /// The catalogue lives beside the generator that owns those choices, so changing
+        /// block recipes does not teach the recycler about prop names. Creation itself is
+        /// frame-budgeted by <see cref="ResidentialPrefabPool.PrewarmStep"/>.
+        /// </summary>
+        internal static int SchedulePrewarmVariants(ResidentialPrefabPool pool, int window,
+                                                     int totalLimit)
+        {
+            if (pool == null || window <= 0 || totalLimit <= pool.Capacity) return 0;
+            int before = pool.PendingPrewarmParts;
+
+            void Schedule(string path, int target)
+            {
+                var prefab = DemoAssetLoad.Load<GameObject>(path);
+                pool.ScheduleCapacity(prefab, target, totalLimit);
+            }
+
+            const string palmEnvironment =
+                "Assets/Synty/PolygonPalmCity/Prefabs/Environment/";
+            // Spend the small reserve on variants that have actually caused first-use
+            // hitches. Keep targets close to one viewport; speculative copies of every
+            // cafe prop used far more memory than the misses they prevented.
+            int palmTarget = Mathf.Max(8, window * 2);
+            for (int i = 1; i <= 6; i++)
+                Schedule(palmEnvironment + "SM_Env_Tree_Palm_0" + i + ".prefab", palmTarget);
+
+            int grateTarget = Mathf.Max(8, window * 4);
+            Schedule(palmEnvironment + "SM_Env_Plant_Grate_01.prefab", grateTarget);
+            Schedule(palmEnvironment + "SM_Env_Plant_Grate_02.prefab", grateTarget);
+
+            // The deterministic WASD route measures the high-water mark rather than
+            // guessing from the first three holders. Keep a little headroom over its
+            // 928 chairs / 232 tables so their first dense cafe window never falls back
+            // to Instantiate (the remaining measured one-frame GC/object spike).
+            Schedule(CafeChair, Mathf.Max(64, window * 78));
+            Schedule(CafeTable, Mathf.Max(24, window * 20));
+
+            int sparseTarget = Mathf.Max(4, window);
+            // These tiny variants sit late in the dressing pass but are the first
+            // asset-load hitch when a route reaches a block that happened not to be
+            // represented by the warmup holders. Reserve them before car/litter tails.
+            Schedule(GrateA, sparseTarget);
+            Schedule(GrateB, sparseTarget);
+            Schedule(Dug, window);
+            for (int i = 0; i < Kit.Length; i++)
+                Schedule(Kit[i], Mathf.Max(2, window / 2));
+
+            int carTarget = Mathf.Max(6, window);
+            var cars = CoreRoads.CarPrefabs;
+            for (int i = 0; i < cars.Count; i++)
+                pool.ScheduleCapacity(cars[i], carTarget, totalLimit);
+
+            for (int i = 0; i < Papers.Length; i++) Schedule(Papers[i], sparseTarget);
+            for (int i = 0; i < Newspapers.Length; i++) Schedule(Newspapers[i], sparseTarget);
+            Schedule(SubwayPath, 1);
+
+            int cafeTarget = Mathf.Max(8, window * 4);
+            for (int i = 0; i < Umbrellas.Length; i++) Schedule(Umbrellas[i], cafeTarget);
+            Schedule(RoadPatch, sparseTarget);
+            Schedule(ManholeA, sparseTarget);
+            Schedule(ManholeB, sparseTarget);
+            for (int i = 0; i < Bins.Length; i++) Schedule(Bins[i], sparseTarget);
+            for (int i = 0; i < Skips.Length; i++) Schedule(Skips[i], sparseTarget);
+            for (int i = 0; i < Litter.Length; i++) Schedule(Litter[i], sparseTarget);
+            return pool.PendingPrewarmParts - before;
         }
 
         /// <summary>
@@ -797,6 +866,10 @@ namespace RoadDemo
 
         /// <summary>Where Synty keeps the other two albedo maps of the city atlas.</summary>
         const string CityAlts = "Assets/Synty/PolygonCity/Materials/Alts/";
+        static readonly List<MeshRenderer> ColourRendererScratch = new List<MeshRenderer>();
+        static readonly List<Material> ColourMaterialScratch = new List<Material>();
+        static readonly Dictionary<(Material, int), Material> Colourways =
+            new Dictionary<(Material, int), Material>();
 
         /// <summary>
         /// Put this building in one of the pack's three colourways.
@@ -809,23 +882,33 @@ namespace RoadDemo
         {
             if (way <= 0) return;                       // _A: what the prefab was baked in
             string letter = way == 1 ? "B" : "C";
-            foreach (var mr in go.GetComponentsInChildren<MeshRenderer>(true))
+            ColourRendererScratch.Clear();
+            go.GetComponentsInChildren(true, ColourRendererScratch);
+            for (int r = 0; r < ColourRendererScratch.Count; r++)
             {
-                var mats = mr.sharedMaterials;
+                var mr = ColourRendererScratch[r];
+                ColourMaterialScratch.Clear();
+                mr.GetSharedMaterials(ColourMaterialScratch);
                 bool swapped = false;
-                for (int k = 0; k < mats.Length; k++)
+                for (int k = 0; k < ColourMaterialScratch.Count; k++)
                 {
-                    var mat = mats[k];
+                    var mat = ColourMaterialScratch[k];
                     if (mat == null) continue;
                     if (!mat.name.StartsWith("PolygonCity_") || !mat.name.EndsWith("_A")) continue;
-                    var alt = DemoAssetLoad.Load<Material>(
-                        CityAlts + mat.name.Substring(0, mat.name.Length - 1) + letter + ".mat");
+                    if (!Colourways.TryGetValue((mat, way), out var alt))
+                    {
+                        alt = DemoAssetLoad.Load<Material>(
+                            CityAlts + mat.name.Substring(0, mat.name.Length - 1) + letter + ".mat");
+                        Colourways[(mat, way)] = alt;
+                    }
                     if (alt == null) continue;
-                    mats[k] = alt;
+                    ColourMaterialScratch[k] = alt;
                     swapped = true;
                 }
-                if (swapped) mr.sharedMaterials = mats;
+                if (swapped) mr.SetSharedMaterials(ColourMaterialScratch);
             }
+            ColourMaterialScratch.Clear();
+            ColourRendererScratch.Clear();
         }
 
         // ------------------------------------------------------------------ the subway

@@ -32,6 +32,9 @@ namespace LivingCity.UI
 
         public GameObject tommyGun;
 
+        [Tooltip("The fragmentation grenade sold on the explosives shelf.")]
+        public GameObject grenade;
+
         [Tooltip("The city's own PrefabDatabase - PortraitStudio's model source in " +
                  "scenes that have no CityBuilder (the standalone Ledger menu).")]
         public LivingCity.Data.PrefabDatabase database;
@@ -175,6 +178,7 @@ namespace LivingCity.UI
                 EquipmentKind.Rifle => set.rifle,
                 EquipmentKind.TommyGun => set.tommyGun,
                 EquipmentKind.MachinePistol => set.tommyGun,
+                EquipmentKind.Grenade => set.grenade,
                 _ => null,
             };
         }

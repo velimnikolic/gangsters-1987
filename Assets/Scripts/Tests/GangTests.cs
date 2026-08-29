@@ -550,6 +550,13 @@ namespace LivingCity.Tests
 
             if (GangLooks.IsGangBody(null) || GangLooks.IsGangBody(""))
                 failures.Add("Cast: the crowd filter claims a body with no name.");
+
+            if (GangLooks.IsGangBody(GangLooks.RetiredKingpin) ||
+                GangLooks.IsGangBody(GangLooks.RetiredKingpin + "_AI"))
+                failures.Add("Cast: the retired kingpin can still be dealt to a gang.");
+
+            if (!Entities.CrowdLooks.IsBarred(GangLooks.RetiredKingpin))
+                failures.Add("Cast: the retired kingpin can return as a passer-by.");
         }
 
         /// <summary>The other half of the same rule, for cars: what the law drives is

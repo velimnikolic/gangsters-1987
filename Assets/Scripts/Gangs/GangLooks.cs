@@ -21,6 +21,11 @@ namespace LivingCity.Gangs
     /// </summary>
     public static class GangLooks
     {
+        /// <summary>The oversized Palm City kingpin body retired from every cast. Kept
+        /// as one named rule so old saves are recast instead of putting him back on the
+        /// street after the live tables stopped dealing him.</summary>
+        public const string RetiredKingpin = "SM_Chr_Kingpin_01";
+
         /// <summary>The muscle - the men who do things. Wide enough that a crew of four
         /// never has to repeat, and mixed across the packs so a line of hoods is a line
         /// of people rather than one pack's idea of a thug.
@@ -57,7 +62,6 @@ namespace LivingCity.Gangs
         public static readonly string[] Lieutenants =
         {
             "SM_Chr_Italian_Gangster_01",
-            "SM_Chr_Kingpin_01",
             "SM_Chr_GangBoss_01",
             "SM_Gen_Chr_Business_Male_01",
             "Character_BusinessMan_Suit",
@@ -222,11 +226,14 @@ namespace LivingCity.Gangs
         /// later of the two is dealt again - and that becomes his.</summary>
         static string Cast(Character member, ICollection<string> taken)
         {
-            if (!string.IsNullOrEmpty(member.Look) && !IsTaken(taken, Bare(member.Look)))
+            if (!string.IsNullOrEmpty(member.Look) && !IsRetired(member.Look) &&
+                !IsTaken(taken, Bare(member.Look)))
                 return member.Look;
             member.Look = Draw(TableFor(member), member.Id, taken, IsFemale(member));
             return member.Look;
         }
+
+        public static bool IsRetired(string look) => Bare(look) == RetiredKingpin;
 
         /// <summary>Whether the books call this member a woman. The roster carries no sex
         /// field - it deals out of the shared name tables - so the name is what answers,
@@ -253,7 +260,7 @@ namespace LivingCity.Gangs
         }
 
         /// <summary>The plain pack name behind a model reference - GangCatalog still
-        /// names its men the crowd's old way ("SM_Chr_Goon_01_AI"), and a suffix must
+        /// names its men the crowd's old way ("SM_Chr_Gang_Male_01_AI"), and a suffix must
         /// not make one body look like two.</summary>
         public static string Bare(string name) =>
             !string.IsNullOrEmpty(name) && name.EndsWith("_AI")

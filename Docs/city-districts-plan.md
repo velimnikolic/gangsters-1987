@@ -48,7 +48,7 @@ Potreban je **ugovor kvarta** i da oba demoa pređu na njega.
 ## 1. Ciljna arhitektura
 
 ```
- Game.unity                          HarborDemo.unity              SuburbDemo.unity
+ CoreDemo.unity                      HarborDemo.unity              SuburbDemo.unity
  ┌──────────────────────┐            ┌───────────────────┐         ┌───────────────────┐
  │ RoadDemoBuilder      │            │ HarborDemoBuilder │         │ SuburbDemoBuilder │
  │  = grid + šavovi +   │            │  = tanki domaćin  │         │  = tanki domaćin  │
@@ -93,7 +93,7 @@ Potreban je **ugovor kvarta** i da oba demoa pređu na njega.
 - **Settings** = ono što su danas javna polja buildera, kao `[Serializable] class HarborSettings` /
   `SuburbSettings` sa **istim default-ima u kodu** → demo scena i grad dobijaju isti kvart.
   Seed kvarta je njegov (`HarborSettings.seed = 1987`), ne gradski → luka sa seed-om 1987 je
-  **identična** u HarborDemo.unity i u Game.unity (to je i test: screenshot oba).
+  **identična** u HarborDemo.unity i u CoreDemo.unity (to je i test: screenshot oba).
   (Kasnije, ako zatreba tuning po sceni: `ScriptableObject` preset koji obe scene referenciraju.)
 
 ### 1.2 Dva domaćina, isti ugovor
@@ -431,16 +431,18 @@ editor osveži projekat). Prvi Play u editoru je i dalje jedina prava provera.
 
 ---
 
-## 6. Scene (2026-08-19)
+## 6. Scene (updated 2026-08-28)
 
 | scena | šta je | ko gradi |
 |---|---|---|
-| `Assets/Scenes/Game.unity` | **prava igra**: ceo grad — grid, šavovi, ostrvo, luka i predgrađa | `RoadDemoBuilder` (objekat `City`) |
+| `Assets/Scenes/CoreDemo.unity` | glavni integracioni harness: core grad, shared gameplay i kamera/mapa | `CoreDemoBuilder` → isti `RoadDemoBuilder` |
 | `Assets/Scenes/BlockDemo.unity` | **jedan kvart**: mreža blokova sa ulicama, avenijama i raskrsnicama između njih — sto za fine-tune | `BlockDemoBuilder` → isti `RoadDemoBuilder`, mali grid |
 | `Assets/Scenes/HarborDemo.unity` | luka sama | `HarborDemoBuilder` → `HarborDistrict` |
 | `Assets/Scenes/SuburbDemo.unity` | predgrađe samo | `SuburbDemoBuilder` → `SuburbDistrict` |
 
-`RoadDemo.unity` je preimenovana u `Game.unity` (isti GUID, Build Settings ažuriran).
+`Game.unity` je penzionisana 2026-08-28 nakon što su layout default-i i mapa prebačeni na
+shared sisteme; scena i njen GUID su uklonjeni iz projekta. Build Settings je namerno prazan dok
+se ne odabere novi product bootstrap, a `CoreDemo` ostaje test harness realnog ponašanja.
 
 **BlockDemo** je ista pogodba kao luka/predgrađe: ne crta ništa sam, nego pušta gradski
 builder na mali grid (podrazumevano 3×3 bloka = 4×4 linije), pa su placevi, bake, pod,
