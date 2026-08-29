@@ -144,10 +144,16 @@ namespace RoadDemo
             var kb = BookOpen ? null : Keyboard.current;
             if (kb != null)
             {
+                // On the turf map T is the debug switch; D remains the ordinary
+                // street strafe key in every view.
+                if (TurfMapHud.IsOpen && kb.tKey.wasPressedThisFrame)
+                    showZoom = !showZoom;
+
                 Vector2 pan = Vector2.zero;
                 if (kb.wKey.isPressed || kb.upArrowKey.isPressed) pan.y += 1f;
                 if (kb.sKey.isPressed || kb.downArrowKey.isPressed) pan.y -= 1f;
-                if (kb.dKey.isPressed || kb.rightArrowKey.isPressed) pan.x += 1f;
+                if (kb.dKey.isPressed || kb.rightArrowKey.isPressed)
+                    pan.x += 1f;
                 if (kb.aKey.isPressed || kb.leftArrowKey.isPressed) pan.x -= 1f;
                 if (pan != Vector2.zero)
                 {
@@ -263,10 +269,12 @@ namespace RoadDemo
             // IMGUI prints over every canvas in the scene, so this would land on the
             // open book, or on the plan - and none of what the hint names works on
             // either of them anyway.
-            if (ScreenTaken)
+            // The debug readout is useful on the map itself; only the book owns the
+            // screen completely and should suppress it.
+            if (BookOpen)
                 return;
 
-            if (showHint)
+            if (showHint && !TurfMapHud.IsOpen)
             {
                 // below the top bar, which spans the full width at 42 canvas-px
                 // (reference height 1080) - convert to real screen pixels
@@ -276,7 +284,7 @@ namespace RoadDemo
 
             if (showZoom)
             {
-                // bottom-left, over whatever the scene draws there: the boom in metres
+                // top-right, over the map: the boom in metres
                 // is what a "too close / too far" report needs to be reproducible, and
                 // the angles go with it because the same distance reads differently
                 // from 22 degrees than from 82. Two and a half times the IMGUI default,
@@ -304,14 +312,12 @@ namespace RoadDemo
                         d / 10f, p, y, px, pz, riding ? "   [riding]" : string.Empty);
                 }
 
-                var at = new Rect(14f, UnityEngine.Screen.height - 52f, 1500f, 44f);
+                string map = TurfMapHud.IsOpen ? "   MAP" : string.Empty;
+                string displayLine = _zoomLine + map;
+                var at = new Rect(UnityEngine.Screen.width - 760f, 14f, 746f, 44f);
                 var was = GUI.color;
-                // A black copy two pixels off is the drop shadow: the sky is too pale
-                // for grey text on its own.
-                GUI.color = Color.black;
-                GUI.Label(new Rect(at.x + 2f, at.y + 2f, at.width, at.height), _zoomLine, _zoomStyle);
-                GUI.color = Color.white;
-                GUI.Label(at, _zoomLine, _zoomStyle);
+                GUI.color = new Color(0.15f, 1f, 0.05f, 1f);
+                GUI.Label(at, displayLine, _zoomStyle);
                 GUI.color = was;
             }
         }

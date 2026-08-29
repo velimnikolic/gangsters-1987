@@ -62,6 +62,23 @@ namespace RoadDemo
 
         RectTransform _root;
         readonly List<TextMeshProUGUI> _pool = new List<TextMeshProUGUI>();
+        float _labelScale = 1f;
+
+        /// <summary>Scale the live lettering down as the full turf map is pulled back.
+        /// The map plate is redrawn per view, so without this deliberate readability
+        /// falloff the camera zoom cancels out and every street name stays the same size
+        /// on screen.</summary>
+        public void SetZoomOut(float amount)
+        {
+            amount = Mathf.Clamp01(amount);
+            _labelScale = Mathf.Lerp(1f, 0.18f, amount);
+            for (int i = 0; i < _pool.Count; i++)
+            {
+                var label = _pool[i];
+                if (label != null)
+                    label.rectTransform.localScale = Vector3.one * _labelScale;
+            }
+        }
 
         /// <summary>The one text used for measuring, kept off the sheet.</summary>
         TextMeshProUGUI _ruler;
@@ -151,6 +168,7 @@ namespace RoadDemo
                     label.Plan.x * TurfPlate.S - TurfPlate.RW * 0.5f,
                     label.Plan.y * TurfPlate.S - TurfPlate.RH * 0.5f);
                 rect.localRotation = Quaternion.Euler(0f, 0f, label.Vertical ? 90f : 0f);
+                rect.localScale = Vector3.one * _labelScale;
             }
         }
 

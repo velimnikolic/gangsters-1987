@@ -18,8 +18,8 @@ namespace LivingCity.Ambient
                  "config wins - one place to change it, alongside every other city setting.")]
         [SerializeField] Data.CityConfig config;
 
-        [Tooltip("Fallback for a scene with no config. Real seconds per game hour.")]
-        [SerializeField, Min(0.02f)] float realSecondsPerGameHour = 60f;
+        [Tooltip("Fallback for a scene with no config. 600 makes one game minute last 10 real seconds.")]
+        [SerializeField, Min(0.02f)] float realSecondsPerGameHour = 600f;
 
         [SerializeField, Range(0f, 24f)] float startHour = 8f;
 

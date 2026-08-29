@@ -477,10 +477,8 @@ namespace LivingCity.Data
         [Min(2)] public int pedestrianLodMidRate = 3;
 
         [Header("Time of day")]
-        [Tooltip("Real seconds for one hour of game time. 60 runs a full day in 24 real minutes; " +
-                 "drop it to 1 and the whole day passes in 24 seconds, which is how you watch a " +
-                 "sunset without waiting for one.")]
-        [Min(0.02f)] public float realSecondsPerGameHour = 60f;
+        [Tooltip("Real seconds for one hour of game time. 600 makes one game minute last 10 real seconds.")]
+        [Min(0.02f)] public float realSecondsPerGameHour = 600f;
 
         [Tooltip("Hour the clock starts at. 8 is mid-morning; 22 drops you straight into night.")]
         [Range(0f, 24f)] public float startHour = 8f;

@@ -25,7 +25,7 @@ namespace LivingCity.UI
         // rotated. Give every rule a transparent skirt perpendicular to its length;
         // LedgerRuleImage interpolates that skirt into the ink and keeps the authored
         // line itself at exactly the requested thickness.
-        const float RuleFeather = 1.5f;
+        const float RuleFeather = 0.5f;
 
         // -------------------------------------------------------------- rect basics
 
@@ -182,7 +182,10 @@ namespace LivingCity.UI
             Rule(parent, x, y - 4f, w, ghost);
         }
 
-        /// <summary>Four hairlines round a rect - a typed box, the pen-drawn frame.</summary>
+        /// <summary>Four thin edges round a rect - a typed box, the pen-drawn frame.
+        /// Frames stay hard-edged and use only the requested thickness. The feathered
+        /// mesh belongs to long rules, where it prevents stair-stepping after rotation;
+        /// on a small box it made every border look like a soft multi-pixel stroke.</summary>
         public static void Frame(RectTransform rect, float thickness, Color color)
         {
             Edge(rect, new Vector2(0f, 1f), new Vector2(1f, 1f), thickness, color);
@@ -201,20 +204,19 @@ namespace LivingCity.UI
             edge.pivot = new Vector2(anchorMin.x, anchorMin.y);
             if (horizontal)
             {
-                // Top edges used to grow down and bottom edges up. Move the padded
-                // rect out by the feather so its opaque core keeps those exact bounds.
-                edge.anchoredPosition = new Vector2(0f,
-                    anchorMin.y > 0.5f ? RuleFeather : -RuleFeather);
-                edge.sizeDelta = new Vector2(0f, thickness + RuleFeather * 2f);
+                // Top edges grow down and bottom edges grow up from their anchored edge.
+                edge.anchoredPosition = Vector2.zero;
+                edge.sizeDelta = new Vector2(0f, thickness);
             }
             else
             {
-                // Likewise, left edges grow right and right edges grow left.
-                edge.anchoredPosition = new Vector2(
-                    anchorMin.x > 0.5f ? RuleFeather : -RuleFeather, 0f);
-                edge.sizeDelta = new Vector2(thickness + RuleFeather * 2f, 0f);
+                // Left edges grow right and right edges grow left from their anchor.
+                edge.anchoredPosition = Vector2.zero;
+                edge.sizeDelta = new Vector2(thickness, 0f);
             }
-            RuleImage(edge, color, vertical: !horizontal);
+            var image = edge.gameObject.AddComponent<Image>();
+            image.color = color;
+            image.raycastTarget = false;
         }
 
         /// <summary>The paper grain laid over a sheet - a tiling dark speckle at low

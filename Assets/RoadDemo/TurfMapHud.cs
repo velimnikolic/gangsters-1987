@@ -267,7 +267,7 @@ namespace RoadDemo
                 var city = _survey.CityView;
                 float wants = Mathf.Max(city.height, city.width / TurfPlate.AW * TurfPlate.AH);
                 _rig.mapCeiling = Mathf.Clamp(
-                    wants * CityFrame / DemoCamera.BoomToMetres, 260f, 6000f);
+                    wants * CityFrame / DemoCamera.BoomToMetres, 260f, 440f);
             }
 
             // And the same plate in the corner, for the player down in the street. It
@@ -688,6 +688,7 @@ namespace RoadDemo
         const float EasyZoom = 1.06f, EasyPan = 0.035f;
 
         float _sheetScale = 1f, _sheetHeading, _sheetTilt = 1f;
+        float _indicatorScale = 1f;
         Vector2 _sheetAt;
 
         float Heading => _rig != null ? _rig.yaw : 0f;
@@ -888,6 +889,17 @@ namespace RoadDemo
 
             _sheetScale = drawn.height / TurfPlate.RH * screenPerMetre;
             float ui = UiScale;
+
+            // Keep lettering naturally readable when close, but let it recede with the
+            // map at the wide end instead of leaving every street name at one screen
+            // size while the city becomes smaller underneath it.
+            if (_lettering != null && _rig != null)
+            {
+                float zoomOut = Mathf.InverseLerp(_rig.mapAt, _rig.mapCeiling,
+                    _rig.distance);
+                _lettering.SetZoomOut(zoomOut);
+                _indicatorScale = Mathf.Lerp(1f, 0.18f, zoomOut);
+            }
 
             // SCALED, not resized: the sheet keeps its 960 x 600 so everything hung on
             // it - every street name - keeps its own place and its own point size in
@@ -1769,6 +1781,7 @@ namespace RoadDemo
         void DrawCrews()
         {
             BankGlow();
+            int glowRadius = Mathf.Max(1, Mathf.RoundToInt(GlowRadius * _indicatorScale));
             int span = GlowRadius * 2 + 1;
 
             foreach (var crew in _units)
@@ -1779,14 +1792,18 @@ namespace RoadDemo
                 var house = TurfHouses.For(crew.GangId);
                 int cx = Mathf.RoundToInt(crew.Plan.x * TurfPlate.S);
                 int cy = Mathf.RoundToInt(crew.Plan.y * TurfPlate.S);
-                if (cx < -GlowRadius || cy < -GlowRadius ||
-                    cx > TurfPlate.RW + GlowRadius || cy > TurfPlate.RH + GlowRadius)
+                if (cx < -glowRadius || cy < -glowRadius ||
+                    cx > TurfPlate.RW + glowRadius || cy > TurfPlate.RH + glowRadius)
                     continue;
 
-                for (int dy = -GlowRadius; dy <= GlowRadius; dy++)
-                    for (int dx = -GlowRadius; dx <= GlowRadius; dx++)
+                for (int dy = -glowRadius; dy <= glowRadius; dy++)
+                    for (int dx = -glowRadius; dx <= glowRadius; dx++)
                     {
-                        int at = (dy + GlowRadius) * span + (dx + GlowRadius);
+                        int sourceX = Mathf.Clamp(Mathf.RoundToInt(dx / _indicatorScale),
+                            -GlowRadius, GlowRadius);
+                        int sourceY = Mathf.Clamp(Mathf.RoundToInt(dy / _indicatorScale),
+                            -GlowRadius, GlowRadius);
+                        int at = (sourceY + GlowRadius) * span + (sourceX + GlowRadius);
                         byte alpha = _glowAlpha[at];
                         if (alpha == 0)
                             continue;
@@ -1796,17 +1813,19 @@ namespace RoadDemo
                         _live.OverDot(cx + dx, cy + dy, tint);
                     }
 
-                Disc(cx, cy, CoreUnits * TurfPlate.S, house.Ink);
-                Disc(cx, cy, PipUnits * TurfPlate.S, house.Pencil);
+                Disc(cx, cy, CoreUnits * TurfPlate.S * _indicatorScale, house.Ink);
+                Disc(cx, cy, PipUnits * TurfPlate.S * _indicatorScale, house.Pencil);
 
                 if (_selected.Contains(crew.Id) && crew.Mine)
-                    Brackets(cx, cy);
+                    Brackets(cx, cy, _indicatorScale);
 
                 if (_inspectedCrew == crew)
                 {
                     // the small cap above a crew whose file is open
-                    int cap = Mathf.RoundToInt(BracketUnits * TurfPlate.S) + 4;
-                    _live.Px(cx - 2, cy + cap, 5, 2, TurfInk.Red);
+                    int cap = Mathf.RoundToInt(BracketUnits * TurfPlate.S * _indicatorScale) + 2;
+                    int capWidth = Mathf.Max(1, Mathf.RoundToInt(5f * _indicatorScale));
+                    int capHeight = Mathf.Max(1, Mathf.RoundToInt(2f * _indicatorScale));
+                    _live.Px(cx - capWidth / 2, cy + cap, capWidth, capHeight, TurfInk.Red);
                 }
             }
         }
@@ -1823,10 +1842,11 @@ namespace RoadDemo
         /// <summary>Four corner brackets - the RTS mark, in oxblood, six authored units
         /// out from the dot. Not a ring: a ring at this size is a blob, and a blob over
         /// a dot hides the dot.</summary>
-        void Brackets(int cx, int cy)
+        void Brackets(int cx, int cy, float scale)
         {
-            int o = Mathf.RoundToInt(BracketUnits * TurfPlate.S);
-            const int arm = 6, weight = 2;
+            int o = Mathf.Max(1, Mathf.RoundToInt(BracketUnits * TurfPlate.S * scale));
+            int arm = Mathf.Max(1, Mathf.RoundToInt(6f * scale));
+            int weight = Mathf.Max(1, Mathf.RoundToInt(2f * scale));
             var red = TurfInk.Red;
 
             _live.Px(cx - o, cy - o, arm, weight, red);

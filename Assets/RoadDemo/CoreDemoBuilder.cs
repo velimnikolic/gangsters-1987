@@ -31,7 +31,8 @@ namespace RoadDemo
 
         [Header("Day")]
         [Range(0f, 24f)] public float startHour = 16f;
-        public float realSecondsPerGameHour = 15f;
+        [Tooltip("Real seconds for one game hour. 600 means one game minute lasts 10 real seconds.")]
+        public float realSecondsPerGameHour = 600f;
 
         [Header("Round the core")]
         [Min(20f)] public float greenBelt = 140f;

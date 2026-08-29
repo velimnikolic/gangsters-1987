@@ -43,7 +43,7 @@ namespace RoadDemo
         /// which is the plate's own 8:5 - anything else would letterbox the city.
         /// </summary>
         const float CardWide = 256f, CardTall = 160f;
-        const float Inset = 16f, Border = 5f;
+        const float Inset = 0f, Border = 5f;
         const float ViewOverscan = 1.25f;
         const float RedrawPanShare = 0.07f;
 

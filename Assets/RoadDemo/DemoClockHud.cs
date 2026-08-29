@@ -131,8 +131,9 @@ namespace RoadDemo
                 LedgerKit.LineBox(11f));
 
             const float small = 30f, speed = 34f, pause = 36f, gap = 3f, tall = 18f;
-            float group = small + speed + small + pause + gap * 3f;
-            float x = Mathf.Max(2f, (width - group) * 0.5f);
+            // The control ladder belongs to the same left reading edge as the date,
+            // rather than floating in the middle of the narrow clock plate.
+            float x = Pad;
             float y = -DateTall - 3f;
             LedgerKit.PlaceTopLeft(_slower, x, y, small, tall);
             x += small + gap;

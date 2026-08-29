@@ -151,9 +151,8 @@ namespace RoadDemo
         public int pedestrianCount = 170;
 
         [Header("Day/night")]
-        [Tooltip("Real seconds per game hour. 15 runs a whole day in 6 minutes; " +
-                 "the city's own default of 60 takes 24.")]
-        public float realSecondsPerGameHour = 15f;
+        [Tooltip("Real seconds per game hour. 600 makes one game minute last 10 real seconds.")]
+        public float realSecondsPerGameHour = 600f;
         [Tooltip("Hour the demo starts at. 16 puts dusk about 40 seconds in.")]
         [Range(0f, 24f)] public float startHour = 16f;
 

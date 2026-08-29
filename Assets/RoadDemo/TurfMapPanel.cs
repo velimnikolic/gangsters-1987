@@ -53,7 +53,8 @@ namespace RoadDemo
         static readonly Color Well = new Color32(43, 36, 24, 16);
         static readonly Color MugField = new Color32(224, 212, 182, 255);
 
-        const float PanelLeft = 0f, PanelTop = DemoClockHud.Height, PanelFoot = 24f;
+        // Leave a small strip of map paper between the clock controls and the file.
+        const float PanelLeft = 0f, PanelTop = DemoClockHud.Height + 8f, PanelFoot = 24f;
         const float PanelWidthFraction = 0.18f;
         const float Pad = 10f, HeadPad = 11f;
 
