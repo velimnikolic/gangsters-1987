@@ -139,6 +139,9 @@ namespace LivingCity.UI
         const int Folios = 18;
 
         Canvas canvas;
+        // The ledger is a full-screen modal document. Keep the exact enabled state
+        // of every other canvas so closing it does not guess which HUDs were visible.
+        readonly List<Canvas> suspendedCanvases = new List<Canvas>();
         GameObject page;
         RectTransform paper;
         TMP_Text headerCount;
@@ -232,7 +235,6 @@ namespace LivingCity.UI
             if (!IsOpen)
                 return;
 
-            // The book must never hide the WASTED card (sortingOrder 95, under this 110).
             // Arrest cannot happen while the book is open - H is behind the modal guard -
             // so death is the one ending that can arrive mid-read.
             if (player && player.IsDead)
@@ -352,9 +354,9 @@ namespace LivingCity.UI
 
             page.SetActive(true);
             IsOpen = true;
-            // The file covers the glass, so nothing can be left live under it. The
-            // strategic map is a screen of its own again: if it was up, it comes down
-            // with the folder opening, and it does not come back by itself.
+            SuspendOtherCanvases();
+            // The strategic map is a screen of its own again: if it was up, it comes
+            // down with the folder opening, and it does not come back by itself.
             if (StrategicMapHud.Instance && StrategicMapHud.IsOpen)
                 StrategicMapHud.Instance.Close();
             // The folder always opens on the morning paper - the day's frame - and
@@ -367,6 +369,7 @@ namespace LivingCity.UI
             if (page)
                 page.SetActive(false);
             IsOpen = false;
+            RestoreOtherCanvases();
             RefreshTargeting();
             if (StrategicMapHud.Instance)
                 StrategicMapHud.Instance.SetTargetHighlights(null, Color.clear);
@@ -383,8 +386,50 @@ namespace LivingCity.UI
         /// scene, and the map would keep sending clicks to a page that is gone.</summary>
         void OnDestroy()
         {
+            RestoreOtherCanvases();
             IsOpen = false;
             RefreshTargeting();
+        }
+
+        /// <summary>
+        /// Hide every other screen-space UI while the ledger is open. Runtime HUDs
+        /// are separate canvases in this project, so this keeps the modal rule in one
+        /// place instead of making every HUD know about every other HUD. Canvases that
+        /// are already disabled are left alone and are not restored by us.
+        /// </summary>
+        void SuspendOtherCanvases()
+        {
+            RestoreOtherCanvases();
+
+            var all = FindObjectsByType<Canvas>(FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            for (var i = 0; i < all.Length; i++)
+            {
+                var other = all[i];
+                if (!other || !other.enabled || other == canvas)
+                    continue;
+
+                // Never suspend the ledger itself, or an ancestor canvas that owns it.
+                // The latter is important if a scene embeds the ledger under a shared
+                // root canvas: disabling that root would disable the modal too.
+                if (other.transform.IsChildOf(canvas.transform) ||
+                    canvas.transform.IsChildOf(other.transform))
+                    continue;
+
+                suspendedCanvases.Add(other);
+                other.enabled = false;
+            }
+        }
+
+        void RestoreOtherCanvases()
+        {
+            for (var i = 0; i < suspendedCanvases.Count; i++)
+            {
+                var other = suspendedCanvases[i];
+                if (other)
+                    other.enabled = true;
+            }
+            suspendedCanvases.Clear();
         }
 
         /// <summary>
