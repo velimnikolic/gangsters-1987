@@ -1,6 +1,8 @@
 # Unity generated
 /[Ll]ibrary/
 /[Tt]emp/
+/Assets/Temp/
+/Assets/_Recovery*
 /[Oo]bj/
 /[Bb]uild/
 /[Bb]uilds/
