@@ -202,6 +202,7 @@ namespace RoadDemo
         public sealed class Stood
         {
             public int Units, Tiles, Props, Lamps, Palms, Stalls, Cars, Tables, Benches, Parks;
+            public int People;
             public int Drains, Dug, Meters, Bins, Boxes, Picnics;
             public int SurfaceFlush, SurfaceClusters, SurfaceMissing;
             public string SurfaceProfile = "";
@@ -226,6 +227,7 @@ namespace RoadDemo
                 if (Picnics > 0) extra.Add($"{Picnics} picnic table(s)");
                 if (Drains > 0) extra.Add($"{Drains} drain(s)");
                 if (Dug > 0) extra.Add("dug-up pavement");
+                if (People > 0) extra.Add($"{People} ambient figure(s)");
                 if (SurfaceFlush + SurfaceClusters > 0)
                     extra.Add($"surface {SurfaceProfile}: {SurfaceFlush} flush/{SurfaceClusters} cluster(s)");
                 return
@@ -286,6 +288,14 @@ namespace RoadDemo
             Schedule(Dug, window);
             for (int i = 0; i < Kit.Length; i++)
                 Schedule(Kit[i], Mathf.Max(2, window / 2));
+
+            // Every block carries only a handful of decorative figures, but their
+            // skinned prefab dependency chains are expensive first-use misses. Warm one
+            // or two of each civilian look gradually; the ordinary observed-capacity
+            // pass supplies any extra copies the current viewport mix actually needs.
+            int peopleTarget = Mathf.Max(1, window / 4);
+            for (int i = 0; i < AmbientBodies.Length; i++)
+                Schedule(AmbientBodies[i], peopleTarget);
 
             int carTarget = Mathf.Max(6, window);
             var cars = CoreRoads.CarPrefabs;
@@ -369,6 +379,7 @@ namespace RoadDemo
             if (Dressed) Street(plan, root, rng, standing, stood);
             Palms(plan, kerbs, standing, root, raise, rng.Next(), stood);
             SurfaceDetails(plan, root, stood);
+            AmbientPeople(plan, root, stood);
 
             stood.Absent.AddRange(Missing);
             stood.Missing = Missing.Count;

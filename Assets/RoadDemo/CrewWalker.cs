@@ -541,7 +541,7 @@ namespace RoadDemo
         ///
         /// No way at all - walled in, or a mark stood inside something - and he simply
         /// walks at it and gets as near as the ground lets him.</summary>
-        public void OrderAcross(Vector3 point, float delay = 0f, bool keepOffRoad = true)
+        public void OrderAcross(Vector3 point, float delay = 0f, bool keepOffRoad = false)
         {
             if (Spilling) return;   // in the air off a machine: he is the spill's until he lands
             if (Dead) return;
@@ -585,7 +585,7 @@ namespace RoadDemo
         /// <summary>Whether this walk is keeping off the carriageway - held for the
         /// replans, which must be drawn under the same rule as the first way or the man
         /// steps onto the road at his first corner.</summary>
-        bool _legsOffRoad = true;
+        bool _legsOffRoad;
 
         /// <summary>The next corner, when there is one. Reached one, he goes on to the
         /// next; STOPPED SHORT of one, the way is drawn again from where he stands -

@@ -1045,9 +1045,8 @@ namespace RoadDemo
             return null;
         }
 
-        /// <summary>Send the selected lieutenant toward a world point - the nearest
-        /// sidewalk to it in the city, the point itself on open floor. Returns where
-        /// he will stand, or false when nothing is selected.
+        /// <summary>Send the selected lieutenant toward a world point over any open
+        /// city ground. Returns where he will stand, or false when nothing is selected.
         ///
         /// <paramref name="run"/> is the player asking for it twice (CrewOverlay's
         /// double right click) and is the ONLY thing that puts a crew into a run over
@@ -1090,34 +1089,10 @@ namespace RoadDemo
                 return true;
             }
 
-            if (FreeRoam)
-            {
-                world = WalkObstacles.ClampToCity(world);
-                world.y = GroundY;
-                var boss = Selected.Boss;
-                var dir = world - boss.Tf.position;
-                dir.y = 0f;
-                var rot = Quaternion.LookRotation(dir.sqrMagnitude > 0.25f ? dir.normalized : boss.Tf.forward);
-                bool stagger = SettledTogether(Selected, boss);
-                boss.OrderToPoint(world);
-                boss.Urgent = run;   // asked for twice on the bare floor too
-                boss.Post = world;
-                for (int k = 0; k < Selected.Hoods.Count; k++)
-                {
-                    var hood = Selected.Hoods[k];
-                    hood.OrderToPoint(WalkObstacles.ClearSpot(
-                        world + rot * FormationOffset(Selected.CrewId, k), WalkObstacles.Radius),
-                        stagger ? HoodBeat() : 0f);
-                    hood.Urgent = run;
-                }
-                destination = world;
-                return true;
-            }
-
-            if (!NearestSidewalk(world, out var link, out float t)) return false;
-            Dispatch(Selected, link, t, run);
-            destination = Selected.Boss.Destination;
-            Selected.Boss.Post = destination;
+            world = WalkObstacles.ClampToCity(world);
+            world.y = GroundY;
+            DispatchAcross(Selected, Selected.Boss, world, run, keepOffRoad: false);
+            destination = world;
             return true;
         }
 
@@ -1133,7 +1108,7 @@ namespace RoadDemo
         ///
         /// This is the order behind a march; the walking itself, the corners and the
         /// steering past whatever has moved into the way since, is CrewWalker's.</summary>
-        public bool MarchTo(Unit unit, Vector3 world, bool run = false, bool keepOffRoad = true)
+        public bool MarchTo(Unit unit, Vector3 world, bool run = false, bool keepOffRoad = false)
         {
             if (unit == null) return false;
             // A CREW WHOSE LIEUTENANT IS DOWN IS STILL A CREW. His hoods are on their
@@ -1149,35 +1124,21 @@ namespace RoadDemo
             world = WalkObstacles.ClampToCity(world);
             world.y = GroundY;
 
-            // THE PAVEMENTS ARE THE WAY, AND THE ROAD IS FOR THE CARS. A march used to
-            // go over the ground (OrderAcross - "never mind the pavements"), which drew
-            // crews diagonally down the middle of a street and left them standing in the
-            // carriageway with the traffic picking its way round. That is the drive-by
-            // scene the whole town over, and it is not what an errand looks like.
-            //
-            // So an ordinary march now walks the SIDEWALK GRAPH, which is exactly what a
-            // player's own right-click has always done (OrderSelected -> Dispatch): down
-            // the pavements, across at the crossings, in formation. Nothing is taken away
-            // from a fight - a crew closing on a mark (TickEngage), one running a chase
-            // down (StartChase) or one fleeing still cuts straight across the road as it
-            // always has, because none of those come through here. What comes through
-            // here is walking about, and walking about belongs on the pavement.
-            //
-            // keepOffRoad: false is for the order that MEANS the carriageway - the lab's
-            // roadblock, which marches a mob into the lane in front of a car on purpose.
-            if (keepOffRoad && !FreeRoam && NearestSidewalk(world, out var walk, out float walkT))
-            {
-                Dispatch(unit, boss, walk, walkT, run);
-                boss.Post = boss.Destination;
-                return true;
-            }
+            DispatchAcross(unit, boss, world, run, keepOffRoad);
+            return true;
+        }
 
+        /// <summary>Move a whole crew across physical ground instead of the pedestrian
+        /// graph. Static obstacles shape the planned route; traffic is avoided live by
+        /// each walker.</summary>
+        void DispatchAcross(Unit unit, CrewWalker boss, Vector3 world, bool run, bool keepOffRoad)
+        {
             var dir = world - boss.Tf.position;
             dir.y = 0f;
             var rot = Quaternion.LookRotation(dir.sqrMagnitude > 0.25f ? dir.normalized : boss.Tf.forward);
             bool stagger = SettledTogether(unit, boss);
             Reseat(boss);
-            boss.OrderAcross(world);
+            boss.OrderAcross(world, keepOffRoad: keepOffRoad);
             // A walk unless the player asked for it twice. The run exists (CrewWalker.
             // Running) but nothing reaches for it on its own: men who break into a jog
             // because some rule inside the game decided they should read as a town in
@@ -1192,10 +1153,9 @@ namespace RoadDemo
                 // spread behind him, so three men arrive as a crew and not as a column
                 man.OrderAcross(WalkObstacles.ClearSpot(
                     world + rot * FormationOffset(unit.CrewId, k), WalkObstacles.Radius),
-                    stagger ? HoodBeat() : 0f);
+                    stagger ? HoodBeat() : 0f, keepOffRoad);
                 man.Urgent = run;
             }
-            return true;
         }
 
         /// <summary>The first man of this crew still on his feet - who leads it when the

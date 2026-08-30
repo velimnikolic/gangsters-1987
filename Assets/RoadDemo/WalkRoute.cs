@@ -34,11 +34,6 @@ namespace RoadDemo
         /// outside of the outermost building.</summary>
         const float Margin = 30f;
 
-        /// <summary>How far from a street a man may still be and be IN THE CITY: the
-        /// pavement, the frontage, and the yard behind it - about half a block. Beyond
-        /// that is grass, and the city stops at its outermost street.</summary>
-        const float CityReach = 34f;
-
         static bool[] _free;
         // and whether a man can actually get from one square to the next, east and
         // north; the other two ways are the same passages read backwards
@@ -108,17 +103,16 @@ namespace RoadDemo
             // more would wall off half the city's frontages.
             float r = WalkObstacles.Radius;
             var net = LaneNet.Active ?? LaneNet.Shared;
-            bool bounded = net != null && net.Roads.Count > 0;
             for (int z = 0; z < _h; z++)
                 for (int x = 0; x < _w; x++)
                 {
                     var q = new Vector3(_x0 + x * Cell, 0f, _z0 + z * Cell);
-                    // the scene's own fence too (WalkObstacles.City): near-a-street is
-                    // not enough where the ground past the pavement is bare void - a
-                    // way must never cut a corner over ground nobody may stand on
+                    // The scene's city fence is the only ground boundary. Inside it,
+                    // surface type does not decide whether a crew may walk: asphalt,
+                    // pavement, grass, frontage and yards are equally valid when they
+                    // are not occupied by a physical obstacle.
                     int i0 = z * _w + x;
                     _free[i0] = !WalkObstacles.Standing(q, r) &&
-                                (!bounded || InTheCity(net, q)) &&
                                 WalkObstacles.InCity(q);
                     // and whether it is ASPHALT, and which way that asphalt runs. A way
                     // is not forbidden the road - a man has to cross one to get anywhere
@@ -203,33 +197,6 @@ namespace RoadDemo
                 run += Along(i, dir.x, dir.z) * Mathf.Min(stepLen, len - t);
             }
             return run;
-        }
-
-        /// <summary>Is this ground part of the city at all?
-        ///
-        /// A crew walks anywhere a man can put his feet - over the lot, across the road
-        /// against the light, down the gap between two buildings - but it does not set
-        /// off across the fields. THE CITY IS ITS STREETS: ground within half a block of
-        /// one is pavement, frontage or yard and a man may be on it; ground further off
-        /// than that is grass, water, or whatever the island is made of out there, and
-        /// no way is ever drawn over it.</summary>
-        static bool InTheCity(LaneNet net, Vector3 q)
-        {
-            for (int i = 0; i < net.Roads.Count; i++)
-            {
-                var road = net.Roads[i];
-                var a = road.A;
-                var ab = road.B - a;
-                float len2 = ab.x * ab.x + ab.z * ab.z;
-                if (len2 < 1e-4f) continue;
-                float t = Mathf.Clamp01(((q.x - a.x) * ab.x + (q.z - a.z) * ab.z) / len2);
-                float dx = q.x - (a.x + ab.x * t), dz = q.z - (a.z + ab.z * t);
-                // measured from the KERB, not the centre line: a boulevard is thirty
-                // metres wide and that width is street, not distance from a street
-                float slack = CityReach + road.HalfRoad;
-                if (dx * dx + dz * dz <= slack * slack) return true;
-            }
-            return false;
         }
 
         static int Index(Vector3 p, out int x, out int z)

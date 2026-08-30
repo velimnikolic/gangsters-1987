@@ -247,6 +247,9 @@ namespace RoadDemo
                 yield return null;
             }
 
+            AmbientPeople(plan, root, stood);
+            yield return null;
+
             stood.Absent.AddRange(Missing);
             stood.Missing = Missing.Count;
             stood.Refused = Worst();
