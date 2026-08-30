@@ -211,6 +211,7 @@ namespace RoadDemo
                 DriveTrace.Int(sb, "seats", unit.Boarding.SeatOf.Count);
                 DriveTrace.Row("crewcar", sb.ToString());
             }
+            foreach (var man in unit.All()) _boardingDoor.Remove(man);
             unit.Boarding = null;
             // and with it whatever was deferred against the walk: a drive-by that was
             // to start when the last man was in has no last man now
@@ -235,6 +236,12 @@ namespace RoadDemo
         /// stood 115 m from their doors for 148 seconds, in the run that found this.)
         /// Close in - across the pavement to the handle - the straight leg is right, and
         /// the graph would only walk him past it.</summary>
+        void SendToCarDoor(CrewWalker man, CrewCar car, int seat, float delay = 0f, bool graph = false)
+        {
+            var door = car.DoorPoint(BoardingDoor(car, man, seat));
+            SendToDoor(man, door, delay, graph);
+        }
+
         void SendToDoor(CrewWalker man, Vector3 door, float delay = 0f, bool graph = false)
         {
             var gap = door - man.Tf.position;
@@ -266,9 +273,36 @@ namespace RoadDemo
         /// and the graph puts him on the nearest pavement, which need not be the one the
         /// car is at. So they alternate, and one of the two always gets him there.</summary>
         readonly Dictionary<CrewWalker, int> _doorTries = new Dictionary<CrewWalker, int>();
+        readonly Dictionary<CrewWalker, int> _boardingDoor = new Dictionary<CrewWalker, int>();
+
+        /// <summary>The physical door a man uses to enter, which need not be the door
+        /// beside the seat he will occupy. A driver dealt on the passenger side used to
+        /// walk straight at the driver's handle THROUGH the car; live avoidance quite
+        /// correctly kept him four metres away forever. He now takes the nearest door
+        /// and moves across the cabin as the boarding pose hides him, while SeatOf still
+        /// keeps the lieutenant in seat zero and every rider in the right riding pose.</summary>
+        int BoardingDoor(CrewCar car, CrewWalker man, int seat)
+        {
+            if (_boardingDoor.TryGetValue(man, out int door) && door >= 0 && door < car.Seats)
+                return door;
+            door = Mathf.Clamp(seat, 0, Mathf.Max(0, car.Seats - 1));
+            float best = float.MaxValue;
+            for (int i = 0; i < car.Seats; i++)
+            {
+                var d = car.DoorPoint(i) - man.Tf.position;
+                d.y = 0f;
+                float ds = d.sqrMagnitude;
+                if (ds >= best) continue;
+                best = ds;
+                door = i;
+            }
+            _boardingDoor[man] = door;
+            return door;
+        }
 
         void Board(Unit unit, CrewCar car)
         {
+            CallOffRaids(unit, "a car order");
             if (DriveTrace.On)
             {
                 var sb = DriveTrace.Take();
@@ -296,7 +330,8 @@ namespace RoadDemo
                 car.SeatOf[man] = seat;
                 man.Disengage();
                 _doorTries.Remove(man);
-                SendToDoor(man, car.DoorPoint(seat));
+                _boardingDoor.Remove(man);
+                SendToCarDoor(man, car, seat);
                 given++;
             }
             if (given == 0 && car.SeatOf.Count == 0) Unboard(unit, "nobody could be given a seat");
@@ -480,11 +515,13 @@ namespace RoadDemo
                                 if (seat < 0) { anyOut = true; continue; }
                                 car.SeatOf[man] = seat;
                                 _doorTries.Remove(man);
-                                SendToDoor(man, car.DoorPoint(seat));
+                                _boardingDoor.Remove(man);
+                                SendToCarDoor(man, car, seat);
                                 anyOut = true;
                                 continue;
                             }
-                            var door = car.DoorPoint(seat);
+                            int doorSeat = BoardingDoor(car, man, seat);
+                            var door = car.DoorPoint(doorSeat);
                             var d = man.Tf.position - door;
                             d.y = 0f;
                             float dist = d.magnitude;
@@ -499,7 +536,7 @@ namespace RoadDemo
                             // hand on the handle, not from across the road - but a door
                             // that will not open for a man who has ARRIVED leaves him
                             // stood beside his own car for the rest of the run
-                            if (dist <= 1.8f || atDoor) car.OpenDoorFor(seat);
+                            if (dist <= 1.8f || atDoor) car.OpenDoorFor(doorSeat);
                             if (DriveTrace.On)
                             {
                                 var sb = DriveTrace.Take();
@@ -507,20 +544,21 @@ namespace RoadDemo
                                 DriveTrace.Int(sb, "seat", seat);
                                 DriveTrace.Num(sb, "toDoor", dist);
                                 DriveTrace.Bool(sb, "order", man.HasOrder);
-                                DriveTrace.Bool(sb, "open", car.DoorOpenFor(seat));
-                                DriveTrace.Bool(sb, "in", atDoor && car.DoorOpenFor(seat));
+                                DriveTrace.Bool(sb, "open", car.DoorOpenFor(doorSeat));
+                                DriveTrace.Bool(sb, "in", atDoor && car.DoorOpenFor(doorSeat));
                                 DriveTrace.Str(sb, "state", man.State.ToString());
                                 DriveTrace.Vec(sb, "p", man.Tf.position);
                                 DriveTrace.Vec(sb, "door", door);
                                 DriveTrace.Row("board", sb.ToString());
                             }
-                            if (atDoor && car.DoorOpenFor(seat))
+                            if (atDoor && car.DoorOpenFor(doorSeat))
                             {
                                 car.Aboard.Add(man);
                                 _doorTries.Remove(man);
+                                _boardingDoor.Remove(man);
                                 man.Disengage();
                                 man.SetRiding(true);
-                                car.CloseDoorFor(seat);
+                                car.CloseDoorFor(doorSeat);
                                 car.Occupant = unit;
                                 unit.Car = car;
                                 TakeCar(unit, car);
@@ -538,7 +576,7 @@ namespace RoadDemo
                                 {
                                     _doorTries.TryGetValue(man, out int tries);
                                     _doorTries[man] = tries + 1;
-                                    SendToDoor(man, door, Random.Range(0.2f, 0.6f), graph: (tries & 1) == 1);
+                                    SendToCarDoor(man, car, seat, Random.Range(0.2f, 0.6f), graph: (tries & 1) == 1);
                                 }
                             }
                         }
@@ -659,12 +697,12 @@ namespace RoadDemo
             return unit.TargetUnit;
         }
 
-        // The mark is finished as far as the car is concerned: every man of it is down
-        // or running off the street. A crew does not keep driving passes at a pavement
-        // with nobody left stood on it - that is what looks mad from the kerb, and a man
-        // who has turned and run is off the board anyway (TakeOffRetreated). Distance is
-        // deliberately not in it: a drive-by ordered on a crew at the far end of the
-        // street is a long drive, not a finished job.
+        // The ordinary street fight is over when every survivor has broken, but an
+        // ordered drive-by is not: a living runner is still a man the riders can see and
+        // shoot on the next pass. It ends only when nobody remains on the crew's books;
+        // a retreat that really gets off the street is removed by TakeOffRetreated and
+        // therefore satisfies the same rule. Distance is deliberately not in it: a
+        // drive-by ordered on a crew at the far end is a long drive, not a finished job.
         static bool Beaten(Unit target)
         {
             foreach (var man in target.All())
@@ -681,7 +719,7 @@ namespace RoadDemo
 
         void TickRiders(CrewCar car, Unit target, float dt)
         {
-            if (target == null || target.Wiped || Beaten(target))
+            if (target == null || target.Wiped)
             {
                 car.TargetDone(); // the job is done: on a little and in at the kerb
                 foreach (var man in car.Aboard) man.RidingAim = false;
@@ -925,7 +963,7 @@ namespace RoadDemo
                 // the man with the keys, or his lieutenant if the hood is not out.
                 CrewWalker man = null;
                 Vector3 anchor;
-                if (front != null) anchor = front.Door;
+                if (front != null) anchor = front.Outside;
                 else
                 {
                     int keeper = CrewCars.KeeperOf(item);

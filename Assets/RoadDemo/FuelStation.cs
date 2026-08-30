@@ -538,6 +538,14 @@ namespace RoadDemo
         /// stations off the district's seed, so the same seed grows the same trees.</summary>
         public void Dress(Transform under, System.Random rng)
         {
+            Dress(under, rng, plantTreeLine: true);
+        }
+
+        /// <summary>Stand the working forecourt dressing, optionally omitting the outer
+        /// wayside tree line. An urban block is surrounded by generated pavement, so its
+        /// perimeter planting belongs to that generator rather than to the rural skirt.</summary>
+        public void Dress(Transform under, System.Random rng, bool plantTreeLine)
+        {
 #if UNITY_EDITOR
             if (under == null) return;
             float yaw = Rot.eulerAngles.y;
@@ -571,7 +579,7 @@ namespace RoadDemo
                 WalkObstacles.Block(At(piece.X, piece.Z), yaw, half);
             }
 
-            PlantTreeLine(under, rng, Load);
+            if (plantTreeLine) PlantTreeLine(under, rng, Load);
 #endif
         }
 
@@ -801,7 +809,11 @@ namespace RoadDemo
                 // over the forecourt. They are one sign in three pieces.)
                 if (piece.Name == "SM_Prop_StreetSign_Pole_01")
                     go.transform.localScale = new Vector3(1.3f, 1.95f, 1.3f);
-                if (piece.Name == "SM_Bld_Shop_01") OpenTheShop(go.transform);
+                if (piece.Name == "SM_Bld_Shop_01")
+                {
+                    OpenTheShop(go.transform);
+                    BuildingCutaway.Prepare(go);
+                }
             }
             station.Footprint = Measure(under);
 #endif

@@ -16,6 +16,115 @@ namespace RoadDemo
         // combat policy in whichever overlay happened to issue the order.
         readonly HashSet<CrewWalker> _orderedMarks = new HashSet<CrewWalker>();
 
+        List<AudioClip> _combatAudioPrewarm;
+        int _combatAudioPrewarmAt;
+        List<GameObject> _combatFxPrewarm;
+        int _combatFxPrewarmAt;
+        Dictionary<GameObject, GameObject> _prewarmedCombatFx;
+
+        /// <summary>Queues the expensive first-use pieces while the scene is settling,
+        /// long before a crew can board a car and reach its first firing window. One FX
+        /// hierarchy or one short clip is touched per frame, so setup does not merely move
+        /// the hitch from the trigger pull into one monolithic initialization frame.</summary>
+        void PrepareCombatPrewarm()
+        {
+            EnsureShotAudioSources();
+
+            _combatFxPrewarm ??= new List<GameObject>(3);
+            _combatFxPrewarm.Clear();
+            AddPrewarmFx(MuzzleFlashPrefab);
+            AddPrewarmFx(BloodPrefab);
+            AddPrewarmFx(ImpactPrefab);
+            _combatFxPrewarmAt = 0;
+            _prewarmedCombatFx ??= new Dictionary<GameObject, GameObject>();
+            _prewarmedCombatFx.Clear();
+
+            _combatAudioPrewarm ??= new List<AudioClip>();
+            _combatAudioPrewarm.Clear();
+            if (GunshotSets != null)
+                foreach (var set in GunshotSets)
+                    if (set?.Clips != null)
+                        foreach (var clip in set.Clips)
+                            if (clip != null && !_combatAudioPrewarm.Contains(clip))
+                                _combatAudioPrewarm.Add(clip);
+            if (CrackClip != null && !_combatAudioPrewarm.Contains(CrackClip))
+                _combatAudioPrewarm.Add(CrackClip);
+            _combatAudioPrewarmAt = 0;
+        }
+
+        void AddPrewarmFx(GameObject prefab)
+        {
+            if (prefab != null && !_combatFxPrewarm.Contains(prefab))
+                _combatFxPrewarm.Add(prefab);
+        }
+
+        void TickCombatPrewarm()
+        {
+            // Instantiate only one hierarchy this frame. The inactive instance becomes
+            // the first real effect, so component initialization is not repeated at fire.
+            if (_combatFxPrewarm != null && _combatFxPrewarmAt < _combatFxPrewarm.Count)
+            {
+                var prefab = _combatFxPrewarm[_combatFxPrewarmAt++];
+                if (prefab != null && !_prewarmedCombatFx.ContainsKey(prefab))
+                {
+                    var warmed = Instantiate(prefab, _root);
+                    warmed.SetActive(false);
+                    _prewarmedCombatFx[prefab] = warmed;
+                }
+                return;
+            }
+
+            // These imports deliberately do not preload their sample data. Ask for one
+            // short report per frame so the first PlayOneShot never owns decompression.
+            if (_combatAudioPrewarm == null ||
+                _combatAudioPrewarmAt >= _combatAudioPrewarm.Count) return;
+            var clip = _combatAudioPrewarm[_combatAudioPrewarmAt++];
+            if (clip != null && clip.loadState == AudioDataLoadState.Unloaded)
+                clip.LoadAudioData();
+        }
+
+        void EnsureShotAudioSources()
+        {
+            if (_shots == null)
+            {
+                _shots = gameObject.AddComponent<AudioSource>();
+                _shots.spatialBlend = 0f;
+                _shots.playOnAwake = false;
+            }
+            if (_cracks == null)
+            {
+                _cracks = gameObject.AddComponent<AudioSource>();
+                _cracks.spatialBlend = 0f;
+                _cracks.playOnAwake = false;
+            }
+        }
+
+        GameObject CombatFx(GameObject prefab, Vector3 position, Quaternion rotation,
+                            Transform parent = null)
+        {
+            GameObject effect = null;
+            if (prefab != null && _prewarmedCombatFx != null &&
+                _prewarmedCombatFx.TryGetValue(prefab, out effect))
+                _prewarmedCombatFx.Remove(prefab);
+
+            if (effect == null)
+                effect = parent != null
+                    ? Instantiate(prefab, position, rotation, parent)
+                    : Instantiate(prefab, position, rotation);
+            else
+            {
+                effect.transform.SetParent(parent, true);
+                effect.transform.SetPositionAndRotation(position, rotation);
+                effect.SetActive(true);
+                foreach (var ps in effect.GetComponentsInChildren<ParticleSystem>(true))
+                {
+                    ps.Clear(true);
+                    ps.Play(true);
+                }
+            }
+            return effect;
+        }
+
         void SetTarget(Unit unit, Unit target) => SetTarget(unit, target, ordered: false);
 
         /// <summary>How far round an ordered job the traffic is thinned, and for how
@@ -26,6 +135,7 @@ namespace RoadDemo
 
         void SetTarget(Unit unit, Unit target, bool ordered)
         {
+            if (ordered) CallOffRaids(unit, "an attack order");
             // an ordered job clears its own street: the player asked for this fight, so
             // the town is not left putting a bus between him and it
             if (ordered && target != null)
@@ -60,7 +170,7 @@ namespace RoadDemo
 
         bool CanEngageOnFoot(CrewWalker man) =>
             man != null && man.Tf != null && !man.Dead && man.Carrying && !man.Panicked &&
-            !IsAboard(man) && !man.Riding;
+            !IsAboard(man) && !man.Riding && !OnRaid(man);
 
         /// <summary>Give this shooter an enemy nobody in the ordered crew has yet,
         /// while one exists. Once every valid enemy already has a gun on him, fall back
@@ -893,7 +1003,7 @@ namespace RoadDemo
             }
             if (BloodPrefab)
             {
-                var blood = Instantiate(BloodPrefab, target.ChestPosition,
+                var blood = CombatFx(BloodPrefab, target.ChestPosition,
                     Quaternion.LookRotation(-line));
                 Destroy(blood, 4f);
             }
@@ -911,7 +1021,8 @@ namespace RoadDemo
             if (civ.Dead) CrewGore.Death(civ, GroundY);
             if (BloodPrefab)
             {
-                var blood = Instantiate(BloodPrefab, civ.Tf.position + Vector3.up * 1.2f, Quaternion.LookRotation(-line));
+                var blood = CombatFx(BloodPrefab, civ.Tf.position + Vector3.up * 1.2f,
+                    Quaternion.LookRotation(-line));
                 Destroy(blood, 4f);
             }
         }
@@ -973,7 +1084,7 @@ namespace RoadDemo
             }
             if (ImpactPrefab)
             {
-                var puff = Instantiate(ImpactPrefab, at, Quaternion.LookRotation(muzzle - at));
+                var puff = CombatFx(ImpactPrefab, at, Quaternion.LookRotation(muzzle - at));
                 Destroy(puff, 1.2f);
             }
         }
@@ -1015,7 +1126,7 @@ namespace RoadDemo
             }
             if (ImpactPrefab)
             {
-                var puff = Instantiate(ImpactPrefab, at, Quaternion.LookRotation(muzzle - at));
+                var puff = CombatFx(ImpactPrefab, at, Quaternion.LookRotation(muzzle - at));
                 Destroy(puff, 1.2f);
             }
         }
@@ -1034,7 +1145,7 @@ namespace RoadDemo
             float wide = Random.Range(0.4f, 1.6f) * (Random.value < 0.5f ? -1f : 1f);
             var spot = muzzle + dir * beyond + side * wide;
             spot.y = GroundY + 0.02f;
-            var puff = Instantiate(ImpactPrefab, spot, Quaternion.LookRotation(Vector3.up));
+            var puff = CombatFx(ImpactPrefab, spot, Quaternion.LookRotation(Vector3.up));
             Destroy(puff, 2f);
         }
 
@@ -1045,7 +1156,8 @@ namespace RoadDemo
         {
             if (MuzzleFlashPrefab)
             {
-                var flash = Instantiate(MuzzleFlashPrefab, muzzle, Quaternion.LookRotation(forward), follow);
+                var flash = CombatFx(MuzzleFlashPrefab, muzzle,
+                    Quaternion.LookRotation(forward), follow);
 
                 // ONE TRIGGER PULL IS ONE FLASH. The pack's FX_Gunshot_01 is authored as
                 // a LOOPING system - the flash emitter runs on a tenth of a second and
@@ -1080,12 +1192,7 @@ namespace RoadDemo
             {
                 // one 2D source, pitch-jittered: the shot has to be heard from the
                 // demo's camera height, where a 3D one-shot at default rolloff is a whisper
-                if (_shots == null)
-                {
-                    _shots = gameObject.AddComponent<AudioSource>();
-                    _shots.spatialBlend = 0f;
-                    _shots.playOnAwake = false;
-                }
+                EnsureShotAudioSources();
                 // Several recorded reports per weapon, so the variation comes from the
                 // files and the pitch only has to keep two shots in a burst from being
                 // identical - a transposition wide enough to fake variety also changes
@@ -1094,12 +1201,6 @@ namespace RoadDemo
                 _shots.PlayOneShot(shots[Random.Range(0, shots.Length)], 0.5f);
                 if (CrackClip)
                 {
-                    if (_cracks == null)
-                    {
-                        _cracks = gameObject.AddComponent<AudioSource>();
-                        _cracks.spatialBlend = 0f;
-                        _cracks.playOnAwake = false;
-                    }
                     _cracks.pitch = Random.Range(0.92f, 1.12f);
                     _cracks.PlayOneShot(CrackClip, 0.3f);
                 }

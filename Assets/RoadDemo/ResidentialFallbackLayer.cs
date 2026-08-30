@@ -247,6 +247,7 @@ namespace RoadDemo
         readonly Dictionary<string, Entry> _entries =
             new Dictionary<string, Entry>(StringComparer.Ordinal);
         ResidentialBlockModel _model;
+        Transform _root;
         Material _ground;
         Material _building;
 
@@ -257,7 +258,7 @@ namespace RoadDemo
             {
                 int count = 0;
                 foreach (var entry in _entries.Values)
-                    if (entry.Root != null && entry.Root.activeSelf) count++;
+                    if (entry.Root != null && entry.Root.activeInHierarchy) count++;
                 return count;
             }
         }
@@ -267,9 +268,20 @@ namespace RoadDemo
             if (_model != null) _model.Changed -= OnModelChanged;
             ClearEntries();
             _model = model ?? throw new ArgumentNullException(nameof(model));
+            EnsureRoot();
             EnsureMaterials();
             for (int i = 0; i < _model.Blocks.Count; i++) Add(_model.Blocks[i]);
             _model.Changed += OnModelChanged;
+        }
+
+        /// <summary>The full TurfMap covers the street. One common parent disables every
+        /// coarse block without walking 158 renderers on the map threshold frame; child
+        /// visibility remains intact for the return to 3D.</summary>
+        public void SetSuppressed(bool suppressed)
+        {
+            EnsureRoot();
+            if (_root.gameObject.activeSelf == !suppressed) return;
+            _root.gameObject.SetActive(!suppressed);
         }
 
         public bool Contains(string recipeId) => recipeId != null && _entries.ContainsKey(recipeId);
@@ -299,9 +311,10 @@ namespace RoadDemo
 
         void Add(ResidentialBlockRecipe recipe)
         {
+            EnsureRoot();
             var description = ResidentialFallbackGeometry.Describe(recipe);
             var root = new GameObject($"Fallback {description.Name}");
-            root.transform.SetParent(transform, false);
+            root.transform.SetParent(_root, false);
             root.transform.localPosition = new Vector3(
                 description.LocalBounds.xMin, 0f, description.LocalBounds.yMin);
             root.isStatic = true;
@@ -320,6 +333,15 @@ namespace RoadDemo
                 Mesh = mesh,
                 Bounds = description.LocalBounds,
             });
+        }
+
+        void EnsureRoot()
+        {
+            if (_root != null) return;
+            _root = transform.Find("Residential fallback views");
+            if (_root != null) return;
+            _root = new GameObject("Residential fallback views").transform;
+            _root.SetParent(transform, false);
         }
 
         void OnModelChanged(ResidentialBlockRecipe recipe, ResidentialBlockChange change)

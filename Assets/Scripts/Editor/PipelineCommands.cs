@@ -30,7 +30,8 @@ namespace GangstersTools
     public static class PipelineCommands
     {
         [CliCommand("gangsters_core_vacancy_tests",
-                    "Run seed-1987 contracts for every Core residential parcel and its no-water fallback.",
+                    "Run seed-1987 contracts for stand-alone amenity blocks, empty remainders, " +
+                    "and residential no-water fallback.",
                     MainThreadRequired = true, Tags = new[] { "gangsters", "core", "tests" })]
         public static object CoreVacancyAudit()
         {
@@ -327,15 +328,16 @@ namespace GangstersTools
             {
                 int s = seed == CoreLayout.SyntySeed ? (i == 0 ? seed : i) : seed + i;
                 var plan = CoreLayout.Arrange(blocks, s, out var raster);
+                // Match CoreDistrict: only ground that belongs to no existing block may
+                // become an independent amenity block.
                 var amenityCandidates = new List<Rect>(plan.Lots);
-                foreach (var block in CoreLayout.WithGround(blocks, plan))
-                    if (block.Lot.width > 0.01f && block.Lot.height > 0.01f)
-                        amenityCandidates.Add(block.Lot);
                 var parking = new List<CoreAmenityLayout.Site>();
                 var fuel = new List<CoreAmenityLayout.Site>();
                 var development = new List<CoreAmenityLayout.Site>();
                 CoreAmenityLayout.Select(raster, amenityCandidates, s, 3, 5,
                     parking, fuel, development);
+                development.RemoveAll(site =>
+                    !CoreAmenityLayout.CanCarryHousing(site, plan.Territory));
                 if (raster.Faults == 0) clean++;
                 if (plan.Attempt == 0) firstDeal++;
                 results.Add(new
@@ -371,16 +373,7 @@ namespace GangstersTools
                         width = site.Box.width,
                         depth = site.Box.height,
                         entry = site.Entry.ToString(),
-                        programme = ResidentialLot.Classify(
-                            Mathf.RoundToInt(site.Box.width / CoreLayout.Cell) - 2 * ResidentialLot.Walk,
-                            Mathf.RoundToInt(site.Box.height / CoreLayout.Cell) - 2 * ResidentialLot.Walk) != null
-                                ? "residential"
-                                : ResidentialLot.CanFrontage(
-                                    Mathf.RoundToInt(site.Box.width / CoreLayout.Cell),
-                                    Mathf.RoundToInt(site.Box.height / CoreLayout.Cell),
-                                    (int)site.Entry)
-                                    ? "residential-frontage"
-                                    : "unresolved",
+                        programme = "residential-with-pavement",
                     }).ToArray(),
                     spareM2 = raster.SpareArea,
                     size = $"{raster.NX * 5}x{raster.NZ * 5}",
@@ -670,6 +663,106 @@ namespace GangstersTools
 
         // ------------------------------------------------------------ the residential harvest
 
+        [CliCommand("gangsters_storefront_refresh",
+                    "Refresh only generated storefront interiors in the open ResidentialDemo; does not save or rebuild blocks.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "residential" })]
+        public static object StorefrontRefresh()
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("The editor is in play mode; leave it first.");
+
+            var scene = EditorSceneManager.GetActiveScene();
+            if (scene.path != ResidentialSketch.DemoScene)
+                throw new InvalidOperationException(
+                    "Open ResidentialDemo before refreshing its storefront interiors.");
+
+            int undo = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Refresh residential storefront interiors");
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                bool carriesStorefront = root.GetComponentsInChildren<MonoBehaviour>(true)
+                    .Any(component => component != null &&
+                                      component.GetType().Name == "ResidentialStorefrontShell");
+                if (carriesStorefront)
+                    Undo.RegisterFullObjectHierarchyUndo(root,
+                        "Refresh residential storefront interiors");
+            }
+
+            var report = ResidentialBlocks.RefreshExistingStorefronts(scene);
+            if (report.Buildings > 0) EditorSceneManager.MarkSceneDirty(scene);
+            Undo.CollapseUndoOperations(undo);
+            return new
+            {
+                passed = report.Buildings > 0 && report.Failures.Length == 0,
+                scene = scene.path,
+                saved = false,
+                report.Buildings,
+                report.Openings,
+                report.Displays,
+                report.Closed,
+                report.RemovedGeneratedProps,
+                report.RemovedLongPieces,
+                report.Failures,
+            };
+        }
+
+        [CliCommand("gangsters_storefront_audit",
+                    "Check every harvested residential/shop prefab can receive a shallow interior, without changing it.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "residential", "tests" })]
+        public static object StorefrontAudit()
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("The editor is in play mode; leave it first.");
+
+            var rows = new List<object>();
+            var failures = new List<string>();
+            foreach (var unit in ResidentialUnits.All.Where(unit =>
+                         unit != null && !ResidentialUnits.IsLot(unit) &&
+                         (unit.Kind == ResidentialKind.Storefront ||
+                          (unit.Shops != null && unit.Shops.Any(count => count > 0)))))
+            {
+                string path = $"{ResidentialHarvest.OutDir}/{unit.Name}.prefab";
+                if (AssetDatabase.LoadAssetAtPath<GameObject>(path) == null)
+                {
+                    failures.Add($"{unit.Name}: missing {path}");
+                    rows.Add(new { unit = unit.Name, prefab = path, openings = 0, passed = false });
+                    continue;
+                }
+
+                GameObject contents = null;
+                int openings = 0;
+                try
+                {
+                    contents = PrefabUtility.LoadPrefabContents(path);
+                    openings = ResidentialBlocks.AuditStorefrontOpeningCount(
+                        contents, unit, Vector3.zero);
+                }
+                finally
+                {
+                    if (contents != null) PrefabUtility.UnloadPrefabContents(contents);
+                }
+
+                bool passed = openings > 0;
+                if (!passed) failures.Add($"{unit.Name}: no measurable storefront opening");
+                rows.Add(new
+                {
+                    unit = unit.Name,
+                    kind = unit.Kind.ToString(),
+                    declaredShops = unit.Shops?.Sum() ?? 0,
+                    openings,
+                    passed,
+                });
+            }
+
+            return new
+            {
+                passed = failures.Count == 0,
+                checkedPrefabs = rows.Count,
+                failures = failures.ToArray(),
+                rows = rows.ToArray(),
+            };
+        }
+
         /// <summary>
         /// The residential harvest, from the terminal: the units the user named in the
         /// harvest scene and in the Palm City demo, measured, baked to prefabs and written
@@ -707,6 +800,17 @@ namespace GangstersTools
             }).ToArray();
 
             return new { units = units.Count, wrote, rows, report = report ? text : null };
+        }
+
+        [CliCommand("gangsters_bake_turf_prefabs",
+                    "Bake prepared TurfMap proxy data into every existing residential prefab.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "performance" })]
+        public static object BakeTurfPrefabs()
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("The editor is in play mode; leave it first.");
+            int changed = ResidentialHarvest.BakeTurfProxyData();
+            return new { changed, ready = true };
         }
     }
 }

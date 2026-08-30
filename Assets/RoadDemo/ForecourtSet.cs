@@ -128,7 +128,8 @@ namespace RoadDemo
         public static void LayApron(FuelStation station, Transform under, Material fallback,
                                     float frontZ, float kerbZ)
         {
-            LayApron(station, under, fallback, frontZ, kerbZ, float.NaN);
+            LayApron(station, under, fallback, frontZ, kerbZ, float.NaN,
+                layCrossovers: true);
         }
 
         /// <summary>Lay the shared apron while guaranteeing an assigned parcel's back edge is
@@ -136,6 +137,18 @@ namespace RoadDemo
         /// PumpDemo and wayside stations keep the measured-cluster overload above.</summary>
         public static void LayApron(FuelStation station, Transform under, Material fallback,
                                     float frontZ, float kerbZ, float assignedBackZ)
+        {
+            LayApron(station, under, fallback, frontZ, kerbZ, assignedBackZ,
+                layCrossovers: true);
+        }
+
+        /// <summary>Lay the apron with optional crossover ownership. A generated city
+        /// pavement already cuts and surfaces its declared vehicle ways, so an urban fuel
+        /// block asks for the forecourt body and arrows but leaves those two cuts to the
+        /// pavement generator. PumpDemo and wayside roads retain the default crossovers.</summary>
+        public static void LayApron(FuelStation station, Transform under, Material fallback,
+                                    float frontZ, float kerbZ, float assignedBackZ,
+                                    bool layCrossovers)
         {
             if (station == null) return;
             float measuredBack = station.BackEdge() - 2.5f;
@@ -145,13 +158,14 @@ namespace RoadDemo
             Pave(station, under, "Forecourt", -FuelStation.ApronHalfX, back,
                  FuelStation.ApronHalfX, frontZ, fallback);
 
-            foreach (float side in new[] { -1f, 1f })
-            {
-                float mouth = side * FuelStation.MouthX;
-                Pave(station, under, "Crossover",
-                     mouth - FuelStation.MouthHalf, frontZ - Overlap,
-                     mouth + FuelStation.MouthHalf, kerbZ + Overlap, fallback);
-            }
+            if (layCrossovers)
+                foreach (float side in new[] { -1f, 1f })
+                {
+                    float mouth = side * FuelStation.MouthX;
+                    Pave(station, under, "Crossover",
+                         mouth - FuelStation.MouthHalf, frontZ - Overlap,
+                         mouth + FuelStation.MouthHalf, kerbZ + Overlap, fallback);
+                }
             LayArrows(station, under);
         }
 
@@ -165,6 +179,81 @@ namespace RoadDemo
             if (station == null || halfWidth <= 0f) return;
             Pave(station, under, "Compact Forecourt", -halfWidth, backZ,
                  halfWidth, frontZ, fallback);
+        }
+
+        /// <summary>Compose a compact city parcel as an asphalt court inside one shared
+        /// CorePavement cell of footway and kerb. Only the two scaled station mouths cut
+        /// through the road-facing band. The old compact composer paved the complete lot
+        /// as road, visually merging it with every adjoining carriageway into one enormous
+        /// intersection.</summary>
+        public static int LayUrbanParcel(FuelStation station, Transform under,
+            Material fallback, float halfWidth, float frontZ, float backZ,
+            float visualScale, System.Func<GameObject, Transform, GameObject> stand,
+            int seed, out string report)
+        {
+            report = "compact station parcel was not laid";
+            if (station == null || under == null || stand == null || halfWidth <= Cell)
+                return 0;
+
+            float innerHalf = halfWidth - Cell;
+            float innerFront = frontZ - Cell;
+            float innerBack = backZ + Cell;
+            if (innerHalf <= 0f || innerFront <= innerBack)
+            {
+                LayParcel(station, under, fallback, halfWidth, frontZ, backZ);
+                report = "parcel is too small for its pavement ring; laid plain forecourt";
+                return 0;
+            }
+
+            // The road kit owns the court itself; CorePavement owns every perimeter tile.
+            Pave(station, under, "Urban Forecourt", -innerHalf, innerBack,
+                 innerHalf, innerFront, fallback);
+
+            var parcel = Box(station, -halfWidth, backZ, halfWidth, frontZ);
+            var plan = CorePavement.Around(new[] { parcel }, band: 0);
+            float mouthX = FuelStation.MouthX * Mathf.Max(0.1f, visualScale);
+            float mouthHalf = FuelStation.MouthHalf * Mathf.Max(0.1f, visualScale);
+            var inverse = Quaternion.Inverse(station.Rot);
+
+            // Around(..., band: 0) gives exactly one owned perimeter cell. Declaring the
+            // road-facing mouth cells directly is more exact than asking the generic yard
+            // finder to infer an exit outside a plan that intentionally ends at the kerb.
+            for (int i = 0; i < plan.NX; i++)
+                for (int j = 0; j < plan.NZ; j++)
+                {
+                    if (!plan.Ground[i, j]) continue;
+                    var centre = new Vector3(
+                        plan.X0 + (i + 0.5f) * CorePavement.Cell,
+                        station.GroundY,
+                        plan.Z0 + (j + 0.5f) * CorePavement.Cell);
+                    var local = inverse * (centre - station.Anchor);
+                    bool front = local.z >= frontZ - Cell - 0.01f &&
+                                 local.z <= frontZ + 0.01f;
+                    bool mouth = Mathf.Abs(Mathf.Abs(local.x) - mouthX) <= mouthHalf;
+                    if (!front || !mouth || plan.Drive[i, j]) continue;
+                    plan.Drive[i, j] = true;
+                    plan.DriveCells++;
+                }
+
+            var pavement = new GameObject("Generated Station Pavement").transform;
+            pavement.SetParent(under, false);
+            return CorePavement.Lay(plan, stand, pavement, out report,
+                y: station.GroundY, seed: seed, ramps: false, under: false, props: true);
+        }
+
+        static Bounds Box(FuelStation station, float x0, float z0, float x1, float z1)
+        {
+            var points = new[]
+            {
+                station.At(x0, z0), station.At(x1, z0),
+                station.At(x0, z1), station.At(x1, z1),
+            };
+            var box = new Bounds(points[0], new Vector3(0f, 1f, 0f));
+            for (int i = 1; i < points.Length; i++) box.Encapsulate(points[i]);
+            var size = box.size;
+            size.y = 1f;
+            box.size = size;
+            return box;
         }
 
         /// <summary>Two lane arrows, and only two: one in the mouth a car turns in at,

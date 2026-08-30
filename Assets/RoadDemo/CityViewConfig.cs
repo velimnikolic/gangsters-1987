@@ -24,8 +24,20 @@ namespace RoadDemo
         [Range(MinimumStreetPitch, MaximumStreetPitch)] public float streetPitch = DefaultStreetPitch;
         [Tooltip("Pitch movement allowed above and below the normal angle. Zero disables vertical right-drag while preserving yaw rotation.")]
         [Range(0f, 10f)] public float streetPitchFreedom = 0f;
-        [Tooltip("Hide near exterior walls at close zoom. Keep off while residential prefabs have no interiors.")]
-        public bool streetCutaway = false;
+        [Tooltip("Replace only camera-blocking buildings with a low footprint at close tactical zoom.")]
+        public bool streetCutaway = true;
+        [Tooltip("Camera boom in metres at which blocking buildings begin cutting away.")]
+        [Min(10f)] public float cutawayEnterDistance = 55f;
+        [Tooltip("Camera boom in metres at which full buildings return. Kept above the enter distance for hysteresis.")]
+        [Min(10f)] public float cutawayExitDistance = 68f;
+        [Tooltip("Absolute height in metres of the closed footprint left by a cut building.")]
+        [Range(0.35f, 1.5f)] public float cutawayProxyHeight = 0.95f;
+        [Tooltip("Seconds a building stays cut after the last sample met it, preventing edge flicker.")]
+        [Range(0.2f, 1f)] public float cutawayRestoreDelay = 0.55f;
+        [Tooltip("Visible crew samples checked immediately each frame before the slower street grid.")]
+        [Range(0, 12)] public int cutawayCrewSamples = 6;
+        [Tooltip("Keep the full building's shadow while its visual shell is cut away.")]
+        public bool cutawayKeepShadows = true;
 
         [Header("Turf map")]
         [Tooltip("North-south metres shown by the corner minimap. The card follows the camera pivot; this is not the full-city map zoom.")]
@@ -73,6 +85,12 @@ namespace RoadDemo
         public float StreetPitch => Mathf.Clamp(streetPitch, MinimumStreetPitch, MaximumStreetPitch);
         public float PitchFreedom => Mathf.Clamp(streetPitchFreedom, 0f, 10f);
         public bool StreetCutaway => streetCutaway;
+        public float CutawayEnterDistance => Mathf.Max(10f, cutawayEnterDistance);
+        public float CutawayExitDistance => Mathf.Max(CutawayEnterDistance + 1f, cutawayExitDistance);
+        public float CutawayProxyHeight => Mathf.Clamp(cutawayProxyHeight, 0.35f, 1.5f);
+        public float CutawayRestoreDelay => Mathf.Clamp(cutawayRestoreDelay, 0.2f, 1f);
+        public int CutawayCrewSamples => Mathf.Clamp(cutawayCrewSamples, 0, 12);
+        public bool CutawayKeepShadows => cutawayKeepShadows;
         public float MinimapViewHeight => Mathf.Max(120f, minimapViewHeight);
         public Vector2 StreetPitchRange => ResolvePitchRange(StreetPitch, PitchFreedom);
         public float Prefetch => Mathf.Max(0f, prefetchMetres);

@@ -276,8 +276,13 @@ namespace HarborDemo
                 for (int i = 0; i < nx; i++)
                 {
                     float cx0 = x0 + i * GroundStep, cz0 = z0 + j * GroundStep;
-                    // nothing under the concrete: the tiles are the ground there
-                    if (cx0 >= -half && cx0 + GroundStep <= half && cz0 >= 0f && cz0 + GroundStep <= apronDepth) continue;
+                    // nothing under the concrete: the tiles are the ground there. The
+                    // reclaimed bulk pier is a second, offset rectangle of that floor.
+                    bool central = cx0 >= -half && cx0 + GroundStep <= half &&
+                                   cz0 >= 0f && cz0 + GroundStep <= apronDepth;
+                    bool bulk = InsideBulkTerminal(cx0, cx0 + GroundStep,
+                                                   cz0, cz0 + GroundStep);
+                    if (central || bulk) continue;
                     int a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
                     float low = Mathf.Min(verts[a].y, verts[b].y, verts[c].y, verts[d].y);
                     var into = low < BeachLine ? sand : grass;
@@ -482,9 +487,13 @@ namespace HarborDemo
             float half = QuayHalf;
             if (_paveTile == null)
                 Debug.LogWarning($"[Harbor] {HarborKit.PaveTile} is missing; the apron is poured as one plane.");
-            else if (TileCarpet("Apron", -half, half, 0f, apronDepth, TileTop, _paveTile, _apronRoot) > 0)
-                return;
-            FlatPlane("Apron", -half, half, 0f, apronDepth, TileTop, ConcreteMaterial(), 12.5f, _apronRoot);
+            bool tiled = _paveTile != null &&
+                         TileCarpet("Apron", -half, half, 0f, apronDepth,
+                                    TileTop, _paveTile, _apronRoot) > 0;
+            if (!tiled)
+                FlatPlane("Apron", -half, half, 0f, apronDepth,
+                          TileTop, ConcreteMaterial(), 12.5f, _apronRoot);
+            BuildBulkTerminalApron();
         }
 
         /// <summary>A strip of asphalt (the yard roads, the gate roads, the aisles) laid
@@ -527,6 +536,7 @@ namespace HarborDemo
                         HarborKit.Prop(_quayPipe, new Vector3(x + 2.5f, WaterY + 0.9f, -QuayFace + 0.05f), 0f, _quayRoot, "Outfall");
                 }
             }
+            BuildBulkTerminalQuay();
 
             // bollards on the coping, a stride in from the face, big and small by turns
             int slot = 0;
@@ -542,20 +552,20 @@ namespace HarborDemo
             for (float x = -half + 13.5f; x < half - 4f; x += 27f)
                 HarborKit.Prop(_pierLamp, new Vector3(x, TileTop, 2.2f), 180f, _quayRoot);
 
-            // where the wall stops the beach begins: rock heaped over the join
+            // where the west wall stops the beach begins. The east rocks moved to the
+            // outer corner of the reclaimed bulk pier.
             if (_shoreRock != null)
-                foreach (float sx in new[] { -1f, 1f })
-                    for (int k = 0; k < 5; k++)
-                    {
-                        var pos = new Vector3(sx * (half + 1.5f + k * 2.2f), WaterY - 0.6f + k * 0.35f,
-                                              -1.5f - k * 2.6f + HarborKit.Range(_rng, -1f, 1f));
-                        var rock = HarborKit.Prop(_shoreRock, pos, HarborKit.Range(_rng, 0f, 360f), _quayRoot, "Rock");
-                        rock.transform.localScale = Vector3.one * HarborKit.Range(_rng, 0.9f, 1.6f);
-                    }
+                for (int k = 0; k < 5; k++)
+                {
+                    var pos = new Vector3(-(half + 1.5f + k * 2.2f), WaterY - 0.6f + k * 0.35f,
+                                          -1.5f - k * 2.6f + HarborKit.Range(_rng, -1f, 1f));
+                    var rock = HarborKit.Prop(_shoreRock, pos, HarborKit.Range(_rng, 0f, 360f), _quayRoot, "Rock");
+                    rock.transform.localScale = Vector3.one * HarborKit.Range(_rng, 0.9f, 1.6f);
+                }
 
             // the channel: tall buoys down the sailing lanes' seaward side, every sixty metres
             if (_buoy != null)
-                for (float x = -half - 60f; x <= half + 60f; x += 60f)
+                for (float x = -half - 60f; x <= BulkTerminalEast + 60f; x += 60f)
                     HarborKit.Prop(_buoy, new Vector3(x + HarborKit.Range(_rng, -6f, 6f), WaterY - 0.25f, -66f + HarborKit.Range(_rng, -3f, 3f)),
                                    HarborKit.Range(_rng, 0f, 360f), _quayRoot, "Buoy");
         }

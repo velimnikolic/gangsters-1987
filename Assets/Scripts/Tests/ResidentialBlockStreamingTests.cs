@@ -23,13 +23,68 @@ namespace LivingCity.Tests
             FrustumIntersectionAndHeight(failures);
             FallbackGeometryIsOpaqueResidential(failures);
             CameraPitchPolicy(failures);
+            TurfMapProxyHeightProjection(failures);
             CompactCoreInfillHasBuildings(failures);
-            ShallowCoreInfillIsApartmentFrontage(failures);
             CoreBlocksHaveStableNamesAndQuarters(failures);
             CoreRiverRunsFullCity(failures);
             CoreShopfrontsCanSeatEveryGang(failures);
+            StorefrontDecorationIsDeterministicAndCoversOpenFacades(failures);
+            CornerStorefrontCoversBothFacesAndKeepsEntranceClear(failures);
             TerritoryStateIsSeparateFromThePlan(failures);
             return failures;
+        }
+
+        static void StorefrontDecorationIsDeterministicAndCoversOpenFacades(
+            List<string> failures)
+        {
+            const int openings = 9;
+            var first = ResidentialBlocks.PlanStorefronts(openings, 1987);
+            var repeat = ResidentialBlocks.PlanStorefronts(openings, 1987);
+
+            if (first.ClosedMask != repeat.ClosedMask ||
+                first.Styles.Length != repeat.Styles.Length)
+            {
+                failures.Add("storefront dressing changed for the same seed");
+                return;
+            }
+
+            int props = 0, open = 0;
+            for (int i = 0; i < first.Styles.Length; i++)
+            {
+                if (first.Styles[i] != repeat.Styles[i])
+                    failures.Add($"storefront opening {i} changed style for the same seed");
+                if (first.Styles[i] >= 0) props++;
+                if ((first.ClosedMask & (1 << i)) == 0) open++;
+            }
+
+            if (open == 0) failures.Add("storefront dressing closed every opening");
+            if (props != open)
+                failures.Add($"storefront dressing covered {props} of {open} open facades");
+        }
+
+        static void CornerStorefrontCoversBothFacesAndKeepsEntranceClear(
+            List<string> failures)
+        {
+            var corner = new[]
+            {
+                new ResidentialStorefrontOpening(
+                    Vector3.zero, Vector3.right, Vector3.back, 4.4f, 2.5f, 7,
+                    corner: true),
+                new ResidentialStorefrontOpening(
+                    Vector3.zero, Vector3.forward, Vector3.right, 4.4f, 2.5f, 7,
+                    corner: true),
+                new ResidentialStorefrontOpening(
+                    Vector3.zero, new Vector3(1f, 0f, 1f).normalized,
+                    new Vector3(1f, 0f, -1f).normalized, 1.4f, 2.5f, 7,
+                    entrance: true, corner: true),
+            };
+            var plan = ResidentialBlocks.PlanStorefronts(corner, 1987);
+            if (plan.ClosedMask != 0)
+                failures.Add("the only corner business was left closed");
+            if (plan.Styles[0] < 0 || plan.Styles[1] < 0)
+                failures.Add("a two-sided corner shop did not dress both main facades");
+            if (plan.Styles[2] >= 0)
+                failures.Add("a corner shop put a prop in its diagonal entrance");
         }
 
         static void BakedCoreCatalogMatchesTheDealer(List<string> failures)
@@ -164,6 +219,30 @@ namespace LivingCity.Tests
                 failures.Add("small pitch freedom did not produce a symmetric pitch range");
         }
 
+        static void TurfMapProxyHeightProjection(List<string> failures)
+        {
+            const float height = 23f;
+            var pitches = new[] { 18f, 52f, 82f };
+            var headings = new[] { 0f, 47f, 133f, 271f };
+            for (int p = 0; p < pitches.Length; p++)
+                for (int h = 0; h < headings.Length; h++)
+                {
+                    float pitch = pitches[p];
+                    float heading = headings[h];
+                    var local = TurfMapBuildingLayer.HeightOffsetWorld(
+                        height, pitch, heading);
+                    var projected = TurfMapHud.ApplyTilt(
+                        TurfMapHud.RotateForHeading(local, heading),
+                        TurfMapHud.PitchTilt(pitch));
+                    var expected = new Vector2(
+                        0f, height * Mathf.Cos(pitch * Mathf.Deg2Rad));
+                    if ((projected - expected).sqrMagnitude <= 0.000001f)
+                        continue;
+                    failures.Add($"TurfMap height projection drifted at pitch {pitch}, " +
+                                 $"heading {heading}: {projected} instead of {expected}");
+                }
+        }
+
         static void CompactCoreInfillHasBuildings(List<string> failures)
         {
             // These are the shallow former parking rectangles dealt by Core's outer
@@ -185,32 +264,6 @@ namespace LivingCity.Tests
                                  $"has {plan.Spots.Count} building(s): {string.Join("; ", plan.Faults)}");
                     break;
                 }
-        }
-
-        static void ShallowCoreInfillIsApartmentFrontage(List<string> failures)
-        {
-            // The five seed-1987 hardstandings are 5-10 m deep. They cannot carry the
-            // ordinary ten-metre pavement ring, but every cell must still become housing.
-            foreach (var shape in new[]
-            {
-                (W: 6, D: 1, Side: 2),
-                (W: 11, D: 1, Side: 0),
-                (W: 12, D: 2, Side: 2),
-                (W: 5, D: 1, Side: 2),
-            })
-            {
-                var plan = ResidentialLot.Frontage(shape.W, shape.D, 1987, shape.Side);
-                if (!plan.Clean || plan.Spots.Count != shape.W * shape.D)
-                    failures.Add($"Core frontage {shape.W}x{shape.D} has " +
-                                 $"{plan.Spots.Count} apartment cells: {string.Join("; ", plan.Faults)}");
-                for (int i = 0; i < shape.W; i++)
-                    for (int j = 0; j < shape.D; j++)
-                        if (plan.Ground[i, j] != ResidentialLot.Use.Building)
-                            failures.Add($"Core frontage {shape.W}x{shape.D} left ({i},{j}) non-residential");
-                foreach (var spot in plan.Spots)
-                    if (!ResidentialUnits.IsFrontage(spot.Unit) || spot.CW != 1 || spot.CD != 1)
-                        failures.Add($"Core frontage {shape.W}x{shape.D} used a non-modular unit");
-            }
         }
 
         static void CoreBlocksHaveStableNamesAndQuarters(List<string> failures)

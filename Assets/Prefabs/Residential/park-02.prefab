@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 1390801610314032279}
   - component: {fileID: 8478064660896868857}
   - component: {fileID: 6157105631176098012}
+  - component: {fileID: 1010923181658811584}
   m_Layer: 0
   m_Name: park-02
   m_TagString: Untagged
@@ -182,6 +183,19 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 35, y: 4.9300003, z: 15}
   m_Center: {x: 17.5, y: 2.435, z: 7.5}
+--- !u!114 &1010923181658811584
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2524584824344206292}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 991d6e824cc774b419537a57b8dd1319, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RoadDemo.ResidentialTurfPrefab
+  _masses: []
 --- !u!1001 &4437239459302661
 PrefabInstance:
   m_ObjectHideFlags: 0

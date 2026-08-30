@@ -32,6 +32,14 @@ namespace RoadDemo
         /// <summary>The doorstep - where the card's tail points and the crew stands.</summary>
         public Vector3 Door;
 
+        /// <summary>The exact pavement point paired with the generated shop door. Core's
+        /// residential view may be recycled, so this model-side link is the stable home
+        /// anchor for the outfit's people and machines.</summary>
+        public Vector3 Entry;
+        public PedLink EntryLink;
+        public float EntryT;
+        public Vector3 Outside => EntryLink != null ? Entry : Door;
+
         /// <summary>The facade normal, toward the street - which way the storefront
         /// faces. Boards go up ACROSS this, fire licks up in front of it (ShopDamage).</summary>
         public Vector3 Outward = Vector3.forward;
@@ -50,6 +58,9 @@ namespace RoadDemo
             GangName = gangName;
             Books = books;
             Door = door;
+            Entry = door;
+            EntryLink = null;
+            EntryT = 0f;
         }
 
         public void Bind(int gangId, string gangName,
@@ -57,6 +68,17 @@ namespace RoadDemo
         {
             Bind(gangId, gangName, books, door);
             if (outward.sqrMagnitude > 1e-4f) Outward = outward.normalized;
+        }
+
+        public void Bind(int gangId, string gangName,
+                         LivingCity.Gangs.FrontDossier books, Vector3 door,
+                         Vector3 entry, PedLink entryLink, float entryT, Vector3 outward)
+        {
+            Bind(gangId, gangName, books, door, outward);
+            if (entryLink == null) return;
+            Entry = entry;
+            EntryLink = entryLink;
+            EntryT = Mathf.Clamp(entryT, 0f, entryLink.Length);
         }
 
         /// <summary>The front this transform belongs to, if any - a click lands on a

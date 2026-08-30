@@ -37,6 +37,11 @@ namespace RoadDemo
         /// disagree about where the player is looking.</summary>
         public float mapAt = CityViewConfig.DefaultMax3DDistance;
 
+        /// <summary>Whether crossing <see cref="mapAt"/> hands the view to the turf
+        /// map. Small review scenes reuse this camera without a map; for them the same
+        /// WASD/orbit/wheel controls stay in 3D all the way to <see cref="mapCeiling"/>.</summary>
+        public bool mapTransition = true;
+
         /// <summary>Metres of ground down the view per metre of boom once the map is
         /// up. The one number the plate's scale, the minimap's frame and the ceiling
         /// below are all read off, so the map opens showing exactly what a given click
@@ -58,7 +63,11 @@ namespace RoadDemo
         public void FrameSpan(float span, float fill = 0.8f, float floor = 110f)
         {
             float want = Mathf.Max(floor, fill * Mathf.Max(1f, span));
-            distance = Mathf.Clamp(want, Mathf.Max(0.5f, minDistance), mapAt - 15f);
+            float minimum = Mathf.Max(0.5f, minDistance);
+            float maximum = mapTransition
+                ? Mathf.Max(minimum, mapAt - 15f)
+                : MaximumDistance;
+            distance = Mathf.Clamp(want, minimum, maximum);
         }
 
         /// <summary>How close the wheel may bring it. Eighteen metres is a man's
@@ -76,13 +85,20 @@ namespace RoadDemo
         public float mapCeiling = 900f;
 
         /// <summary>Whether the map should be up: the boom is past the threshold.</summary>
-        public bool MapOut => distance > mapAt;
+        public bool MapOut => mapTransition && distance > mapAt;
+        /// <summary>Transient deterministic-harness gate. Gameplay never sets this;
+        /// it prevents stale editor input from contaminating a measured camera route.</summary>
+        public bool SuppressInput { get; set; }
+
+        float MaximumDistance => mapTransition
+            ? Mathf.Max(mapAt + 40f, mapCeiling)
+            : Mathf.Max(Mathf.Max(0.5f, minDistance), mapCeiling);
 
         /// <summary>The shared wheel rule, including the street floor and map ceiling.
         /// TurfMapHud asks before moving its cursor anchor; the street applies it directly.</summary>
         internal float DistanceAfterWheel(float scroll) => Mathf.Clamp(
             distance * (1f - Mathf.Sign(scroll) * WheelZoomStep),
-            Mathf.Max(0.5f, minDistance), Mathf.Max(mapAt + 40f, mapCeiling));
+            Mathf.Max(0.5f, minDistance), MaximumDistance);
 
         /// <summary>Where the thing the camera is riding is now, or null when there is
         /// nothing left of it to watch. Null itself while the camera is the player's
@@ -141,7 +157,7 @@ namespace RoadDemo
         void LateUpdate()
         {
             float dt = Time.unscaledDeltaTime;
-            var kb = BookOpen ? null : Keyboard.current;
+            var kb = BookOpen || SuppressInput ? null : Keyboard.current;
             if (kb != null)
             {
                 // T owns one shared information panel at every zoom level. Keeping the
@@ -171,7 +187,7 @@ namespace RoadDemo
                 if (kb.eKey.isPressed) yaw += 70f * dt;
             }
 
-            var mouse = BookOpen ? null : Mouse.current;
+            var mouse = BookOpen || SuppressInput ? null : Mouse.current;
             if (mouse != null)
             {
                 // While the turf map is visible it owns the wheel: it has to pin the
@@ -206,7 +222,7 @@ namespace RoadDemo
             // allowed to stop at the city, or the plan opens on a stamp of streets in a
             // screenful of sea.
             distance = Mathf.Clamp(distance, Mathf.Max(0.5f, minDistance),
-                Mathf.Max(mapAt + 40f, mapCeiling));
+                MaximumDistance);
             pitch = Mathf.Clamp(pitch, _minimumPitch, _maximumPitch);
 
             var rot = Quaternion.Euler(pitch, yaw, 0f);
@@ -329,13 +345,50 @@ namespace RoadDemo
     /// performance command and destroys itself after one route.</summary>
     public sealed class DemoCameraStreamingStress : MonoBehaviour
     {
+        public sealed class StressReport
+        {
+            public int Frames;
+            public float DurationSeconds;
+            public float AverageFrameMs;
+            public float P95FrameMs;
+            public float P99FrameMs;
+            public float WorstFrameMs;
+            public int Over16Ms;
+            public int Over33Ms;
+            public int Over50Ms;
+            public int Gen0Collections;
+            public int MinimapUploads;
+            public float WorstMinimapUploadFrameMs;
+            public int PeakActiveViews;
+            public int PeakPendingViews;
+        }
+
+        static StressReport _last;
+        public static StressReport Last => _last;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetForPlay() => _last = null;
+
         DemoCamera _rig;
         Vector3[] _route;
         int _next;
+        float _beganAt, _measureAt, _worst, _worstUpload;
+        int _over16, _over33, _over50, _gen0At, _uploadsAt, _lastUploads;
+        int _peakActive, _peakPending;
+        TurfMinimap _minimap;
+        CityBlockRecycler[] _recyclers;
+        readonly System.Collections.Generic.List<float> _frames =
+            new System.Collections.Generic.List<float>(2048);
+
+        public int Frames => _frames.Count;
+        public float ElapsedSeconds => Mathf.Max(0f, Time.unscaledTime - _beganAt);
+        public float WorstFrameMs => _worst;
 
         public void Begin(DemoCamera rig)
         {
             _rig = rig;
+            _rig.SuppressInput = true;
+            _rig.Drop();
             var start = rig.pivot;
             _route = new[]
             {
@@ -346,19 +399,103 @@ namespace RoadDemo
                 start,
             };
             _next = 0;
+            _last = null;
+            _frames.Clear();
+            _beganAt = Time.unscaledTime;
+            _measureAt = _beganAt + 0.75f;
+            _gen0At = System.GC.CollectionCount(0);
+            _minimap = FindAnyObjectByType<TurfMinimap>();
+            _recyclers = FindObjectsByType<CityBlockRecycler>();
+            _uploadsAt = _lastUploads = _minimap != null ? _minimap.Uploads : 0;
         }
 
         void Update()
         {
             if (_rig == null || _route == null || _next >= _route.Length)
             {
-                Destroy(gameObject);
+                Finish();
                 return;
             }
+
+            Measure();
             float metresPerSecond = Mathf.Max(10f, _rig.distance * 0.55f);
             _rig.pivot = Vector3.MoveTowards(
                 _rig.pivot, _route[_next], metresPerSecond * Time.unscaledDeltaTime);
             if ((_rig.pivot - _route[_next]).sqrMagnitude < 0.01f) _next++;
+        }
+
+        void Measure()
+        {
+            if (Time.unscaledTime < _measureAt) return;
+            float ms = Time.unscaledDeltaTime * 1000f;
+            _frames.Add(ms);
+            _worst = Mathf.Max(_worst, ms);
+            if (ms > 16.667f) _over16++;
+            if (ms > 33.333f) _over33++;
+            if (ms > 50f) _over50++;
+
+            int uploads = _minimap != null ? _minimap.Uploads : _lastUploads;
+            if (uploads != _lastUploads)
+            {
+                _worstUpload = Mathf.Max(_worstUpload, ms);
+                _lastUploads = uploads;
+            }
+
+            if (_recyclers == null) return;
+            int active = 0, pending = 0;
+            for (int i = 0; i < _recyclers.Length; i++)
+            {
+                var recycler = _recyclers[i];
+                if (recycler == null) continue;
+                active += recycler.ActiveViews;
+                pending += recycler.PendingViews + recycler.ComposingViews + recycler.AttachingViews;
+            }
+            _peakActive = Mathf.Max(_peakActive, active);
+            _peakPending = Mathf.Max(_peakPending, pending);
+        }
+
+        void Finish()
+        {
+            if (_frames.Count > 0)
+            {
+                _frames.Sort();
+                float total = 0f;
+                for (int i = 0; i < _frames.Count; i++) total += _frames[i];
+                _last = new StressReport
+                {
+                    Frames = _frames.Count,
+                    DurationSeconds = Mathf.Max(0f, Time.unscaledTime - _measureAt),
+                    AverageFrameMs = total / _frames.Count,
+                    P95FrameMs = Percentile(0.95f),
+                    P99FrameMs = Percentile(0.99f),
+                    WorstFrameMs = _worst,
+                    Over16Ms = _over16,
+                    Over33Ms = _over33,
+                    Over50Ms = _over50,
+                    Gen0Collections = System.GC.CollectionCount(0) - _gen0At,
+                    MinimapUploads = Mathf.Max(0, _lastUploads - _uploadsAt),
+                    WorstMinimapUploadFrameMs = _worstUpload,
+                    PeakActiveViews = _peakActive,
+                    PeakPendingViews = _peakPending,
+                };
+                Debug.Log($"[StreamingStress] {_last.Frames} frames, avg {_last.AverageFrameMs:0.00} ms, " +
+                          $"p95 {_last.P95FrameMs:0.00}, p99 {_last.P99FrameMs:0.00}, " +
+                          $"worst {_last.WorstFrameMs:0.00}; >33 ms {_last.Over33Ms}, " +
+                          $"minimap uploads {_last.MinimapUploads}.");
+            }
+            Destroy(gameObject);
+
+            float Percentile(float share)
+            {
+                int at = Mathf.Clamp(Mathf.CeilToInt(_frames.Count * share) - 1,
+                    0, _frames.Count - 1);
+                return _frames[at];
+            }
+        }
+
+        void OnDestroy()
+        {
+            if (_rig != null) _rig.SuppressInput = false;
         }
     }
 }

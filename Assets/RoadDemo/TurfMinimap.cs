@@ -44,8 +44,16 @@ namespace RoadDemo
         /// </summary>
         const float CardWide = 256f, CardTall = 160f;
         const float Inset = 0f, Border = 5f;
-        const float ViewOverscan = 1.25f;
-        const float RedrawPanShare = 0.07f;
+        const float ViewOverscan = 1.75f;
+        const float RedrawPanShare = 0.08f;
+        const float RedrawAfterStillSeconds = 0.14f;
+        const float MovingRedrawInterval = 0.9f;
+        // The card is only 256 x 160 canvas pixels. A 480 x 300 upload was almost
+        // four source texels for every displayed pixel and could make Texture2D.Apply
+        // the one periodic hitch while the 3D camera was moving. The shared survey is
+        // still drawn at full resolution on its worker; only the corner-card handoff is
+        // reduced to 240 x 150 and bilinear filtering restores the final card size.
+        const int UploadDownsample = 4;
 
         /// <summary>How much bigger a crew's dot is drawn here than the plate's own
         /// scale would make it. The design's own MinimapScaleBoost: a marker that is
@@ -62,14 +70,15 @@ namespace RoadDemo
 
         readonly TurfMapSurvey _survey = new TurfMapSurvey();
 
-        /// <summary>The three static layers flattened into one, because a RawImage
-        /// takes one texture and the multiply the full map gets from a material has to
-        /// happen in the buffer here.</summary>
-        readonly TurfPlate _sheet = new TurfPlate();
-
         Canvas _canvas;
         RectTransform _card, _view, _sheetRect;
         Texture2D _paper;
+        readonly Color32[] _uploadPixels = new Color32[
+            TurfPlate.RW / UploadDownsample * (TurfPlate.RH / UploadDownsample)];
+        Vector2 _lastPivot;
+        float _lastMotionAt = -10f, _lastKickAt = -10f;
+        int _draws, _uploads;
+        long _lastDrawMs;
 
         /// <summary>The crew markers, pooled as Images: the Image carries its own
         /// RectTransform, so one list serves both the placing and the tinting.</summary>
@@ -126,6 +135,9 @@ namespace RoadDemo
         public TurfMapSurvey Survey => _survey;
         public bool Printed => _printed;
         public Rect RequestedView => WantedView();
+        public int Draws => _draws;
+        public int Uploads => _uploads;
+        public long LastDrawMs => _lastDrawMs;
 
         public void Init(RoadDemoBuilder city, Transform blocks, DemoCamera camera,
             DemoCrews streetCrews, TurfMapSurvey shareHeight)
@@ -133,6 +145,8 @@ namespace RoadDemo
             _builder = city;
             _rig = camera;
             _crews = streetCrews;
+            if (camera != null)
+                _lastPivot = new Vector2(camera.pivot.x, camera.pivot.z);
             if (city != null)
                 _viewHeight = city.MinimapViewHeight;
 
@@ -184,7 +198,16 @@ namespace RoadDemo
             DemoUi.Fill(_view, Border);
             _view.gameObject.AddComponent<RectMask2D>();
 
-            _paper = TurfPlate.NewTexture("Turf Minimap");
+            _paper = new Texture2D(
+                TurfPlate.RW / UploadDownsample,
+                TurfPlate.RH / UploadDownsample,
+                TextureFormat.RGBA32, false, false)
+            {
+                name = "Turf Minimap",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.DontSave,
+            };
             // Held at a fifth of its drawn size, so a point filter would drop four
             // pixels in five and shatter every kerb hairline on the sheet. This is the
             // one place on the map where the paper is read smaller than it was printed.
@@ -297,13 +320,15 @@ namespace RoadDemo
             _kickView = view;
             _fault = null;
             _state = Drawing;
+            _lastKickAt = Time.unscaledTime;
 
             System.Threading.Tasks.Task.Run(() =>
             {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
                     _survey.Draw(_kickView);
-                    _sheet.Compose(_survey.Ground, _survey.Turf, _survey.Built);
+                    _survey.Composite.Downsample(UploadDownsample, _uploadPixels);
                 }
                 catch (System.Exception fault)
                 {
@@ -311,6 +336,9 @@ namespace RoadDemo
                 }
                 finally
                 {
+                    watch.Stop();
+                    _lastDrawMs = watch.ElapsedMilliseconds;
+                    _draws++;
                     _state = Drawn;
                 }
             });
@@ -325,7 +353,9 @@ namespace RoadDemo
                 else
                 {
                     _survey.Publish();
-                    _sheet.Apply(_paper);
+                    _paper.SetPixelData(_uploadPixels, 0);
+                    _paper.Apply(false);
+                    _uploads++;
                     _printed = true;
                 }
                 _state = Idle;
@@ -342,6 +372,15 @@ namespace RoadDemo
             if (!want || !_printed)
                 return;
 
+            var pivot = _rig != null
+                ? new Vector2(_rig.pivot.x, _rig.pivot.z)
+                : _lastPivot;
+            if ((pivot - _lastPivot).sqrMagnitude > 0.0025f)
+            {
+                _lastPivot = pivot;
+                _lastMotionAt = Time.unscaledTime;
+            }
+
             if (_state == Idle)
             {
                 var wanted = WantedView();
@@ -355,7 +394,9 @@ namespace RoadDemo
                     float pan = drawn.height > 0f
                         ? (wanted.center - drawn.center).magnitude / drawn.height
                         : float.MaxValue;
-                    if (pan >= RedrawPanShare)
+                    bool settled = Time.unscaledTime - _lastMotionAt >= RedrawAfterStillSeconds;
+                    bool movingRefreshDue = Time.unscaledTime - _lastKickAt >= MovingRedrawInterval;
+                    if (pan >= RedrawPanShare && (settled || movingRefreshDue))
                         Kick(wanted);
                 }
             }

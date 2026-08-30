@@ -15,7 +15,13 @@ MonoBehaviour:
   max3DDistance: 180
   streetPitch: 55
   streetPitchFreedom: 0
-  streetCutaway: 0
+  streetCutaway: 1
+  cutawayEnterDistance: 55
+  cutawayExitDistance: 68
+  cutawayProxyHeight: 0.95
+  cutawayRestoreDelay: 0.55
+  cutawayCrewSamples: 6
+  cutawayKeepShadows: 1
   minimapViewHeight: 360
   prefetchMetres: 25
   recycleHysteresisMetres: 45

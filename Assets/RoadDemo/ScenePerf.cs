@@ -163,10 +163,9 @@ namespace RoadDemo
 
         const float MergeCell = 120f;
 
-        /// <summary>How tall a piece has to be before the merge bothers to remember which
-        /// chunk swallowed it. What asks is the cutaway (<see cref="StreetCutaway"/>), and
-        /// it only ever asks about buildings - a kerb, a bin or a parked car is not one,
-        /// and there are a hundred thousand of those.</summary>
+        /// <summary>Fallback height at which an old single-renderer catalogue piece is
+        /// remembered as a building. Explicit <see cref="BuildingCutaway"/> roots register
+        /// every renderer in their shell; a kerb, bin or parked car still registers none.</summary>
         public const float CutawayHeight = 5f;
 
         struct MergeKey : System.IEquatable<MergeKey>
@@ -300,11 +299,13 @@ namespace RoadDemo
                     }
 
                     // From here the piece is the chunk's: it will be switched off below
-                    // and the chunk is the only thing that can give it back. Buildings -
-                    // tall, and carrying the footprint collider every bake has - are
-                    // registered for reverse lookup too; nothing else is ever asked for.
-                    ChunkObject(chunk).Adopt(mr, mr.bounds.size.y >= CutawayHeight
-                                                 && mr.TryGetComponent<Collider>(out _));
+                    // and the chunk is the only thing that can give it back. Old catalogue
+                    // buildings keep the tall-renderer contract; declared logical buildings
+                    // also register their short bases, roofs and signs so the whole shell can
+                    // be restored from the merge and cut as one.
+                    ChunkObject(chunk).Adopt(mr,
+                        BuildingCutaway.Owns(mr) ||
+                        mr.bounds.size.y >= CutawayHeight && mr.TryGetComponent<Collider>(out _));
 
                     var mats = mr.sharedMaterials;
                     // CombineMeshes writes vertices in the receiving mesh's local space.

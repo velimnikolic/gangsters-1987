@@ -6,19 +6,20 @@ namespace LivingCity.EditorTools
 {
     /// <summary>
     /// The armoured SUV: one copy of Palm City's SM_Veh_Suv_01 turned into the car a
-    /// boss rides in - gunmetal body, plate over the doors and sills, a bull bar on the
+    /// boss rides in - black body, plate over the doors and sills, a bull bar on the
     /// nose, bars across every side window and a plate on the roof.
     ///
     /// Two decisions carry the whole pass, and both are about memory.
     ///
     /// The colour is NOT a Synty Alts swap. Every palm alt is a 4096px atlas that costs
     /// 42.7 MB resident, so a seventh alt for one unique car is the most expensive way
-    /// to change one cell of paint. Instead the body meshes are copied and the paint
-    /// cell's UVs are moved onto a grey cell the SAME atlas already carries: the SUV's
+    /// to change one cell of paint. Instead the body meshes are copied and every paint
+    /// vertex is moved onto one black cell the SAME atlas already carries: the SUV's
     /// paint sits at u 0.117-0.136, v 0.855-0.858 (#91382F body, #792B25 its shade), and
-    /// the greys the car already wears on its trim sit at (0.079, 0.300) #414549 and
-    /// (0.080, 0.278) #35383C. Moving the UVs there costs a mesh copy - kilobytes - and
-    /// no new texture at all.
+    /// the atlas black used here sits at (0.65625, 0.90625), #161616. The conversion
+    /// armour uses that exact cell too: there is one black, not a lighter body plus
+    /// progressively darker plates and bars. Moving the UVs there costs a mesh copy -
+    /// kilobytes - and no new texture at all.
     ///
     /// The armour is likewise one procedural mesh on the same atlas material, so the car
     /// stays a two-material vehicle (body atlas + glass) and batches as it did before.
@@ -50,13 +51,11 @@ namespace LivingCity.EditorTools
         const float PaintUMax = 0.140f;
         const float PaintVMin = 0.850f;
         const float PaintVMax = 0.863f;
-        const float PaintShadeU = 0.124f;   // below this the vertex is on the darker shade
 
-        // Grey cells the same atlas already carries, sampled off this very car's trim.
-        static readonly Vector2 UvBody  = new Vector2(0.080f, 0.278f);   // #35383C gunmetal
-        static readonly Vector2 UvShade = new Vector2(0.082f, 0.253f);   // #2A2C2F its shade
-        static readonly Vector2 UvPlate = new Vector2(0.082f, 0.253f);   // #2A2C2F armour plate
-        static readonly Vector2 UvBar   = new Vector2(0.080f, 0.231f);   // #25272A bar stock
+        // Centre of an opaque #161616 cell already in the Palm City atlas. Body paint,
+        // its old shade, every plate and every bar all land here so the conversion reads
+        // as one black vehicle instead of the old four-step gunmetal treatment.
+        static readonly Vector2 UvBlack = new Vector2(0.65625f, 0.90625f);
 
         [MenuItem("Tools/City/Vehicles/Bake the armoured SUV")]
         public static void Build()
@@ -137,7 +136,7 @@ namespace LivingCity.EditorTools
                           && PrefabUtility.GetPrefabAssetType(prefab) == PrefabAssetType.Variant));
         }
 
-        /// <summary>A copy of the mesh with every paint-cell vertex moved onto a grey cell.</summary>
+        /// <summary>A copy of the mesh with every paint-cell vertex moved onto one black cell.</summary>
         static Mesh Repaint(Mesh source)
         {
             if (source == null) return null;
@@ -147,7 +146,7 @@ namespace LivingCity.EditorTools
             {
                 var p = uv[i];
                 if (p.x < PaintUMin || p.x > PaintUMax || p.y < PaintVMin || p.y > PaintVMax) continue;
-                uv[i] = p.x < PaintShadeU ? UvShade : UvBody;
+                uv[i] = UvBlack;
                 moved++;
             }
             if (moved == 0) return null;
@@ -171,20 +170,20 @@ namespace LivingCity.EditorTools
             for (int rail = 0; rail < 3; rail++)
             {
                 float y = rail == 0 ? 0.62f : rail == 1 ? 1.02f : 1.42f;
-                Box(verts, norms, uvs, tris, new Vector3(-0.98f, y, 2.90f), new Vector3(0.98f, y + 0.14f, 3.06f), UvBar);
+                Box(verts, norms, uvs, tris, new Vector3(-0.98f, y, 2.90f), new Vector3(0.98f, y + 0.14f, 3.06f), UvBlack);
             }
             foreach (float x in new[] { -0.72f, -0.24f, 0.24f, 0.72f })
-                Box(verts, norms, uvs, tris, new Vector3(x - 0.06f, 0.58f, 2.91f), new Vector3(x + 0.06f, 1.60f, 3.05f), UvBar);
+                Box(verts, norms, uvs, tris, new Vector3(x - 0.06f, 0.58f, 2.91f), new Vector3(x + 0.06f, 1.60f, 3.05f), UvBlack);
             // the arms that tie it back into the chassis
             foreach (float x in new[] { -0.72f, 0.72f })
-                Box(verts, norms, uvs, tris, new Vector3(x - 0.07f, 0.86f, 2.62f), new Vector3(x + 0.07f, 1.02f, 2.94f), UvBar);
+                Box(verts, norms, uvs, tris, new Vector3(x - 0.07f, 0.86f, 2.62f), new Vector3(x + 0.07f, 1.02f, 2.94f), UvBlack);
             // skid plate below the bumper, whose underside measures y 0.81
-            Box(verts, norms, uvs, tris, new Vector3(-0.90f, 0.62f, 2.55f), new Vector3(0.90f, 0.80f, 3.02f), UvPlate);
+            Box(verts, norms, uvs, tris, new Vector3(-0.90f, 0.62f, 2.55f), new Vector3(0.90f, 0.80f, 3.02f), UvBlack);
 
             // --- tail: bumper plate on a rear face that ends at z -2.77 ---------------
-            Box(verts, norms, uvs, tris, new Vector3(-0.98f, 0.62f, -2.90f), new Vector3(0.98f, 1.06f, -2.74f), UvPlate);
+            Box(verts, norms, uvs, tris, new Vector3(-0.98f, 0.62f, -2.90f), new Vector3(0.98f, 1.06f, -2.74f), UvBlack);
             foreach (float x in new[] { -0.70f, 0.70f })
-                Box(verts, norms, uvs, tris, new Vector3(x - 0.08f, 0.58f, -2.96f), new Vector3(x + 0.08f, 1.14f, -2.86f), UvBar);
+                Box(verts, norms, uvs, tris, new Vector3(x - 0.08f, 0.58f, -2.96f), new Vector3(x + 0.08f, 1.14f, -2.86f), UvBlack);
 
             // --- flanks: sill plate, door plate, arch flares --------------------------
             foreach (float side in new[] { -1f, 1f })
@@ -194,20 +193,20 @@ namespace LivingCity.EditorTools
 
                 // sill, kept inside the wheels at z +-1.9
                 Box(verts, norms, uvs, tris, new Vector3(Mathf.Min(inner, outer), 0.44f, -1.28f),
-                    new Vector3(Mathf.Max(inner, outer), 0.80f, 1.28f), UvPlate);
+                    new Vector3(Mathf.Max(inner, outer), 0.80f, 1.28f), UvBlack);
 
                 // one plate per door, with a gap on the shut line so the doors still read
                 Box(verts, norms, uvs, tris, new Vector3(Mathf.Min(inner, outer) + 0.02f, 0.84f, 0.02f),
-                    new Vector3(Mathf.Max(inner, outer) - 0.02f, 1.52f, 1.26f), UvPlate);
+                    new Vector3(Mathf.Max(inner, outer) - 0.02f, 1.52f, 1.26f), UvBlack);
                 Box(verts, norms, uvs, tris, new Vector3(Mathf.Min(inner, outer) + 0.02f, 0.84f, -1.26f),
-                    new Vector3(Mathf.Max(inner, outer) - 0.02f, 1.52f, -0.06f), UvPlate);
+                    new Vector3(Mathf.Max(inner, outer) - 0.02f, 1.52f, -0.06f), UvBlack);
 
                 // arch flares over wheels at z +1.95 and -1.88
                 float archIn = side < 0 ? -1.34f : 1.02f;
                 float archOut = side < 0 ? -1.02f : 1.34f;
                 foreach (float wheelZ in new[] { 1.95f, -1.88f })
                     Box(verts, norms, uvs, tris, new Vector3(Mathf.Min(archIn, archOut), 1.13f, wheelZ - 0.78f),
-                        new Vector3(Mathf.Max(archIn, archOut), 1.29f, wheelZ + 0.78f), UvBar);
+                        new Vector3(Mathf.Max(archIn, archOut), 1.29f, wheelZ + 0.78f), UvBlack);
 
                 // --- window bars: side glass runs y 1.65-2.07 ------------------------
                 float barIn = side < 0 ? -1.06f : 1.00f;
@@ -219,23 +218,23 @@ namespace LivingCity.EditorTools
                     for (int i = 0; i < 3; i++)
                     {
                         float y = 1.70f + i * 0.15f;
-                        Box(verts, norms, uvs, tris, new Vector3(x0, y, window.x), new Vector3(x1, y + 0.06f, window.y), UvBar);
+                        Box(verts, norms, uvs, tris, new Vector3(x0, y, window.x), new Vector3(x1, y + 0.06f, window.y), UvBlack);
                     }
                     float mid = (window.x + window.y) * 0.5f;
-                    Box(verts, norms, uvs, tris, new Vector3(x0, 1.66f, mid - 0.04f), new Vector3(x1, 2.06f, mid + 0.04f), UvBar);
+                    Box(verts, norms, uvs, tris, new Vector3(x0, 1.66f, mid - 0.04f), new Vector3(x1, 2.06f, mid + 0.04f), UvBlack);
                 }
             }
 
             // --- tailgate window: uprights across glass that runs y 1.59-2.03 ---------
             foreach (float x in new[] { -0.62f, -0.31f, 0f, 0.31f, 0.62f })
-                Box(verts, norms, uvs, tris, new Vector3(x - 0.04f, 1.56f, -2.74f), new Vector3(x + 0.04f, 2.06f, -2.66f), UvBar);
+                Box(verts, norms, uvs, tris, new Vector3(x - 0.04f, 1.56f, -2.74f), new Vector3(x + 0.04f, 2.06f, -2.66f), UvBlack);
 
             // --- roof: plate bedded between the pack's own roof rails at y 2.38 -------
-            Box(verts, norms, uvs, tris, new Vector3(-0.88f, 2.24f, -2.20f), new Vector3(0.88f, 2.32f, 0.92f), UvPlate);
+            Box(verts, norms, uvs, tris, new Vector3(-0.88f, 2.24f, -2.20f), new Vector3(0.88f, 2.32f, 0.92f), UvBlack);
             foreach (float z in new[] { -1.90f, -0.90f, 0.10f, 0.80f })
-                Box(verts, norms, uvs, tris, new Vector3(-0.92f, 2.30f, z - 0.05f), new Vector3(0.92f, 2.38f, z + 0.05f), UvBar);
+                Box(verts, norms, uvs, tris, new Vector3(-0.92f, 2.30f, z - 0.05f), new Vector3(0.92f, 2.38f, z + 0.05f), UvBlack);
             // visor over the windscreen, whose glass tops out at y 2.12 by z 0.9
-            Box(verts, norms, uvs, tris, new Vector3(-0.90f, 2.20f, 0.90f), new Vector3(0.90f, 2.30f, 1.24f), UvBar);
+            Box(verts, norms, uvs, tris, new Vector3(-0.90f, 2.20f, 0.90f), new Vector3(0.90f, 2.30f, 1.24f), UvBlack);
 
             var mesh = new Mesh { name = "SM_Veh_Suv_01_Armour" };
             mesh.SetVertices(verts);
@@ -290,11 +289,14 @@ namespace LivingCity.EditorTools
             if (source == null) return null;
 
             var tinted = new Material(source) { name = "Glass_Armoured_01" };
+            // The source is green architectural glass. Multiplying it preserved that
+            // hue and made the black wagon read as another tone. This private copy gets
+            // a neutral smoked black directly; its smoothness and reflections stay.
+            var smokedBlack = new Color(0.055f, 0.055f, 0.055f, 0.88f);
             foreach (var prop in new[] { "_BaseColor", "_Color" })
             {
                 if (!tinted.HasProperty(prop)) continue;
-                var c = tinted.GetColor(prop);
-                tinted.SetColor(prop, new Color(c.r * 0.28f, c.g * 0.28f, c.b * 0.30f, Mathf.Max(c.a, 0.85f)));
+                tinted.SetColor(prop, smokedBlack);
             }
 
             AssetDatabase.DeleteAsset(GlassPath);

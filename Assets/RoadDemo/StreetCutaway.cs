@@ -15,7 +15,7 @@ namespace RoadDemo
     /// to watch - his crew on the corner, the pavement, the car pulling up - is behind
     /// them. Gangsters answered it by taking the near buildings out, and this is that
     /// answer: below <see cref="cutIn"/> metres of boom, every building standing between
-    /// visible ground and the lens stops drawing.
+    /// visible ground and the lens becomes a low, closed cutaway footprint.
     ///
     /// WHAT IS ASKED FOR, not what is guessed at. The sweep samples the ground the
     /// camera can actually see - a grid across the lower screen, each point dropped onto
@@ -25,13 +25,12 @@ namespace RoadDemo
     /// would hide the building in front of it, then the one in front of that, until half
     /// the quarter had gone.
     ///
-    /// HIDING, not fading. The city is one opaque atlas material and a few dozen tint
-    /// variants of it, so per-building transparency does not exist without shader
-    /// surgery. <see cref="ShadowCastingMode.ShadowsOnly"/> is the one per-renderer
-    /// channel that does: the walls go, the shadow they lay across the street stays - so
-    /// the light on the pavement does not jump every time a facade comes and goes - and
-    /// the collider never moves, so bullets, sightlines and men on foot go on treating
-    /// the invisible wall as the wall it still is.
+    /// HIDING, not transparent sorting. <see cref="BuildingCutaway"/> groups every piece
+    /// of one logical building, leaves a low footprint behind, and uses
+    /// <see cref="ShadowCastingMode.ShadowsOnly"/> for the full shell. The shadow stays,
+    /// the collider never moves, and bullets, sightlines and men on foot go on treating
+    /// the missing wall as the wall it still is. No guessed replacement footprint is
+    /// drawn over the authored street.
     ///
     /// The merge is the complication. By the time the player is down in the street the
     /// block is one combined mesh and its buildings have no renderers of their own left
@@ -59,23 +58,33 @@ namespace RoadDemo
         /// street behind them is concerned.</summary>
         public float minHeight = ScenePerf.CutawayHeight;
 
+        /// <summary>Absolute height of the closed footprint left behind. A percentage of
+        /// building height made towers leave a two-storey wall; street readability needs
+        /// the same low rim for a shop and a tower.</summary>
+        public float proxyHeight = 0.95f;
+
+        /// <summary>How long an occluder remains cut after the last sample met it. Longer
+        /// than the grid refresh so rotating or resting on a facade edge cannot blink it.</summary>
+        public float keepHiddenSeconds = 0.35f;
+
+        /// <summary>Direct crew samples per frame. They guarantee that the selected crew
+        /// is revealed immediately; the slower screen grid supplies the surrounding street.</summary>
+        [Range(0, 12)] public int crewSamplesPerFrame = 6;
+
         /// <summary>Whether a hidden building goes on laying its shadow. It does, by
         /// default: a facade that takes its shadow with it lights the whole street up the
         /// moment it goes, which reads far worse than the missing wall.</summary>
         public bool keepShadows = true;
 
-        /// <summary>H toggles the whole thing while a scene is being looked at. Off by
-        /// default: the current residential prefabs are exterior shells, so removing a
-        /// facade exposes no interior and leaves roofs/windows floating. The shared city
-        /// view config may enable it again once interior-capable views exist.</summary>
-        public bool on = false;
+        /// <summary>H toggles the whole thing while a scene is being looked at. The shared
+        /// city-view config owns the production default.</summary>
+        public bool on = true;
 
         const float Chest = 1.2f;              // sample height: what a man on the pavement is
         const float Radius = 0.9f;             // fat enough that the cast is a person, not a pin
         const float BackOffset = 2f;           // a cast started inside a wall skips that wall; start behind the sample
-        const float KeepHiddenSeconds = 0.35f; // longer than a full sweep, so a facade the last pass held does not blink
-        const float RefreshSeconds = 0.2f;     // how long the whole grid takes to come round again
-        const float StepCeiling = 1f / 30f;    // a slow frame gets a nominal frame's rows, never the whole grid
+        const int GridSamplesPerFrame = 6;      // bounded physics work, independent of frame duration
+        const float PointerInterval = 0.08f;
         const int Columns = 16, Rows = 10;
         const float TopFraction = 0.8f;        // above this the screen is distance and sky
         const float ReachBooms = 2.5f;         // ground further out than this many booms is not the street in front
@@ -88,24 +97,24 @@ namespace RoadDemo
         static readonly int Mask = ~((1 << 2) | (1 << 8) | (1 << 10)
                                      | (1 << ScenePerf.PropLayer) | (1 << ScenePerf.CrowdLayer));
 
-        struct Gone
-        {
-            public ShadowCastingMode Shadows;   // what the renderer cast before it went
-            public bool ByShadow;               // how it was taken out, in case the flag is flipped meanwhile
-            public float Seen;                  // when a sample last found it in the way
-            public MergedChunk Chunk;           // the hold keeping its block in pieces, or none
-        }
-
         static StreetCutaway _instance;
 
         Camera _cam;
-        readonly Dictionary<MeshRenderer, Gone> _gone = new Dictionary<MeshRenderer, Gone>();
-        readonly List<MeshRenderer> _lapsed = new List<MeshRenderer>();
-        readonly Dictionary<Collider, MeshRenderer> _known = new Dictionary<Collider, MeshRenderer>();
+        DemoCrews _crews;
+        readonly Dictionary<BuildingCutaway, float> _gone =
+            new Dictionary<BuildingCutaway, float>();
+        readonly List<BuildingCutaway> _lapsed = new List<BuildingCutaway>();
+        readonly Dictionary<Collider, BuildingCutaway> _known =
+            new Dictionary<Collider, BuildingCutaway>();
         readonly RaycastHit[] _hits = new RaycastHit[128];
         readonly Collider[] _overlaps = new Collider[16];
-        int _row;
+        int _gridSample;
         bool _cutting;
+        float _crewLookupAt;
+        float _nextPointerAt;
+
+        public int HiddenBuildings => _gone.Count;
+        public int CachedColliderAnswers => _known.Count;
 
         /// <summary>Whether this collider belongs to a building the camera is currently
         /// seeing through. The collider stays solid on purpose - the wall is still a wall
@@ -116,8 +125,7 @@ namespace RoadDemo
         {
             var self = _instance;
             if (self == null || self._gone.Count == 0 || collider == null) return false;
-            var mr = self.Building(collider);
-            return mr != null && self._gone.ContainsKey(mr);
+            return BuildingCutaway.Invisible(collider);
         }
 
         void Awake()
@@ -125,6 +133,7 @@ namespace RoadDemo
             _instance = this;
             _cam = GetComponent<Camera>();
             if (rig == null) rig = GetComponent<DemoCamera>();
+            _crews = FindAnyObjectByType<DemoCrews>();
         }
 
         void OnDestroy()
@@ -154,14 +163,98 @@ namespace RoadDemo
                         && rig.distance <= (_cutting ? cutOut : cutIn);
             if (!want)
             {
+                bool wasCutting = _cutting;
                 _cutting = false;
                 ShowEverything();
+                if (wasCutting) _known.Clear();
                 return;
             }
             _cutting = true;
 
+            // Recycled colliders unregister themselves, but a negative lookup has no
+            // owner to do that for it. Keep this convenience cache bounded while a long
+            // pan visits the whole city.
+            if (_known.Count > 2048) _known.Clear();
+
+            SweepPointer();
+            SweepCrews();
             Sweep();
             Restore();
+        }
+
+        /// <summary>The order cursor gets one exact sample every frame. The background
+        /// grid makes the whole near street readable; this one makes the specific patch
+        /// the player is about to click readable without waiting for its row to come round.</summary>
+        void SweepPointer()
+        {
+            if (Time.unscaledTime < _nextPointerAt) return;
+            _nextPointerAt = Time.unscaledTime + PointerInterval;
+            var mouse = Mouse.current;
+            if (mouse == null) return;
+            var screen = mouse.position.ReadValue();
+            if (!_cam.pixelRect.Contains(screen)) return;
+
+            var ray = _cam.ScreenPointToRay(screen);
+            if (ray.direction.y >= -0.001f) return;
+            float t = -ray.origin.y / ray.direction.y;
+            float reach = Mathf.Max(40f, rig.distance * ReachBooms);
+            if (t <= 0.5f || t > reach) return;
+
+            var sample = ray.origin + ray.direction * t + Vector3.up * Chest;
+            if (!Indoors(sample)) SweepSubject(sample);
+        }
+
+        /// <summary>The screen grid turns the street into readable context over a fraction
+        /// of a second. A crew cannot wait for that pass: cast straight from every visible
+        /// selected member first, then spend the remaining bounded samples on other action
+        /// already visible in the camera.</summary>
+        void SweepCrews()
+        {
+            if (_crews == null && Time.unscaledTime >= _crewLookupAt)
+            {
+                _crewLookupAt = Time.unscaledTime + 2f;
+                _crews = FindAnyObjectByType<DemoCrews>();
+            }
+            if (_crews == null) return;
+
+            int left = Mathf.Clamp(crewSamplesPerFrame, 0, 12);
+            var selected = _crews.Selected;
+            SweepUnit(selected, ref left);
+        }
+
+        void SweepUnit(DemoCrews.Unit unit, ref int left)
+        {
+            if (unit == null || left <= 0) return;
+            if (unit.Car != null && left > 0)
+            {
+                if (SweepSubject(unit.Car.Position + Vector3.up * Chest)) left--;
+            }
+            foreach (var man in unit.All())
+            {
+                if (left <= 0) break;
+                if (man == null || man.Dead || man.Tf == null || !man.Tf.gameObject.activeInHierarchy)
+                    continue;
+                if (SweepSubject(man.ChestPosition)) left--;
+            }
+        }
+
+        bool SweepSubject(Vector3 sample)
+        {
+            var viewport = _cam.WorldToViewportPoint(sample);
+            if (viewport.z <= 0f || viewport.x < -0.08f || viewport.x > 1.08f ||
+                viewport.y < -0.08f || viewport.y > 1.08f)
+                return false;
+
+            var toLens = _cam.transform.position - sample;
+            float span = toLens.magnitude;
+            if (span < 1f) return false;
+            var dir = toLens / span;
+            int count = Physics.SphereCastNonAlloc(
+                sample - dir * BackOffset, Radius, dir, _hits,
+                Mathf.Min(span + BackOffset - 1f, CastRange), Mask,
+                QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < count; i++) Hide(_hits[i].collider);
+            return true;
         }
 
         void Sweep()
@@ -170,38 +263,35 @@ namespace RoadDemo
             var lens = _cam.transform.position;
 
             float reach = Mathf.Max(40f, rig.distance * ReachBooms);
-            float step = Mathf.Min(Time.deltaTime, StepCeiling);
-            int rowsThisFrame = Mathf.Clamp(Mathf.CeilToInt(Rows * step / RefreshSeconds), 1, Rows);
-
-            for (int r = 0; r < rowsThisFrame; r++)
+            int total = Columns * Rows;
+            for (int sampleIndex = 0; sampleIndex < GridSamplesPerFrame; sampleIndex++)
             {
-                float v = (_row + 0.5f) / Rows * TopFraction;
-                for (int c = 0; c < Columns; c++)
-                {
-                    float u = (c + 0.5f) / Columns;
-                    var ray = _cam.ViewportPointToRay(new Vector3(u, v, 0f));
-                    if (ray.direction.y >= -0.001f) continue;
+                int sample = _gridSample++ % total;
+                int row = sample / Columns;
+                int column = sample - row * Columns;
+                float v = (row + 0.5f) / Rows * TopFraction;
+                float u = (column + 0.5f) / Columns;
+                var ray = _cam.ViewportPointToRay(new Vector3(u, v, 0f));
+                if (ray.direction.y >= -0.001f) continue;
 
-                    // The street plane, not a raycast down the same line: that would land
-                    // on the roof of the very building being asked about. The grid is
-                    // flat at zero by construction - the roads sit a few centimetres
-                    // under it, the buildings stand on it.
-                    float t = -ray.origin.y / ray.direction.y;
-                    if (t <= 0.5f || t > reach) continue;
+                // The street plane, not a raycast down the same line: that would land
+                // on the roof of the very building being asked about. The grid is
+                // flat at zero by construction - the roads sit a few centimetres
+                // under it, the buildings stand on it.
+                float t = -ray.origin.y / ray.direction.y;
+                if (t <= 0.5f || t > reach) continue;
 
-                    var sample = ray.origin + ray.direction * t + Vector3.up * Chest;
-                    if (Indoors(sample)) continue;
+                var point = ray.origin + ray.direction * t + Vector3.up * Chest;
+                if (Indoors(point)) continue;
 
-                    var toLens = lens - sample;
-                    float span = toLens.magnitude;
-                    if (span < 1f) continue;
-                    var dir = toLens / span;
-                    int n = Physics.SphereCastNonAlloc(sample - dir * BackOffset, Radius, dir, _hits,
-                                                       Mathf.Min(span + BackOffset - 1f, CastRange),
-                                                       Mask, QueryTriggerInteraction.Ignore);
-                    for (int i = 0; i < n; i++) Hide(_hits[i].collider);
-                }
-                _row = (_row + 1) % Rows;
+                var toLens = lens - point;
+                float span = toLens.magnitude;
+                if (span < 1f) continue;
+                var dir = toLens / span;
+                int n = Physics.SphereCastNonAlloc(point - dir * BackOffset, Radius, dir, _hits,
+                                                   Mathf.Min(span + BackOffset - 1f, CastRange),
+                                                   Mask, QueryTriggerInteraction.Ignore);
+                for (int i = 0; i < n; i++) Hide(_hits[i].collider);
             }
         }
 
@@ -212,40 +302,25 @@ namespace RoadDemo
             int n = Physics.OverlapSphereNonAlloc(point, IndoorProbe, _overlaps, Mask,
                                                   QueryTriggerInteraction.Ignore);
             for (int i = 0; i < n; i++)
-                if (Building(_overlaps[i]) != null) return true;
+                if (Occluder(_overlaps[i]) != null) return true;
             return false;
         }
 
         void Hide(Collider collider)
         {
-            var mr = Building(collider);
-            if (mr == null) return;
+            var building = Occluder(collider);
+            if (building == null) return;
 
-            if (_gone.TryGetValue(mr, out var gone))
+            if (_gone.ContainsKey(building))
             {
-                gone.Seen = Time.time;
-                _gone[mr] = gone;
+                _gone[building] = Time.unscaledTime;
                 return;
             }
 
-            // Merged away: the renderer is off and its triangles are in a combined mesh,
-            // so the whole block has to stand in pieces before this one building can go.
-            // A chunk the merge has not finished with says no and is asked again on the
-            // next sweep - a facade a fraction of a second late is nothing; a hole in the
-            // city while the merge is mid-fold is not.
-            MergedChunk chunk = null;
-            if (!mr.enabled)
-            {
-                chunk = MergedChunk.Of(mr);
-                if (chunk == null || !chunk.Hold()) return;
-            }
-
-            _gone[mr] = new Gone
-            {
-                Shadows = mr.shadowCastingMode, ByShadow = keepShadows, Seen = Time.time, Chunk = chunk,
-            };
-            if (keepShadows) mr.shadowCastingMode = ShadowCastingMode.ShadowsOnly;
-            else mr.enabled = false;
+            // The group owns merged-chunk holds and all renderers belonging to this one
+            // logical building. A merge still folding returns false and is asked again.
+            if (!building.Cut(keepShadows, proxyHeight)) return;
+            _gone[building] = Time.unscaledTime;
         }
 
         void Restore()
@@ -254,7 +329,8 @@ namespace RoadDemo
 
             _lapsed.Clear();
             foreach (var pair in _gone)
-                if (pair.Key == null || Time.time - pair.Value.Seen > KeepHiddenSeconds)
+                if (pair.Key == null ||
+                    Time.unscaledTime - pair.Value > keepHiddenSeconds)
                     _lapsed.Add(pair.Key);
 
             for (int i = 0; i < _lapsed.Count; i++) Show(_lapsed[i]);
@@ -270,34 +346,29 @@ namespace RoadDemo
             _lapsed.Clear();
         }
 
-        void Show(MeshRenderer mr)
+        void Show(BuildingCutaway building)
         {
-            if (!_gone.TryGetValue(mr, out var gone)) return;
-            if (mr != null)
-            {
-                if (gone.ByShadow) mr.shadowCastingMode = gone.Shadows;
-                else mr.enabled = true;
-            }
-            // the hold goes last: releasing it may switch the piece off again, which is
-            // exactly right once it is the merged mesh drawing the building instead
-            if (gone.Chunk != null) gone.Chunk.Release();
-            _gone.Remove(mr);
+            if (!_gone.ContainsKey(building)) return;
+            if (building != null) building.Restore();
+            _gone.Remove(building);
         }
 
-        /// <summary>The building this collider is, or null for everything else. Every
-        /// catalog bake is one GameObject carrying its own footprint box beside its own
-        /// renderer, so there is no climbing to do - and the answer never changes, so it
-        /// is settled once per collider and remembered.</summary>
-        MeshRenderer Building(Collider collider)
+        /// <summary>The logical building this collider belongs to, or null. Explicitly
+        /// composed buildings register all their pieces; old catalogue bakes fall back to
+        /// the established collider-and-renderer-on-one-object contract.</summary>
+        BuildingCutaway Occluder(Collider collider)
         {
             if (collider == null) return null;
-            if (_known.TryGetValue(collider, out var known)) return known;
+            if (_known.TryGetValue(collider, out var known))
+            {
+                if (ReferenceEquals(known, null)) return null;
+                if (known != null && BuildingCutaway.RegisteredTo(collider, known)) return known;
+                _known.Remove(collider);
+            }
 
-            MeshRenderer found = null;
-            if (collider.TryGetComponent<MeshRenderer>(out var mr)
-                && mr.bounds.size.y >= minHeight
-                && Ours(collider.transform))
-                found = mr;
+            BuildingCutaway found = null;
+            if (Ours(collider.transform))
+                found = BuildingCutaway.Resolve(collider, minHeight, proxyHeight);
             _known[collider] = found;
             return found;
         }

@@ -1,4 +1,5 @@
 using LivingCity.Personnel;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace RoadDemo
@@ -116,14 +117,19 @@ namespace RoadDemo
         /// one a car can actually leave.</summary>
         const float PullOutRoom = 4f;
 
-        /// <summary>How far off the carriageway the man may stand and still have this
-        /// road count as "his": the pavement's width and a stride.</summary>
-        const float OffRoad = 14f;
+        const float NearbyRoadReach = 80f;
+        const int MaxRoadCandidates = 12;
 
-        /// <summary>How far off a road the holder may be standing, tried in turn. The
-        /// first is the old rule (a man on the pavement); the rest are the yard, the
-        /// forecourt and the far side of a lot.</summary>
-        static readonly float[] Widening = { OffRoad, 30f, 60f, 120f };
+        struct RoadCandidate
+        {
+            public Carriageway Road;
+            public float S, D, DistanceSq;
+        }
+
+        static readonly List<RoadCandidate> Candidates = new List<RoadCandidate>();
+
+        static int CompareCandidate(RoadCandidate a, RoadCandidate b) =>
+            a.DistanceSq.CompareTo(b.DistanceSq);
 
         /// <summary>A free length of kerb beside this man to leave a car of this size
         /// on: nose along the traffic on that side, its flank a hand over the stone,
@@ -138,43 +144,82 @@ namespace RoadDemo
             rot = Quaternion.identity;
             if (net == null) return false;
 
-            // WHICH ROAD IS HIS - and the search widens rather than giving up. Fourteen
-            // metres is a man standing on a pavement; a lieutenant dealt onto a lot, a
-            // yard, a forecourt or a district street stands further off than that, and
-            // the machine the ledger sold him was then never put on the street at all -
-            // one warning line, and a player who owns a motorcycle that does not exist
-            // (nineteen runs in twenty-two of the monkey soak). The kerb it ends up at
-            // is still a real kerb: everything below this line is unchanged.
-            Carriageway road = null;
-            float s0 = 0f, d = 0f;
-            foreach (var within in Widening)
+            // A shop can face a short no-parking segment, a full kerb, or the wrong side
+            // of a divided road. The old nearest-road-only rule then gave up even though
+            // the next corner had an empty legal kerb. Rank the nearby surface roads and
+            // try both sides, still choosing the closest free physical slot.
+            Candidates.Clear();
+            float reachSq = NearbyRoadReach * NearbyRoadReach;
+            for (int i = 0; i < net.Roads.Count; i++)
             {
-                road = net.Locate(near, out s0, out d, within);
-                if (road != null) break;
+                var road = net.Roads[i];
+                if (road == null || road.Elevated || (!road.ParkingA && !road.ParkingB)) continue;
+                road.Project(near, out float projectedS, out float d);
+                float s = Mathf.Clamp(projectedS, 0f, road.Length);
+                var q = road.Pose(s, 0f);
+                float dx = q.x - near.x, dz = q.z - near.z;
+                float distanceSq = dx * dx + dz * dz;
+                if (distanceSq > reachSq) continue;
+                Candidates.Add(new RoadCandidate
+                {
+                    Road = road, S = s, D = d, DistanceSq = distanceSq,
+                });
             }
-            if (road == null) return false;
+            if (Candidates.Count == 0) return false;
+            Candidates.Sort(CompareCandidate);
 
-            float kerb = road.KerbDOnSide(d, halfWidth);
+            bool found = false;
+            float bestDistanceSq = float.MaxValue;
+            int roadCount = Mathf.Min(MaxRoadCandidates, Candidates.Count);
+            for (int i = 0; i < roadCount; i++)
+            {
+                var candidate = Candidates[i];
+                int preferred = candidate.D >= 0f ? 1 : -1;
+                for (int which = 0; which < 2; which++)
+                {
+                    int side = which == 0 ? preferred : -preferred;
+                    if (!TrySide(candidate.Road, candidate.S, side, near,
+                            halfLength, halfWidth, out var at, out var facing))
+                        continue;
+                    float dx = at.x - near.x, dz = at.z - near.z;
+                    float distanceSq = dx * dx + dz * dz;
+                    if (distanceSq >= bestDistanceSq) continue;
+                    bestDistanceSq = distanceSq;
+                    pos = at;
+                    rot = facing;
+                    found = true;
+                }
+            }
+            return found;
+        }
+
+        static bool TrySide(Carriageway road, float s0, int side, Vector3 near,
+            float halfLength, float halfWidth, out Vector3 pos, out Quaternion rot)
+        {
+            pos = near;
+            rot = Quaternion.identity;
+            if (road == null || side == 0) return false;
+            if (!(side > 0 ? road.ParkingB : road.ParkingA)) return false;
+
+            float kerb = side * (road.HalfRoad - halfWidth + 0.38f);
             if (!road.Drivable(kerb, halfWidth)) return false;
-            // whichever side of the axis the man is on has to allow standing there
-            if (!(kerb >= 0f ? road.ParkingB : road.ParkingA)) return false;
-
-            int heading = kerb >= 0f ? 1 : -1;
             float d0 = kerb - halfWidth - 0.3f, d1 = kerb + halfWidth + 0.3f;
-            // clear of the junction boxes at either end, and of the crossings on them
             float lo = halfLength + 7f, hi = road.Length - halfLength - 7f;
             if (hi <= lo) return false;
 
-            for (float out_ = 0f; out_ <= Reach; out_ += Step)
-                for (int side = 0; side < 2; side++)
+            for (float outward = 0f; outward <= Reach; outward += Step)
+                for (int direction = 0; direction < 2; direction++)
                 {
-                    if (side == 1 && out_ <= 0f) continue;
-                    float s = Mathf.Clamp(s0 + (side == 0 ? out_ : -out_), lo, hi);
-                    // and room at each end to get out of it again (PullOutRoom)
-                    if (road.Busy(null, s - halfLength - PullOutRoom, s + halfLength + PullOutRoom, d0, d1)) continue;
+                    if (direction == 1 && outward <= 0f) continue;
+                    float s = Mathf.Clamp(
+                        s0 + (direction == 0 ? outward : -outward), lo, hi);
+                    if (road.Busy(null, s - halfLength - PullOutRoom,
+                            s + halfLength + PullOutRoom, d0, d1))
+                        continue;
                     var p = road.Pose(s, kerb);
+                    var axis = road.DirAt(s) * side;
                     pos = new Vector3(p.x, near.y, p.z);
-                    rot = Quaternion.LookRotation(road.Axis * heading, Vector3.up);
+                    rot = Quaternion.LookRotation(axis, Vector3.up);
                     return true;
                 }
             return false;

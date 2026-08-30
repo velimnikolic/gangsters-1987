@@ -135,7 +135,7 @@ namespace RoadDemo
                 // man the book dealt it to, or his lieutenant if that man is not out.
                 CrewWalker man = null;
                 Vector3 anchor;
-                if (front != null) anchor = front.Door;
+                if (front != null) anchor = front.Outside;
                 else
                 {
                     int keeper = CrewCars.KeeperOf(item);
@@ -701,6 +701,21 @@ namespace RoadDemo
         /// <summary>Is this machine out on a raid? TickBikes asks before it decides what
         /// to do about a rider who has been shot.</summary>
         bool OnRaid(CrewBike bike) => RaidOf(bike) != null;
+
+        /// <summary>A later direct order replaces this crew's motorcycle pass. The two
+        /// riders are a detached pair while the pass is live, so merely writing the new
+        /// order over their walk leaves the bike waiting until its watchdog expires.</summary>
+        void CallOffRaids(Unit crew, string why)
+        {
+            if (crew == null) return;
+            for (int i = _raids.Count - 1; i >= 0; i--)
+            {
+                var raid = _raids[i];
+                if (raid == null || raid.Crew != crew) continue;
+                Finish(raid, why);
+                _raids.RemoveAt(i);
+            }
+        }
 
         /// <summary>The walk to the machine. A man gets on from beside it, so the point
         /// he is sent to is off its flank on the kerb side - never its own position,

@@ -9,7 +9,7 @@ namespace LivingCity.EditorTools
     /// The two benches are dealt afresh the moment they are opened.
     ///
     /// Both scenes are GENERATED - the core demo builds its quarter at Play and the
-    /// residential demo is five blocks written out by the menu - so what is on disk is
+    /// residential demo is its review blocks written out by the menu - so what is on disk is
     /// always yesterday's deal. Looking at yesterday's deal is how a whole evening went by
     /// with the user asking why he could not see a single cafe or shop in a block: the
     /// units had been harvested and the recipe changed, and the scene he was looking at had
@@ -17,7 +17,7 @@ namespace LivingCity.EditorTools
     /// ili residentialblocks da se uvek izgenerise od nule sve").
     ///
     /// So: open <c>CoreDemo</c> and the core city is drawn into it from a seed nobody chose;
-    /// open <c>ResidentialDemo</c> and its five blocks are dealt again. The core's drawing is
+    /// open <c>ResidentialDemo</c> and its residential set plus functional pump block are dealt again. The core's drawing is
     /// marked <see cref="HideFlags.DontSave"/> and the scene's dirty flag is cleared after
     /// it, so a city of a hundred thousand pieces is never written into a 5 KB scene file
     /// and nothing asks to save on the way out.
@@ -124,7 +124,7 @@ namespace LivingCity.EditorTools
                       "scene; Play replaces it with the quarter the builder stands.");
         }
 
-        /// <summary>The residential bench: five blocks, dealt again and written out - which is
+        /// <summary>The residential bench, dealt again and written out - which is
         /// what that scene is for.</summary>
         static void Residential() => Debug.Log("[Demo] " + ResidentialSketch.Demo(Random.Range(1, 90000)));
     }

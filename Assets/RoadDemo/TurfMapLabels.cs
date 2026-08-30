@@ -160,15 +160,23 @@ namespace RoadDemo
 
                 var label = labels[i];
                 var text = _pool[i];
-                text.fontSize = label.Size;
-                text.text = label.Text;
+                if (!Mathf.Approximately(text.fontSize, label.Size))
+                    text.fontSize = label.Size;
+                if (text.text != label.Text)
+                    text.text = label.Text;
 
                 var rect = (RectTransform)text.transform;
-                rect.anchoredPosition = new Vector2(
+                var position = new Vector2(
                     label.Plan.x * TurfPlate.S - TurfPlate.RW * 0.5f,
                     label.Plan.y * TurfPlate.S - TurfPlate.RH * 0.5f);
-                rect.localRotation = Quaternion.Euler(0f, 0f, label.Vertical ? 90f : 0f);
-                rect.localScale = Vector3.one * _labelScale;
+                if (rect.anchoredPosition != position)
+                    rect.anchoredPosition = position;
+                var rotation = Quaternion.Euler(0f, 0f, label.Vertical ? 90f : 0f);
+                if (rect.localRotation != rotation)
+                    rect.localRotation = rotation;
+                var scale = Vector3.one * _labelScale;
+                if (rect.localScale != scale)
+                    rect.localScale = scale;
             }
         }
 

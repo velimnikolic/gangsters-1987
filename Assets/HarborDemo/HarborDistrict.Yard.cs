@@ -125,10 +125,9 @@ namespace HarborDemo
             taken.Add(new Vector2(_gateEastX - GateLaneHalf, _gateEastX + GateLaneHalf));
             var blocked = new List<Vector2>(taken);   // what the line's cursor must step over
 
-            // the main building first: the demo's big warehouse, once, square on the
-            // line at the middle of the port, its doors to the water - the head office
-            // of the place; the rest of the line is filled round it
-            if (main != null)
+            // The authority building takes the centre of the port itself. If its catalogue
+            // pieces are absent, the old large warehouse remains a safe fallback.
+            if (!TryBuildHeadquarters(ShedFrontZ + 8f, ref backMax, taken, blocked) && main != null)
             {
                 var mb = HarborKit.PrefabBounds(main);
                 var go = Instantiate(main, Vector3.zero, Quaternion.Euler(0f, 180f, 0f), _warehouseRoot);
@@ -621,7 +620,13 @@ namespace HarborDemo
             FenceLine(_gateEastX + GateHalf, half, y, z);
             // the ends: down the sides of the yard to the coping
             FenceRun(new Vector3(-half, y, z), new Vector3(-half, y, 3f));
-            FenceRun(new Vector3(half, y, 3f), new Vector3(half, y, z));
+            // The east side steps around the deeper bulk terminal rather than drawing a
+            // fence through it. This jog is the port's deliberately irregular outline.
+            FenceRun(new Vector3(half, y, z), new Vector3(half, y, BulkTerminalNorth));
+            FenceRun(new Vector3(half, y, BulkTerminalNorth),
+                     new Vector3(BulkTerminalEast, y, BulkTerminalNorth));
+            FenceRun(new Vector3(BulkTerminalEast, y, BulkTerminalNorth),
+                     new Vector3(BulkTerminalEast, y, BulkTerminalSouth + 3f));
             // the gates stand open all day - a port's do - each as two leaves swung
             // out flat beside the road, hinged at the posts, a leaf no longer than the
             // verge between wire and pavement (fit: the piece is one leaf's worth)
@@ -672,6 +677,7 @@ namespace HarborDemo
             AsphaltStrip(-half + 1f, gW - 5f, YardRoadZ0, YardRoadZ1, _apronRoot);
             AsphaltStrip(gE + 5f, half - 1f, YardRoadZ0, YardRoadZ1, _apronRoot);
             AsphaltStrip(-half + 1f, half - 1f, QuayLaneZ - 3f, QuayLaneZ + 3f, _apronRoot);
+            BuildBulkTerminalRoads();
             // the forklift aisles - only where there ARE forklift aisles. A berth that
             // works no boxes has no stacks to run a lane between, and a strip of tarmac
             // laid up through a sand heap or a rank of parked imports is a road drawn

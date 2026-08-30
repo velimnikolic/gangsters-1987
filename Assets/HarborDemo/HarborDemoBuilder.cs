@@ -183,7 +183,10 @@ namespace HarborDemo
             var harbor = _harbor.LocalBounds;
             var industry = _industry.LocalBounds;
             var sharedRoad = _industry.ExternalRoad;
-            float x = harbor.center.x - industry.center.x;
+            // The harbor bounds are intentionally asymmetric now: the bulk terminal
+            // widens only the east end. Keep the industrial strip on the port's gate/quay
+            // axis instead of following the centre of that enlarged reservation.
+            float x = -industry.center.x;
 
             // If a service street is already close to the west harbor gate, line the two
             // up exactly. It becomes a proper four-way crossing through the same strip of

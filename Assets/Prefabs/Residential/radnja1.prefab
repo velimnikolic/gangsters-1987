@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 1515331160460784812}
   - component: {fileID: 1994990325753604902}
   - component: {fileID: 6227389760812949747}
+  - component: {fileID: 8858818406137163607}
   m_Layer: 0
   m_Name: radnja1
   m_TagString: Untagged
@@ -162,6 +163,75 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 15, y: 4.8, z: 10}
   m_Center: {x: 7.5, y: 2.4, z: 5}
+--- !u!114 &8858818406137163607
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8782669917318829901}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 991d6e824cc774b419537a57b8dd1319, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RoadDemo.ResidentialTurfPrefab
+  _masses:
+  - _footprint:
+      serializedVersion: 2
+      x: 0
+      y: 0
+      width: 11
+      height: 1
+    _bottom: 0
+    _top: 4.0819364
+  - _footprint:
+      serializedVersion: 2
+      x: 0
+      y: 1
+      width: 1
+      height: 5
+    _bottom: 0
+    _top: 4.0819364
+  - _footprint:
+      serializedVersion: 2
+      x: 1
+      y: 1
+      width: 9
+      height: 4
+    _bottom: 0
+    _top: 3.965874
+  - _footprint:
+      serializedVersion: 2
+      x: 10
+      y: 1
+      width: 1
+      height: 5
+    _bottom: 0
+    _top: 4.0819364
+  - _footprint:
+      serializedVersion: 2
+      x: 1
+      y: 5
+      width: 9
+      height: 1
+    _bottom: 0
+    _top: 4.0819364
+  - _footprint:
+      serializedVersion: 2
+      x: 2
+      y: 6
+      width: 3
+      height: 1
+    _bottom: 0
+    _top: 3.1007571
+  - _footprint:
+      serializedVersion: 2
+      x: 7
+      y: 6
+      width: 3
+      height: 1
+    _bottom: 0
+    _top: 3.1007571
 --- !u!1001 &381947035379785248
 PrefabInstance:
   m_ObjectHideFlags: 0

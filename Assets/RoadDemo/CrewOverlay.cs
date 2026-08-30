@@ -8,6 +8,22 @@ using UnityEngine.UI;
 
 namespace RoadDemo
 {
+    /// <summary>One choice against a rival crew. CrewOverlay owns the gameplay answer;
+    /// the street and TurfMap only differ in how they draw and hit-test these rows.</summary>
+    internal readonly struct CrewEnemyAction
+    {
+        public readonly string Label;
+        public readonly string Note;
+        public readonly System.Action Run;
+
+        public CrewEnemyAction(string label, string note, System.Action run)
+        {
+            Label = label;
+            Note = note;
+            Run = run;
+        }
+    }
+
     // The indicators for the crews' men: equal-sized state-coloured square corners sit on
     // the ground around their feet, while hover and selection add ground brackets and status dots ride
     // above unselected men. The two clicks that command them: a left click within PickRadius of any
@@ -754,9 +770,9 @@ namespace RoadDemo
         // the clicks the first one was answering, and the pickers here have to agree
         // about which of them owns a click. Manual rectangles cannot disagree.
 
-        const float CardWidth = 268f;
-        const float CardRow = 34f;
-        const float CardPad = 7f;
+        const float CardWidth = TurfContextMenuStyle.EnemyWidth;
+        const float CardRow = TurfContextMenuStyle.EnemyRowHeight;
+        const float CardFoot = TurfContextMenuStyle.FooterHeight;
 
         sealed class OrderRow
         {
@@ -767,18 +783,14 @@ namespace RoadDemo
         }
 
         RectTransform _cardRect;
+        TMP_Text _cardTitle;
         List<OrderRow> _cardRows = new List<OrderRow>();
+        List<CrewEnemyAction> _enemyActions = new List<CrewEnemyAction>();
         int _cardShown;
         DemoCrews.Unit _cardTarget, _cardCrew;
         GangFront _cardFront;
         CrewCar _cardPlantCar;
         bool _ordersOpen;
-
-        static readonly Color RowFace = new Color(0.045f, 0.095f, 0.145f, 0f);
-        static readonly Color RowLit = new Color(1f, 0.78f, 0.32f, 0.16f);
-
-        /// <summary>An order the crew cannot give: readable, plainly out of reach.</summary>
-        static readonly Color RowDead = new Color(0.42f, 0.50f, 0.60f, 0.75f);
 
         /// <summary>Open the card over this rival. Nothing happens without a crew
         /// selected - there would be nobody to give the order to.</summary>
@@ -787,16 +799,36 @@ namespace RoadDemo
             var crew = _crews.Selected;
             if (crew == null || target == null || target.Wiped) return;
             if (!BuildCard()) { if (_crews.OrderAttack(target)) ShowMark(target.Position + Vector3.up * 1.2f, AttackTint); return; }
+            if (!TryGetEnemyActions(target, _enemyActions)) return;
 
             _cardTarget = target;
             _cardCrew = crew;
             _cardShown = 0;
+            _cardTitle.text = target.GangName.ToUpperInvariant() + " · " +
+                              target.Standing() + " MEN";
 
-            Row("KILL", "the crew goes in on him", () =>
+            foreach (var action in _enemyActions)
+                Row(action.Label, action.Note, action.Run, action.Run != null);
+
+            LayoutAndShow(screen);
+        }
+
+        /// <summary>The single source for what right-clicking a rival means. TurfMap asks
+        /// for these same rows, so availability, refusal copy and execution cannot drift
+        /// from the street card.</summary>
+        internal bool TryGetEnemyActions(DemoCrews.Unit target, List<CrewEnemyAction> actions)
+        {
+            actions.Clear();
+            var crew = _crews != null ? _crews.Selected : null;
+            if (crew == null || target == null || target.Wiped)
+                return false;
+
+            actions.Add(new CrewEnemyAction("KILL", "the crew goes in on him", () =>
             {
+                if (!EnemyContextCurrent(crew, target)) return;
                 if (_crews.OrderAttack(target))
                     ShowMark(target.Position + Vector3.up * 1.2f, AttackTint);
-            });
+            }));
 
             // The machine the ledger sold this crew. The rule for whether it can go is
             // the crews' own (DemoCrews.CanDriveBy), asked here rather than restated, so
@@ -819,7 +851,7 @@ namespace RoadDemo
             var can = bike != null && machines > 0;
             var why = bike == null ? "no machine - buy one in the ledger and give it to him"
                     : _crews.DriveByRefusal ?? "not now";
-            Row("MOTO DRIVE-BY",
+            actions.Add(new CrewEnemyAction("MOTO DRIVE-BY",
                 !can ? why
                     : machines == 1
                         ? "two men on the " + bike.DisplayName.ToLowerInvariant() + ", one pass"
@@ -827,33 +859,37 @@ namespace RoadDemo
                           " men, one pass each",
                 can ? () =>
                 {
+                    if (!EnemyContextCurrent(crew, target)) return;
                     if (_crews.OrderDriveBy(target))
                         ShowMark(target.Position + Vector3.up * 1.2f, AttackTint);
                     else if (_crews.DriveByRefusal != null)
                         _refusal = (_crews.DriveByRefusal, Time.unscaledTime + 2.5f);
                 }
-                : (System.Action)null,
-                lit: can);
+                : (System.Action)null));
 
             // The grenade, if the crew is carrying one. Same rule as the drive-by row:
             // the row stands even when it cannot be thrown, faded, with the reason where
             // the note goes - a player with no grenades should see WHY, not a shorter card.
             var canBomb = _crews.CanBombThrow(crew, target.Position);
-            Row("BOMBA",
+            actions.Add(new CrewEnemyAction("BOMBA",
                 canBomb ? "lob a grenade at him - it kills all it stands over"
                         : (_crews.BombRefusal ?? "no grenades"),
                 canBomb ? () =>
                 {
+                    if (!EnemyContextCurrent(crew, target)) return;
                     if (_crews.OrderBombThrow(target))
                         ShowMark(target.Position + Vector3.up * 1.2f, AttackTint);
                     else if (_crews.BombRefusal != null)
                         _refusal = (_crews.BombRefusal, Time.unscaledTime + 2.5f);
                 }
-                : (System.Action)null,
-                lit: canBomb);
+                : (System.Action)null));
 
-            LayoutAndShow(screen);
+            return true;
         }
+
+        bool EnemyContextCurrent(DemoCrews.Unit crew, DemoCrews.Unit target) =>
+            _crews != null && _crews.Selected == crew && crew != null && !crew.Wiped &&
+            target != null && !target.Wiped;
 
         /// <summary>Small numbers the way the card says them. The rows are written in
         /// prose - "two men on the harley davidson" - and a digit dropped in the middle
@@ -883,10 +919,12 @@ namespace RoadDemo
                 bool live = i < _cardShown;
                 if (_cardRows[i].Rect.gameObject.activeSelf != live)
                     _cardRows[i].Rect.gameObject.SetActive(live);
-                if (live) _cardRows[i].Rect.anchoredPosition = new Vector2(CardPad, -CardPad - i * CardRow);
+                if (live)
+                    _cardRows[i].Rect.anchoredPosition = new Vector2(
+                        0f, -TurfContextMenuStyle.HeaderHeight - i * CardRow);
             }
 
-            float height = CardPad * 2f + _cardShown * CardRow;
+            float height = TurfContextMenuStyle.HeaderHeight + _cardShown * CardRow + CardFoot;
             _cardRect.sizeDelta = new Vector2(CardWidth, height);
             Place(screen, height);
             _cardRect.gameObject.SetActive(true);
@@ -907,6 +945,7 @@ namespace RoadDemo
             _cardPlantCar = null;
             _cardCrew = crew;
             _cardShown = 0;
+            _cardTitle.text = front.GangName.ToUpperInvariant() + " · PREMISES";
 
             var canBomb = _crews.CanBombThrow(crew, front.Door);
             Row("BOMBA",
@@ -938,6 +977,10 @@ namespace RoadDemo
             _cardPlantCar = car;
             _cardCrew = crew;
             _cardShown = 0;
+            var carOwner = car.Occupant ?? car.Owner;
+            _cardTitle.text = carOwner != null
+                ? carOwner.GangName.ToUpperInvariant() + " · " + car.DisplayName.ToUpperInvariant()
+                : car.DisplayName.ToUpperInvariant();
 
             var canPlant = _crews.CanBombPlant(crew, car);
             Row("PODMETNI BOMBU",
@@ -994,9 +1037,9 @@ namespace RoadDemo
             var row = _cardRows[_cardShown++];
             row.Label.text = label;
             row.Note.text = note;
-            row.Label.color = lit ? DemoUi.Ink : RowDead;
-            row.Note.color = lit ? DemoUi.InkDim : RowDead;
-            row.Face.color = RowFace;
+            row.Label.color = lit ? TurfContextMenuStyle.Body : TurfContextMenuStyle.Disabled;
+            row.Note.color = lit ? TurfContextMenuStyle.Note : TurfContextMenuStyle.Disabled;
+            row.Face.color = TurfContextMenuStyle.Clear;
             row.Run = run;
         }
 
@@ -1058,8 +1101,11 @@ namespace RoadDemo
                 var row = _cardRows[i];
                 bool lit = row.Run != null && mouse != null &&
                            RectTransformUtility.RectangleContainsScreenPoint(row.Rect, at);
-                var want = lit ? RowLit : RowFace;
+                var want = lit ? TurfContextMenuStyle.Hover : TurfContextMenuStyle.Clear;
                 if (row.Face.color != want) row.Face.color = want;
+                var label = row.Run == null ? TurfContextMenuStyle.Disabled
+                    : lit ? TurfContextMenuStyle.Accent : TurfContextMenuStyle.Body;
+                if (row.Label.color != label) row.Label.color = label;
             }
         }
 
@@ -1068,25 +1114,29 @@ namespace RoadDemo
         /// caller then falls back to the one-click attack rather than to nothing.</summary>
         bool BuildCard()
         {
-            if (_cardRect != null) return true;
+            if (_cardRect != null && _cardTitle != null) return true;
             if (TMP_Settings.instance == null || TMP_Settings.defaultFontAsset == null) return false;
+
+            // Adopt a live pre-style card after script reload by replacing its chrome the
+            // next time it is opened. Keeping the old hierarchy would leave the dark card
+            // on screen until Play was restarted.
+            if (_cardRect != null)
+            {
+                _cardRect.gameObject.SetActive(false);
+                Destroy(_cardRect.gameObject);
+                _cardRect = null;
+                _cardRows.Clear();
+                _cardShown = 0;
+            }
 
             _cardRect = DemoUi.NewRect("Orders", _canvas.transform);
             _cardRect.pivot = new Vector2(0f, 1f);
             _cardRect.anchorMin = _cardRect.anchorMax = new Vector2(0f, 0f);
-            _cardRect.sizeDelta = new Vector2(CardWidth, CardRow + CardPad * 2f);
+            _cardRect.sizeDelta = new Vector2(CardWidth,
+                TurfContextMenuStyle.HeaderHeight + CardRow + CardFoot);
 
-            var back = _cardRect.gameObject.AddComponent<Image>();
-            back.raycastTarget = false;
-            DemoUi.Dress(back, DemoUi.Box, 15f, DemoUi.Panel);
-
-            var stripe = DemoUi.Block(_cardRect, "Accent", AttackTint);
-            var stripeRect = stripe.rectTransform;
-            stripeRect.anchorMin = new Vector2(0f, 0f);
-            stripeRect.anchorMax = new Vector2(0f, 1f);
-            stripeRect.pivot = new Vector2(0f, 0.5f);
-            stripeRect.anchoredPosition = new Vector2(3f, 0f);
-            stripeRect.sizeDelta = new Vector2(3f, -10f);
+            TurfContextMenuStyle.Dress(_cardRect);
+            _cardTitle = TurfContextMenuStyle.Header(_cardRect, CardWidth, string.Empty);
 
             _cardRect.gameObject.SetActive(false);
             return true;
@@ -1097,28 +1147,13 @@ namespace RoadDemo
             var rect = DemoUi.NewRect("Order", _cardRect);
             rect.anchorMin = rect.anchorMax = new Vector2(0f, 1f);
             rect.pivot = new Vector2(0f, 1f);
-            rect.sizeDelta = new Vector2(CardWidth - CardPad * 2f, CardRow);
+            rect.sizeDelta = new Vector2(CardWidth, CardRow);
 
             var face = rect.gameObject.AddComponent<Image>();
             face.raycastTarget = false;
-            face.color = RowFace;
+            face.color = TurfContextMenuStyle.Clear;
 
-            var label = DemoUi.Text(rect, "Label", 14f, DemoUi.Ink,
-                TextAlignmentOptions.MidlineLeft, display: true);
-            label.characterSpacing = 2f;
-            var labelRect = label.rectTransform;
-            labelRect.anchorMin = new Vector2(0f, 0.5f);
-            labelRect.anchorMax = new Vector2(1f, 1f);
-            labelRect.offsetMin = new Vector2(10f, 0f);
-            labelRect.offsetMax = new Vector2(-8f, -2f);
-
-            var note = DemoUi.Text(rect, "Note", 11.5f, DemoUi.InkDim,
-                TextAlignmentOptions.MidlineLeft, display: false);
-            var noteRect = note.rectTransform;
-            noteRect.anchorMin = new Vector2(0f, 0f);
-            noteRect.anchorMax = new Vector2(1f, 0.5f);
-            noteRect.offsetMin = new Vector2(10f, 2f);
-            noteRect.offsetMax = new Vector2(-8f, 0f);
+            TurfContextMenuStyle.EnemyText(rect, CardWidth, out var label, out var note);
 
             return new OrderRow { Rect = rect, Face = face, Label = label, Note = note };
         }
@@ -1205,6 +1240,8 @@ namespace RoadDemo
                 _menTag = new List<(CrewWalker, string, DemoCrews.Unit, string, string)>();
             if (_carTag == null)
                 _carTag = new List<(CrewCar, bool, string, DemoCrews.Unit, string, string)>();
+            if (_enemyActions == null)
+                _enemyActions = new List<CrewEnemyAction>();
 
             var cardRowsLost = _cardRows == null || _cardShown < 0 ||
                                (_cardRows != null && _cardShown > _cardRows.Count);

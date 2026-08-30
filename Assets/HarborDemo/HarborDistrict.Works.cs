@@ -33,6 +33,8 @@ namespace HarborDemo
 
         void BuildPortWorks()
         {
+            DressHeadquarters();
+            BuildBulkTerminal();
             BuildHarbourmaster();
             if (gateWorks) BuildGateWorks();
         }

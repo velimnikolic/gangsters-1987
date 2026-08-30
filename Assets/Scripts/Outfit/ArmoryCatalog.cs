@@ -75,9 +75,10 @@ namespace LivingCity.Outfit
         /// can buy; the fourth is the outfit's own.
         ///
         /// THE ARMOURED WAGON IS NO PACK BODY. It is Palm City's SUV rebuilt by
-        /// ArmouredSuvBuilder - gunmetal paint, plate over the sills and doors, a bull
-        /// bar, bars across every window and a plate on the roof - and it is priced as
-        /// the decision it is: 6,000, which is the working car, the van and a tommy gun
+        /// ArmouredSuvBuilder - one black finish across body and armour, plate over the
+        /// sills and doors, a bull bar, bars across every window and a plate on the roof
+        /// - and it is priced as the decision it is: 6,000, which is the working car,
+        /// the van and a tommy gun
         /// all at once. It is the boss's car and remains the dearest vehicle on the
         /// counter even when the campaign starts with a testing bankroll.
         ///

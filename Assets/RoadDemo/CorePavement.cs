@@ -44,8 +44,9 @@ namespace RoadDemo
     ///
     /// The rhythm: a lamp every 20 m along a run (21 of their 38 gaps, 9 more at 25) and
     /// the first one A CELL IN from the corner, never on it; a row of bollards a cell in
-    /// from a corner; then one bin per 16 kerb tiles, a hydrant and a postbox per 46, a
-    /// bench per 85, a newspaper box per 102.
+    /// from a corner; then a deliberately lively production rhythm of one bin per 12 kerb
+    /// tiles, a hydrant per 38, a postbox per 34, a bench per 5 (capped at ten per block)
+    /// and a newspaper box per 54.
     ///
     /// So a block needs nothing but the ground its buildings stand on: grow that by the
     /// one tile and the shape which comes out IS the block, kerb, corners and all. What
@@ -90,6 +91,9 @@ namespace RoadDemo
         const string PalmPropsDir = "Assets/Synty/PolygonPalmCity/Prefabs/Props/";
         const string GenericPropsDir = "Assets/Synty/PolygonGeneric/Prefabs/Props/";
 
+        /// <summary>The low metal guard Palm City seats around a pavement tree's trunk.</summary>
+        public const string TreeCagePiece = "SM_Prop_Tree_Cage_01";
+
         /// <summary>The street lamp: mast and cantilever arm in one piece, 6.5 m tall, the
         /// arm reaching 2.5 m so that standing a metre in from the kerb line it hangs over
         /// the carriageway. Which is also why it faces OUT.</summary>
@@ -115,6 +119,17 @@ namespace RoadDemo
         public const string PalmPiece = "SM_Env_Tree_Palm_0";
         const string Palm = PalmPiece;
         const int Baskets = 2, PalmKinds = 6;
+
+        /// <summary>Fallback for an unknown pavement-palm variant. Known variants use
+        /// <see cref="PavementPalmScaleFor(string)"/> because their trunks are not the same width.</summary>
+        public const float PavementPalmScale = 0.55f;
+
+        /// <summary>
+        /// The grate and cage meshes extend about 14 mm below their prefab origin. Lift the
+        /// whole tree station just clear of the pavement plane so its floor cannot slice
+        /// through the cage's bottom rails.
+        /// </summary>
+        public const float TreeStationLift = 0.025f;
 
         /// <summary>Kerb tiles per palm - a few of them, not an avenue.</summary>
         const int PalmEvery = 10;
@@ -147,9 +162,13 @@ namespace RoadDemo
             public readonly bool Turns;
             /// <summary>Does it want a wall at its back?</summary>
             public readonly bool Backed;
+            /// <summary>Minimum per composed block when enough clear kerb remains.</summary>
+            public readonly int Minimum;
+            /// <summary>Optional maximum per composed block; zero means uncapped.</summary>
+            public readonly int Maximum;
 
             public Furniture(string dir, string[] pieces, float across, int every,
-                             bool turns, bool backed)
+                             bool turns, bool backed, int minimum = 0, int maximum = 0)
             {
                 Dir = dir;
                 Pieces = pieces;
@@ -157,6 +176,8 @@ namespace RoadDemo
                 Every = every;
                 Turns = turns;
                 Backed = backed;
+                Minimum = minimum;
+                Maximum = maximum;
             }
         }
 
@@ -167,28 +188,28 @@ namespace RoadDemo
             // frontage and the walk between the two furnishing lanes left open.
             new Furniture(PalmPropsDir, new[] {
                 "SM_Prop_Trash_Bin_01", "SM_Prop_Trash_Bin_02", "SM_Prop_Trash_Bin_04"
-            }, KerbLane, 16, true, false),
+            }, KerbLane, 12, true, false, minimum: 1),
             new Furniture(PalmPropsDir, new[] { "SM_Prop_Fire_Hydrant_01" },
-                KerbLane, 46, true, false),
+                KerbLane, 38, true, false),
             new Furniture(PalmPropsDir, new[] { "SM_Prop_Mailbox_01" },
-                KerbLane, 46, false, false),
+                KerbLane, 34, false, false, minimum: 1),
             new Furniture(PalmPropsDir, new[] {
-                "SM_Prop_Bench_Seat_01", "SM_Prop_Bench_Seat_02", "SM_Prop_Bench_Seat_03"
-            }, WallLane, 54, false, true),
+                "SM_Prop_Bench_Seat_02", "SM_Prop_Bench_Seat_01", "SM_Prop_Bench_Seat_03"
+            }, WallLane, 5, false, true, minimum: 1, maximum: 10),
             new Furniture(PalmPropsDir, new[] { "SM_Prop_Newspaper_Stand_01" },
-                WallLane, 70, false, true),
+                WallLane, 54, false, true),
             new Furniture(PalmPropsDir, new[] {
                 "SM_Prop_Planter_01", "SM_Prop_Planter_02", "SM_Prop_Planter_03",
                 "SM_Prop_Planter_04"
-            }, WallLane, 18, false, true),
+            }, WallLane, 14, false, true),
             new Furniture(PalmPropsDir, new[] { "SM_Prop_Trash_Bag_01" },
-                WallLane, 34, true, true),
+                WallLane, 28, true, true),
             // Paper clusters are almost flat. They add the fine-grained pavement life of
             // the reference scene without becoming an obstacle or another piece of street
             // furniture in the pedestrian corridor.
             new Furniture(GenericPropsDir, new[] {
                 "SM_Gen_Prop_Papers_01", "SM_Gen_Prop_Papers_02", "SM_Gen_Prop_Papers_06"
-            }, Cell * 0.5f, 18, true, false),
+            }, Cell * 0.5f, 14, true, false),
         };
 
         /// <summary>How much of a cell a building has to cover before the cell counts as
@@ -969,7 +990,8 @@ namespace RoadDemo
             Where(plan, tile, Cell * 0.5f, Cell * 0.5f, y);
 
         /// <summary>
-        /// One palm and the grate it grows out of, on the cell whose middle and facing are
+        /// One palm, the grate it grows out of and the low cage around its trunk, on the
+        /// cell whose middle and facing are
         /// given: a step along the kerb so a run of them is not a row of soldiers, the grate
         /// laid first because it is the ground the palm comes out of, and the palm turned to
         /// any angle at all - a tree has no facing.
@@ -981,11 +1003,133 @@ namespace RoadDemo
         static bool Sapling(Vector3 middle, float yaw, System.Random dice, Stands stand)
         {
             float along = 1.5f + (float)dice.NextDouble() * (Cell - 3f);
-            var spot = middle + Quaternion.Euler(0f, yaw, 0f) * Vector3.right * (along - Cell * 0.5f);
-            if (!stand(Basket + (dice.Next(Baskets) + 1), PalmDir, spot, yaw + 90 * dice.Next(4)))
+            var spot = middle
+                     + Quaternion.Euler(0f, yaw, 0f) * Vector3.right * (along - Cell * 0.5f)
+                     + Vector3.up * TreeStationLift;
+            float furnitureYaw = yaw + 90 * dice.Next(4);
+            if (!stand(Basket + (dice.Next(Baskets) + 1), PalmDir, spot, furnitureYaw))
                 return false;
+            // Palm City uses the cage as part of the tree station, sharing the grate's
+            // centre. It is nested deliberately: neither the grate nor the cage may make
+            // the palm itself look like a collision/refusal.
+            stand(TreeCagePiece, PalmPropsDir, spot, furnitureYaw);
             stand(Palm + (dice.Next(PalmKinds) + 1), PalmDir, spot, (float)dice.NextDouble() * 360f);
             return true;
+        }
+
+        /// <summary>
+        /// Palm City's own caged-tree groups scale each palm variant differently. The
+        /// thicker 01/05/06 trunks must be smaller than the slender 02/03/04 trunks; one
+        /// common scale still lets some variants cut through the unit cage.
+        /// </summary>
+        public static float PavementPalmScaleFor(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return PavementPalmScale;
+            if (name.StartsWith(PalmPiece + "1", StringComparison.OrdinalIgnoreCase)) return 0.45f;
+            if (name.StartsWith(PalmPiece + "2", StringComparison.OrdinalIgnoreCase)) return 0.65f;
+            if (name.StartsWith(PalmPiece + "3", StringComparison.OrdinalIgnoreCase)) return 0.57f;
+            if (name.StartsWith(PalmPiece + "4", StringComparison.OrdinalIgnoreCase)) return 0.69f;
+            if (name.StartsWith(PalmPiece + "5", StringComparison.OrdinalIgnoreCase)) return 0.49f;
+            if (name.StartsWith(PalmPiece + "6", StringComparison.OrdinalIgnoreCase)) return 0.45f;
+            return PavementPalmScale;
+        }
+
+        /// <summary>
+        /// Normalize a palm to Palm City's variant-specific pavement-tree scale. Using the
+        /// largest authored axis makes this idempotent: it fixes unit-scale palms copied
+        /// into Core blocks without shrinking an already corrected palm a second time.
+        /// </summary>
+        public static void SizePavementPalm(Transform palm)
+        {
+            if (palm == null) return;
+            var scale = palm.localScale;
+            float largest = Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
+            if (largest <= Mathf.Epsilon) return;
+            palm.localScale = scale * (PavementPalmScaleFor(palm.name) / largest);
+        }
+
+        /// <summary>
+        /// Add the same cage to palms already authored inside a copied block prefab.
+        /// Generated palms go through <see cref="Sapling"/>; Palm City's harvested blocks
+        /// already contain their palms, so without this small idempotent pass the two block
+        /// families would disagree. Existing cages are retained and matched by trunk
+        /// position. The caller supplies the same raiser used for the block so this also
+        /// works with pooled/runtime instances.
+        /// </summary>
+        public static int CageExistingPalms(Transform root,
+            Func<GameObject, Transform, GameObject> stand)
+        {
+            if (root == null || stand == null) return 0;
+
+            var palms = new List<Transform>();
+            var cages = new List<Vector3>();
+            var grates = new List<Vector3>();
+            foreach (var t in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (t == null) continue;
+                if (t.name.StartsWith(TreeCagePiece, StringComparison.OrdinalIgnoreCase))
+                    cages.Add(t.position);
+                if (t.name.StartsWith(Basket, StringComparison.OrdinalIgnoreCase))
+                    grates.Add(t.position);
+                if (!t.name.StartsWith(PalmPiece, StringComparison.OrdinalIgnoreCase)) continue;
+                if (t.parent != null &&
+                    t.parent.name.StartsWith(PalmPiece, StringComparison.OrdinalIgnoreCase)) continue;
+                palms.Add(t);
+            }
+            if (palms.Count == 0) return 0;
+
+            var prefab = DemoAssetLoad.Load<GameObject>(PalmPropsDir + TreeCagePiece + ".prefab");
+            if (prefab == null)
+            {
+                Debug.LogWarning($"[CorePavement] {PalmPropsDir}{TreeCagePiece}.prefab is missing; " +
+                                 "existing pavement trees stay uncaged.");
+                return 0;
+            }
+
+            const float SameTrunk = 0.35f;
+            int added = 0;
+            foreach (var palm in palms)
+            {
+                // A palm elsewhere in an authored parcel is landscaping, not a pavement
+                // tree. The grate at the same trunk is the reliable mark of the Palm City
+                // pavement triple; do not put street furniture round every courtyard palm.
+                bool plantedInGrate = false;
+                foreach (var grate in grates)
+                {
+                    float dx = grate.x - palm.position.x, dz = grate.z - palm.position.z;
+                    if (dx * dx + dz * dz <= SameTrunk * SameTrunk)
+                    {
+                        plantedInGrate = true;
+                        break;
+                    }
+                }
+                if (!plantedInGrate) continue;
+
+                // Harvested Core block prefabs carry these palms at authored scale one.
+                // Normalize the existing tree before matching/adding its unit cage.
+                SizePavementPalm(palm);
+
+                bool already = false;
+                foreach (var cage in cages)
+                {
+                    float dx = cage.x - palm.position.x, dz = cage.z - palm.position.z;
+                    if (dx * dx + dz * dz <= SameTrunk * SameTrunk)
+                    {
+                        already = true;
+                        break;
+                    }
+                }
+                if (already) continue;
+
+                var go = stand(prefab, palm.parent != null ? palm.parent : root);
+                if (go == null) continue;
+                float yaw = Mathf.Round(palm.eulerAngles.y / 90f) * 90f;
+                var cagePosition = palm.position + Vector3.up * TreeStationLift;
+                go.transform.SetPositionAndRotation(cagePosition, Quaternion.Euler(0f, yaw, 0f));
+                cages.Add(cagePosition);
+                added++;
+            }
+            return added;
         }
 
         /// <summary>One kerb tile of a block that is ALREADY BUILT: the middle of its cell
@@ -1078,6 +1222,8 @@ namespace RoadDemo
                 var go = stand(prefab, parent);
                 if (go == null) return false;
                 go.transform.SetPositionAndRotation(at, Quaternion.Euler(0f, turn, 0f));
+                if (piece.StartsWith(PalmPiece, StringComparison.OrdinalIgnoreCase))
+                    SizePavementPalm(go.transform);
                 stood?.Invoke();
                 return true;
             };
@@ -1282,6 +1428,8 @@ namespace RoadDemo
                 float due = kerbs.Count / (float)kind.Every;
                 int wanted = Mathf.FloorToInt(due), stood = 0;
                 if (dice.NextDouble() < due - wanted) wanted++;
+                wanted = Mathf.Max(kind.Minimum, wanted);
+                if (kind.Maximum > 0) wanted = Mathf.Min(kind.Maximum, wanted);
                 for (int i = 0; i < free.Count && stood < wanted; i++)
                 {
                     if (spent[i]) continue;
@@ -1294,7 +1442,11 @@ namespace RoadDemo
 
                     float along = 1f + (float)dice.NextDouble() * (Cell - 2f);
                     float turn = at.Yaw + (kind.Turns ? 90 * dice.Next(4) : 0);
-                    string piece = kind.Pieces[dice.Next(kind.Pieces.Length)];
+                    // The first guaranteed placement is the exact reference piece the
+                    // family is named for; additional placements may use its variants.
+                    string piece = stood == 0 && kind.Minimum > 0
+                        ? kind.Pieces[0]
+                        : kind.Pieces[dice.Next(kind.Pieces.Length)];
                     if (!stand(piece, kind.Dir, Where(plan, at, across, along, y), turn)) break;
                     spent[i] = true;
                     stood++;

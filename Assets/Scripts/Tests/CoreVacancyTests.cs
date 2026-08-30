@@ -20,11 +20,11 @@ namespace LivingCity.Tests
             var core = new CoreDistrict();
             core.Plan(Array.Empty<float>(), Seed);
 
-            ExactlyFiveFuelStations(core, failures);
-            EveryLayoutParkingCellHasProgramme(core, failures);
+            FuelStationsOwnWholeStandaloneBlocks(core, failures);
             EveryDevelopmentParcelHasHousing(core, failures);
-            ThinParcelsAreSolidApartmentFrontages(core, failures);
-            ResidentialViewsKeepOpaqueStaticBacking(core, failures);
+            DevelopmentPreservesStandaloneLotsAndPavement(core, failures);
+            NoStandaloneBlockStaysEmpty(core, failures);
+            ResidentialViewsOwnTheirOnlyGroundSurface(core, failures);
             EveryResidentialBlockHasFallbackGeometry(core, failures);
             InfillDoesNotRewriteTheRoadPlan(core, failures);
             DevelopmentPublishesMapAndTerritoryIdentity(core, failures);
@@ -84,56 +84,26 @@ namespace LivingCity.Tests
                 failures.Add("Core river reservation was published as a one-ended harbour basin");
         }
 
-        static void ExactlyFiveFuelStations(CoreDistrict core, List<string> failures)
+        static void FuelStationsOwnWholeStandaloneBlocks(CoreDistrict core,
+            List<string> failures)
         {
-            if (core.FuelSites.Count != 5)
-                failures.Add($"Core vacancy seed {Seed}: expected 5 filling stations, got {core.FuelSites.Count}");
-        }
+            if (core.FuelSites.Count == 0)
+                failures.Add($"Core vacancy seed {Seed}: no stand-alone filling station was selected");
 
-        /// <summary>
-        /// The reported holes were Parking cells inside Layout.Lots which never reached
-        /// parking, fuel or development selection because a street crossed the source
-        /// rectangle. Judge the raster cells themselves: every one must now belong to an
-        /// explicit programme, regardless of how the source lot was split.
-        /// </summary>
-        static void EveryLayoutParkingCellHasProgramme(CoreDistrict core, List<string> failures)
-        {
-            var raster = core.Raster;
-            var missed = new List<string>();
-            for (int n = 0; n < core.Layout.Lots.Count; n++)
+            foreach (var fuel in core.FuelSites)
             {
-                var lot = core.Layout.Lots[n];
-                int i0 = Mathf.Clamp(Mathf.RoundToInt((lot.xMin - raster.X0) / CoreRoads.Cell),
-                                     0, raster.NX);
-                int i1 = Mathf.Clamp(Mathf.RoundToInt((lot.xMax - raster.X0) / CoreRoads.Cell),
-                                     0, raster.NX);
-                int j0 = Mathf.Clamp(Mathf.RoundToInt((lot.yMin - raster.Z0) / CoreRoads.Cell),
-                                     0, raster.NZ);
-                int j1 = Mathf.Clamp(Mathf.RoundToInt((lot.yMax - raster.Z0) / CoreRoads.Cell),
-                                     0, raster.NZ);
-                for (int i = i0; i < i1; i++)
-                    for (int j = j0; j < j1; j++)
-                    {
-                        if (raster.At(i, j) != CoreRoads.Kind.Parking) continue;
-                        var point = new Vector2(raster.X(i) + CoreRoads.Cell * 0.5f,
-                                                raster.Z(j) + CoreRoads.Cell * 0.5f);
-                        if (CoreAmenityLayout.Contains(core.ParkingSites, point) ||
-                            CoreAmenityLayout.Contains(core.FuelSites, point) ||
-                            CoreAmenityLayout.Contains(core.DevelopmentSites, point))
-                            continue;
-                        if (missed.Count < 8) missed.Add($"lot {n} cell ({i},{j}) at {point}");
-                    }
+                int wholeLots = 0;
+                for (int i = 0; i < core.Layout.Lots.Count; i++)
+                    if (Same(fuel.Box, core.Layout.Lots[i])) wholeLots++;
+                if (wholeLots != 1)
+                    failures.Add($"Core fuel {Where(fuel.Box)} is not the sole programme of one stand-alone block");
             }
-
-            if (missed.Count > 0)
-                failures.Add($"Core vacancy seed {Seed}: layout parking remains without a programme: " +
-                             string.Join(", ", missed));
         }
 
         static void EveryDevelopmentParcelHasHousing(CoreDistrict core, List<string> failures)
         {
-            if (core.DevelopmentSites.Count < 5)
-                failures.Add($"Core vacancy seed {Seed}: only {core.DevelopmentSites.Count} former parking parcels were programmed");
+            if (core.DevelopmentSites.Count == 0)
+                failures.Add($"Core vacancy seed {Seed}: no outer-quarter remainder became housing");
 
             foreach (var site in core.DevelopmentSites)
             {
@@ -158,38 +128,107 @@ namespace LivingCity.Tests
             }
         }
 
-        static void ThinParcelsAreSolidApartmentFrontages(CoreDistrict core, List<string> failures)
+        static void DevelopmentPreservesStandaloneLotsAndPavement(CoreDistrict core,
+            List<string> failures)
         {
-            int frontages = 0;
             foreach (var site in core.DevelopmentSites)
             {
+                if (!CoreAmenityLayout.CanCarryHousing(site))
+                    failures.Add($"Core vacancy {Where(site.Box)} cannot preserve the shared pavement ring");
+                bool insideStandaloneLot = false;
+                for (int n = 0; n < core.Layout.Lots.Count; n++)
+                    if (Contains(core.Layout.Lots[n], site.Box))
+                    {
+                        insideStandaloneLot = true;
+                        break;
+                    }
+                if (!insideStandaloneLot)
+                    failures.Add($"Core vacancy {Where(site.Box)} was cut from an existing mixed-use block");
+
                 int w = Mathf.RoundToInt(site.Box.width / CoreLayout.Cell);
                 int d = Mathf.RoundToInt(site.Box.height / CoreLayout.Cell);
-                if (!ResidentialLot.CanFrontage(w, d, (int)site.Entry)) continue;
-                frontages++;
-
                 var matches = RecipesAt(core, site.Box);
                 if (matches.Count != 1) continue;
                 var plan = matches[0].Plan;
-                if (!plan.Clean || plan.Spots.Count != w * d)
-                    failures.Add($"Core vacancy {Where(site.Box)}: frontage has {plan.Spots.Count}/{w * d} apartment cells: " +
-                                 string.Join("; ", plan.Faults));
-
                 for (int i = 0; i < w; i++)
                     for (int j = 0; j < d; j++)
-                        if (plan.Ground[i, j] != ResidentialLot.Use.Building)
-                            failures.Add($"Core vacancy {Where(site.Box)}: cell ({i},{j}) is not a building");
-
-                foreach (var spot in plan.Spots)
-                    if (spot?.Unit == null || !ResidentialUnits.IsFrontage(spot.Unit))
-                        failures.Add($"Core vacancy {Where(site.Box)}: frontage used a non-apartment module");
+                    {
+                        bool pavementRing = i < ResidentialLot.Walk || j < ResidentialLot.Walk ||
+                                            i >= w - ResidentialLot.Walk ||
+                                            j >= d - ResidentialLot.Walk;
+                        if (pavementRing && plan.Ground[i, j] == ResidentialLot.Use.Building)
+                            failures.Add($"Core vacancy {Where(site.Box)}: building occupies pavement cell ({i},{j})");
+                    }
             }
-
-            if (frontages < 5)
-                failures.Add($"Core vacancy seed {Seed}: expected at least the 5 reported thin parcels, got {frontages}");
         }
 
-        static void ResidentialViewsKeepOpaqueStaticBacking(CoreDistrict core, List<string> failures)
+        /// <summary>Only shallow one- and two-cell remnants may fall through to CoreRoads'
+        /// ordinary painted bays. A connected three-cell-deep remainder is a city block,
+        /// and leaving it without parking, fuel or housing is the empty-block regression.</summary>
+        static void NoStandaloneBlockStaysEmpty(CoreDistrict core,
+            List<string> failures)
+        {
+            var raster = core.Raster;
+            var seen = new bool[raster.NX, raster.NZ];
+            for (int i = 0; i < raster.NX; i++)
+                for (int j = 0; j < raster.NZ; j++)
+                {
+                    if (seen[i, j] || !OrdinaryStandaloneParking(core, i, j)) continue;
+                    var todo = new Queue<Vector2Int>();
+                    todo.Enqueue(new Vector2Int(i, j));
+                    seen[i, j] = true;
+                    int i0 = i, i1 = i, j0 = j, j1 = j;
+                    bool touchesStreet = false;
+                    while (todo.Count > 0)
+                    {
+                        var cell = todo.Dequeue();
+                        i0 = Mathf.Min(i0, cell.x); i1 = Mathf.Max(i1, cell.x);
+                        j0 = Mathf.Min(j0, cell.y); j1 = Mathf.Max(j1, cell.y);
+                        foreach (var next in new[]
+                        {
+                            new Vector2Int(cell.x - 1, cell.y),
+                            new Vector2Int(cell.x + 1, cell.y),
+                            new Vector2Int(cell.x, cell.y - 1),
+                            new Vector2Int(cell.x, cell.y + 1),
+                        })
+                        {
+                            if (next.x < 0 || next.y < 0 || next.x >= raster.NX ||
+                                next.y >= raster.NZ)
+                                continue;
+                            var kind = raster.At(next.x, next.y);
+                            if (CoreRoads.IsRoad(kind) && kind != CoreRoads.Kind.Parking)
+                                touchesStreet = true;
+                            if (seen[next.x, next.y] ||
+                                !OrdinaryStandaloneParking(core, next.x, next.y)) continue;
+                            seen[next.x, next.y] = true;
+                            todo.Enqueue(next);
+                        }
+                    }
+
+                    int width = i1 - i0 + 1, depth = j1 - j0 + 1;
+                    if (Mathf.Min(width, depth) > 2)
+                        failures.Add($"Core vacancy seed {Seed}: unprogrammed stand-alone block " +
+                                     $"{width * CoreRoads.Cell:F0}x{depth * CoreRoads.Cell:F0} m " +
+                                     $"at ({raster.X(i0):F0},{raster.Z(j0):F0})");
+                    if (!touchesStreet)
+                        failures.Add($"Core ordinary parking remainder ({i0},{j0})..({i1},{j1}) does not reach a street");
+                }
+        }
+
+        static bool OrdinaryStandaloneParking(CoreDistrict core, int i, int j)
+        {
+            if (i < 0 || j < 0 || i >= core.Raster.NX || j >= core.Raster.NZ ||
+                core.Raster.At(i, j) != CoreRoads.Kind.Parking || core.ComposedSurfaceAt(i, j))
+                return false;
+            var point = new Vector2(core.Raster.X(i) + CoreRoads.Cell * 0.5f,
+                                    core.Raster.Z(j) + CoreRoads.Cell * 0.5f);
+            for (int n = 0; n < core.Layout.Lots.Count; n++)
+                if (core.Layout.Lots[n].Contains(point)) return true;
+            return false;
+        }
+
+        static void ResidentialViewsOwnTheirOnlyGroundSurface(CoreDistrict core,
+            List<string> failures)
         {
             var raster = core.Raster;
             foreach (var site in core.DevelopmentSites)
@@ -203,8 +242,14 @@ namespace LivingCity.Tests
                     for (int j = j0; j < j1; j++)
                         if (raster.At(i, j) != CoreRoads.Kind.Parking)
                         {
-                            failures.Add($"Core vacancy {Where(site.Box)}: streamed housing lost its static backing at ({i},{j}) " +
+                            failures.Add($"Core vacancy {Where(site.Box)}: accepted topology changed at ({i},{j}) " +
                                          $"to {raster.At(i, j)}");
+                            reported = true;
+                            break;
+                        }
+                        else if (!core.ComposedSurfaceAt(i, j))
+                        {
+                            failures.Add($"Core vacancy {Where(site.Box)}: road renderer would add a second ground at ({i},{j})");
                             reported = true;
                             break;
                         }
@@ -291,6 +336,10 @@ namespace LivingCity.Tests
                     if (InteriorOverlap(development.Box, parking.Box))
                         failures.Add($"Core vacancy {Where(development.Box)} overlaps retained parking");
             }
+            foreach (var fuel in core.FuelSites)
+                foreach (var parking in core.ParkingSites)
+                    if (InteriorOverlap(fuel.Box, parking.Box))
+                        failures.Add($"Core fuel {Where(fuel.Box)} overlaps retained parking");
         }
 
         static List<ResidentialBlockRecipe> RecipesAt(CoreDistrict core, Rect box)
@@ -304,6 +353,10 @@ namespace LivingCity.Tests
         static bool Same(Rect a, Rect b) =>
             Mathf.Abs(a.xMin - b.xMin) < 0.01f && Mathf.Abs(a.yMin - b.yMin) < 0.01f &&
             Mathf.Abs(a.width - b.width) < 0.01f && Mathf.Abs(a.height - b.height) < 0.01f;
+
+        static bool Contains(Rect outer, Rect inner) =>
+            inner.xMin >= outer.xMin - 0.01f && inner.xMax <= outer.xMax + 0.01f &&
+            inner.yMin >= outer.yMin - 0.01f && inner.yMax <= outer.yMax + 0.01f;
 
         static bool InteriorOverlap(Rect a, Rect b) =>
             Mathf.Min(a.xMax, b.xMax) - Mathf.Max(a.xMin, b.xMin) > 0.01f &&

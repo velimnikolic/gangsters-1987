@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 2924109276585919033}
   - component: {fileID: 5767497164806196712}
   - component: {fileID: 9209537890885214154}
+  - component: {fileID: 4898576482761844937}
   m_Layer: 0
   m_Name: pizzapub
   m_TagString: Untagged
@@ -84,6 +85,27 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 5, y: 9, z: 10}
   m_Center: {x: 2.5, y: 4.5, z: 5}
+--- !u!114 &4898576482761844937
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1915785085187090050}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 991d6e824cc774b419537a57b8dd1319, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RoadDemo.ResidentialTurfPrefab
+  _masses:
+  - _footprint:
+      serializedVersion: 2
+      x: -1
+      y: -1
+      width: 7
+      height: 12
+    _bottom: 0
+    _top: 6.74354
 --- !u!1001 &248184436055873369
 PrefabInstance:
   m_ObjectHideFlags: 0

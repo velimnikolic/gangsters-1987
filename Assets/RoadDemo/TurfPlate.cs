@@ -171,6 +171,39 @@ namespace RoadDemo
             texture.Apply(false);
         }
 
+        /// <summary>Box-filter this plate into a smaller upload buffer. The corner map
+        /// occupies 256 x 160 screen pixels and gains nothing from uploading all 960 x
+        /// 600 source pixels; doing this on its worker keeps the main-thread handoff
+        /// small without changing the shared survey renderer.</summary>
+        public void Downsample(int factor, Color32[] into)
+        {
+            factor = Mathf.Max(1, factor);
+            int wide = RW / factor, tall = RH / factor;
+            if (into == null || into.Length != wide * tall)
+                throw new System.ArgumentException("Downsample buffer has the wrong size.", nameof(into));
+
+            int area = factor * factor;
+            for (int y = 0; y < tall; y++)
+                for (int x = 0; x < wide; x++)
+                {
+                    int r = 0, g = 0, b = 0, a = 0;
+                    int sourceY = y * factor;
+                    int sourceX = x * factor;
+                    for (int py = 0; py < factor; py++)
+                    {
+                        int at = (sourceY + py) * RW + sourceX;
+                        for (int px = 0; px < factor; px++)
+                        {
+                            var colour = _pixels[at + px];
+                            r += colour.r; g += colour.g; b += colour.b; a += colour.a;
+                        }
+                    }
+                    into[y * wide + x] = new Color32(
+                        (byte)(r / area), (byte)(g / area),
+                        (byte)(b / area), (byte)(a / area));
+                }
+        }
+
         /// <summary>
         /// The three static layers flattened into one sheet, the way the screen stacks
         /// them: ground, the turf wash MULTIPLIED over it, then the footprints laid on
@@ -205,6 +238,48 @@ namespace RoadDemo
                 _pixels[i] = under;
             }
         }
+
+        /// <summary>Build the full turf sheet and its no-turf companion in one worker
+        /// pass. The full map can then toggle the overlay while still uploading only
+        /// one ready texture on the main thread.</summary>
+        public void ComposePair(TurfPlate ground, TurfPlate wash, TurfPlate built,
+                                TurfPlate withoutWash)
+        {
+            if (withoutWash == null)
+                throw new System.ArgumentNullException(nameof(withoutWash));
+            for (int i = 0; i < _pixels.Length; i++)
+            {
+                Color32 plain = ground._pixels[i];
+                Color32 coloured = plain;
+
+                var film = wash._pixels[i];
+                if (film.a > 0)
+                    coloured = new Color32(
+                        (byte)(coloured.r * film.r / 255),
+                        (byte)(coloured.g * film.g / 255),
+                        (byte)(coloured.b * film.b / 255), 255);
+
+                var over = built._pixels[i];
+                if (over.a == 255)
+                {
+                    plain = over;
+                    coloured = over;
+                }
+                else if (over.a > 0)
+                {
+                    plain = CompositeOver(plain, over);
+                    coloured = CompositeOver(coloured, over);
+                }
+
+                _pixels[i] = coloured;
+                withoutWash._pixels[i] = plain;
+            }
+        }
+
+        static Color32 CompositeOver(Color32 under, Color32 over) => new Color32(
+            (byte)((under.r * (255 - over.a) + over.r * over.a) / 255),
+            (byte)((under.g * (255 - over.a) + over.g * over.a) / 255),
+            (byte)((under.b * (255 - over.a) + over.b * over.a) / 255), 255);
 
         /// <summary>A plate-shaped texture: point filtered, clamped, no mips. Every
         /// layer of the map is one of these, and the pixelated upscale the design

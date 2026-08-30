@@ -521,6 +521,7 @@ namespace RoadDemo
             _legTo = point;
             // one leg, so its corner IS its far end - and the run reads the far end
             _legEnd = point;
+            _pendingAcrossPlan = false;
             BeginLeg();
             State = Mode.Striding;
         }
@@ -529,6 +530,7 @@ namespace RoadDemo
         readonly List<Vector3> _legs = new List<Vector3>();
         int _legAt, _replans;
         Vector3 _legEnd;
+        bool _pendingAcrossPlan;
 
         /// <summary>Be there, and never mind the pavements.
         ///
@@ -560,9 +562,23 @@ namespace RoadDemo
             _legEnd = point;
             _replans = 0;
             _legsOffRoad = keepOffRoad;
-            if (!WalkRoute.Plan(Tf.position, point, _legs, keepOffRoad)) _legs.Clear();
-            _legAt = 0;
-            _legTo = _legs.Count > 0 ? _legs[0] : point;
+            _legs.Clear();
+            // Hoods already have a deliberate beat before they follow their boss. Plan
+            // during that beat, on their own frames, instead of making one mouse-down
+            // synchronously solve the same cross-city route three times. The boss (delay
+            // zero) still receives his complete route immediately.
+            _pendingAcrossPlan = delay > 0.001f;
+            if (!_pendingAcrossPlan)
+            {
+                if (!WalkRoute.Plan(Tf.position, point, _legs, keepOffRoad)) _legs.Clear();
+                _legAt = 0;
+                _legTo = _legs.Count > 0 ? _legs[0] : point;
+            }
+            else
+            {
+                _legAt = 0;
+                _legTo = point;
+            }
             var far = point - Tf.position;
             far.y = 0f;
             _acrossBest = far.magnitude;
@@ -1160,7 +1176,16 @@ namespace RoadDemo
 
                 case Mode.Striding:
                 {
-                    if (HoldingBeat(dt)) return;
+                    if (_pendingAcrossPlan)
+                    {
+                        if (HoldingBeat(dt)) return;
+                        _pendingAcrossPlan = false;
+                        if (!WalkRoute.Plan(Tf.position, _legEnd, _legs, _legsOffRoad)) _legs.Clear();
+                        _legAt = 0;
+                        _legTo = _legs.Count > 0 ? _legs[0] : _legEnd;
+                        BeginLeg();
+                    }
+                    else if (HoldingBeat(dt)) return;
                     TickStride(dt, _legTo, 0.15f, hurry: Hustle, run: Running());
                     var gap = _legTo - Tf.position;
                     gap.y = 0f;

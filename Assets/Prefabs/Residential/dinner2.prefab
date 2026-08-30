@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 4779048951654076808}
   - component: {fileID: 3737806384090073253}
   - component: {fileID: 7622933539990381668}
+  - component: {fileID: 106746993682509101}
   m_Layer: 0
   m_Name: dinner2
   m_TagString: Untagged
@@ -386,6 +387,171 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 30, y: 5.5, z: 25}
   m_Center: {x: 15, y: 2.75, z: 12.5}
+--- !u!114 &106746993682509101
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9076773014503600911}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 991d6e824cc774b419537a57b8dd1319, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RoadDemo.ResidentialTurfPrefab
+  _masses:
+  - _footprint:
+      serializedVersion: 2
+      x: 11
+      y: 5
+      width: 8
+      height: 2
+    _bottom: 0
+    _top: 3.538756
+  - _footprint:
+      serializedVersion: 2
+      x: 7
+      y: 7
+      width: 1
+      height: 10
+    _bottom: 0
+    _top: 3.538756
+  - _footprint:
+      serializedVersion: 2
+      x: 8
+      y: 7
+      width: 6
+      height: 2
+    _bottom: 0
+    _top: 4.657323
+  - _footprint:
+      serializedVersion: 2
+      x: 14
+      y: 7
+      width: 2
+      height: 1
+    _bottom: 0
+    _top: 3.1546154
+  - _footprint:
+      serializedVersion: 2
+      x: 16
+      y: 7
+      width: 6
+      height: 2
+    _bottom: 0
+    _top: 4.656926
+  - _footprint:
+      serializedVersion: 2
+      x: 22
+      y: 7
+      width: 1
+      height: 10
+    _bottom: 0
+    _top: 3.538756
+  - _footprint:
+      serializedVersion: 2
+      x: 14
+      y: 8
+      width: 2
+      height: 1
+    _bottom: 0
+    _top: 4.6465244
+  - _footprint:
+      serializedVersion: 2
+      x: 8
+      y: 9
+      width: 2
+      height: 2
+    _bottom: 0
+    _top: 4.656926
+  - _footprint:
+      serializedVersion: 2
+      x: 10
+      y: 9
+      width: 11
+      height: 2
+    _bottom: 0
+    _top: 4.3988724
+  - _footprint:
+      serializedVersion: 2
+      x: 21
+      y: 9
+      width: 1
+      height: 7
+    _bottom: 0
+    _top: 4.656926
+  - _footprint:
+      serializedVersion: 2
+      x: 8
+      y: 11
+      width: 1
+      height: 5
+    _bottom: 0
+    _top: 4.656926
+  - _footprint:
+      serializedVersion: 2
+      x: 9
+      y: 11
+      width: 5
+      height: 2
+    _bottom: 0
+    _top: 5.472308
+  - _footprint:
+      serializedVersion: 2
+      x: 14
+      y: 11
+      width: 7
+      height: 3
+    _bottom: 0
+    _top: 4.3988724
+  - _footprint:
+      serializedVersion: 2
+      x: 9
+      y: 13
+      width: 1
+      height: 3
+    _bottom: 0
+    _top: 4.6465244
+  - _footprint:
+      serializedVersion: 2
+      x: 10
+      y: 13
+      width: 4
+      height: 2
+    _bottom: 0
+    _top: 4.3988724
+  - _footprint:
+      serializedVersion: 2
+      x: 14
+      y: 14
+      width: 4
+      height: 1
+    _bottom: 0
+    _top: 4.3988724
+  - _footprint:
+      serializedVersion: 2
+      x: 18
+      y: 14
+      width: 3
+      height: 2
+    _bottom: 0
+    _top: 5.4492903
+  - _footprint:
+      serializedVersion: 2
+      x: 10
+      y: 15
+      width: 8
+      height: 1
+    _bottom: 0
+    _top: 4.656926
+  - _footprint:
+      serializedVersion: 2
+      x: 8
+      y: 16
+      width: 14
+      height: 1
+    _bottom: 0
+    _top: 3.538756
 --- !u!1001 &6805665564550466
 PrefabInstance:
   m_ObjectHideFlags: 0

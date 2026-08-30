@@ -116,6 +116,7 @@ namespace RoadDemo
             public ResidentialBlocks.IncrementalComposition Compose;
             public IEnumerator Merge;
             public bool Active;
+            public bool Attached;
             public bool Attaching;
             public int AttachCursor;
             public int LastUsed;
@@ -283,12 +284,13 @@ namespace RoadDemo
             bool map = _mapHandoff && _rig.MapOut;
             if (map)
             {
-                if (!_mapWasOut) EvictAllPayloads();
+                if (!_mapWasOut) SuspendForMap();
                 _mapWasOut = true;
                 _prefabPool.PrewarmStep(_config.PrewarmPartsPerFrame, 1);
                 BeginRuntimePoolWhenReady();
                 return;
             }
+            if (_mapWasOut) _fallbacks?.SetSuppressed(false);
             _mapWasOut = false;
 
             var clock = Stopwatch.StartNew();
@@ -635,6 +637,7 @@ namespace RoadDemo
             }
 
             view.Active = false;
+            view.Attached = false;
             _resident.Add(recipe.Id, view);
             if (attached) Activate(view);
             _built++;
@@ -706,6 +709,12 @@ namespace RoadDemo
         void BeginAttachment(View view)
         {
             CancelAttachment(view);
+            if (view.Attached)
+            {
+                view.Holder.SetActive(true);
+                if (view.Recipe != null) _fallbacks?.HideFallback(view.Recipe.Id);
+                return;
+            }
             if (view.Recipe != null) _fallbacks?.ShowFallback(view.Recipe.Id);
             view.AttachCursor = 0;
             for (int i = 0; i < view.AttachRenderers.Count; i++)
@@ -714,7 +723,12 @@ namespace RoadDemo
                 if (renderer != null) renderer.enabled = false;
             }
             view.Holder.SetActive(true);
-            if (view.AttachRenderers.Count == 0) return;
+            if (view.AttachRenderers.Count == 0)
+            {
+                view.Attached = true;
+                if (view.Recipe != null) _fallbacks?.HideFallback(view.Recipe.Id);
+                return;
+            }
             view.Attaching = true;
             _attachments.Add(view);
         }
@@ -742,6 +756,7 @@ namespace RoadDemo
                 if (view.AttachCursor >= view.AttachRenderers.Count)
                 {
                     view.Attaching = false;
+                    view.Attached = true;
                     if (view.Active && view.Recipe != null)
                         _fallbacks?.HideFallback(view.Recipe.Id);
                     _attachments.RemoveAt(index);
@@ -754,7 +769,11 @@ namespace RoadDemo
         void CancelAttachment(View view)
         {
             if (view == null) return;
-            if (view.Attaching) _attachments.Remove(view);
+            if (view.Attaching)
+            {
+                _attachments.Remove(view);
+                view.Attached = false;
+            }
             view.Attaching = false;
             view.AttachCursor = 0;
         }
@@ -783,7 +802,10 @@ namespace RoadDemo
 
         void TrimCache()
         {
-            while (CachedViews > _config.CachedViews)
+            // Retiring one complete holder can return hundreds of nested prefab roots.
+            // RecyclerView releases one detached holder per frame; a while loop here
+            // turned a camera jump or map return into one large hierarchy mutation.
+            if (CachedViews > _config.CachedViews)
             {
                 View oldest = null;
                 foreach (var pair in _resident)
@@ -792,8 +814,7 @@ namespace RoadDemo
                     if (view.Active || oldest != null && view.LastUsed >= oldest.LastUsed) continue;
                     oldest = view;
                 }
-                if (oldest == null) break;
-                Evict(oldest);
+                if (oldest != null) Evict(oldest);
             }
         }
 
@@ -844,6 +865,24 @@ namespace RoadDemo
             _scratchViews.Clear();
             foreach (var pair in _resident) _scratchViews.Add(pair.Value);
             for (int i = 0; i < _scratchViews.Count; i++) Evict(_scratchViews[i]);
+            _candidates.Clear();
+        }
+
+        /// <summary>
+        /// The TurfMap owns the screen, not the residential payload memory. Breaking every
+        /// prepared holder back into thousands of pooled prefab roots on the threshold frame
+        /// bought no memory (the prefab pool retained them all) and caused the map-open hitch.
+        /// Keep complete holders bound and disable their common ancestors. Returning to the
+        /// street can then reactivate the same recipes; ordinary cache trimming retires at
+        /// most one off-screen holder per later frame.
+        /// </summary>
+        void SuspendForMap()
+        {
+            _fallbacks?.SetSuppressed(true);
+            _scratchViews.Clear();
+            foreach (var pair in _resident) _scratchViews.Add(pair.Value);
+            for (int i = 0; i < _scratchViews.Count; i++)
+                if (_scratchViews[i].Active) Deactivate(_scratchViews[i]);
             _candidates.Clear();
         }
 
@@ -905,6 +944,7 @@ namespace RoadDemo
             view.Objects = 0;
             view.Renderers = 0;
             view.Active = false;
+            view.Attached = false;
             view.AttachRenderers.Clear();
             view.Parts.Clear();
         }

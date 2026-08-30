@@ -144,6 +144,12 @@ namespace RoadDemo
         /// next order.</summary>
         public bool NoTurnBack;
 
+        /// <summary>This errand is not allowed to replace a turn in the current road with
+        /// a route around the block. Crew drive-bys use it while shuttling on the target's
+        /// carriageway; ordinary trips still give up after their normal patience and take
+        /// the lane graph's detour.</summary>
+        protected virtual bool RequiresInRoadTurn => false;
+
         /// <summary>Held by a junction ahead - the light, the box - or stood behind
         /// somebody who is: a queue, not a jam; nobody goes round a queue.</summary>
         public bool InQueue { get; private set; }
@@ -707,6 +713,10 @@ namespace RoadDemo
 
         float _turnBackFor;     // seconds spent looking for the turn-round on this road
 
+        bool RequiredTurnHere() => RequiresInRoadTurn && !NoTurnBack && _hasGoal &&
+            Road != null && Road == _goalRoad && Road.TwoWay &&
+            Profile.UTurnsInRoad && Road.MedianHalf <= 0f;
+
         /// <summary>Turns in the road already spent on THIS goal. A parking goal is
         /// re-chosen on the approach, and a re-pick that lands behind the car asks for
         /// a turn whose completion puts the next re-pick behind the car again - a crew
@@ -757,7 +767,9 @@ namespace RoadDemo
             // on the right road the wrong way round, or past the spot: the turn in the
             // road is the way back when the driver may make one - the route round the
             // block is only for failing that (TickRoad gives up on the turn near the junction)
-            if (!NoTurnBack && Road == _goalRoad && Road.TwoWay && Profile.UTurnsInRoad && Road.MedianHalf <= 0f && _turnBackFor < TurnBackPatience) return;
+            if (!NoTurnBack && Road == _goalRoad && Road.TwoWay &&
+                Profile.UTurnsInRoad && Road.MedianHalf <= 0f &&
+                (_turnBackFor < TurnBackPatience || RequiredTurnHere())) return;
             RouteShift ??= new Dictionary<RoadEdge, RoadEdge>();
             Route = LaneNet.RouteToward(Net.Edges, _goalLane, out var dist, RouteShift);
 
@@ -1046,8 +1058,9 @@ namespace RoadDemo
             // at a mark thirty metres behind it used to ride the whole way round the
             // quarter, because the lane graph has no U-turn in it to route through and
             // the only road it could draw went forward.
+            bool requiredTurn = RequiredTurnHere();
             if (_hasGoal && _man != Manoeuvre.UTurn && !NoTurnBack &&
-                _goalUTurns < MaxGoalUTurns &&
+                (_goalUTurns < MaxGoalUTurns || requiredTurn) &&
                 (_turnFirst || (road == _goalRoad && Heading != _goalHeading && Route == null)) &&
                 road.TwoWay && Profile.UTurnsInRoad && road.MedianHalf <= 0f)
             {
@@ -1069,8 +1082,24 @@ namespace RoadDemo
                 // rightly called an empty road. Slowing for a turn the road has NO room
                 // for is still the rolling roadblock the old rule was written against,
                 // and that is still refused.
-                if (UTurnAvailable() || (_turnBackFor < TurnBackPatience && UTurnAvailable(timing: false)))
+                if (UTurnAvailable() ||
+                    ((requiredTurn || _turnBackFor < TurnBackPatience) &&
+                     UTurnAvailable(timing: false)))
                     v = Mathf.Min(v, UTurnApproachSpeed());
+                if (requiredTurn)
+                {
+                    // A drive-by waits for a safe gap before the junction instead of
+                    // crossing it and letting the route table turn the next block into
+                    // part of the pass. Stop at the last point whose whole U-turn sweep
+                    // still fits this carriageway; when the band clears, TryUTurn below
+                    // releases it in the opposite lane.
+                    float margin = UTurnRadius() + HalfLen + 3f;
+                    var turnNode = road.NodeAhead(Heading);
+                    if (turnNode != null) margin += turnNode.StopSetback;
+                    float lastTurnS = road.EndS(Heading) - Heading * margin;
+                    float toLastTurn = (lastTurnS - S) * Heading;
+                    v = Mathf.Min(v, Allowed(0f, Mathf.Max(0f, toLastTurn)));
+                }
                 _retry -= dt;
                 if (_retry <= 0f && _man == Manoeuvre.None)
                 {
@@ -1099,7 +1128,11 @@ namespace RoadDemo
                         var turnNode = road.NodeAhead(Heading);
                         bool noRoom = (road.EndS(Heading) - (S + Heading * arcRoom)) * Heading <
                                       (turnNode != null ? turnNode.StopSetback : 0f);
-                        if (noRoom || _turnBackFor > TurnBackPatience) { _turnBackFor = 99f; Replan(); }
+                        if (!requiredTurn && (noRoom || _turnBackFor > TurnBackPatience))
+                        {
+                            _turnBackFor = 99f;
+                            Replan();
+                        }
                     }
                 }
             }

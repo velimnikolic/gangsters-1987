@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 4193787202567831238}
   - component: {fileID: 153594596806316813}
   - component: {fileID: 7749745463502592767}
+  - component: {fileID: 6166677874993947054}
   m_Layer: 0
   m_Name: gym
   m_TagString: Untagged
@@ -190,6 +191,211 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 15, y: 6.7, z: 15}
   m_Center: {x: 7.5, y: 3.35, z: 7.5}
+--- !u!114 &6166677874993947054
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 330950627689479333}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 991d6e824cc774b419537a57b8dd1319, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RoadDemo.ResidentialTurfPrefab
+  _masses:
+  - _footprint:
+      serializedVersion: 2
+      x: 2
+      y: 1
+      width: 2
+      height: 1
+    _bottom: 0
+    _top: 2.6724348
+  - _footprint:
+      serializedVersion: 2
+      x: 4
+      y: 1
+      width: 6
+      height: 1
+    _bottom: 0
+    _top: 2.5030546
+  - _footprint:
+      serializedVersion: 2
+      x: 10
+      y: 1
+      width: 1
+      height: 1
+    _bottom: 0
+    _top: 2.6724348
+  - _footprint:
+      serializedVersion: 2
+      x: 15
+      y: 1
+      width: 1
+      height: 1
+    _bottom: 0
+    _top: 2.6724348
+  - _footprint:
+      serializedVersion: 2
+      x: 3
+      y: 2
+      width: 1
+      height: 2
+    _bottom: 0
+    _top: 2.5030546
+  - _footprint:
+      serializedVersion: 2
+      x: 15
+      y: 2
+      width: 1
+      height: 2
+    _bottom: 0
+    _top: 2.5030546
+  - _footprint:
+      serializedVersion: 2
+      x: 0
+      y: 4
+      width: 2
+      height: 2
+    _bottom: 0
+    _top: 4.894201
+  - _footprint:
+      serializedVersion: 2
+      x: 2
+      y: 4
+      width: 2
+      height: 7
+    _bottom: 0
+    _top: 6.7053695
+  - _footprint:
+      serializedVersion: 2
+      x: 15
+      y: 4
+      width: 1
+      height: 2
+    _bottom: 0
+    _top: 2.6724348
+  - _footprint:
+      serializedVersion: 2
+      x: 0
+      y: 6
+      width: 1
+      height: 3
+    _bottom: 0
+    _top: 4.864164
+  - _footprint:
+      serializedVersion: 2
+      x: 1
+      y: 6
+      width: 1
+      height: 3
+    _bottom: 0
+    _top: 4.2621374
+  - _footprint:
+      serializedVersion: 2
+      x: 15
+      y: 6
+      width: 1
+      height: 3
+    _bottom: 0
+    _top: 2.5030546
+  - _footprint:
+      serializedVersion: 2
+      x: 4
+      y: 8
+      width: 1
+      height: 1
+    _bottom: 0
+    _top: 3.7196813
+  - _footprint:
+      serializedVersion: 2
+      x: 0
+      y: 9
+      width: 2
+      height: 2
+    _bottom: 0
+    _top: 4.894201
+  - _footprint:
+      serializedVersion: 2
+      x: 15
+      y: 9
+      width: 1
+      height: 2
+    _bottom: 0
+    _top: 2.6724348
+  - _footprint:
+      serializedVersion: 2
+      x: 3
+      y: 11
+      width: 1
+      height: 2
+    _bottom: 0
+    _top: 2.5030546
+  - _footprint:
+      serializedVersion: 2
+      x: 15
+      y: 11
+      width: 1
+      height: 2
+    _bottom: 0
+    _top: 2.5030546
+  - _footprint:
+      serializedVersion: 2
+      x: 2
+      y: 13
+      width: 2
+      height: 1
+    _bottom: 0
+    _top: 2.6724348
+  - _footprint:
+      serializedVersion: 2
+      x: 4
+      y: 13
+      width: 2
+      height: 1
+    _bottom: 0
+    _top: 2.5030546
+  - _footprint:
+      serializedVersion: 2
+      x: 6
+      y: 13
+      width: 1
+      height: 1
+    _bottom: 0
+    _top: 2.6724348
+  - _footprint:
+      serializedVersion: 2
+      x: 7
+      y: 13
+      width: 4
+      height: 1
+    _bottom: 0
+    _top: 2.5030546
+  - _footprint:
+      serializedVersion: 2
+      x: 11
+      y: 13
+      width: 1
+      height: 1
+    _bottom: 0
+    _top: 2.6724348
+  - _footprint:
+      serializedVersion: 2
+      x: 12
+      y: 13
+      width: 3
+      height: 1
+    _bottom: 0
+    _top: 2.5030546
+  - _footprint:
+      serializedVersion: 2
+      x: 15
+      y: 13
+      width: 1
+      height: 1
+    _bottom: 0
+    _top: 2.6724348
 --- !u!1001 &8908064151718052
 PrefabInstance:
   m_ObjectHideFlags: 0

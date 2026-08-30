@@ -43,8 +43,9 @@ namespace RoadDemo
         [Range(0, 8)] public int parkingLots = 3;
         [Tooltip("Live ParkingDemo cars cycling through each retained lot.")]
         [Range(0, 12)] public int parkingCarsPerLot = 5;
-        [Tooltip("PumpDemo filling stations placed on suitable former parking parcels. " +
-                 "Each station contains the demo's two-pump forecourt.")]
+        [Tooltip("Maximum PumpDemo filling stations placed on suitable stand-alone former " +
+                 "parking blocks. A station owns its whole block and never shares one with " +
+                 "an existing building.")]
         [Range(0, 8)] public int fuelStations = 5;
 
         void Awake()

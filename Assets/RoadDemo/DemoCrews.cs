@@ -743,6 +743,7 @@ namespace RoadDemo
             IntentOverlay = gameObject.AddComponent<CombatIntentOverlay>();
             IntentOverlay.Init(this);
             CrewWalker.FindCover = CoverNear;
+            PrepareCombatPrewarm();
         }
 
         // After the animation has posed every man for the frame, the fighters' gun
@@ -949,6 +950,7 @@ namespace RoadDemo
 
         void Update()
         {
+            TickCombatPrewarm();
             var director = PersonnelDirector.Instance;
             if (director != null && director.Roster != null &&
                 (FreeRoam || (_sidewalks != null && _sidewalks.Count > 0)) &&
@@ -1053,45 +1055,52 @@ namespace RoadDemo
         /// an order. Left off, and off is the default, the crew walks - which is what
         /// it did before there was a run at all.</summary>
         public bool OrderSelected(Vector3 world, out Vector3 destination, bool run = false)
+            => OrderUnit(Selected, world, out destination, run);
+
+        /// <summary>The selected-order path for an explicit unit. TurfMap can gather more
+        /// than one crew, but every one must still get the street's exact move semantics:
+        /// finish boarding, drive when already in a car, or walk across open ground.</summary>
+        public bool OrderUnit(Unit unit, Vector3 world, out Vector3 destination, bool run = false)
         {
             destination = world;
-            if (Selected == null || Selected.Boss == null || Selected.Boss.Dead) return false;
-            Selected.TargetUnit = null;
-            Selected.OrderedAt = Time.time;
+            if (unit == null || unit.Boss == null || unit.Boss.Dead) return false;
+            CallOffRaids(unit, "a move order");
+            unit.TargetUnit = null;
+            unit.OrderedAt = Time.time;
 
             // half in the car - the first men in their seats, the rest still walking to
             // their doors: the drive waits for them. The order is kept and the car goes
             // the moment the last man is in (TickCars).
-            if (Selected.Boarding != null && Selected.Car == Selected.Boarding && StillBoarding(Selected))
+            if (unit.Boarding != null && unit.Car == unit.Boarding && StillBoarding(unit))
             {
-                world.y = Selected.Car.RoadY;
-                Selected.PendingDrive = world;
+                world.y = unit.Car.RoadY;
+                unit.PendingDrive = world;
                 destination = world;
                 return true;
             }
-            Unboard(Selected, "a walk order"); // a walk order cancels a walk to the car
-            Selected.PendingDrive = null;
+            Unboard(unit, "a walk order"); // a walk order cancels a walk to the car
+            unit.PendingDrive = null;
 
             // in the car: the car goes there, the crew with it - unless the man at the
             // wheel is dead, when the order is to get out
-            if (Selected.Car != null)
+            if (unit.Car != null)
             {
-                if (DriverDead(Selected.Car))
+                if (DriverDead(unit.Car))
                 {
-                    Disembark(Selected);
-                    destination = Selected.Car.Position;
+                    Disembark(unit);
+                    destination = unit.Car.Position;
                     return true;
                 }
-                world.y = Selected.Car.RoadY;
-                Selected.Leaving = false;
-                Selected.Car.DriveTo(world);
+                world.y = unit.Car.RoadY;
+                unit.Leaving = false;
+                unit.Car.DriveTo(world);
                 destination = world;
                 return true;
             }
 
             world = WalkObstacles.ClampToCity(world);
             world.y = GroundY;
-            DispatchAcross(Selected, Selected.Boss, world, run, keepOffRoad: false);
+            DispatchAcross(unit, unit.Boss, world, run, keepOffRoad: false);
             destination = world;
             return true;
         }
@@ -1117,6 +1126,7 @@ namespace RoadDemo
             // hoods standing in the street for the rest of the run.
             var boss = unit.Boss != null && !unit.Boss.Dead ? unit.Boss : Standing(unit);
             if (boss == null || boss.Tf == null) return false;
+            CallOffRaids(unit, "a march order");
             unit.TargetUnit = null;
             unit.OrderedAt = Time.time;
             Unboard(unit, "a march order");
@@ -2240,17 +2250,24 @@ namespace RoadDemo
             var front = PlayerFront();
             if (front == null || _sidewalks == null || _sidewalks.Count == 0) return null;
 
-            PedLink best = null;
-            float bestD = float.MaxValue, bestT = 0f;
-            foreach (var l in _sidewalks)
+            PedLink best = front.EntryLink;
+            float bestD = 0f, bestT = front.EntryT;
+            // Authored/demo fronts do not yet publish an entry link. Keep their old
+            // nearest-pavement fallback; Core fronts always take the exact link that was
+            // selected with their shop door.
+            if (best == null)
             {
-                var along = l.To.Pos - l.From.Pos;
-                float len = l.Length;
-                if (len < 1e-3f) continue;
-                float proj = Mathf.Clamp(Vector3.Dot(front.Door - l.From.Pos, along / len), 0f, len);
-                var p = l.From.Pos + along * (proj / len);
-                float d = (p - front.Door).sqrMagnitude;
-                if (d < bestD) { bestD = d; best = l; bestT = proj; }
+                bestD = float.MaxValue;
+                foreach (var l in _sidewalks)
+                {
+                    var along = l.To.Pos - l.From.Pos;
+                    float len = l.Length;
+                    if (len < 1e-3f) continue;
+                    float proj = Mathf.Clamp(Vector3.Dot(front.Door - l.From.Pos, along / len), 0f, len);
+                    var p = l.From.Pos + along * (proj / len);
+                    float d = (p - front.Door).sqrMagnitude;
+                    if (d < bestD) { bestD = d; best = l; bestT = proj; }
+                }
             }
             // a door with no pavement near it is a badly seated front, not a spawn point
             if (best == null || bestD > 30f * 30f) return null;

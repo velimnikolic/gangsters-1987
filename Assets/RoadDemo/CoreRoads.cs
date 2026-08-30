@@ -1182,14 +1182,16 @@ namespace RoadDemo
         }
 
         /// <summary>Every patch of touching cells of one kind.</summary>
-        static List<List<Vector2Int>> Lots(Raster r, Kind kind)
+        static List<List<Vector2Int>> Lots(Raster r, Kind kind,
+            Func<int, int, bool> skip = null)
         {
             var lots = new List<List<Vector2Int>>();
             var seen = new bool[r.NX, r.NZ];
             for (int i = 0; i < r.NX; i++)
                 for (int j = 0; j < r.NZ; j++)
                 {
-                    if (r.Kinds[i, j] != kind || seen[i, j]) continue;
+                    if (r.Kinds[i, j] != kind || seen[i, j] ||
+                        (skip != null && skip(i, j))) continue;
                     var lot = new List<Vector2Int>();
                     var todo = new Queue<Vector2Int>();
                     todo.Enqueue(new Vector2Int(i, j));
@@ -1202,7 +1204,8 @@ namespace RoadDemo
                                                   new Vector2Int(c.x, c.y - 1), new Vector2Int(c.x, c.y + 1) })
                         {
                             if (n.x < 0 || n.y < 0 || n.x >= r.NX || n.y >= r.NZ) continue;
-                            if (r.Kinds[n.x, n.y] != kind || seen[n.x, n.y]) continue;
+                            if (r.Kinds[n.x, n.y] != kind || seen[n.x, n.y] ||
+                                (skip != null && skip(n.x, n.y))) continue;
                             seen[n.x, n.y] = true;
                             todo.Enqueue(n);
                         }
@@ -1239,9 +1242,12 @@ namespace RoadDemo
         /// </summary>
         /// <param name="skip">Cells that get no tile although they are road: the channel a
         /// bascule's leaves span carries the leaves' own deck, not the road's.</param>
+        /// <param name="skipParking">Parking cells whose amenity or streamed block supplies
+        /// its own complete surface. They are removed before ordinary parking patches are
+        /// grouped, so painted rows cannot cross into a composed parcel.</param>
         public static void Lay(Raster r, Func<GameObject, Transform, GameObject> stand, Transform parent,
                                Func<int, int, bool> skip = null, bool layCarParks = true,
-                               Func<int, int, bool> skipPlainParking = null)
+                               Func<int, int, bool> skipParking = null)
         {
             int sc = StreetCells, bc = BlvdCells;
             var kinds = r.Kinds;
@@ -1255,10 +1261,11 @@ namespace RoadDemo
             var blvdNear = Band(-BlvdHalf, -MedianHalf);
             var blvdFar = Band(MedianHalf, BlvdHalf);
             var kit = new Kit(stand, parent);
-            if (layCarParks) LayCarParks(r, kit);
-            else LayPlainParking(r, kit, (i, j) =>
+            bool SkipParking(int i, int j) =>
                 (skip != null && skip(i, j)) ||
-                (skipPlainParking != null && skipPlainParking(i, j)));
+                (skipParking != null && skipParking(i, j));
+            if (layCarParks) LayCarParks(r, kit, SkipParking);
+            else LayPlainParking(r, kit, SkipParking);
             // a length of road whose cells are not all of one kind is laid bare across its
             // whole width - it is a drawing that has gone wrong, but no cell of it is left
             // without a tile
@@ -1440,9 +1447,9 @@ namespace RoadDemo
         /// lot stops looking like a lot. A strip one row deep is still kerb-side parking,
         /// which is a different thing - that is the street's own bays, not a lot's.
         /// </summary>
-        static void LayCarParks(Raster r, Kit kit)
+        static void LayCarParks(Raster r, Kit kit, Func<int, int, bool> skip)
         {
-            foreach (var lot in Lots(r, Kind.Parking)) LayLot(r, kit, lot);
+            foreach (var lot in Lots(r, Kind.Parking, skip)) LayLot(r, kit, lot);
         }
 
         /// <summary>Opaque, unmarked hardstanding for parking-classified remainder ground

@@ -207,6 +207,65 @@ namespace LivingCity.EditorTools
                       "footprint collider; nested Synty colliders are disabled.");
         }
 
+        [MenuItem("Tools/City/Residential/Bake Turf Proxy Data", priority = 44)]
+        public static void BakeTurfProxyDataMenu()
+        {
+            int changed = BakeTurfProxyData();
+            Debug.Log($"[ResidentialHarvest] {changed} residential prefabs now carry " +
+                      "their prepared TurfMap proxy data.");
+        }
+
+        /// <summary>Refresh only the lightweight map companion on already-baked 3D
+        /// prefabs. This intentionally does not reopen source scenes or rewrite the
+        /// generated residential table. It also refreshes the small runtime index.</summary>
+        public static int BakeTurfProxyData()
+        {
+            int changed = 0;
+            var entries = new List<RoadDemo.ResidentialTurfCatalogEntry>();
+            foreach (var unit in RoadDemo.ResidentialUnits.All)
+            {
+                if (unit == null) continue;
+                string path = $"{OutDir}/{unit.Name}.prefab";
+                if (AssetDatabase.LoadAssetAtPath<GameObject>(path) == null) continue;
+                var root = PrefabUtility.LoadPrefabContents(path);
+                try
+                {
+                    var proxy = RoadDemo.ResidentialTurfPrefab.BakeInto(
+                        root, unit.CW * Cell, unit.CD * Cell, unit.MaxH);
+                    entries.Add(new RoadDemo.ResidentialTurfCatalogEntry
+                    {
+                        Name = unit.Name,
+                        Masses = proxy.CopyMasses(),
+                    });
+                    PrefabUtility.SaveAsPrefabAsset(root, path);
+                    changed++;
+                }
+                finally { PrefabUtility.UnloadPrefabContents(root); }
+            }
+            // Frontage modules are generated from three authored apartment pieces rather
+            // than one harvested prefab. Their Turf companions still belong in the same
+            // baked catalog: scrolling the map must not synthesize even these tiny towers.
+            foreach (var unit in RoadDemo.ResidentialUnits.Frontages)
+            {
+                if (unit == null) continue;
+                entries.Add(new RoadDemo.ResidentialTurfCatalogEntry
+                {
+                    Name = unit.Name,
+                    Masses = RoadDemo.ResidentialTurfPrefab.FromMask(unit),
+                });
+            }
+            var catalog = AssetDatabase.LoadAssetAtPath<RoadDemo.ResidentialTurfCatalog>(
+                RoadDemo.ResidentialTurfCatalog.AssetPath);
+            if (catalog == null)
+            {
+                catalog = ScriptableObject.CreateInstance<RoadDemo.ResidentialTurfCatalog>();
+                AssetDatabase.CreateAsset(catalog, RoadDemo.ResidentialTurfCatalog.AssetPath);
+            }
+            catalog.Replace(entries);
+            AssetDatabase.SaveAssets();
+            return changed;
+        }
+
         /// <summary>The same work with no dialog, for a pipeline command - a modal dialog
         /// from a command deadlocks the editor.</summary>
         public static int Bake(out List<Unit> units, out string report)
@@ -880,6 +939,10 @@ namespace LivingCity.EditorTools
             // pooled instance is reparented. One positive lot box is cheaper, stable under
             // all four unit rotations, and is the footprint BuildingCardPicker expects.
             PreparePhysics(go, unit.CW * Cell, unit.CD * Cell, unit.Floor, unit.MaxH);
+            // The normal 3D prefab also carries its ready-to-read TurfMap companion.
+            // Runtime map opening must never walk hundreds of nested mesh renderers.
+            RoadDemo.ResidentialTurfPrefab.BakeInto(
+                go, unit.CW * Cell, unit.CD * Cell, unit.MaxH);
 
             PrefabUtility.SaveAsPrefabAsset(go, $"{OutDir}/{unit.Name}.prefab");
             Object.DestroyImmediate(go);

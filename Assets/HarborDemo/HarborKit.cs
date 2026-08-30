@@ -87,6 +87,9 @@ namespace HarborDemo
         public const string WarehouseSmall = KitBuildings + "building-warehouse-small.prefab";
         public const string DepotGarage = KitBuildings + "building-depot-garage.prefab";
         public const string YardShed = KitBuildings + "building-yard-shed.prefab";
+        public const string PortHeadquarters = KitBuildings + "building-tower-02.prefab";
+        public const string PortAdministration = "Assets/Synty/PolygonCity/Prefabs/Buildings/SM_Bld_OfficeOld_Large_01.prefab";
+        public const string CompanySign = GangProps + "SM_Prop_CompanySign_01.prefab";
         // The yard furniture. The Military Warehouse pack's own props all wear the
         // POLYGON Military atlas, which this project does not own - the material on
         // disk under that GUID is a flat grey stand-in (Materials/PolygonMilitary_01_A)

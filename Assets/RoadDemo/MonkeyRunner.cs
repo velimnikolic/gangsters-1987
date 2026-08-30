@@ -76,6 +76,23 @@ namespace RoadDemo
 
         int _deaths;
 
+        public int Orders => _orders;
+        public int Wars => _wars;
+        public int FootFights => _footFights;
+        public int DriveBys => _driveBys;
+        public int MotoPasses => _motos;
+        public int Marches => _marches;
+        public int Deaths => _deaths;
+        public int Faults
+        {
+            get
+            {
+                int total = 0;
+                foreach (var fault in _faults) total += fault.Value;
+                return total;
+            }
+        }
+
         float Now => Time.timeSinceLevelLoad;
 
         void Start()
@@ -170,6 +187,7 @@ namespace RoadDemo
         {
             var ours = Pick(live, u => u.Faction == 0);
             if (ours == null) return;
+            if (_crews.RaidActive(ours)) return;
             var target = Nearest(live, ours, 700f);
             if (target == null) return;
 
@@ -192,6 +210,7 @@ namespace RoadDemo
             // are for.
             var ours = Pick(live, u => u.Faction == 0 && _crews.CarOf(u) != null);
             if (ours == null) { Once("no-car", "the outfit", "no crew of ours has a car"); return; }
+            if (_crews.RaidActive(ours)) return;
             var car = _crews.CarOf(ours);
             if (car == null) return;
 
@@ -225,8 +244,10 @@ namespace RoadDemo
             }
 
             var refusal = "";
+            bool busy = false;
             foreach (var ours in mounted)
             {
+                if (_crews.RaidActive(ours)) { busy = true; continue; }
                 var target = Nearest(live, ours, 900f);
                 if (target == null) continue;
                 if (!_crews.CanDriveBy(ours, target))
@@ -248,7 +269,7 @@ namespace RoadDemo
                 return;
             }
 
-            if (refusal.Length > 0) Once("no-pass", "the outfit", refusal);
+            if (refusal.Length > 0 && !busy) Once("no-pass", "the outfit", refusal);
         }
 
         /// <summary>Somebody sent somewhere for no reason - the walk code, over open
@@ -263,6 +284,7 @@ namespace RoadDemo
         {
             var unit = live[_rng.Next(live.Count)];
             if (unit.IsPolice) return;
+            if (_crews.RaidActive(unit)) return;
 
             Vector3 to;
             var fronts = GangFront.All;
@@ -395,6 +417,15 @@ namespace RoadDemo
         {
             if (unit.TargetUnit == null) { _wared.Remove(unit); return; }
             if (!_wared.TryGetValue(unit, out var since)) return;
+            // The foot-war watchdog measures two mobs closing. A crew in a car or on a
+            // motorcycle is deliberately leaving that geometry, and its vehicle has its
+            // own progress watchdogs.
+            if (unit.Car != null || unit.TargetUnit.Car != null ||
+                _crews.RaidActive(unit) || _crews.RaidActive(unit.TargetUnit))
+            {
+                _wared.Remove(unit);
+                return;
+            }
             if (Now - since.at < warPatience) return;
 
             var range = Vector3.Distance(unit.Position, unit.TargetUnit.Position);

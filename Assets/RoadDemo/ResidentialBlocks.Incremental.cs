@@ -144,23 +144,47 @@ namespace RoadDemo
                     else stood.Units++;
                 }
                 yield return null;
+                if (go != null && NeedsStorefrontDressing(spot.Unit))
+                {
+                    int interiorSeed = StorefrontSeed(
+                        plan.Seed, spot.Unit.Name, spot.I, spot.J, spot.Yaw);
+                    foreach (int _ in StorefrontDressingSteps(
+                        go, spot.Unit, "unit:" + spot.Unit.Name,
+                        interiorSeed, null, stood))
+                        yield return null;
+                }
             }
 
             Subway(plan, root, stood);
             yield return null;
+            int cafeNth = 0;
             foreach (var placed in cafes)
             {
-                if (CafeStand(placed.Spot, root, stood) &&
-                    (placed.Spot.Unit?.Seats ?? 0) < OwnSeats)
+                var cafe = CafeStand(placed.Spot, root, stood);
+                yield return null;
+                if (cafe != null)
                 {
-                    yield return null;
-                    Patio(plan, placed.Gap, placed.Spot, root, rng, standing, stood);
-                    yield return null;
-                    Terraces(plan, placed.Gap, placed.Spot, root, rng, standing, stood);
+                    int interiorSeed = StorefrontSeed(
+                        plan.Seed, placed.Spot.Name, placed.Gap.At, placed.Gap.Side, cafeNth++);
+                    Vector3 outward = CafeLocalOutward(placed.Gap, root, cafe.transform);
+                    foreach (int _ in StorefrontDressingSteps(
+                        cafe, placed.Spot.Unit,
+                        "cafe:" + (placed.Spot.Path ?? placed.Spot.Unit?.Name ?? placed.Spot.Name),
+                        interiorSeed, outward, stood))
+                        yield return null;
+
+                    if ((placed.Spot.Unit?.Seats ?? 0) < OwnSeats)
+                    {
+                        Patio(plan, placed.Gap, placed.Spot, root, rng, standing, stood);
+                        yield return null;
+                        Terraces(plan, placed.Gap, placed.Spot, root, rng, standing, stood);
+                    }
                 }
                 yield return null;
             }
 
+            PlazaClusters(plan, root, standing, stood);
+            yield return null;
             Courtyard(plan, root, rng, standing, stood);
             yield return null;
             SharedYards(plan, root, rng, standing, stood);
@@ -205,6 +229,8 @@ namespace RoadDemo
             MainPlazaTables(plan, root, standing, stood);
             yield return null;
             Lamps(plan, root, standing, stood);
+            yield return null;
+            PavementEssentials(plan, root, standing, stood);
             yield return null;
             if (Dressed)
             {

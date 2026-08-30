@@ -58,6 +58,11 @@ namespace RoadDemo
         const float PassSpeed = 9f;         // metres a second alongside the mark
 
         int _passDir = 1;
+        Carriageway _driveByRoad;
+        bool _localPass;
+
+        protected override bool RequiresInRoadTurn =>
+            DriveByTarget != null && _localPass && Road == _driveByRoad;
 
         public CrewCar()
         {
@@ -234,6 +239,8 @@ namespace RoadDemo
         public void ParkNear(Vector3 point)
         {
             DriveByTarget = null;
+            _driveByRoad = null;
+            _localPass = false;
             Profile = Civic ? DriverProfile.Police : Hot ? DriverProfile.Hot : DriverProfile.Gangster;
             if (!OnRoad || Net == null)
             {
@@ -259,6 +266,8 @@ namespace RoadDemo
         {
             if (target == null) return;
             DriveByTarget = target;
+            _driveByRoad = null;
+            _localPass = false;
             Profile = DriverProfile.Hot;
             var t = target.Position;
             if (Road != null)
@@ -285,9 +294,13 @@ namespace RoadDemo
             // the same widening the bike's pass does, and for the same reason: a crew at
             // a frontage stands further than fourteen metres off the carriageway, and
             // ParkNear would clear the mark and end the drive-by before a round was fired
-            Carriageway road = null;
+            // The first pass chooses the attack segment. Keep it for the whole order:
+            // a wounded mark may run toward the next corner, but that must not quietly
+            // turn the following pass into a lap around a different block.
+            Carriageway road = _driveByRoad;
             float ts = 0f, td = 0f;
-            foreach (float within in PassReach)
+            if (road != null) road.Project(t, out ts, out td);
+            else foreach (float within in PassReach)
             {
                 road = Net.Locate(t, out ts, out td, within);
                 if (road != null) break;
@@ -299,12 +312,33 @@ namespace RoadDemo
                 GoFree(new Vector3(t.x, RoadY, t.z) + f0.normalized * PassOvershoot);
                 return;
             }
+            _driveByRoad = road;
             // which way along the target's road this pass runs: on it already, the way
             // the passes alternate; coming from elsewhere, the lane on the mark's side
             int dir = Road == road ? _passDir : (td >= 0f ? 1 : -1);
-            float endS = Mathf.Clamp(ts + dir * PassOvershoot, 8f, road.Length - 8f);
             var lane = road.LaneFor(dir, td) ?? road.LaneFor(-dir, td);
             if (lane == null) { ParkNear(t); return; }
+
+            // A car drive-by owns this one street segment until the mark is finished.
+            // Leave enough road at either end for the complete turn, the junction's stop
+            // box and the braking distance from the nine-metre pass pace. Without these
+            // interior endpoints the ordinary trip planner eventually gives up on its
+            // U-turn and faithfully routes the car around the surrounding blocks.
+            float maxRadius = Mathf.Max(2.2f, road.HalfRoad - HalfWide - 0.45f);
+            float radius = Mathf.Clamp(Mathf.Abs(lane.Offset), 2.2f, maxRadius);
+            float brakingRoom = PassSpeed * PassSpeed /
+                                Mathf.Max(1f, 2f * Brake) + 2f;
+            float turnBody = radius + HalfLen + 3f + brakingRoom;
+            float minS = turnBody + (road.NodeA != null ? road.NodeA.StopSetback : 0f);
+            float maxS = road.Length - turnBody -
+                         (road.NodeB != null ? road.NodeB.StopSetback : 0f);
+            bool twoWay = road.TwoWay && road.MedianHalf <= 0f &&
+                          road.LaneFor(-lane.Heading, -lane.Offset) != null;
+            _localPass = twoWay && maxS - minS >= Mathf.Max(8f, HalfLen * 2f + 2f);
+
+            float endS = _localPass
+                ? Mathf.Clamp(ts + lane.Heading * PassOvershoot, minS, maxS)
+                : Mathf.Clamp(ts + lane.Heading * PassOvershoot, 8f, road.Length - 8f);
             _passDir = lane.Heading;
             var goal = road.Pose(endS, lane.Offset);
             GoTo(goal, park: false, standOff: 0f, stopAtGoal: false, wantHeading: lane.Heading);
@@ -314,8 +348,8 @@ namespace RoadDemo
         {
             if (DriveByTarget != null)
             {
-                // the end of a pass: the next one runs the other way - a turn-round in
-                // the road (or the long way round the block) and back past the mark
+                // the end of a pass: the next one runs the other way, turning inside
+                // this same segment and coming back past the mark
                 _passDir = -_passDir;
                 PlanPass();
             }
@@ -326,6 +360,8 @@ namespace RoadDemo
         public new void Stop()
         {
             DriveByTarget = null;
+            _driveByRoad = null;
+            _localPass = false;
             Halt(hard: false);
         }
 
@@ -336,12 +372,16 @@ namespace RoadDemo
         public void HardStop()
         {
             DriveByTarget = null;
+            _driveByRoad = null;
+            _localPass = false;
             Halt(hard: true);
         }
 
         void EndDriveBy()
         {
             DriveByTarget = null;
+            _driveByRoad = null;
+            _localPass = false;
             // the job is done: on down the road a little and in at the kerb on this side
             ParkNear(Position + Forward * 34f);
         }

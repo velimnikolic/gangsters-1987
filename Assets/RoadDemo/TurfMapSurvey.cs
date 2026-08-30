@@ -188,6 +188,10 @@ namespace RoadDemo
         public readonly TurfPlate Ground = new TurfPlate();
         public readonly TurfPlate Turf = new TurfPlate();
         public readonly TurfPlate Built = new TurfPlate();
+        /// <summary>Worker-composited upload answers. The full map never uploads the
+        /// three source layers separately.</summary>
+        public readonly TurfPlate Composite = new TurfPlate();
+        public readonly TurfPlate Plain = new TurfPlate();
 
         public readonly List<TurfBuilding> Buildings = new List<TurfBuilding>();
         public readonly List<TurfLandmark> Landmarks = new List<TurfLandmark>();
@@ -527,6 +531,7 @@ namespace RoadDemo
             ScoreDistricts();
             PaintTurf();
             PaintBuildings();
+            Composite.ComposePair(Ground, Turf, Built, Plain);
         }
 
         /// <summary>Every world rectangle, into the projection just chosen. Done in one

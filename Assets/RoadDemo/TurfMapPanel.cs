@@ -9,6 +9,70 @@ using LivingCity.UI;
 namespace RoadDemo
 {
     /// <summary>
+    /// The one visual vocabulary for pointer menus over both the TurfMap and the street.
+    /// Their input paths deliberately differ (uGUI buttons on the map, manual rectangles
+    /// over the 3D view), but the paper, type, rules and hover wash must not drift apart.
+    /// </summary>
+    internal static class TurfContextMenuStyle
+    {
+        public const float HeaderHeight = 22f;
+        public const float EnemyWidth = 268f;
+        public const float EnemyRowHeight = 34f;
+        public const float FooterHeight = 4f;
+
+        public static readonly Color Paper = new Color32(247, 240, 218, 247);
+        public static readonly Color Border = new Color32(43, 36, 24, 140);
+        public static readonly Color Rule = new Color32(43, 36, 24, 90);
+        public static readonly Color Body = new Color32(47, 40, 32, 255);
+        public static readonly Color Note = new Color32(109, 92, 64, 255);
+        public static readonly Color Disabled = new Color32(138, 119, 86, 170);
+        public static readonly Color Accent = new Color32(143, 33, 25, 255);
+        public static readonly Color Hover = new Color32(143, 33, 25, 31);
+        public static readonly Color Clear = new Color(0f, 0f, 0f, 0f);
+
+        public static void Dress(RectTransform rect)
+        {
+            LedgerKit.Fill(rect, Paper);
+            LedgerKit.Frame(rect, 0.5f, Border);
+        }
+
+        public static void ClearContent(RectTransform rect)
+        {
+            // LedgerKit.Frame is four anchored "Edge" children. They are permanent
+            // chrome; only the heading and action rows belong to one opening.
+            for (int i = rect.childCount - 1; i >= 0; i--)
+                if (rect.GetChild(i).name != "Edge")
+                    Object.Destroy(rect.GetChild(i).gameObject);
+        }
+
+        public static TextMeshProUGUI Header(Transform parent, float width, string label)
+        {
+            const float size = 10f;
+            float y = -(HeaderHeight - LedgerKit.LineBox(size)) * 0.5f;
+            var title = LedgerKit.Line(parent, LedgerStyle.Condensed, size, Accent,
+                10f, y, width - 16f, LedgerKit.LineBox(size),
+                label != null ? label.ToUpperInvariant() : string.Empty);
+            title.characterSpacing = 16f;
+            title.overflowMode = TextOverflowModes.Ellipsis;
+            LedgerKit.Rule(parent, 0f, -HeaderHeight + 1f, width, Rule, 1f);
+            return title;
+        }
+
+        public static void EnemyText(RectTransform row, float width,
+            out TextMeshProUGUI label, out TextMeshProUGUI note)
+        {
+            label = LedgerKit.Line(row, LedgerStyle.Mono, 11f, Body,
+                11f, 0f, width - 16f, EnemyRowHeight * 0.56f, string.Empty);
+            label.overflowMode = TextOverflowModes.Ellipsis;
+
+            note = LedgerKit.Line(row, LedgerStyle.Mono, 9.5f, Note,
+                11f, -EnemyRowHeight * 0.48f, width - 16f,
+                EnemyRowHeight * 0.44f, string.Empty);
+            note.overflowMode = TextOverflowModes.Ellipsis;
+        }
+    }
+
+    /// <summary>
     /// The map's paper: the date plate, the ONE panel top left, the turf key pinned
     /// to the bottom right, the place labels over the districts, and the right-click
     /// menu. Nothing else ever floats over the plate.
@@ -76,6 +140,7 @@ namespace RoadDemo
         bool _showPanel, _showMapChrome;
 
         RectTransform _panelRect, _viewport, _content, _keyRect, _placesRoot, _menuRect;
+        DemoCrews.Unit _menuActor, _menuTarget;
 
         RectTransform _dossierRect;
         RawImage _mugImage;
@@ -166,7 +231,8 @@ namespace RoadDemo
             BuildKey(root);
             _paintedKey = KeyStamp();
 
-            _menuRect = Paper("Menu", root, new Color32(247, 240, 218, 247));
+            _menuRect = DemoUi.NewRect("Menu", root);
+            TurfContextMenuStyle.Dress(_menuRect);
             _menuRect.gameObject.SetActive(false);
         }
 
@@ -393,6 +459,10 @@ namespace RoadDemo
 
             if (_showMapChrome)
             {
+                if (_menuTarget != null &&
+                    !_hud.EnemyContextValid(_menuActor, _menuTarget))
+                    CloseMenu();
+
                 int key = KeyStamp();
                 if (key != _paintedKey)
                 {
@@ -1022,72 +1092,52 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ menu
 
-        readonly List<(string label, System.Action run)> _menuItems =
-            new List<(string, System.Action)>();
-
-        public void OpenMenu(Vector2 screen, Vector2 plan, TurfBuilding building,
-            TurfDistrict district)
+        internal void OpenEnemyMenu(Vector2 screen, DemoCrews.Unit actor,
+            DemoCrews.Unit target, IReadOnlyList<CrewEnemyAction> actions)
         {
-            for (int i = _menuRect.childCount - 1; i >= 0; i--)
-                Destroy(_menuRect.GetChild(i).gameObject);
-
-            _menuItems.Clear();
-            _menuItems.Add(("Move here", () => _hud.Order(TurfOrder.Moving, plan, null)));
-            _menuItems.Add(("Walk in hard", () => _hud.Order(TurfOrder.WalkingIn, plan, null)));
-            _menuItems.Add(("Walk the block", () => _hud.Order(TurfOrder.Walking, plan, null)));
-            _menuItems.Add(("Hold position", () => _hud.Order(TurfOrder.Holding, plan, null)));
-            _menuItems.Add(("Pull back to post", () => _hud.Order(TurfOrder.PullingBack, plan, null)));
-
-            if (building != null)
+            if (actor == null || target == null || actions == null || actions.Count == 0)
             {
-                _menuItems.Add(("Take the " + building.Name.ToLowerInvariant(),
-                    () => _hud.Order(TurfOrder.Taking, plan, building)));
-                _menuItems.Add(("Read the property file", () => Read(building, null)));
+                CloseMenu();
+                return;
             }
-            if (district != null)
-                _menuItems.Add(("Read " + district.Name.ToLowerInvariant(),
-                    () => Read(null, district)));
 
-            int men = 0, gathered = 0;
-            foreach (var crew in _hud.Units)
-                if (_hud.IsGathered(crew.Id))
-                {
-                    gathered++;
-                    men += crew.MenStanding;
-                }
+            TurfContextMenuStyle.ClearContent(_menuRect);
+            _menuActor = actor;
+            _menuTarget = target;
 
-            // As wide as its longest line asks for, between a floor and a ceiling. A
-            // fixed 178 cut "Take the queensbridge warehouse" in half and left three
-            // fingers of empty paper beside "Move here".
-            const float headH = 22f, itemH = 21f;
-            float w = 150f;
-            foreach (var (label, _) in _menuItems)
-                w = Mathf.Max(w, Wide(label, 11f, LedgerStyle.Mono, 0f) + 26f);
-            w = Mathf.Min(w, 260f);
+            const float headH = TurfContextMenuStyle.HeaderHeight;
+            const float itemH = TurfContextMenuStyle.EnemyRowHeight;
+            const float w = TurfContextMenuStyle.EnemyWidth;
 
-            var title = Caps(_menuRect, 10f, Mid(headH, LedgerKit.LineBox(10f)), w - 16f,
-                gathered > 0 ? gathered + " CREWS · " + men + " MEN" : "NOBODY GATHERED",
-                10f, Red, LedgerStyle.Condensed);
-            title.characterSpacing = 16f;
-            LedgerKit.Rule(_menuRect, 0f, -headH + 1f, w, Rule, 1f);
+            TurfContextMenuStyle.Header(_menuRect, w,
+                target.GangName + " · " + target.Standing() + " MEN");
 
             float y = -headH;
-            foreach (var (label, run) in _menuItems)
+            foreach (var action in actions)
             {
                 var row = DemoUi.NewRect("Item", _menuRect);
                 LedgerKit.PlaceTopLeft(row, 0f, y, w, itemH);
-                var face = Clickable(row, new Color(0f, 0f, 0f, 0f));
-                var text = LedgerKit.Line(row, LedgerStyle.Mono, 11f, Body,
-                    11f, 0f, w - 16f, itemH, label);
-                text.overflowMode = TextOverflowModes.Ellipsis;
+                var face = Clickable(row, TurfContextMenuStyle.Clear);
+                TurfContextMenuStyle.EnemyText(row, w, out var label, out var note);
+                label.text = action.Label;
+                note.text = action.Note;
 
-                var call = run;
-                LedgerKit.RowButton(row, face, () => { call(); CloseMenu(); });
-                Hover.Add(row, face, text, Body, Red, new Color32(143, 33, 25, 31));
+                var call = action.Run;
+                if (call != null)
+                {
+                    LedgerKit.RowButton(row, face, () => { call(); CloseMenu(); });
+                    Hover.Add(row, face, label, TurfContextMenuStyle.Body,
+                        TurfContextMenuStyle.Accent, TurfContextMenuStyle.Hover);
+                }
+                else
+                {
+                    label.color = TurfContextMenuStyle.Disabled;
+                    note.color = TurfContextMenuStyle.Disabled;
+                }
                 y -= itemH;
             }
 
-            _menuRect.sizeDelta = new Vector2(w, -y + 4f);
+            _menuRect.sizeDelta = new Vector2(w, -y + TurfContextMenuStyle.FooterHeight);
 
             // The cursor arrives in real pixels and the menu is measured in canvas
             // units; the reading has to come onto the canvas's own ladder before it
@@ -1102,19 +1152,15 @@ namespace RoadDemo
             _menuRect.gameObject.SetActive(true);
         }
 
-        void Read(TurfBuilding building, TurfDistrict district)
-        {
-            if (building != null)
-                _hud.ReadProperty(building);
-            else if (district != null)
-                _hud.ReadDistrict(district);
-        }
-
         public void CloseMenu()
         {
+            _menuActor = null;
+            _menuTarget = null;
             if (_menuRect != null)
                 _menuRect.gameObject.SetActive(false);
         }
+
+        public bool MenuOpen => _menuRect != null && _menuRect.gameObject.activeSelf;
 
         /// <summary>Whether the pointer is on paper rather than on the map. The map's
         /// own picks are polled from the mouse, so they have to stand aside for the

@@ -32,6 +32,11 @@ namespace RoadDemo
         /// <summary>The pavement plans in the scene: each prop's footprint, as laid.</summary>
         public static readonly List<SidewalkPlan> Props = new List<SidewalkPlan>();
 
+        // Props that arrive already composed inside a block prefab, rather than through
+        // StreetKit/SidewalkDressing. They are still furniture, not walls: walkers and
+        // cover see them, while sight lines keep the existing wall-only policy.
+        static SidewalkPlan _composedProps = new SidewalkPlan();
+
         // the scene's own solids, kept in a plan of their own so they bucket the same way
         static SidewalkPlan _solids = new SidewalkPlan();
 
@@ -102,6 +107,7 @@ namespace RoadDemo
         {
             Props.Clear();
             _solids = new SidewalkPlan();
+            _composedProps = new SidewalkPlan();
             Near.Clear();
             City.Clear();
             Min = new Vector2(float.MaxValue, float.MaxValue);
@@ -139,6 +145,71 @@ namespace RoadDemo
             float reach = half.magnitude;
             Grew(centre.x - reach, centre.x + reach, centre.z - reach, centre.z + reach);
             _solids.Take(SidewalkPlan.Make(new Vector2(centre.x, centre.z), yaw, half, solid: true));
+        }
+
+        /// <summary>Register one fixed piece of furniture without turning it into a
+        /// wall for visibility/cover rules.</summary>
+        public static void BlockProp(in SidewalkPlan.Box box)
+        {
+            if (!box.Solid || box.H.x <= 0f || box.H.y <= 0f) return;
+            float rx = Mathf.Abs(box.Ax.x) * box.H.x + Mathf.Abs(box.Az.x) * box.H.y;
+            float rz = Mathf.Abs(box.Ax.y) * box.H.x + Mathf.Abs(box.Az.y) * box.H.y;
+            Grew(box.C.x - rx, box.C.x + rx, box.C.y - rz, box.C.y + rz);
+            _composedProps.Take(box);
+        }
+
+        /// <summary>Register physical props already nested in a composed block prefab.
+        /// Ground slabs are deliberately excluded by name; rooftop attachments are
+        /// excluded by the walk-height slice. Returns the number registered.</summary>
+        public static int BlockComposedProps(Transform root, float groundY)
+        {
+            if (root == null) return 0;
+            int taken = 0;
+            var all = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < all.Length; i++)
+            {
+                var t = all[i];
+                if (t == null || t == root || !PhysicalPropName(t.name) || HasPhysicalPropParent(t, root))
+                    continue;
+                if (!TouchesWalkHeight(t, groundY)) continue;
+                if (!SidewalkPlan.Footprint(t.gameObject, t.position, t.eulerAngles.y, out var box) ||
+                    !box.Solid)
+                    continue;
+                BlockProp(box);
+                taken++;
+            }
+            return taken;
+        }
+
+        static bool PhysicalPropName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            return name.StartsWith("SM_Prop_", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("SM_Veh_", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("SM_Env_Tree_", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("SM_Env_Fence_", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("SM_Env_SubwayEntrance_", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.IndexOf("wall", System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        static bool HasPhysicalPropParent(Transform t, Transform root)
+        {
+            for (var p = t.parent; p != null && p != root; p = p.parent)
+                if (PhysicalPropName(p.name)) return true;
+            return false;
+        }
+
+        static bool TouchesWalkHeight(Transform root, float groundY)
+        {
+            const float ankle = 0.06f;
+            const float shoulder = 1.9f;
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var b = renderers[i].bounds;
+                if (b.max.y >= groundY + ankle && b.min.y <= groundY + shoulder) return true;
+            }
+            return false;
         }
 
         /// <summary>Read a stretch of walk against EVERYTHING that has been blocked -
@@ -223,6 +294,7 @@ namespace RoadDemo
         static bool OnGround(Vector2 q, float radius, float tallBerth)
         {
             if (_solids.Occupied(q, radius, tallBerth)) return true;
+            if (_composedProps.Occupied(q, radius, tallBerth)) return true;
             for (int i = 0; i < Props.Count; i++)
                 if (Props[i].Occupied(q, radius, tallBerth)) return true;
             return false;
@@ -421,6 +493,7 @@ namespace RoadDemo
         {
             into.Clear();
             var q = new Vector2(p.x, p.z);
+            _composedProps.SolidNear(q, reach, into);
             for (int i = 0; i < Props.Count; i++) Props[i].SolidNear(q, reach, into);
         }
 
@@ -436,6 +509,20 @@ namespace RoadDemo
             h.Normalize();
             Near.Clear();          // the road is nobody's business here
             return Run(p, h, radius, ahead);
+        }
+
+        /// <summary>Is a complete straight walk blocked by anything fixed? Uses each
+        /// plan's spatial segment query rather than stepping along the line. Traffic is
+        /// deliberately excluded for the same reason as <see cref="ClearStanding"/>.</summary>
+        public static bool BlocksStanding(Vector3 from, Vector3 to, float radius)
+        {
+            var a = new Vector2(from.x, from.z);
+            var b = new Vector2(to.x, to.z);
+            if (_solids.Obstructs(a, b, radius) || _composedProps.Obstructs(a, b, radius))
+                return true;
+            for (int i = 0; i < Props.Count; i++)
+                if (Props[i].Obstructs(a, b, radius)) return true;
+            return false;
         }
 
         /// <summary>How far a man of this radius can walk from <paramref name="from"/>
@@ -509,10 +596,20 @@ namespace RoadDemo
             w.Normalize();
             GatherRoad(p, ahead + radius + 0.5f);
 
-            // inside something: out of it first, the way he was going
-            if (OnGround(p, 0.1f) || InRoad(p, 0.1f))
+            // A moving car can overlap a walker between frames. Push him toward the
+            // nearest flank/end until his shoulders are outside it; continuing along
+            // the wanted line here used to let him traverse the whole car.
+            if (RoadEscape(p, w, radius, ahead, out var escape, out clear))
             {
-                clear = ahead;
+                side = 0;
+                return new Vector3(escape.x, 0f, escape.y);
+            }
+
+            // Already inside fixed furniture means bad placement or newly registered
+            // streamed geometry. Never solve it by walking through the object.
+            if (OnGround(p, 0.1f))
+            {
+                clear = 0f;
                 return new Vector3(w.x, 0f, w.y);
             }
 
@@ -583,6 +680,53 @@ namespace RoadDemo
                 if (c > bestClear) { bestClear = c; best = line; bestSide = sign; }
                 return false;
             }
+        }
+
+        static bool RoadEscape(Vector2 p, Vector2 wanted, float radius, float ahead,
+            out Vector2 escape, out float clear)
+        {
+            escape = wanted;
+            clear = 0f;
+            float best = float.MaxValue;
+            bool found = false;
+            for (int i = 0; i < Near.Count; i++)
+            {
+                var b = Near[i];
+                var d = p - b.C;
+                float along = Vector2.Dot(d, b.F);
+                float across = Vector2.Dot(d, b.R);
+                float longHalf = b.HL + radius;
+                float wideHalf = b.HW + radius;
+                if (Mathf.Abs(along) >= longHalf || Mathf.Abs(across) >= wideHalf) continue;
+
+                float outLong = longHalf - Mathf.Abs(along);
+                float outWide = wideHalf - Mathf.Abs(across);
+                Vector2 dir;
+                float distance;
+                if (outWide <= outLong)
+                {
+                    float sign = Mathf.Abs(across) > 1e-4f
+                        ? Mathf.Sign(across)
+                        : (Vector2.Dot(wanted, b.R) >= 0f ? 1f : -1f);
+                    dir = b.R * sign;
+                    distance = outWide;
+                }
+                else
+                {
+                    float sign = Mathf.Abs(along) > 1e-4f
+                        ? Mathf.Sign(along)
+                        : (Vector2.Dot(wanted, b.F) >= 0f ? 1f : -1f);
+                    dir = b.F * sign;
+                    distance = outLong;
+                }
+                if (distance >= best) continue;
+                best = distance;
+                escape = dir;
+                found = true;
+            }
+            if (!found) return false;
+            clear = Mathf.Min(ahead, Mathf.Max(0.1f, best + 0.05f));
+            return true;
         }
 
         // a flat heading turned by deg (positive = to its right, as a man turns)

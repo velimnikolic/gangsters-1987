@@ -25,7 +25,7 @@ namespace RoadDemo
         /// Bump when the meaning of the same ResidentialLot input changes. The plan hash
         /// catches data changes; this catches an optimiser/composer interpretation change.
         /// </summary>
-        public const int GeneratorVersion = 1;
+        public const int GeneratorVersion = 8;
 
         public string Id { get; private set; }
         public string Name { get; private set; }
@@ -42,6 +42,11 @@ namespace RoadDemo
         /// derived from recipe data, so a tilted camera never needs a live view merely
         /// to know whether the future view could reach into the picture.</summary>
         public float VisualHeight { get; private set; }
+        readonly List<ResidentialTurfMass> _turfMasses =
+            new List<ResidentialTurfMass>();
+        /// <summary>Lightweight map geometry generated beside this block recipe. It is
+        /// independent of every recycled 3D holder and contains no live GameObjects.</summary>
+        public IReadOnlyList<ResidentialTurfMass> TurfMasses => _turfMasses;
 
         public ulong ContentKey
         {
@@ -82,6 +87,7 @@ namespace RoadDemo
             Revision++;
             PlanHash = Hash(plan, localBounds, seed);
             VisualHeight = MeasureVisualHeight(plan);
+            ResidentialTurfRecipeBaker.Bake(plan, localBounds, _turfMasses);
             if (notify) Changed?.Invoke(this, change);
         }
 

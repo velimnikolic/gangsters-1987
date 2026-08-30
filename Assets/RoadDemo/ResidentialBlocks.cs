@@ -98,6 +98,8 @@ namespace RoadDemo
         /// (QuayBlocks), a bench against the back line.</summary>
         const string CoffeeProps = "Assets/Synty/PolygonCoffeeShop/Prefabs/";
         const string PalmProps = "Assets/Synty/PolygonPalmCity/Prefabs/Props/";
+        const string PalmEnvironment = "Assets/Synty/PolygonPalmCity/Prefabs/Environment/";
+        const string PalmVehicles = "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/";
         const string CafeTable = CityProps + "SM_Prop_Table_02.prefab";
         const string CafeChair = CoffeeProps + "SM_Prop_Chair_01.prefab";
         static readonly string[] Umbrellas =
@@ -111,6 +113,33 @@ namespace RoadDemo
         const string CourtPlanterBench = PalmProps + "SM_Prop_Planter_Bench_01.prefab";
         const string CourtPlanter = PalmProps + "SM_Prop_Planter_04.prefab";
         const string CourtTable = PalmProps + "SM_Prop_Table_Outdoor_01.prefab";
+        const string PlazaDivider = PalmEnvironment + "SM_Env_Divider_Large_01.prefab";
+        const string PlazaHedge = PalmEnvironment + "SM_Env_Hedge_03.prefab";
+        const string PlazaBike = PalmVehicles + "SM_Veh_E_Bike_01.prefab";
+        const string TreeCage = PalmProps + CorePavement.TreeCagePiece + ".prefab";
+        const string PalmPavementMailbox = PalmProps + "SM_Prop_Mailbox_01.prefab";
+        static readonly string[] PalmPavementBins =
+        {
+            PalmProps + "SM_Prop_Trash_Bin_01.prefab",
+            PalmProps + "SM_Prop_Trash_Bin_02.prefab",
+            PalmProps + "SM_Prop_Trash_Bin_04.prefab",
+        };
+        static readonly string[] PlazaBenches =
+        {
+            PalmProps + "SM_Prop_Bench_Seat_01.prefab",
+            PalmProps + "SM_Prop_Bench_Seat_02.prefab",
+            PalmProps + "SM_Prop_Bench_Seat_03.prefab",
+        };
+        static readonly string[] PlazaBikeStands =
+        {
+            PalmProps + "SM_Prop_Bike_Stand_01.prefab",
+            PalmProps + "SM_Prop_Bike_Stand_02.prefab",
+        };
+        static readonly string[] PlazaLinearDividers =
+        {
+            PalmEnvironment + "SM_Env_Divider_01.prefab",
+            PalmEnvironment + "SM_Env_Divider_02.prefab",
+        };
         const float TableAlongMin = 3.6f, TableAlongMax = 4.6f;
         const float TableRowMin = 3.6f, TableRowMax = 4.5f;
         const float TableJitter = 0.45f;
@@ -202,7 +231,9 @@ namespace RoadDemo
         public sealed class Stood
         {
             public int Units, Tiles, Props, Lamps, Palms, Stalls, Cars, Tables, Benches, Parks;
+            public int BenchBlocks, BikeStations, Dividers;
             public int People;
+            public int Storefronts, StorefrontProps, ClosedStorefronts;
             public int Drains, Dug, Meters, Bins, Boxes, Picnics;
             public int SurfaceFlush, SurfaceClusters, SurfaceMissing;
             public string SurfaceProfile = "";
@@ -227,7 +258,13 @@ namespace RoadDemo
                 if (Picnics > 0) extra.Add($"{Picnics} picnic table(s)");
                 if (Drains > 0) extra.Add($"{Drains} drain(s)");
                 if (Dug > 0) extra.Add("dug-up pavement");
+                if (BenchBlocks > 0) extra.Add($"{BenchBlocks} bench block(s)");
+                if (BikeStations > 0) extra.Add($"{BikeStations} bike station(s)");
+                if (Dividers > 0) extra.Add($"{Dividers} low divider(s)");
                 if (People > 0) extra.Add($"{People} ambient figure(s)");
+                if (Storefronts > 0)
+                    extra.Add($"{Storefronts} dressed storefront(s), " +
+                              $"{StorefrontProps} display(s), {ClosedStorefronts} closed");
                 if (SurfaceFlush + SurfaceClusters > 0)
                     extra.Add($"surface {SurfaceProfile}: {SurfaceFlush} flush/{SurfaceClusters} cluster(s)");
                 return
@@ -259,18 +296,19 @@ namespace RoadDemo
                 pool.ScheduleCapacity(prefab, target, totalLimit);
             }
 
-            const string palmEnvironment =
-                "Assets/Synty/PolygonPalmCity/Prefabs/Environment/";
             // Spend the small reserve on variants that have actually caused first-use
             // hitches. Keep targets close to one viewport; speculative copies of every
             // cafe prop used far more memory than the misses they prevented.
             int palmTarget = Mathf.Max(8, window * 2);
             for (int i = 1; i <= 6; i++)
-                Schedule(palmEnvironment + "SM_Env_Tree_Palm_0" + i + ".prefab", palmTarget);
+                Schedule(PalmEnvironment + "SM_Env_Tree_Palm_0" + i + ".prefab", palmTarget);
 
             int grateTarget = Mathf.Max(8, window * 4);
-            Schedule(palmEnvironment + "SM_Env_Plant_Grate_01.prefab", grateTarget);
-            Schedule(palmEnvironment + "SM_Env_Plant_Grate_02.prefab", grateTarget);
+            Schedule(PalmEnvironment + "SM_Env_Plant_Grate_01.prefab", grateTarget);
+            Schedule(PalmEnvironment + "SM_Env_Plant_Grate_02.prefab", grateTarget);
+            // Every generated pavement palm now carries the same cage as the Palm City
+            // reference, so its reserve follows the two grate variants combined.
+            Schedule(TreeCage, grateTarget * 2);
 
             // The deterministic WASD route measures the high-water mark rather than
             // guessing from the first three holders. Keep a little headroom over its
@@ -288,12 +326,18 @@ namespace RoadDemo
             Schedule(Dug, window);
             for (int i = 0; i < Kit.Length; i++)
                 Schedule(Kit[i], Mathf.Max(2, window / 2));
+            // Each open facade now receives one tiny single-renderer display. Spread the
+            // reserve across the three variants so the first dense corner building does
+            // not fall back to a burst of Instantiate calls.
+            int interiorTarget = Mathf.Max(6, window * 4);
+            for (int i = 0; i < StorefrontInteriorProps.Length; i++)
+                Schedule(StorefrontInteriorProps[i], interiorTarget);
 
-            // Every block carries only a handful of decorative figures, but their
-            // skinned prefab dependency chains are expensive first-use misses. Warm one
-            // or two of each civilian look gradually; the ordinary observed-capacity
-            // pass supplies any extra copies the current viewport mix actually needs.
-            int peopleTarget = Mathf.Max(1, window / 4);
+            // Venue, bench, bin and doorway tableaus now put several figures on each
+            // visible block. Their skinned dependency chains are expensive first-use
+            // misses, so warm half a viewport of every look gradually; the observed-
+            // capacity pass supplies the remainder in the proportions actually dealt.
+            int peopleTarget = Mathf.Max(2, (window + 1) / 2);
             for (int i = 0; i < AmbientBodies.Length; i++)
                 Schedule(AmbientBodies[i], peopleTarget);
 
@@ -305,6 +349,23 @@ namespace RoadDemo
             for (int i = 0; i < Papers.Length; i++) Schedule(Papers[i], sparseTarget);
             for (int i = 0; i < Newspapers.Length; i++) Schedule(Newspapers[i], sparseTarget);
             Schedule(SubwayPath, 1);
+            Schedule(PlazaDivider, sparseTarget);
+            Schedule(PlazaHedge, Mathf.Max(6, window * 2));
+            // Street pavements can now carry up to ten seats on the largest blocks.
+            // Reserve roughly a viewport's real mix across all three variants so the
+            // denser frontage does not fall back to a first-use Instantiate burst.
+            int pavementBenchTarget = Mathf.Max(8, window * 3);
+            for (int i = 0; i < PlazaBenches.Length; i++)
+                Schedule(PlazaBenches[i], pavementBenchTarget);
+            for (int i = 0; i < PalmPavementBins.Length; i++)
+                Schedule(PalmPavementBins[i], sparseTarget);
+            Schedule(PalmPavementMailbox, sparseTarget);
+            Schedule(BillboardPole, sparseTarget);
+            Schedule(BillboardPanel, sparseTarget);
+            for (int i = 0; i < PlazaBikeStands.Length; i++) Schedule(PlazaBikeStands[i], sparseTarget);
+            for (int i = 0; i < PlazaLinearDividers.Length; i++)
+                Schedule(PlazaLinearDividers[i], sparseTarget);
+            Schedule(PlazaBike, Mathf.Max(12, window * 4));
 
             int cafeTarget = Mathf.Max(8, window * 4);
             for (int i = 0; i < Umbrellas.Length; i++) Schedule(Umbrellas[i], cafeTarget);
@@ -353,9 +414,18 @@ namespace RoadDemo
             CaryardVenueArrow(plan, root);
             Stand(plan, root, stood);
             Subway(plan, root, stood);
+            int cafeNth = 0;
             foreach (var placed in cafes)
             {
-                if (!CafeStand(placed.Spot, root, stood)) continue;
+                var cafe = CafeStand(placed.Spot, root, stood);
+                if (cafe == null) continue;
+                int interiorSeed = StorefrontSeed(
+                    plan.Seed, placed.Spot.Name, placed.Gap.At, placed.Gap.Side, cafeNth++);
+                Vector3 outward = CafeLocalOutward(placed.Gap, root, cafe.transform);
+                foreach (int _ in StorefrontDressingSteps(
+                    cafe, placed.Spot.Unit,
+                    "cafe:" + (placed.Spot.Path ?? placed.Spot.Unit?.Name ?? placed.Spot.Name),
+                    interiorSeed, outward, stood)) { }
                 // A storefront that arrived with its own terrace is not given a second one.
                 if ((placed.Spot.Unit?.Seats ?? 0) < OwnSeats)
                 {
@@ -363,6 +433,7 @@ namespace RoadDemo
                     Terraces(plan, placed.Gap, placed.Spot, root, rng, standing, stood);
                 }
             }
+            PlazaClusters(plan, root, standing, stood);
             Courtyard(plan, root, rng, standing, stood);
             SharedYards(plan, root, rng, standing, stood);
             Cars(stalls, root, rng, raise, stood);
@@ -376,6 +447,7 @@ namespace RoadDemo
             MainPlazaTables(plan, root, standing, stood);
 
             Lamps(plan, root, standing, stood);
+            PavementEssentials(plan, root, standing, stood);
             if (Dressed) Street(plan, root, rng, standing, stood);
             Palms(plan, kerbs, standing, root, raise, rng.Next(), stood);
             SurfaceDetails(plan, root, stood);
@@ -868,6 +940,14 @@ namespace RoadDemo
                 var go = StandUnit(spot.Unit, spot.Yaw, spot.I, spot.J, root,
                                    ResidentialUnits.IsLot(spot.Unit) ? 0 : ((mix % 3) + 3) % 3);
                 if (go == null) continue;
+                if (NeedsStorefrontDressing(spot.Unit))
+                {
+                    int interiorSeed = StorefrontSeed(
+                        plan.Seed, spot.Unit.Name, spot.I, spot.J, spot.Yaw);
+                    foreach (int _ in StorefrontDressingSteps(
+                        go, spot.Unit, "unit:" + spot.Unit.Name,
+                        interiorSeed, null, stood)) { }
+                }
                 if (ResidentialUnits.IsLot(spot.Unit)) stood.Parks++;
                 else stood.Units++;
             }
@@ -895,6 +975,10 @@ namespace RoadDemo
             };
             go.transform.SetPositionAndRotation(new Vector3(x, 0f, z) + offset, Quaternion.Euler(0f, yaw, 0f));
             go.name = $"{unit.Name} ({i},{j}) {yaw}";
+            // Parks and complete amenity lots may contain several unrelated tall props.
+            // Houses and storefronts are one logical shell and must cut as one, otherwise
+            // roofs and upper floors remain floating over the revealed street.
+            if (!ResidentialUnits.IsLot(unit)) BuildingCutaway.Prepare(go);
             return go;
         }
 
@@ -946,6 +1030,7 @@ namespace RoadDemo
                 return null;
             }
             Colourway(go, way);
+            BuildingCutaway.Prepare(go);
             return go;
         }
 
@@ -1344,7 +1429,7 @@ namespace RoadDemo
             return 0f;
         }
 
-        static bool CafeStand(CafeSpot cafe, Transform root, Stood stood)
+        static GameObject CafeStand(CafeSpot cafe, Transform root, Stood stood)
         {
             GameObject go;
             if (cafe.Unit != null)
@@ -1357,10 +1442,265 @@ namespace RoadDemo
             {
                 string failed = $"no {cafe.Name}: no room";
                 stood.Cafe = stood.Cafe.Length == 0 ? failed : stood.Cafe + "; " + failed;
-                return false;
+                return null;
             }
             go.name = $"{cafe.Name} (cafe)";
             stood.Cafe = stood.Cafe.Length == 0 ? cafe.Name : stood.Cafe + " + " + cafe.Name;
+            return go;
+        }
+
+        /// <summary>
+        /// Give a genuinely open paved patch one composed civic object instead of
+        /// scattering unrelated props over it. The two patterns are the user's
+        /// PalmCityDemo references:
+        ///
+        ///  * benchblock - a low SM_Env_Divider_Large_01 island, three hedge crowns and
+        ///    four Palm City seats facing it;
+        ///  * bikestandwithbikes - three rack modules holding six e-bikes, with an
+        ///    occasional scaled low divider behind them.
+        ///
+        /// Palm City's own dividers are low, axis-aligned and commonly scaled to the
+        /// island they finish. They are never used here as a fence across the pedestrian
+        /// line. A complete clear rectangle is reserved around each composition, and all
+        /// of that rectangle must be Court/Paved ground, so neither pattern consumes a
+        /// narrow pavement or an entrance. The plan seed owns this random stream; adding
+        /// these patterns does not perturb cars, cafes, palms or the older courtyard pass.
+        /// </summary>
+        static void PlazaClusters(ResidentialLot.Plan plan, Transform root,
+                                  List<Vector3> standing, Stood stood)
+        {
+            var patches = PlazaPatches(plan);
+            if (patches.Count == 0) return;
+
+            var rng = new System.Random(unchecked(plan.Seed * 7919 + plan.W * 104729 +
+                                                   plan.D * 1299709 + 0x2B17));
+            Transform pen = null;
+            int made = 0;
+            foreach (var patch in patches.OrderByDescending(p => p.Count))
+            {
+                if (made >= 2 || patch.Count < 6) break;
+                var cells = new HashSet<int>(patch.Select(c => c.x + c.y * plan.W));
+                float ci = (float)patch.Average(c => c.x);
+                float cj = (float)patch.Average(c => c.y);
+                int minI = patch.Min(c => c.x), maxI = patch.Max(c => c.x);
+                int minJ = patch.Min(c => c.y), maxJ = patch.Max(c => c.y);
+                var candidates = new List<Vector2>();
+                // Half-cell stations include the seam at the true centre of an even-sized
+                // plaza. Cell centres alone could never centre a 10 m object in a 10 m
+                // patch: every candidate hung 2.5 m over one edge and was rightly refused.
+                for (int hx = minI * 2 + 1; hx <= (maxI + 1) * 2 - 1; hx++)
+                    for (int hz = minJ * 2 + 1; hz <= (maxJ + 1) * 2 - 1; hz++)
+                        candidates.Add(new Vector2(hx * ResidentialLot.Cell * 0.5f,
+                                                   hz * ResidentialLot.Cell * 0.5f));
+                candidates = candidates
+                    .OrderBy(c => (c.x / ResidentialLot.Cell - ci - 0.5f) *
+                                  (c.x / ResidentialLot.Cell - ci - 0.5f) +
+                                  (c.y / ResidentialLot.Cell - cj - 0.5f) *
+                                  (c.y / ResidentialLot.Cell - cj - 0.5f))
+                    .ThenBy(_ => rng.Next()).ToList();
+
+                var turns = new List<int> { 0, 90, 180, 270 };
+                Dice.Shuffle(turns, rng);
+                bool benchFirst = patch.Count >= 12 && rng.Next(2) == 0;
+
+                bool Try(bool bench)
+                {
+                    if (bench && patch.Count < 12) return false;
+                    foreach (var at in candidates)
+                    {
+                        float x = at.x;
+                        float z = at.y;
+                        foreach (int yaw in turns)
+                        {
+                            if (pen == null)
+                            {
+                                pen = new GameObject("pavement programmes").transform;
+                                pen.SetParent(root, false);
+                            }
+                            bool placed = bench
+                                ? BenchBlock(plan, cells, pen, x, z, yaw, rng, standing, stood)
+                                : BikeStation(plan, cells, pen, x, z, yaw, rng, standing, stood);
+                            if (placed) return true;
+                        }
+                    }
+                    return false;
+                }
+
+                if ((benchFirst && (Try(true) || Try(false))) ||
+                    (!benchFirst && (Try(false) || Try(true)))) made++;
+            }
+
+            if (pen != null && pen.childCount == 0) Object.DestroyImmediate(pen.gameObject);
+        }
+
+        static List<List<Vector2Int>> PlazaPatches(ResidentialLot.Plan plan)
+        {
+            bool Plaza(int i, int j) => i >= 0 && j >= 0 && i < plan.W && j < plan.D &&
+                (plan.Ground[i, j] == ResidentialLot.Use.Paved ||
+                 plan.Ground[i, j] == ResidentialLot.Use.Court);
+
+            var found = new List<List<Vector2Int>>();
+            var seen = new bool[plan.W, plan.D];
+            for (int i = 0; i < plan.W; i++)
+                for (int j = 0; j < plan.D; j++)
+                {
+                    if (seen[i, j] || !Plaza(i, j)) continue;
+                    var patch = new List<Vector2Int>();
+                    var todo = new Queue<Vector2Int>();
+                    todo.Enqueue(new Vector2Int(i, j));
+                    seen[i, j] = true;
+                    while (todo.Count > 0)
+                    {
+                        var at = todo.Dequeue();
+                        patch.Add(at);
+                        for (int side = 0; side < 4; side++)
+                        {
+                            int x = at.x + ResidentialLot.Step[side, 0];
+                            int y = at.y + ResidentialLot.Step[side, 1];
+                            if (!Plaza(x, y) || seen[x, y]) continue;
+                            seen[x, y] = true;
+                            todo.Enqueue(new Vector2Int(x, y));
+                        }
+                    }
+                    found.Add(patch);
+                }
+            return found;
+        }
+
+        static bool BenchBlock(ResidentialLot.Plan plan, HashSet<int> cells, Transform parent,
+                               float x, float z, float yaw, System.Random rng,
+                               List<Vector3> standing, Stood stood)
+        {
+            // The reference itself is about 10.3 x 5.6 m. Sixteen by eleven retains a
+            // real walking apron around it and therefore needs a larger plaza, not a gap.
+            var clear = PlazaRect(x, z, 16f, 11f, yaw);
+            if (!PlazaContains(plan, cells, clear) || !Room(clear)) return false;
+            if (DemoAssetLoad.Load<GameObject>(PlazaDivider) == null ||
+                DemoAssetLoad.Load<GameObject>(PlazaHedge) == null ||
+                DemoAssetLoad.Load<GameObject>(PlazaBenches[1]) == null) return false;
+
+            Claim(clear);
+            var group = new GameObject("benchblock").transform;
+            group.SetParent(parent, false);
+
+            int props = 0;
+            bool Put(string path, float ox, float oz, float turn, Vector3 scale,
+                     bool seat = false, bool divider = false)
+            {
+                if (PlazaPiece(path, group, x, z, ox, oz, yaw, turn, scale, out var at) == null)
+                    return false;
+                standing.Add(at);
+                props++;
+                if (seat) stood.Benches++;
+                if (divider) stood.Dividers++;
+                return true;
+            }
+
+            // SM_Env_Divider_Large_01 is a low planted island, not a pedestrian fence.
+            Put(PlazaDivider, 0f, 0f, 0f, new Vector3(1f, 1f, 1.22f), divider: true);
+            float[] hedgeX = { -3.2f, 0f, 3.2f };
+            float[] hedgeScale = { 1.25f, 1.25f, 1.5f };
+            for (int i = 0; i < hedgeX.Length; i++)
+                Put(PlazaHedge, hedgeX[i], 0f, 0f,
+                    new Vector3(hedgeScale[i], Between(rng, 1.45f, 1.9f), 1.38f));
+
+            string variedA = PlazaBenches[rng.Next(PlazaBenches.Length)];
+            string variedB = PlazaBenches[rng.Next(PlazaBenches.Length)];
+            Put(PlazaBenches[1], -1.3f, 2.45f, 0f, Vector3.one, seat: true);
+            Put(variedA, 1.3f, 2.45f, 0f, Vector3.one, seat: true);
+            Put(PlazaBenches[1], -1.3f, -2.45f, 180f, Vector3.one, seat: true);
+            Put(variedB, 1.3f, -2.45f, 180f, Vector3.one, seat: true);
+
+            stood.Props += props;
+            stood.BenchBlocks++;
+            return true;
+        }
+
+        static bool BikeStation(ResidentialLot.Plan plan, HashSet<int> cells, Transform parent,
+                                float x, float z, float yaw, System.Random rng,
+                                List<Vector3> standing, Stood stood)
+        {
+            var clear = PlazaRect(x, z, 10f, 7.5f, yaw);
+            if (!PlazaContains(plan, cells, clear) || !Room(clear)) return false;
+            if (DemoAssetLoad.Load<GameObject>(PlazaBike) == null ||
+                DemoAssetLoad.Load<GameObject>(PlazaBikeStands[0]) == null) return false;
+
+            Claim(clear);
+            var group = new GameObject("bikestandwithbikes").transform;
+            group.SetParent(parent, false);
+
+            int props = 0;
+            bool Put(string path, float ox, float oz, float turn, Vector3 scale,
+                     bool divider = false)
+            {
+                if (PlazaPiece(path, group, x, z, ox, oz, yaw, turn, scale, out var at) == null)
+                    return false;
+                standing.Add(at);
+                props++;
+                if (divider) stood.Dividers++;
+                return true;
+            }
+
+            for (int k = -1; k <= 1; k++)
+            {
+                string rack = k == -1 ? PlazaBikeStands[0]
+                                      : PlazaBikeStands[rng.Next(PlazaBikeStands.Length)];
+                Put(rack, k * 2f, 0.3f, 0f, Vector3.one);
+            }
+            float[] bikes = { -2.5f, -1.5f, -0.5f, 0.55f, 1.5f, 2.5f };
+            foreach (float bx in bikes)
+                Put(PlazaBike, bx, -0.3f, Between(rng, -10f, 10f), Vector3.one);
+
+            // The Synty scene scales these low divider strips to the island instead of
+            // repeating fence modules. Keep it behind the racks and use it only often
+            // enough to test the vocabulary without making every station identical.
+            if (rng.NextDouble() < 0.65)
+                Put(PlazaLinearDividers[rng.Next(PlazaLinearDividers.Length)],
+                    0f, 1.45f, 0f, new Vector3(0.62f, 1f, 1f), divider: true);
+
+            stood.Props += props;
+            stood.BikeStations++;
+            return true;
+        }
+
+        static GameObject PlazaPiece(string path, Transform parent, float x, float z,
+                                     float offsetX, float offsetZ, float groupYaw,
+                                     float pieceYaw, Vector3 scale, out Vector3 at)
+        {
+            var turn = Quaternion.Euler(0f, groupYaw, 0f);
+            var offset = turn * new Vector3(offsetX, 0f, offsetZ);
+            at = new Vector3(x + offset.x, Deck, z + offset.z);
+
+            var go = Raise(path, parent);
+            if (go == null) return null;
+            go.transform.localScale = Vector3.Scale(go.transform.localScale, scale);
+            go.transform.SetPositionAndRotation(Vector3.zero,
+                Quaternion.Euler(0f, groupYaw + pieceYaw, 0f));
+            if (WorldBox(go, out var box))
+                go.transform.position = new Vector3(at.x - box.center.x,
+                    Deck - box.min.y, at.z - box.center.z);
+            else go.transform.position = at;
+            return go;
+        }
+
+        static Rect PlazaRect(float x, float z, float width, float depth, float yaw)
+        {
+            if (Turned(yaw)) { float swap = width; width = depth; depth = swap; }
+            return new Rect(x - width * 0.5f, z - depth * 0.5f, width, depth);
+        }
+
+        static bool PlazaContains(ResidentialLot.Plan plan, HashSet<int> cells, Rect area)
+        {
+            const float seam = 0.01f;
+            float cell = ResidentialLot.Cell;
+            int i0 = Mathf.FloorToInt((area.xMin + seam) / cell);
+            int i1 = Mathf.CeilToInt((area.xMax - seam) / cell) - 1;
+            int j0 = Mathf.FloorToInt((area.yMin + seam) / cell);
+            int j1 = Mathf.CeilToInt((area.yMax - seam) / cell) - 1;
+            if (i0 < 0 || j0 < 0 || i1 >= plan.W || j1 >= plan.D) return false;
+            for (int i = i0; i <= i1; i++)
+                for (int j = j0; j <= j1; j++)
+                    if (!cells.Contains(i + j * plan.W)) return false;
             return true;
         }
 
@@ -2045,6 +2385,131 @@ namespace RoadDemo
             x += side == 1 ? push : side == 3 ? -push : 0f;
             z += side == 2 ? push : side == 0 ? -push : 0f;
             return new Vector3(x, 0f, z);
+        }
+
+        /// <summary>
+        /// The Palm City essentials that belong on the street pavement itself. They are
+        /// independent of <see cref="PlazaClusters"/>: a block needs no empty court to get
+        /// an ordinary bin, bench and mailbox. Only outer Walkway cells on a real street
+        /// are candidates, after cafes and lamps have booked their ground, so these props
+        /// cannot replace a storefront, occupy a driveway or spill into a plaza.
+        /// </summary>
+        static void PavementEssentials(ResidentialLot.Plan plan, Transform root,
+                                       List<Vector3> standing, Stood stood)
+        {
+            var candidates = new List<(int Side, int I, int J)>();
+            for (int side = 0; side < 4; side++)
+            {
+                if (!plan.Street[side]) continue;
+                bool alongX = side == 0 || side == 2;
+                int length = alongX ? plan.W : plan.D;
+                for (int at = 1; at < length - 1; at++)
+                {
+                    var (i, j) = RingCell(plan, side, at);
+                    if (plan.Ground[i, j] == ResidentialLot.Use.Walkway)
+                        candidates.Add((side, i, j));
+                }
+            }
+            if (candidates.Count == 0) return;
+
+            var rng = new System.Random(unchecked(plan.Seed * 486187739 + plan.W * 83492791 +
+                                                   plan.D * 19349663 + 0x51D3));
+            Dice.Shuffle(candidates, rng);
+            var used = new HashSet<int>();
+            Transform pen = null;
+
+            bool Put(string path, (int Side, int I, int J) cell, float inset,
+                     float yaw, float room, float jitter)
+            {
+                var at = KerbLane(plan, cell.Side, cell.I, cell.J, inset);
+                float slide = Between(rng, -jitter, jitter);
+                if (cell.Side == 0 || cell.Side == 2) at.x += slide;
+                else at.z += slide;
+                if (pen == null)
+                {
+                    pen = new GameObject("Palm City pavement essentials").transform;
+                    pen.SetParent(root, false);
+                }
+                if (Prop(path, pen, at.x, at.z, yaw, room, Deck) == null) return false;
+                used.Add(cell.I + cell.J * plan.W);
+                standing.Add(at);
+                stood.Props++;
+                return true;
+            }
+
+            int Place(int wanted, System.Func<int, string> path, float inset,
+                      float room, float jitter, System.Func<int, float> yaw, out int made)
+            {
+                made = 0;
+                for (int i = 0; i < candidates.Count && made < wanted; i++)
+                {
+                    var cell = candidates[i];
+                    int key = cell.I + cell.J * plan.W;
+                    if (used.Contains(key)) continue;
+                    if (Put(path(made), cell, inset, yaw(cell.Side), room, jitter)) made++;
+                }
+                return made;
+            }
+
+            // Scale with the usable street frontage: roughly one seat per five 5 m
+            // pavement cells, capped so even an unusually large block stays readable.
+            int benchesWanted = Mathf.Clamp(Mathf.RoundToInt(candidates.Count / 5f), 1, 10);
+            Place(benchesWanted,
+                n => n == 0 ? PlazaBenches[1] : PlazaBenches[rng.Next(PlazaBenches.Length)],
+                3.8f, 1.15f, 0.6f, side => ToStreet(side), out int benches);
+            stood.Benches += benches;
+
+            int mailboxesWanted = Mathf.Clamp(Mathf.RoundToInt(candidates.Count / 15f), 1, 2);
+            Place(mailboxesWanted, _ => PalmPavementMailbox,
+                1.4f, 1.15f, 0.75f, side => ToStreet(side) + 180f, out int mailboxes);
+            if (mailboxes > 0) stood.Mailbox = true;
+
+            int binsWanted = Mathf.Clamp(Mathf.RoundToInt(candidates.Count / 10f), 1, 4);
+            Place(binsWanted,
+                n => n == 0 ? PalmPavementBins[0]
+                             : PalmPavementBins[rng.Next(PalmPavementBins.Length)],
+                1.35f, 1.1f, 0.8f,
+                side => ToStreet(side) + 90f * rng.Next(4), out int bins);
+            stood.Bins += bins;
+
+            // A billboard is a street-facing edge to an open plateau, never generic
+            // pavement clutter. Look through the full sidewalk band: the first cell past
+            // it must be Paved/Court, and even then only some qualifying blocks receive
+            // one. The panel faces the street; the open ground is behind its back.
+            if (!stood.Billboard && Chance(rng, 0.6))
+            {
+                foreach (var cell in candidates)
+                {
+                    int key = cell.I + cell.J * plan.W;
+                    if (used.Contains(key)) continue;
+                    int inward = (cell.Side + 2) % 4;
+                    int behindI = cell.I + ResidentialLot.Step[inward, 0] * ResidentialLot.Walk;
+                    int behindJ = cell.J + ResidentialLot.Step[inward, 1] * ResidentialLot.Walk;
+                    if (behindI < 0 || behindJ < 0 || behindI >= plan.W || behindJ >= plan.D)
+                        continue;
+                    var behind = plan.Ground[behindI, behindJ];
+                    if (behind != ResidentialLot.Use.Paved && behind != ResidentialLot.Use.Court)
+                        continue;
+
+                    var at = KerbLane(plan, cell.Side, cell.I, cell.J, 4.1f);
+                    float slide = Between(rng, -0.45f, 0.45f);
+                    if (cell.Side == 0 || cell.Side == 2) at.x += slide;
+                    else at.z += slide;
+                    if (pen == null)
+                    {
+                        pen = new GameObject("Palm City pavement essentials").transform;
+                        pen.SetParent(root, false);
+                    }
+                    if (!Billboard(pen, at.x, at.z, ToStreet(cell.Side))) continue;
+                    used.Add(key);
+                    standing.Add(at);
+                    stood.Billboard = true;
+                    stood.Props += 2;
+                    break;
+                }
+            }
+
+            if (pen != null && pen.childCount == 0) Object.DestroyImmediate(pen.gameObject);
         }
 
         /// <summary>

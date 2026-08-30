@@ -41,6 +41,11 @@ namespace RoadDemo
         // the way the carriageway under each square runs, or zero where a square is not
         // on one. Kept as two floats rather than a Vector3 to hold the lattice down.
         static float[] _roadAx, _roadAz;
+        // Every expensive answer is filled only when a search actually reaches that
+        // square/edge. Building all of CoreDemo on the first right click was hundreds of
+        // thousands of obstacle and lane probes on Unity's input frame.
+        static int[] _freeAt, _passXAt, _passZAt, _roadAt;
+        static int _cacheAt;
         static int _w, _h;
         static float _x0, _z0;
         static int _builtAt = -1;
@@ -60,8 +65,9 @@ namespace RoadDemo
             _free = null;
             _passX = _passZ = null;
             _roadAx = _roadAz = null;
+            _freeAt = _passXAt = _passZAt = _roadAt = null;
             _cost = null; _from = null; _stamp = null;
-            _w = _h = 0; _builtAt = -1; _visit = 0;
+            _w = _h = 0; _builtAt = -1; _cacheAt = 0; _visit = 0;
             _open.Clear();
         }
 
@@ -74,71 +80,69 @@ namespace RoadDemo
         {
             if (_free != null && _builtAt == WalkObstacles.Version) return true;
             if (WalkObstacles.Max.x <= WalkObstacles.Min.x) return false;   // nothing blocked yet
-            Build();
+            PrepareLattice();
             return _free != null;
         }
 
-        static void Build()
+        /// <summary>Prepare the lattice's address space, not its contents. Occupancy,
+        /// passages and road axes are memoised on demand by Free, Passable and Along.</summary>
+        static void PrepareLattice()
         {
-            _x0 = WalkObstacles.Min.x - Margin;
-            _z0 = WalkObstacles.Min.y - Margin;
-            _w = Mathf.CeilToInt((WalkObstacles.Max.x + Margin - _x0) / Cell) + 1;
-            _h = Mathf.CeilToInt((WalkObstacles.Max.y + Margin - _z0) / Cell) + 1;
-            if (_w <= 1 || _h <= 1 || (long)_w * _h > 4_000_000L) { _free = null; return; }
+            float x0 = WalkObstacles.Min.x - Margin;
+            float z0 = WalkObstacles.Min.y - Margin;
+            int w = Mathf.CeilToInt((WalkObstacles.Max.x + Margin - x0) / Cell) + 1;
+            int h = Mathf.CeilToInt((WalkObstacles.Max.y + Margin - z0) / Cell) + 1;
+            if (w <= 1 || h <= 1 || (long)w * h > 4_000_000L)
+            {
+                _free = null;
+                return;
+            }
 
-            int n = _w * _h;
-            _free = new bool[n];
-            _passX = new bool[n];
-            _passZ = new bool[n];
-            _roadAx = new float[n];
-            _roadAz = new float[n];
-            _cost = new float[n];
-            _from = new int[n];
-            _stamp = new int[n];
-            _visit = 0;
+            bool sameAddressSpace = _free != null && w == _w && h == _h &&
+                                    Mathf.Abs(x0 - _x0) < 0.001f &&
+                                    Mathf.Abs(z0 - _z0) < 0.001f;
+            _x0 = x0; _z0 = z0; _w = w; _h = h;
+            int n = w * h;
+            if (!sameAddressSpace)
+            {
+                _free = new bool[n];
+                _passX = new bool[n];
+                _passZ = new bool[n];
+                _roadAx = new float[n];
+                _roadAz = new float[n];
+                _freeAt = new int[n];
+                _passXAt = new int[n];
+                _passZAt = new int[n];
+                _roadAt = new int[n];
+                _cost = new float[n];
+                _from = new int[n];
+                _stamp = new int[n];
+                _visit = 0;
+                _cacheAt = 1;
+            }
+            else if (_cacheAt == int.MaxValue)
+            {
+                System.Array.Clear(_freeAt, 0, n);
+                System.Array.Clear(_passXAt, 0, n);
+                System.Array.Clear(_passZAt, 0, n);
+                System.Array.Clear(_roadAt, 0, n);
+                _cacheAt = 1;
+            }
+            else _cacheAt++;
 
-            // A square is free when a man STOOD IN THE MIDDLE OF IT is clear of
-            // everything fixed. Half a man of air, not more: the gap between a
-            // building and the kerb is often exactly a pavement wide, and asking for
-            // more would wall off half the city's frontages.
-            float r = WalkObstacles.Radius;
-            var net = LaneNet.Active ?? LaneNet.Shared;
-            for (int z = 0; z < _h; z++)
-                for (int x = 0; x < _w; x++)
-                {
-                    var q = new Vector3(_x0 + x * Cell, 0f, _z0 + z * Cell);
-                    // The scene's city fence is the only ground boundary. Inside it,
-                    // surface type does not decide whether a crew may walk: asphalt,
-                    // pavement, grass, frontage and yards are equally valid when they
-                    // are not occupied by a physical obstacle.
-                    int i0 = z * _w + x;
-                    _free[i0] = !WalkObstacles.Standing(q, r) &&
-                                WalkObstacles.InCity(q);
-                    // and whether it is ASPHALT, and which way that asphalt runs. A way
-                    // is not forbidden the road - a man has to cross one to get anywhere
-                    // - but it is charged for going ALONG it (Search), which is what
-                    // walking down a carriageway is.
-                    var axis = RoadAxisAt(net, q);
-                    _roadAx[i0] = axis.x;
-                    _roadAz[i0] = axis.z;
-                }
-
-            // TWO FREE SQUARES ARE NOT A WAY BETWEEN THEM. A square is free when a man
-            // stood in the MIDDLE of it is clear, and a wall thin enough to stand
-            // between two middles leaves both of them free while a man cannot get from
-            // one to the other. A way drawn through such a pair comes back with a corner
-            // three metres off and a metre of air in front of it, and the crew stands
-            // there for the rest of the run. So each passage is asked about once, here,
-            // and the search only ever steps through one that answers yes.
-            for (int z = 0; z < _h; z++)
-                for (int x = 0; x < _w; x++)
-                {
-                    int i = z * _w + x;
-                    if (!_free[i]) continue;
-                    if (x + 1 < _w && _free[i + 1]) _passX[i] = Walkable(Middle(i), Middle(i + 1));
-                    if (z + 1 < _h && _free[i + _w]) _passZ[i] = Walkable(Middle(i), Middle(i + _w));
-                }
             _builtAt = WalkObstacles.Version;
+        }
+
+        /// <summary>A square is free when a man stood in its middle clears every fixed
+        /// obstacle and remains inside the city fence. Asked once per obstacle version.</summary>
+        static bool Free(int i)
+        {
+            if (_freeAt[i] == _cacheAt) return _free[i];
+            var q = Middle(i);
+            _free[i] = !WalkObstacles.Standing(q, WalkObstacles.Radius) &&
+                       WalkObstacles.InCity(q);
+            _freeAt[i] = _cacheAt;
+            return _free[i];
         }
 
         /// <summary>The way the carriageway under this point runs, normalised - or zero
@@ -171,6 +175,13 @@ namespace RoadDemo
         /// as a fraction of the step: 0 straight across, 1 straight down it.</summary>
         static float Along(int square, float dx, float dz)
         {
+            if (_roadAt[square] != _cacheAt)
+            {
+                var axis = RoadAxisAt(LaneNet.Active ?? LaneNet.Shared, Middle(square));
+                _roadAx[square] = axis.x;
+                _roadAz[square] = axis.z;
+                _roadAt[square] = _cacheAt;
+            }
             float ax = _roadAx[square], az = _roadAz[square];
             if (ax == 0f && az == 0f) return 0f;
             float len = Mathf.Sqrt(dx * dx + dz * dz);
@@ -213,7 +224,7 @@ namespace RoadDemo
         /// inside a wall, or a mark stood against one, still has to be walked to.</summary>
         static int Nearest(int i)
         {
-            if (_free[i]) return i;
+            if (Free(i)) return i;
             int x0 = i % _w, z0 = i / _w;
             for (int ring = 1; ring <= 24; ring++)
                 for (int dz = -ring; dz <= ring; dz++)
@@ -223,7 +234,7 @@ namespace RoadDemo
                         int x = x0 + dx, z = z0 + dz;
                         if (x < 0 || z < 0 || x >= _w || z >= _h) continue;
                         int j = z * _w + x;
-                        if (_free[j]) return j;
+                        if (Free(j)) return j;
                     }
             return -1;
         }
@@ -240,7 +251,7 @@ namespace RoadDemo
         static int Reachable(Vector3 p)
         {
             int i = Index(p, out int x0, out int z0);
-            if (_free[i] && Walkable(p, Middle(i))) return i;
+            if (Free(i) && Walkable(p, Middle(i))) return i;
             for (int ring = 1; ring <= 8; ring++)
                 for (int dz = -ring; dz <= ring; dz++)
                     for (int dx = -ring; dx <= ring; dx++)
@@ -249,7 +260,7 @@ namespace RoadDemo
                         int x = x0 + dx, z = z0 + dz;
                         if (x < 0 || z < 0 || x >= _w || z >= _h) continue;
                         int j = z * _w + x;
-                        if (_free[j] && Walkable(p, Middle(j))) return j;
+                        if (Free(j) && Walkable(p, Middle(j))) return j;
                     }
             return -1;
         }
@@ -267,6 +278,13 @@ namespace RoadDemo
             bool keepOffRoad = false)
         {
             into.Clear();
+            // Clear ground is by far the common order and needs no city-sized address
+            // space at all. The obstacle query is proportional only to this line.
+            if (!keepOffRoad && Walkable(from, to))
+            {
+                into.Add(to);
+                return true;
+            }
             if (!Ready()) return false;
 
             // Where he can SET OFF from; and if there is nowhere - he is in a pocket the
@@ -307,10 +325,30 @@ namespace RoadDemo
         /// reads the neighbour's.</summary>
         static bool Passable(int x, int z, int dx, int dz)
         {
-            if (dx > 0) return _passX[z * _w + x];
-            if (dx < 0) return x > 0 && _passX[z * _w + x - 1];
-            if (dz > 0) return _passZ[z * _w + x];
-            return z > 0 && _passZ[(z - 1) * _w + x];
+            if (dx > 0) return Passage(z * _w + x, z * _w + x + 1, true);
+            if (dx < 0) return x > 0 && Passage(z * _w + x - 1, z * _w + x, true);
+            if (dz > 0) return Passage(z * _w + x, (z + 1) * _w + x, false);
+            return z > 0 && Passage((z - 1) * _w + x, z * _w + x, false);
+        }
+
+        static bool Passage(int from, int to, bool xAxis)
+        {
+            var stamps = xAxis ? _passXAt : _passZAt;
+            var values = xAxis ? _passX : _passZ;
+            if (stamps[from] == _cacheAt) return values[from];
+            if (!Free(from) || !Free(to)) values[from] = false;
+            else
+            {
+                var a = Middle(from);
+                var b = Middle(to);
+                // Their centres are already known free. Only the ground BETWEEN them
+                // remains to ask; calling Walkable repeated both expensive endpoint
+                // occupancy probes for every edge A* opened.
+                values[from] = WalkObstacles.InCity((a + b) * 0.5f) &&
+                               !WalkObstacles.BlocksStanding(a, b, WalkObstacles.Radius);
+            }
+            stamps[from] = _cacheAt;
+            return values[from];
         }
 
         static bool Search(int a, int b, bool keepOffRoad = false)
@@ -339,7 +377,7 @@ namespace RoadDemo
                     int x = cx + _dx[d], z = cz + _dz[d];
                     if (x < 0 || z < 0 || x >= _w || z >= _h) continue;
                     int nb = z * _w + x;
-                    if (!_free[nb]) continue;
+                    if (!Free(nb)) continue;
                     // and there has to be a way from here to there, not just ground at
                     // both ends; a corner is turned only when both of its sides are ways
                     if (d < 4)
@@ -348,7 +386,7 @@ namespace RoadDemo
                     }
                     else
                     {
-                        if (!_free[cz * _w + x] || !_free[z * _w + cx]) continue;
+                        if (!Free(cz * _w + x) || !Free(z * _w + cx)) continue;
                         if (!Passable(cx, cz, _dx[d], 0) || !Passable(x, cz, 0, _dz[d])) continue;
                         if (!Passable(cx, cz, 0, _dz[d]) || !Passable(cx, z, _dx[d], 0)) continue;
                     }
@@ -383,32 +421,27 @@ namespace RoadDemo
             int i = 0;
             while (i < crumbs.Count)
             {
-                int keep = -1;
-                // pulling the way taut must not pull it back into the road the search
-                // just paid to stay out of
-                if (keepOffRoad)
-                    for (int j = crumbs.Count - 1; j >= i; j--)
-                        if (Walkable(at, crumbs[j]) && AlongRun(at, crumbs[j]) <= AlongLimit)
-                        { keep = j; break; }
-                // AND THE WAY MUST STILL ARRIVE. The road rule is about the WAY, not
-                // about the last few metres onto the mark - and the mark is very often
-                // ON the asphalt: a car door at a kerb is, which is what this broke. A
-                // crew sent to its car stopped between three and eight metres short of
-                // every door and stood there, because no taut line to the handle could
-                // be drawn that did not run along the kerb. Where the rule can keep no
-                // line at all, the plain one is kept instead: worst case the way is what
-                // it was before there was a rule.
-                if (keep < 0)
-                    for (int j = crumbs.Count - 1; j >= i; j--)
-                        if (Walkable(at, crumbs[j])) { keep = j; break; }
-                // Nothing on the rest of the way can be walked straight to from here. At
-                // the very start that is the awkward first metre again - he is handed the
-                // next square and steers to it. Further along it means the way has been
-                // overtaken by something; he walks what is drawn and asks again there.
-                if (keep < 0)
+                // Grow the visible run FORWARD and keep its last point. The former
+                // backwards scan asked about every long, blocked chord before finding
+                // the same corner; on a cross-city order that made string-pulling dearer
+                // than A* itself. A connected lattice path guarantees the next crumb is
+                // reachable, so the first failed chord is exactly where this run ends.
+                int keep = i;
+                bool found = false;
+                for (int j = i; j < crumbs.Count; j++)
                 {
-                    if (into.Count > 0) return;
-                    keep = i;
+                    bool clear = Walkable(at, crumbs[j]);
+                    if (clear && (!keepOffRoad || AlongRun(at, crumbs[j]) <= AlongLimit))
+                    {
+                        keep = j;
+                        found = true;
+                        continue;
+                    }
+                    if (found) break;
+                    // The exact spawn point can be an awkward first half-metre outside
+                    // the lattice. Preserve the old escape hatch and hand that first
+                    // square to the runtime steering.
+                    break;
                 }
                 into.Add(crumbs[keep]);
                 at = crumbs[keep];
@@ -431,9 +464,13 @@ namespace RoadDemo
             d.y = 0f;
             float len = d.magnitude;
             if (len < 0.01f) return true;
+            if (!WalkObstacles.InCity(a) || !WalkObstacles.InCity(b)) return false;
+            int citySamples = Mathf.CeilToInt(len / Cell);
+            for (int i = 1; i < citySamples; i++)
+                if (!WalkObstacles.InCity(a + d * (i / (float)citySamples))) return false;
             float r = WalkObstacles.Radius;
             if (WalkObstacles.Standing(a, r) || WalkObstacles.Standing(b, r)) return false;
-            return WalkObstacles.ClearStanding(a, d / len, r, len) >= len - 0.01f;
+            return !WalkObstacles.BlocksStanding(a, b, r);
         }
     }
 }

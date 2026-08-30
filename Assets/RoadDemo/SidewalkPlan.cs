@@ -279,12 +279,15 @@ namespace RoadDemo
         public bool Occupied(Vector2 p, float radius, float tallBerth)
         {
             float grow = Mathf.Max(0f, tallBerth);
-            int span = grow > 0f ? Mathf.CeilToInt((radius + grow) / Cell) : 1;
-            int cx = Mathf.FloorToInt(p.x / Cell), cz = Mathf.FloorToInt(p.y / Cell);
-            for (int dx = -span; dx <= span; dx++)
-                for (int dz = -span; dz <= span; dz++)
+            float reach = Mathf.Max(0f, radius + grow);
+            int x0 = Mathf.FloorToInt((p.x - reach) / Cell);
+            int x1 = Mathf.FloorToInt((p.x + reach) / Cell);
+            int z0 = Mathf.FloorToInt((p.y - reach) / Cell);
+            int z1 = Mathf.FloorToInt((p.y + reach) / Cell);
+            for (int cx = x0; cx <= x1; cx++)
+                for (int cz = z0; cz <= z1; cz++)
                 {
-                    if (!_grid.TryGetValue(Key(cx + dx, cz + dz), out var bucket)) continue;
+                    if (!_grid.TryGetValue(Key(cx, cz), out var bucket)) continue;
                     for (int k = 0; k < bucket.Count; k++)
                     {
                         var b = _boxes[bucket[k]];
@@ -349,6 +352,122 @@ namespace RoadDemo
         // the sight line's own, so a look taken while a gather is being read cannot
         // wipe the gather's dedupe out from under it
         static readonly HashSet<int> SeenSight = new HashSet<int>();
+        static readonly HashSet<int> SeenWalk = new HashSet<int>();
+
+        /// <summary>Does a circle of <paramref name="radius"/> swept from a to b touch
+        /// any solid in this plan? Unlike <see cref="Blocks"/>, this is a walking
+        /// question: furniture and tall props count, low objects count, and the walker's
+        /// shoulder radius is honoured.
+        ///
+        /// The line's grid cells (plus the one-cell shoulder fringe) are visited with a
+        /// DDA. Each candidate is then tested exactly against its oriented footprint.
+        /// This replaces the old third-metre point sampling: a route across CoreDemo no
+        /// longer performs thousands of dictionary probes, while a thin post between two
+        /// lattice points still cannot be missed.</summary>
+        public bool Obstructs(Vector2 a, Vector2 b, float radius)
+        {
+            var d = b - a;
+            if (d.sqrMagnitude < 1e-6f) return Occupied(a, radius);
+
+            // A lattice edge is shorter than a bucket. Its shoulder-expanded bounding
+            // box covers at most a handful of buckets and visits each exactly once; the
+            // DDA fringe below revisits the same neighbours as it crosses an edge, which
+            // is worthwhile for a city-long chord but wasteful for the thousands of
+            // little edges A* asks about.
+            int bx0 = Mathf.FloorToInt((Mathf.Min(a.x, b.x) - radius) / Cell);
+            int bx1 = Mathf.FloorToInt((Mathf.Max(a.x, b.x) + radius) / Cell);
+            int bz0 = Mathf.FloorToInt((Mathf.Min(a.y, b.y) - radius) / Cell);
+            int bz1 = Mathf.FloorToInt((Mathf.Max(a.y, b.y) + radius) / Cell);
+            int cells = (bx1 - bx0 + 1) * (bz1 - bz0 + 1);
+            if (cells <= 16)
+            {
+                SeenWalk.Clear();
+                for (int x = bx0; x <= bx1; x++)
+                    for (int z = bz0; z <= bz1; z++)
+                        if (WalkBucketHits(x, z, a, b, radius)) return true;
+                return false;
+            }
+
+            int cx = Mathf.FloorToInt(a.x / Cell), cz = Mathf.FloorToInt(a.y / Cell);
+            int ex = Mathf.FloorToInt(b.x / Cell), ez = Mathf.FloorToInt(b.y / Cell);
+            int sx = d.x >= 0f ? 1 : -1, sz = d.y >= 0f ? 1 : -1;
+            float ax = Mathf.Abs(d.x), az = Mathf.Abs(d.y);
+            float tdx = ax > 1e-6f ? Cell / ax : float.MaxValue;
+            float tdz = az > 1e-6f ? Cell / az : float.MaxValue;
+            float tx = ax > 1e-6f
+                ? (d.x >= 0f ? (cx + 1) * Cell - a.x : a.x - cx * Cell) / ax : float.MaxValue;
+            float tz = az > 1e-6f
+                ? (d.y >= 0f ? (cz + 1) * Cell - a.y : a.y - cz * Cell) / az : float.MaxValue;
+            int fringe = Mathf.Max(1, Mathf.CeilToInt(Mathf.Max(0f, radius) / Cell));
+
+            SeenWalk.Clear();
+            for (int guard = 0; guard < 4096; guard++)
+            {
+                for (int dx = -fringe; dx <= fringe; dx++)
+                    for (int dz = -fringe; dz <= fringe; dz++)
+                        if (WalkBucketHits(cx + dx, cz + dz, a, b, radius)) return true;
+                if (cx == ex && cz == ez) return false;
+                if (tx < tz) { tx += tdx; cx += sx; }
+                else { tz += tdz; cz += sz; }
+            }
+            return false;
+        }
+
+        bool WalkBucketHits(int cx, int cz, Vector2 a, Vector2 b, float radius)
+        {
+            if (!_grid.TryGetValue(Key(cx, cz), out var bucket)) return false;
+            for (int k = 0; k < bucket.Count; k++)
+            {
+                int id = bucket[k];
+                if (!SeenWalk.Add(id)) continue;
+                var box = _boxes[id];
+                if (!box.Solid || box.KeepClear) continue;
+                if (SweptCircleHits(box, a, b, radius)) return true;
+            }
+            return false;
+        }
+
+        static bool SweptCircleHits(in Box box, Vector2 a, Vector2 b, float radius)
+        {
+            var oa = a - box.C;
+            var ob = b - box.C;
+            var pa = new Vector2(Vector2.Dot(oa, box.Ax), Vector2.Dot(oa, box.Az));
+            var pb = new Vector2(Vector2.Dot(ob, box.Ax), Vector2.Dot(ob, box.Az));
+            if (SegmentHitsRect(pa, pb, box.H)) return true;
+
+            float r2 = radius * radius;
+            if (PointRectDistanceSq(pa, box.H) <= r2 || PointRectDistanceSq(pb, box.H) <= r2)
+                return true;
+            var h = box.H;
+            return PointSegmentDistanceSq(new Vector2(-h.x, -h.y), pa, pb) <= r2 ||
+                   PointSegmentDistanceSq(new Vector2(-h.x, h.y), pa, pb) <= r2 ||
+                   PointSegmentDistanceSq(new Vector2(h.x, -h.y), pa, pb) <= r2 ||
+                   PointSegmentDistanceSq(new Vector2(h.x, h.y), pa, pb) <= r2;
+        }
+
+        static bool SegmentHitsRect(Vector2 a, Vector2 b, Vector2 half)
+        {
+            var dir = b - a;
+            float t0 = 0f, t1 = 1f;
+            return Slab(dir.x, -half.x - a.x, half.x - a.x, ref t0, ref t1) &&
+                   Slab(dir.y, -half.y - a.y, half.y - a.y, ref t0, ref t1);
+        }
+
+        static float PointRectDistanceSq(Vector2 p, Vector2 half)
+        {
+            float dx = Mathf.Max(0f, Mathf.Abs(p.x) - half.x);
+            float dz = Mathf.Max(0f, Mathf.Abs(p.y) - half.y);
+            return dx * dx + dz * dz;
+        }
+
+        static float PointSegmentDistanceSq(Vector2 p, Vector2 a, Vector2 b)
+        {
+            var d = b - a;
+            float dd = d.sqrMagnitude;
+            if (dd < 1e-8f) return (p - a).sqrMagnitude;
+            float t = Mathf.Clamp01(Vector2.Dot(p - a, d) / dd);
+            return (p - (a + d * t)).sqrMagnitude;
+        }
 
         /// <summary>Every solid prop standing within <paramref name="reach"/> of a
         /// point - the furniture itself, not a yes or no. What a man under fire looks

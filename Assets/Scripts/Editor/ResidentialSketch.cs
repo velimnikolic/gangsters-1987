@@ -21,6 +21,7 @@ namespace LivingCity.EditorTools
     {
         public const string DemoScene = "Assets/Scenes/ResidentialDemo.unity";
         const string Root = "RESIDENTIAL";
+        const string FuelRoot = Root + " pumpdemo full functional";
 
         /// <summary>The blocks the demo scene stands. The large Court recipe is intentionally
         /// absent here: at its minimum 80 x 80 m it needs a dedicated courtyard programme,
@@ -82,11 +83,26 @@ namespace LivingCity.EditorTools
             Debug.Log(said);
         }
 
-        [MenuItem("Tools/City/Residential/Demo Scene (eight blocks)", priority = 42)]
+        [MenuItem("Tools/City/Residential/Demo Scene (nine blocks)", priority = 42)]
         public static void DemoMenu()
         {
             string said = Demo(FreshSeed());
             Debug.Log(said);
+            EditorUtility.DisplayDialog("Residential demo", said, "OK");
+        }
+
+        [MenuItem("Tools/City/Residential/Add Full Functional PumpDemo Block", priority = 43)]
+        public static void AddFuelMenu()
+        {
+            var scene = SceneManager.GetActiveScene();
+            if (scene.path != DemoScene)
+            {
+                EditorUtility.DisplayDialog("Residential demo",
+                    "Open ResidentialDemo before adding its functional pump block.", "OK");
+                return;
+            }
+            string said = AddFuelBlock(scene, FreshSeed());
+            Debug.Log("[Demo] " + said);
             EditorUtility.DisplayDialog("Residential demo", said, "OK");
         }
 
@@ -104,7 +120,8 @@ namespace LivingCity.EditorTools
 
         /// <summary>
         /// The demo scene: the residential recipes and yard blocks in two compact rows,
-        /// with open editor ground between them, saved to <see cref="DemoScene"/>. A long
+        /// followed by the full functional PumpDemo station on its own review row, with
+        /// open editor ground between them, saved to <see cref="DemoScene"/>. A long
         /// single row left a full block-depth of dead test ground behind every shallow lot.
         /// The road carpet is intentionally absent: this bench is for dragging and judging
         /// residential blocks, and thousands of selectable asphalt tiles only get in the
@@ -174,12 +191,75 @@ namespace LivingCity.EditorTools
                 index++;
             }
 
+            // The pump is deliberately NOT a ResidentialLot recipe. It is a shared fuel
+            // station block with generated city pavement and two road connectors. Its
+            // standalone LaneNet is logical only -- no PumpDemo road loop is drawn here --
+            // and still lets the real FuelCustomer errand run in Play.
+            int fuelRow = atZ + rowDepth + Street;
+            var fuel = ComposeFuel(scene, seed++);
+            var fuelBounds = FuelStationBlock.PreviewBounds;
+            fuel.root.transform.position = new Vector3(
+                Street * ResidentialLot.Cell - fuelBounds.xMin,
+                0f,
+                fuelRow * ResidentialLot.Cell - fuelBounds.yMin);
+            said.AppendLine($"pumpdemo-full  {fuel.stood}");
+            index++;
+
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, DemoScene);
 
             int faults = plans.Sum(p => p.Plan.Faults.Count);
-            said.Insert(0, $"{plans.Count} block(s) in {DemoScene} from seed {first}, {faults} fault(s)\n");
+            said.Insert(0, $"{index} block(s) in {DemoScene} from seed {first}, {faults} fault(s)\n");
             return said.ToString();
+        }
+
+        /// <summary>
+        /// Append only the pump to an existing ResidentialDemo. This is the safe path for
+        /// a manually adjusted review scene: unlike <see cref="Demo"/>, it neither clears
+        /// nor re-deals any residential block. Repeated calls are idempotent.
+        /// </summary>
+        public static string AddFuelBlock(Scene scene, int seed)
+        {
+            if (!scene.IsValid() || !scene.isLoaded) return "ResidentialDemo is not loaded.";
+            foreach (var root in scene.GetRootGameObjects())
+                if (root.name.StartsWith(FuelRoot, System.StringComparison.Ordinal))
+                    return root.name + " is already present; nothing was changed.";
+
+            bool found = false;
+            float maxZ = 0f;
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                if (!root.name.StartsWith(Root + " ", System.StringComparison.Ordinal)) continue;
+                var renderers = root.GetComponentsInChildren<Renderer>(true);
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    maxZ = found ? Mathf.Max(maxZ, renderers[i].bounds.max.z)
+                                 : renderers[i].bounds.max.z;
+                    found = true;
+                }
+            }
+
+            float gap = Street * ResidentialLot.Cell;
+            float nextMinZ = found ? Mathf.Ceil(maxZ / ResidentialLot.Cell) * ResidentialLot.Cell + gap
+                                   : gap;
+            var fuel = ComposeFuel(scene, seed);
+            var bounds = FuelStationBlock.PreviewBounds;
+            fuel.root.transform.position = new Vector3(
+                gap - bounds.xMin, 0f, nextMinZ - bounds.yMin);
+            EditorSceneManager.MarkSceneDirty(scene);
+            Selection.activeGameObject = fuel.root;
+            return fuel.root.name + " added without rebuilding the other blocks; " + fuel.stood;
+        }
+
+        static (GameObject root, FuelStationBlock.Stood stood) ComposeFuel(Scene scene, int seed)
+        {
+            var root = new GameObject($"{FuelRoot} seed {seed}");
+            SceneManager.MoveGameObjectToScene(root, scene);
+            // Like the residential composer: stand at the origin, translate only after
+            // every child has been parented. FuelStation and StreetKit both place world
+            // transforms while composing.
+            var stood = FuelStationBlock.Compose(root.transform, seed);
+            return (root, stood);
         }
 
         /// <summary>How the editor raises a prefab: a linked instance, so a block can be

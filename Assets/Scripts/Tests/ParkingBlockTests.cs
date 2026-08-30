@@ -112,8 +112,8 @@ namespace LivingCity.Tests
             };
             var boxes = new[]
             {
-                new Rect(10f, 10f, 90f, 35f),
-                new Rect(110f, 10f, 70f, 40f),
+                new Rect(10f, 10f, 40f, 35f),
+                new Rect(60f, 10f, 70f, 40f),
                 new Rect(10f, 80f, 70f, 40f),
             };
             foreach (var box in boxes)
@@ -137,16 +137,14 @@ namespace LivingCity.Tests
                 parking, fuel, development);
             if (parking.Count != 1 || fuel.Count != 1)
                 failures.Add($"Core amenities: cap 1+1 selected {parking.Count} parking and {fuel.Count} fuel");
-            if (development.Count != 2)
-                failures.Add($"Core amenities: expected unused parcel plus cropped fuel remainder, got {development.Count}");
+            if (development.Count != 1)
+                failures.Add($"Core amenities: expected one unused whole parcel, got {development.Count}");
             if (parking.Count > 0 && fuel.Count > 0 && parking[0].Box.Overlaps(fuel[0].Box))
                 failures.Add("Core amenities: one remainder parcel was assigned to parking and fuel");
             if (fuel.Count > 0)
             {
-                if (Mathf.Abs(fuel[0].Box.width - CoreAmenityLayout.FuelFrontage) > 0.01f &&
-                    Mathf.Abs(fuel[0].Box.height - CoreAmenityLayout.FuelFrontage) > 0.01f)
-                    failures.Add($"Core amenities: fuel parcel did not crop to a " +
-                                 $"{CoreAmenityLayout.FuelFrontage:F0} m road frontage");
+                if (!Same(fuel[0].Box, boxes[0]))
+                    failures.Add("Core amenities: filling station did not retain its whole dedicated block");
                 CoreAmenityLayout.FuelPose(fuel[0], out var anchor, out _);
                 if (!fuel[0].Box.Contains(new Vector2(anchor.x, anchor.z)))
                     failures.Add("Core amenities: PumpDemo anchor falls outside its assigned parcel");
@@ -160,9 +158,15 @@ namespace LivingCity.Tests
                 if (ResidentialLot.Classify(
                         w - 2 * ResidentialLot.Walk,
                         d - 2 * ResidentialLot.Walk) == null)
-                    failures.Add($"Core amenities: fuel left an undevelopable {w}x{d} cell remainder");
+                    failures.Add($"Core amenities: unused whole parcel is undevelopable at {w}x{d} cells");
             }
         }
+
+        static bool Same(Rect a, Rect b) =>
+            Mathf.Abs(a.xMin - b.xMin) < 0.01f &&
+            Mathf.Abs(a.yMin - b.yMin) < 0.01f &&
+            Mathf.Abs(a.width - b.width) < 0.01f &&
+            Mathf.Abs(a.height - b.height) < 0.01f;
 
         static void CoreFuelSurfaceStaysInsideParcel(List<string> failures)
         {

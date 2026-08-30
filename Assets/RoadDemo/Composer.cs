@@ -214,7 +214,11 @@ namespace RoadDemo
         {
             if (!Book(path, x, z, yaw, room, out var where)) return null;
             var go = Stand(path, parent, x, z, yaw);
-            if (go != null) Claim(where);
+            if (go != null)
+            {
+                Claim(where);
+                BuildingCutaway.Prepare(go);
+            }
             return go;
         }
 

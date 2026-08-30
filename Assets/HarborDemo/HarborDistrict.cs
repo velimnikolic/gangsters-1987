@@ -170,7 +170,8 @@ namespace HarborDemo
             // the rectangle in contract coordinates: x measured from the middle of the
             // gate span, z from the street (0) down past the quay to the ships' water
             float half = Mathf.Max(QuayHalf + 40f, span * 0.5f + 60f);
-            _bounds = Rect.MinMaxRect(-half, -(BasinReach + PlannedStreetZ), half, 0f);
+            float east = Mathf.Max(half, PlannedBulkTerminalEast + 30f);
+            _bounds = Rect.MinMaxRect(-half, -(BasinReach + PlannedStreetZ), east, 0f);
         }
 
         public void Reserve(DistrictReservations into)

@@ -3455,7 +3455,8 @@ namespace RoadDemo
                 books.Address = AddressOf(door);
 
                 door.Building.AddComponent<GangFront>()
-                    .Bind(id, gangs[id].Name, books, door.Pos, door.Outward);
+                    .Bind(id, gangs[id].Name, books, door.Pos,
+                          door.EntryPos, door.LinkFwd, door.EntryT, door.Outward);
                 // and into the registry, so the ledger's FAMILIES page names the same
                 // door the street card does
                 LivingCity.Gangs.GangRegistry.SetFrontBooks(id, books);
@@ -4201,6 +4202,12 @@ namespace RoadDemo
             var cutaway = camGo.AddComponent<StreetCutaway>();
             cutaway.rig = dc;
             cutaway.on = ResolvedCityView.StreetCutaway;
+            cutaway.cutIn = ResolvedCityView.CutawayEnterDistance;
+            cutaway.cutOut = ResolvedCityView.CutawayExitDistance;
+            cutaway.proxyHeight = ResolvedCityView.CutawayProxyHeight;
+            cutaway.keepHiddenSeconds = ResolvedCityView.CutawayRestoreDelay;
+            cutaway.crewSamplesPerFrame = ResolvedCityView.CutawayCrewSamples;
+            cutaway.keepShadows = ResolvedCityView.CutawayKeepShadows;
             var seeThrough = new List<Transform> { _blocks };
             seeThrough.AddRange(_districtStatic);
             seeThrough.AddRange(_streamRoots);

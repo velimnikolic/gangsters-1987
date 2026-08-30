@@ -156,6 +156,7 @@ namespace RoadDemo
         RoadDemoBuilder _builder;
         Transform _blockRoot;
         DemoCrews _crews;
+        CrewOverlay _crewOverlay;
         BuildingCardPicker _picker;
         DemoCamera _rig;
         List<DemoVehicle> _traffic;
@@ -164,9 +165,10 @@ namespace RoadDemo
         readonly TurfMapSurvey _survey = new TurfMapSurvey();
         readonly TurfPlate _live = new TurfPlate();
         TurfMapLabels _lettering;
+        TurfMapBuildingLayer _buildingLayer;
 
-        Texture2D _groundTex, _turfTex, _builtTex, _liveTex;
-        RawImage _groundImage, _turfImage, _builtImage, _liveImage;
+        Texture2D _groundTex, _liveTex;
+        RawImage _groundImage, _liveImage;
         RectTransform _sheetPose, _sheet;
         Canvas _canvas;
         TurfMapPanel _mapChrome;
@@ -174,6 +176,7 @@ namespace RoadDemo
 
         readonly List<TurfCrew> _units = new List<TurfCrew>();
         readonly List<Marker> _markers = new List<Marker>();
+        List<CrewEnemyAction> _enemyActions = new List<CrewEnemyAction>();
 
         /// <summary>Selected crews, by DemoCrews unit id. Only ever ours.</summary>
         readonly List<int> _selected = new List<int>();
@@ -185,6 +188,11 @@ namespace RoadDemo
         int _seenPersonnelVersion = -1;
 
         bool _dragging, _dragMoved;
+        float _lastRightOrderAt = -10f;
+        Vector2 _lastRightOrderScreen;
+
+        const float DoubleRightClick = 0.55f;
+        const float DoubleRightSlack = 60f;
 
         /// <summary>The ground chosen by the wheel event that crossed back into the
         /// street. Banked for the following Update, when Show(false) takes the map down.</summary>
@@ -209,6 +217,7 @@ namespace RoadDemo
         public bool TurfOn { get; private set; } = true;
 
         public TurfMapSurvey Survey => _survey;
+        public TurfMapBuildingLayer BuildingLayer => _buildingLayer;
         public IReadOnlyList<TurfCrew> Units => _units;
         public IReadOnlyList<int> Selected => _selected;
 
@@ -229,6 +238,7 @@ namespace RoadDemo
             _picker = cardPicker;
             _rig = camera;
             _crews = streetCrews;
+            _crewOverlay = streetCrews != null ? streetCrews.GetComponent<CrewOverlay>() : null;
             _traffic = cars;
             _policeCars = patrols;
         }
@@ -300,7 +310,7 @@ namespace RoadDemo
         void OnDestroy()
         {
             Blank(false);
-            foreach (var texture in new[] { _groundTex, _turfTex, _builtTex, _liveTex })
+            foreach (var texture in new[] { _groundTex, _liveTex })
                 if (texture != null)
                     Destroy(texture);
 
@@ -403,7 +413,10 @@ namespace RoadDemo
             var keyboard = Keyboard.current;
             if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
             {
-                Descend();
+                if (_mapChrome != null && _mapChrome.MenuOpen)
+                    _mapChrome.CloseMenu();
+                else
+                    Descend();
                 return;
             }
 
@@ -507,6 +520,8 @@ namespace RoadDemo
         /// </summary>
         void Zoom()
         {
+            if (_rig != null && _rig.SuppressInput)
+                return;
             var mouse = Mouse.current;
             if (_rig == null || mouse == null || PointerOverChrome)
                 return;
@@ -616,14 +631,15 @@ namespace RoadDemo
             _sheet.pivot = new Vector2(0.5f, 0.5f);
             _sheet.sizeDelta = new Vector2(TurfPlate.RW, TurfPlate.RH);
 
-            _groundTex = TurfPlate.NewTexture("Turf Ground");
-            _turfTex = TurfPlate.NewTexture("Turf Wash");
-            _builtTex = TurfPlate.NewTexture("Turf Built");
+            _groundTex = TurfPlate.NewTexture("Turf Static Sheet");
             _liveTex = TurfPlate.NewTexture("Turf Live");
 
             _groundImage = Layer("Ground", _groundTex, null);
-            _turfImage = Layer("Turf", _turfTex, DemoUi.Multiply);
-            _builtImage = Layer("Built", _builtTex, null);
+
+            // True-height building massing lives after the flat survey footprints and
+            // before every live marker/name. It is model-derived and persistent, not a
+            // second look at whichever streamed holders happen to be resident.
+            EnsureBuildingLayer();
             _liveImage = Layer("Live", _liveTex, null);
 
             // Over every raster layer, under the panel: the design's own order, where
@@ -739,6 +755,12 @@ namespace RoadDemo
         System.Exception _kickFault;
         long _kickMs;
         int _surveys;
+        float _lastPublishMs, _worstPublishMs;
+        int _staticUploads;
+
+        public float LastPublishMs => _lastPublishMs;
+        public float WorstPublishMs => _worstPublishMs;
+        public int StaticUploads => _staticUploads;
 
         /// <summary>Who held what when the draw in flight was handed over. Stamped onto
         /// the plate when it lands, NOT the reading taken at that moment: a takeover
@@ -832,6 +854,7 @@ namespace RoadDemo
             var want = TurfMapSurvey.FitToPlate(WantedView());
             if (_survey.RefreshGeometryIfNeeded())
             {
+                EnsureBuildingLayer();
                 if (_inspectedBuilding != null &&
                     !_survey.Buildings.Contains(_inspectedBuilding))
                     _inspectedBuilding = null;
@@ -865,10 +888,15 @@ namespace RoadDemo
         /// every hit test runs through, and the lettering that belongs to it.</summary>
         void Publish()
         {
+            long began = System.Diagnostics.Stopwatch.GetTimestamp();
             _survey.Publish();
             PushStatic();
             _lettering.Set(_survey.Labels);
             _paintedOwnership = _kickOwnership;
+
+            _lastPublishMs = (System.Diagnostics.Stopwatch.GetTimestamp() - began) *
+                1000f / System.Diagnostics.Stopwatch.Frequency;
+            _worstPublishMs = Mathf.Max(_worstPublishMs, _lastPublishMs);
 
             _surveys++;
             if (logSurveys)
@@ -931,6 +959,39 @@ namespace RoadDemo
                 drawn.center - pivot, _sheetHeading) * screenPerMetre;
             _sheetAt = ApplyTilt(uncompressedAt, _sheetTilt);
             _sheet.anchoredPosition = uncompressedAt / ui;
+
+            EnsureBuildingLayer();
+            if (_buildingLayer != null)
+                _buildingLayer.SetView(_survey.Plan, _sheetHeading,
+                    _rig != null ? _rig.pitch : 90f);
+        }
+
+        /// <summary>Adopts/installs the volume layer after a script reload in Play.
+        /// Existing sheet layers may predate the field; insertion immediately before
+        /// Live preserves the map's built -> volumes -> markers -> names contract.</summary>
+        void EnsureBuildingLayer()
+        {
+            if (_buildingLayer == null && _sheet != null)
+            {
+                var root = _sheet.Find("Building Volumes") as RectTransform;
+                if (root == null)
+                {
+                    root = DemoUi.NewRect("Building Volumes", _sheet);
+                    DemoUi.Fill(root);
+                    if (_liveImage != null)
+                        root.SetSiblingIndex(_liveImage.transform.GetSiblingIndex());
+                }
+                _buildingLayer = root.GetComponent<TurfMapBuildingLayer>();
+                if (_buildingLayer == null)
+                    _buildingLayer = root.gameObject.AddComponent<TurfMapBuildingLayer>();
+            }
+
+            if (_buildingLayer != null && _builder != null &&
+                _buildingLayer.GeometryVersion != _builder.ResidentialGeometryVersion)
+            {
+                _buildingLayer.PreparePose(Heading, _rig != null ? _rig.pitch : 90f);
+                _buildingLayer.Rebuild(_builder, _survey);
+            }
         }
 
         /// <summary>Adopts a sheet built before this field existed when scripts reload
@@ -1056,9 +1117,8 @@ namespace RoadDemo
 
         void PushStatic()
         {
-            _survey.Ground.Apply(_groundTex);
-            _survey.Turf.Apply(_turfTex);
-            _survey.Built.Apply(_builtTex);
+            (TurfOn ? _survey.Composite : _survey.Plain).Apply(_groundTex);
+            _staticUploads++;
         }
 
         /// <summary>A cheap fingerprint of who holds what. Ownership changes are rare
@@ -1078,8 +1138,9 @@ namespace RoadDemo
 
         public void SetTurf(bool on)
         {
+            if (TurfOn == on) return;
             TurfOn = on;
-            _turfImage.gameObject.SetActive(on);
+            PushStatic();
         }
 
         // ------------------------------------------------------------------- crews
@@ -1370,6 +1431,8 @@ namespace RoadDemo
 
         void Pointer()
         {
+            if (_rig != null && _rig.SuppressInput)
+                return;
             var mouse = Mouse.current;
             if (mouse == null)
                 return;
@@ -1380,18 +1443,60 @@ namespace RoadDemo
                               (EventSystem.current && EventSystem.current.IsPointerOverGameObject());
             PointerOverChrome = overChrome;
 
-            if (mouse.rightButton.wasPressedThisFrame && !overChrome)
+            if (mouse.rightButton.wasPressedThisFrame)
             {
+                // Same dismissal rule as the street card: either mouse button outside
+                // answers the open question first and does not also issue another order.
+                if (_mapChrome.MenuOpen)
+                {
+                    _mapChrome.CloseMenu();
+                    return;
+                }
+                if (overChrome)
+                    return;
+
                 var plan = ToPlan(screen);
-                _mapChrome.OpenMenu(screen, plan, _survey.BuildingAt(plan), _survey.DistrictAtPlan(plan));
+
+                // A rival answers with the exact street choices. The map owns the paper
+                // they are drawn on, but CrewOverlay owns what KILL / DRIVE-BY / BOMBA do.
+                var target = NearestCrew(plan, false);
+                if (target != null && !target.Mine)
+                {
+                    if (_crewOverlay == null && _crews != null)
+                        _crewOverlay = _crews.GetComponent<CrewOverlay>();
+                    if (_enemyActions == null)
+                        _enemyActions = new List<CrewEnemyAction>();
+                    if (_crewOverlay != null &&
+                        _crewOverlay.TryGetEnemyActions(target.Unit, _enemyActions))
+                        _mapChrome.OpenEnemyMenu(
+                            screen, _crews.Selected, target.Unit, _enemyActions);
+                    return;
+                }
+
+                if (_selected.Count == 0 || _crews == null)
+                    return;
+
+                // CrewOverlay's gesture is authored on a 1080-line canvas. TurfMap's
+                // furniture uses a 720-line canvas, so using its scale factor here would
+                // make the same double click fifty percent looser on the map.
+                float slack = DoubleRightSlack * Mathf.Max(0.01f, Screen.height / 1080f);
+                bool run = Time.unscaledTime - _lastRightOrderAt <= DoubleRightClick &&
+                           (screen - _lastRightOrderScreen).sqrMagnitude <= slack * slack;
+                _lastRightOrderAt = Time.unscaledTime;
+                _lastRightOrderScreen = screen;
+                MoveHere(plan, run);
                 return;
             }
 
             if (mouse.leftButton.wasPressedThisFrame)
             {
-                _mapChrome.CloseMenu();
                 if (overChrome)
                     return;
+                if (_mapChrome.MenuOpen)
+                {
+                    _mapChrome.CloseMenu();
+                    return;
+                }
                 _dragging = true;
                 _dragMoved = false;
                 _dragFrom = _dragTo = _survey.Plan.ToWorld(ToPlan(screen));
@@ -1499,6 +1604,10 @@ namespace RoadDemo
             return best;
         }
 
+        internal bool EnemyContextValid(DemoCrews.Unit actor, DemoCrews.Unit target) =>
+            _crews != null && _crews.Selected == actor && actor != null && !actor.Wiped &&
+            target != null && target.Faction != 0 && !target.Wiped;
+
         public void Inspect(TurfCrew crew)
         {
             _inspectedBuilding = null;
@@ -1598,6 +1707,49 @@ namespace RoadDemo
         }
 
         // ------------------------------------------------------------------ orders
+
+        /// <summary>A bare TurfMap right click is the street's ordinary move command,
+        /// issued immediately. An explicit unit path preserves driving/boarding behavior;
+        /// a gathered group simply receives that same command once per crew.</summary>
+        void MoveHere(Vector2 plan, bool run)
+        {
+            if (_selected.Count == 0 || _crews == null)
+                return;
+
+            var at = _survey.Plan.ToWorld(plan);
+            int live = 0;
+            foreach (var crew in _units)
+                if (crew.Mine && crew.Alive && _selected.Contains(crew.Id))
+                    live++;
+
+            var scatter = new TurfPlate.Roll(Time.frameCount);
+            bool moved = false;
+            foreach (var crew in _units)
+            {
+                if (!crew.Mine || !crew.Alive || !_selected.Contains(crew.Id))
+                    continue;
+
+                var destination = live > 1 ? Spread(at, ref scatter) : at;
+                var world = new Vector3(destination.x, _crews.GroundY, destination.y);
+                if (!_crews.OrderUnit(crew.Unit, world, out _, run))
+                    continue;
+
+                crew.Order = TurfOrder.Moving;
+                crew.Taking = null;
+                moved = true;
+            }
+
+            if (!moved)
+                return;
+
+            _markers.Add(new Marker
+            {
+                World = at,
+                Life = MarkerSeconds,
+                Order = TurfOrder.Moving,
+            });
+            Changed();
+        }
 
         /// <summary>
         /// Every order the map can give, issued to the whole selection. Nothing here

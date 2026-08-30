@@ -155,8 +155,8 @@ namespace RoadDemo
             }
         }
 
-        /// A palm in its pavement grate, a tree cage round the trunk half the time -
-        /// the triple the palm city's own kerbs carry.
+        /// A palm in its pavement grate, with a tree cage round the trunk - the triple
+        /// the palm city's own kerbs carry.
         bool Tree(float t)
         {
             if (!Any(_p.Grates) || !Any(_p.Palms)) return false;
@@ -169,8 +169,10 @@ namespace RoadDemo
             if (!Stand(grate, pos, lie, Geometry)) return false;
             // the palm stands INSIDE the grate - it shares that ground on
             // purpose, which is the whole point of a grate
-            if (!Stand(Pick(_p.Palms), pos, Random.value * 360f, Flora, nest: true)) return false;
-            if (_p.TreeCage != null && Random.value < 0.5f)
+            var palm = Place(Pick(_p.Palms), pos, Random.value * 360f, Flora, nest: true);
+            if (palm == null) return false;
+            CorePavement.SizePavementPalm(palm.transform);
+            if (_p.TreeCage != null)
                 Stand(_p.TreeCage, pos, lie, Geometry, nest: true);
             return true;
         }
