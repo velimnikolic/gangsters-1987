@@ -262,6 +262,19 @@ namespace RoadDemo
                     if (i < Walk || j < Walk || i >= w - Walk || j >= d - Walk)
                         plan.Ground[i, j] = Use.Walkway;
 
+            // A 10-15 m inner strip cannot take the catalogue's two-street corner houses.
+            // The generic dealer then accepts two small units and programmes the rejected
+            // frontage as paving, producing an 85 x 35 m "clean" block that is visually an
+            // empty slab. Use the existing modular apartment frontage for this one physical
+            // shape: two street-facing terraces with a narrow service yard between them.
+            if (plan.Klass == Klass.Row && Math.Min(plan.Inner, plan.InnerD) <= 3 &&
+                LayCompactRow(plan))
+            {
+                Measure(plan);
+                Judge(plan);
+                return plan;
+            }
+
             // The same seed and the same buildable ground deal the same block even when the
             // city's pavement standard changes. The +2 preserves the sequence from the old
             // one-cell ring while making the ring itself irrelevant to the interior deal.
@@ -283,7 +296,7 @@ namespace RoadDemo
             for (int again = 1; again <= 12; again++)
             {
                 bool empty = plan.Lone && !Standing(plan);
-                bool bare = Fill(plan) < FillLeast;
+                bool bare = BuiltCoverage(plan) < RequiredBuiltCoverage(plan);
                 bool weakFront = (plan.Klass == Klass.Block || plan.Klass == Klass.Court) &&
                                  EdgeCoverage(plan, plan.Artery) < 65;
                 bool strandedWay = Patches(plan).Any(patch => !patch.Out);
@@ -359,10 +372,12 @@ namespace RoadDemo
             plan.M.Parks++;
         }
 
-        /// <summary>How much of the block's inner ground its buildings, their forecourts and
-        /// its lot stand on, percent.</summary>
-        static int Fill(Plan plan)
+        /// <summary>Share of the buildable inner ground occupied by real programme:
+        /// buildings, their forecourts, or a complete amenity lot. Paving is deliberately
+        /// excluded; calling a large paved gap "used" is the empty-block regression.</summary>
+        public static int BuiltCoverage(Plan plan)
         {
+            if (plan?.Ground == null) return 0;
             int stands = 0;
             for (int i = Walk; i < plan.W - Walk; i++)
                 for (int j = Walk; j < plan.D - Walk; j++)
@@ -576,6 +591,77 @@ namespace RoadDemo
             return plan;
         }
 
+        /// <summary>Lay the shallow ordinary-row case without converting most of its only
+        /// buildable band to anonymous paving. Returns false when two opposite serving
+        /// streets are unavailable, in which case the ordinary dealer remains authoritative.</summary>
+        static bool LayCompactRow(Plan plan)
+        {
+            bool horizontal = plan.Inner >= plan.InnerD;
+            int firstSide = horizontal ? 0 : 3;
+            int secondSide = horizontal ? 2 : 1;
+            if (!plan.Street[firstSide] || !plan.Street[secondSide]) return false;
+
+            int along = horizontal ? plan.Inner : plan.InnerD;
+            int passage = along >= 10 ? Walk + along / 2 : -1;
+            foreach (int side in new[] { firstSide, secondSide })
+                for (int n = 0; n < along; n++)
+                {
+                    int at = Walk + n;
+                    if (at == passage) continue;
+
+                    int i = horizontal ? at : (side == 3 ? Walk : plan.W - Walk - 1);
+                    int j = horizontal ? (side == 0 ? Walk : plan.D - Walk - 1) : at;
+                    int style = unchecked(plan.Seed * 486187739 + i * 73856093 +
+                                          j * 19349663 + side * 104729);
+                    style = (style % ResidentialUnits.Frontages.Length +
+                             ResidentialUnits.Frontages.Length) % ResidentialUnits.Frontages.Length;
+                    var unit = ResidentialUnits.Frontages[style];
+                    int yaw = ((2 - side + 4) % 4) * 90;
+                    plan.Spots.Add(new Spot
+                    {
+                        Unit = unit,
+                        Yaw = yaw,
+                        I = i,
+                        J = j,
+                        CW = 1,
+                        CD = 1,
+                        Side = side,
+                        AccessSide = side,
+                        EntranceAt = at,
+                    });
+                    plan.Accesses.Add(new Access
+                    {
+                        Side = side,
+                        At = at,
+                        Purpose = unit.Name,
+                    });
+                    plan.Ground[i, j] = Use.Building;
+                }
+
+            for (int i = Walk; i < plan.W - Walk; i++)
+                for (int j = Walk; j < plan.D - Walk; j++)
+                    if (plan.Ground[i, j] == Use.Empty)
+                        plan.Ground[i, j] = passage >= 0 && (horizontal ? i : j) == passage
+                            ? Use.Paved
+                            : Use.Yard;
+
+            if (passage >= 0)
+            {
+                plan.Gaps.Add(new Gap
+                {
+                    Side = firstSide,
+                    At = passage,
+                    Run = 1,
+                    Depth = horizontal ? plan.InnerD : plan.Inner,
+                    Use = Use.Paved,
+                });
+                plan.M.Gaps = 1;
+                plan.M.GapCells = 1;
+                plan.M.Paved = 1;
+            }
+            return plan.Spots.Count > 0;
+        }
+
         /// <summary>Reserves the existing ParkingDemo attended-lot footprint along the
         /// caryard's north edge. This is only the paper plan; <c>ResidentialBlocks</c>
         /// transfers the real ParkingDemo composer into these cells.</summary>
@@ -644,6 +730,15 @@ namespace RoadDemo
         /// and its lot may stand on. Below this the block is paving with something in the
         /// middle of it, which is what a gym given a whole quarter cell looked like.</summary>
         public const int FillLeast = 30;
+
+        /// <summary>A shallow row has almost no private middle to explain a large gap.
+        /// Require half of its inner strip to be actual buildings/forecourts so a pair of
+        /// small houses cannot leave most of an 85 x 35 m block as anonymous paving.</summary>
+        public const int CompactRowFillLeast = 50;
+
+        public static int RequiredBuiltCoverage(Plan plan) =>
+            plan != null && plan.Klass == Klass.Row &&
+            Math.Min(plan.Inner, plan.InnerD) <= 3 ? CompactRowFillLeast : FillLeast;
 
         static bool Modest(Plan plan, Turn turn) =>
             (plan.Klass != Klass.Block && plan.Klass != Klass.Court) ||
@@ -2409,10 +2504,11 @@ namespace RoadDemo
             // 2026-08-28: "izgleda preglupo... dodaj pravilo da ne smes ovako da punis
             // blokove"). What stands on a block - its houses, their forecourts, its lot -
             // has to be a real share of the ground inside its pavement.
-            int fill = Fill(plan);
-            if (fill < FillLeast)
+            int fill = BuiltCoverage(plan);
+            int requiredFill = RequiredBuiltCoverage(plan);
+            if (fill < requiredFill)
                 plan.Faults.Add($"Bare: what stands on the block covers {fill}% of its inner ground, " +
-                                "and a block is not a car park with a shed on it");
+                                $"below the {requiredFill}% {plan.Klass} minimum");
 
             // Every corner a block of this class is built on carries a building. A corner
             // block is one building and its garden, a row keeps its open ends: asking all

@@ -416,13 +416,20 @@ namespace RoadDemo
         /// with the gun out of the window gets his mark abeam for a heartbeat and the
         /// pass goes by without a round fired, which is what the runs showed. Slowed to
         /// a walking-pace nine, the same pass gives every gun on that side two or three.
-        /// Away from the mark the pace is the profile's own again - a getaway is a
-        /// getaway.</summary>
+        /// The run-up uses the profile's own pace; once the car is on the locked attack
+        /// segment it keeps the pass pace all the way to each turn-round.</summary>
         protected override float LimitTarget(float target)
         {
             // nothing under the bonnet is turning: it rolls to a stop and stays there
             if (EngineDead) return 0f;
             if (DriveByTarget == null || Tf == null) return target;
+            // Once the attack segment is chosen, every metre on it is part of the pass.
+            // Do not release the car back to the Hot profile merely because the mark ran
+            // more than 45 m from it: at eighteen metres a second the remaining end berth
+            // is no longer enough to brake for the in-road turn, so the car crosses the
+            // junction and the route table quite reasonably sends it round the block.
+            if (_localPass && Road == _driveByRoad)
+                return Mathf.Min(target, PassSpeed);
             var to = DriveByTarget.Position - Position;
             to.y = 0f;
             float dist = to.magnitude;

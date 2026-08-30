@@ -25,7 +25,7 @@ namespace RoadDemo
         /// Bump when the meaning of the same ResidentialLot input changes. The plan hash
         /// catches data changes; this catches an optimiser/composer interpretation change.
         /// </summary>
-        public const int GeneratorVersion = 8;
+        public const int GeneratorVersion = 9;
 
         public string Id { get; private set; }
         public string Name { get; private set; }

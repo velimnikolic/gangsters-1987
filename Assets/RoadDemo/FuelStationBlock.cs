@@ -35,6 +35,8 @@ namespace RoadDemo
         // not a second fuel-demo width. Its two gate claims cut road tiles all the way
         // through the band at the real PumpDemo mouths.
         public const float PavementWidth = CoreBlockMetrics.PavementWidth;
+        public const float BlockFrontage = 2f * (ParcelHalfX + PavementWidth);
+        public const float BlockDepth = ParcelFrontZ - ParcelBackZ + 2f * PavementWidth;
         // The frontage's innermost row belongs to the pavement plan: sidewalk between
         // the mouths, vehicle surface through them. Stopping the shared apron here keeps
         // two coplanar road tiles from being laid in each opening.
@@ -87,7 +89,8 @@ namespace RoadDemo
             stationRoot.SetParent(root, false);
             var rotation = Quaternion.Euler(0f, 180f, 0f);
             stood.Station = FuelStation.Stand(
-                stationRoot, Vector3.zero, rotation, ApronY, CrossZ);
+                stationRoot, Vector3.zero, rotation, ApronY, CrossZ,
+                blockWalkers: false);
 
             var asphalt = Load<Material>(GroundMaterial);
             ForecourtSet.Slab(stood.Station, stationRoot, "Station Parcel Ground",

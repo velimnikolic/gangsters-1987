@@ -13,6 +13,12 @@ namespace RoadDemo
     /// </summary>
     public class CoreDemoBuilder : MonoBehaviour
     {
+        [Header("Layout")]
+        [Tooltip("Deal a new city whenever Play starts. Turn this off and enter the seed " +
+                 "printed in Console to reproduce a reported layout.")]
+        public bool newSeedEveryPlay = true;
+        [Tooltip("Fixed/replay seed when New Seed Every Play is off. During Play this shows " +
+                 "the seed currently used by the city.")]
         public int seed = 1987;
 
         [Header("Traffic")]
@@ -51,6 +57,12 @@ namespace RoadDemo
         void Awake()
         {
 #if UNITY_EDITOR
+            if (newSeedEveryPlay) seed = FreshPlaySeed();
+            Debug.Log($"[CoreDemo] Play seed {seed}." +
+                      (newSeedEveryPlay
+                          ? " Disable New Seed Every Play and enter this number to replay it."
+                          : " Fixed-seed replay is enabled."));
+
             // a sketch left in the scene from the editor menu would stand under the quarter
             foreach (var root in gameObject.scene.GetRootGameObjects())
                 if (root.name == CoreLayout.SketchRoot) Destroy(root);
@@ -116,6 +128,14 @@ namespace RoadDemo
 #else
             Debug.LogError("[CoreDemo] The core loads Synty prefabs through the AssetDatabase and only runs in the editor.");
 #endif
+        }
+
+        /// <summary>Independent of UnityEngine.Random so choosing the city's identity does
+        /// not shift any ambient/global random sequence before the seeded systems start.</summary>
+        static int FreshPlaySeed()
+        {
+            int value = System.BitConverter.ToInt32(System.Guid.NewGuid().ToByteArray(), 0) & int.MaxValue;
+            return value == 0 ? 1 : value;
         }
     }
 }

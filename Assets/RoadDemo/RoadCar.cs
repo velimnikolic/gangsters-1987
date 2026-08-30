@@ -999,7 +999,19 @@ namespace RoadDemo
 
             // out of the lane ahead - the junction (or the end of the road)
             var node = road.NodeAhead(Heading);
-            if (_next == null && node != null && _man != Manoeuvre.UTurn) PlanNext(node);
+            bool requiredTurn = RequiredTurnHere();
+            if (requiredTurn && !_committed)
+            {
+                // The pending U-turn is the way on. A connector selected earlier in the
+                // pass must not survive into this wait: once it does, the junction owns
+                // the car and the lane graph turns a refused sweep into a lap of the
+                // block. Keep the far side unclaimed until the in-road turn is complete.
+                _next = null;
+                _via = null;
+                DropNext();
+            }
+            if (_next == null && node != null && _man != Manoeuvre.UTurn && !requiredTurn)
+                PlanNext(node);
 
             // THE CLAIM MUST SAY WHERE WE ARE ACTUALLY GOING. It names the way through
             // the box, and every other driver plans against that name: a car whose line
@@ -1058,7 +1070,6 @@ namespace RoadDemo
             // at a mark thirty metres behind it used to ride the whole way round the
             // quarter, because the lane graph has no U-turn in it to route through and
             // the only road it could draw went forward.
-            bool requiredTurn = RequiredTurnHere();
             if (_hasGoal && _man != Manoeuvre.UTurn && !NoTurnBack &&
                 (_goalUTurns < MaxGoalUTurns || requiredTurn) &&
                 (_turnFirst || (road == _goalRoad && Heading != _goalHeading && Route == null)) &&
@@ -3743,9 +3754,10 @@ namespace RoadDemo
 
         bool PlansTurnRoundToGoal()
         {
+            bool requiredTurn = RequiredTurnHere();
             if (!_hasGoal || Road == null || Road != _goalRoad || NoTurnBack ||
                 !Road.TwoWay || !Profile.UTurnsInRoad || Road.MedianHalf > 0f ||
-                _turnBackFor >= TurnBackPatience) return false;
+                (!requiredTurn && _turnBackFor >= TurnBackPatience)) return false;
             return Heading != _goalHeading || (_goalS - S) * Heading < -3f;
         }
 

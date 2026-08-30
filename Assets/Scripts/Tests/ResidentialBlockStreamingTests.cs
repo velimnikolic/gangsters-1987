@@ -24,7 +24,7 @@ namespace LivingCity.Tests
             FallbackGeometryIsOpaqueResidential(failures);
             CameraPitchPolicy(failures);
             TurfMapProxyHeightProjection(failures);
-            CompactCoreInfillHasBuildings(failures);
+            CompactCoreInfillHasEnoughProgramme(failures);
             CoreBlocksHaveStableNamesAndQuarters(failures);
             CoreRiverRunsFullCity(failures);
             CoreShopfrontsCanSeatEveryGang(failures);
@@ -243,7 +243,7 @@ namespace LivingCity.Tests
                 }
         }
 
-        static void CompactCoreInfillHasBuildings(List<string> failures)
+        static void CompactCoreInfillHasEnoughProgramme(List<string> failures)
         {
             // These are the shallow former parking rectangles dealt by Core's outer
             // quarters. They are real 30-45 m urban plots, not empty map blocks.
@@ -255,13 +255,19 @@ namespace LivingCity.Tests
                 new Vector2Int(10, 7),
             };
             for (int n = 0; n < sizes.Length; n++)
-                for (int seed = 1987; seed < 1997; seed++)
+                for (int sample = 0; sample <= 10; sample++)
                 {
+                    // The last sample is the exact seed of the 85x35 m CoreDemo block
+                    // reported as an empty paved slab.
+                    int seed = sample < 10 ? 1987 + sample : 223715228;
                     var size = sizes[n];
                     var plan = ResidentialLot.Roll(size.x, size.y, seed, seed & 3);
-                    if (plan.Spots.Count > 0 && plan.Clean) continue;
+                    int coverage = ResidentialLot.BuiltCoverage(plan);
+                    int required = ResidentialLot.RequiredBuiltCoverage(plan);
+                    if (plan.Spots.Count > 0 && plan.Clean && coverage >= required) continue;
                     failures.Add($"Core residential infill {size.x}x{size.y} seed {seed} " +
-                                 $"has {plan.Spots.Count} building(s): {string.Join("; ", plan.Faults)}");
+                                 $"has {plan.Spots.Count} building(s), {coverage}% programme " +
+                                 $"(minimum {required}%): {string.Join("; ", plan.Faults)}");
                     break;
                 }
         }

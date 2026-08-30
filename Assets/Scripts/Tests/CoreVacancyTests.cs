@@ -25,6 +25,7 @@ namespace LivingCity.Tests
             DevelopmentPreservesStandaloneLotsAndPavement(core, failures);
             NoStandaloneBlockStaysEmpty(core, failures);
             ResidentialViewsOwnTheirOnlyGroundSurface(core, failures);
+            EveryCompactResidentialBlockHasEnoughProgramme(core, failures);
             EveryResidentialBlockHasFallbackGeometry(core, failures);
             InfillDoesNotRewriteTheRoadPlan(core, failures);
             DevelopmentPublishesMapAndTerritoryIdentity(core, failures);
@@ -135,14 +136,7 @@ namespace LivingCity.Tests
             {
                 if (!CoreAmenityLayout.CanCarryHousing(site))
                     failures.Add($"Core vacancy {Where(site.Box)} cannot preserve the shared pavement ring");
-                bool insideStandaloneLot = false;
-                for (int n = 0; n < core.Layout.Lots.Count; n++)
-                    if (Contains(core.Layout.Lots[n], site.Box))
-                    {
-                        insideStandaloneLot = true;
-                        break;
-                    }
-                if (!insideStandaloneLot)
+                if (!CoveredByStandaloneLots(core, site.Box))
                     failures.Add($"Core vacancy {Where(site.Box)} was cut from an existing mixed-use block");
 
                 int w = Mathf.RoundToInt(site.Box.width / CoreLayout.Cell);
@@ -297,6 +291,28 @@ namespace LivingCity.Tests
             }
         }
 
+        /// <summary>"Empty" is visual, not only a literal Empty enum value. Paving every
+        /// rejected building gap makes a technically complete plan that still reads as one
+        /// vacant slab, so judge the share occupied by real programme.</summary>
+        static void EveryCompactResidentialBlockHasEnoughProgramme(CoreDistrict core,
+            List<string> failures)
+        {
+            foreach (var recipe in core.ResidentialBlocks.Blocks)
+            {
+                var plan = recipe?.Plan;
+                int required = ResidentialLot.RequiredBuiltCoverage(plan);
+                // The ordinary 30% contract is already part of ResidentialLot.Judge and
+                // some legacy recipes deliberately publish that pre-existing fault. This
+                // regression is for the shallow Row shape which used to pass Judge while
+                // reading as one large paved slab.
+                if (required <= ResidentialLot.FillLeast) continue;
+                int coverage = ResidentialLot.BuiltCoverage(plan);
+                if (coverage < required)
+                    failures.Add($"Core vacancy {recipe?.Name ?? "<unnamed>"}: actual programme " +
+                                 $"covers {coverage}% of inner ground, below {required}%");
+            }
+        }
+
         static void InfillDoesNotRewriteTheRoadPlan(CoreDistrict core, List<string> failures)
         {
             if (core.Raster.Faults != core.AcceptedRoadFaults)
@@ -354,9 +370,27 @@ namespace LivingCity.Tests
             Mathf.Abs(a.xMin - b.xMin) < 0.01f && Mathf.Abs(a.yMin - b.yMin) < 0.01f &&
             Mathf.Abs(a.width - b.width) < 0.01f && Mathf.Abs(a.height - b.height) < 0.01f;
 
-        static bool Contains(Rect outer, Rect inner) =>
-            inner.xMin >= outer.xMin - 0.01f && inner.xMax <= outer.xMax + 0.01f &&
-            inner.yMin >= outer.yMin - 0.01f && inner.yMax <= outer.yMax + 0.01f;
+        static bool CoveredByStandaloneLots(CoreDistrict core, Rect box)
+        {
+            // Supplemental development can join adjacent source rectangles into one site.
+            // Validate their union cell-by-cell instead of requiring one source rectangle
+            // to contain the complete joined parcel.
+            float half = CoreLayout.Cell * 0.5f;
+            for (float x = box.xMin + half; x < box.xMax; x += CoreLayout.Cell)
+                for (float z = box.yMin + half; z < box.yMax; z += CoreLayout.Cell)
+                {
+                    var point = new Vector2(x, z);
+                    bool covered = false;
+                    for (int n = 0; n < core.Layout.Lots.Count; n++)
+                        if (core.Layout.Lots[n].Contains(point))
+                        {
+                            covered = true;
+                            break;
+                        }
+                    if (!covered) return false;
+                }
+            return true;
+        }
 
         static bool InteriorOverlap(Rect a, Rect b) =>
             Mathf.Min(a.xMax, b.xMax) - Mathf.Max(a.xMin, b.xMin) > 0.01f &&

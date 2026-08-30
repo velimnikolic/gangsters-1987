@@ -30,9 +30,10 @@ namespace RoadDemo
     ///   live   - crews, traffic, order markers, the selection box. Per frame.
     ///
     /// and one layer that is NOT raster: the street names, real type floating over the
-    /// paper as children of the sheet (<see cref="TurfMapLabels"/>). They are the
-    /// loudest thing on a survey plate and the design forbids baking them - a name
-    /// printed into the paper magnifies with the paper.
+    /// paper as children of the sheet (<see cref="TurfMapLabels"/>). They stay above
+    /// the cartography but below the live tactical layer, so a crew marker or its route
+    /// never disappears under a name. The design forbids baking them - a name printed
+    /// into the paper magnifies with the paper.
     ///
     /// THE SURVEY RUNS OFF THE MAIN THREAD. A plate is thirty milliseconds and the
     /// wheel asks for one several times a second; drawn in Update that is two dropped
@@ -176,6 +177,7 @@ namespace RoadDemo
 
         readonly List<TurfCrew> _units = new List<TurfCrew>();
         readonly List<Marker> _markers = new List<Marker>();
+        readonly List<Vector3> _movementPath = new List<Vector3>();
         List<CrewEnemyAction> _enemyActions = new List<CrewEnemyAction>();
 
         /// <summary>Selected crews, by DemoCrews unit id. Only ever ours.</summary>
@@ -642,8 +644,9 @@ namespace RoadDemo
             EnsureBuildingLayer();
             _liveImage = Layer("Live", _liveTex, null);
 
-            // Over every raster layer, under the panel: the design's own order, where
-            // the lettering is the topmost thing on the map itself.
+            // Over the cartography, under the live tactical layer and panel. Street
+            // names remain vector-sharp, while crews and their I-key routes retain
+            // priority when the two occupy the same stretch of road.
             //
             // No mask on the sheet, deliberately. A RectMask2D here would be the tidy
             // way to cut a name at the paper's edge, but it re-materialises every
@@ -653,6 +656,7 @@ namespace RoadDemo
             // overhangs is half a word.
             _lettering = go.AddComponent<TurfMapLabels>();
             _lettering.Attach(_sheet);
+            EnsureMapLayerOrder();
 
             _mapChrome = go.AddComponent<TurfMapPanel>();
             _mapChrome.Init(this, showPanel: false, showMapChrome: true);
@@ -967,8 +971,8 @@ namespace RoadDemo
         }
 
         /// <summary>Adopts/installs the volume layer after a script reload in Play.
-        /// Existing sheet layers may predate the field; insertion immediately before
-        /// Live preserves the map's built -> volumes -> markers -> names contract.</summary>
+        /// Existing sheet layers may predate the field; the final order is static map,
+        /// volumes, street names, then live tactical marks.</summary>
         void EnsureBuildingLayer()
         {
             if (_buildingLayer == null && _sheet != null)
@@ -978,8 +982,6 @@ namespace RoadDemo
                 {
                     root = DemoUi.NewRect("Building Volumes", _sheet);
                     DemoUi.Fill(root);
-                    if (_liveImage != null)
-                        root.SetSiblingIndex(_liveImage.transform.GetSiblingIndex());
                 }
                 _buildingLayer = root.GetComponent<TurfMapBuildingLayer>();
                 if (_buildingLayer == null)
@@ -992,6 +994,29 @@ namespace RoadDemo
                 _buildingLayer.PreparePose(Heading, _rig != null ? _rig.pitch : 90f);
                 _buildingLayer.Rebuild(_builder, _survey);
             }
+
+            EnsureMapLayerOrder();
+        }
+
+        /// <summary>Live people and order graphics must win over street lettering.
+        /// Reasserted from the hot-reload adoption path as well as on a fresh build,
+        /// because an already-open map can have been assembled by the previous script.</summary>
+        void EnsureMapLayerOrder()
+        {
+            if (_sheet == null)
+                return;
+
+            if (_buildingLayer != null && _groundImage != null)
+            {
+                var volumes = _buildingLayer.transform;
+                int afterGround = _groundImage.transform.GetSiblingIndex() + 1;
+                if (volumes.GetSiblingIndex() != afterGround)
+                    volumes.SetSiblingIndex(afterGround);
+            }
+
+            if (_liveImage != null &&
+                _liveImage.transform.GetSiblingIndex() != _sheet.childCount - 1)
+                _liveImage.transform.SetAsLastSibling();
         }
 
         /// <summary>Adopts a sheet built before this field existed when scripts reload
@@ -1976,10 +2001,10 @@ namespace RoadDemo
         // -------------------------------------------------------------- the moving
 
         /// <summary>
-        /// The one layer redrawn per frame, in the design's order: traffic, then crews
-        /// with their glow, then order markers, then the marquee. Buildings and the
-        /// wash are NOT here - they are stacked underneath as their own textures, which
-        /// is what keeps this to a clear and a few thousand pixels.
+        /// The one layer redrawn per frame, in the design's order: traffic, I-key
+        /// movement routes, then crews with their glow, order markers and the marquee.
+        /// Buildings and the wash are NOT here - they are stacked underneath as their
+        /// own textures, which is what keeps this to a clear and a few thousand pixels.
         /// </summary>
         void DrawLive()
         {
@@ -1987,6 +2012,7 @@ namespace RoadDemo
 
             DrawTraffic();
             DrawPickedBuilding();
+            DrawMovementIndicators();
             DrawCrews();
             DrawMarkers();
             DrawMarquee();
@@ -2048,6 +2074,155 @@ namespace RoadDemo
                 _live.Px(rx + 2, ry + 1, length - 4, thick - 2, TurfInk.Cabin);
                 _live.Px(rx + (ahead ? length - 2 : 1), ry + 1, 1, thick - 2, TurfInk.Lamp);
             }
+        }
+
+        // ------------------------------------------------------- movement intent
+
+        /// <summary>The world I-key view fans a route out to every formation position.
+        /// On the TurfMap a dot already means the whole crew, so its movement is reduced
+        /// to the leader's real planned way and one shared destination mark. A crew in a
+        /// car similarly contributes one car route, never one line per passenger.</summary>
+        void DrawMovementIndicators()
+        {
+            if (_crews == null || _crews.IntentOverlay == null ||
+                !_crews.IntentOverlay.IsVisible)
+                return;
+
+            foreach (var crew in _units)
+            {
+                if (crew == null || !crew.Mine || !crew.Alive || crew.Unit == null)
+                    continue;
+
+                var unit = crew.Unit;
+                if (unit.Car != null && unit.Car.Occupant == unit &&
+                    unit.Car.CopyPlannedRoute(_movementPath) && _movementPath.Count > 1)
+                {
+                    DrawMovementRoute(_movementPath, TurfInk.MovementDrive);
+                    continue;
+                }
+
+                var lead = CrewMoveLeader(unit);
+                if (!MovingOnFoot(lead) || !lead.CopyPlannedRoute(_movementPath) ||
+                    _movementPath.Count < 2)
+                    continue;
+
+                DrawMovementRoute(_movementPath,
+                    lead.Urgent ? TurfInk.MovementRun : TurfInk.MovementWalk);
+            }
+        }
+
+        /// <summary>The crew-level position is its lieutenant, or the first man still
+        /// standing when he is down. A late hood finishing his formation leg does not
+        /// grow a second map route after that shared point has already arrived.</summary>
+        static CrewWalker CrewMoveLeader(DemoCrews.Unit unit)
+        {
+            if (unit.Boss != null && !unit.Boss.Dead && unit.Boss.Tf != null &&
+                !unit.Boss.Riding)
+                return unit.Boss;
+
+            foreach (var man in unit.All())
+                if (man != null && !man.Dead && man.Tf != null && !man.Riding)
+                    return man;
+            return null;
+        }
+
+        static bool MovingOnFoot(CrewWalker man) =>
+            man != null && !man.Dead && man.Tf != null && !man.Riding &&
+            (man.State == CrewWalker.Mode.Walking ||
+             man.State == CrewWalker.Mode.Homing ||
+             man.State == CrewWalker.Mode.Striding);
+
+        void DrawMovementRoute(List<Vector3> worldPath, Color32 colour)
+        {
+            int weight = Mathf.Max(1, Mathf.RoundToInt(2f * _indicatorScale));
+            Vector2 previous = RoutePixel(worldPath[0]);
+            for (int i = 1; i < worldPath.Count; i++)
+            {
+                Vector2 next = RoutePixel(worldPath[i]);
+                DrawRouteLeg(previous, next, weight, colour);
+                previous = next;
+            }
+
+            // One target for the crew, regardless of how many men will fan out around
+            // it in the 3D formation view.
+            int cx = Mathf.RoundToInt(previous.x);
+            int cy = Mathf.RoundToInt(previous.y);
+            int reach = Mathf.Max(2, Mathf.RoundToInt(4f * _indicatorScale));
+            _live.Px(cx - reach, cy - reach, reach * 2 + 1, weight, colour);
+            _live.Px(cx - reach, cy + reach, reach * 2 + 1, weight, colour);
+            _live.Px(cx - reach, cy - reach, weight, reach * 2 + 1, colour);
+            _live.Px(cx + reach, cy - reach, weight, reach * 2 + 1, colour);
+        }
+
+        Vector2 RoutePixel(Vector3 world)
+        {
+            var plan = _survey.Plan.ToPlan(world);
+            return plan * TurfPlate.S;
+        }
+
+        /// <summary>Integer survey line with clipping. At a close map zoom most of a
+        /// long route can be thousands of pixels beyond the plate; clipping before the
+        /// Bresenham walk keeps that invisible distance out of the per-frame cost.</summary>
+        void DrawRouteLeg(Vector2 from, Vector2 to, int weight, Color32 colour)
+        {
+            if (!ClipRouteLeg(ref from, ref to))
+                return;
+
+            int x0 = Mathf.RoundToInt(from.x), y0 = Mathf.RoundToInt(from.y);
+            int x1 = Mathf.RoundToInt(to.x), y1 = Mathf.RoundToInt(to.y);
+            int dx = Mathf.Abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+            int dy = -Mathf.Abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+            int error = dx + dy;
+            int offset = weight / 2;
+
+            while (true)
+            {
+                _live.Px(x0 - offset, y0 - offset, weight, weight, colour);
+                if (x0 == x1 && y0 == y1)
+                    break;
+                int twice = error * 2;
+                if (twice >= dy) { error += dy; x0 += sx; }
+                if (twice <= dx) { error += dx; y0 += sy; }
+            }
+        }
+
+        static bool ClipRouteLeg(ref Vector2 from, ref Vector2 to)
+        {
+            float dx = to.x - from.x;
+            float dy = to.y - from.y;
+            float enter = 0f, leave = 1f;
+            if (!ClipRouteEdge(-dx, from.x, ref enter, ref leave) ||
+                !ClipRouteEdge(dx, TurfPlate.RW - 1f - from.x, ref enter, ref leave) ||
+                !ClipRouteEdge(-dy, from.y, ref enter, ref leave) ||
+                !ClipRouteEdge(dy, TurfPlate.RH - 1f - from.y, ref enter, ref leave))
+                return false;
+
+            var start = from;
+            if (leave < 1f)
+                to = start + new Vector2(dx, dy) * leave;
+            if (enter > 0f)
+                from = start + new Vector2(dx, dy) * enter;
+            return true;
+        }
+
+        static bool ClipRouteEdge(float direction, float distance,
+            ref float enter, ref float leave)
+        {
+            if (Mathf.Approximately(direction, 0f))
+                return distance >= 0f;
+
+            float ratio = distance / direction;
+            if (direction < 0f)
+            {
+                if (ratio > leave) return false;
+                if (ratio > enter) enter = ratio;
+            }
+            else
+            {
+                if (ratio < enter) return false;
+                if (ratio < leave) leave = ratio;
+            }
+            return true;
         }
 
         // ------------------------------------------------------------- the crew dot

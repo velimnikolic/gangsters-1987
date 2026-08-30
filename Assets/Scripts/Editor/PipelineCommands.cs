@@ -336,8 +336,6 @@ namespace GangstersTools
                 var development = new List<CoreAmenityLayout.Site>();
                 CoreAmenityLayout.Select(raster, amenityCandidates, s, 3, 5,
                     parking, fuel, development);
-                development.RemoveAll(site =>
-                    !CoreAmenityLayout.CanCarryHousing(site, plan.Territory));
                 if (raster.Faults == 0) clean++;
                 if (plan.Attempt == 0) firstDeal++;
                 results.Add(new

@@ -48,9 +48,16 @@ namespace RoadDemo
         public const float ZebraStrength = 0.8f;
 
         /// <summary>Street lettering. Full white on purpose - the names are the loudest
-        /// thing on a survey plate and everything else is mixed down to let them be.
-        /// </summary>
+        /// cartographic mark on the survey plate. Live tactical indicators are the one
+        /// exception: they sit above the names because an order must never disappear
+        /// under a word.</summary>
         public static readonly Color32 Street = Hex("fffdf2");
+
+        /// <summary>The I-key movement inks, shared semantically with the world overlay:
+        /// turquoise for an ordinary walk, yellow for a run and violet for a car.</summary>
+        public static readonly Color32 MovementWalk = Hex("40f2d1");
+        public static readonly Color32 MovementRun = Hex("ffd133");
+        public static readonly Color32 MovementDrive = Hex("eb7aff");
 
         public static readonly Color32 Ink = Hex("1e1a12");
         public static readonly Color32 Ink2 = Hex("4a3f2c");

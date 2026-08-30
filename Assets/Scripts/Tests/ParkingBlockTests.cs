@@ -17,7 +17,7 @@ namespace LivingCity.Tests
             GateThroatIsStraight(failures);
             UrbanBlockUsesCorePavement(failures);
             CoreAmenityCountIsCapped(failures);
-            CoreFuelSurfaceStaysInsideParcel(failures);
+            FullFuelBlockPoseMatchesEveryEntry(failures);
             return failures;
         }
 
@@ -106,15 +106,15 @@ namespace LivingCity.Tests
             {
                 X0 = 0f,
                 Z0 = 0f,
-                NX = 40,
-                NZ = 24,
-                Kinds = new CoreRoads.Kind[40, 24],
+                NX = 50,
+                NZ = 50,
+                Kinds = new CoreRoads.Kind[50, 50],
             };
             var boxes = new[]
             {
-                new Rect(10f, 10f, 40f, 35f),
-                new Rect(60f, 10f, 70f, 40f),
-                new Rect(10f, 80f, 70f, 40f),
+                new Rect(10f, 10f, 80f, 70f),
+                new Rect(110f, 10f, 70f, 60f),
+                new Rect(10f, 110f, 70f, 60f),
             };
             foreach (var box in boxes)
             {
@@ -143,11 +143,20 @@ namespace LivingCity.Tests
                 failures.Add("Core amenities: one remainder parcel was assigned to parking and fuel");
             if (fuel.Count > 0)
             {
-                if (!Same(fuel[0].Box, boxes[0]))
-                    failures.Add("Core amenities: filling station did not retain its whole dedicated block");
-                CoreAmenityLayout.FuelPose(fuel[0], out var anchor, out _);
-                if (!fuel[0].Box.Contains(new Vector2(anchor.x, anchor.z)))
-                    failures.Add("Core amenities: PumpDemo anchor falls outside its assigned parcel");
+                bool side = fuel[0].Entry == ParkingEntrySide.East ||
+                            fuel[0].Entry == ParkingEntrySide.West;
+                float frontage = side ? fuel[0].Box.height : fuel[0].Box.width;
+                float depth = side ? fuel[0].Box.width : fuel[0].Box.height;
+                if (Mathf.Abs(frontage - FuelStationBlock.BlockFrontage) > 0.001f ||
+                    Mathf.Abs(depth - FuelStationBlock.BlockDepth) > 0.001f)
+                    failures.Add($"Core amenities: full PumpDemo block is {frontage}x{depth}, " +
+                                 $"not {FuelStationBlock.BlockFrontage}x{FuelStationBlock.BlockDepth}");
+
+                bool insideSource = false;
+                for (int i = 0; i < boxes.Length; i++)
+                    if (Contains(boxes[i], fuel[0].Box)) insideSource = true;
+                if (!insideSource)
+                    failures.Add("Core amenities: cropped PumpDemo block falls outside every source parcel");
             }
             foreach (var site in development)
             {
@@ -168,9 +177,12 @@ namespace LivingCity.Tests
             Mathf.Abs(a.width - b.width) < 0.01f &&
             Mathf.Abs(a.height - b.height) < 0.01f;
 
-        static void CoreFuelSurfaceStaysInsideParcel(List<string> failures)
+        static bool Contains(Rect outer, Rect inner) =>
+            inner.xMin >= outer.xMin - 0.001f && inner.xMax <= outer.xMax + 0.001f &&
+            inner.yMin >= outer.yMin - 0.001f && inner.yMax <= outer.yMax + 0.001f;
+
+        static void FullFuelBlockPoseMatchesEveryEntry(List<string> failures)
         {
-            var box = new Rect(10f, 20f, 80f, 60f);
             foreach (var entry in new[]
             {
                 ParkingEntrySide.South,
@@ -179,14 +191,40 @@ namespace LivingCity.Tests
                 ParkingEntrySide.West,
             })
             {
-                var surface = CoreAmenityLayout.FuelSurface(
-                    new CoreAmenityLayout.Site(box, entry, 1));
-                if (Mathf.Abs(surface.xMin - box.xMin) > 0.001f ||
-                    Mathf.Abs(surface.xMax - box.xMax) > 0.001f ||
-                    Mathf.Abs(surface.yMin - box.yMin) > 0.001f ||
-                    Mathf.Abs(surface.yMax - box.yMax) > 0.001f)
-                    failures.Add($"Core amenities: {entry} PumpDemo does not cover its whole assigned parcel");
+                bool side = entry == ParkingEntrySide.East || entry == ParkingEntrySide.West;
+                var box = new Rect(10f, 20f,
+                    side ? FuelStationBlock.BlockDepth : FuelStationBlock.BlockFrontage,
+                    side ? FuelStationBlock.BlockFrontage : FuelStationBlock.BlockDepth);
+                var site = new CoreAmenityLayout.Site(box, entry, 1);
+                CoreAmenityLayout.FuelBlockPose(site, out var position, out int yaw);
+                var placed = PlacedFuelBounds(position, yaw);
+                if (!Same(placed, box))
+                    failures.Add($"Core amenities: {entry} full PumpDemo pavement bounds " +
+                                 $"{placed} do not match reserved block {box}");
             }
+        }
+
+        static Rect PlacedFuelBounds(Vector3 position, int yaw)
+        {
+            var area = FuelStationBlock.PreviewBounds;
+            var turn = Quaternion.Euler(0f, yaw, 0f);
+            var corners = new[]
+            {
+                position + turn * new Vector3(area.xMin, 0f, area.yMin),
+                position + turn * new Vector3(area.xMin, 0f, area.yMax),
+                position + turn * new Vector3(area.xMax, 0f, area.yMin),
+                position + turn * new Vector3(area.xMax, 0f, area.yMax),
+            };
+            float x0 = corners[0].x, x1 = corners[0].x;
+            float z0 = corners[0].z, z1 = corners[0].z;
+            for (int i = 1; i < corners.Length; i++)
+            {
+                x0 = Mathf.Min(x0, corners[i].x);
+                x1 = Mathf.Max(x1, corners[i].x);
+                z0 = Mathf.Min(z0, corners[i].z);
+                z1 = Mathf.Max(z1, corners[i].z);
+            }
+            return Rect.MinMaxRect(x0, z0, x1, z1);
         }
     }
 }

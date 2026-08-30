@@ -778,9 +778,9 @@ namespace RoadDemo
         }
 
         /// <summary>Stand and wire the shared station, optionally leaving obstacle ownership
-        /// to the caller. CoreDemo uses a uniformly scaled visual cluster and therefore
-        /// registers its measured, scaled bounds after composition; the full-size PumpDemo
-        /// and wayside stations keep the precise authored blockers above.</summary>
+        /// to the caller. FuelStationBlock is composed at the origin and moved afterwards, so
+        /// its runtime registers the precise blockers only after the finished block is placed;
+        /// fixed PumpDemo and wayside stations may register them immediately.</summary>
         public static FuelStation Stand(Transform under, Vector3 anchor, Quaternion rot,
                                         float groundY, float crossZ, bool blockWalkers)
         {

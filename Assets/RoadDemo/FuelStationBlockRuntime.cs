@@ -4,9 +4,9 @@ using UnityEngine;
 namespace RoadDemo
 {
     /// <summary>
-    /// ResidentialDemo's thin functional adapter for <see cref="FuelStationBlock"/>.
-    /// It first binds the block's two connectors to a compatible active city lane. When
-    /// ResidentialDemo is watched alone it may supply an invisible compact lane circuit;
+    /// Shared functional adapter for <see cref="FuelStationBlock"/>. A city district may bind
+    /// its graph explicitly before activation; otherwise it finds the active compatible lane.
+    /// When ResidentialDemo is watched alone it may supply an invisible compact lane circuit;
     /// the visual block still contains only the station parcel and generated pavement.
     /// The actual errand remains the shared <see cref="FuelCustomer"/> used by PumpDemo
     /// and the city's wayside stations.
@@ -29,6 +29,7 @@ namespace RoadDemo
         public float auditEvery = 10f;
 
         LaneNet _net;
+        LaneNet _cityNet;
         FuelStation _station;
         Transform _liveRoot;
         CityLife _life;
@@ -40,6 +41,15 @@ namespace RoadDemo
         List<GameObject> _people;
         float _chatScan;
         float _auditAt;
+
+        /// <summary>Bind a generated block to the district graph before its GameObject is
+        /// activated. CoreDemo composes the block inactive, moves and turns it onto its
+        /// reserved parcel, then wakes it against the graph it just built.</summary>
+        public void BindCityRoad(LaneNet net)
+        {
+            _cityNet = net;
+            standaloneRoadHarness = false;
+        }
 
         void Awake()
         {
@@ -60,7 +70,12 @@ namespace RoadDemo
             BlockDressing();
 
             bool wired = false;
-            if (LaneNet.Active != null)
+            if (_cityNet != null)
+            {
+                _net = _cityNet;
+                wired = WireTheRoad();
+            }
+            else if (LaneNet.Active != null)
             {
                 _net = LaneNet.Active;
                 wired = WireTheRoad();
@@ -73,26 +88,21 @@ namespace RoadDemo
                 wired = WireTheRoad();
             }
             if (!wired)
-                Debug.LogWarning("[ResidentialFuel] The station stands with open entry/exit " +
+                Debug.LogWarning("[FuelBlock] The station stands with open entry/exit " +
                                  "connectors, but no compatible city lane is beside them.");
 
-            var area = FuelStationBlock.PreviewBounds;
-            var low = transform.TransformPoint(new Vector3(area.xMin, 0f, area.yMin));
-            var high = transform.TransformPoint(new Vector3(area.xMax, 0f, area.yMax));
-            WalkObstacles.City.Add(Rect.MinMaxRect(
-                Mathf.Min(low.x, high.x), Mathf.Min(low.z, high.z),
-                Mathf.Max(low.x, high.x), Mathf.Max(low.z, high.z)));
+            WalkObstacles.City.Add(WorldFootprint());
 
             var clips = CrewKit.Clips();
             BuildStationWalkers(clips);
             BuildCustomers(clips);
             _auditAt = 1f;
-            Debug.Log($"[ResidentialFuel] functional full PumpDemo block: " +
+            Debug.Log($"[FuelBlock] functional full PumpDemo block: " +
                       $"{_customers.Count} fuel customer(s), {_walkers.Count} shop walker(s), " +
                       $"{_station.Bays.Length} pump bay(s), " +
                       $"{(_ownsNet ? "standalone logical road" : "city road") }.");
 #else
-            Debug.LogError("[ResidentialFuel] The preview loads Synty bodies in the editor only.");
+            Debug.LogError("[FuelBlock] The preview loads Synty bodies in the editor only.");
 #endif
         }
 
@@ -122,11 +132,40 @@ namespace RoadDemo
         bool ValidFrame()
         {
             var scale = transform.lossyScale;
-            if (Quaternion.Angle(transform.rotation, Quaternion.identity) < 0.01f &&
-                (scale - Vector3.one).sqrMagnitude < 1e-5f) return true;
-            Debug.LogError("[ResidentialFuel] The functional preview root may be translated, " +
-                           "but not rotated or scaled: its compact LaneNet is axis-aligned.");
+            if ((scale - Vector3.one).sqrMagnitude >= 1e-5f)
+            {
+                Debug.LogError("[FuelBlock] The full fuel block may be translated and " +
+                               "rotated, but not scaled.");
+                return false;
+            }
+            if (_cityNet != null || LaneNet.Active != null || !standaloneRoadHarness ||
+                Quaternion.Angle(transform.rotation, Quaternion.identity) < 0.01f)
+                return true;
+            Debug.LogError("[FuelBlock] A rotated fuel block needs a city LaneNet; " +
+                           "the standalone preview circuit is axis-aligned.");
             return false;
+        }
+
+        Rect WorldFootprint()
+        {
+            var area = FuelStationBlock.PreviewBounds;
+            var corners = new[]
+            {
+                transform.TransformPoint(new Vector3(area.xMin, 0f, area.yMin)),
+                transform.TransformPoint(new Vector3(area.xMin, 0f, area.yMax)),
+                transform.TransformPoint(new Vector3(area.xMax, 0f, area.yMin)),
+                transform.TransformPoint(new Vector3(area.xMax, 0f, area.yMax)),
+            };
+            float x0 = corners[0].x, x1 = corners[0].x;
+            float z0 = corners[0].z, z1 = corners[0].z;
+            for (int i = 1; i < corners.Length; i++)
+            {
+                x0 = Mathf.Min(x0, corners[i].x);
+                x1 = Mathf.Max(x1, corners[i].x);
+                z0 = Mathf.Min(z0, corners[i].z);
+                z1 = Mathf.Max(z1, corners[i].z);
+            }
+            return Rect.MinMaxRect(x0, z0, x1, z1);
         }
 
         LaneNet BuildRoadNet()
@@ -365,7 +404,7 @@ namespace RoadDemo
             }
             if (forward == null)
             {
-                Debug.LogWarning("[ResidentialFuel] The shop door reaches no forecourt walk.");
+                Debug.LogWarning("[FuelBlock] The shop door reaches no forecourt walk.");
                 return;
             }
 
@@ -464,7 +503,7 @@ namespace RoadDemo
                 if (_walkers[i].State == CivilianAgent.Mode.Inside) inside++;
 
             var line = new System.Text.StringBuilder();
-            line.Append($"[ResidentialFuel] {busy}/{_station.Bays.Length} bays taken");
+            line.Append($"[FuelBlock] {busy}/{_station.Bays.Length} bays taken");
             for (int i = 0; i < _customers.Count; i++)
                 line.Append($" | {_customers[i].Plate}: {_customers[i].Doing}");
             line.Append($" | {inside}/{_walkers.Count} ambient walker(s) inside shop");
