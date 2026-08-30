@@ -1,6 +1,7 @@
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 using LivingCity.UI;
@@ -34,9 +35,16 @@ namespace RoadDemo
         Image _pauseFace;
         int _shownMinute = -1, _shownDay = -1;
 
+        DemoCamera _rig;
+        RectTransform _timeScrubber;
+        Slider _timeSlider;
+        TMP_Text _scrubTime;
+        int _scrubMinute = -1;
+
         public void Init(DemoClock clock)
         {
             _clock = clock;
+            _rig = FindAnyObjectByType<DemoCamera>();
             Build();
         }
 
@@ -89,6 +97,66 @@ namespace RoadDemo
 
             Layout();
             RefreshControls();
+            BuildTimeScrubber();
+        }
+
+        /// <summary>The T readout's interactive half. It lives on the permanent clock
+        /// canvas, above both the 3D city and TurfMap, so one slider controls the one
+        /// shared DemoClock in either representation.</summary>
+        void BuildTimeScrubber()
+        {
+            const float width = 460f, height = 46f;
+
+            _timeScrubber = DemoUi.NewRect("Time Scrubber", transform);
+            _timeScrubber.anchorMin = _timeScrubber.anchorMax = _timeScrubber.pivot =
+                new Vector2(1f, 1f);
+            _timeScrubber.anchoredPosition = new Vector2(-14f, -64f);
+            _timeScrubber.sizeDelta = new Vector2(width, height);
+            LedgerKit.Fill(_timeScrubber, Paper).raycastTarget = true;
+            LedgerKit.Frame(_timeScrubber, 0.5f, Rule);
+
+            var label = Line(_timeScrubber, "TIME", LedgerStyle.Condensed, 10f, Ink,
+                TextAlignmentOptions.MidlineLeft);
+            label.characterSpacing = 10f;
+            LedgerKit.PlaceTopLeft(label.rectTransform, 10f, -12f, 54f, 22f);
+
+            var track = DemoUi.NewRect("Hour", _timeScrubber);
+            LedgerKit.PlaceTopLeft(track, 70f, -19f, 306f, 8f);
+            var trackFace = LedgerKit.Fill(track, Key);
+            trackFace.raycastTarget = true;
+            LedgerKit.Frame(track, 0.5f, Rule);
+
+            var fill = DemoUi.NewRect("Elapsed", track);
+            DemoUi.Fill(fill, 1f);
+            LedgerKit.Fill(fill, new Color(Red.r, Red.g, Red.b, 0.55f));
+
+            var handle = DemoUi.NewRect("Handle", track);
+            handle.sizeDelta = new Vector2(12f, 18f);
+            var handleFace = LedgerKit.Fill(handle, Red);
+            handleFace.raycastTarget = true;
+
+            _timeSlider = track.gameObject.AddComponent<Slider>();
+            _timeSlider.minValue = 0f;
+            _timeSlider.maxValue = DemoClock.HoursPerDay;
+            _timeSlider.wholeNumbers = false;
+            _timeSlider.fillRect = fill;
+            _timeSlider.handleRect = handle;
+            _timeSlider.targetGraphic = handleFace;
+            _timeSlider.direction = Slider.Direction.LeftToRight;
+            _timeSlider.SetValueWithoutNotify(_clock != null ? _clock.Hour : 0f);
+            _timeSlider.onValueChanged.AddListener(SetTimeFromSlider);
+
+            _scrubTime = Line(_timeScrubber, "00:00", LedgerStyle.Mono, 11f, Red,
+                TextAlignmentOptions.MidlineRight);
+            LedgerKit.PlaceTopLeft(_scrubTime.rectTransform, 386f, -12f, 64f, 22f);
+
+            _timeScrubber.gameObject.SetActive(false);
+        }
+
+        void SetTimeFromSlider(float hour)
+        {
+            if (_clock != null)
+                _clock.SetHour(hour);
         }
 
         TMP_Text Line(Transform parent, string text, TMP_FontAsset face, float size,
@@ -182,6 +250,24 @@ namespace RoadDemo
         {
             if (_clock == null)
                 return;
+
+            if (_rig == null)
+                _rig = FindAnyObjectByType<DemoCamera>();
+
+            bool showScrubber = _rig != null && _rig.showZoom;
+            if (_timeScrubber && _timeScrubber.gameObject.activeSelf != showScrubber)
+                _timeScrubber.gameObject.SetActive(showScrubber);
+
+            if (showScrubber)
+            {
+                _timeSlider.SetValueWithoutNotify(_clock.Hour);
+                int scrubMinute = Mathf.FloorToInt(_clock.Hour * 60f) % (24 * 60);
+                if (scrubMinute != _scrubMinute)
+                {
+                    _scrubMinute = scrubMinute;
+                    _scrubTime.SetText("{0:00}:{1:00}", scrubMinute / 60, scrubMinute % 60);
+                }
+            }
 
             Layout();
 

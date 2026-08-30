@@ -153,6 +153,8 @@ MonoBehaviour:
   streetSpeed: 9
   boulevardSpeed: 13
   alleySpeed: 5
+  startHour: 23
+  realSecondsPerGameHour: 60
 --- !u!4 &181442270
 Transform:
   m_ObjectHideFlags: 0

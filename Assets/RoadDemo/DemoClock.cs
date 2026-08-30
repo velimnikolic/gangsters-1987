@@ -48,6 +48,20 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>Configure the generated clock and put it on that hour immediately.
+        /// AddComponent invokes Awake before RoadDemoBuilder can assign its fields, so
+        /// assigning startHour alone leaves every system built in the same frame looking
+        /// at DemoClock's old 16:00 default until Start.</summary>
+        public void Configure(float initialHour, float realSecondsPerHour)
+        {
+            startHour = Mathf.Repeat(initialHour, HoursPerDay);
+            secondsPerGameHour = Mathf.Max(0.02f, realSecondsPerHour);
+            SetHour(startHour);
+        }
+
+        /// <summary>Scrub the time of day without changing the campaign day.</summary>
+        public void SetHour(float hour) => Hour = Mathf.Repeat(hour, HoursPerDay);
+
         public void SpeedUp()
         {
             if (_speedIndex < Speeds.Length - 1)
@@ -69,7 +83,7 @@ namespace RoadDemo
         // startHour right after AddComponent - which is after Awake already ran.
         void Awake()
         {
-            Hour = Mathf.Repeat(startHour, HoursPerDay);
+            SetHour(startHour);
             // The campaign calendar walks on whichever clock a scene runs, and this is
             // the one the shipping scene builds.
             LivingCity.Ambient.DayClock.Register(this);
@@ -77,7 +91,7 @@ namespace RoadDemo
 
         void Start()
         {
-            Hour = Mathf.Repeat(startHour, HoursPerDay);
+            SetHour(startHour);
             _started = true;
         }
 

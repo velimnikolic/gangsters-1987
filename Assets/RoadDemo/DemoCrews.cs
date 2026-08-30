@@ -1225,7 +1225,29 @@ namespace RoadDemo
             return result.Ok;
         }
 
-        /// <summary>Why the last recruit was refused, or null.</summary>
+        /// <summary>Returns the last hood in this crew to the outfit's free personnel
+        /// pool. This is the inverse of the street recruiting chip: the man stays on
+        /// the books, but no longer answers to this lieutenant.</summary>
+        public bool ReleaseHood(Unit unit)
+        {
+            LastRefusal = null;
+            if (unit == null || unit.Faction != 0) return false;
+            var director = PersonnelDirector.Instance;
+            var roster = director != null ? director.Roster : null;
+            var crew = roster != null ? roster.FindCrew(unit.CrewId) : null;
+            if (crew == null || crew.HoodIds.Count == 0) return false;
+
+            int id = crew.HoodIds[crew.HoodIds.Count - 1];
+            var result = director.AssignToPool(id);
+            if (!result.Ok)
+            {
+                LastRefusal = result.Reason;
+                Debug.Log("[Crews] Release refused: " + result.Reason);
+            }
+            return result.Ok;
+        }
+
+        /// <summary>Why the last personnel change was refused, or null.</summary>
         public string LastRefusal { get; private set; }
 
         /// <summary>Send the selected crew at that one: every man closes and shoots.</summary>

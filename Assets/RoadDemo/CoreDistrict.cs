@@ -72,6 +72,8 @@ namespace RoadDemo
         CityBlockRecycler _recycler;
         Material _fuelAsphalt;
         int _seed = 1987;
+        const string EdgePavement =
+            "Assets/Synty/PolygonCity/Prefabs/Environments/SM_Env_Sidewalk_01.prefab";
 
         /// <summary>The generated residential data, independent of whichever views are
         /// currently on camera. Future generator edits replace/invalidate recipes here.</summary>
@@ -83,6 +85,16 @@ namespace RoadDemo
         /// <summary>Plan-owned public car parks, available to shared map/gameplay adapters
         /// without inspecting their composed scene objects.</summary>
         public IReadOnlyList<CoreAmenityLayout.Site> ParkingSites => _parkingSites;
+
+        /// <summary>The shared parking lots' live cars. The city lighting stack uses
+        /// these exact vehicles so a car gets headlamps while moving and only a rare,
+        /// non-casting cabin/marker glow while its engine is off in a bay.</summary>
+        public IEnumerable<ParkingCar> ParkingCars()
+        {
+            for (int i = 0; i < _parkingLots.Count; i++)
+                for (int j = 0; j < _parkingLots[i].Cars.Count; j++)
+                    yield return _parkingLots[i].Cars[j];
+        }
         /// <summary>Plan-owned filling stations, kept stable even if their 3D views change.</summary>
         public IReadOnlyList<CoreAmenityLayout.Site> FuelSites => _fuelSites;
         /// <summary>Former parking parcels reassigned to generated housing. Exposed as
@@ -208,6 +220,7 @@ namespace RoadDemo
             if (_plan == null || _plan.Quays.Count == 0) return;
             Composer.ForgetMissing();
             var wants = QuayWalk.Cast(_plan);
+            int venue = 0;
             for (int q = 0; q < _plan.Quays.Count; q++)
             {
                 var block = _plan.Quays[q];
@@ -217,7 +230,8 @@ namespace RoadDemo
                 int dice = unchecked(_seed * 7919 + Mathf.RoundToInt(box.xMin) * 104729 + Mathf.RoundToInt(box.yMin) * 1299709);
                 var walk = QuayWalk.ForQuay(_plan, block, wants[q], new System.Random(dice));
                 var stood = QuayBlocks.Compose(walk, root, new System.Random(dice),
-                    (prefab, parent) => Object.Instantiate(prefab, parent));
+                    (prefab, parent) => Object.Instantiate(prefab, parent), venueOffset: venue);
+                venue = stood.NextVenueOffset;
                 QuayBlocks.Pave(walk, root, out _, (prefab, parent) => Object.Instantiate(prefab, parent), dice);
                 CoreLayout.PlaceQuay(_plan, block, root);
                 if (stood.Gaps > 0 || stood.RailGap > 0.5f || stood.OnWalk > 0)
@@ -321,10 +335,78 @@ namespace RoadDemo
         public void Reserve(DistrictReservations into)
         {
             var world = Frame.ToWorldRect(_bounds);
-            into.Pave(world);
+            // Core is not a solid rectangular slab. Keep island ground beneath its
+            // Outside/Spare cells, but remove it wherever the accepted raster really lays
+            // a road, pavement, lot or block. This prevents the sea plane from appearing as
+            // a moat along the raster's rectangular outer bounds.
+            into.Pave(PavesWholeGroundCell);
+
+            // The river is an actual channel through the island, not only a water renderer
+            // beneath flat land. Continue it far enough in both directions to meet the sea;
+            // unlike a harbour basin it already has two prescribed open ends, so the island
+            // must not push it sideways in OpenBasinsToSea.
+            if (_plan != null && _plan.Water.width > 0.01f)
+            {
+                var river = Rect.MinMaxRect(
+                    _plan.Water.xMin, _plan.River.Z0 - RiverBridge.Reach,
+                    _plan.Water.xMax, _plan.River.Z1 + RiverBridge.Reach);
+                into.Sea(Frame.ToWorldRect(river), false);
+            }
             into.Level(Rect.MinMaxRect(world.xMin - 20f, world.yMin - 20f, world.xMax + 20f, world.yMax + 20f),
                        RoadDemoBuilder.RoadBed);
             into.NoFlora(world);
+        }
+
+        bool PavesWholeGroundCell(float worldX, float worldZ, float halfCell)
+        {
+            if (_raster == null)
+                return false;
+
+            float reach = Mathf.Max(0f, halfCell - 0.01f);
+            var a = Frame.ToLocal(new Vector3(worldX - reach, 0f, worldZ - reach));
+            var b = Frame.ToLocal(new Vector3(worldX + reach, 0f, worldZ - reach));
+            var c = Frame.ToLocal(new Vector3(worldX - reach, 0f, worldZ + reach));
+            var d = Frame.ToLocal(new Vector3(worldX + reach, 0f, worldZ + reach));
+            float x0 = Mathf.Min(a.x, b.x, c.x, d.x);
+            float x1 = Mathf.Max(a.x, b.x, c.x, d.x);
+            float z0 = Mathf.Min(a.z, b.z, c.z, d.z);
+            float z1 = Mathf.Max(a.z, b.z, c.z, d.z);
+            int i0 = Mathf.FloorToInt((x0 - _raster.X0) / CoreRoads.Cell);
+            int i1 = Mathf.FloorToInt((x1 - _raster.X0) / CoreRoads.Cell);
+            int j0 = Mathf.FloorToInt((z0 - _raster.Z0) / CoreRoads.Cell);
+            int j1 = Mathf.FloorToInt((z1 - _raster.Z0) / CoreRoads.Cell);
+
+            for (int i = i0; i <= i1; i++)
+                for (int j = j0; j <= j1; j++)
+                {
+                    var kind = _raster.At(i, j);
+                    if (kind == CoreRoads.Kind.Outside && IsCityEdgePavement(i, j))
+                        continue;
+                    if (kind == CoreRoads.Kind.Outside || kind == CoreRoads.Kind.Water ||
+                        kind == CoreRoads.Kind.Spare)
+                        return false;
+                }
+            return true;
+        }
+
+        /// <summary>
+        /// The city's final five metres are pavement: one exact band in the first Outside
+        /// cell touching built ground. It follows the irregular raster edge and never uses
+        /// Water as an anchor, so it cannot close the river or recreate the old rectangular
+        /// moat. Kept public for the shared TurfMap survey and plan regression tests.
+        /// </summary>
+        public bool IsCityEdgePavement(int i, int j)
+        {
+            if (_raster == null || i < 0 || j < 0 || i >= _raster.NX || j >= _raster.NZ ||
+                _raster.At(i, j) != CoreRoads.Kind.Outside)
+                return false;
+
+            static bool City(CoreRoads.Kind kind) =>
+                kind != CoreRoads.Kind.Outside && kind != CoreRoads.Kind.Water &&
+                kind != CoreRoads.Kind.Spare;
+
+            return City(_raster.At(i - 1, j)) || City(_raster.At(i + 1, j)) ||
+                   City(_raster.At(i, j - 1)) || City(_raster.At(i, j + 1));
         }
 
         // ----------------------------------------------------------------- build
@@ -366,6 +448,7 @@ namespace RoadDemo
             CoreRoads.Lay(_raster, (prefab, parent) => Object.Instantiate(prefab, parent), roads,
                           RiverBridge.Skip(_plan, _raster), layCarParks: false,
                           skipPlainParking: AmenitySurfaceAt);
+            StandCityEdgePavement(roads);
             CorePowerlines.Stand(_plan, _raster, quarter, _seed);
             var river = new GameObject("River").transform;
             river.SetParent(quarter, false);
@@ -396,6 +479,24 @@ namespace RoadDemo
                       $"{_vehicles.Count} traffic cars, {_parkingSites.Count} ParkingDemo lots, " +
                       $"{_fuelSites.Count} PumpDemo station(s), {_raster.Faults} faults.{System.Environment.NewLine}" +
                       string.Join(System.Environment.NewLine, _plan.Rows) + System.Environment.NewLine + _raster.Report);
+        }
+
+        /// <summary>Lays the narrow visible pavement band published by
+        /// <see cref="IsCityEdgePavement"/>. Primary-structure terrain is held a few
+        /// centimetres below this level, so the band remains opaque without removing a
+        /// broad rectangular belt of island ground.</summary>
+        void StandCityEdgePavement(Transform roads)
+        {
+            var edge = new GameObject("City Edge Pavement").transform;
+            edge.SetParent(roads, false);
+            Composer.Begin((prefab, parent) => Object.Instantiate(prefab, parent));
+            for (int i = 0; i < _raster.NX; i++)
+                for (int j = 0; j < _raster.NZ; j++)
+                {
+                    if (!IsCityEdgePavement(i, j)) continue;
+                    Composer.Lay(EdgePavement, edge, _raster.X(i), _raster.Z(j),
+                        CoreRoads.Cell, CoreRoads.Cell, 0f);
+                }
         }
 
         /// <summary>The shared parking and filling-station composers bring their own surface.

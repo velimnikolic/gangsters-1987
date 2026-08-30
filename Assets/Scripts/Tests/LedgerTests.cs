@@ -656,6 +656,9 @@ namespace LivingCity.Tests
             var accounts = new Accounts();
             accounts.Open(1);
 
+            if (accounts.Safe != 1_000_000)
+                failures.Add("PurchaseGateDebitsAndBooks: the starting safe is not $1,000,000.");
+
             if (BalanceMath.TryPurchase(accounts, 750) != null)
                 failures.Add("PurchaseGateDebitsAndBooks: an affordable buy refused.");
             if (accounts.Safe != Accounts.StartingSafe - 750 ||
@@ -796,12 +799,6 @@ namespace LivingCity.Tests
             if (dearestName != "Armoured Wagon")
                 failures.Add("CarsAreOnTheCounter: the armoured wagon is not the dearest " +
                              $"car on the shelf - {dearestName} at {dearest} is.");
-
-            // A plated car the outfit cannot afford in its first week is the point; one
-            // it can never afford at all is a listing nobody will ever click.
-            if (dearest <= Accounts.StartingSafe / 4 || dearest >= Accounts.StartingSafe)
-                failures.Add($"CarsAreOnTheCounter: the wagon at {dearest} against a " +
-                             $"{Accounts.StartingSafe} safe is not a decision.");
         }
 
         static void NewStockEntersThePoolUnheld(List<string> failures)

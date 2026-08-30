@@ -87,6 +87,8 @@ namespace RoadDemo
         const int BaysPerTile = 3;
 
         const string PropsDir = "Assets/Synty/PolygonCity/Prefabs/Props/";
+        const string PalmPropsDir = "Assets/Synty/PolygonPalmCity/Prefabs/Props/";
+        const string GenericPropsDir = "Assets/Synty/PolygonGeneric/Prefabs/Props/";
 
         /// <summary>The street lamp: mast and cantilever arm in one piece, 6.5 m tall, the
         /// arm reaching 2.5 m so that standing a metre in from the kerb line it hangs over
@@ -135,7 +137,8 @@ namespace RoadDemo
         /// <summary>One piece of street furniture and how thickly it is spread.</summary>
         readonly struct Furniture
         {
-            public readonly string Piece;
+            public readonly string[] Pieces;
+            public readonly string Dir;
             /// <summary>Metres in from the kerb line.</summary>
             public readonly float Across;
             /// <summary>Kerb tiles per one of these.</summary>
@@ -145,9 +148,11 @@ namespace RoadDemo
             /// <summary>Does it want a wall at its back?</summary>
             public readonly bool Backed;
 
-            public Furniture(string piece, float across, int every, bool turns, bool backed)
+            public Furniture(string dir, string[] pieces, float across, int every,
+                             bool turns, bool backed)
             {
-                Piece = piece;
+                Dir = dir;
+                Pieces = pieces;
                 Across = across;
                 Every = every;
                 Turns = turns;
@@ -157,11 +162,33 @@ namespace RoadDemo
 
         static readonly Furniture[] Kerbside =
         {
-            new Furniture("SM_Prop_Trashbin_01", KerbLane, 16, true, false),
-            new Furniture("SM_Prop_Hydrant_01", KerbLane, 46, true, false),
-            new Furniture("SM_Prop_Mailbox_01", KerbLane, 46, false, false),
-            new Furniture("SM_Prop_ParkBench_01", WallLane, 85, false, true),
-            new Furniture("SM_Prop_Newspaper_02", WallLane + 0.5f, 102, false, true),
+            // PalmCityDemo does not repeat one generic bin and bench over the whole city.
+            // It works from small families, with the larger pieces kept against the
+            // frontage and the walk between the two furnishing lanes left open.
+            new Furniture(PalmPropsDir, new[] {
+                "SM_Prop_Trash_Bin_01", "SM_Prop_Trash_Bin_02", "SM_Prop_Trash_Bin_04"
+            }, KerbLane, 16, true, false),
+            new Furniture(PalmPropsDir, new[] { "SM_Prop_Fire_Hydrant_01" },
+                KerbLane, 46, true, false),
+            new Furniture(PalmPropsDir, new[] { "SM_Prop_Mailbox_01" },
+                KerbLane, 46, false, false),
+            new Furniture(PalmPropsDir, new[] {
+                "SM_Prop_Bench_Seat_01", "SM_Prop_Bench_Seat_02", "SM_Prop_Bench_Seat_03"
+            }, WallLane, 54, false, true),
+            new Furniture(PalmPropsDir, new[] { "SM_Prop_Newspaper_Stand_01" },
+                WallLane, 70, false, true),
+            new Furniture(PalmPropsDir, new[] {
+                "SM_Prop_Planter_01", "SM_Prop_Planter_02", "SM_Prop_Planter_03",
+                "SM_Prop_Planter_04"
+            }, WallLane, 18, false, true),
+            new Furniture(PalmPropsDir, new[] { "SM_Prop_Trash_Bag_01" },
+                WallLane, 34, true, true),
+            // Paper clusters are almost flat. They add the fine-grained pavement life of
+            // the reference scene without becoming an obstacle or another piece of street
+            // furniture in the pedestrian corridor.
+            new Furniture(GenericPropsDir, new[] {
+                "SM_Gen_Prop_Papers_01", "SM_Gen_Prop_Papers_02", "SM_Gen_Prop_Papers_06"
+            }, Cell * 0.5f, 18, true, false),
         };
 
         /// <summary>How much of a cell a building has to cover before the cell counts as
@@ -1249,9 +1276,9 @@ namespace RoadDemo
 
             foreach (var kind in Kerbside)
             {
-                // the rate is kept as a FRACTION rather than rounded: a bench falls due
-                // once per 85 kerb tiles and no block of theirs is that long, so rounding
-                // would mean no block ever had one. Six of their sixteen do
+                // The rate is kept as a fraction rather than rounded. Most blocks are
+                // shorter than a full furniture interval, but across the city the stated
+                // density still emerges without every block getting the same checklist.
                 float due = kerbs.Count / (float)kind.Every;
                 int wanted = Mathf.FloorToInt(due), stood = 0;
                 if (dice.NextDouble() < due - wanted) wanted++;
@@ -1259,20 +1286,24 @@ namespace RoadDemo
                 {
                     if (spent[i]) continue;
                     var at = free[i];
-                    // a bench with nothing at its back is a bench in the middle of a street
-                    if (kind.Backed)
-                    {
-                        var back = Behind(at.Yaw);
-                        if (!plan.In(at.I + back.x, at.J + back.y) ||
-                            !plan.Built[at.I + back.x, at.J + back.y]) continue;
-                    }
+                    // Frontage props sit just outside the first built cell. CoreDemo has a
+                    // two-tile pavement while the park/quay adapters may ask for one, so a
+                    // fixed four-metre wall lane would leave the wider pavements empty.
+                    float across = kind.Across;
+                    if (kind.Backed && !FrontageLane(plan, at, out across)) continue;
+
                     float along = 1f + (float)dice.NextDouble() * (Cell - 2f);
                     float turn = at.Yaw + (kind.Turns ? 90 * dice.Next(4) : 0);
-                    if (!stand(kind.Piece, PropsDir, Where(plan, at, kind.Across, along, y), turn)) break;
+                    string piece = kind.Pieces[dice.Next(kind.Pieces.Length)];
+                    if (!stand(piece, kind.Dir, Where(plan, at, across, along, y), turn)) break;
                     spent[i] = true;
                     stood++;
                 }
-                if (stood > 0) tally.Add($"{stood} {kind.Piece.Replace("SM_Prop_", "")}");
+                if (stood > 0)
+                {
+                    string family = kind.Pieces[0].Replace("SM_Prop_", "").Replace("SM_Gen_Prop_", "");
+                    tally.Add($"{stood} {family}" + (kind.Pieces.Length > 1 ? " variant(s)" : ""));
+                }
             }
             return string.Join(", ", tally);
         }
@@ -1292,6 +1323,28 @@ namespace RoadDemo
                 case 180: return new Vector2Int(0, 1);
                 default: return new Vector2Int(1, 0);
             }
+        }
+
+        /// <summary>
+        /// Finds the inner furnishing lane from this kerb. A backed prop belongs a metre
+        /// before the first built cell, whether the caller grew one tile or CoreDemo's two
+        /// tiles of pavement around it. A deeper yard has no frontage here and gets no
+        /// bench, planter or rubbish bag guessed into its open ground.
+        /// </summary>
+        static bool FrontageLane(Plan plan, Laid tile, out float across)
+        {
+            across = WallLane;
+            var back = Behind(tile.Yaw);
+            int most = Mathf.Max(1, CoreBlockMetrics.PavementTiles + 1);
+            for (int step = 1; step <= most; step++)
+            {
+                int i = tile.I + back.x * step, j = tile.J + back.y * step;
+                if (!plan.In(i, j)) return false;
+                if (!plan.Built[i, j]) continue;
+                across = step * Cell - 1f;
+                return true;
+            }
+            return false;
         }
 
         /// <summary>A place on a kerb tile, given in the kerb's OWN frame: metres in from

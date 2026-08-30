@@ -50,7 +50,7 @@ namespace RoadDemo
         public const float Channel = 40f;
         /// <summary>How far the water runs past the line's two ends, so the river does not
         /// stop where the core does; the boat sails from one reach to the other.</summary>
-        public const float Reach = 200f;
+        public const float Reach = 1000f;
         /// <summary>The boulevard's two carriageways, off its crown: the lanes lie at 7.5
         /// and 12.5 m (<c>RasterGraph.Boulevard</c>), so each carriageway is centred at 10.</summary>
         static readonly float[] BoulevardSeats = { -10f, 10f };

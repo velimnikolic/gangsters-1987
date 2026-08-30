@@ -228,6 +228,7 @@ namespace LivingCity.EditorTools
             bank.SetParent(city, false);
             Composer.ForgetMissing();
             var wants = QuayWalk.Cast(plan);
+            int venue = 0;
             for (int q = 0; q < plan.Quays.Count; q++)
             {
                 var block = plan.Quays[q];
@@ -237,7 +238,9 @@ namespace LivingCity.EditorTools
                 int dice = unchecked(seed * 7919 + Mathf.RoundToInt(box.xMin) * 104729 + Mathf.RoundToInt(box.yMin) * 1299709);
                 var walk = QuayWalk.ForQuay(plan, block, wants[q], new System.Random(dice));
                 var stood = QuayBlocks.Compose(walk, root, new System.Random(dice),
-                    (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent));
+                    (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent),
+                    venueOffset: venue);
+                venue = stood.NextVenueOffset;
                 QuayBlocks.Pave(walk, root, out _,
                     (prefab, parent) => (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent), dice);
                 CoreLayout.PlaceQuay(plan, block, root);

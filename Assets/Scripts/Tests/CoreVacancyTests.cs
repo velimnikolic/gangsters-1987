@@ -29,9 +29,59 @@ namespace LivingCity.Tests
             InfillDoesNotRewriteTheRoadPlan(core, failures);
             DevelopmentPublishesMapAndTerritoryIdentity(core, failures);
             ProgrammesDoNotOverlap(core, failures);
+            RiverAndIrregularEdgeReserveTheRightGround(core, failures);
 
             core.Dispose();
             return failures;
+        }
+
+        static void RiverAndIrregularEdgeReserveTheRightGround(CoreDistrict core,
+            List<string> failures)
+        {
+            var reservations = new DistrictReservations();
+            core.Reserve(reservations);
+            var raster = core.Raster;
+            bool sawPaved = false, sawEdge = false, sawRemoteOutside = false;
+            for (int i = 0; i < raster.NX; i++)
+                for (int j = 0; j < raster.NZ; j++)
+                {
+                    var kind = raster.At(i, j);
+                    float x = raster.X(i) + CoreRoads.Cell * 0.5f;
+                    float z = raster.Z(j) + CoreRoads.Cell * 0.5f;
+                    if (kind == CoreRoads.Kind.Outside)
+                    {
+                        if (core.IsCityEdgePavement(i, j))
+                        {
+                            sawEdge = true;
+                            if (!reservations.InPaved(x, z))
+                                failures.Add("Core reservation misses the pavement at the city edge");
+                        }
+                        else
+                        {
+                            sawRemoteOutside = true;
+                            if (reservations.InPaved(x, z))
+                                failures.Add("Core reservation paves remote Outside ground");
+                        }
+                    }
+                    else if (kind != CoreRoads.Kind.Water && kind != CoreRoads.Kind.Spare)
+                    {
+                        sawPaved = true;
+                        if (!reservations.InPaved(x, z))
+                            failures.Add($"Core reservation misses paved {kind} ground");
+                    }
+                }
+
+            if (!sawPaved || !sawEdge || !sawRemoteOutside)
+                failures.Add($"Core edge fixture incomplete: paved={sawPaved}, edge={sawEdge}, " +
+                             $"remoteOutside={sawRemoteOutside}");
+
+            var line = core.Layout.River;
+            float riverX = (line.Wall + line.FarWater) * 0.5f;
+            float outsideCityZ = line.Z0 - RiverBridge.Reach * 0.5f;
+            if (!reservations.InWater(riverX, outsideCityZ))
+                failures.Add("Core river reservation stops before reaching open water");
+            if (reservations.WaterOpens.Count == 0 || reservations.WaterOpens[0])
+                failures.Add("Core river reservation was published as a one-ended harbour basin");
         }
 
         static void ExactlyFiveFuelStations(CoreDistrict core, List<string> failures)

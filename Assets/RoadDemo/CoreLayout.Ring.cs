@@ -343,6 +343,12 @@ namespace RoadDemo
             Lay(plan, dice, CoreQuarterId.SouthRiverside, "S", midLo, midWide, colsMid, skirtMid,
                 j0 - deep, deep, bandsSouth, skirtSouth);
 
+            // Keep the full intended reach as plan data. The accepted downtown/quarter
+            // deal is judged first; only that winning plan is expanded into the much
+            // longer river, so riverside dressing cannot change which city a seed means.
+            plan.RiverCityZ0 = (j0 - deep) * Cell;
+            plan.RiverCityZ1 = (j1 + deep) * Cell;
+
             var boulevard = plan.Bands[0];
             float edge = (riverEast ? landLo : landHi) * Cell;
             plan.Bands[0] = riverEast
@@ -396,6 +402,10 @@ namespace RoadDemo
                 }
                 at += cols[c] + StreetGap;
             }
+
+            if (quarterId == CoreQuarterId.NorthRiverside ||
+                quarterId == CoreQuarterId.SouthRiverside)
+                DeclareRiverApproaches(plan, cells);
 
             // a tenth of the ground is park, never two of them facing each other and never on
             // the quarter's own edge - out there one would look at the belt across the park
@@ -497,6 +507,38 @@ namespace RoadDemo
             }
             plan.Rows.Add($"{name}: {cols.Count} column(s), {cells.Count} block(s) - {stood} of houses, " +
                           $"{green.Count} green, {yards.Count} yard(s), {lots} car park(s)");
+        }
+
+        /// <summary>
+        /// Publishes the cross streets which reach the promenade from a riverside quarter.
+        /// The ordinary quarter roads are inferred from block gaps, but a road which may
+        /// become a bridge must be explicit so CoreRoads is allowed to carry it over water.
+        /// Only the river-facing column is read: a merged block in an inland column may stop
+        /// a street there without closing the real mouth on the quay.
+        /// </summary>
+        static void DeclareRiverApproaches(Plan plan, List<Rect> cells)
+        {
+            var line = plan.River;
+            var edge = new List<Rect>();
+            for (int i = 0; i < cells.Count; i++)
+            {
+                var box = cells[i];
+                float bankSide = line.East ? box.xMax : box.xMin;
+                if (Mathf.Abs(bankSide - line.QuayLand) < 0.1f)
+                    edge.Add(box);
+            }
+            edge.Sort((a, b) => a.yMin.CompareTo(b.yMin));
+
+            for (int i = 1; i < edge.Count; i++)
+            {
+                float z0 = edge[i - 1].yMax, z1 = edge[i].yMin;
+                if (z1 - z0 < Cell * 0.9f)
+                    continue;
+                float inland = line.East
+                    ? Mathf.Min(edge[i - 1].xMin, edge[i].xMin)
+                    : Mathf.Max(edge[i - 1].xMax, edge[i].xMax);
+                plan.RiverApproaches.Add(Span(inland, line.QuayWater, z0, z1));
+            }
         }
 
         /// <summary>

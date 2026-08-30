@@ -23,7 +23,9 @@ namespace RoadDemo
         const float SpotInnerAngle = 35f;
         const float Range = 12f;
         const float Intensity = 16f;
-        static readonly Color BeamColour = new Color(1f, 0.85f, 0.45f);
+        // Shared with the street-lamp bulbs: the visible source and the light it
+        // promises should use the same period-tungsten colour across the city.
+        internal static readonly Color BeamColour = new Color(1f, 0.85f, 0.45f);
 
         class Rig
         {
@@ -34,6 +36,8 @@ namespace RoadDemo
         }
 
         readonly List<Rig> _rigs = new List<Rig>();
+        readonly HashSet<RoadCar> _registered = new HashSet<RoadCar>();
+        DemoCrews _crews;
         float[] _key = new float[0];
         int[] _order = new int[0];
         float _nextResort;
@@ -50,11 +54,12 @@ namespace RoadDemo
             _rigs.Add(rig);
         }
 
-        /// <summary>Register a live traffic car so its engine/parking state can drive
-        /// the lamps. The transform-only overload remains for decorative highway cars.</summary>
-        public void Register(DemoVehicle car)
+        /// <summary>Register a live road car so its engine/parking state can drive the
+        /// lamps. This includes traffic, parking customers and crew cars; the
+        /// transform-only overload remains for decorative highway cars.</summary>
+        public void Register(RoadCar car)
         {
-            if (car == null || !car.Tf) return;
+            if (car == null || !car.Tf || !_registered.Add(car)) return;
             var rig = new Rig
             {
                 Car = car.Tf,
@@ -65,9 +70,26 @@ namespace RoadDemo
             _rigs.Add(rig);
         }
 
+        /// <summary>Crew cars are dealt from the ledger after the city and its night
+        /// stack have already been built. Watch that live list so every car added later
+        /// receives the same bounded headlight pair as ordinary traffic.</summary>
+        public void Watch(DemoCrews crews)
+        {
+            _crews = crews;
+            RegisterCrewCars();
+        }
+
+        void RegisterCrewCars()
+        {
+            if (_crews == null) return;
+            for (int i = 0; i < _crews.Cars.Count; i++)
+                Register(_crews.Cars[i]);
+        }
+
         static bool WantsLights(Rig rig) => rig.Vehicle == null ||
             (!rig.Vehicle.Parked && !rig.Vehicle.EngineOff &&
-             !rig.Vehicle.Derelict && !rig.Vehicle.Wrecked);
+             !rig.Vehicle.Derelict && !rig.Vehicle.Wrecked &&
+             (rig.Vehicle is not CrewCar crew || !crew.EngineDead));
 
         static Light Attach(Transform car, Vector3 localPos)
         {
@@ -94,10 +116,16 @@ namespace RoadDemo
 
         void LateUpdate()
         {
+            RegisterCrewCars();
+
             // a car that was destroyed took its lamps with it; its rig is not walked
             // and ranked for the rest of the run
             for (int i = _rigs.Count - 1; i >= 0; i--)
-                if (!_rigs[i].L || !_rigs[i].R) _rigs.RemoveAt(i);
+                if (!_rigs[i].L || !_rigs[i].R)
+                {
+                    if (_rigs[i].Vehicle != null) _registered.Remove(_rigs[i].Vehicle);
+                    _rigs.RemoveAt(i);
+                }
             if (_rigs.Count == 0)
                 return;
 

@@ -253,7 +253,7 @@ namespace RoadDemo
             // a block's bay is the car park the demo had there, anything else is paved and
             // reported so the cuts can be argued about - and left-over ground is never
             // given a road's markings (Docs/core-district-plan.md).
-            var roads = Roads(kinds, lot, w, h, r, plan.Bands);
+            var roads = Roads(kinds, lot, w, h, r, plan.Bands, plan.RiverApproaches);
 
             // where two roads cross the ground is a junction: bare asphalt, a zebra at
             // every mouth. A junction takes the whole width of BOTH roads it belongs to, so
@@ -571,7 +571,8 @@ namespace RoadDemo
         /// An alley runs only as far as it is walled, not as far as the ground is clear:
         /// where the blocks either side stop, the alley has its mouth.
         /// </summary>
-        static List<Corridor> Roads(Kind[,] kinds, bool[,] lot, int w, int h, Raster r, List<Rect> bands)
+        static List<Corridor> Roads(Kind[,] kinds, bool[,] lot, int w, int h, Raster r,
+                                    List<Rect> bands, List<Rect> riverApproaches)
         {
             var roads = new List<Corridor>();
             var takenNS = new bool[w, h];
@@ -710,6 +711,17 @@ namespace RoadDemo
                             Mathf.RoundToInt(Mathf.Max(band.xMin, r.X0) / Cell - r.X0 / Cell),
                             Mathf.RoundToInt(Mathf.Min(band.xMax, r.X(w)) / Cell - r.X0 / Cell));
             }
+            // Riverside approaches are added only after a seed's ordinary city plan has
+            // won its verdict. Keep them after the established declared-road ordering:
+            // mixing equal-width late roads into List.Sort changes tie order and can alter
+            // junction ownership in the already accepted downtown network.
+            if (riverApproaches != null)
+                foreach (var band in riverApproaches)
+                    Declare(false,
+                        Mathf.RoundToInt((band.yMin - r.Z0) / Cell),
+                        Mathf.RoundToInt(band.height / Cell),
+                        Mathf.RoundToInt(Mathf.Max(band.xMin, r.X0) / Cell - r.X0 / Cell),
+                        Mathf.RoundToInt(Mathf.Min(band.xMax, r.X(w)) / Cell - r.X0 / Cell));
             // and the rest, off the free ground. There is no boulevard among them: the
             // core has one, the main road, and it is declared. A gap wide enough for
             // another is a street with ground left over beside it

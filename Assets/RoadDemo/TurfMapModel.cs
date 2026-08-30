@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using LivingCity.Personnel;
 using LivingCity.Entities;
 
 namespace RoadDemo
@@ -444,6 +445,11 @@ namespace RoadDemo
     {
         public DemoCrews.Unit Unit;
 
+        /// <summary>The actual personnel records behind our street unit. Rival crews
+        /// have neither: they are observed on the pavement, not carried on our books.</summary>
+        public Crew Book;
+        public Character Lieutenant;
+
         public int Id;
         public int GangId;
 
@@ -482,13 +488,8 @@ namespace RoadDemo
         /// for a crew on nobody's books - a rival's - and then the dossier leaves the
         /// word out rather than making one up from the crew's size.</summary>
         public string Rank = "";
-        public string Alias = "";
         public string Ride = "On foot";
-
-        /// <summary>The body the lieutenant wears, by prefab name - what the ledger's
-        /// portrait studio photographs for the mug shot. Empty when the crew has no
-        /// file in the roster and the dossier falls back to an empty frame.</summary>
-        public string Look = "";
+        public string Gun = "Bare hands";
 
         /// <summary>The lieutenant's actual ledger ratings, in half steps. The map
         /// only carries the three that matter while directing a crew here.</summary>
@@ -501,7 +502,7 @@ namespace RoadDemo
 
         public bool Alive => Unit != null && !Unit.Wiped;
         public int MenStanding => Unit != null ? Unit.Standing() : Men.Count;
-        public string Gun => Men.Count > 0 ? Men[0].Gun : "Bare hands";
+        public int HoodsOnBooks => Book != null ? Book.HoodIds.Count : Mathf.Max(0, Men.Count - 1);
     }
 
     /// <summary>A quarter of the city, as a rectangle of authored ground with a name

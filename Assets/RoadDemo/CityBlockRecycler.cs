@@ -161,6 +161,7 @@ namespace RoadDemo
         Camera _camera;
         DemoNightWindows _night;
         DemoStreetLamps _lamps;
+        DemoParkedCarGlow _parkedGlow;
         bool _mapHandoff = true;
         bool _mapWasOut;
         bool _runtimePoolStarted;
@@ -327,6 +328,7 @@ namespace RoadDemo
             if (_rig == null) SetCamera(FindAnyObjectByType<DemoCamera>());
             if (_night == null) _night = FindAnyObjectByType<DemoNightWindows>();
             if (_lamps == null) _lamps = FindAnyObjectByType<DemoStreetLamps>();
+            if (_parkedGlow == null) _parkedGlow = FindAnyObjectByType<DemoParkedCarGlow>();
             if (_config == null) _config = CityViewConfig.Resolve();
         }
 
@@ -679,6 +681,7 @@ namespace RoadDemo
             view.Active = true;
             BeginAttachment(view);
             _lamps?.Register(view.Content);
+            _parkedGlow?.Register(view.Content);
             _active++;
         }
 
@@ -875,6 +878,7 @@ namespace RoadDemo
             {
                 _night?.Unregister(view.Content);
                 _lamps?.Unregister(view.Content);
+                _parkedGlow?.Unregister(view.Content);
                 _prefabPool?.ReleaseAll(view.Parts);
                 view.Content.gameObject.SetActive(false);
                 view.Content.SetParent(null, false);

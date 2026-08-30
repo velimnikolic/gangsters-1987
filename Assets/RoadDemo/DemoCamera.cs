@@ -144,9 +144,10 @@ namespace RoadDemo
             var kb = BookOpen ? null : Keyboard.current;
             if (kb != null)
             {
-                // On the turf map T is the debug switch; D remains the ordinary
-                // street strafe key in every view.
-                if (TurfMapHud.IsOpen && kb.tKey.wasPressedThisFrame)
+                // T owns one shared information panel at every zoom level. Keeping the
+                // same switch in the street and on the turf map means its time scrubber
+                // never disappears merely because the camera crossed the map line.
+                if (kb.tKey.wasPressedThisFrame)
                     showZoom = !showZoom;
 
                 Vector2 pan = Vector2.zero;

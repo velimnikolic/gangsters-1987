@@ -12,6 +12,16 @@ namespace RoadDemo
         public Vector3 Pos;               // the doorstep, on the facade plane
         public Vector3 Outward;           // facade normal, toward the street
 
+        /// <summary>The logical block this door belongs to. Ordinary baked-city doors
+        /// leave this at -1; Core's streamed residential fronts publish their stable
+        /// recipe block id so families can be spread across different blocks before
+        /// any residential view has been composed.</summary>
+        public int BlockId = -1;
+
+        /// <summary>A stable plan-level address for a streamed door. Empty on ordinary
+        /// scene doors, where RoadDemoBuilder derives the street address geometrically.</summary>
+        public string Address = "";
+
         /// <summary>The bake this door is cut into - the block or the single building.
         /// A door is the only handle the street has on a BUILDING (the sidewalk graph
         /// knows pavement, the crowd knows doors), so a family's front premises is

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LivingCity.Gangs;
 using RoadDemo;
 using UnityEngine;
 
@@ -25,6 +26,8 @@ namespace LivingCity.Tests
             CompactCoreInfillHasBuildings(failures);
             ShallowCoreInfillIsApartmentFrontage(failures);
             CoreBlocksHaveStableNamesAndQuarters(failures);
+            CoreRiverRunsFullCity(failures);
+            CoreShopfrontsCanSeatEveryGang(failures);
             TerritoryStateIsSeparateFromThePlan(failures);
             return failures;
         }
@@ -291,6 +294,85 @@ namespace LivingCity.Tests
                     recipe.Name != block.DisplayName)
                     failures.Add($"residential recipe lost territory identity for {block.DisplayName}");
             }
+        }
+
+        static void CoreRiverRunsFullCity(List<string> failures)
+        {
+            var plan = verifiedCorePlan;
+            if (plan == null || plan.Residential.Count == 0)
+            {
+                failures.Add("Core river contract has no verified residential city plan");
+                return;
+            }
+
+            float cityZ0 = float.MaxValue, cityZ1 = float.MinValue;
+            for (int i = 0; i < plan.Residential.Count; i++)
+            {
+                cityZ0 = Mathf.Min(cityZ0, plan.Residential[i].Box.yMin);
+                cityZ1 = Mathf.Max(cityZ1, plan.Residential[i].Box.yMax);
+            }
+            if (plan.River.Z0 > cityZ0 + 0.1f || plan.River.Z1 < cityZ1 - 0.1f)
+                failures.Add($"Core river covers z {plan.River.Z0:F0}..{plan.River.Z1:F0}, " +
+                             $"but the city covers {cityZ0:F0}..{cityZ1:F0}");
+
+            float span = plan.River.Z1 - plan.River.Z0;
+            float southThird = plan.River.Z0 + span / 3f;
+            float northThird = plan.River.Z1 - span / 3f;
+            bool southBridge = false, northBridge = false;
+            float cut = 0f;
+            for (int i = 0; i < plan.Bridges.Count; i++)
+            {
+                var band = plan.Bridges[i].Band;
+                southBridge |= band.center.y < southThird;
+                northBridge |= band.center.y > northThird;
+                cut += band.height;
+            }
+            if (!southBridge || !northBridge)
+                failures.Add($"Core river has no bridge in the " +
+                             $"{(!southBridge ? "south" : "north")} riverside reach");
+
+            float promenade = 0f;
+            for (int i = 0; i < plan.Quays.Count; i++)
+                promenade += plan.Quays[i].Box.height;
+            if (Mathf.Abs(promenade + cut - span) > CoreLayout.Cell * 0.1f)
+                failures.Add($"Core promenade and bridge cuts cover {promenade + cut:F0} m " +
+                             $"of the river's {span:F0} m");
+        }
+
+        static void CoreShopfrontsCanSeatEveryGang(List<string> failures)
+        {
+            const int seed = 1987;
+            var core = new CoreDistrict();
+            core.Plan(System.Array.Empty<float>(), seed);
+            var sites = CoreResidentialFronts.Collect(
+                core.ResidentialBlocks, DistrictFrame.Identity);
+
+            if (sites.Count < GangCatalog.GangCount)
+            {
+                failures.Add($"Core has {sites.Count} reachable residential shopfront " +
+                             $"candidates for {GangCatalog.GangCount} gangs");
+                core.Dispose();
+                return;
+            }
+
+            var candidates = new List<GangFronts.FrontCandidate>(sites.Count);
+            for (var i = 0; i < sites.Count; i++)
+                candidates.Add(new GangFronts.FrontCandidate(
+                    sites[i].BlockId, sites[i].Door.x, sites[i].Door.z));
+
+            var picks = GangFronts.Select(candidates,
+                GangSeeder.Generate(seed, null)[GangCatalog.PlayerGangId].FrontRoll,
+                GangCatalog.GangCount);
+            var occupied = new HashSet<int>();
+            for (var gang = 0; gang < picks.Length; gang++)
+            {
+                if (picks[gang] < 0)
+                    failures.Add($"Core left gang {gang} without a residential outfit");
+                else if (!occupied.Add(picks[gang]))
+                    failures.Add($"Core assigned shopfront {picks[gang]} to two gangs");
+            }
+
+            core.Dispose();
         }
 
         static void TerritoryStateIsSeparateFromThePlan(List<string> failures)

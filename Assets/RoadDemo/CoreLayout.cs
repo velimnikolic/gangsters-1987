@@ -975,6 +975,154 @@ namespace RoadDemo
             plan.Rows.Add(said.ToString());
         }
 
+        /// <summary>
+        /// Extends the core's river through the two riverside residential quarters. River()
+        /// runs before those quarters exist, so it can only see downtown's cross streets;
+        /// once Ring has dealt the northern and southern cells this finishes the one river
+        /// line, continues both bank roads, and gives each outer reach its own crossings.
+        /// </summary>
+        static void ExtendRiver(Plan plan, System.Random dice, float z0, float z1)
+        {
+            if (plan.Quays.Count == 0 || z1 <= z0)
+                return;
+
+            var line = plan.River;
+            float coreZ0 = line.Z0, coreZ1 = line.Z1;
+
+            AddReachBridges(plan, dice, z0, coreZ0);
+            AddReachBridges(plan, dice, coreZ1, z1);
+
+            // Every riverside cross street reaches the quay street. A selected one continues
+            // over the water to the far-bank road and is dressed as a bridge later.
+            for (int b = 0; b < plan.RiverApproaches.Count; b++)
+            {
+                var band = plan.RiverApproaches[b];
+                if (band.width <= band.height || band.yMax <= z0 || band.yMin >= z1)
+                    continue;
+                bool outerReach = band.yMax <= coreZ0 + 0.1f || band.yMin >= coreZ1 - 0.1f;
+                if (!outerReach || !TouchesQuay(line, band))
+                    continue;
+
+                bool crossing = false;
+                for (int n = 0; n < plan.Bridges.Count; n++)
+                    if (Mathf.Abs(plan.Bridges[n].Band.yMin - band.yMin) < 0.1f &&
+                        Mathf.Abs(plan.Bridges[n].Band.yMax - band.yMax) < 0.1f)
+                    { crossing = true; break; }
+
+                float waterEnd = crossing ? line.FarLand : line.QuayWater;
+                plan.RiverApproaches[b] = line.East
+                    ? Rect.MinMaxRect(band.xMin, band.yMin, waterEnd, band.yMax)
+                    : Rect.MinMaxRect(waterEnd, band.yMin, band.xMax, band.yMax);
+            }
+
+            // Continue the two streets which run beside the water. They were authored in
+            // River() while only the middle cell existed, so identify them by their exact
+            // cross-river spans instead of relying on their list positions.
+            for (int b = 0; b < plan.Bands.Count; b++)
+            {
+                var band = plan.Bands[b];
+                if (band.height <= band.width)
+                    continue;
+                if (SameSpan(band.xMin, band.xMax, line.QuayLand, line.QuayWater))
+                    plan.Bands[b] = Span(line.QuayLand, line.QuayWater,
+                        z0 - 2f * StreetGap * Cell, z1 + 2f * StreetGap * Cell);
+                else if (SameSpan(band.xMin, band.xMax, line.FarRoad, line.FarLand))
+                    plan.Bands[b] = Span(line.FarRoad, line.FarLand, z0, z1);
+            }
+
+            line.Z0 = z0;
+            line.Z1 = z1;
+            plan.River = line;
+            plan.Water = Span(line.Wall, line.FarWater, z0, z1);
+
+            plan.Outside.Clear();
+            float beyond = line.East ? Any : -Any;
+            plan.Outside.Add(Span(line.BankEnd, beyond, -Any, Any));
+            plan.Outside.Add(Span(line.QuayWater, beyond, -Any, z0));
+            plan.Outside.Add(Span(line.QuayWater, beyond, z1, Any));
+
+            RebuildRiverGround(plan, z0, z1);
+            plan.Bridges.Sort((one, other) => one.Band.yMin.CompareTo(other.Band.yMin));
+            plan.Rows.Add($"river continued through the whole city: z {z0:F0}..{z1:F0}, " +
+                          $"{plan.Quays.Count} promenade stretches, {plan.Bridges.Count} bridges");
+        }
+
+        static void AddReachBridges(Plan plan, System.Random dice, float z0, float z1)
+        {
+            if (z1 - z0 < 2f * QuayEndMin * Cell)
+                return;
+
+            var line = plan.River;
+            var candidates = new List<int>();
+            for (int b = 0; b < plan.RiverApproaches.Count; b++)
+            {
+                var band = plan.RiverApproaches[b];
+                if (band.width <= band.height || !TouchesQuay(line, band))
+                    continue;
+                if (band.yMin - z0 < QuayEndMin * Cell || z1 - band.yMax < QuayEndMin * Cell)
+                    continue;
+                candidates.Add(b);
+            }
+            Dice.Shuffle(candidates, dice);
+
+            int wanted = dice.Next(BridgesMin, BridgesMax + 1);
+            int added = 0;
+            for (int n = 0; n < candidates.Count && added < wanted; n++)
+            {
+                var band = plan.RiverApproaches[candidates[n]];
+                bool clear = true;
+                for (int k = 0; k < plan.Bridges.Count; k++)
+                {
+                    var other = plan.Bridges[k].Band;
+                    if (band.yMax + BridgeApart * Cell > other.yMin &&
+                        band.yMin - BridgeApart * Cell < other.yMax)
+                    { clear = false; break; }
+                }
+                if (!clear) continue;
+
+                plan.Bridges.Add(new Bridge
+                {
+                    Band = Span(line.QuayWater, line.FarLand, band.yMin, band.yMax),
+                });
+                added++;
+            }
+        }
+
+        static bool TouchesQuay(RiverLine line, Rect band) => line.East
+            ? band.xMax >= line.QuayLand - Cell * 0.1f && band.xMin < line.QuayLand
+            : band.xMin <= line.QuayLand + Cell * 0.1f && band.xMax > line.QuayLand;
+
+        static bool SameSpan(float a0, float a1, float b0, float b1) =>
+            Mathf.Abs(a0 - Mathf.Min(b0, b1)) < 0.1f &&
+            Mathf.Abs(a1 - Mathf.Max(b0, b1)) < 0.1f;
+
+        /// <summary>Re-cuts the continuous promenade and far-bank apron around every bridge.</summary>
+        static void RebuildRiverGround(Plan plan, float z0, float z1)
+        {
+            var line = plan.River;
+            plan.Bridges.Sort((one, other) => one.Band.yMin.CompareTo(other.Band.yMin));
+            plan.Quays.Clear();
+            plan.Aprons.Clear();
+            float from = z0;
+            for (int b = 0; b <= plan.Bridges.Count; b++)
+            {
+                float to = b < plan.Bridges.Count ? plan.Bridges[b].Band.yMin : z1;
+                int cells = Mathf.RoundToInt((to - from) / Cell);
+                if (cells > 0)
+                {
+                    var quay = Ground($"{QuayPrefix}{plan.Quays.Count + 1:00}", line.Depth, cells);
+                    quay.Pivot = new Vector2(Mathf.Min(line.QuayWater, line.Wall), from);
+                    plan.Quays.Add(quay);
+                    var apron = Ground($"{ApronPrefix}{plan.Aprons.Count + 1:00}", FarApron, cells);
+                    apron.Pivot = new Vector2(Mathf.Min(line.FarWater, line.FarRoad), from);
+                    plan.Aprons.Add(apron);
+                }
+                if (b < plan.Bridges.Count) from = plan.Bridges[b].Band.yMax;
+            }
+            plan.Bank = Ground(BankName, 1, Mathf.RoundToInt((z1 - z0) / Cell));
+            plan.Bank.Pivot = new Vector2(Mathf.Min(line.FarLand, line.BankEnd), z0);
+        }
+
         /// <summary>Stands the instance where the plan puts it, turned the way it says.</summary>
         public static void Place(Block block)
         {
@@ -1129,6 +1277,10 @@ namespace RoadDemo
             public Rect Water;
             public RiverLine River;
             public readonly List<Bridge> Bridges = new List<Bridge>();
+            /// <summary>Cross streets at the two riverside quarters, recorded during the
+            /// deal and published only after that deal has won the ordinary road verdict.</summary>
+            public readonly List<Rect> RiverApproaches = new List<Rect>();
+            public float RiverCityZ0, RiverCityZ1;
             /// <summary>Ground beyond the edge of the drawing: no road is read there and no
             /// block wants one along it. The river line goes on through the city from here.</summary>
             public readonly List<Rect> Outside = new List<Rect>();
@@ -1844,6 +1996,7 @@ namespace RoadDemo
                 int faults = drawn.Faults + Mathf.Max(0, plan.ParkRuns - 1);
                 if (faults == 0)
                 {
+                    FinishRiver(blocks, plan, ref drawn);
                     raster = drawn;
                     return plan;
                 }
@@ -1864,7 +2017,24 @@ namespace RoadDemo
             var finalGround = WithGround(blocks, again);
             again.Territory = CoreTerritoryPlan.Build(seed, finalGround);
             raster = CoreRoads.Build(finalGround, again);
+            FinishRiver(blocks, again, ref raster);
             return again;
+        }
+
+        /// <summary>Expands only the already accepted plan. Keeping this out of the deal's
+        /// verdict preserves the established seed layout and amenity parcels while the final
+        /// raster still receives the complete river and its functional bridge approaches.</summary>
+        static void FinishRiver(List<Block> blocks, Plan plan, ref CoreRoads.Raster raster)
+        {
+            if (plan == null || plan.Quays.Count == 0 || plan.RiverCityZ1 <= plan.RiverCityZ0)
+                return;
+
+            var bridgeDice = new System.Random(unchecked(
+                plan.Seed * 486187739 + plan.Attempt * 16777619 + 1987));
+            ExtendRiver(plan, bridgeDice, plan.RiverCityZ0, plan.RiverCityZ1);
+            var ground = WithGround(blocks, plan);
+            plan.Territory = CoreTerritoryPlan.Build(plan.Seed, ground);
+            raster = CoreRoads.Build(ground, plan);
         }
 
         /// <summary>The caller's blocks and the ground the deal made itself - the parks, the

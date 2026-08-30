@@ -39,7 +39,7 @@ namespace LivingCity.Outfit
     public sealed class Accounts
     {
         /// <summary>Day one's stake.</summary>
-        public const int StartingSafe = 15_000;
+        public const int StartingSafe = 1_000_000;
 
         /// <summary>How many days of closed sheets are kept. A year of them: enough for
         /// the finances page to page back through a long campaign, bounded so a machine

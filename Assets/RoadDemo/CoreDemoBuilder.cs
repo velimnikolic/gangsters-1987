@@ -30,9 +30,9 @@ namespace RoadDemo
         [Range(0, 4)] public int rivalHoods = 3;
 
         [Header("Day")]
-        [Range(0f, 24f)] public float startHour = 16f;
-        [Tooltip("Real seconds for one game hour. 600 means one game minute lasts 10 real seconds.")]
-        public float realSecondsPerGameHour = 600f;
+        [Range(0f, 24f)] public float startHour = 23f;
+        [Tooltip("Real seconds for one game hour. 60 means one game minute lasts one real second.")]
+        public float realSecondsPerGameHour = 60f;
 
         [Header("Round the core")]
         [Min(20f)] public float greenBelt = 140f;

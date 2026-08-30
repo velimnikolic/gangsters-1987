@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using static RoadDemo.Composer;
 
@@ -76,26 +77,46 @@ namespace RoadDemo
             CityEnv + "SM_Env_Tree_03.prefab",
         };
 
-        // the cafe: a kiosk by the kerb, tables under umbrellas before the walk
-        static readonly string[] Kiosks =
+        // The waterfront venues are the complete groups the user authored in
+        // PalmCityDemo, not little kit kiosks assembled here. The first six were baked
+        // verbatim by ResidentialHarvest; Restaurant_01/02 were extracted from the same
+        // scene by SyntyKitExtractor. Keep the Serbian working names so a hierarchy and an
+        // audit say exactly which source group stands on the quay.
+        const string Residential = "Assets/Prefabs/Residential/";
+        const string KitBld = "Assets/CityKit/Buildings/";
+        readonly struct Venue
         {
-            PalmBld + "SM_Bld_Beach_Shop_01.prefab",
-            PalmBld + "SM_Bld_Beach_Shop_02.prefab",
-            PalmBld + "SM_Bld_Beach_Shop_03.prefab",
+            public readonly string Name, Path;
+            public readonly ResidentialUnit Unit;
+
+            public Venue(string name, string path, ResidentialUnit unit = null)
+            {
+                Name = name;
+                Path = path;
+                Unit = unit;
+            }
+        }
+
+        static readonly Venue[] Venues =
+        {
+            Harvested("dinner"),
+            Harvested("dinner2"),
+            Harvested("radnja3"),
+            Harvested("radnja1"),
+            Harvested("radnja2"),
+            new Venue("restoran1", KitBld + "building-restaurant.prefab"),
+            new Venue("restoran2", KitBld + "building-cafe.prefab"),
+            Harvested("gym"),
         };
+
+        static Venue Harvested(string name) => new Venue(
+            name, Residential + name + ".prefab",
+            ResidentialUnits.All.FirstOrDefault(unit => unit.Name == name));
+
         const string CafeTable = CityProps + "SM_Prop_Table_02.prefab";
         const string CafeChair = CoffeeProps + "SM_Prop_Chair_01.prefab";
         const string Umbrella = PalmProps + "SM_Prop_Umbrella_02.prefab";
         const string MenuStand = PalmProps + "SM_Prop_Menu_Stand_01.prefab";
-        const string NewsStand = PalmProps + "SM_Prop_Newspaper_Stand_01.prefab";
-        const string BikeStand = PalmProps + "SM_Prop_Bike_Stand_01.prefab";
-        /// <summary>The catalog's own coffee shop (5.8 x 7.2 m) stands in for a kiosk one
-        /// cafe in four, and the diner (16.3 x 8.8 m) is a programme of its own. Which way
-        /// either faces is MEASURED off its mesh (<see cref="FacadeFinder"/>): the coffee
-        /// shop was baked with its back to the street once already.</summary>
-        const string KitBld = "Assets/CityKit/Buildings/";
-        const string CoffeeShop = KitBld + "building-coffeeshop.prefab";
-        const string Diner = KitBld + "building-diner.prefab";
         const string HotDogCart = PalmVeh + "SM_Veh_Hot_Dog_Cart_01.prefab";
 
         // the planting on the paving: palms in their grates (the pavement's own trees in
@@ -110,7 +131,6 @@ namespace RoadDemo
         const string Grate = PalmEnv + "SM_Env_Plant_Grate_01.prefab";
         const string Planter = PalmProps + "SM_Prop_Planter_01.prefab";
         const string PlanterBench = PalmProps + "SM_Prop_Planter_Bench_01.prefab";
-        const string SignPole = PalmProps + "SM_Prop_Sign_Pole_02.prefab";
 
         // the plaza
         const string Fountain = PalmProps + "SM_Prop_Fountain_01.prefab";
@@ -179,13 +199,9 @@ namespace RoadDemo
         const int MostPavilions = 2;
         /// <summary>A fisherman's spot at the railing.</summary>
         const float FishingEvery = 48f;
-        /// <summary>The pier's cafe: a table every two and a half metres along, in rows
-        /// three metres apart.</summary>
-        const float TableAlong = 2.6f, TableRows = 3.2f;
-        /// <summary>A cafe's terrace: two rows of tables, nine metres either side of the
-        /// kiosk - the pier's own terrace is two rows on ten metres.</summary>
-        const int TerraceRows = 2;
-        const float TerraceHalf = 9f;
+        /// <summary>The two extracted Restaurant buildings receive one modest row of
+        /// tables, at the Palm City pier's two-and-a-half-metre rhythm.</summary>
+        const float TableAlong = 2.6f;
 
         // ----------------------------------------------------------------------- the walk
 
@@ -208,10 +224,16 @@ namespace RoadDemo
             /// <summary>Things standing in the clear way of the walk, counted off what
             /// actually stood.</summary>
             public int OnWalk;
-            public int Lamps, Benches, BinCount, TreeCount, PalmCount, Planters, Tables, Kiosks, Carts, Programmes, BoatCount, Rings, Ladders;
+            public int Lamps, Benches, BinCount, TreeCount, PalmCount, Planters, Tables, Carts, Programmes, BoatCount, Rings, Ladders;
             /// <summary>The archways down the middle of the promenade, and the pavilions.</summary>
             public int ArchCount, PavilionCount;
-            public bool Wheel, DinerStood;
+            public bool Wheel, DinerStood, GymStood;
+            /// <summary>The exact PalmCityDemo venue groups which actually fitted and stood.</summary>
+            public readonly List<string> VenueNames = new List<string>();
+            /// <summary>Compatibility count for the old quay audit field.</summary>
+            public int Kiosks => VenueNames.Count;
+            /// <summary>Where the city-wide venue cycle continues on the next quay stretch.</summary>
+            public int NextVenueOffset;
             public string Refused = "";
             /// <summary>What was found in the way, by name - a count alone is a thing to
             /// guess at, and the first drawing had one.</summary>
@@ -224,13 +246,14 @@ namespace RoadDemo
         /// ground it stands on and the floor fills whatever is left, the park's order.
         /// </summary>
         public static Stood Compose(QuayWalk.Plan plan, Transform root, System.Random rng,
-                                    Func<GameObject, Transform, GameObject> raise)
+                                    Func<GameObject, Transform, GameObject> raise,
+                                    int venueOffset = 0)
         {
             Begin(raise);
             var stood = new Stood { Plan = plan, Root = root };
 
             BookTheWay(plan);
-            Programmes(plan, root, rng, stood);
+            Programmes(plan, root, rng, stood, venueOffset);
             Ornament(plan, root, rng, stood);
             WaterLine(plan, root, rng, stood);
             Furniture(plan, root, rng, stood);
@@ -302,10 +325,12 @@ namespace RoadDemo
 
         // ---------------------------------------------------------------- the programmes
 
-        static void Programmes(QuayWalk.Plan plan, Transform root, System.Random rng, Stood stood)
+        static void Programmes(QuayWalk.Plan plan, Transform root, System.Random rng, Stood stood,
+                               int venueOffset)
         {
             var under = new GameObject("Programmes").transform;
             under.SetParent(root, false);
+            int venue = ((venueOffset % Venues.Length) + Venues.Length) % Venues.Length;
             foreach (var room in plan.Rooms)
             {
                 var box = Fit(plan, room);
@@ -313,13 +338,18 @@ namespace RoadDemo
                 switch (room.Programme)
                 {
                     case QuayWalk.Programme.Fountain: Plaza(under, box, rng, stood); break;
-                    case QuayWalk.Programme.Terrace: Terrace(plan, under, box, rng, stood); break;
+                    case QuayWalk.Programme.Terrace:
+                        VenueStand(under, box, rng, stood, ref venue);
+                        break;
                     case QuayWalk.Programme.Landing: Landing(plan, under, room, rng, stood); break;
                     case QuayWalk.Programme.Fair: Fair(under, box, stood); break;
-                    case QuayWalk.Programme.Diner: DinerStand(under, box, rng, stood); break;
+                    case QuayWalk.Programme.Diner:
+                        VenueStand(under, box, rng, stood, ref venue);
+                        break;
                     default: break;       // the lawn and the grove are planted, the paving is left
                 }
             }
+            stood.NextVenueOffset = venue;
         }
 
         // ------------------------------------------------------------------ the ornament
@@ -394,35 +424,92 @@ namespace RoadDemo
             return true;
         }
 
-        /// <summary>The diner, its back a step off the kerb and its front to the water, with
-        /// a few tables under umbrellas before it - a roadside diner turned to the river,
-        /// which is what a 1987 waterfront made of the ones it had.</summary>
-        static void DinerStand(Transform under, Rect box, System.Random rng, Stood stood)
+        /// <summary>
+        /// Stands one complete PalmCityDemo venue with its real front toward the river.
+        /// The authored groups already carry their own walls, signs, tables and gym kit;
+        /// only the two extracted Restaurant buildings receive a modest table apron here.
+        /// If the scheduled venue is too large for this room, the other requested venues
+        /// are tried in their authored order rather than shrinking one.
+        /// </summary>
+        static void VenueStand(Transform under, Rect box, System.Random rng, Stood stood,
+                               ref int cursor)
         {
-            var pen = new GameObject("diner").transform;
-            pen.SetParent(under, false);
-            float yaw = FrontYaw(Diner);
-            var foot = Foot(Diner, yaw);
-            float x = box.xMin + foot.x * 0.5f + 0.6f, z = box.center.y;
-            if (Building(Diner, pen, x, z, yaw, 1.03f) == null) return;
-            stood.DinerStood = true;
-            stood.Programmes++;
-            float chair = Box(CafeChair).size.x * 0.5f + Box(CafeTable).size.x * 0.5f + 0.05f;
-            float tx = x + foot.x * 0.5f + 2.4f;
-            if (tx > box.xMax - 1f) return;
-            for (float tz = z - foot.y * 0.5f + 1.5f; tz < z + foot.y * 0.5f - 1f; tz += TableAlong)
+            for (int attempt = 0; attempt < Venues.Length; attempt++)
             {
-                var table = Prop(CafeTable, pen, tx, tz, 90f * rng.Next(4), 1.15f);
+                int index = (cursor + attempt) % Venues.Length;
+                var venue = Venues[index];
+                float yaw = VenueYaw(venue);
+                var foot = Foot(venue.Path, yaw);
+                const float Air = 0.6f;
+                if (foot.x + 2f * Air > box.width || foot.y + 2f * Air > box.height)
+                    continue;
+
+                float x = box.xMin + Air + foot.x * 0.5f;
+                float z = box.center.y;
+                var pen = new GameObject(venue.Name).transform;
+                pen.SetParent(under, false);
+                var go = Building(venue.Path, pen, x, z, yaw, 1.02f);
+                if (go == null)
+                {
+                    UnityEngine.Object.DestroyImmediate(pen.gameObject);
+                    continue;
+                }
+
+                go.name = venue.Name;
+                stood.VenueNames.Add(venue.Name);
+                stood.Programmes++;
+                stood.DinerStood |= venue.Name.StartsWith("dinner", StringComparison.Ordinal);
+                stood.GymStood |= venue.Name == "gym";
+                cursor = (index + 1) % Venues.Length;
+
+                // dinner, dinner2 and the three radnja groups bring their authored outdoor
+                // details with them. Restaurant_01/02 are buildings, so give them a small
+                // river-facing terrace in the remaining apron without touching the clear way.
+                if (venue.Unit == null && venue.Name.StartsWith("restoran", StringComparison.Ordinal))
+                    VenueTables(pen, box, rng, stood, x + foot.x * 0.5f + 1.5f, z, foot.y);
+                return;
+            }
+
+            Refused["PalmCityDemo venue"] = Refused.TryGetValue("PalmCityDemo venue", out int seen)
+                ? seen + 1 : 1;
+        }
+
+        static float VenueYaw(Venue venue)
+        {
+            if (venue.Unit == null)
+                return FrontYaw(venue.Path);
+
+            // ResidentialUnit faces are south, east, north, west. A positive Unity yaw
+            // turns north toward east; choose the first authored public face and rotate it
+            // onto the quay's +X water side.
+            int front = 2;
+            for (int side = 0; side < venue.Unit.Face.Length; side++)
+                if (venue.Unit.Face[side]) { front = side; break; }
+            return 90f * ((front - 1 + 4) % 4);
+        }
+
+        static void VenueTables(Transform pen, Rect box, System.Random rng, Stood stood,
+                                float x, float z, float frontage)
+        {
+            if (x > box.xMax - 1.2f) return;
+            float chair = Box(CafeChair).size.x * 0.5f + Box(CafeTable).size.x * 0.5f + 0.05f;
+            float z0 = Mathf.Max(box.yMin + 1.5f, z - frontage * 0.5f + 1.5f);
+            float z1 = Mathf.Min(box.yMax - 1.5f, z + frontage * 0.5f - 1f);
+            for (float tz = z0; tz < z1; tz += TableAlong)
+            {
+                var table = Prop(CafeTable, pen, x, tz, 90f * rng.Next(4), 1.15f);
                 if (table == null) continue;
                 stood.Tables++;
                 for (int k = 0; k < 4; k++)
                 {
-                    var spot = Quaternion.Euler(0f, k * 90f, 0f) * new Vector3(0f, 0f, chair);
-                    Sit(CafeChair, pen, tx + spot.x, tz + spot.z, k * 90f + 180f + Between(rng, -15f, 15f));
+                    float yaw = k * 90f;
+                    var spot = Quaternion.Euler(0f, yaw, 0f) * new Vector3(0f, 0f, chair);
+                    Sit(CafeChair, pen, x + spot.x, tz + spot.z,
+                        yaw + 180f + Between(rng, -15f, 15f));
                 }
-                if (Chance(rng, 0.5)) Sit(Umbrella, pen, tx, tz, Between(rng, 0f, 360f));
+                if (Chance(rng, 0.5)) Sit(Umbrella, pen, x, tz, Between(rng, 0f, 360f));
             }
-            Prop(SignPole, pen, x + foot.x * 0.5f + 0.8f, z + foot.y * 0.5f + 0.8f, yaw);
+            Prop(MenuStand, pen, x - 0.8f, z + frontage * 0.5f + 0.6f, 90f);
         }
 
         /// <summary>The fountain in the middle of its plaza, the water playing, four benches
@@ -443,63 +530,6 @@ namespace RoadDemo
                 float x = middle.x + spot.x, z = middle.y + spot.z;
                 if (!box.Contains(new Vector2(x, z))) continue;
                 if (Prop(ParkBench, under, x, z, yaw + 180f) != null) stood.Benches++;
-            }
-        }
-
-        /// <summary>
-        /// The cafe: a kiosk by the kerb with its front to the water, a menu stand at its
-        /// corner, and the tables between it and the walk - the pier's own rate, four to
-        /// ten metres, in rows, every other one under an umbrella.
-        /// </summary>
-        static void Terrace(QuayWalk.Plan plan, Transform under, Rect box, System.Random rng, Stood stood)
-        {
-            var pen = new GameObject("terrace").transform;
-            pen.SetParent(under, false);
-
-            // the kiosk, its front to the water (+x) - measured, not assumed - a metre off
-            // the kerb in the middle of the room's length; one cafe in four is the
-            // catalog's coffee shop instead of a beach kiosk
-            string kiosk = Chance(rng, 0.25) ? CoffeeShop : Any(Kiosks, rng);
-            float face = FrontYaw(kiosk);
-            var foot = Foot(kiosk, face);
-            float kx = box.xMin + foot.x * 0.5f + 0.8f, kz = box.center.y;
-            var stood0 = kiosk == CoffeeShop ? Building(kiosk, pen, kx, kz, face, 1.05f)
-                                             : Prop(kiosk, pen, kx, kz, face, 1.05f);
-            if (stood0 == null) return;
-            stood.Kiosks++;
-            stood.Programmes++;
-            Prop(MenuStand, pen, kx + foot.x * 0.5f + 0.6f, kz + foot.y * 0.5f + 0.3f, 90f);
-            // the paper stand and the bike stand by its flank
-            Prop(NewsStand, pen, kx + Between(rng, -1f, 1f), kz - foot.y * 0.5f - 1.2f, Between(rng, 0f, 360f));
-            Prop(BikeStand, pen, kx - foot.x * 0.5f + 0.4f, kz + foot.y * 0.5f + 1.6f, 90f);
-
-            // the tables: two rows before the kiosk, the pier's own terrace and no bigger -
-            // laid to fill the room, a 45 m room came out with seventy-five of them, which
-            // is a beer garden and not a cafe on a promenade
-            float x0 = kx + foot.x * 0.5f + 1.6f, x1 = box.xMax - 0.6f;
-            int rows = Mathf.Min(TerraceRows, Mathf.FloorToInt((x1 - x0) / TableRows));
-            if (rows <= 0) return;
-            float chair = Box(CafeChair).size.x * 0.5f + Box(CafeTable).size.x * 0.5f + 0.05f;
-            float zLo = Mathf.Max(box.yMin + 1.6f, kz - TerraceHalf), zHi = Mathf.Min(box.yMax - 1.6f, kz + TerraceHalf);
-            for (int r = 0; r < rows; r++)
-            {
-                float x = x0 + (r + 0.5f) * TableRows;
-                for (float z = zLo; z < zHi; z += TableAlong)
-                {
-                    float tz = z + Between(rng, -0.25f, 0.25f);
-                    var table = Prop(CafeTable, pen, x, tz, 90f * rng.Next(4), 1.15f);
-                    if (table == null) continue;
-                    stood.Tables++;
-                    // the chairs on the four sides, turned to the table
-                    for (int k = 0; k < 4; k++)
-                    {
-                        float yaw = k * 90f;
-                        var spot = Quaternion.Euler(0f, yaw, 0f) * new Vector3(0f, 0f, chair);
-                        Sit(CafeChair, pen, x + spot.x, tz + spot.z, yaw + 180f + Between(rng, -15f, 15f));
-                    }
-                    if ((r + Mathf.RoundToInt((z - box.yMin) / TableAlong)) % 2 == 0)
-                        Sit(Umbrella, pen, x, tz, Between(rng, 0f, 360f));
-                }
             }
         }
 
@@ -903,10 +933,11 @@ namespace RoadDemo
                       $"{stood.RailGap:F1} m of railing missing, {stood.OnWalk} thing(s) in the way; " +
                       $"{stood.Lamps} lamp(s), {stood.Rings} ring(s), {stood.Ladders} ladder(s), {stood.Benches} bench(es), " +
                       $"{stood.BinCount} bin(s), {stood.TreeCount} tree(s), {stood.PalmCount} palm(s), {stood.Planters} planter(s), " +
-                      $"{stood.Kiosks} kiosk(s), {stood.Tables} table(s), {stood.Carts} cart(s), " +
+                      $"{stood.VenueNames.Count} PalmCityDemo venue(s) [{string.Join(", ", stood.VenueNames)}], " +
+                      $"{stood.Tables} added table(s), {stood.Carts} cart(s), " +
                       $"{stood.ArchCount} arch(es), {stood.PavilionCount} pavilion(s), " +
                       $"{stood.BoatCount} boat(s), {stood.Programmes} programme(s)" + (stood.Wheel ? ", the wheel" : "") +
-                      (stood.DinerStood ? ", the diner" : ""));
+                      (stood.DinerStood ? ", a diner" : "") + (stood.GymStood ? ", the gym" : ""));
             if (stood.InTheWay.Count > 0)
                 sb.Append(Environment.NewLine).Append("   WARNING: in the way: ").Append(string.Join(", ", stood.InTheWay));
             if (!string.IsNullOrEmpty(stood.Refused))

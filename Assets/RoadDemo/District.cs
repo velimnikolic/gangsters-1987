@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -102,6 +103,11 @@ namespace RoadDemo
     {
         /// <summary>Ground the district tiles itself: the island skips these cells.</summary>
         public readonly List<Rect> Paved = new List<Rect>();
+        /// <summary>Non-rectangular paved footprints. The point is the centre of one
+        /// island-ground cell and inset is its half-size; the predicate returns true only
+        /// when that whole cell is covered by the district's own surfaces.</summary>
+        public readonly List<Func<float, float, float, bool>> PavedTests =
+            new List<Func<float, float, float, bool>>();
         /// <summary>Ground the island must hold flat, and at what height.</summary>
         public readonly List<(Rect area, float level)> Flat = new List<(Rect, float)>();
         /// <summary>Water: the coast may not cross into these - a harbour basin.</summary>
@@ -116,6 +122,10 @@ namespace RoadDemo
         public readonly List<Rect> Bare = new List<Rect>();
 
         public void Pave(Rect world) => Paved.Add(world);
+        public void Pave(Func<float, float, float, bool> test)
+        {
+            if (test != null) PavedTests.Add(test);
+        }
         public void Level(Rect world, float y) => Flat.Add((world, y));
         public void Sea(Rect world) => Sea(world, true);
 
@@ -143,6 +153,8 @@ namespace RoadDemo
                 if (x > r.xMin + inset && x < r.xMax - inset &&
                     z > r.yMin + inset && z < r.yMax - inset) return true;
             }
+            for (int i = 0; i < PavedTests.Count; i++)
+                if (PavedTests[i](x, z, inset)) return true;
             return false;
         }
 

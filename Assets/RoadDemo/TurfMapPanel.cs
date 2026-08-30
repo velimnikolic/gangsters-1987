@@ -369,7 +369,7 @@ namespace RoadDemo
 
         // Bump when the runtime-built row shape changes, so an in-Play script reload
         // rebuilds existing paper instead of leaving the pre-change controls standing.
-        const int PanelLayoutVersion = 2;
+        const int PanelLayoutVersion = 3;
 
         public void Refresh()
         {
@@ -417,8 +417,12 @@ namespace RoadDemo
             // pair of the same size changes nothing in this number, and the roster's
             // red edge would stay on the crews it was on before.
             foreach (var crew in _hud.Units)
+            {
+                var boss = crew.Unit != null ? crew.Unit.Boss : null;
                 stamp = stamp * 31 + (int)crew.Order + crew.MenStanding * 13 +
+                        crew.HoodsOnBooks * 17 + (boss != null ? boss.CharacterId * 19 : 0) +
                         (_hud.IsGathered(crew.Id) ? 7 : 0);
+            }
             return stamp;
         }
 
@@ -518,9 +522,12 @@ namespace RoadDemo
             _mugImage.enabled = false;
             _mugImage.raycastTarget = false;
 
-            var body = string.IsNullOrEmpty(crew.Look)
-                ? null
-                : PortraitStudio.FindPeoplePrefab(crew.Look);
+            // Prefer the exact prefab walking outside. If the unit has not been dealt
+            // yet, ask the same MemberModel door the street spawn uses; never resolve a
+            // second, merely similar face from a copied string.
+            var body = crew.Unit != null && crew.Unit.Boss != null
+                ? crew.Unit.Boss.SourcePrefab
+                : crew.Lieutenant != null ? PersonnelAlmanac.MemberModel(crew.Lieutenant) : null;
             if (body != null)
                 // The map dossier is the same personnel file viewed from the plan:
                 // use the ledger's full-colour bust, not the newspaper halftone.
@@ -538,15 +545,15 @@ namespace RoadDemo
             y -= LedgerKit.LineBox(15f);
 
             // The typewritten kicker is the one line here that can run to any length -
-            // a rank, a family and an alias - so it is the one line set without extra
-            // tracking and cut rather than allowed to run off the paper.
+            // a rank and a family - so it is set without extra tracking and cut rather
+            // than allowed to run off the paper. Character has no alias field, so this
+            // must not invent one by repeating the unit's name.
             // A rival's lieutenant is on nobody's books and has no rank to print, so
             // the line starts at his family rather than at a blank.
             var house = TurfHouses.For(crew.GangId);
             var sub = LedgerKit.Line(_dossierRect, LedgerStyle.Mono, 9f, Red, Pad, y, inner,
                 LedgerKit.LineBox(9f),
-                (string.IsNullOrEmpty(crew.Rank) ? "" : crew.Rank + " · ") + house.Short +
-                (string.IsNullOrEmpty(crew.Alias) ? "" : " · " + crew.Alias));
+                (string.IsNullOrEmpty(crew.Rank) ? "" : crew.Rank + " · ") + house.Short);
             sub.overflowMode = TextOverflowModes.Ellipsis;
             y -= LedgerKit.LineBox(9f) + 6f;
 
@@ -556,7 +563,7 @@ namespace RoadDemo
             y -= SkillRow(_dossierRect, Pad, y, inner, "Intelligence", crew.Intelligence);
             y -= SkillRow(_dossierRect, Pad, y, inner, "Organization", crew.Organization);
             y -= SkillRow(_dossierRect, Pad, y, inner, "Firearms", crew.Firearms);
-            y -= CountRow(_dossierRect, Pad, y, inner, "MEN", crew.MenStanding + " / 6");
+            y -= CrewCountRow(_dossierRect, Pad, y, inner, crew);
 
             y -= 5f;
             Caps(_dossierRect, Pad, y, inner, "CARRYING", MicroType, Label,
@@ -632,21 +639,47 @@ namespace RoadDemo
             return StatHeight;
         }
 
-        /// <summary>The crew's headcount belongs below the three personal ratings,
-        /// because it describes the crew rather than the lieutenant.</summary>
-        float CountRow(Transform parent, float x, float y, float w, string key, string value)
+        /// <summary>The count and both personnel doors in one row. This is HOODS, not
+        /// total bodies: the lieutenant is not one of his own four recruitable slots.</summary>
+        float CrewCountRow(Transform parent, float x, float y, float w, TurfCrew crew)
         {
-            const float inset = 6f;
-            var row = DemoUi.NewRect("Stat", parent);
+            const float inset = 6f, control = 17f, number = 48f, gap = 3f;
+            var row = DemoUi.NewRect("Hoods", parent);
             LedgerKit.PlaceTopLeft(row, x, y, w, StatHeight);
             LedgerKit.Fill(row, Well);
             LedgerKit.Frame(row, 1f, RuleFaint);
-            Caps(row, inset, Mid(StatHeight, LedgerKit.LineBox(MicroType)), 60f, key,
+            Caps(row, inset, Mid(StatHeight, LedgerKit.LineBox(MicroType)), 60f, "HOODS",
                 MicroType, Label, LedgerStyle.Condensed);
-            LedgerKit.Line(row, LedgerStyle.Mono, 11f, Red, 0f,
-                Mid(StatHeight, LedgerKit.LineBox(11f)), w - inset,
-                LedgerKit.LineBox(11f), value, TextAlignmentOptions.MidlineRight);
+
+            float plusX = w - control;
+            float numberX = plusX - gap - number;
+            float minusX = numberX - gap - control;
+            InlineCountButton(row, minusX, "−", crew.Mine && crew.HoodsOnBooks > 0,
+                () => _hud.ReleaseHood(crew));
+            LedgerKit.Line(row, LedgerStyle.Mono, 11f, Red, numberX, 0f, number,
+                StatHeight, crew.HoodsOnBooks + " / " + LivingCity.Personnel.Crew.MaxHoods,
+                TextAlignmentOptions.Center);
+            InlineCountButton(row, plusX, "+",
+                crew.Mine && crew.HoodsOnBooks < LivingCity.Personnel.Crew.MaxHoods,
+                () => _hud.RecruitHood(crew));
             return StatHeight + 4f;
+        }
+
+        void InlineCountButton(Transform parent, float x, string glyph, bool enabled,
+            UnityEngine.Events.UnityAction run)
+        {
+            var rect = DemoUi.NewRect(glyph == "+" ? "Recruit" : "Release", parent);
+            LedgerKit.PlaceTopLeft(rect, x, 0f, StatHeight, StatHeight);
+            var colour = enabled ? (Color)Red : Dim;
+            var face = Clickable(rect, new Color(0f, 0f, 0f, 0f));
+            face.raycastTarget = enabled;
+            LedgerKit.Frame(rect, 1f, enabled ? Red : RuleFaint);
+            var mark = LedgerKit.Line(rect, LedgerStyle.MonoBold, 13f, colour,
+                0f, 0f, StatHeight, StatHeight, glyph, TextAlignmentOptions.Center);
+            if (!enabled)
+                return;
+            LedgerKit.RowButton(rect, face, run);
+            Hover.Add(rect, face, mark, colour, new Color32(242, 230, 204, 255));
         }
 
         float KitBox(Transform parent, float x, float y, float w, string text)

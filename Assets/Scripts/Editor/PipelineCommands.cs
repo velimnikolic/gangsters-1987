@@ -533,6 +533,8 @@ namespace GangstersTools
                     benches = stood.Benches,
                     tables = stood.Tables,
                     kiosks = stood.Kiosks,
+                    venues = stood.VenueNames,
+                    gym = stood.GymStood,
                     arches = stood.ArchCount,
                     pavilions = stood.PavilionCount,
                     trees = stood.TreeCount,

@@ -295,7 +295,11 @@ namespace RoadDemo
         {
             held = 1f;
             float d = OutsideGrid(x, z, out float toSea);
-            if (d <= 0f) return 0f;
+            // A generated primary structure can have intentional holes inside its
+            // rectangular bounds. Its exact paved mask removes covered ground later;
+            // what remains sits just below the authored surfaces instead of exposing the
+            // sea plane or fighting coplanar road tiles at the irregular city edge.
+            if (d <= 0f) return HasPrimaryStructure ? RoadBed : 0f;
             held = 0f;
 
             // rolling ground: low knolls, never a cliff, and dead flat by the road
@@ -524,7 +528,11 @@ namespace RoadDemo
                     // yard took a four-metre bite of ground with it, and the ring of
                     // those bites round the quarter is the open air you could see the
                     // sea through.
-                    if (cx > _gx0 && cx < _gx1 && cz > _gz0 && cz < _gz1) continue;
+                    // The ordinary grid fully tiles this rectangle. A primary structure
+                    // such as Core does not: its own reservation publishes an exact paved
+                    // mask so Outside cells keep real island ground.
+                    if (!HasPrimaryStructure &&
+                        cx > _gx0 && cx < _gx1 && cz > _gz0 && cz < _gz1) continue;
                     if (_reservations.InPaved(cx, cz, GroundStep * 0.5f)) continue;
                     int a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
                     float low = Mathf.Min(verts[a].y, verts[b].y, verts[c].y, verts[d].y);

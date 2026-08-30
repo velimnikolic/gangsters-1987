@@ -3410,26 +3410,39 @@ namespace RoadDemo
             List<List<(string boss, List<string> hoods)>> byFamily, List<Vector3> taken)
         {
             var fronts = new DemoDoor[gangs.Length];
-            var doors = new List<DemoDoor>();
-            if (_life != null)
+            var doors = PrimaryCore != null ? CoreOutfitDoors() : new List<DemoDoor>();
+            if (PrimaryCore == null && _life != null)
                 foreach (var door in _life.Doors)
-                    if (door.Building != null)
+                    if (door.Building != null &&
+                        !doors.Exists(other => other.Building == door.Building))
                         doors.Add(door);
 
             if (doors.Count == 0)
             {
-                Debug.LogWarning("[RoadDemo] No street door has a building behind it - " +
-                                 "the families operate out of nowhere.");
+                Debug.LogWarning(PrimaryCore != null
+                    ? "[RoadDemo] Core has no residential ground-floor shop on a reachable pavement - the families operate out of nowhere."
+                    : "[RoadDemo] No street door has a building behind it - the families operate out of nowhere.");
                 return fronts;
             }
 
-            var claimed = new HashSet<GameObject>();
+            var candidates = new List<LivingCity.Gangs.GangFronts.FrontCandidate>(doors.Count);
+            foreach (var door in doors)
+                candidates.Add(new LivingCity.Gangs.GangFronts.FrontCandidate(
+                    door.BlockId, door.EntryPos.x, door.EntryPos.z));
+
+            var active = Mathf.Min(families + 1, gangs.Length);
+            var picks = LivingCity.Gangs.GangFronts.Select(
+                candidates, gangs[0].FrontRoll, active);
+
             for (int id = 0; id <= families; id++)
             {
-                var door = FarthestDoor(doors, claimed, taken);
-                if (door == null) break;
+                if (id >= picks.Length || picks[id] < 0)
+                    break;
 
-                claimed.Add(door.Building);
+                var door = doors[picks[id]];
+                if (PrimaryCore != null)
+                    StandLogicalFront(door, gangs[id].Name);
+
                 taken.Add(door.EntryPos);
                 fronts[id] = door;
 
@@ -3483,6 +3496,9 @@ namespace RoadDemo
         /// street in the city's own metres, evens on one side as they are everywhere.</summary>
         string AddressOf(DemoDoor door)
         {
+            if (!string.IsNullOrEmpty(door.Address))
+                return door.Address;
+
             bool onVertical = Mathf.Abs(door.Outward.x) > Mathf.Abs(door.Outward.z);
             string name = null;
             float along = 0f;
@@ -4208,8 +4224,7 @@ namespace RoadDemo
             var go = new GameObject("DayNight");
 
             var clock = go.AddComponent<DemoClock>();
-            clock.secondsPerGameHour = Mathf.Max(0.02f, realSecondsPerGameHour);
-            clock.startHour = startHour;
+            clock.Configure(startHour, realSecondsPerGameHour);
 
             var sky = go.AddComponent<DemoSky>();
             sky.clock = clock;
@@ -4252,13 +4267,30 @@ namespace RoadDemo
             // With no root the component scans the scene and still filters vehicle glass.
             windows.facadeRoot = HasPrimaryStructure ? null : _blocks;
 
+            var parkedGlow = go.AddComponent<DemoParkedCarGlow>();
+            parkedGlow.clock = clock;
+            foreach (var v in _vehicles)
+                parkedGlow.Register(v);
+            foreach (var police in _policeCars)
+                parkedGlow.Register(police);
+
             var headlights = go.AddComponent<DemoHeadlights>();
             headlights.clock = clock;
+            headlights.Watch(_crews);
             foreach (var v in _vehicles)
                 headlights.Register(v);
             foreach (var traffic in _highwayTraffic)
                 foreach (var car in traffic.Cars())
                     headlights.Register(car, 2.3f);
+            if (PrimaryCore != null)
+                foreach (var car in PrimaryCore.ParkingCars())
+                {
+                    // These cars alternate between a real parking bay and the lane
+                    // graph. The two systems are mutually exclusive by vehicle state:
+                    // beams while moving, subtle non-casting accents while parked.
+                    headlights.Register(car);
+                    parkedGlow.Register(car);
+                }
 
             var hudGo = new GameObject("Clock HUD");
             hudGo.AddComponent<DemoClockHud>().Init(clock);

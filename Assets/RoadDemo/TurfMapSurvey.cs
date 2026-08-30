@@ -241,6 +241,9 @@ namespace RoadDemo
         Transform _blockRoot;
         readonly List<Rect> _residentialGreens = new List<Rect>();
         readonly List<ParkSurface> _parkSurfaces = new List<ParkSurface>();
+        readonly List<Rect> _corePaving = new List<Rect>();
+        readonly List<Rect> _coreWater = new List<Rect>();
+        readonly List<Rect> _corePromenades = new List<Rect>();
         int _residentialGeometryVersion = -1;
 
         /// <summary>The whole city and a margin - what the map shows when the wheel is
@@ -256,6 +259,12 @@ namespace RoadDemo
         public int ResidentialGreenCount => _residentialGreens.Count;
         /// <summary>Real kerb, walk and plaza cells published by composed Core park plans.</summary>
         public int ParkSurfaceCount => _parkSurfaces.Count;
+        /// <summary>Exact accepted-raster paving strips represented for Core.</summary>
+        public int CorePavingCount => _corePaving.Count;
+        /// <summary>Plan-owned Core water rectangles represented on this survey.</summary>
+        public int CoreWaterCount => _coreWater.Count;
+        /// <summary>Plan-owned Core promenade stretches represented on this survey.</summary>
+        public int CorePromenadeCount => _corePromenades.Count;
 
         /// <summary>Refreshes model-derived footprints on the main thread when a future
         /// generator replaces a recipe. A worker draw is never mutated underneath.</summary>
@@ -325,6 +334,7 @@ namespace RoadDemo
             CollectBuildings(blockRoot);
             _residentialGeometryVersion = _builder.ResidentialGeometryVersion;
             CollectDistricts();
+            CollectCoreRiver();
 
             // Every family's ink mixed here, on the main thread, so no drawing pass has
             // to mix one - two surveys draw at once and they would be mixing into the
@@ -474,6 +484,7 @@ namespace RoadDemo
             DrawGround();
             DrawSeams();
             DrawQuarters();
+            DrawCoreRiver();
             // Concrete district ground is the base; intentional parks are printed over it.
             // The old order erased every Core park under the primary district rectangle.
             DrawGreen();
@@ -661,6 +672,37 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>Core's river is plan-owned water, not one of the old grid seams. Draw
+        /// it after the primary district's concrete base, then restore the promenade on
+        /// its bank; road ink later crosses it only where the plan actually has a bridge.</summary>
+        void DrawCoreRiver()
+        {
+            // The primary Core DistrictPlan is only a rectangular host bound. Print the
+            // accepted raster instead, so real city hardstanding remains while its Outside
+            // cells do not become a concrete frame around the map.
+            for (int i = 0; i < _corePaving.Count; i++)
+            {
+                var plan = _plan.ToPlan(_corePaving[i]);
+                if (OnSheet(plan)) Ground.Fill(plan, TurfInk.Concrete);
+            }
+
+            for (int i = 0; i < _coreWater.Count; i++)
+            {
+                var plan = _plan.ToPlan(_coreWater[i]);
+                if (!OnSheet(plan)) continue;
+                Ground.Fill(plan, TurfInk.Water);
+                MarkWater(plan);
+                for (int ry = PxY(plan.yMin); ry < PxY(plan.yMax); ry += 4)
+                    Ground.Px(PxX(plan.xMin), ry, PxW(plan.width), 1, TurfInk.Water2);
+            }
+
+            for (int i = 0; i < _corePromenades.Count; i++)
+            {
+                var plan = _plan.ToPlan(_corePromenades[i]);
+                if (OnSheet(plan)) Ground.Fill(plan, TurfInk.Concrete);
+            }
+        }
+
         void MarkWater(Rect plan)
         {
             int x0 = Mathf.Max(0, PxX(plan.xMin)), x1 = Mathf.Min(TurfPlate.RW, PxX(plan.xMax));
@@ -722,6 +764,12 @@ namespace RoadDemo
             foreach (var district in _builder.DistrictPlans)
             {
                 if (district.Kind == DistrictKind.Suburb)
+                    continue;
+                // Core is an irregular plan of blocks, streets, parks and open river.
+                // Its primary DistrictPlan is only a hosting/camera bound; filling that
+                // rectangle prints a fake pavement frame around the whole city.
+                if (_builder.HasPrimaryStructure &&
+                    district.Name == _builder.PrimaryCore?.Name)
                     continue;
 
                 var plan = _plan.ToPlan(district.World);
@@ -1586,6 +1634,57 @@ namespace RoadDemo
             }
 
             CollectQuayLandmarks(core);
+        }
+
+        /// <summary>Copies Core's river geometry into plain world rectangles while still
+        /// on the main thread. The draw pass can then print it without reading the live
+        /// district or relying on the water plane's renderer.</summary>
+        void CollectCoreRiver()
+        {
+            _corePaving.Clear();
+            _coreWater.Clear();
+            _corePromenades.Clear();
+            var core = _builder != null ? _builder.PrimaryCore : null;
+            var layout = core?.Layout;
+            if (layout == null || layout.Water.width <= 0.01f || layout.Water.height <= 0.01f)
+                return;
+
+            // Compact each raster row into actual paved runs. Water, Spare and remote
+            // Outside stay absent; only the single explicit city-edge pavement band is
+            // retained before parks/buildings print their more specific ink.
+            var raster = core.Raster;
+            if (raster != null)
+                for (int j = 0; j < raster.NZ; j++)
+                {
+                    int from = -1;
+                    for (int i = 0; i <= raster.NX; i++)
+                    {
+                        var kind = i < raster.NX ? raster.At(i, j) : CoreRoads.Kind.Outside;
+                        bool paved = core.IsCityEdgePavement(i, j) ||
+                                     kind != CoreRoads.Kind.Outside &&
+                                     kind != CoreRoads.Kind.Water &&
+                                     kind != CoreRoads.Kind.Spare;
+                        if (paved && from < 0)
+                            from = i;
+                        else if (!paved && from >= 0)
+                        {
+                            var strip = new Rect(raster.X(from), raster.Z(j),
+                                (i - from) * CoreRoads.Cell, CoreRoads.Cell);
+                            _corePaving.Add(core.Frame.ToWorldRect(strip));
+                            from = -1;
+                        }
+                    }
+                }
+
+            // Match RiverBridge.Dress: the water continues beyond both ends of the built
+            // city, so the survey reads it as a river passing the town rather than a blue
+            // rectangle which stops at the last block.
+            var water = Rect.MinMaxRect(
+                layout.Water.xMin, layout.River.Z0 - RiverBridge.Reach,
+                layout.Water.xMax, layout.River.Z1 + RiverBridge.Reach);
+            _coreWater.Add(core.Frame.ToWorldRect(water));
+            for (int i = 0; i < layout.Quays.Count; i++)
+                _corePromenades.Add(core.Frame.ToWorldRect(layout.Quays[i].Box));
         }
 
         void CollectQuayLandmarks(CoreDistrict core)

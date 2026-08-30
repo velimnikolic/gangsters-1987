@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.UI;
@@ -180,6 +181,8 @@ namespace RoadDemo
         TurfCrew _inspectedCrew;
         TurfBuilding _inspectedBuilding;
         TurfDistrict _inspectedDistrict;
+        bool _crewFileRequested;
+        int _seenPersonnelVersion = -1;
 
         bool _dragging, _dragMoved;
 
@@ -213,7 +216,7 @@ namespace RoadDemo
         /// than a set: a selection is a handful of crews and the panel asks once a
         /// row.</summary>
         public bool IsGathered(int crewId) => _selected.Contains(crewId);
-        public TurfCrew InspectedCrew => _inspectedCrew;
+        public TurfCrew InspectedCrew => _crewFileRequested ? _inspectedCrew : null;
         public TurfBuilding InspectedBuilding => _inspectedBuilding;
         public TurfDistrict InspectedDistrict => _inspectedDistrict;
 
@@ -242,6 +245,10 @@ namespace RoadDemo
             }
 
             BuildCanvas();
+            _inspectedCrew = null;
+            _crewFileRequested = false;
+            _inspectedBuilding = null;
+            _inspectedDistrict = null;
             BuildCrewPanel();
 
             // The ruler has to exist before the first draw: the crossings pass steers
@@ -380,8 +387,11 @@ namespace RoadDemo
             if (want != IsOpen)
                 Show(want);
 
-            // The dossier is the street's standing desk: it persists when the survey
-            // closes, while the sheet's key, names and context menu do not.
+            // The roster is present in the 3D city as well as on the plan. Only the
+            // Personal File section is conditional on an explicit lieutenant click.
+            if (_crewPanel != null && !_crewPanel.gameObject.activeSelf)
+                _crewPanel.gameObject.SetActive(true);
+            RefreshCrewDossiers();
             _crewPanel.Refresh();
 
             if (!IsOpen)
@@ -1079,11 +1089,18 @@ namespace RoadDemo
         /// rebuilt where possible: a crew's dossier is its lieutenant's, and re-reading
         /// the roster every frame to print four stars would be a waste of a book.
         /// </summary>
-        void CollectCrews()
+        void CollectCrews(bool preserveContext = false)
         {
+            bool preserveCrewFile = preserveContext && _crewFileRequested;
+            int inspectedId = preserveCrewFile && _inspectedCrew != null
+                ? _inspectedCrew.Id : -1;
+            HashSet<int> gathered = preserveContext
+                ? new HashSet<int>(_selected) : null;
+
             _units.Clear();
             _selected.Clear();
             _inspectedCrew = null;
+            _crewFileRequested = false;
             if (_crews == null)
                 return;
 
@@ -1091,7 +1108,7 @@ namespace RoadDemo
 
             foreach (var unit in _crews.Units)
             {
-                if (unit == null || unit.IsPolice || unit.Wiped)
+                if (!EligibleCrewUnit(unit, roster))
                     continue;
 
                 var crew = new TurfCrew
@@ -1126,14 +1143,32 @@ namespace RoadDemo
                 var leader = Man(roster, unit.Boss);
                 crew.Rank = leader != null ? leader.Rank.ToString().ToUpperInvariant() : "";
                 crew.Name = crew.Men.Count > 0 ? crew.Men[0].Name : unit.Name;
-                crew.Alias = string.IsNullOrEmpty(unit.Name) ? "" : unit.Name.ToUpperInvariant();
                 crew.Ride = unit.Car != null ? unit.Car.DisplayName : "On foot";
+                crew.Gun = unit.Boss != null ? GunName(unit.Boss.WeaponKind) : "Bare hands";
                 crew.Loyal = unit.Loyalty;
                 crew.Zone = new Rect(unit.Position.x - ZoneWide * 0.5f,
                     unit.Position.z - ZoneDeep * 0.5f, ZoneWide, ZoneDeep);
 
                 ReadDossier(crew, roster);
                 _units.Add(crew);
+            }
+
+            _seenPersonnelVersion = PersonnelDirector.Instance != null
+                ? PersonnelDirector.Instance.Version : -1;
+
+            if (preserveContext)
+            {
+                foreach (var crew in _units)
+                {
+                    if (preserveCrewFile && crew.Id == inspectedId)
+                    {
+                        _inspectedCrew = crew;
+                        _crewFileRequested = true;
+                    }
+                    if (gathered.Contains(crew.Id) && crew.Mine && crew.Alive)
+                        _selected.Add(crew.Id);
+                }
+                return;
             }
 
             // The map opens on whoever the street had picked. The traffic goes the other
@@ -1165,9 +1200,10 @@ namespace RoadDemo
             if (lieutenant == null)
                 return;
 
+            crew.Book = book;
+            crew.Lieutenant = lieutenant;
             crew.Name = lieutenant.FullName;
             crew.Rank = lieutenant.Rank.ToString().ToUpperInvariant();
-            crew.Look = lieutenant.Look;
             crew.Intelligence = Stars(lieutenant,
                 LivingCity.Personnel.CharacterAttribute.Intelligence);
             crew.Organization = Stars(lieutenant,
@@ -1175,6 +1211,133 @@ namespace RoadDemo
             crew.Firearms = Stars(lieutenant,
                 LivingCity.Personnel.CharacterAttribute.Firearms);
             crew.Loyal = lieutenant.Loyalty;
+            crew.Gun = LedgerGun(roster, lieutenant);
+        }
+
+        /// <summary>Keeps an already-open file tied to the live street unit and the
+        /// versioned personnel book. The panel is persistent, so opening it once must
+        /// not freeze a name, face, weapon, ride or rating into a stale snapshot.</summary>
+        void RefreshCrewDossiers()
+        {
+            bool repaint = false;
+            if (CrewShapeChanged())
+            {
+                // PersonnelDirector.Start and DemoCrews.Update have no guaranteed order:
+                // on the first frame the persistent panel can collect an empty street,
+                // then never see the lieutenant dealt one Update later. A newspaper hire
+                // is the same shape change later in the game. Rebuild only when the live
+                // set changes, preserving the file and gathered crews already in use.
+                CollectCrews(preserveContext: true);
+                _mapChrome.SelectionChanged();
+                repaint = true;
+            }
+
+            var director = PersonnelDirector.Instance;
+            var roster = director != null ? director.Roster : null;
+            bool booksChanged = director != null && director.Version != _seenPersonnelVersion;
+            repaint |= booksChanged;
+
+            foreach (var crew in _units)
+            {
+                if (crew == null || crew.Unit == null)
+                    continue;
+
+                string ride = crew.Unit.Car != null ? crew.Unit.Car.DisplayName : "On foot";
+                string gun = crew.Mine && crew.Lieutenant != null
+                    ? LedgerGun(roster, crew.Lieutenant)
+                    : crew.Unit.Boss != null ? GunName(crew.Unit.Boss.WeaponKind) : "Bare hands";
+                if (crew.Ride != ride || crew.Gun != gun)
+                {
+                    crew.Ride = ride;
+                    crew.Gun = gun;
+                    repaint = true;
+                }
+
+                if (booksChanged && crew.Mine)
+                    ReadDossier(crew, roster);
+            }
+
+            if (director != null)
+                _seenPersonnelVersion = director.Version;
+            if (repaint)
+                _crewPanel.SelectionChanged();
+        }
+
+        /// <summary>Whether the panel's crew rows describe the same live units as the
+        /// street. Membership changes inside a crew do not rebuild the list; a hired,
+        /// dead or newly dealt lieutenant does.</summary>
+        bool CrewShapeChanged()
+        {
+            if (_crews == null)
+                return _units.Count != 0;
+
+            var roster = PersonnelDirector.Instance != null
+                ? PersonnelDirector.Instance.Roster : null;
+            int eligible = 0;
+            foreach (var unit in _crews.Units)
+            {
+                if (!EligibleCrewUnit(unit, roster))
+                    continue;
+                eligible++;
+
+                bool known = false;
+                foreach (var crew in _units)
+                    if (crew != null && crew.Unit == unit)
+                    {
+                        known = true;
+                        break;
+                    }
+                if (!known)
+                    return true;
+            }
+            return eligible != _units.Count;
+        }
+
+        /// <summary>Our rows appear only after the book and the street agree on the
+        /// lieutenant. This removes the one-frame synthetic name/portrait that used to
+        /// be printed while Start order was still unresolved.</summary>
+        static bool EligibleCrewUnit(DemoCrews.Unit unit,
+            LivingCity.Personnel.Roster roster)
+        {
+            if (unit == null || unit.IsPolice || unit.Wiped || unit.Boss == null)
+                return false;
+            if (unit.Faction != 0)
+                return true;
+            if (roster == null)
+                return false;
+
+            var book = roster.FindCrew(unit.CrewId);
+            var lieutenant = book != null ? roster.Find(book.LieutenantId) : null;
+            return lieutenant != null && unit.Boss.CharacterId == lieutenant.Id;
+        }
+
+        /// <summary>The same firearm answer used to arm the street: the exact item
+        /// assigned to this man, or the personal .38 that every ordinary outfit man
+        /// carries when no stock weapon is signed out to him.</summary>
+        static string LedgerGun(LivingCity.Personnel.Roster roster,
+            LivingCity.Personnel.Character man)
+        {
+            var item = man != null ? CrewArms.FirearmOf(roster, man.Id) : null;
+            if (item == null)
+                return "Revolver, .38 — his own";
+            return !string.IsNullOrEmpty(item.DisplayName)
+                ? item.DisplayName
+                : LivingCity.UI.LedgerText.EquipmentLabel(item.Kind);
+        }
+
+        /// <summary>The Personal File's plus and minus are only views onto the shared
+        /// personnel doors. Recruit pays and respects Crew.MaxHoods; release returns a
+        /// hood to the pool instead of deleting him.</summary>
+        public void RecruitHood(TurfCrew crew)
+        {
+            if (_crews != null && crew != null && _crews.Recruit(crew.Unit))
+                _seenPersonnelVersion = -1;
+        }
+
+        public void ReleaseHood(TurfCrew crew)
+        {
+            if (_crews != null && crew != null && _crews.ReleaseHood(crew.Unit))
+                _seenPersonnelVersion = -1;
         }
 
         /// <summary>The ledger entry behind a man on the street. Rivals are on
@@ -1198,6 +1361,8 @@ namespace RoadDemo
             foreach (var item in LivingCity.Outfit.ArmoryCatalog.Weapons)
                 if (item.Kind == kind)
                     return item.DisplayName;
+            if (kind == LivingCity.Personnel.EquipmentKind.Pistol)
+                return "Revolver, .38";
             return kind == LivingCity.Personnel.EquipmentKind.Grenade ? "Grenade" : "Bare hands";
         }
 
@@ -1211,7 +1376,8 @@ namespace RoadDemo
 
             var screen = mouse.position.ReadValue();
             bool overChrome = _mapChrome.ClaimsPointer(screen) ||
-                              _crewPanel.ClaimsPointer(screen);
+                              _crewPanel.ClaimsPointer(screen) ||
+                              (EventSystem.current && EventSystem.current.IsPointerOverGameObject());
             PointerOverChrome = overChrome;
 
             if (mouse.rightButton.wasPressedThisFrame && !overChrome)
@@ -1272,6 +1438,7 @@ namespace RoadDemo
             _inspectedBuilding = null;
             _inspectedDistrict = null;
             _inspectedCrew = null;
+            _crewFileRequested = false;
             Changed();
         }
 
@@ -1300,6 +1467,7 @@ namespace RoadDemo
             if (building != null)
             {
                 _inspectedCrew = null;
+                _crewFileRequested = false;
                 _inspectedDistrict = null;
                 _inspectedBuilding = building;
                 Changed();
@@ -1308,6 +1476,7 @@ namespace RoadDemo
 
             _selected.Clear();
             _inspectedCrew = null;
+            _crewFileRequested = false;
             _inspectedBuilding = null;
             _inspectedDistrict = _survey.DistrictAtPlan(plan);
             Changed();
@@ -1335,6 +1504,7 @@ namespace RoadDemo
             _inspectedBuilding = null;
             _inspectedDistrict = null;
             _inspectedCrew = crew;
+            _crewFileRequested = crew != null;
             Changed();
         }
 
@@ -1382,8 +1552,9 @@ namespace RoadDemo
             if (_crews == null)
                 return;
 
-            var pick = _inspectedCrew != null && _inspectedCrew.Mine && _inspectedCrew.Alive
-                ? _inspectedCrew
+            var inspected = InspectedCrew;
+            var pick = inspected != null && inspected.Mine && inspected.Alive
+                ? inspected
                 : FirstGathered();
             _crews.Select(pick != null ? pick.Unit : null);
         }
@@ -1401,6 +1572,7 @@ namespace RoadDemo
         public void ReadProperty(TurfBuilding building)
         {
             _inspectedCrew = null;
+            _crewFileRequested = false;
             _inspectedDistrict = null;
             _inspectedBuilding = building;
             Changed();
@@ -1409,6 +1581,7 @@ namespace RoadDemo
         public void ReadDistrict(TurfDistrict district)
         {
             _inspectedCrew = null;
+            _crewFileRequested = false;
             _inspectedBuilding = null;
             _inspectedDistrict = district;
             Changed();
@@ -1417,6 +1590,7 @@ namespace RoadDemo
         public void ClearInspection()
         {
             _inspectedCrew = null;
+            _crewFileRequested = false;
             _inspectedBuilding = null;
             _inspectedDistrict = null;
             _selected.Clear();
@@ -1819,7 +1993,7 @@ namespace RoadDemo
                 if (_selected.Contains(crew.Id) && crew.Mine)
                     Brackets(cx, cy, _indicatorScale);
 
-                if (_inspectedCrew == crew)
+                if (InspectedCrew == crew)
                 {
                     // the small cap above a crew whose file is open
                     int cap = Mathf.RoundToInt(BracketUnits * TurfPlate.S * _indicatorScale) + 2;

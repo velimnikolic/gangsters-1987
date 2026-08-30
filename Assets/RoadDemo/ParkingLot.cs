@@ -19,6 +19,7 @@ namespace RoadDemo
 
         public int CarCount => _cars.Count;
         public RoadEdge HomeLane => _home;
+        public IReadOnlyList<ParkingCar> Cars => _cars;
 
         public ParkingLot(
             ParkingBlockSite site, LaneNet net, int carCount, int seed, Transform liveRoot)

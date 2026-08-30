@@ -43,7 +43,7 @@ namespace RoadDemo
     //    somebody is out, somebody's flat is empty - so a share of them stay dark
     //    all night, and the rest go to bed at their own hour.
     //  - TRADE - shops, offices, the yards - all light, and shut at closing time,
-    //    which runs from half nine to a quarter to one across the lots. One lot
+    //    which runs from ten to half past midnight across the lots. One lot
     //    of them does not close at all: the garage, the lobby, the sign nobody
     //    has the key for.
     //  - LANDMARKS - the Palm Tower - burn from dusk to dawn and are exempt from
@@ -88,9 +88,6 @@ namespace RoadDemo
         static readonly int SyntyEmissionMap = Shader.PropertyToID("_Emission_Map");
         static readonly int EmissionColor = Shader.PropertyToID("_EmissionColor");
         static readonly int EmissionMap = Shader.PropertyToID("_EmissionMap");
-        static readonly int BaseColor = Shader.PropertyToID("_BaseColor");
-        static readonly int LegacyColor = Shader.PropertyToID("_Color");
-
         // The lots, in one block so the indices below can name their ranges.
         const int HomeLots = 10;     // 0 .. 9    flats and houses
         const int VigilLot = 10;     //           the home lot that is up all night
@@ -100,7 +97,7 @@ namespace RoadDemo
         const int Lots = 16;
 
         // Share of homes that never light: asleep, out, or empty.
-        const float HomeDark = 0.28f;
+        const float HomeDark = 0.34f;
 
         // Share of the homes that DO light which draw the night-shift lot. This is
         // what is still burning between four and six, so it is also the answer to
@@ -126,8 +123,10 @@ namespace RoadDemo
 
         // A pane is a large flat surface and blooms far more readily than a
         // painted swatch does, so the two are scaled apart.
-        const float PaneIntensity = 1.15f;
-        const float AtlasIntensity = 1.5f;
+        // A window is seen through tinted glass, not painted onto the front of it.
+        // Keep it below the signage and let the pane's own alpha soften it further.
+        const float PaneIntensity = 0.32f;
+        const float AtlasIntensity = 0.50f;
 
         // Four in the morning, and how long the wave takes to pass over the city.
         // Nothing brings the lights back: DemoSky starts lifting the sky at 4:45
@@ -260,8 +259,9 @@ namespace RoadDemo
                 // is a facade candidate and belongs to the same Home policy its res-
                 // ancestor would have selected. Avoid walking/naming that hierarchy again
                 // for every pooled bind.
-                bool facade = root != null || !facadeRoot ||
-                              renderer.transform.IsChildOf(facadeRoot);
+                bool facade = root != null || (facadeRoot
+                    ? renderer.transform.IsChildOf(facadeRoot)
+                    : IsBuilding(renderer.transform));
                 _materialScratch.Clear();
                 renderer.GetSharedMaterials(_materialScratch);
                 int lot = -2;
@@ -274,7 +274,9 @@ namespace RoadDemo
 
                     var surface = SurfaceOf(original);
                     bool pane = facade && (surface & SurfaceKind.Pane) != 0;
-                    if (!pane && (surface & SurfaceKind.Emissive) == 0) continue;
+                    bool emissive = (surface & SurfaceKind.Emissive) != 0 &&
+                                    (!AlreadyEmissive(original) || facade);
+                    if (!pane && !emissive) continue;
                     if (lot == -2)
                     {
                         lot = LotOf(renderer.transform.position,
@@ -287,7 +289,7 @@ namespace RoadDemo
                     {
                         clone = MakeNightMaterial(original, pane);
                         _clones[(original, lot)] = clone;
-                        float intensity = pane ? PaneIntensity / PaneCoverage(original) : AtlasIntensity;
+                        float intensity = pane ? PaneIntensity : AtlasIntensity;
                         _lamps[lot].Add(new Lamp(clone, _lots[lot].Tint * intensity));
                         if (pane) _paneMaterials++; else _signMaterials++;
                     }
@@ -305,8 +307,8 @@ namespace RoadDemo
         {
             if (_surfaceKinds.TryGetValue(material, out var known)) return known;
             var found = SurfaceKind.None;
-            if (IsUnlitPane(material)) found |= SurfaceKind.Pane;
-            if (UnlitEmissionMap(material)) found |= SurfaceKind.Emissive;
+            if (IsPane(material)) found |= SurfaceKind.Pane;
+            if (EmissionMapOf(material)) found |= SurfaceKind.Emissive;
             _surfaceKinds[material] = found;
             return found;
         }
@@ -331,15 +333,14 @@ namespace RoadDemo
             var lots = new Lot[Lots];
             var rng = new System.Random(9187);
 
-            // Homes come on across the whole of the dusk - the ones at the top of
-            // the ramp are people who were already in, the last are people still
-            // on their way - and turn in somewhere between half past midnight and
-            // half three.
+            // Homes come on across the whole dusk. Most stay alive through eleven,
+            // then go out in a stagger from 22:45 to 01:45 instead of leaving the
+            // whole residential city blazing until half three.
             for (int i = 0; i < HomeLots; i++)
                 lots[i] = new Lot(
                     0.05f + 0.6f * (i / (float)(HomeLots - 1)),
-                    0.5f + 3f * (float)rng.NextDouble(),
-                    Pick(HomeTints, rng) * (0.72f + 0.4f * (float)rng.NextDouble()),
+                    -1.25f + 3f * (float)rng.NextDouble(),
+                    Pick(HomeTints, rng) * (0.62f + 0.28f * (float)rng.NextDouble()),
                     false);
 
             // The night shift: a landing light, a baby, somebody working. Dim, and
@@ -347,7 +348,7 @@ namespace RoadDemo
             lots[VigilLot] = new Lot(0.12f, Never, Tungsten * 0.7f, true);
 
             // Trade lights on early - the sign goes on before the light does - and
-            // shuts at closing time, which is spread from half nine to one in the
+            // shuts at closing time, which is spread from ten to half past midnight in the
             // morning across the lots. All but the last of them: something has to
             // still be burning for the four o'clock blackout to take, so the last
             // lot is the all-night end of the trade - the garage, the hotel lobby,
@@ -357,12 +358,12 @@ namespace RoadDemo
                 bool allNight = i == TradeLots - 1;
                 lots[TradeLot + i] = new Lot(
                     0.3f * (float)rng.NextDouble(),
-                    allNight ? Never : -2.5f + 3.2f * (i / (TradeLots - 2f)),
-                    Pick(TradeTints, rng) * (0.9f + 0.35f * (float)rng.NextDouble()),
+                    allNight ? Never : -2f + 2.5f * (i / (TradeLots - 2f)),
+                    Pick(TradeTints, rng) * (0.72f + 0.25f * (float)rng.NextDouble()),
                     false);
             }
 
-            lots[LandmarkLot] = new Lot(0f, Never, Tungsten * 1.15f, true);
+            lots[LandmarkLot] = new Lot(0f, Never, Tungsten * 0.72f, true);
             return lots;
         }
 
@@ -439,8 +440,8 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// Whether this is a window pane waiting to be lit: a glass material that
-        /// is not already emitting.
+        /// Whether this is a building window pane: a glass material, whether the
+        /// pack shipped its emission enabled or not.
         ///
         /// Matched on the name because that is the only thing the kits agree on -
         /// the panes come from five different packs (Generic_Glass_Opaque,
@@ -449,7 +450,7 @@ namespace RoadDemo
         /// Two families of name have to be kept out: a vehicle's windscreen, and
         /// the "Glasses" a character wears.
         /// </summary>
-        static bool IsUnlitPane(Material material)
+        static bool IsPane(Material material)
         {
             var name = material.name;
             if (!Mentions(name, "Glass"))
@@ -457,46 +458,20 @@ namespace RoadDemo
             if (Mentions(name, "Vehicle") || Mentions(name, "Glasses"))
                 return false;
 
-            return !AlreadyEmissive(material);
+            return true;
         }
 
         /// <summary>
-        /// How much of a lit pane actually reaches the screen: its albedo alpha.
+        /// The real emission map of a material that carries one, or null.
         ///
-        /// Most of the kits' glass is alpha-blended - PolygonCity's Misc/Glass_01,
-        /// the pane on the bulk of the residential bake, sits at 0.44 - and a
-        /// blended surface has its emission multiplied by that alpha on the way
-        /// out. Dividing the lot's brightness by it puts every pane on screen at
-        /// the value the lot asked for, whatever its glass was set to. Floored,
-        /// so a nearly invisible pane cannot ask for a hundred times the light.
+        /// Several pack materials have a NORMAL map sitting in the emission slot;
+        /// lighting those paints the facade in normal-map lilac, so the texture
+        /// has to actually be an emissive one. Already-burning maps are retimed
+        /// only when their renderer is architecture; props and vehicles keep the
+        /// pack's authored treatment.
         /// </summary>
-        static float PaneCoverage(Material material)
+        static Texture EmissionMapOf(Material material)
         {
-            float alpha = 1f;
-            if (material.HasProperty(BaseColor))
-                alpha = material.GetColor(BaseColor).a;
-            else if (material.HasProperty(LegacyColor))
-                alpha = material.GetColor(LegacyColor).a;
-
-            return Mathf.Clamp(alpha, 0.35f, 1f);
-        }
-
-        /// <summary>
-        /// The emission map of a material that carries one but does not currently
-        /// use it, or null.
-        ///
-        /// Anything already burning - the PalmCity facades and vehicles, the
-        /// police station's security panels - is the pack looking as intended and
-        /// is not ours to drive. And several of the pack's own materials have a
-        /// NORMAL map sitting in the emission slot; lighting those paints the
-        /// facade in normal-map lilac, so the texture has to actually be an
-        /// emissive one.
-        /// </summary>
-        static Texture UnlitEmissionMap(Material material)
-        {
-            if (AlreadyEmissive(material))
-                return null;
-
             Texture map = null;
             if (material.HasProperty(SyntyEmissionMap))
                 map = material.GetTexture(SyntyEmissionMap);
@@ -504,6 +479,27 @@ namespace RoadDemo
                 map = material.GetTexture(EmissionMap);
 
             return map && Mentions(map.name, "Emissive") ? map : null;
+        }
+
+        /// <summary>Whether a renderer belongs to architecture when Core has no single
+        /// facade root. Existing pack emissives are retimed only on buildings: the same
+        /// PalmCity material also covers power lines, cars and street props, whose authored
+        /// emission must not be mistaken for an occupied window.</summary>
+        static bool IsBuilding(Transform transform)
+        {
+            for (var at = transform; at; at = at.parent)
+            {
+                string name = at.name;
+                if (name.StartsWith("SM_Veh_", System.StringComparison.OrdinalIgnoreCase) ||
+                    Mentions(name, "Traffic") || Mentions(name, "Parking Car") ||
+                    Mentions(name, "Patrol Car"))
+                    return false;
+                if (name.StartsWith("SM_Bld_", System.StringComparison.OrdinalIgnoreCase) ||
+                    Mentions(name, "building") || Mentions(name, "apartment") ||
+                    Mentions(name, "residential") || Mentions(name, "Palm Tower"))
+                    return true;
+            }
+            return false;
         }
 
         // Emissive by either convention: the Synty toggle, or - for materials that

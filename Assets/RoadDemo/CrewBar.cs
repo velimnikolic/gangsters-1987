@@ -83,9 +83,10 @@ namespace RoadDemo
         /// <summary>The layer the feed cameras see and nothing else: a lieutenant's
         /// body (and the gun in his hand) is put on it, so his picture is him alone
         /// on a plain ground - no street behind, no other man walking through.
-        /// Unnamed in the layer table (29; PortraitStudio holds 31, the strategic map
-        /// 30) and rendered by the main camera like any other layer.</summary>
-        public const int FeedLayer = 29;
+        /// Unnamed in the layer table (28; CatalogueTurntableStudio owns 29,
+        /// the strategic map 30 and PortraitStudio 31) and rendered by the main
+        /// camera like any other layer.</summary>
+        public const int FeedLayer = 28;
         const int SortingOrder = 22; // over the road demo's top bar (20), under its map (30)
 
         static readonly Color Wounded = new Color(1f, 0.78f, 0.20f, 0.42f);

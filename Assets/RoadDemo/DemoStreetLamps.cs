@@ -35,15 +35,25 @@ namespace RoadDemo
             ("SM_Prop_Street_Lamp_01", new Vector3(0f, BulbHeight, 1.3f)),
             ("SM_Prop_Street_Lamp_08", new Vector3(0f, BulbHeight, 0f)),
             ("SM_Prop_Pier_Lamp_01", new Vector3(0f, 3.4f, 0.45f)),
+            // CorePavement uses PolygonCity's 6.5 m mast rather than PalmCity's
+            // shorter post. Its arm points down local +Z, over the carriageway.
+            ("SM_Prop_LightPole_Base_01", new Vector3(0f, 6.05f, 2.15f)),
         };
 
-        // the pack's own street-lamp amber, and a cone that paints a pool on the
-        // pavement instead of spending itself sideways into the air
-        static readonly Color LampColour = new Color(1f, 0.655f, 0.189f);
-        const float SpotOuterAngle = 135f;
-        const float SpotInnerAngle = 65f;
-        const float Range = 10f;
-        const float Intensity = 5f;
+        // Match the cars' period-tungsten beams exactly: the bulb and every nearby
+        // headlight now speak one night-light colour instead of amber versus yellow.
+        static readonly Color LampColour = DemoHeadlights.BeamColour;
+        const float SpotOuterAngle = 152f;
+        const float SpotInnerAngle = 86f;
+        const float Range = 14f;
+        const float Intensity = 8f;
+
+        // Still scarce, but visible across Core: around six dead and six intermittent
+        // bulbs at the current ~470-lamp count. Stable by position so a lamp does not
+        // become healthy merely because its block was streamed out.
+        const float DeadShare = 0.012f;
+        const float FlickerShare = 0.012f;
+        enum Fault : byte { None, Dead, Flicker }
 
         const int LitLampBudget = 192;
         const float ResortInterval = 0.4f;
@@ -57,6 +67,8 @@ namespace RoadDemo
         float[] _key = System.Array.Empty<float>();
         int[] _order = System.Array.Empty<int>();
         bool[] _burning = System.Array.Empty<bool>();
+        Fault[] _fault = System.Array.Empty<Fault>();
+        float[] _flickerPhase = System.Array.Empty<float>();
         float _nextResort;
         float _lit = -1f;
 
@@ -66,6 +78,11 @@ namespace RoadDemo
             Register(null);
 
             Debug.Log($"[RoadDemo] {_lamps.Count} street lamp bulbs wired.", this);
+            int dead = 0, flicker = 0;
+            for (int i = 0; i < _fault.Length; i++)
+                if (_fault[i] == Fault.Dead) dead++;
+                else if (_fault[i] == Fault.Flicker) flicker++;
+            Debug.Log($"[RoadDemo] Street lamp wear: {dead} dead, {flicker} intermittent.", this);
             clock.Stop();
             // whole-scene sweep at Start: this walks EVERY transform in the city
             // (~376,000 of them) to find lamp roots. Timed because the first frames
@@ -166,11 +183,18 @@ namespace RoadDemo
             _key = new float[_lamps.Count];
             _order = new int[_lamps.Count];
             _burning = new bool[_lamps.Count];
+            _fault = new Fault[_lamps.Count];
+            _flickerPhase = new float[_lamps.Count];
             for (int i = 0; i < _lamps.Count; i++)
             {
                 _at[i] = _lamps[i].transform.position;
                 _order[i] = i;
                 _burning[i] = _lamps[i].enabled;
+                float wear = Hash01(_at[i], 0x6D2B79F5u);
+                _fault[i] = wear < DeadShare ? Fault.Dead
+                    : wear < DeadShare + FlickerShare ? Fault.Flicker
+                    : Fault.None;
+                _flickerPhase[i] = Hash01(_at[i], 0x9E3779B9u) * 19f;
             }
         }
 
@@ -191,8 +215,10 @@ namespace RoadDemo
             {
                 for (int i = 0; i < _lamps.Count; i++)
                     if (_burning[i] && _lamps[i])
-                        _lamps[i].intensity = target;
+                        _lamps[i].intensity = LampIntensity(i, target);
             }
+            else
+                ApplyFlicker(target);
 
             _lit = target;
         }
@@ -224,7 +250,8 @@ namespace RoadDemo
                 if (!lamp)
                     continue;
 
-                bool burn = rank < LitLampBudget && intensity > 0.001f;
+                bool burn = rank < LitLampBudget && intensity > 0.001f &&
+                            _fault[i] != Fault.Dead;
                 // a light re-registers with the renderer on every enable/disable, so
                 // only the ones that actually change state are touched
                 if (burn != _burning[i])
@@ -233,7 +260,44 @@ namespace RoadDemo
                     _burning[i] = burn;
                 }
                 if (burn)
-                    lamp.intensity = intensity;
+                    lamp.intensity = LampIntensity(i, intensity);
+            }
+        }
+
+        void ApplyFlicker(float intensity)
+        {
+            for (int i = 0; i < _lamps.Count; i++)
+                if (_burning[i] && _fault[i] == Fault.Flicker && _lamps[i])
+                    _lamps[i].intensity = LampIntensity(i, intensity);
+        }
+
+        float LampIntensity(int index, float steady)
+        {
+            if (_fault[index] != Fault.Flicker) return steady;
+
+            // A short, irregular double miss every eight to twelve seconds. It is
+            // never a regular sine pulse: a broken starter coughs, then settles.
+            float phase = _flickerPhase[index];
+            float period = 8.2f + Mathf.Repeat(phase * 0.37f, 3.8f);
+            float t = Mathf.Repeat(Time.unscaledTime + phase, period);
+            if (t < 0.055f) return steady * 0.06f;
+            if (t < 0.115f) return steady;
+            if (t < 0.19f) return steady * 0.22f;
+            if (t < 0.29f) return steady * 0.78f;
+            return steady;
+        }
+
+        static float Hash01(Vector3 position, uint salt)
+        {
+            unchecked
+            {
+                uint h = (uint)(Mathf.RoundToInt(position.x * 10f) * 73856093
+                              ^ Mathf.RoundToInt(position.y * 10f) * 83492791
+                              ^ Mathf.RoundToInt(position.z * 10f) * 19349663) ^ salt;
+                h ^= h >> 13;
+                h *= 2654435761u;
+                h ^= h >> 16;
+                return (h & 0xFFFFFF) / (float)0x1000000;
             }
         }
 
