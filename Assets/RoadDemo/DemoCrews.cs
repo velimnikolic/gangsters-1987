@@ -677,6 +677,11 @@ namespace RoadDemo
         List<GameObject> _fallbackPrefabs;
         Transform _root;
         int _seenVersion = -1;
+        // PersonnelDirector and the street are dealt on different lifecycle beats.
+        // Select the first playable outfit crew once it actually exists so an opening
+        // right-click is an order, not a silent no-op. Later explicit deselection stays
+        // respected across ordinary roster refreshes.
+        bool _initialPlayerSelectionMade;
         readonly Dictionary<int, CrewWalker> _byCharacter = new Dictionary<int, CrewWalker>();
         System.Random _rng;
         readonly System.Random _variety = new System.Random(4242); // gaits, falls, paces
@@ -2064,6 +2069,19 @@ namespace RoadDemo
                 if (kv.Value.boss) Place(roster, kv.Key, kv.Value.crew, true, previousUnitOf);
             foreach (var kv in wanted)
                 if (!kv.Value.boss) Place(roster, kv.Key, kv.Value.crew, false, previousUnitOf);
+
+            if (!_initialPlayerSelectionMade)
+            {
+                foreach (var unit in liveUnits)
+                {
+                    if (unit.Boss == null || unit.Boss.Dead)
+                        continue;
+                    _initialPlayerSelectionMade = true;
+                    if (Selected == null)
+                        Selected = unit;
+                    break;
+                }
+            }
 
             BindCars(roster);
             BindBikes(roster);

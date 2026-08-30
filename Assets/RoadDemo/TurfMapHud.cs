@@ -1254,6 +1254,18 @@ namespace RoadDemo
                     if (gathered.Contains(crew.Id) && crew.Mine && crew.Alive)
                         _selected.Add(crew.Id);
                 }
+
+                // The street may have received its first player crew after this panel
+                // was built. Adopt that one-time central selection when there was no
+                // earlier map selection to preserve, so street and plan never disagree
+                // about who the next order belongs to.
+                if (_selected.Count == 0 && _crews.Selected != null)
+                    foreach (var crew in _units)
+                        if (crew.Unit == _crews.Selected && crew.Mine && crew.Alive)
+                        {
+                            _selected.Add(crew.Id);
+                            break;
+                        }
                 return;
             }
 
