@@ -234,7 +234,21 @@ namespace LivingCity.Personnel
             {
                 for (var i = 0; i < roster.Crews.Count; i++)
                 {
-                    var lieutenant = roster.Find(roster.Crews[i].LieutenantId);
+                    var branch = roster.Crews[i];
+                    // His own bodyguard detail is a crew he leads himself. Its MEN are
+                    // his subordinates; he is not his own.
+                    if (branch.LieutenantId == leaderId)
+                    {
+                        for (var g = 0; g < branch.HoodIds.Count; g++)
+                        {
+                            var guard = roster.Find(branch.HoodIds[g]);
+                            if (guard != null && !guard.Gone)
+                                into.Add(Person(guard));
+                        }
+                        continue;
+                    }
+
+                    var lieutenant = roster.Find(branch.LieutenantId);
                     if (lieutenant != null && !lieutenant.Gone)
                         into.Add(Person(lieutenant));
                 }
@@ -337,6 +351,17 @@ namespace LivingCity.Personnel
                     if (hood != null && !hood.Gone && hood.Rank == Rank.Hood)
                         manpower++;
                 }
+
+                // The bodyguard detail is men he is holding too - they cost him wages
+                // and they cost him a place at his own cap.
+                var detail = Bodyguards.DetailOf(roster);
+                if (detail != null)
+                    for (var i = 0; i < detail.HoodIds.Count; i++)
+                    {
+                        var guard = roster.Find(detail.HoodIds[i]);
+                        if (guard != null && !guard.Gone && guard.Rank == Rank.Hood)
+                            manpower++;
+                    }
             }
             else
             {

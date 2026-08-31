@@ -26,6 +26,9 @@ namespace LivingCity.Tests
             ("TheSpanOfControlBindsPromotion", TheSpanOfControlBindsPromotion),
             ("TheDonsDeathEndsIt", TheDonsDeathEndsIt),
             ("DeathReachesTheRosterByOnePathOnly", DeathReachesTheRosterByOnePathOnly),
+            ("ADetailStandsBetweenHimAndIt", ADetailStandsBetweenHimAndIt),
+            ("ADetailOfCowardsIsNoDetailAtAll", ADetailOfCowardsIsNoDetailAtAll),
+            ("GuardsCostWagesAndLearnLittle", GuardsCostWagesAndLearnLittle),
         };
 
         public static List<string> Run()
@@ -358,6 +361,127 @@ namespace LivingCity.Tests
             if (quiet.Fallen)
                 failures.Add("DeathReachesTheRosterByOnePathOnly: losing a lieutenant " +
                              "ended the campaign.");
+        }
+
+        // -------------------------------------------------------------- the detail
+
+        /// <summary>A Boss with a detail of n steady men, and the outcome of one
+        /// attempt on his life off a fixed stream.</summary>
+        static AssassinationOutcome Attempt(int guards, int courage, int seed,
+            out Roster roster, out Character boss, List<Incident> incidents = null)
+        {
+            roster = new Roster();
+            boss = MakeBoss(roster, 8, 8);
+            var detail = Bodyguards.FormDetail(roster);
+
+            for (var i = 0; i < guards; i++)
+            {
+                var guard = MakeHood(roster);
+                guard.SetHalfSteps(CharacterAttribute.Combat, 6);
+                Personality.Set(guard, PersonalityTrait.Courage, courage);
+                detail.HoodIds.Add(guard.Id);
+            }
+
+            return Bodyguards.Attempt(roster, new System.Random(seed), 10,
+                "Pearl Street", incidents);
+        }
+
+        static void ADetailStandsBetweenHimAndIt(List<string> failures)
+        {
+            // Nobody in front of him: it gets through.
+            var bare = Attempt(0, 90, 7, out _, out _);
+            if (!bare.ReachedTheBoss)
+                failures.Add("ADetailStandsBetweenHimAndIt: a Don with no detail was " +
+                             "not reached.");
+
+            // Two steady men in front of him: it does not.
+            var incidents = new List<Incident>();
+            var held = Attempt(2, 95, 7, out var roster, out var boss, incidents);
+            if (held.ReachedTheBoss)
+                failures.Add("ADetailStandsBetweenHimAndIt: two steady guards and it " +
+                             "still got through.");
+            if (held.GuardsSpent != 1)
+                failures.Add($"ADetailStandsBetweenHimAndIt: {held.GuardsSpent} men were " +
+                             "spent stopping one attempt; it should cost exactly one.");
+            if (boss.Gone)
+                failures.Add("ADetailStandsBetweenHimAndIt: the Don was struck off by an " +
+                             "attempt his men stopped.");
+
+            // The man who took it is really gone from the day's work - dead or in a bed -
+            // and the paper has a line about it.
+            var spentMan = 0;
+            for (var i = 0; i < roster.Members.Count; i++)
+                if (roster.Members[i].Status == CharacterStatus.Dead ||
+                    roster.Members[i].Status == CharacterStatus.Hospitalized)
+                    spentMan++;
+            if (spentMan != 1)
+                failures.Add($"ADetailStandsBetweenHimAndIt: {spentMan} men actually paid " +
+                             "for it - putting a man in front of a gun has to cost one.");
+            if (incidents.Count == 0)
+                failures.Add("ADetailStandsBetweenHimAndIt: nothing was printed about a " +
+                             "man taking a bullet for the Don.");
+        }
+
+        static void ADetailOfCowardsIsNoDetailAtAll(List<string> failures)
+        {
+            // Six men who will not stand are six men who are not there. Run it on a
+            // few streams so the assertion is about the rule and not about one roll.
+            var gotThrough = 0;
+            for (var seed = 0; seed < 8; seed++)
+                if (Attempt(6, 0, seed, out _, out _).ReachedTheBoss)
+                    gotThrough++;
+
+            if (gotThrough == 0)
+                failures.Add("ADetailOfCowardsIsNoDetailAtAll: six men with no nerve at " +
+                             "all stopped every single attempt.");
+
+            // And the same six, steady, stop all of them.
+            var stopped = 0;
+            for (var seed = 0; seed < 8; seed++)
+                if (!Attempt(6, 95, seed, out _, out _).ReachedTheBoss)
+                    stopped++;
+            if (stopped != 8)
+                failures.Add($"ADetailOfCowardsIsNoDetailAtAll: six steady men stopped " +
+                             $"only {stopped} of 8 - a detail that deep should be a wall.");
+        }
+
+        static void GuardsCostWagesAndLearnLittle(List<string> failures)
+        {
+            var roster = new Roster();
+            MakeBoss(roster, 8, 8);
+            var detail = Bodyguards.FormDetail(roster);
+            var guard = MakeHood(roster);
+            detail.HoodIds.Add(guard.Id);
+
+            if (Outfit.Wages.WageFor(guard) <= 0)
+                failures.Add("GuardsCostWagesAndLearnLittle: a man on the detail draws " +
+                             "nothing, so a detail is free.");
+
+            var runner = new Outfit.CampaignRunner();
+            for (var day = 0; day < 20; day++)
+                runner.DayTick(roster);
+
+            var row = ActivityXp.RowOf(Activity.BodyguardDuty);
+            var moved = false;
+            for (var i = 0; i < row.Trains.Length; i++)
+                if (guard.GetHalfSteps(row.Trains[i]) > AttributeScale.MinHalfSteps ||
+                    guard.GetPractice(row.Trains[i]) > 0)
+                    moved = true;
+            if (!moved)
+                failures.Add("GuardsCostWagesAndLearnLittle: twenty days on the detail " +
+                             "taught him nothing at all.");
+
+            // But only what the detail teaches - standing behind the Don is not driving.
+            if (guard.GetPractice(CharacterAttribute.Driving) != 0)
+                failures.Add("GuardsCostWagesAndLearnLittle: guard duty taught him to " +
+                             "drive.");
+
+            // The detail counts against the Boss's own cap, because they are his men.
+            var view = new OrganizationQuery(roster).CapacityOf(roster.BossId);
+            if (view.Manpower.Current < 1)
+                failures.Add("GuardsCostWagesAndLearnLittle: the guard does not count " +
+                             "against the Don's own capacity, so a detail is free there " +
+                             "too.");
         }
 
         static void OverCapacityIsFlaggedNeverFixed(List<string> failures)

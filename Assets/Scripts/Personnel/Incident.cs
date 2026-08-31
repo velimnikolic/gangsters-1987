@@ -27,6 +27,12 @@ namespace LivingCity.Personnel
 
         /// <summary>The years took something off him.</summary>
         SlowingDown,
+
+        /// <summary>He stood in front of the Don and it killed him.</summary>
+        DiedOnTheDetail,
+
+        /// <summary>He stood in front of the Don and lived.</summary>
+        StoppedIt,
     }
 
     /// <summary>
@@ -62,6 +68,12 @@ namespace LivingCity.Personnel
                     return name + " wants his envelope brought up to the rate.";
                 case IncidentKind.CaughtSkimming:
                     return name + " has been taking a cut off the top" + place + ".";
+                case IncidentKind.DiedOnTheDetail:
+                    return "They came for the Don" + place + ". " + name +
+                           " was in the way, and did not get up.";
+                case IncidentKind.StoppedIt:
+                    return "They came for the Don" + place + ". " + name +
+                           " took it instead, and is in a bed.";
                 default:
                     return name + " is slowing down.";
             }
