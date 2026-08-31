@@ -117,6 +117,21 @@ namespace LivingCity.Personnel
 
         readonly int[] halfSteps = new int[AttributeScale.Count];
 
+        /// <summary>
+        /// A man starts on the scale's own floor - one star at everything - rather than
+        /// on the zero a bare array gives him. "Nobody in this line of work is a zero"
+        /// is <see cref="AttributeScale.MinHalfSteps"/>'s whole reason for existing, and
+        /// leaving the field at 0 made that true only for men somebody remembered to
+        /// deal stats to: a hand-built character sat under the floor, and the growth
+        /// curve - which prices a step from where he stands - would never move him off
+        /// it, because there is no step from below the bottom.
+        /// </summary>
+        public Character()
+        {
+            for (var i = 0; i < halfSteps.Length; i++)
+                halfSteps[i] = AttributeScale.MinHalfSteps;
+        }
+
         /// <summary>Points banked toward the NEXT half-step of each attribute - what a
         /// man has learned on the job and not yet grown into. Parallel to
         /// <see cref="halfSteps"/> and never converted here: accumulation and promotion

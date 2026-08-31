@@ -284,6 +284,10 @@ namespace LivingCity.Outfit
                 roster.Year = Campaign.Year;
 
                 StandingDay(roster);
+                // The command drip BEFORE the conversion, so a day spent holding a
+                // crew can be the day that buys the half-step. Banked after it, every
+                // command day would be worth one day less than it was.
+                CommandDrip.Tick(roster);
                 Practice.Convert(roster, Rises);
                 // What the day gave and what it took, in one pass and in that order,
                 // so a man who earned a half-step this morning and lost one to his

@@ -24,6 +24,10 @@ namespace LivingCity.Tests
             ("FailingAtHardWorkBeatsSucceedingAtEasy", FailingAtHardWorkBeatsSucceedingAtEasy),
             ("AwardBanksAgainstEverySkillItTrains", AwardBanksAgainstEverySkillItTrains),
             ("TheDeadLearnNothing", TheDeadLearnNothing),
+            ("AQuietCommanderStillLearns", AQuietCommanderStillLearns),
+            ("AnEmptyCrewTeachesNobody", AnEmptyCrewTeachesNobody),
+            ("ACommanderInACellStopsDripping", ACommanderInACellStopsDripping),
+            ("TheDripLandsBeforeTheBooksTurn", TheDripLandsBeforeTheBooksTurn),
         };
 
         public static List<string> Run()
@@ -198,6 +202,166 @@ namespace LivingCity.Tests
             if (ActivityXp.AwardCommand(new Character { Id = 3 }, 0) != 0)
                 failures.Add("AwardBanks: a lieutenant with nobody under him still " +
                              "drew a command drip.");
+        }
+
+        // ------------------------------------------------------------------ the drip
+
+        /// <summary>A crew and nothing else: one lieutenant, some hoods, no ceilings on
+        /// anybody, no dates of birth so the years never touch them.</summary>
+        static Character MakeCrew(Roster roster, int hoods, out List<Character> men)
+        {
+            var lieutenant = new Character
+            {
+                Id = roster.NextCharacterId(),
+                FirstName = "Rocco",
+                Surname = "Vale",
+                Rank = Rank.Lieutenant,
+            };
+            roster.Members.Add(lieutenant);
+
+            var crew = new Crew { Id = roster.NextCrewId(), LieutenantId = lieutenant.Id };
+            men = new List<Character>();
+            for (var i = 0; i < hoods; i++)
+            {
+                var hood = new Character
+                {
+                    Id = roster.NextCharacterId(),
+                    FirstName = "Hood" + i,
+                    Surname = "Ferri",
+                };
+                roster.Members.Add(hood);
+                crew.HoodIds.Add(hood.Id);
+                men.Add(hood);
+            }
+            roster.Crews.Add(crew);
+            return lieutenant;
+        }
+
+        /// <summary>How far along a skill he is, as one number that only ever goes up.
+        /// Practice alone falls when it is spent on a half-step, so a test that watched
+        /// practice would read a promotion as a loss.</summary>
+        static int Progress(Character man, CharacterAttribute skill) =>
+            man.GetHalfSteps(skill) * 10_000 + man.GetPractice(skill);
+
+        static int CommandPractice(Character man)
+        {
+            var row = ActivityXp.RowOf(Activity.CommandingACrew);
+            var total = 0;
+            for (var i = 0; i < row.Trains.Length; i++)
+                total += man.GetHalfSteps(row.Trains[i]);
+            return total;
+        }
+
+        static void AQuietCommanderStillLearns(List<string> failures)
+        {
+            var roster = new Roster();
+            var lieutenant = MakeCrew(roster, 3, out var hoods);
+            var runner = new CampaignRunner();
+
+            var before = CommandPractice(lieutenant);
+            var combatBefore = lieutenant.GetHalfSteps(CharacterAttribute.Combat);
+
+            for (var day = 0; day < 30; day++)
+                runner.DayTick(roster);
+
+            if (CommandPractice(lieutenant) <= before)
+                failures.Add("AQuietCommanderStillLearns: thirty days holding a crew and " +
+                             "he is exactly the man he was.");
+            if (lieutenant.GetHalfSteps(CharacterAttribute.Combat) != combatBefore)
+                failures.Add("AQuietCommanderStillLearns: sitting in the chair taught " +
+                             "him to shoot.");
+
+            var row = ActivityXp.RowOf(Activity.CommandingACrew);
+            for (var i = 1; i < row.Trains.Length; i++)
+                if (lieutenant.GetHalfSteps(row.Trains[i]) !=
+                    lieutenant.GetHalfSteps(row.Trains[0]))
+                    failures.Add($"AQuietCommanderStillLearns: {row.Trains[i]} did not " +
+                                 $"move with {row.Trains[0]}.");
+
+            for (var i = 0; i < hoods.Count; i++)
+                for (var s = 0; s < AttributeScale.Count; s++)
+                    if (hoods[i].GetPractice((CharacterAttribute)s) != 0)
+                        failures.Add($"AQuietCommanderStillLearns: {hoods[i].FullName} " +
+                                     "learned something by being commanded at.");
+        }
+
+        static void AnEmptyCrewTeachesNobody(List<string> failures)
+        {
+            var roster = new Roster();
+            var lieutenant = MakeCrew(roster, 0, out _);
+            var runner = new CampaignRunner();
+
+            for (var day = 0; day < 30; day++)
+                runner.DayTick(roster);
+
+            for (var s = 0; s < AttributeScale.Count; s++)
+                if (lieutenant.GetPractice((CharacterAttribute)s) != 0 ||
+                    lieutenant.GetHalfSteps((CharacterAttribute)s) !=
+                    AttributeScale.MinHalfSteps)
+                    failures.Add("AnEmptyCrewTeachesNobody: a lieutenant with nobody " +
+                                 "under him spent a month getting better at commanding " +
+                                 "nobody.");
+        }
+
+        static void ACommanderInACellStopsDripping(List<string> failures)
+        {
+            var roster = new Roster();
+            var lieutenant = MakeCrew(roster, 4, out _);
+            var runner = new CampaignRunner();
+
+            var start = Progress(lieutenant, CharacterAttribute.Leadership);
+            runner.DayTick(roster);
+            var afterOneDay = Progress(lieutenant, CharacterAttribute.Leadership) - start;
+
+            RosterOps.Jail(roster, lieutenant.Id, backOnDay: runner.Campaign.Day + 5);
+            var inside = Progress(lieutenant, CharacterAttribute.Leadership);
+            for (var day = 0; day < 4; day++)
+                runner.DayTick(roster);
+
+            var stillInside = Progress(lieutenant, CharacterAttribute.Leadership);
+            if (stillInside != inside)
+                failures.Add("ACommanderInACellStopsDripping: he ran the crew from a " +
+                             "cell and got better at it.");
+            if (afterOneDay <= 0)
+                failures.Add("ACommanderInACellStopsDripping: he never dripped at all, " +
+                             "so the cell proves nothing.");
+
+            // Out on his day, and back on the books.
+            for (var day = 0; day < 4; day++)
+                runner.DayTick(roster);
+            if (lieutenant.Status != CharacterStatus.Active)
+                failures.Add("ACommanderInACellStopsDripping: he never got out.");
+            var after = Progress(lieutenant, CharacterAttribute.Leadership);
+            if (after <= stillInside)
+                failures.Add("ACommanderInACellStopsDripping: he came out and never " +
+                             "started learning again.");
+        }
+
+        static void TheDripLandsBeforeTheBooksTurn(List<string> failures)
+        {
+            // Tick ordering is invisible in play and obvious here: bank one day short
+            // of the next half-step, and the day he commands must be the day he buys it.
+            var roster = new Roster();
+            var lieutenant = MakeCrew(roster, 3, out _);
+            var runner = new CampaignRunner();
+
+            var drip = ActivityXp.Points(Activity.CommandingACrew, XpOutcome.Completed);
+            var cost = Practice.NextCost(lieutenant, CharacterAttribute.Leadership);
+            if (cost <= drip)
+            {
+                failures.Add($"TheDripLandsBeforeTheBooksTurn: a half-step costs {cost} " +
+                             $"and a day of command pays {drip} - the test cannot tell " +
+                             "the ordering apart any more.");
+                return;
+            }
+
+            lieutenant.AddPractice(CharacterAttribute.Leadership, cost - drip);
+            var before = lieutenant.GetHalfSteps(CharacterAttribute.Leadership);
+            runner.DayTick(roster);
+
+            if (lieutenant.GetHalfSteps(CharacterAttribute.Leadership) != before + 1)
+                failures.Add("TheDripLandsBeforeTheBooksTurn: today's command day was " +
+                             "banked after the books turned, so it counted tomorrow.");
         }
 
         static void TheDeadLearnNothing(List<string> failures)
