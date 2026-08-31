@@ -54,9 +54,9 @@ namespace RoadDemo
                  "an existing building.")]
         [Range(0, 8)] public int fuelStations = 5;
 
-        [Tooltip("Blocks dealt from the catalogue. 0 is the whole city; a small number " +
-                 "is the test rig - a couple of quarters that stand up in seconds.")]
-        [Min(0)] public int blockBudget;
+        [Tooltip("Quarters built. 0 is the whole city; 2 is the test rig - the city is " +
+                 "dealt whole and everything outside those quarters is taken back off it.")]
+        [Min(0)] public int quarterBudget;
 
         void Awake()
         {
@@ -82,7 +82,7 @@ namespace RoadDemo
                 parkingLotCount = Mathf.Max(0, parkingLots),
                 parkingCarsPerLot = Mathf.Max(0, parkingCarsPerLot),
                 fuelStationCount = Mathf.Max(0, fuelStations),
-                blockBudget = Mathf.Max(0, blockBudget),
+                quarterBudget = Mathf.Max(0, quarterBudget),
             };
 
             // Inactive while it is configured: RoadDemoBuilder.Awake must see Core as
