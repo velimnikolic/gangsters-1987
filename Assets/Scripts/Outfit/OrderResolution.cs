@@ -202,9 +202,14 @@ namespace LivingCity.Outfit
         ///
         /// streetOutcome is how the sim answered a Violence job that played out on the
         /// road; a Roll job passes null and is decided here.
+        ///
+        /// incidents collects what the men's own characters did that nobody ordered -
+        /// who froze, who ran, whose temper turned a collection into a shooting. Pass
+        /// null and the checks still run and still bind; only the printing is lost.
         /// </summary>
         public static JobOutcome Resolve(in OrderSpec spec, Job job, Roster roster,
-            Crew crew, System.Random rng, OrderOutcome? streetOutcome = null)
+            Crew crew, System.Random rng, OrderOutcome? streetOutcome = null,
+            List<Incident> incidents = null)
         {
             var targets = job?.TargetCount ?? 1;
             var stat = CrewKit.BestAt(roster, crew, spec.PrimaryAttribute);
@@ -235,7 +240,78 @@ namespace LivingCity.Outfit
                 : -1;
 
             var casualty = Misfire(spec, job, roster, crew, rng, completed);
+            heat += RunTheChecks(spec, job, roster, crew, rng, incidents);
             return new JobOutcome(outcome, payout, cost, heat, casualty, recruited);
+        }
+
+        /// <summary>Buffers of its own rather than the shared Scratch: this runs inside
+        /// Resolve, which already has Misfire holding that one.</summary>
+        static readonly List<int> OnTheJob = new List<int>();
+        static readonly List<int> Ran = new List<int>();
+
+        /// <summary>
+        /// What the men themselves did about the job. Every man on it is put to the
+        /// checks his character is exposed to: the wheel and the gun both answer for
+        /// their discipline, only violent work asks about nerve, and only work that
+        /// involves leaning on somebody can be provoked.
+        ///
+        /// A man who froze or ran is not then asked about his discipline as well - one
+        /// night, one story about him.
+        /// </summary>
+        /// <returns>Police attention the men drew on top of the job's own.</returns>
+        static int RunTheChecks(in OrderSpec spec, Job job, Roster roster, Crew crew,
+            System.Random rng, List<Incident> incidents)
+        {
+            if (roster == null || crew == null || rng == null || job == null)
+                return 0;
+
+            var activity = OrderTable.ActivityOf(spec.Type);
+            var violent = activity == Activity.AttackOnARival;
+            var provoking = activity == Activity.RacketCollection ||
+                            activity == Activity.Leaning;
+
+            CrewKit.MenOnJob(roster, crew, job.Men, OnTheJob);
+            Ran.Clear();
+            var heat = 0;
+
+            for (var i = 0; i < OnTheJob.Count; i++)
+            {
+                var man = roster.Find(OnTheJob[i]);
+                if (man == null || man.Gone)
+                    continue;
+
+                if (violent && PersonalityChecks.TryCourage(man, rng, job.IssuedDay,
+                        job.TargetLabel, out var nerve))
+                {
+                    incidents?.Add(nerve);
+                    heat += nerve.Heat;
+                    if (nerve.Kind == IncidentKind.Fled)
+                        Ran.Add(man.Id);
+                    continue;
+                }
+
+                if (provoking && PersonalityChecks.TryTemper(man, rng, job.IssuedDay,
+                        job.TargetLabel, out var temper))
+                {
+                    incidents?.Add(temper);
+                    heat += temper.Heat;
+                    continue;
+                }
+
+                if (PersonalityChecks.TryDiscipline(man, rng, job.IssuedDay,
+                        job.TargetLabel, out var loose))
+                {
+                    incidents?.Add(loose);
+                    heat += loose.Heat;
+                }
+            }
+
+            // Struck off after the walk, not during it: the list being walked is the
+            // crew's own men.
+            for (var i = 0; i < Ran.Count; i++)
+                RosterOps.Desert(roster, Ran[i]);
+
+            return heat;
         }
 
         /// <summary>

@@ -49,6 +49,11 @@ namespace LivingCity.Outfit
         /// today's losses and not the campaign's.</summary>
         public readonly List<Decline> Declines = new List<Decline>();
 
+        /// <summary>What the men's own characters did that nobody ordered - who froze,
+        /// who ran, whose temper turned a collection into a shooting. Written as jobs
+        /// finish and cleared at the day tick, so the page carries today's.</summary>
+        public readonly List<Incident> Incidents = new List<Incident>();
+
         /// <summary>Police attention the outfit has drawn. Nothing spends it yet; the
         /// jobs pay into it so the police layer inherits a history when it lands.</summary>
         public int Heat;
@@ -174,8 +179,9 @@ namespace LivingCity.Outfit
             var rng = new System.Random(OrderResolution.Mix(
                 Seed + Generation.SeedOffsets.Orders, job.IssuedDay, job.Id));
 
+            var incidentsBefore = Incidents.Count;
             var result = OrderResolution.Resolve(spec, job, roster, crew, rng,
-                job.StreetOutcome);
+                job.StreetOutcome, Incidents);
 
             BookMoney(spec, result.Payout, result.Cost);
             Heat += result.Heat;
@@ -185,11 +191,31 @@ namespace LivingCity.Outfit
                     Campaign.Day + OrderResolution.MisfireDays,
                     OrderResolution.InjuryNote(rng));
 
-            // Either of these MOVED THE ROSTER - a man into a bed, or a new name onto
-            // the books - and a roster that moves without the personnel version moving
-            // leaves the ledger on a stale page and the street short a body it never
-            // dealt.
-            if (result.CasualtyId >= 0 || result.RecruitedId >= 0)
+            // The law's own record of what the men did. Only the escalations go on it:
+            // a rap sheet is his file WITH THE CITY, and a man who went to pieces on a
+            // corner has not been charged with anything.
+            for (var i = incidentsBefore; i < Incidents.Count; i++)
+            {
+                var incident = Incidents[i];
+                if (incident.Kind != IncidentKind.Escalated)
+                    continue;
+                var man = roster.Find(incident.CharacterId);
+                if (man == null)
+                    continue;
+                RapSheet.Add(man,
+                    News.NewsDate.FromClockDay(incident.Day - 1).Short(),
+                    "Discharging a firearm",
+                    "Under investigation");
+            }
+
+            // Either of these MOVED THE ROSTER - a man into a bed, a new name onto the
+            // books, or a man who ran off them - and a roster that moves without the
+            // personnel version moving leaves the ledger on a stale page and the street
+            // short a body it never dealt.
+            var ranOff = false;
+            for (var i = incidentsBefore; i < Incidents.Count && !ranOff; i++)
+                ranOff = Incidents[i].Kind == IncidentKind.Fled;
+            if (result.CasualtyId >= 0 || result.RecruitedId >= 0 || ranOff)
                 RosterMoved?.Invoke();
 
             OrderResolution.AwardPractice(spec, roster, crew, job.Men,
@@ -277,6 +303,7 @@ namespace LivingCity.Outfit
 
             Rises.Clear();
             Declines.Clear();
+            Incidents.Clear();
             if (roster != null)
             {
                 // The calendar, written through before anything reads it: a man taken

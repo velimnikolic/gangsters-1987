@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using LivingCity.Outfit;
 using LivingCity.Personnel;
 
 namespace LivingCity.Tests
@@ -22,6 +23,12 @@ namespace LivingCity.Tests
             ("EveryTraitHasAWordAtEveryValue", EveryTraitHasAWordAtEveryValue),
             ("NothingMovesWithoutAReason", NothingMovesWithoutAReason),
             ("TheScaleHoldsAtBothEnds", TheScaleHoldsAtBothEnds),
+            ("TheCowardFreezesAndSometimesRuns", TheCowardFreezesAndSometimesRuns),
+            ("TheSteadyManNeverBreaks", TheSteadyManNeverBreaks),
+            ("TheHotHeadTurnsACollectionIntoAShooting", TheHotHeadTurnsACollectionIntoAShooting),
+            ("TheUndisciplinedTakeTheirOwnChoices", TheUndisciplinedTakeTheirOwnChoices),
+            ("OneNightOneStoryAboutAMan", OneNightOneStoryAboutAMan),
+            ("EveryIncidentIsReadyForThePaper", EveryIncidentIsReadyForThePaper),
         };
 
         public static List<string> Run()
@@ -210,6 +217,188 @@ namespace LivingCity.Tests
             if (man.Loyalty != loyaltyBefore - 5)
                 failures.Add("NothingMovesWithoutAReason: the nudge did not reach the " +
                              "one Loyalty field.");
+        }
+
+        // ----------------------------------------------------------- the checks fire
+
+        /// <summary>A crew of men all built the same way, and a job to send them on.
+        /// Returns the incidents of running that job a scripted number of times, on a
+        /// fresh crew each time so a desertion cannot empty the fixture.</summary>
+        static List<Incident> RunJobs(OrderType type, PersonalityTrait trait, int value,
+            int times, out int deserted)
+        {
+            var incidents = new List<Incident>();
+            deserted = 0;
+
+            for (var run = 0; run < times; run++)
+            {
+                var roster = new Roster();
+                var lieutenant = new Character
+                {
+                    Id = roster.NextCharacterId(), FirstName = "Lt", Surname = "Bruno",
+                    Rank = Rank.Lieutenant,
+                };
+                roster.Members.Add(lieutenant);
+                var crew = new Crew
+                {
+                    Id = roster.NextCrewId(), LieutenantId = lieutenant.Id,
+                };
+                var hood = new Character
+                {
+                    Id = roster.NextCharacterId(), FirstName = "Man", Surname = "Ferri",
+                };
+                roster.Members.Add(hood);
+                crew.HoodIds.Add(hood.Id);
+                roster.Crews.Add(crew);
+
+                // Everybody steady except the one trait under test, so only that trait
+                // can fire and the count means what it says.
+                foreach (var man in new[] { lieutenant, hood })
+                {
+                    Personality.Set(man, PersonalityTrait.Courage, 90);
+                    Personality.Set(man, PersonalityTrait.Temper, 10);
+                    Personality.Set(man, PersonalityTrait.Discipline, 90);
+                    Personality.Set(man, trait, value);
+                }
+
+                var job = new Job
+                {
+                    Id = run, CrewId = crew.Id, Type = type, Men = 2,
+                    IssuedDay = 10 + run, TargetLabel = "Pearl Street",
+                };
+                var rng = new System.Random(1987 + run);
+                OrderResolution.Resolve(OrderTable.SpecOf(type), job, roster, crew, rng,
+                    null, incidents);
+
+                for (var i = 0; i < roster.Members.Count; i++)
+                    if (roster.Members[i].Status == CharacterStatus.Deserted)
+                        deserted++;
+            }
+
+            return incidents;
+        }
+
+        static void TheCowardFreezesAndSometimesRuns(List<string> failures)
+        {
+            var incidents = RunJobs(OrderType.Raid, PersonalityTrait.Courage, 0, 60,
+                out var deserted);
+
+            var froze = 0;
+            var fled = 0;
+            for (var i = 0; i < incidents.Count; i++)
+            {
+                if (incidents[i].Kind == IncidentKind.Froze) froze++;
+                if (incidents[i].Kind == IncidentKind.Fled) fled++;
+            }
+
+            if (froze == 0)
+                failures.Add("TheCowardFreezesAndSometimesRuns: sixty raids and a man " +
+                             "with no nerve at all never once went to pieces.");
+            if (fled == 0)
+                failures.Add("TheCowardFreezesAndSometimesRuns: nobody ever ran.");
+            if (deserted != fled)
+                failures.Add($"TheCowardFreezesAndSometimesRuns: {fled} men ran and " +
+                             $"{deserted} were struck off - a man who runs is off the " +
+                             "books.");
+        }
+
+        static void TheSteadyManNeverBreaks(List<string> failures)
+        {
+            var incidents = RunJobs(OrderType.Raid, PersonalityTrait.Courage, 90, 60,
+                out var deserted);
+            for (var i = 0; i < incidents.Count; i++)
+                if (incidents[i].Kind == IncidentKind.Froze ||
+                    incidents[i].Kind == IncidentKind.Fled)
+                    failures.Add("TheSteadyManNeverBreaks: a man well over the floor was " +
+                                 "still rolled for, and broke.");
+            if (deserted != 0)
+                failures.Add("TheSteadyManNeverBreaks: a steady man deserted.");
+        }
+
+        static void TheHotHeadTurnsACollectionIntoAShooting(List<string> failures)
+        {
+            var incidents = RunJobs(OrderType.CollectProtection, PersonalityTrait.Temper,
+                100, 60, out _);
+
+            var escalated = 0;
+            for (var i = 0; i < incidents.Count; i++)
+                if (incidents[i].Kind == IncidentKind.Escalated)
+                {
+                    escalated++;
+                    if (incidents[i].Heat <= 0)
+                        failures.Add("TheHotHead: a shooting nobody ordered drew no " +
+                                     "police attention at all.");
+                }
+            if (escalated == 0)
+                failures.Add("TheHotHead: sixty collections by a man with no temper " +
+                             "control and not one of them turned.");
+
+            // And the placid man never escalates.
+            var calm = RunJobs(OrderType.CollectProtection, PersonalityTrait.Temper, 10,
+                60, out _);
+            for (var i = 0; i < calm.Count; i++)
+                if (calm[i].Kind == IncidentKind.Escalated)
+                    failures.Add("TheHotHead: a placid man started a gunfight.");
+        }
+
+        static void TheUndisciplinedTakeTheirOwnChoices(List<string> failures)
+        {
+            var incidents = RunJobs(OrderType.CollectProtection,
+                PersonalityTrait.Discipline, 0, 60, out _);
+
+            var deviated = 0;
+            for (var i = 0; i < incidents.Count; i++)
+                if (incidents[i].Kind == IncidentKind.Deviated)
+                    deviated++;
+            if (deviated == 0)
+                failures.Add("TheUndisciplinedTakeTheirOwnChoices: a man with no " +
+                             "discipline did sixty jobs exactly as written.");
+
+            var exact = RunJobs(OrderType.CollectProtection, PersonalityTrait.Discipline,
+                90, 60, out _);
+            for (var i = 0; i < exact.Count; i++)
+                if (exact[i].Kind == IncidentKind.Deviated)
+                    failures.Add("TheUndisciplinedTakeTheirOwnChoices: an exact man " +
+                                 "improvised.");
+        }
+
+        static void OneNightOneStoryAboutAMan(List<string> failures)
+        {
+            // A man who went to pieces is not then also written up for improvising.
+            var incidents = RunJobs(OrderType.Raid, PersonalityTrait.Courage, 0, 60,
+                out _);
+            var seen = new Dictionary<string, int>();
+            for (var i = 0; i < incidents.Count; i++)
+            {
+                var key = incidents[i].Day + ":" + incidents[i].CharacterId;
+                seen.TryGetValue(key, out var count);
+                seen[key] = count + 1;
+                if (count + 1 > 1)
+                    failures.Add($"OneNightOneStoryAboutAMan: {incidents[i].Name} got " +
+                                 $"{count + 1} write-ups out of one job on day " +
+                                 $"{incidents[i].Day}.");
+            }
+        }
+
+        static void EveryIncidentIsReadyForThePaper(List<string> failures)
+        {
+            foreach (IncidentKind kind in Enum.GetValues(typeof(IncidentKind)))
+            {
+                var line = PersonalityChecks.Line(kind, "Rocco Vale", "Pearl Street");
+                if (line.Length == 0)
+                    failures.Add($"EveryIncidentIsReadyForThePaper: {kind} has no line.");
+                if (!line.Contains("Rocco Vale"))
+                    failures.Add($"EveryIncidentIsReadyForThePaper: {kind}'s line does " +
+                                 "not name the man it is about.");
+                if (!line.Contains("Pearl Street"))
+                    failures.Add($"EveryIncidentIsReadyForThePaper: {kind}'s line does " +
+                                 "not say where.");
+
+                // And it still reads when nobody could say where.
+                if (PersonalityChecks.Line(kind, "Rocco Vale", "").Length == 0)
+                    failures.Add($"EveryIncidentIsReadyForThePaper: {kind} has no line " +
+                                 "when the place is unknown.");
+            }
         }
 
         static void TheScaleHoldsAtBothEnds(List<string> failures)
