@@ -58,7 +58,7 @@ namespace LivingCity.Outfit
         public const int AdsPerEdition = 4;
 
         /// <summary>A man who advertises for a crew of his own claims the head for it:
-        /// his Intelligence and Organization are floored at the house's own promotion
+        /// his Awareness and Organization are floored at the house's own promotion
         /// line (RosterOps.LowStatHalfSteps), so the paper never offers the outfit a
         /// lieutenant it would warn against making. Talent is payroll, so the floor is
         /// paid for in the price he asks.</summary>
@@ -143,8 +143,8 @@ namespace LivingCity.Outfit
             var man = RosterSeeder.Deal(roster, rng, AdvertisedCeilingHalfSteps);
 
             // The head a lieutenancy lives on, floored before the price is read off him.
-            if (man.GetHalfSteps(CharacterAttribute.Intelligence) < HeadFloorHalfSteps)
-                man.SetHalfSteps(CharacterAttribute.Intelligence, HeadFloorHalfSteps);
+            if (man.GetHalfSteps(CharacterAttribute.Awareness) < HeadFloorHalfSteps)
+                man.SetHalfSteps(CharacterAttribute.Awareness, HeadFloorHalfSteps);
             if (man.GetHalfSteps(CharacterAttribute.Organization) < HeadFloorHalfSteps)
                 man.SetHalfSteps(CharacterAttribute.Organization, HeadFloorHalfSteps);
 
@@ -214,17 +214,17 @@ namespace LivingCity.Outfit
         /// book, which is why it lives with the market and not in LedgerText.</summary>
         public static string TradeName(CharacterAttribute trade) => trade switch
         {
-            CharacterAttribute.Intelligence => "A THINKING MAN",
-            CharacterAttribute.Organization => "CREW BOSS",
-            CharacterAttribute.Business => "BUSINESS HEAD",
-            CharacterAttribute.Firearms => "GUN HAND",
-            CharacterAttribute.Fists => "MUSCLE FOR HIRE",
-            CharacterAttribute.Knives => "QUIET BLADE",
-            CharacterAttribute.Arson => "TORCH",
-            CharacterAttribute.Explosives => "POWDER MAN",
-            CharacterAttribute.Intimidation => "COLLECTOR",
-            CharacterAttribute.Driving => "WHEEL MAN",
+            CharacterAttribute.Combat => "GUN HAND",
+            CharacterAttribute.Awareness => "A THINKING MAN",
             CharacterAttribute.Stealth => "DISCREET PARTY",
+            CharacterAttribute.Driving => "WHEEL MAN",
+            CharacterAttribute.Streetwise => "BUSINESS HEAD",
+            CharacterAttribute.Leadership => "CREW BOSS",
+            CharacterAttribute.Organization => "ORGANISER",
+            CharacterAttribute.StreetAuthority => "A KNOWN NAME",
+            CharacterAttribute.Persuasion => "NEGOTIATOR",
+            CharacterAttribute.Intimidation => "COLLECTOR",
+            CharacterAttribute.Connections => "WELL CONNECTED",
             _ => "SITUATION WANTED",
         };
 
@@ -232,39 +232,39 @@ namespace LivingCity.Outfit
         /// print - nothing in a classified says what it means.</summary>
         public static string Pitch(CharacterAttribute trade) => trade switch
         {
-            CharacterAttribute.Intelligence =>
-                "Educated man seeks serious position. I read what the other fellow " +
-                "signed, and I remember it.",
-            CharacterAttribute.Organization =>
-                "I run men. Nobody late, nobody drunk, nobody missing on a Friday. " +
-                "Bring me four and a territory.",
-            CharacterAttribute.Business =>
-                "Books, licences, premises. I have made a losing shop show a profit " +
-                "twice, and neither time on paper only.",
-            CharacterAttribute.Firearms =>
+            CharacterAttribute.Combat =>
                 "Steady hand and quiet about it. Own iron, own car, no questions on " +
                 "either side of the arrangement.",
-            CharacterAttribute.Fists =>
-                "Large, willing, cheap to feed. Doors, debts and difficult customers " +
-                "attended to at short notice.",
-            CharacterAttribute.Knives =>
-                "Close work only. No noise, no mess, and no conversation about it " +
-                "afterward. References on request.",
-            CharacterAttribute.Arson =>
-                "Insurance matters handled with care. The property goes; the block " +
-                "beside it stands. Winter rates.",
-            CharacterAttribute.Explosives =>
-                "Powder man, quarry-trained. Nothing of mine has ever gone off twice " +
-                "or in the wrong hour.",
-            CharacterAttribute.Intimidation =>
-                "Persuasive with slow payers. I have rarely had to say a thing twice " +
-                "and never had to say it loudly.",
-            CharacterAttribute.Driving =>
-                "Wheel man. I know every alley in this city and which of them come " +
-                "out the other end.",
+            CharacterAttribute.Awareness =>
+                "Educated man seeks serious position. I read what the other fellow " +
+                "signed, and I remember it.",
             CharacterAttribute.Stealth =>
                 "Discreet party available for delicate errands. In, out, and nobody " +
                 "the wiser on either end.",
+            CharacterAttribute.Driving =>
+                "Wheel man. I know every alley in this city and which of them come " +
+                "out the other end.",
+            CharacterAttribute.Streetwise =>
+                "Books, licences, premises. I have made a losing shop show a profit " +
+                "twice, and neither time on paper only.",
+            CharacterAttribute.Leadership =>
+                "I run men. Nobody late, nobody drunk, nobody missing on a Friday. " +
+                "Bring me four and a territory.",
+            CharacterAttribute.Organization =>
+                "Rotas, stock, keys. Give me the yard and you will stop hearing " +
+                "about the yard.",
+            CharacterAttribute.StreetAuthority =>
+                "My name has been said on these corners for eleven years. Ask after " +
+                "it before you write to this box.",
+            CharacterAttribute.Persuasion =>
+                "Difficult conversations conducted to a conclusion. Both parties " +
+                "shake hands and neither one has to be carried.",
+            CharacterAttribute.Intimidation =>
+                "Persuasive with slow payers. I have rarely had to say a thing twice " +
+                "and never had to say it loudly.",
+            CharacterAttribute.Connections =>
+                "I know a man at the precinct, a man at the courthouse and a man at " +
+                "the docks. All three take my calls.",
             _ =>
                 "Capable man seeks a place with a serious outfit. Willing, sober, and " +
                 "not particular about the hours.",

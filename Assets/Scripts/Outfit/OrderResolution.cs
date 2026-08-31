@@ -175,12 +175,14 @@ namespace LivingCity.Outfit
 
         /// <summary>
         /// Police attention the job leaves behind. A crew with a quiet man on it works
-        /// at half the noise; a killing done by a knife-and-shadows specialist is not
-        /// heard at all, which is the one thing that makes Stealth and Knives worth a
-        /// slot on a violent roster.
+        /// at half the noise; a killing done in the dark is not heard at all, which is
+        /// the one thing that makes Stealth worth a slot on a violent roster.
+        ///
+        /// Stealth alone now. The rule used to average Stealth with Knives, and Knives
+        /// merged into Combat with every other violent trade - reading Combat here
+        /// would have made the loudest man on the books the quietest killer.
         /// </summary>
-        public static int HeatFor(in OrderSpec spec, int targetCount, int stealthHalfSteps,
-            int knivesHalfSteps)
+        public static int HeatFor(in OrderSpec spec, int targetCount, int stealthHalfSteps)
         {
             if (spec.Heat <= 0)
                 return 0;
@@ -188,8 +190,7 @@ namespace LivingCity.Outfit
                 targetCount = 1;
 
             var heat = spec.Heat * targetCount;
-            if (spec.Type == OrderType.Kill &&
-                (stealthHalfSteps + knivesHalfSteps) / 2 >= QuietHalfSteps)
+            if (spec.Type == OrderType.Kill && stealthHalfSteps >= QuietHalfSteps)
                 return 0;
             return stealthHalfSteps >= QuietHalfSteps ? heat / 2 : heat;
         }
@@ -227,8 +228,7 @@ namespace LivingCity.Outfit
             var completed = outcome == OrderOutcome.Completed;
             var payout = completed ? PayoutFor(spec, targets, stat, job.TargetWorth) : 0;
             var heat = HeatFor(spec, targets,
-                CrewKit.BestAt(roster, crew, CharacterAttribute.Stealth),
-                CrewKit.BestAt(roster, crew, CharacterAttribute.Knives));
+                CrewKit.BestAt(roster, crew, CharacterAttribute.Stealth));
 
             var recruited = completed && spec.Type == OrderType.Recruit
                 ? BringHimIn(roster, crew, rng, stat)
@@ -243,7 +243,7 @@ namespace LivingCity.Outfit
         /// that went looking. Organization capacity is soft, so a completed recruit is
         /// never discarded merely because his lieutenant is already overloaded.
         ///
-        /// The recruiter's own Intelligence rides along: a sharp man knows a promising
+        /// The recruiter's own Awareness rides along: a sharp man knows a promising
         /// corner boy when he sees one (RosterSeeder.Recruit), which is the only thing
         /// that lifts a recruit above his three-star ceiling.
         /// </summary>
@@ -263,14 +263,17 @@ namespace LivingCity.Outfit
         /// whose best man is under the stated floor may put one of them in a bed -
         /// checked only on a failure, because a charge that went off where it was meant
         /// to went off correctly by definition.
+        ///
+        /// The two orders are named outright rather than read off the primary skill:
+        /// torch and powder work are Combat like every other violent trade now, and a
+        /// skill test would put a raid and a kidnapping on the same hook.
         /// </summary>
         static int Misfire(in OrderSpec spec, Job job, Roster roster, Crew crew,
             System.Random rng, bool completed)
         {
             if (completed || rng == null || job == null)
                 return -1;
-            if (spec.PrimaryAttribute != CharacterAttribute.Arson &&
-                spec.PrimaryAttribute != CharacterAttribute.Explosives)
+            if (spec.Type != OrderType.Torch && spec.Type != OrderType.Bomb)
                 return -1;
             if (CrewKit.BestAt(roster, crew, spec.PrimaryAttribute) >= FloorOf(spec))
                 return -1;

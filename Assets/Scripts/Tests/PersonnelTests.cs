@@ -70,28 +70,28 @@ namespace LivingCity.Tests
 
             var roster = new Roster();
             var man = Make(roster, "Sal", "Renna");
-            var at = man.GetHalfSteps(CharacterAttribute.Firearms);
-            if (Practice.NextCost(man, CharacterAttribute.Firearms) != Practice.CostOf(at + 1))
+            var at = man.GetHalfSteps(CharacterAttribute.Combat);
+            if (Practice.NextCost(man, CharacterAttribute.Combat) != Practice.CostOf(at + 1))
                 failures.Add("PracticeCostsRiseWithTheStars: the next step is mispriced.");
 
             // One point short buys nothing; the point that completes it buys the step.
-            man.AddPractice(CharacterAttribute.Firearms, Practice.CostOf(at + 1) - 1);
+            man.AddPractice(CharacterAttribute.Combat, Practice.CostOf(at + 1) - 1);
             Practice.Convert(roster, null);
-            if (man.GetHalfSteps(CharacterAttribute.Firearms) != at)
+            if (man.GetHalfSteps(CharacterAttribute.Combat) != at)
                 failures.Add("PracticeCostsRiseWithTheStars: a short bank still bought a star.");
 
             var rises = new List<Improvement>();
-            man.AddPractice(CharacterAttribute.Firearms, 1);
+            man.AddPractice(CharacterAttribute.Combat, 1);
             Practice.Convert(roster, rises);
-            if (man.GetHalfSteps(CharacterAttribute.Firearms) != at + 1)
+            if (man.GetHalfSteps(CharacterAttribute.Combat) != at + 1)
                 failures.Add("PracticeCostsRiseWithTheStars: a full bank bought nothing.");
             if (rises.Count != 1 || rises[0].CharacterId != man.Id ||
-                rises[0].Attribute != CharacterAttribute.Firearms ||
+                rises[0].Attribute != CharacterAttribute.Combat ||
                 rises[0].HalfSteps != at + 1)
                 failures.Add("PracticeCostsRiseWithTheStars: the rise was not recorded.");
 
             // The bank is spent, not merely read - a second midnight must buy nothing.
-            if (man.GetPractice(CharacterAttribute.Firearms) != 0)
+            if (man.GetPractice(CharacterAttribute.Combat) != 0)
                 failures.Add("PracticeCostsRiseWithTheStars: the points were not spent.");
         }
 
@@ -117,15 +117,15 @@ namespace LivingCity.Tests
         {
             var roster = new Roster();
             var man = Make(roster, "Nick", "Pasca");
-            man.SetHalfSteps(CharacterAttribute.Fists, AttributeScale.MaxHalfSteps);
+            man.SetHalfSteps(CharacterAttribute.Combat, AttributeScale.MaxHalfSteps);
 
-            if (Practice.NextCost(man, CharacterAttribute.Fists) != 0)
+            if (Practice.NextCost(man, CharacterAttribute.Combat) != 0)
                 failures.Add("PracticeStopsAtFiveStars: a five-star man still has a price.");
 
-            man.AddPractice(CharacterAttribute.Fists, 1_000);
+            man.AddPractice(CharacterAttribute.Combat, 1_000);
             var rises = new List<Improvement>();
             Practice.Convert(roster, rises);
-            if (man.GetHalfSteps(CharacterAttribute.Fists) != AttributeScale.MaxHalfSteps ||
+            if (man.GetHalfSteps(CharacterAttribute.Combat) != AttributeScale.MaxHalfSteps ||
                 rises.Count != 0)
                 failures.Add("PracticeStopsAtFiveStars: the scale went past five stars.");
         }
@@ -134,15 +134,15 @@ namespace LivingCity.Tests
         {
             var roster = new Roster();
             var man = Make(roster, "Enzo", "Bardi");
-            man.SetHalfSteps(CharacterAttribute.Arson, AttributeScale.MinHalfSteps);
+            man.SetHalfSteps(CharacterAttribute.Combat, AttributeScale.MinHalfSteps);
 
             // Enough for both the third and the fourth half-step, banked in one go.
-            man.AddPractice(CharacterAttribute.Arson,
+            man.AddPractice(CharacterAttribute.Combat,
                 Practice.CostOf(3) + Practice.CostOf(4));
             var rises = new List<Improvement>();
             Practice.Convert(roster, rises);
 
-            if (man.GetHalfSteps(CharacterAttribute.Arson) != 4 || rises.Count != 2)
+            if (man.GetHalfSteps(CharacterAttribute.Combat) != 4 || rises.Count != 2)
                 failures.Add("PracticeCarriesTwoStepsAtOnce: a big job was worth one step.");
         }
 
@@ -405,11 +405,11 @@ namespace LivingCity.Tests
 
             var roster = new Roster();
             var member = Make(roster, "Test", "Case");
-            member.SetHalfSteps(CharacterAttribute.Fists, 0);
-            if (member.GetHalfSteps(CharacterAttribute.Fists) != AttributeScale.MinHalfSteps)
+            member.SetHalfSteps(CharacterAttribute.Combat, 0);
+            if (member.GetHalfSteps(CharacterAttribute.Combat) != AttributeScale.MinHalfSteps)
                 failures.Add("HalfStepScaleRoundTrips: no floor clamp.");
-            member.SetHalfSteps(CharacterAttribute.Fists, 12);
-            if (member.GetHalfSteps(CharacterAttribute.Fists) != AttributeScale.MaxHalfSteps)
+            member.SetHalfSteps(CharacterAttribute.Combat, 12);
+            if (member.GetHalfSteps(CharacterAttribute.Combat) != AttributeScale.MaxHalfSteps)
                 failures.Add("HalfStepScaleRoundTrips: no ceiling clamp.");
         }
 
@@ -471,7 +471,7 @@ namespace LivingCity.Tests
         {
             var roster = new Roster();
             var hood = Make(roster, "Dim", "Fella");
-            hood.SetHalfSteps(CharacterAttribute.Intelligence, 4); // 2.0 stars
+            hood.SetHalfSteps(CharacterAttribute.Awareness, 4); // 2.0 stars
 
             var check = RosterOps.CheckPromote(roster, hood.Id);
             if (!check.CanPromote || !check.LowStatWarning)
@@ -684,10 +684,10 @@ namespace LivingCity.Tests
             var mud = Make(roster, "Wild", "Miss");
             MakeCrew(roster, lieutenant, ace, mid, mud);
 
-            lieutenant.SetHalfSteps(CharacterAttribute.Firearms, 2);
-            ace.SetHalfSteps(CharacterAttribute.Firearms, 10);
-            mid.SetHalfSteps(CharacterAttribute.Firearms, 8);
-            mud.SetHalfSteps(CharacterAttribute.Firearms, 4);
+            lieutenant.SetHalfSteps(CharacterAttribute.Combat, 2);
+            ace.SetHalfSteps(CharacterAttribute.Combat, 10);
+            mid.SetHalfSteps(CharacterAttribute.Combat, 8);
+            mud.SetHalfSteps(CharacterAttribute.Combat, 4);
 
             var tommy = MakeItem(roster, EquipmentKind.TommyGun);
             tommy.Value = 2000;
@@ -775,7 +775,7 @@ namespace LivingCity.Tests
         /// with the surplus staying in the locker, never raiding a crew's deck; a
         /// guard who joins a crew takes his iron into that crew's deal.</summary>
         /// <summary>The counter sells motorcycles (ArmoryCatalog.Motorcycles), and a
-        /// motorcycle is WHEELS: dealt by Driving with the cars, never by Firearms with
+        /// motorcycle is WHEELS: dealt by Driving with the cars, never by Combat with
         /// the guns. The whole split is one predicate (RosterOps.IsWeapon) and it used
         /// to read "anything that is not a Vehicle", so the day the kind was added the
         /// quartermaster would have handed the outfit's best shot a moped to fire.</summary>
@@ -797,11 +797,11 @@ namespace LivingCity.Tests
             // the wrong stat lands on the wrong man and is visible.
             lieutenant.SetHalfSteps(CharacterAttribute.Organization, 10);
             lieutenant.SetHalfSteps(CharacterAttribute.Driving, 2);
-            lieutenant.SetHalfSteps(CharacterAttribute.Firearms, 2);
+            lieutenant.SetHalfSteps(CharacterAttribute.Combat, 2);
             rider.SetHalfSteps(CharacterAttribute.Driving, 10);
-            rider.SetHalfSteps(CharacterAttribute.Firearms, 2);
+            rider.SetHalfSteps(CharacterAttribute.Combat, 2);
             shot.SetHalfSteps(CharacterAttribute.Driving, 2);
-            shot.SetHalfSteps(CharacterAttribute.Firearms, 10);
+            shot.SetHalfSteps(CharacterAttribute.Combat, 10);
 
             var bike = MakeItem(roster, EquipmentKind.Motorcycle);
             bike.Value = 1200;
@@ -848,9 +848,9 @@ namespace LivingCity.Tests
                 return;
             }
 
-            manager.SetHalfSteps(CharacterAttribute.Firearms, 6);
-            ace.SetHalfSteps(CharacterAttribute.Firearms, 10);
-            mud.SetHalfSteps(CharacterAttribute.Firearms, 4);
+            manager.SetHalfSteps(CharacterAttribute.Combat, 6);
+            ace.SetHalfSteps(CharacterAttribute.Combat, 10);
+            mud.SetHalfSteps(CharacterAttribute.Combat, 4);
 
             var crewGun = MakeItem(roster, EquipmentKind.Shotgun);
             crewGun.Value = 900;
@@ -942,7 +942,7 @@ namespace LivingCity.Tests
             var options = new ViewOptions
             {
                 Sort = SortKey.Attribute,
-                SortAttribute = CharacterAttribute.Firearms,
+                SortAttribute = CharacterAttribute.Combat,
             };
             RosterView.Build(roster, options, rows);
 
@@ -967,7 +967,7 @@ namespace LivingCity.Tests
                 }
 
                 var value = roster.Find(row.CharacterId)
-                    .GetHalfSteps(CharacterAttribute.Firearms);
+                    .GetHalfSteps(CharacterAttribute.Combat);
                 if (value > previous ||
                     (value == previous && row.CharacterId < previousId))
                     failures.Add("ViewSortsWithinGroups: out of order within a group.");
@@ -1140,7 +1140,7 @@ namespace LivingCity.Tests
         static void LabelsFitTheLedgerColumns(List<string> failures)
         {
             // The detail card's label cell is 160px at 14pt; 13 characters is the proven
-            // fit ("Intelligence" and "Organization" at 12 set the budget).
+            // fit ("Organization" and "Intimidation" at 12 set the budget).
             foreach (CharacterAttribute a in Enum.GetValues(typeof(CharacterAttribute)))
                 if (LedgerText.AttributeLabel(a).Length > 13)
                     failures.Add($"LabelsFitTheLedgerColumns: {a} overflows the label cell.");

@@ -2427,7 +2427,7 @@ namespace RoadDemo
                 out var anthropometry);
             var man = new CrewWalker
                 { Speed = pace, CharacterId = member.Id, SourcePrefab = prefab,
-                  FirearmsHalfSteps = member.GetHalfSteps(CharacterAttribute.Firearms),
+                  CombatHalfSteps = member.GetHalfSteps(CharacterAttribute.Combat),
                   Anthropometry = anthropometry };
             man.Init(go.transform, CrewKit.Draw(_clips, _variety), link, Mathf.Clamp(t, 0.3f, link.Length - 0.3f));
             man.Fired = OnFired;
@@ -2444,7 +2444,7 @@ namespace RoadDemo
                 out var anthropometry);
             var man = new CrewWalker
                 { Speed = pace, CharacterId = member.Id, SourcePrefab = prefab,
-                  FirearmsHalfSteps = member.GetHalfSteps(CharacterAttribute.Firearms),
+                  CombatHalfSteps = member.GetHalfSteps(CharacterAttribute.Combat),
                   Anthropometry = anthropometry };
             man.InitAt(go.transform, CrewKit.Draw(_clips, _variety), Clear(pos, member.FullName), rot);
             man.Fired = OnFired;

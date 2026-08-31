@@ -19,17 +19,19 @@ namespace LivingCity.UI
 
         public static string AttributeLabel(CharacterAttribute attribute) => attribute switch
         {
-            CharacterAttribute.Intelligence => "Intelligence",
-            CharacterAttribute.Organization => "Organization",
-            CharacterAttribute.Business => "Business",
-            CharacterAttribute.Firearms => "Firearms",
-            CharacterAttribute.Fists => "Fists",
-            CharacterAttribute.Knives => "Knives",
-            CharacterAttribute.Arson => "Arson",
-            CharacterAttribute.Explosives => "Explosives",
-            CharacterAttribute.Intimidation => "Intimidation",
-            CharacterAttribute.Driving => "Driving",
+            CharacterAttribute.Combat => "Combat",
+            CharacterAttribute.Awareness => "Awareness",
             CharacterAttribute.Stealth => "Stealth",
+            CharacterAttribute.Driving => "Driving",
+            CharacterAttribute.Streetwise => "Streetwise",
+            CharacterAttribute.Leadership => "Leadership",
+            CharacterAttribute.Organization => "Organization",
+            // "Street Authority" is sixteen characters and the label cell takes
+            // thirteen; the card has room for the word that carries the meaning.
+            CharacterAttribute.StreetAuthority => "Authority",
+            CharacterAttribute.Persuasion => "Persuasion",
+            CharacterAttribute.Intimidation => "Intimidation",
+            CharacterAttribute.Connections => "Connections",
             _ => "",
         };
 
@@ -38,32 +40,37 @@ namespace LivingCity.UI
         /// feeds instead of restating the label.</summary>
         public static string AttributeNote(CharacterAttribute attribute) => attribute switch
         {
-            CharacterAttribute.Intelligence =>
-                "Brain work: collecting protection, audits, recruiting, bribes and " +
-                "police contacts. A lieutenancy leans on it.",
+            CharacterAttribute.Combat =>
+                "Every violent trade: raids, kills, assaults, smash-ups, kidnappings, " +
+                "torch and bomb work, patrols and guard duty. The best draw the guns " +
+                "when gear is dealt.",
+            CharacterAttribute.Awareness =>
+                "What he notices: collecting protection, audits, recruiting, bribes " +
+                "and police contacts.",
+            CharacterAttribute.Stealth =>
+                "Moving unseen - exploring and scouting another outfit's turf, and " +
+                "leaving a job quietly.",
+            CharacterAttribute.Driving =>
+                "Behind the wheel. The best drivers draw the cars when gear is dealt.",
+            CharacterAttribute.Streetwise =>
+                "Buying premises, setting up and running businesses, and knowing " +
+                "where a donation does the most good.",
+            CharacterAttribute.Leadership =>
+                "Command of men: how many will follow him, and how well they hold " +
+                "when it goes wrong.",
             CharacterAttribute.Organization =>
                 "How much of the armory a lieutenant actually gets into his crew's " +
                 "hands. A lieutenancy leans on it.",
-            CharacterAttribute.Business =>
-                "Buying premises, setting up and running businesses, and knowing " +
-                "where a donation does the most good.",
-            CharacterAttribute.Firearms =>
-                "Gun work: raids, kills, patrols, guard duty, ambushes. The best " +
-                "shots draw the guns when gear is dealt.",
-            CharacterAttribute.Fists =>
-                "Muscle: assaults, smash-ups and kidnappings.",
-            CharacterAttribute.Knives =>
-                "Quiet blade work, for the jobs that turn close and personal.",
-            CharacterAttribute.Arson =>
-                "Torch jobs - burning the place without burning the block.",
-            CharacterAttribute.Explosives =>
-                "Bomb jobs - a charge that goes off once, where it was meant to.",
+            CharacterAttribute.StreetAuthority =>
+                "What the street concedes him before he speaks - the standing a made " +
+                "name carries into a room.",
+            CharacterAttribute.Persuasion =>
+                "Talking a man round: the deal that is taken rather than forced.",
             CharacterAttribute.Intimidation =>
                 "The lean: extortion, threats and raising protection rates.",
-            CharacterAttribute.Driving =>
-                "Behind the wheel. The best drivers draw the cars when gear is dealt.",
-            CharacterAttribute.Stealth =>
-                "Moving unseen - exploring and scouting another outfit's turf.",
+            CharacterAttribute.Connections =>
+                "Who he knows outside the outfit - police, lawyers, judges and " +
+                "whoever owes him a call.",
             _ => "",
         };
 

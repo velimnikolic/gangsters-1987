@@ -1491,7 +1491,7 @@ namespace RoadDemo
 
         /// <summary>
         /// The lieutenant's file, off the outfit's own roster. The map prints the
-        /// same Intelligence, Organization and Firearms ratings the personnel ledger
+        /// same Awareness, Organization and Combat ratings the personnel ledger
         /// owns; it does not translate them into map-only stats.
         /// </summary>
         static void ReadDossier(TurfCrew crew, LivingCity.Personnel.Roster roster)
@@ -1511,12 +1511,12 @@ namespace RoadDemo
             crew.Lieutenant = lieutenant;
             crew.Name = lieutenant.FullName;
             crew.Rank = lieutenant.Rank.ToString().ToUpperInvariant();
-            crew.Intelligence = Stars(lieutenant,
-                LivingCity.Personnel.CharacterAttribute.Intelligence);
+            crew.Awareness = Stars(lieutenant,
+                LivingCity.Personnel.CharacterAttribute.Awareness);
             crew.Organization = Stars(lieutenant,
                 LivingCity.Personnel.CharacterAttribute.Organization);
-            crew.Firearms = Stars(lieutenant,
-                LivingCity.Personnel.CharacterAttribute.Firearms);
+            crew.Combat = Stars(lieutenant,
+                LivingCity.Personnel.CharacterAttribute.Combat);
             crew.Loyal = lieutenant.Loyalty;
             crew.Gun = LedgerGun(roster, lieutenant);
         }

@@ -317,8 +317,7 @@ namespace LivingCity.Outfit
                 BookMoney(spec, OrderResolution.PayoutFor(spec, job.TargetCount,
                     CrewKit.BestAt(roster, crew, spec.PrimaryAttribute)), 0);
                 Heat += OrderResolution.HeatFor(spec, job.TargetCount,
-                    CrewKit.BestAt(roster, crew, CharacterAttribute.Stealth),
-                    CrewKit.BestAt(roster, crew, CharacterAttribute.Knives));
+                    CrewKit.BestAt(roster, crew, CharacterAttribute.Stealth));
             }
         }
 

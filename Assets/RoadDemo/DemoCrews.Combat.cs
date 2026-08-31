@@ -870,13 +870,13 @@ namespace RoadDemo
             // shotgun in a man's face very nearly is
             float reach = Mathf.Max(stats.Range, 1f);
             float falloff = dist <= reach * 0.5f ? 1f : Mathf.Lerp(1f, 0.5f, (dist / reach - 0.5f) / 0.5f);
-            // THE MAN BEHIND THE GUN. Until the ledger's Firearms stat reached this
+            // THE MAN BEHIND THE GUN. Until the ledger's Combat stat reached this
             // line a five-star shot and a man who had never held a pistol put the same
             // rounds into the same door, and the whole attribute sheet decided nothing
             // but a warning on a job card. 0.82 of the gun's own accuracy at one star,
             // 1.30 at five - wide enough to feel, narrow enough that a shotgun in a
             // man's face is still a shotgun in a man's face.
-            float p = stats.Accuracy * falloff * CrewSkill.Aim(shooter.FirearmsHalfSteps);
+            float p = stats.Accuracy * falloff * CrewSkill.Aim(shooter.CombatHalfSteps);
             if (shooter.IsLieutenant) p += 0.08f;
             // a man in a car has the door and the sill between him and the round; a man
             // crouched behind one has its flank
@@ -956,7 +956,7 @@ namespace RoadDemo
             target.TakeHit(stats.Damage, shooter);
             // A round that found its mark is the only shooting practice the game
             // recognises - firing off a magazine into a wall teaches nobody anything.
-            CrewSkill.Landed(shooter.CharacterId, CharacterAttribute.Firearms);
+            CrewSkill.Landed(shooter.CharacterId, CharacterAttribute.Combat);
             if (DriveTrace.On)
                 DriveTrace.Event("hit", shooter.DisplayName, target.DisplayName,
                     $"\"dist\":{dist:F1},\"dead\":{(target.Dead ? "true" : "false")}");

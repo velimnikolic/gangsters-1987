@@ -221,9 +221,9 @@ namespace LivingCity.Outfit
             _ => "SM_Veh_Sedan_01",
         };
 
-        /// <summary>3.0 Firearms stars. Below this, handing a man the tommy gun earns
+        /// <summary>3.0 Combat stars. Below this, handing a man the tommy gun earns
         /// the amber warning - and is allowed, because the mistake is the player's to
         /// make (the promotion rule's discipline).</summary>
-        public const int TommyGunFirearmsFloor = 6;
+        public const int TommyGunCombatFloor = 6;
     }
 }

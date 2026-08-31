@@ -500,7 +500,7 @@ namespace RoadDemo
 
         /// <summary>The lieutenant's actual ledger ratings, in half steps. The map
         /// only carries the three that matter while directing a crew here.</summary>
-        public int Intelligence = 3, Organization = 3, Firearms = 3;
+        public int Awareness = 3, Organization = 3, Combat = 3;
         public int Heat, Loyal, Take;
 
         /// <summary>Ours to command. Only ours can be selected, marqueed or ordered.

@@ -14,10 +14,10 @@ namespace LivingCity.Personnel
     /// can never re-lay the city. The draw order is FIXED and documented inline - insert a
     /// draw mid-sequence and every campaign's starting six reshuffles.
     ///
-    /// Roles draw NOTHING: the lieutenant is the best head (Intelligence + Organization),
-    /// the front the best remaining businessman, the crew the two best remaining fighters
-    /// (Firearms + Fists + Knives). Derived roles keep the stream length constant and make
-    /// the starting assignment sensible for free - the player re-deals from the almanac.
+    /// Roles draw NOTHING: the lieutenant is the best head (Awareness + Organization),
+    /// the front the best remaining Streetwise man, the crew the two best remaining
+    /// fighters (Combat). Derived roles keep the stream length constant and make the
+    /// starting assignment sensible for free - the player re-deals from the almanac.
     ///
     /// Names index into PedestrianIdentity's tables - already 1980s-flavoured, already
     /// length-budgeted for popups - so a gangster can share a name with some civilian
@@ -181,7 +181,7 @@ namespace LivingCity.Personnel
             };
             for (var a = 0; a < AttributeScale.Count; a++)
                 boss.SetHalfSteps((CharacterAttribute)a, 8);
-            boss.SetHalfSteps(CharacterAttribute.Intelligence, AttributeScale.MaxHalfSteps);
+            boss.SetHalfSteps(CharacterAttribute.Awareness, AttributeScale.MaxHalfSteps);
             boss.SetHalfSteps(CharacterAttribute.Organization, AttributeScale.MaxHalfSteps);
 
             roster.Members.Add(boss);
@@ -194,7 +194,7 @@ namespace LivingCity.Personnel
         /// system the point of the roster rather than a decoration on it.</summary>
         public const int RecruitCeilingHalfSteps = 6;
 
-        /// <summary>Extra rolls a good recruiter buys, per half-step of Intelligence
+        /// <summary>Extra rolls a good recruiter buys, per half-step of Awareness
         /// over the Recruit order's own floor. A sharp man knows a promising one when
         /// he sees him; each bonus re-rolls a random trade and keeps the better.</summary>
         public const int RecruitBonusPerHalfStep = 1;
@@ -204,7 +204,7 @@ namespace LivingCity.Personnel
         /// answering directly to the Boss. The
         /// recruiting door - the Organization Ledger intent and the Recruit order both.
         ///
-        /// recruiterHalfSteps is the Intelligence of whoever went looking; pass 0 for a
+        /// recruiterHalfSteps is the Awareness of whoever went looking; pass 0 for a
         /// walk-in, which is what the street bar's chip is.
         /// </summary>
         public static Character Recruit(Roster roster, System.Random rng,
@@ -312,12 +312,12 @@ namespace LivingCity.Personnel
             var remaining = new List<Character>(roster.Members);
 
             var lieutenant = TakeBest(remaining,
-                m => m.GetHalfSteps(CharacterAttribute.Intelligence) +
+                m => m.GetHalfSteps(CharacterAttribute.Awareness) +
                      m.GetHalfSteps(CharacterAttribute.Organization));
             lieutenant.Rank = Rank.Lieutenant;
 
             var front = TakeBest(remaining,
-                m => m.GetHalfSteps(CharacterAttribute.Business));
+                m => m.GetHalfSteps(CharacterAttribute.Streetwise));
             roster.FrontId = front.Id;
 
             var first = TakeBest(remaining, FightScore);
@@ -340,9 +340,7 @@ namespace LivingCity.Personnel
         }
 
         static int FightScore(Character m) =>
-            m.GetHalfSteps(CharacterAttribute.Firearms) +
-            m.GetHalfSteps(CharacterAttribute.Fists) +
-            m.GetHalfSteps(CharacterAttribute.Knives);
+            m.GetHalfSteps(CharacterAttribute.Combat);
 
         /// <summary>Removes and returns the highest scorer; ties go to the lower id, so
         /// the outcome never depends on list order.</summary>

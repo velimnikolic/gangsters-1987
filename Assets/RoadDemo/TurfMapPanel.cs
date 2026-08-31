@@ -651,9 +651,9 @@ namespace RoadDemo
             // These are the very same half-step ratings shown in the ledger, in the
             // ledger's block meter. The map is a view onto that book, not a second
             // character sheet with its own invented stat names.
-            y -= SkillRow(_dossierRect, Pad, y, inner, "Intelligence", crew.Intelligence);
+            y -= SkillRow(_dossierRect, Pad, y, inner, "Awareness", crew.Awareness);
             y -= SkillRow(_dossierRect, Pad, y, inner, "Organization", crew.Organization);
-            y -= SkillRow(_dossierRect, Pad, y, inner, "Firearms", crew.Firearms);
+            y -= SkillRow(_dossierRect, Pad, y, inner, "Combat", crew.Combat);
             y -= CrewCountRow(_dossierRect, Pad, y, inner, crew);
 
             y -= 5f;

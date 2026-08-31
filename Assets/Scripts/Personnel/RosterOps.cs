@@ -48,7 +48,7 @@ namespace LivingCity.Personnel
     /// </summary>
     public static class RosterOps
     {
-        /// <summary>3.0 stars. Below this in Intelligence OR Organization, promotion is
+        /// <summary>3.0 stars. Below this in Awareness OR Organization, promotion is
         /// warned against but allowed - lieutenancy lives on those two stats.</summary>
         public const int LowStatHalfSteps = 6;
 
@@ -72,7 +72,7 @@ namespace LivingCity.Personnel
             if (member.Rank == Rank.Boss)
                 return new PromoteCheck(false, false, LedgerText.ReasonBossMoves);
 
-            var low = member.GetHalfSteps(CharacterAttribute.Intelligence) < LowStatHalfSteps ||
+            var low = member.GetHalfSteps(CharacterAttribute.Awareness) < LowStatHalfSteps ||
                       member.GetHalfSteps(CharacterAttribute.Organization) < LowStatHalfSteps;
             return new PromoteCheck(true, low, "");
         }
@@ -243,7 +243,7 @@ namespace LivingCity.Personnel
             return OpResult.Fail("The block has no organization responsibility.");
         }
 
-        /// <summary>Guns are dealt by Firearms, vehicles by Driving - the one split
+        /// <summary>Guns are dealt by Combat, vehicles by Driving - the one split
         /// NormalizeArms cares about. The chain-of-command rule itself covers BOTH:
         /// everything in the drawer issues to a lieutenant.</summary>
         public static bool IsWeapon(EquipmentKind kind) =>
@@ -417,7 +417,7 @@ namespace LivingCity.Personnel
         /// BELONGS to a parent group (a lieutenant's crew, or the front) and never
         /// leaves it on a man's back - OwnerId is the deed, HolderId just says who
         /// carries it today. Each deal re-runs over the group's current hands: guns
-        /// by Firearms, wheels by Driving, the best of each to the best hand when
+        /// by Combat, wheels by Driving, the best of each to the best hand when
         /// the dealer is organized, progressively more backwards when he is not.
         /// A man who leaves the group is simply no longer a hand - the next deal
         /// passes his old piece to whoever remains. Deterministic and idempotent:
@@ -495,7 +495,7 @@ namespace LivingCity.Personnel
                     hands.Add(member);
             }
 
-            Deal(guns, hands, CharacterAttribute.Firearms,
+            Deal(guns, hands, CharacterAttribute.Combat,
                 AttributeScale.MaxHalfSteps, RosterEquipment.FrontArmory);
             Deal(wheels, hands, CharacterAttribute.Driving,
                 AttributeScale.MaxHalfSteps, RosterEquipment.FrontArmory);
@@ -535,7 +535,7 @@ namespace LivingCity.Personnel
             }
 
             var organization = lieutenant.GetHalfSteps(CharacterAttribute.Organization);
-            Deal(guns, hands, CharacterAttribute.Firearms, organization, lieutenant.Id);
+            Deal(guns, hands, CharacterAttribute.Combat, organization, lieutenant.Id);
             Deal(wheels, hands, CharacterAttribute.Driving, organization, lieutenant.Id);
         }
 

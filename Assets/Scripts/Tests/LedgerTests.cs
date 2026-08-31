@@ -135,7 +135,7 @@ namespace LivingCity.Tests
 
             var before = runner.Accounts.Safe;
             var lieutenant = roster.Find(roster.Crews[0].LieutenantId);
-            var learned = lieutenant.GetPractice(CharacterAttribute.Business);
+            var learned = lieutenant.GetPractice(CharacterAttribute.Streetwise);
 
             runner.DayTick(roster);
 
@@ -163,7 +163,7 @@ namespace LivingCity.Tests
                     failures.Add("AStandingWatchPaysDaily: the safe and the day disagree.");
             }
 
-            if (lieutenant.GetPractice(CharacterAttribute.Business) <= learned)
+            if (lieutenant.GetPractice(CharacterAttribute.Streetwise) <= learned)
                 failures.Add("AStandingWatchPaysDaily: a day's work taught nobody.");
 
             // Days later it is still standing - a watch is never finished, only called
@@ -527,19 +527,19 @@ namespace LivingCity.Tests
         static void QuietMenDrawNoHeat(List<string> failures)
         {
             var kill = OrderTable.SpecOf(OrderType.Kill);
-            var loud = OrderResolution.HeatFor(kill, 1, stealthHalfSteps: 2, knivesHalfSteps: 2);
+            var loud = OrderResolution.HeatFor(kill, 1, stealthHalfSteps: 2);
             if (loud != kill.Heat)
                 failures.Add("QuietMenDrawNoHeat: a loud killing did not draw its heat.");
 
             // A careful crew works at half the noise.
             var careful = OrderResolution.HeatFor(OrderTable.SpecOf(OrderType.Torch), 1,
-                OrderResolution.QuietHalfSteps, 2);
+                OrderResolution.QuietHalfSteps);
             if (careful != OrderTable.SpecOf(OrderType.Torch).Heat / 2)
                 failures.Add("QuietMenDrawNoHeat: Stealth did not halve the noise.");
 
-            // Knife and shadows together: nobody heard a shot, because there was none.
-            if (OrderResolution.HeatFor(kill, 1, OrderResolution.QuietHalfSteps,
-                    OrderResolution.QuietHalfSteps) != 0)
+            // A man who works in the dark: nobody heard a shot, because nobody heard
+            // anything at all.
+            if (OrderResolution.HeatFor(kill, 1, OrderResolution.QuietHalfSteps) != 0)
                 failures.Add("QuietMenDrawNoHeat: the quiet kill was still heard.");
         }
 
@@ -563,12 +563,12 @@ namespace LivingCity.Tests
             if (!CrewKit.HasVehicle(roster, crew))
                 failures.Add("CrewKitReadsVehiclesAndSkill: the signed-out car is invisible.");
 
-            var best = CrewKit.BestAt(roster, crew, CharacterAttribute.Firearms);
+            var best = CrewKit.BestAt(roster, crew, CharacterAttribute.Combat);
             var manual = 0;
             void Consider(int id)
             {
                 var m = roster.Find(id);
-                var v = m.GetHalfSteps(CharacterAttribute.Firearms);
+                var v = m.GetHalfSteps(CharacterAttribute.Combat);
                 if (v > manual)
                     manual = v;
             }

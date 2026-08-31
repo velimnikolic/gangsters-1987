@@ -590,7 +590,7 @@ namespace RoadDemo
 
             if (hoods.Count > 0)
             {
-                Rank(roster, hoods, CharacterAttribute.Firearms);
+                Rank(roster, hoods, CharacterAttribute.Combat);
                 pillion = hoods[0];
             }
             else if (bossMayRide && Available(unit.Boss, takenMen))

@@ -250,13 +250,13 @@ namespace LivingCity.UI
         /// order the personnel card lists them in, so the two pages agree.</summary>
         static CharacterAttribute NthBest(Character man, int rank)
         {
-            var best = CharacterAttribute.Intelligence;
+            var best = CharacterAttribute.Awareness;
             var taken = 0;
 
             for (var pick = 0; pick <= rank; pick++)
             {
                 var bestValue = int.MinValue;
-                best = CharacterAttribute.Intelligence;
+                best = CharacterAttribute.Awareness;
                 for (var a = 0; a < AttributeScale.Count; a++)
                 {
                     if ((taken & (1 << a)) != 0)
