@@ -1009,12 +1009,13 @@ namespace RoadDemo
             if (building.Rent > 0)
                 text += "\nTAKE: $" + building.Rent + " a week";
 
-            // LEGACY / DEPRECATED (CTRL-011): this button keeps the existing demo path
-            // reachable; new territory UI uses the stable-ID command/query boundary.
+            // Ground is not taken off a map any more. The button walks the men to the
+            // door and nothing else: what happens there is the racket's business, and
+            // who ends up holding the street is read off what stands on it.
             return FileSheet(width, top, "PROPERTY FILE", text,
                 "surveyed from the street · owner unaware",
-                building.GangId == 0 ? "ALREADY OURS" : "TAKE IT",
-                building.GangId == 0 ? null : (UnityEngine.Events.UnityAction)(() =>
+                "SEND THE MEN",
+                (UnityEngine.Events.UnityAction)(() =>
                     _hud.Order(TurfOrder.Taking,
                         _hud.Survey.Plan.ToPlan(building.World.center), building)),
                 metresPerUnit);

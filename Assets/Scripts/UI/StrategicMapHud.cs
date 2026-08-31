@@ -1541,6 +1541,31 @@ namespace LivingCity.UI
             else
                 holdingsScratch.Clear();
 
+            // Who holds this street is the DERIVED reading, not a count of deeds: the men
+            // standing on it, what it fears, whose shops pay whom, and whether that house
+            // answers for them. The deeds are still printed under it, because a family
+            // with premises here is a fact worth knowing - it is simply not the answer.
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            var read = false;
+            if (runtime != null && runtime.Control != null &&
+                runtime.TryGetBlock(block.Id, out var canonical))
+            {
+                var state = runtime.Control.StateOf(canonical);
+                var leader = runtime.Control.LeaderOf(canonical);
+                if (state != Territory.TerritoryControlState.Unknown &&
+                    state != Territory.TerritoryControlState.Uncontrolled)
+                {
+                    read = true;
+                    if (leader.IsValid)
+                        text.Append("<color=#")
+                            .Append(ColorUtility.ToHtmlStringRGB(GangPalette.Of(leader.Value)))
+                            .Append('>')
+                            .Append(Gangs.GangRegistry.NameOf(leader.Value))
+                            .Append("</color> — ");
+                    text.Append(LedgerText.ControlWord(state)).Append('\n');
+                }
+            }
+
             var gangId = Outfit.Turf.DominantIn(holdingsScratch, block.Id);
             if (gangId >= 0)
             {
@@ -1553,7 +1578,7 @@ namespace LivingCity.UI
                     .Append(held == 1 ? "a business" : held + " businesses")
                     .Append(" here\n");
             }
-            else
+            else if (!read)
             {
                 text.Append("No family holds ground here\n");
             }

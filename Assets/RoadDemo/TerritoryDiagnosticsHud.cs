@@ -48,6 +48,7 @@ namespace RoadDemo
             sections.Add(new PresenceSection());
             sections.Add(new FearSection());
             sections.Add(new RacketSection());
+            sections.Add(new ControlSection());
             // The businesses page installs itself rather than waiting to be registered:
             // the business pass runs BEFORE this HUD is built, so a push from that side
             // would depend on component start order.
@@ -588,6 +589,78 @@ namespace RoadDemo
 
                 if (shown == 0)
                     text.Append("no family has spoken to any shop on this block");
+            }
+        }
+
+        /// <summary>
+        /// What this street reads as and why: every family's four terms, what they add up
+        /// to, and the quarter the street sits in. Read off the control ledger - the page
+        /// derives nothing and can set nothing, because there is nothing to set.
+        /// </summary>
+        sealed class ControlSection : ITerritoryDiagnosticsSection
+        {
+            readonly List<TerritoryBlockId> members = new List<TerritoryBlockId>();
+
+            public string Title => "Control (derived)";
+
+            public void Append(
+                StringBuilder text, TerritoryBlockTruth block, TerritoryRuntime runtime)
+            {
+                var control = runtime?.Control;
+                if (control == null)
+                {
+                    text.Append("no control ledger in this scene");
+                    return;
+                }
+
+                var blockId = block.Definition.Id;
+                control.Scores(blockId, out var best, out var second);
+                text.Append("reads: ").Append(control.StateOf(blockId));
+                var leader = control.LeaderOf(blockId);
+                if (leader.IsValid)
+                    text.Append("  ·  gang #").Append(leader.Value);
+                text.Append("  ·  best ").Append(best.ToString("0.0"))
+                    .Append(" vs ").Append(second.ToString("0.0")).AppendLine();
+
+                var signals = block.Signals;
+                for (var i = 0; i < signals.Gangs.Count; i++)
+                {
+                    var gangId = signals.Gangs[i].GangId;
+                    var inputs = runtime.ControlInputsFor(blockId, gangId);
+                    var score = control.Config.Score(inputs);
+                    runtime.Power.Collect(blockId, gangId, runtime.GameHour,
+                        out var incidents, out var unanswered);
+
+                    text.Append("  gang #").Append(gangId.Value)
+                        .Append("  P ").Append(score.PresenceTerm.ToString("0.0"))
+                        .Append(" + F ").Append(score.FearTerm.ToString("0.0"))
+                        .Append(" + C ").Append(score.ComplianceTerm.ToString("0.0"))
+                        .Append("  x power ").Append(inputs.Power.ToString("0.00"))
+                        .Append("  =  ").Append(score.Total.ToString("0.0"));
+                    if (incidents > 0)
+                        text.Append("  [").Append(unanswered).Append('/').Append(incidents)
+                            .Append(" unanswered]");
+                    text.AppendLine();
+                }
+
+                var geography = runtime.Geography;
+                if (geography == null ||
+                    !geography.TryGetNeighborhood(block.Definition.NeighborhoodId, out var hood))
+                    return;
+
+                members.Clear();
+                for (var i = 0; i < hood.BlockIds.Count; i++)
+                    members.Add(hood.BlockIds[i]);
+                var status = TerritoryNeighborhoodReading.Read(
+                    block.Definition.NeighborhoodId, members, control);
+                text.Append(block.Definition.NeighborhoodName).Append(": ")
+                    .Append(status.Dominated).Append(" outright, ")
+                    .Append(status.Controlled).Append(" held, ")
+                    .Append(status.Contested).Append(" contested, ")
+                    .Append(status.Influenced).Append(" influenced, ")
+                    .Append(status.Neutral).Append(" nobody's");
+                if (status.Leader.IsValid)
+                    text.Append("  ·  gang #").Append(status.Leader.Value).Append(" leads");
             }
         }
 

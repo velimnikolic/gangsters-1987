@@ -142,21 +142,6 @@ namespace RoadDemo
             _lastCloseFrame = -1;
         }
 
-        /// <summary>
-        /// Whether a crew may take a building by standing on it, and the seam a real
-        /// campaign rule replaces. Ground in this project is taken premise by premise
-        /// and the rule for HOW is deliberately unwritten (Outfit.Turf's note); the map
-        /// must not invent one. The default below is the smallest honest stub - the
-        /// crew has to actually be there and nobody else's men may be standing on it -
-        /// and the ownership it writes is BusinessMarker.GangId, the project's single
-        /// source for who holds ground, so the ledger sees a takeover the same frame.
-        /// </summary>
-        /// <remarks>
-        /// LEGACY / DEPRECATED: CTRL-011 removes this direct TAKE IT claim path. New
-        /// territory UI must submit stable-ID commands and may not write control or
-        /// compliance through this seam.
-        /// </remarks>
-        public static System.Func<TurfBuilding, TurfCrew, bool> ClaimRule;
 
         // ------------------------------------------------------------------ wiring
 
@@ -2233,41 +2218,18 @@ namespace RoadDemo
                 _crews.Sic(crew.Unit, best);
         }
 
+        /// <summary>
+        /// The men have arrived, and that is the whole of it. Standing on a building used
+        /// to claim it outright - the crew got there, nobody else's men were about, and
+        /// the deed changed hands the same frame. Ground is not taken that way any more:
+        /// a street answers to what stands on it, what it fears, whose shops pay whom and
+        /// whether the house answers for them, all read on the control channel. The walk
+        /// is one of those inputs, not a claim.
+        /// </summary>
         void Claim(TurfCrew crew)
         {
-            var building = crew.Taking;
             crew.Taking = null;
             crew.Order = TurfOrder.Holding;
-
-            if (building == null || building.Business == null)
-                return;
-
-            var rule = ClaimRule ?? DefaultClaim;
-            if (!rule(building, crew))
-                return;
-
-            // LEGACY / DEPRECATED (CTRL-011): TAKE IT still resolves here so the old
-            // demo remains usable, but no new territory feature may copy this direct
-            // BusinessMarker write. It will be removed when the real control loop lands.
-            building.Business.GangId = crew.GangId;
-
-            // The wash and the footprints are now wrong on a plate nobody is going to
-            // redraw for zoom reasons - the boom has not moved.
-            _ownershipStale = true;
-        }
-
-        /// <summary>The stub rule: the crew is standing on it and nobody else's men
-        /// are. Replaced wholesale by assigning <see cref="ClaimRule"/>.</summary>
-        bool DefaultClaim(TurfBuilding building, TurfCrew crew)
-        {
-            foreach (var other in _units)
-            {
-                if (other.Mine || !other.Alive)
-                    continue;
-                if ((other.Plan - crew.Plan).sqrMagnitude < PickRadius * PickRadius * 4f)
-                    return false;
-            }
-            return true;
         }
 
         // -------------------------------------------------------------- the moving

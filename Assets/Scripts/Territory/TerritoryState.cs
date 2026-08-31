@@ -139,10 +139,18 @@ namespace LivingCity.Territory
     public enum TerritoryControlState
     {
         Unknown,
+
+        /// <summary>The design plan's "Neutral": nobody's street.</summary>
         Uncontrolled,
+
         Influenced,
         Contested,
         Controlled,
+
+        // Appended so existing serialized values keep their meaning.
+
+        /// <summary>Held so completely that nobody else is worth naming on it.</summary>
+        Dominated,
     }
 
     /// <summary>

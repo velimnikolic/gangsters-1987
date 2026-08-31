@@ -580,6 +580,142 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_control_tests",
+                    "Run GAN-120 contracts for derived block control: the weighted inputs, the " +
+                    "ladder from neutral to held outright, contested detection with hysteresis, " +
+                    "organic gain and loss, the Power ledger and the quarter aggregate.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "control", "tests" })]
+        public static object ControlTests()
+        {
+            var failures = LivingCity.Tests.ControlTests.Run();
+            failures.AddRange(LivingCity.Tests.RackTests.Run()
+                .Select(failure => "Racket regression: " + failure));
+            failures.AddRange(LivingCity.Tests.FearTests.Run()
+                .Select(failure => "Fear regression: " + failure));
+            failures.AddRange(LivingCity.Tests.PresenceTests.Run()
+                .Select(failure => "Presence regression: " + failure));
+            failures.AddRange(LivingCity.Tests.TerritoryFoundationTests.Run()
+                .Select(failure => "Territory regression: " + failure));
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
+        /// <summary>
+        /// Why a street reads the way it does: every family's terms, what the block says
+        /// now, and what the quarter it sits in adds up to. Report only.
+        /// </summary>
+        [CliCommand("gangsters_control_audit",
+                    "Break down live block control: per-family presence/fear/compliance/power " +
+                    "terms, the derived state and leader, and the neighbourhood aggregate.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "control", "audit" })]
+        public static object ControlAudit(
+            [CliArg("block", "Canonical block id or legacy plan index. Omitted, the blocks " +
+                             "that read as something are reported.")]
+            string block = "",
+            [CliArg("limit", "How many blocks to report when none is named.")] int limit = 5)
+        {
+            var runtime = UnityEngine.Object.FindAnyObjectByType<RoadDemo.TerritoryRuntime>();
+            var control = runtime?.Control;
+            if (runtime == null || control == null)
+                return new { ok = false, reason = "No TerritoryRuntime is running in this scene." };
+
+            var wanted = new List<LivingCity.Territory.TerritoryBlockId>();
+            if (!string.IsNullOrEmpty(block))
+            {
+                if (int.TryParse(block, out var legacy) &&
+                    runtime.TryGetBlock(legacy, out var byIndex))
+                    wanted.Add(byIndex);
+                else
+                    wanted.Add(new LivingCity.Territory.TerritoryBlockId(block));
+            }
+            else
+            {
+                for (var i = 0; i < control.Blocks.Count && wanted.Count < System.Math.Max(1, limit); i++)
+                {
+                    var candidate = control.Blocks[i];
+                    if (control.StateOf(candidate) != LivingCity.Territory.TerritoryControlState.Uncontrolled &&
+                        control.StateOf(candidate) != LivingCity.Territory.TerritoryControlState.Unknown)
+                        wanted.Add(candidate);
+                }
+            }
+
+            var rows = new List<object>();
+            for (var i = 0; i < wanted.Count; i++)
+            {
+                var blockId = wanted[i];
+                runtime.DebugTruth.TryGetBlock(blockId, out var truth);
+                control.Scores(blockId, out var best, out var second);
+
+                var families = new List<object>();
+                var seen = new List<int>();
+                if (truth != null)
+                    for (var g = 0; g < truth.Signals.Gangs.Count; g++)
+                        seen.Add(truth.Signals.Gangs[g].GangId.Value);
+
+                for (var g = 0; g < seen.Count; g++)
+                {
+                    var gangId = new LivingCity.Territory.TerritoryGangId(seen[g]);
+                    var inputs = runtime.ControlInputsFor(blockId, gangId);
+                    var score = control.Config.Score(inputs);
+                    runtime.Power.Collect(blockId, gangId, runtime.GameHour,
+                        out var incidents, out var unanswered);
+                    families.Add(new
+                    {
+                        gang = seen[g],
+                        presence = inputs.Presence,
+                        fear = inputs.Fear,
+                        compliance = inputs.Compliance,
+                        power = inputs.Power,
+                        incidents,
+                        unanswered,
+                        presenceTerm = score.PresenceTerm,
+                        fearTerm = score.FearTerm,
+                        complianceTerm = score.ComplianceTerm,
+                        total = score.Total,
+                    });
+                }
+
+                rows.Add(new
+                {
+                    block = blockId.Value,
+                    name = truth?.Definition.DisplayName ?? "",
+                    state = control.StateOf(blockId).ToString(),
+                    leader = control.LeaderOf(blockId).IsValid
+                        ? control.LeaderOf(blockId).Value
+                        : -1,
+                    bestScore = best,
+                    secondScore = second,
+                    families = families.ToArray(),
+                });
+            }
+
+            return new
+            {
+                ok = true,
+                gameHour = runtime.GameHour,
+                blocksRead = control.Blocks.Count,
+                config = new
+                {
+                    presenceWeight = control.Config.PresenceWeight,
+                    fearWeight = control.Config.FearWeight,
+                    complianceWeight = control.Config.ComplianceWeight,
+                    influencedAt = control.Config.InfluencedAt,
+                    controlledAt = control.Config.ControlledAt,
+                    dominatedAt = control.Config.DominatedAt,
+                    contestedMargin = control.Config.ContestedMargin,
+                    contestedExitMargin = control.Config.ContestedExitMargin,
+                    contestedFloor = control.Config.ContestedFloor,
+                    holdTicks = control.Config.HoldTicks,
+                    powerFloor = control.Config.PowerFloor,
+                    powerAnswerWindowHours = control.Config.PowerAnswerWindowHours,
+                },
+                blocks = rows.ToArray(),
+            };
+        }
+
         [CliCommand("gangsters_rack_tests",
                     "Run GAN-103 contracts for the racket: per Business x Gang standing, the " +
                     "owner's evaluation, accept/hesitate/refuse, threats, escalation, " +

@@ -79,6 +79,27 @@ namespace RoadDemo
         [SerializeField, Min(0f)] float rivalDemandPresence = 25f;
         [SerializeField, Min(0)] int rivalDemandsPerTick = 2;
 
+        [Header("Derived control (GAN-120)")]
+        [SerializeField, Min(0f)] float controlPresenceWeight = 0.35f;
+        [SerializeField, Min(0f)] float controlFearWeight = 0.25f;
+        [SerializeField, Min(0f)] float controlComplianceWeight = 0.4f;
+        [Tooltip("Where a family stops being on the street and starts running it.")]
+        [SerializeField] float influencedAt = 12f;
+        [SerializeField] float controlledAt = 32f;
+        [SerializeField] float dominatedAt = 65f;
+        [Tooltip("How close the second family must be for the street to be a fight, and " +
+                 "how far it must fall behind for the fight to be over.")]
+        [SerializeField, Min(0f)] float contestedMargin = 10f;
+        [SerializeField, Min(0f)] float contestedExitMargin = 16f;
+        [SerializeField, Min(0f)] float contestedFloor = 12f;
+        [Tooltip("Readings running that must agree before a street changes hands.")]
+        [SerializeField, Min(1)] int controlHoldTicks = 2;
+        [Tooltip("How far a house that never answers for its ground falls.")]
+        [SerializeField, Range(0f, 1f)] float powerFloor = 0.5f;
+        [SerializeField, Min(0f)] float powerPenalty = 0.5f;
+        [SerializeField, Min(1f)] float powerMemoryHours = 72f;
+        [SerializeField, Min(0.01f)] float powerAnswerWindowHours = 12f;
+
         public static TerritoryRuntime Instance { get; private set; }
 
         RoadDemoBuilder builder;
@@ -132,6 +153,12 @@ namespace RoadDemo
         readonly List<TerritoryBusinessId> blockBusinessScratch = new List<TerritoryBusinessId>();
         int rivalDemandCursor;
 
+        TerritoryControlLedger control;
+        TerritoryPowerLedger power;
+        readonly List<TerritoryControlScore> controlScores = new List<TerritoryControlScore>();
+        readonly List<TerritoryGangId> controlGangs = new List<TerritoryGangId>();
+        readonly List<TerritoryGangId> racketGangScratch = new List<TerritoryGangId>();
+
         public ITerritoryTruthQuery DebugTruth => truth;
 
         /// <summary>Who is really standing on which block, family by family. Simulation
@@ -145,6 +172,15 @@ namespace RoadDemo
         /// <summary>Who pays whom, shop by shop. Written only by resolved interactions -
         /// a click never reaches it, and neither does a marker.</summary>
         public TerritoryRacketLedger Racket => racket;
+
+        /// <summary>What each street currently reads as, and who leads it. DERIVED on the
+        /// control channel from what every family has going for it there - there is no
+        /// owner field anywhere in this project, and no command that sets one.</summary>
+        public TerritoryControlLedger Control => control;
+
+        /// <summary>Whether a family answers for what happens to the ground it is paid to
+        /// protect. Scales everything else it is worth on that block.</summary>
+        public TerritoryPowerLedger Power => power;
 
         /// <summary>The last game hour territory was ticked at - the stamp every Fear
         /// record is filed under, so an act that happens between ticks is not filed at a
@@ -256,6 +292,13 @@ namespace RoadDemo
                 rivalDemandPresence: rivalDemandPresence,
                 rivalDemandsPerTick: rivalDemandsPerTick,
                 approachRadiusMetres: approachRadiusMetres));
+            var controlConfig = new TerritoryControlConfig(
+                controlPresenceWeight, controlFearWeight, controlComplianceWeight,
+                influencedAt, controlledAt, dominatedAt,
+                contestedMargin, contestedFloor, contestedExitMargin, controlHoldTicks,
+                powerFloor, powerPenalty, powerMemoryHours, powerAnswerWindowHours);
+            control = new TerritoryControlLedger(controlConfig);
+            power = new TerritoryPowerLedger(controlConfig);
             StreetAlarm.OnShot += OnStreetShot;
             StreetAlarm.OnDeath += OnStreetDeath;
 
@@ -428,11 +471,15 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// Publishes who holds each block, read off the deeds standing on it. This is the
-        /// DerivedControl channel's whole job: the arithmetic is pure
-        /// (TerritoryControlDerivation) and the only thing written back is the block's
-        /// control and each family's standing - fear and business compliance are carried
-        /// forward untouched, because they belong to their own tickets.
+        /// Publishes what every street reads as. Control is DERIVED and re-derived: from
+        /// the men standing there, what the street fears, which of its shops are paying
+        /// whom, and whether the family answers for the ground it is paid to protect.
+        /// There is no owner field to set and no command that could set one - a street
+        /// changes hands because the things behind it changed, or it does not change.
+        ///
+        /// The deed share each family holds is still published beside it (the Influence
+        /// channel), because the maps and the ledger read it - but it is a FACT about the
+        /// premises now, not the authority on the block.
         /// </summary>
         void DeriveControl()
         {
@@ -456,10 +503,9 @@ namespace RoadDemo
                 tally.Add(business.GangId);
             }
 
-            // Every block is read, not just the ones with deeds: a block whose last
-            // premise changed hands has to stop saying it is held. The change guard is
-            // what keeps that from bumping the state version of the whole city every
-            // quarter hour - after the first pass almost nothing is written.
+            // Every block is read, not just the ones with deeds: a block whose last man
+            // walked off has to stop saying it is held. The change guard is what keeps
+            // that from bumping the whole city's version every quarter hour.
             var ids = state.BlockIds;
             for (var i = 0; i < ids.Count; i++)
             {
@@ -467,9 +513,113 @@ namespace RoadDemo
                 controlTallies.TryGetValue(blockId, out var tally);
                 var current = state.SignalsOf(blockId);
                 var next = TerritoryControlDerivation.Signals(tally, current, controlScratch);
-                if (!TerritoryControlDerivation.Same(current, next))
-                    state.SetSignals(blockId, next);
+
+                var reading = ReadControl(blockId, next);
+                if (!TerritoryControlDerivation.Same(current, reading) ||
+                    current.Control != reading.Control ||
+                    current.LeadingGangId != reading.LeadingGangId)
+                    state.SetSignals(blockId, reading);
             }
+
+            power?.Forget(lastGameHour);
+        }
+
+        /// <summary>
+        /// Score every family that has anything going for it here, let the control ledger
+        /// decide whether that is enough to change what the block says, and announce it.
+        /// </summary>
+        TerritoryBlockSignals ReadControl(
+            TerritoryBlockId blockId, TerritoryBlockSignals deedSignals)
+        {
+            if (control == null)
+                return deedSignals;
+
+            CollectControlGangs(blockId);
+            controlScores.Clear();
+            for (var i = 0; i < controlGangs.Count; i++)
+                controlScores.Add(control.Config.Score(ControlInputsFor(blockId, controlGangs[i])));
+
+            if (control.Read(blockId, controlScores, lastGameHour, out var change))
+            {
+                events.Publish(new BlockControlChanged(
+                    blockId, change.PreviousLeader, change.Leader, change.Current,
+                    change.GameHour));
+                if (change.BecameContested)
+                {
+                    control.Scores(blockId, out _, out _);
+                    events.Publish(new BlockBecameContested(
+                        blockId, change.Leader, change.PreviousLeader, change.GameHour));
+                }
+                if (change.LostControl && change.PreviousLeader.IsValid)
+                    events.Publish(new BlockControlLost(
+                        blockId, change.PreviousLeader, change.GameHour));
+            }
+
+            return new TerritoryBlockSignals(
+                deedSignals.LocalFear,
+                deedSignals.BusinessCompliance,
+                deedSignals.CompliantBusinesses,
+                deedSignals.TotalBusinesses,
+                control.StateOf(blockId),
+                control.LeaderOf(blockId),
+                deedSignals.Gangs);
+        }
+
+        /// <summary>Every family with men, a name or a shop on this street.</summary>
+        void CollectControlGangs(TerritoryBlockId blockId)
+        {
+            controlGangs.Clear();
+            if (presence != null)
+            {
+                presence.CollectGangs(blockId, presenceGangs);
+                for (var i = 0; i < presenceGangs.Count; i++)
+                    if (!controlGangs.Contains(presenceGangs[i].GangId))
+                        controlGangs.Add(presenceGangs[i].GangId);
+            }
+
+            if (fear != null)
+            {
+                fear.CollectGangs(blockId, lastGameHour, fearGangs);
+                for (var i = 0; i < fearGangs.Count; i++)
+                    if (!controlGangs.Contains(fearGangs[i].GangId))
+                        controlGangs.Add(fearGangs[i].GangId);
+            }
+
+            if (racket == null || geography == null)
+                return;
+
+            BlockBusinesses(blockId);
+            racket.CollectGangsOn(blockBusinessScratch, racketGangScratch);
+            for (var i = 0; i < racketGangScratch.Count; i++)
+                if (!controlGangs.Contains(racketGangScratch[i]))
+                    controlGangs.Add(racketGangScratch[i]);
+        }
+
+        /// <summary>What one family has going for it here, gathered from the systems that
+        /// own each number. Nothing is copied into the control reading's own store.</summary>
+        public TerritoryControlInputs ControlInputsFor(
+            TerritoryBlockId blockId, TerritoryGangId gangId)
+        {
+            var standing = presence?.TotalOf(blockId, gangId) ?? 0f;
+            var feared = fear?.FearOf(blockId, gangId, lastGameHour) ?? 0f;
+            var paying = 0f;
+            if (racket != null && geography != null)
+            {
+                BlockBusinesses(blockId);
+                paying = racket.ComplianceOf(blockBusinessScratch, gangId);
+            }
+
+            return new TerritoryControlInputs(
+                gangId, standing, feared, paying,
+                power?.Coefficient(blockId, gangId, lastGameHour) ?? 1f);
+        }
+
+        void BlockBusinesses(TerritoryBlockId blockId)
+        {
+            blockBusinessScratch.Clear();
+            var here = geography.BusinessesOf(blockId);
+            for (var i = 0; i < here.Count; i++)
+                blockBusinessScratch.Add(here[i].BusinessId);
         }
 
         void SampleActorBlocks(double gameHour, double cadenceHours)
@@ -729,10 +879,40 @@ namespace RoadDemo
                 return 0f;
 
             var impact = fear.Record(value);
+            NotePower(value);
             fearDirty.Add(value.BlockId);
             events.Publish(new FearEventRecorded(
                 value.BlockId, value.GangId, value.SourceActorId, impact, value.GameHour));
             return impact;
+        }
+
+        /// <summary>
+        /// Violence on a street is a bill for whoever is paid to keep the peace on it.
+        /// Every family with a shop here that did NOT do this has an incident against its
+        /// name; the family that DID it has answered for its own ground. That is the whole
+        /// of Power in Phase 1: a house that never comes when its shops are hit is worth
+        /// less on that street than one that does, whatever else it has going for it.
+        /// </summary>
+        void NotePower(TerritoryFearEvent value)
+        {
+            if (power == null || racket == null || geography == null || !value.BlockId.IsValid)
+                return;
+            if (value.Category != TerritoryFearCategory.Assault &&
+                value.Category != TerritoryFearCategory.PropertyDamage &&
+                value.Category != TerritoryFearCategory.Shot &&
+                value.Category != TerritoryFearCategory.Killing)
+                return;
+
+            BlockBusinesses(value.BlockId);
+            for (var i = 0; i < blockBusinessScratch.Count; i++)
+            {
+                if (!racket.TryGetProtector(blockBusinessScratch[i], out var protector))
+                    continue;
+                if (protector == value.GangId)
+                    power.Answered(value.BlockId, protector, value.GameHour);
+                else
+                    power.Incident(value.BlockId, protector, value.GameHour);
+            }
         }
 
         /// <summary>

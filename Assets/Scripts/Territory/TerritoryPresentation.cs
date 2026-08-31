@@ -80,7 +80,8 @@ namespace LivingCity.Territory
             string influenced = "Influenced",
             string contested = "Contested",
             string controlled = "Controlled",
-            string unknownControl = "Unknown")
+            string unknownControl = "Unknown",
+            string dominated = "Dominated")
         {
             Presence = presence ?? throw new ArgumentNullException(nameof(presence));
             Fear = fear ?? throw new ArgumentNullException(nameof(fear));
@@ -93,6 +94,7 @@ namespace LivingCity.Territory
             Contested = contested ?? "Contested";
             Controlled = controlled ?? "Controlled";
             UnknownControl = unknownControl ?? "Unknown";
+            Dominated = dominated ?? "Dominated";
         }
 
         public TerritoryQualitativeScale Presence { get; }
@@ -108,6 +110,9 @@ namespace LivingCity.Territory
         public string Contested { get; }
         public string Controlled { get; }
         public string UnknownControl { get; }
+
+        /// <summary>A street held so heavily nobody else is worth naming on it.</summary>
+        public string Dominated { get; }
 
         public static TerritoryPresentationProfile Default { get; } =
             new TerritoryPresentationProfile(
@@ -382,6 +387,7 @@ namespace LivingCity.Territory
                 case TerritoryControlState.Influenced: return profile.Influenced;
                 case TerritoryControlState.Contested: return profile.Contested;
                 case TerritoryControlState.Controlled: return profile.Controlled;
+                case TerritoryControlState.Dominated: return profile.Dominated;
                 default: return profile.UnknownControl;
             }
         }

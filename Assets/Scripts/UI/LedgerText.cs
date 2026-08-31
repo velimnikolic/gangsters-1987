@@ -402,5 +402,19 @@ namespace LivingCity.UI
         public const string ReasonNotHeld = "Nobody holds it.";
         public const string ReasonGearViaLieutenant =
             "Gear goes to a lieutenant - his crew draws from him.";
-    }
+    
+        /// <summary>What a street's derived reading is called on a card. The words are
+        /// the presentation profile's; this is the plain fallback for surfaces that do
+        /// not carry one.</summary>
+        public static string ControlWord(Territory.TerritoryControlState state) => state switch
+        {
+            Territory.TerritoryControlState.Influenced => "influence here",
+            Territory.TerritoryControlState.Contested => "contested ground",
+            Territory.TerritoryControlState.Controlled => "holds this street",
+            Territory.TerritoryControlState.Dominated => "owns this street outright",
+            Territory.TerritoryControlState.Uncontrolled => "nobody's street",
+            _ => "not known",
+        };
+
+}
 }

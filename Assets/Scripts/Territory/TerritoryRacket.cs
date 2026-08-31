@@ -596,6 +596,49 @@ namespace LivingCity.Territory
             share = weighted * 100f / total;
         }
 
+        /// <summary>
+        /// How much of this street is paying ONE family, on the same scale the block's
+        /// overall compliance is counted in. A wavering shop counts as the configured
+        /// fraction of a yes to that family, and to nobody else.
+        /// </summary>
+        public float ComplianceOf(
+            IReadOnlyList<TerritoryBusinessId> blockBusinesses, TerritoryGangId gangId)
+        {
+            if (blockBusinesses == null || blockBusinesses.Count == 0 || !gangId.IsValid)
+                return 0f;
+
+            var weighted = 0f;
+            for (var i = 0; i < blockBusinesses.Count; i++)
+            {
+                if (!businesses.TryGetValue(blockBusinesses[i], out var row))
+                    continue;
+                var state = row.StateOf(gangId);
+                if (state == TerritoryProtectionState.Compliant)
+                    weighted += 1f;
+                else if (state == TerritoryProtectionState.Hesitant ||
+                         state == TerritoryProtectionState.Intimidated)
+                    weighted += Config.HesitantComplianceShare;
+            }
+
+            return weighted * 100f / blockBusinesses.Count;
+        }
+
+        /// <summary>Every family with any standing at all on this street's shops.</summary>
+        public void CollectGangsOn(
+            IReadOnlyList<TerritoryBusinessId> blockBusinesses, List<TerritoryGangId> into)
+        {
+            into?.Clear();
+            if (into == null || blockBusinesses == null)
+                return;
+
+            for (var i = 0; i < blockBusinesses.Count; i++)
+            {
+                if (!businesses.TryGetValue(blockBusinesses[i], out var row))
+                    continue;
+                row.CollectGangs(into);
+            }
+        }
+
         BusinessRelations Row(TerritoryBusinessId businessId)
         {
             if (businesses.TryGetValue(businessId, out var row))
@@ -686,6 +729,14 @@ namespace LivingCity.Territory
 
                 gangId = default;
                 return false;
+            }
+
+            public void CollectGangs(List<TerritoryGangId> into)
+            {
+                for (var i = 0; i < gangs.Count; i++)
+                    if (gangs[i].State != TerritoryProtectionState.Unaffiliated &&
+                        !into.Contains(gangs[i].GangId))
+                        into.Add(gangs[i].GangId);
             }
 
             public void Collect(List<TerritoryProtectionRelationship> into)
