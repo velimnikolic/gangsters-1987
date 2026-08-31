@@ -548,6 +548,22 @@ namespace RoadDemo
 
         void LateUpdate()
         {
+            // Start is not the only way this component can arrive at its first frame. A
+            // script reload in the middle of Play rebuilds the managed object - the lot
+            // table and the lamp lists come back as the field initialisers left them,
+            // and Start is NOT called a second time. Unguarded, the null lamp list threw
+            // once per frame per instance, and a few thousand stack traces a second is
+            // what starves the block streamer of the frame it composes in: the city
+            // stops standing up, and the map and the minimap that read those blocks
+            // empty out with it. Cheaper to notice it than to be brought down by it.
+            if (_lots == null)
+            {
+                EnsureReady();
+                Debug.LogWarning("[RoadDemo] Night windows lost their wiring - a script " +
+                                 "reload during Play. Windows already lit stay as they " +
+                                 "are; blocks that bind from here light again.", this);
+            }
+
             float hour = clock ? clock.Hour : 12f;
             float night = DemoSky.Nightness(hour);
             float blackout = Blackout(hour);
@@ -555,7 +571,7 @@ namespace RoadDemo
             for (int b = 0; b < Lots; b++)
             {
                 var lamps = _lamps[b];
-                if (lamps.Count == 0)
+                if (lamps == null || lamps.Count == 0)
                     continue;
 
                 float lit = LotNight(_lots[b], hour, night);
