@@ -29,6 +29,7 @@ namespace LivingCity.Tests
             ("ADetailStandsBetweenHimAndIt", ADetailStandsBetweenHimAndIt),
             ("ADetailOfCowardsIsNoDetailAtAll", ADetailOfCowardsIsNoDetailAtAll),
             ("GuardsCostWagesAndLearnLittle", GuardsCostWagesAndLearnLittle),
+            ("TheSameMenHoldMoreUnderABetterMan", TheSameMenHoldMoreUnderABetterMan),
         };
 
         public static List<string> Run()
@@ -482,6 +483,67 @@ namespace LivingCity.Tests
                 failures.Add("GuardsCostWagesAndLearnLittle: the guard does not count " +
                              "against the Don's own capacity, so a detail is free there " +
                              "too.");
+        }
+
+        // ----------------------------------------------------------- what he extracts
+
+        static void TheSameMenHoldMoreUnderABetterMan(List<string> failures)
+        {
+            var roster = new Roster();
+            var poor = MakeLieutenant(roster, AttributeScale.MinHalfSteps, out var poorCrew);
+            poor.SetHalfSteps(CharacterAttribute.Organization, AttributeScale.MinHalfSteps);
+            var great = MakeLieutenant(roster, AttributeScale.MaxHalfSteps, out var greatCrew);
+            great.SetHalfSteps(CharacterAttribute.Organization, AttributeScale.MaxHalfSteps);
+
+            if (Command.PresenceFactor(poor) != Command.WorstPresenceFactor)
+                failures.Add($"TheSameMenHoldMoreUnderABetterMan: the worst commander " +
+                             $"extracts {Command.PresenceFactor(poor)}, not " +
+                             $"{Command.WorstPresenceFactor}.");
+            if (Command.PresenceFactor(great) != Command.BestPresenceFactor)
+                failures.Add($"TheSameMenHoldMoreUnderABetterMan: the best extracts " +
+                             $"{Command.PresenceFactor(great)}, not " +
+                             $"{Command.BestPresenceFactor}.");
+
+            // The same man, moved between them, is worth what his commander makes of
+            // him - and the change follows him the moment he is recrewed.
+            var hood = MakeHood(roster);
+            poorCrew.HoodIds.Add(hood.Id);
+            var under = Command.PresenceFactorFor(roster, hood.Id);
+            if (under != Command.WorstPresenceFactor)
+                failures.Add($"TheSameMenHoldMoreUnderABetterMan: a man under the worst " +
+                             $"commander is worth {under}.");
+
+            poorCrew.HoodIds.Remove(hood.Id);
+            greatCrew.HoodIds.Add(hood.Id);
+            var moved = Command.PresenceFactorFor(roster, hood.Id);
+            if (moved <= under)
+                failures.Add($"TheSameMenHoldMoreUnderABetterMan: he moved to a better " +
+                             $"crew and is worth {moved} against {under}.");
+
+            // Five men under each: the better crew holds measurably more ground with
+            // exactly the same headcount, and not so much more that headcount stops
+            // mattering.
+            var poorBlock = 5 * Command.PresenceFactor(poor);
+            var greatBlock = 5 * Command.PresenceFactor(great);
+            if (greatBlock <= poorBlock)
+                failures.Add("TheSameMenHoldMoreUnderABetterMan: command quality does " +
+                             "not move a block at all.");
+            if (greatBlock >= poorBlock * 2f)
+                failures.Add($"TheSameMenHoldMoreUnderABetterMan: five men under a good " +
+                             $"commander are worth {greatBlock} against {poorBlock} - " +
+                             "that replaces headcount instead of weighting it.");
+
+            // Nobody's man, and nobody at all, stand at exactly what they are worth.
+            var loose = MakeHood(roster);
+            if (Command.PresenceFactorFor(roster, loose.Id) != 1f)
+                failures.Add("TheSameMenHoldMoreUnderABetterMan: a pooled man is not " +
+                             "worth his own weight.");
+            if (Command.PresenceFactorFor(roster, -3) != 1f)
+                failures.Add("TheSameMenHoldMoreUnderABetterMan: a rival body, on " +
+                             "nobody's books, was weighted by our command.");
+            if (Command.PresenceFactorFor(null, 0) != 1f)
+                failures.Add("TheSameMenHoldMoreUnderABetterMan: no roster at all did " +
+                             "not read as neutral.");
         }
 
         static void OverCapacityIsFlaggedNeverFixed(List<string> failures)

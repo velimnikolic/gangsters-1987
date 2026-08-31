@@ -646,10 +646,19 @@ namespace RoadDemo
 
                 // The same pass that reports who crossed a kerb is the pass that counts
                 // Presence: one walk over the city's bodies, one truth out of it. A block
-                // the police are watching is worth less to stand on (FEAR-013).
+                // the police are watching is worth less to stand on (FEAR-013), and a
+                // man is worth what his commander extracts from him (RANK-004) - the
+                // same five men hold more ground under a better lieutenant.
+                var ground = fear == null ? 1f : fear.PresenceScale(blockId, gameHour);
+                var roster = LivingCity.Gameplay.PersonnelDirector.Instance != null
+                    ? LivingCity.Gameplay.PersonnelDirector.Instance.Roster
+                    : null;
                 presence?.Contribute(
                     blockId, observation,
-                    fear == null ? 1f : fear.PresenceScale(blockId, gameHour));
+                    ground * LivingCity.Personnel.Command.PresenceFactorFor(
+                        roster, observation.CharacterId.IsValid
+                            ? observation.CharacterId.Value
+                            : -1));
             });
             BlocklessActors = blockless;
 

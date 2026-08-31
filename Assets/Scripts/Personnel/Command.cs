@@ -96,6 +96,73 @@ namespace LivingCity.Personnel
                    (MaxLieutenants - FloorLieutenants) * reach * reach / 10_000;
         }
 
+        /// <summary>What a man on a block is worth under the worst commander there
+        /// is, and under the best. A modest band on purpose: command quality has to
+        /// matter without ever replacing headcount - five men well led should beat
+        /// four, not eight.</summary>
+        public const float WorstPresenceFactor = 0.8f;
+
+        public const float BestPresenceFactor = 1.3f;
+
+        /// <summary>
+        /// How much of a man's physical presence his commander actually extracts.
+        /// Organization and Leadership together: the rota that puts him on the right
+        /// corner at the right hour, and the reason he is still standing there an hour
+        /// later.
+        ///
+        /// This is the Roster track's hook into the territory war. Pull hoods off a
+        /// block for a fight and Presence falls, businesses stop paying, Fear decays
+        /// and control weakens - war is expensive even when no fight is lost - and a
+        /// good commander is what makes the same men hold more of it.
+        ///
+        /// Out of scope, deliberately: the design also has Organization capping orders
+        /// per week. That is a different lever and belongs to the orders layer when
+        /// weekly budgets exist.
+        /// </summary>
+        public static float PresenceFactor(Character commander)
+        {
+            if (commander == null)
+                return 1f;
+
+            var quality = (AttributeScale.ValueOf(
+                               commander.GetHalfSteps(CharacterAttribute.Organization)) +
+                           AttributeScale.ValueOf(
+                               commander.GetHalfSteps(CharacterAttribute.Leadership))) / 2;
+
+            var floor = AttributeScale.ValueOf(AttributeScale.MinHalfSteps);
+            var span = AttributeScale.ValueOf(AttributeScale.MaxHalfSteps) - floor;
+            var t = (quality - floor) / (float)span;
+
+            return WorstPresenceFactor + (BestPresenceFactor - WorstPresenceFactor) * t;
+        }
+
+        /// <summary>
+        /// The factor for one man on the street, found through whoever commands him.
+        /// A man nobody commands - pooled, or on nobody's books at all, which is every
+        /// rival body the city walks past - stands at exactly what he is worth.
+        /// </summary>
+        public static float PresenceFactorFor(Roster roster, int characterId)
+        {
+            if (roster == null || characterId < 0)
+                return 1f;
+
+            var man = roster.Find(characterId);
+            if (man == null)
+                return 1f;
+
+            // A commander extracts his own presence too: the Boss and his lieutenants
+            // are one body each on the ground like anybody else.
+            if (man.Rank == Rank.Boss || man.Rank == Rank.Lieutenant)
+                return PresenceFactor(man);
+
+            var crew = roster.CrewOf(characterId);
+            var commander = crew != null ? roster.Find(crew.LieutenantId) : null;
+            if (commander == null && roster.Organization.BossHoodIds.Contains(characterId))
+                commander = roster.FindBoss();
+
+            return commander != null ? PresenceFactor(commander) : 1f;
+        }
+
         /// <summary>Lieutenants on the books who are still on their feet.</summary>
         public static int LieutenantsHeld(Roster roster)
         {
