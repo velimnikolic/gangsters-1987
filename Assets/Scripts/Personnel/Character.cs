@@ -115,6 +115,11 @@ namespace LivingCity.Personnel
         /// a long soak and a stored day cannot.</summary>
         public int UnderpaidSince;
 
+        /// <summary>The campaign day he last changed rank. An ambitious man who has
+        /// been exactly what he is for long enough starts to feel it (LOY-001), and a
+        /// day rather than a count for the reason every other clock here is one.</summary>
+        public int RankSince;
+
         /// <summary>He is taking a cut of whatever he handles. Nothing tells the player
         /// this - it shows as thin takes on a block until somebody catches him.</summary>
         public bool Skimming;

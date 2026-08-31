@@ -33,6 +33,15 @@ namespace LivingCity.Personnel
 
         /// <summary>He stood in front of the Don and lived.</summary>
         StoppedIt,
+
+        /// <summary>His loyalty crossed down through the watch band.</summary>
+        BearsWatching,
+
+        /// <summary>A lieutenant walked, and took men with him.</summary>
+        Defected,
+
+        /// <summary>He was made a lieutenant.</summary>
+        Promoted,
     }
 
     /// <summary>
@@ -74,6 +83,12 @@ namespace LivingCity.Personnel
                 case IncidentKind.StoppedIt:
                     return "They came for the Don" + place + ". " + name +
                            " took it instead, and is in a bed.";
+                case IncidentKind.BearsWatching:
+                    return name + " bears watching.";
+                case IncidentKind.Defected:
+                    return name + " has gone over, and he did not go alone.";
+                case IncidentKind.Promoted:
+                    return name + " has a crew of his own.";
                 default:
                     return name + " is slowing down.";
             }

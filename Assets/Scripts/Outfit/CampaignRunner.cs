@@ -76,6 +76,11 @@ namespace LivingCity.Outfit
         /// than the whole campaign, for the reason <see cref="RecordsKept"/> is one.</summary>
         public const int IncidentsKept = 120;
 
+        /// <summary>Scratch for the day's defections - the roster is walked to find
+        /// them and then walked again to strike them off, because a lieutenant going
+        /// over takes his crew with him as he goes.</summary>
+        static readonly List<Character> DefectedToday = new List<Character>();
+
         /// <summary>Police attention the outfit has drawn. Nothing spends it yet; the
         /// jobs pay into it so the police layer inherits a history when it lands.</summary>
         public int Heat;
@@ -384,6 +389,7 @@ namespace LivingCity.Outfit
                 // The calendar, written through before anything reads it: a man taken
                 // on today is dealt a date of birth in THIS year.
                 roster.Year = Campaign.Year;
+                roster.Day = Campaign.Day;
 
                 StandingDay(roster);
                 // The command drip BEFORE the conversion, so a day spent holding a
@@ -414,14 +420,40 @@ namespace LivingCity.Outfit
                             UI.LedgerText.AttributeLabel(loss.Attribute).ToLowerInvariant())));
                 }
 
-                // What the underpaid are doing about it. Read against the wage table
-                // rather than stored on the man, so a raise or a promotion closes the
-                // gap the same midnight it happens.
+                // What the underpaid are doing about it, and what the men think of the
+                // one man each of them actually answers to. Both read against the live
+                // roster rather than anything stored, so a raise, a promotion or a
+                // transfer lands the same midnight it happens.
+                var branch = new OrganizationQuery(roster);
                 for (var i = 0; i < roster.Members.Count; i++)
                 {
                     var member = roster.Members[i];
                     GreedLadder.Tick(member, Wages.WageFor(member),
                         Wages.WorthOf(member), Campaign.Day, Incidents, CharacterChanges);
+
+                    var hasSuperior = branch.TryGetCommandParent(member.Id, out var above);
+                    var crowded = hasSuperior &&
+                                  branch.CapacityOf(above.Id).IsOverCapacity;
+                    Loyalty.Drift(member, hasSuperior, crowded, Wages.PayGap(member),
+                        Campaign.Day, Campaign.Day - member.RankSince,
+                        CharacterChanges, Incidents);
+                }
+
+                // And then the men whose loyalty has run out entirely. Walked over a
+                // copy, because a lieutenant going over takes his crew off the books
+                // as he goes.
+                DefectedToday.Clear();
+                for (var i = 0; i < roster.Members.Count; i++)
+                    if (roster.Members[i].Rank == Rank.Lieutenant &&
+                        !roster.Members[i].Gone &&
+                        roster.Members[i].Loyalty <= Defection.BreakingPoint)
+                        DefectedToday.Add(roster.Members[i]);
+                for (var i = 0; i < DefectedToday.Count; i++)
+                {
+                    var report = Defection.Tick(roster, DefectedToday[i], Campaign.Day,
+                        Incidents);
+                    if (report.Happened)
+                        RosterMoved?.Invoke();
                 }
 
                 var back = RosterOps.Discharge(roster, Campaign.Day);

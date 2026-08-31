@@ -61,6 +61,11 @@ namespace LivingCity.Personnel
         /// older than he is. Zero means "the campaign's opening year".</summary>
         public int Year;
 
+        /// <summary>The campaign day as of the last tick, written through by the runner
+        /// for the same reason as <see cref="Year"/>: a rank change has to be stamped
+        /// with the day it happened, and the rules layer cannot reach the calendar.</summary>
+        public int Day;
+
         int nextCharacterId;
         int nextCrewId;
         int nextEquipmentId;

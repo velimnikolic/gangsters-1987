@@ -173,6 +173,10 @@ namespace LivingCity.Personnel
             Detach(roster, id);
             var member = roster.Find(id);
             member.Rank = Rank.Lieutenant;
+            member.RankSince = roster.Day;
+            // He answers to the Boss now, and a new relationship starts near zero
+            // history - what he felt about his old lieutenant does not come with him.
+            Loyalty.Reaim(member, "made a lieutenant, and answers to the Boss now");
 
             var crew = new Crew { Id = roster.NextCrewId(), LieutenantId = id };
             roster.Crews.Add(crew);
@@ -199,6 +203,8 @@ namespace LivingCity.Personnel
                 roster.Crews.Remove(crew);
 
             member.Rank = Rank.Hood;
+            member.RankSince = roster.Day;
+            Loyalty.Reaim(member, "taken back down to a hood");
             PutUnderBossIfPresent(roster, member.Id);
             if (formerHoods != null)
                 for (var i = 0; i < formerHoods.Count; i++)
@@ -231,6 +237,8 @@ namespace LivingCity.Personnel
 
             Detach(roster, id);
             crew.HoodIds.Add(id);
+            // A new superior is a new relationship: loyalty starts near neutral again.
+            Loyalty.Reaim(roster.Find(id), "put under a new lieutenant");
             return OpResult.Success;
         }
 
