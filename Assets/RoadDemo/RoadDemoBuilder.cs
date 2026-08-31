@@ -592,6 +592,10 @@ namespace RoadDemo
             // connectors they cross are in
                 Pass("BuildHighwayLinks", BuildHighwayLinks);
             }
+            // the city's businesses and their gazde, dealt once from the plan BEFORE any
+            // consumer - the outfit fronts, the map, the territory runtime - asks who
+            // trades where (RoadDemoBuilder.Business.cs)
+            Pass("BuildBusinessSimulation", BuildBusinessSimulation);
             Pass("BuildCityLife", BuildCityLife);
             Pass("SpawnCars", SpawnCars);
             Pass("SpawnBikes", SpawnBikes);

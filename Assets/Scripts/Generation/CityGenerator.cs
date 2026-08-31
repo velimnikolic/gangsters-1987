@@ -212,6 +212,17 @@ namespace LivingCity.Generation
         /// or any other agent state seeded from their subsystem streams.
         /// </summary>
         public const int Anthropometry = 32_000;
+
+        /// <summary>
+        /// Read by the city business population pass (EPIC 2.5): every shop's archetype,
+        /// its name and its gazda. Its own offset for the list's standing reason, and one
+        /// that matters here because the pass runs over the SAME city seed the streets were
+        /// laid from - a business roll sharing a stream with generation would mean the shop
+        /// on a corner depended on how many lamps the city happened to have. Each site then
+        /// mixes (seed + this offset, siteId hash) into its own stream, so adding or
+        /// removing one site cannot reroll any other - see BusinessIdentity.MixSeed.
+        /// </summary>
+        public const int Business = 33_000;
     }
 
     /// <summary>

@@ -624,6 +624,12 @@ namespace RoadDemo
                 UnityEngine.Debug.LogWarning(
                     $"[BlockRecycler] {recipe.Name}: {stood.Missing} piece(s) missing", this);
 
+            // The block's simulated businesses, bound to the pieces that just stood up.
+            // Before the merge, because merging retires the individual unit roots and a
+            // binding wants the shop's own mesh. Binding creates no business and changes
+            // no record - see BusinessRuntime.BindBlockView.
+            RoadDemoBuilder.BindBusinessViews(recipe.Id, view.Content);
+
             if (_config.mergeVisibleBlocks)
             {
                 var roots = new[] { view.Content };

@@ -15,7 +15,9 @@ server that Unity's CLI talks to. Prefer it over anything that needs the editor 
 This project's own commands: `gangsters_layout` (district roll for a seed), `gangsters_measure`
 (what a prefab really measures), `gangsters_play` (a harness run inside the open editor, no
 lockfile), `gangsters_core` and `gangsters_industry` (a quarter dealt from a seed and judged;
-`--draw` stands it up). They live in `Assets/Scripts/Editor/PipelineCommands.cs`.
+`--draw` stands it up), `gangsters_business_tests` and `gangsters_business_audit` (the city's
+businesses and their gazde; `--seed N` deals a quarter and audits it with the editor idle).
+They live in `Assets/Scripts/Editor/PipelineCommands.cs`.
 
 **Read `Docs/unity-cli.md` before reaching for a batch run or a hand-built offline compiler.**
 
@@ -50,6 +52,7 @@ make it call the shared service/model.
 | the play harness, the trace, the reader | `Docs/play-harness.md` |
 | the tactical map (the turf map: survey plate on the wheel, panel, minimap) | `Docs/tactical-map.md` |
 | the city's districts | `Docs/city-districts-plan.md` |
+| every source of a business, and which provider owns it | `Docs/business-inventory.md` |
 | what the port is made of | `Docs/harbor-detail.md` |
 | the period | `Docs/1987-period-reference.md` |
 | what the game owes a credit for | `Docs/credits.md` |

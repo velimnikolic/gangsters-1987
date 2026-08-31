@@ -6,9 +6,17 @@ namespace RoadDemo
     public partial class RoadDemoBuilder
     {
         /// <summary>
-        /// Core outfits live in random generated ground-floor shops. The residential
-        /// view may be pooled, so these doors are projected from the recipe onto the
-        /// permanent pavement graph instead of being discovered in a live hierarchy.
+        /// Core outfits live in ground-floor shops that ALREADY EXIST in the simulation.
+        /// The residential view may be pooled, so these doors are projected from the plan
+        /// onto the permanent pavement graph instead of being discovered in a live
+        /// hierarchy - and since EPIC 2.5 the plan is read through the business site
+        /// catalogue rather than through a second sweep of the same recipes.
+        ///
+        /// Only the primary shopfront of each shop building qualifies, in the order the
+        /// residential provider published them: that is exactly the set and the order
+        /// CoreResidentialFronts used to return, so migrating the fronts onto the
+        /// catalogue cannot move a single family's address. A second shopfront round a
+        /// corner is a real business but was never an outfit's door, and it stays out.
         /// </summary>
         List<DemoDoor> CoreOutfitDoors()
         {
@@ -17,18 +25,18 @@ namespace RoadDemo
             if (core == null)
                 return result;
 
-            var sites = CoreResidentialFronts.Collect(core.ResidentialBlocks, core.Frame);
-            foreach (var site in sites)
+            foreach (var site in FrontageSites(core))
             {
-                if (!NearestFrontPavement(site.Door, out var link, out var t, out var entry))
+                var door = new Vector3(site.Approach.X, 0f, site.Approach.Z);
+                if (!NearestFrontPavement(door, out var link, out var t, out var entry))
                     continue;
 
                 result.Add(new DemoDoor
                 {
-                    Pos = site.Door,
-                    Outward = site.Outward,
-                    BlockId = site.BlockId,
-                    Address = site.Address,
+                    Pos = door,
+                    Outward = new Vector3(site.ApproachOutward.X, 0f, site.ApproachOutward.Z),
+                    BlockId = site.LegacyBlockId,
+                    Address = site.Label,
                     LinkFwd = link,
                     EntryT = t,
                     EntryPos = entry,
@@ -36,6 +44,41 @@ namespace RoadDemo
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// The storefront sites the residential provider published, in ITS order - the
+        /// recipe order the outfit picker has always used. The catalogue itself enumerates
+        /// by site id, which is the right order for the population pass and the wrong one
+        /// here, so the sort is undone with the publish order the site carries.
+        /// </summary>
+        static List<LivingCity.Business.BusinessSite> FrontageSites(CoreDistrict core)
+        {
+            var sites = new List<LivingCity.Business.BusinessSite>();
+            var runtime = LivingCity.Business.BusinessRuntime.Instance;
+
+            if (runtime != null && runtime.Catalog != null)
+            {
+                var all = runtime.Catalog.Sites;
+                for (var i = 0; i < all.Count; i++)
+                    if (all[i].ProviderId == LivingCity.Business.BusinessProviders.Residential &&
+                        all[i].Role == LivingCity.Business.ResidentialBusinessSites.FrontageRole)
+                        sites.Add(all[i]);
+            }
+            else
+            {
+                // The business pass has not run (a scene that builds fronts before it, a
+                // test harness): read the same provider directly rather than inventing a
+                // second rule for the same doors.
+                var provider = new LivingCity.Business.ResidentialBusinessSites(
+                    core.ResidentialBlocks, core.Frame);
+                foreach (var site in provider.Sites())
+                    if (site.Role == LivingCity.Business.ResidentialBusinessSites.FrontageRole)
+                        sites.Add(site);
+            }
+
+            sites.Sort((a, b) => a.PublishOrder.CompareTo(b.PublishOrder));
+            return sites;
         }
 
         bool NearestFrontPavement(Vector3 door, out PedLink best, out float bestT,

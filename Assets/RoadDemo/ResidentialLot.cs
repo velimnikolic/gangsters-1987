@@ -2216,6 +2216,14 @@ namespace RoadDemo
         /// <summary>How deep the inner ground is from this side.</summary>
         static int Depth(Plan plan, int side) => side == 0 || side == 2 ? plan.InnerD : plan.Inner;
 
+        /// <summary>
+        /// The one mapping from (side, along, depth) to a block cell, published so that a
+        /// reader outside the generator - the business site provider, which has to measure a
+        /// gap's ground without composing it - uses this and never a second copy of it.
+        /// </summary>
+        public static (int i, int j) GapCell(Plan plan, int side, int at, int k) =>
+            Into(plan, side, at, k);
+
         /// <summary>The cell <paramref name="k"/> in from this edge, at <paramref name="at"/>
         /// along it.</summary>
         static (int, int) Into(Plan plan, int side, int at, int k) => side switch

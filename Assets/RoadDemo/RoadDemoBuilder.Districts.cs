@@ -58,6 +58,11 @@ namespace RoadDemo
 
         readonly List<IDistrict> _built = new List<IDistrict>();
 
+        /// <summary>Every quarter that actually stands, the primary structure included.
+        /// Read by plan-level passes (the business site sweep) that need a district's own
+        /// data rather than its hierarchy.</summary>
+        public IReadOnlyList<IDistrict> BuiltDistricts => _built;
+
         /// <summary>One quarter as PLANNED: what it is called, what kind it is, and
         /// the ground it stands on. The map washes the quarter in its own colour and
         /// prints the name across it; nothing else needs the list.</summary>

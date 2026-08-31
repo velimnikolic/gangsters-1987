@@ -242,22 +242,11 @@ namespace LivingCity.UI
         {
             var spec = CurrentDraftSpec();
 
-            Entities.BusinessMarker best = null;
-            var bestSqr = 45f * 45f;
-            foreach (var business in PropertyRegistry.Businesses)
-            {
-                if (!business)
-                    continue;
-                var position = business.transform.position;
-                var dx = position.x - world.x;
-                var dz = position.z - world.y;
-                var sqr = dx * dx + dz * dz;
-                if (sqr < bestSqr)
-                {
-                    bestSqr = sqr;
-                    best = business;
-                }
-            }
+            // The nearest business the SIMULATION knows about, not the nearest marker in
+            // the scene: a block that is streamed out still has its shops, and an order
+            // drafted over one has to find them.
+            var found = Business.CityBusinesses.TryNearest(
+                new Vector3(world.x, 0f, world.y), 45f, out var best);
 
             var needsBusiness = spec.Type == Outfit.OrderType.SmashUp ||
                 spec.Type == Outfit.OrderType.Raid ||
@@ -270,26 +259,25 @@ namespace LivingCity.UI
 
             // Verbose BEFORE assignment, opaque after execution - that split is the
             // design: the planner explains, the report never does.
-            if (needsBusiness && !best)
+            if (needsBusiness && !found)
             {
                 ordersNote = LedgerText.OrderLabel(spec.Type) +
                     " wants a business door - nothing stands there.";
                 return;
             }
-            if (blockId < 0 && !best)
+            if (blockId < 0 && !found)
             {
                 ordersNote = "Open street - nothing to target.";
                 return;
             }
 
             draftBlocks.Clear();
-            if (best)
+            if (found)
             {
                 draftBlockId = best.BlockId;
-                var position = best.transform.position;
-                draftX = position.x;
-                draftZ = position.z;
-                draftLabel = best.BusinessName;
+                draftX = best.Position.x;
+                draftZ = best.Position.z;
+                draftLabel = best.Name;
             }
             else
             {
@@ -355,13 +343,8 @@ namespace LivingCity.UI
             }
         }
 
-        static bool BlockHasBusiness(int blockId)
-        {
-            foreach (var business in PropertyRegistry.Businesses)
-                if (business && business.BlockId == blockId)
-                    return true;
-            return false;
-        }
+        static bool BlockHasBusiness(int blockId) =>
+            Business.CityBusinesses.AnyOnBlock(blockId);
 
         /// <summary>Metres from headquarters to the draft's place - the same figure the
         /// director charges the crew when the job starts, quoted before the player

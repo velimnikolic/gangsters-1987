@@ -1,4 +1,5 @@
 using UnityEngine;
+using LivingCity.Business;
 using LivingCity.Gameplay;
 using LivingCity.Territory;
 
@@ -35,6 +36,16 @@ namespace LivingCity.Entities
         public TerritoryBlockId CanonicalBlockId { get; private set; }
 
         public PropertyOwner Owner { get; set; }
+
+        /// <summary>The gazda's name when the deed lives in the simulated business
+        /// directory rather than in PropertyRegistry's legacy owner pool. The popup reads
+        /// whichever of the two is present.</summary>
+        public string OwnerName { get; private set; }
+
+        /// <summary>The doorstep the simulation published for this business, world XZ. A
+        /// crew ordered to approach walks here rather than to the middle of the mesh.</summary>
+        public Vector3 ApproachPoint { get; private set; }
+
         public bool Protected { get; set; }
 
         /// <summary>The gang whose front this building is; -1 for the honest majority. Set
@@ -63,18 +74,66 @@ namespace LivingCity.Entities
             WeeklyIncome = weeklyIncome;
             BusinessId = businessId;
             CanonicalBlockId = canonicalBlockId;
+            ApproachPoint = transform.position;
+        }
+
+        /// <summary>
+        /// Bind this view to a business that ALREADY EXISTS in the simulation. Nothing here
+        /// creates, names or rerolls anything: the ID, the name, the trade, the deed and the
+        /// doorstep are all read off the record and the site. A recycled block that comes
+        /// back rebinds to the same ID, which is the whole point of the site catalogue.
+        /// </summary>
+        public void BindTo(BusinessRecord record, BusinessSite site, string ownerName)
+        {
+            if (record == null || site == null)
+                return;
+
+            var wasBound = BusinessId;
+            BusinessId = record.Id;
+            BusinessName = record.DisplayName;
+            OwnerName = ownerName;
+            Category = CategoryOf(record.Archetype);
+            WeeklyIncome = record.EstimatedWeeklyTurnover;
+            BlockId = site.LegacyBlockId;
+            CanonicalBlockId = site.BlockHint;
+            ApproachPoint = new Vector3(site.Approach.X, transform.position.y, site.Approach.Z);
+
+            if (isActiveAndEnabled)
+            {
+                if (wasBound.IsValid && wasBound != BusinessId)
+                    BusinessViewBindings.Unbind(wasBound, this);
+                BusinessViewBindings.Bind(BusinessId, this);
+            }
+        }
+
+        /// <summary>The archetype's overlay category. Three words, because the popup and the
+        /// future action layer have only ever known three.</summary>
+        static BusinessCategory CategoryOf(BusinessArchetypeId archetype)
+        {
+            if (!BusinessArchetypes.TryGet(archetype, out var entry))
+                return BusinessCategory.Commercial;
+            switch (entry.Category)
+            {
+                case "industrial": return BusinessCategory.Industrial;
+                case "port": return BusinessCategory.Port;
+                default: return BusinessCategory.Commercial;
+            }
         }
 
         void OnEnable()
         {
             UI.OverlayRegistry.Register(this);
             PropertyRegistry.Register(this);
+            BusinessViewBindings.Bind(BusinessId, this);
         }
 
         void OnDisable()
         {
             UI.OverlayRegistry.Unregister(this);
             PropertyRegistry.Unregister(this);
+            // Only the BINDING goes. The business itself lives in the directory and has to
+            // survive its street being streamed out.
+            BusinessViewBindings.Unbind(BusinessId, this);
         }
 
         Transform UI.IOverlaySubject.OverlayAnchor => transform;
@@ -98,7 +157,7 @@ namespace LivingCity.Entities
         string UI.IOverlaySubject.OverlayTitle => BusinessName ?? name;
 
         string UI.IOverlaySubject.OverlayLine =>
-            UI.BusinessIntention.Line(Owner?.DisplayName, WeeklyIncome, Protected,
+            UI.BusinessIntention.Line(Owner?.DisplayName ?? OwnerName, WeeklyIncome, Protected,
                 Gangs.GangRegistry.NameOf(GangId));
 
         // Gang bits sit at 48+, clear of the owner's at 32+ (owner counts stay far below

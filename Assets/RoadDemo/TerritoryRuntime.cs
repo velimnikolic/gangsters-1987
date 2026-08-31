@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using LivingCity.Ambient;
-using LivingCity.Entities;
 using LivingCity.Gameplay;
 using LivingCity.Gangs;
 using LivingCity.Personnel;
@@ -467,21 +466,14 @@ namespace RoadDemo
             if (unit == null)
                 return TerritoryCommandExecution.Reject(refusal);
 
-            BusinessMarker business = null;
-            var businesses = PropertyRegistry.Businesses;
-            for (var i = 0; i < businesses.Count; i++)
-            {
-                if (businesses[i] != null && businesses[i].BusinessId == command.BusinessId)
-                {
-                    business = businesses[i];
-                    break;
-                }
-            }
+            // The doorstep comes from the simulated site, so an order can be given to a
+            // business whose block is streamed out - which is most of the city most of the
+            // time. A live marker is used only for the ground height under it.
+            if (!LivingCity.Business.CityBusinesses.TryApproachPoint(
+                    command.BusinessId, out var door))
+                return TerritoryCommandExecution.Reject("No such business in this city.");
 
-            if (business == null)
-                return TerritoryCommandExecution.Reject("The business is not present in this scene.");
-
-            return crews.MarchTo(unit, business.transform.position)
+            return crews.MarchTo(unit, door)
                 ? TerritoryCommandExecution.Pending(
                     "The group is approaching; the business state is unchanged.")
                 : TerritoryCommandExecution.Reject("The physical crew refused the order.");

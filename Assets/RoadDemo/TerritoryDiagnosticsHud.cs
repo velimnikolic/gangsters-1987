@@ -44,6 +44,10 @@ namespace RoadDemo
             sections.Add(new IdentitySection());
             sections.Add(new ResponsibilitySection());
             sections.Add(new PhysicalActorsSection());
+            // The businesses page installs itself rather than waiting to be registered:
+            // the business pass runs BEFORE this HUD is built, so a push from that side
+            // would depend on component start order.
+            sections.Add(new BusinessDiagnosticsSection());
             sections.Add(new EventSection());
         }
 

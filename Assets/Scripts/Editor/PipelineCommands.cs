@@ -94,6 +94,178 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_business_tests",
+                    "Run GAN-154 contracts for the business registry, site providers, archetype " +
+                    "catalogue, deterministic owners and city population.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "business", "tests" })]
+        public static object BusinessTests()
+        {
+            var failures = LivingCity.Tests.BusinessFoundationTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
+        /// <summary>
+        /// Why every business in this city exists, and which source owns it. Report only -
+        /// an audit that repaired its data would hide the very faults it is for.
+        /// </summary>
+        [CliCommand("gangsters_business_audit",
+                    "Count the live city's business sites, businesses and owners by provider and " +
+                    "archetype, and name every duplicate, unsupported, unpopulated or unbound one.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "business", "audit" })]
+        public static object BusinessAudit(
+            [CliArg("rows", "List every site, not just the totals and the faults.")] bool rows = false,
+            [CliArg("seed", "Deal a Core quarter from this seed and audit THAT plan instead of " +
+                            "the live scene. -1 uses the running city.")] int seed = -1)
+        {
+            var runtime = seed < 0
+                ? UnityEngine.Object.FindAnyObjectByType<LivingCity.Business.BusinessRuntime>()
+                : null;
+
+            LivingCity.Business.BusinessSiteCatalog catalog;
+            LivingCity.Business.BusinessDirectory directory;
+            LivingCity.Business.BusinessPopulationReport report;
+            int citySeed;
+            bool live = runtime != null && runtime.Populated;
+
+            if (live)
+            {
+                catalog = runtime.Catalog;
+                directory = runtime.Directory;
+                report = runtime.Report;
+                citySeed = runtime.CitySeed;
+            }
+            else
+            {
+                // No city standing: deal one from the seed. CoreDistrict.Plan is pure data
+                // - no prefab is loaded and no GameObject is made - which is exactly why
+                // the sweep can be audited from the terminal with the editor idle.
+                citySeed = seed < 0 ? 1987 : seed;
+                var core = new CoreDistrict();
+                core.Plan(null, citySeed);
+                core.Frame = DistrictFrame.Identity;
+
+                catalog = new LivingCity.Business.BusinessSiteCatalog();
+                catalog.Add(new LivingCity.Business.ResidentialBusinessSites(
+                    core.ResidentialBlocks, core.Frame));
+                catalog.Add(new LivingCity.Business.StandaloneBusinessSites(core));
+                catalog.Add(new LivingCity.Business.CompoundBusinessSites(core, null));
+                catalog.Build();
+
+                directory = new LivingCity.Business.BusinessDirectory();
+                report = LivingCity.Business.BusinessPopulation.Populate(
+                    catalog, citySeed, directory);
+            }
+            var failures = new List<string>(report.Problems);
+
+            var unpopulated = new List<string>();
+            var unbound = new List<string>();
+            var hintMismatch = new List<string>();
+            var bound = 0;
+
+            foreach (var site in catalog.Sites)
+            {
+                if (!site.Eligible)
+                    continue;
+
+                if (!directory.TryGetBySite(site.SiteId, out var record))
+                {
+                    unpopulated.Add(site.SiteId.Value + " (" + site.ProviderId + ")");
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(site.ArchetypeHint) &&
+                    LivingCity.Business.BusinessArchetypes.TryFromSignage(
+                        site.ArchetypeHint, out var hinted) &&
+                    hinted.Id != record.Archetype)
+                    hintMismatch.Add($"{site.SiteId}: signed '{site.ArchetypeHint}' but trades " +
+                                     $"as {record.Archetype}.");
+
+                if (live && LivingCity.Business.BusinessViewBindings.TryGet(record.Id, out _))
+                    bound++;
+                else if (live)
+                    unbound.Add(site.SiteId.Value);
+            }
+
+            var orphans = new List<string>();
+            foreach (var id in directory.BusinessIds)
+            {
+                directory.TryGet(id, out var record);
+                if (record == null)
+                    continue;
+                if (!catalog.TryGet(record.SiteId, out _))
+                    orphans.Add(id.Value + ": no site.");
+                else if (!directory.TryGetOwner(record.OwnerId, out _))
+                    orphans.Add(id.Value + ": no owner.");
+            }
+
+            failures.AddRange(unpopulated.Select(site => "BIZ: eligible site never populated: " + site));
+            failures.AddRange(hintMismatch);
+            failures.AddRange(orphans.Select(row => "BIZ: orphan " + row));
+
+            return new
+            {
+                passed = failures.Count == 0,
+                seed = citySeed,
+                source = live ? "live city" : "dealt from seed",
+                sites = catalog.Sites.Count,
+                eligible = catalog.EligibleCount,
+                businesses = directory.BusinessIds.Count,
+                owners = directory.OwnerIds.Count,
+                boundViews = bound,
+                unboundViews = unbound.Count,
+                byProvider = report.ByProvider
+                    .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                    .Select(pair => new { provider = pair.Key, count = pair.Value }).ToArray(),
+                byArchetype = report.ByArchetype
+                    .OrderBy(pair => pair.Key.ToString(), StringComparer.Ordinal)
+                    .Select(pair => new { archetype = pair.Key.ToString(), count = pair.Value })
+                    .ToArray(),
+                unsupported = report.Unsupported.ToArray(),
+                failures = failures.ToArray(),
+                rows = rows
+                    ? catalog.Sites.Select(site =>
+                    {
+                        directory.TryGetBySite(site.SiteId, out var record);
+                        string owner = null;
+                        if (record != null && directory.TryGetOwner(record.OwnerId, out var deed))
+                            owner = deed.DisplayName;
+                        return new
+                        {
+                            siteId = site.SiteId.Value,
+                            provider = site.ProviderId,
+                            plan = site.SourcePlanId,
+                            group = site.GroupKey,
+                            role = site.Role,
+                            hint = site.ArchetypeHint,
+                            size = site.Size.ToString(),
+                            block = site.BlockHint.Value,
+                            legacyBlock = site.LegacyBlockId,
+                            approach = new { x = site.Approach.X, z = site.Approach.Z },
+                            footprint = new
+                            {
+                                x = site.Footprint.XMin,
+                                z = site.Footprint.ZMin,
+                                w = site.Footprint.Width,
+                                d = site.Footprint.Depth,
+                            },
+                            eligible = site.Eligible,
+                            reason = site.ExclusionReason,
+                            businessId = record?.Id.Value,
+                            archetype = record?.Archetype.ToString(),
+                            name = record?.DisplayName,
+                            ownerId = record?.OwnerId.Value,
+                            owner,
+                            weekly = record?.EstimatedWeeklyTurnover ?? 0,
+                        };
+                    }).ToArray()
+                    : null,
+            };
+        }
+
         // ---------------------------------------------------------------- the plan
 
         /// <summary>The district roll for a seed, without building anything. This is the
