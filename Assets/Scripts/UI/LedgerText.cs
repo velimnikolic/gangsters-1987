@@ -385,6 +385,7 @@ namespace LivingCity.UI
         // -------------------------------------------------------------- op refusals
 
         public const string ReasonNoSuchMember = "No such man on the books.";
+        public const string ReasonNoDemand = "He has not asked for anything.";
         public const string ReasonNoSuchCrew = "No such crew.";
         public const string ReasonNoSuchItem = "No such item in the stock.";
         public const string ReasonFinanceUnavailable =

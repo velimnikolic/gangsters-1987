@@ -86,6 +86,49 @@ namespace LivingCity.Outfit
         public static int DailyWageFor(Character member) => WageFor(member);
 
         /// <summary>
+        /// What a man of his rank and his stats is WORTH a day, as against what the
+        /// outfit happens to be paying him. Not the same number, and the gap between
+        /// them is the whole of PSY-003: a lieutenant draws a flat premium however good
+        /// he gets, and a man hired out of the paper draws the bargain he struck years
+        /// ago. Both of them can work out what they are worth.
+        /// </summary>
+        public static int WorthOf(Character member)
+        {
+            if (member == null || member.Gone)
+                return 0;
+
+            switch (member.Specialty)
+            {
+                case Specialty.Accountant:
+                    return AccountantWage;
+                case Specialty.Lawyer:
+                    return LawyerWage;
+            }
+
+            // The player character owns the payroll; there is nothing for him to be
+            // short of.
+            if (member.Rank == Rank.Boss)
+                return 0;
+
+            var above = member.TotalHalfSteps() -
+                        AttributeScale.Count * AttributeScale.MinHalfSteps;
+            if (above < 0)
+                above = 0;
+
+            return member.Rank == Rank.Lieutenant
+                ? LieutenantWage + HoodPerHalfStep * above
+                : HoodBase + HoodPerHalfStep * above;
+        }
+
+        /// <summary>What he is short of the rate, a day; 0 when he is paid it or
+        /// better. The one figure the greed ladder is climbed by.</summary>
+        public static int PayGap(Character member)
+        {
+            var gap = WorthOf(member) - WageFor(member);
+            return gap > 0 ? gap : 0;
+        }
+
+        /// <summary>
         /// What a man advertising in the classified column asks a day: the
         /// lieutenancy's premium PLUS the same talent scale a hood is paid on. The
         /// house rate for a lieutenant is flat because the house raised him; a man who

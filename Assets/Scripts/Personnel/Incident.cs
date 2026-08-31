@@ -15,6 +15,15 @@ namespace LivingCity.Personnel
 
         /// <summary>It happened - louder, later, or messier than it was ordered.</summary>
         Deviated,
+
+        /// <summary>Somebody else's envelope started looking reasonable.</summary>
+        TookRivalMoney,
+
+        /// <summary>He stopped being quiet about being underpaid.</summary>
+        DemandedARaise,
+
+        /// <summary>Caught with his hand in the count.</summary>
+        CaughtSkimming,
     }
 
     /// <summary>

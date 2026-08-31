@@ -241,7 +241,53 @@ namespace LivingCity.Outfit
 
             var casualty = Misfire(spec, job, roster, crew, rng, completed);
             heat += RunTheChecks(spec, job, roster, crew, rng, incidents);
+            payout = LessWhatWentMissing(spec, job, roster, crew, rng, payout, incidents);
             return new JobOutcome(outcome, payout, cost, heat, casualty, recruited);
+        }
+
+        /// <summary>
+        /// What the men handling the money kept. Only a collection passes through
+        /// anybody's hands, so only a collection can be short - and the shortfall is
+        /// taken off the PAYOUT, which means it is genuinely missing from the books and
+        /// shows on the block as thin takes rather than as a number in a debug view.
+        ///
+        /// Whether the player ever learns why is his lieutenant's problem: the man who
+        /// runs the crew counts up afterwards, and what he notices depends on what he
+        /// sees and how well he keeps his paper.
+        /// </summary>
+        static int LessWhatWentMissing(in OrderSpec spec, Job job, Roster roster,
+            Crew crew, System.Random rng, int payout, List<Incident> incidents)
+        {
+            if (payout <= 0 || roster == null || crew == null || job == null ||
+                OrderTable.ActivityOf(spec.Type) != Activity.RacketCollection)
+                return payout;
+
+            var lieutenant = roster.Find(crew.LieutenantId);
+            var awareness = lieutenant != null
+                ? lieutenant.GetHalfSteps(CharacterAttribute.Awareness) : 0;
+            var organization = lieutenant != null
+                ? lieutenant.GetHalfSteps(CharacterAttribute.Organization) : 0;
+
+            CrewKit.MenOnJob(roster, crew, job.Men, OnTheJob);
+            var taken = 0;
+            for (var i = 0; i < OnTheJob.Count; i++)
+            {
+                var man = roster.Find(OnTheJob[i]);
+                if (man == null || man.Gone || !man.Skimming)
+                    continue;
+
+                taken += GreedLadder.SkimPercent;
+                // He is caught by the count, not by the theft: the money is already
+                // gone whether or not anybody works out where.
+                GreedLadder.TryCatch(man, awareness, organization, rng, job.IssuedDay,
+                    job.TargetLabel, incidents);
+            }
+
+            if (taken <= 0)
+                return payout;
+            if (taken > GreedLadder.MaxSkimPercent)
+                taken = GreedLadder.MaxSkimPercent;
+            return payout - payout * taken / 100;
         }
 
         /// <summary>Buffers of its own rather than the shared Scratch: this runs inside

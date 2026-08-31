@@ -54,6 +54,11 @@ namespace LivingCity.Outfit
         /// finish and cleared at the day tick, so the page carries today's.</summary>
         public readonly List<Incident> Incidents = new List<Incident>();
 
+        /// <summary>Every trait that moved today and the reason it moved - the same
+        /// clear-and-refill cycle, and the record the paper's rumour lines read.</summary>
+        public readonly List<PersonalityChange> CharacterChanges =
+            new List<PersonalityChange>();
+
         /// <summary>Police attention the outfit has drawn. Nothing spends it yet; the
         /// jobs pay into it so the police layer inherits a history when it lands.</summary>
         public int Heat;
@@ -304,6 +309,7 @@ namespace LivingCity.Outfit
             Rises.Clear();
             Declines.Clear();
             Incidents.Clear();
+            CharacterChanges.Clear();
             if (roster != null)
             {
                 // The calendar, written through before anything reads it: a man taken
@@ -321,6 +327,16 @@ namespace LivingCity.Outfit
                 // birthday tonight reads as both and not as neither.
                 Aging.Tick(roster, Campaign.Year,
                     (Campaign.Day - 1) % Campaign.DaysPerYear, Declines);
+
+                // What the underpaid are doing about it. Read against the wage table
+                // rather than stored on the man, so a raise or a promotion closes the
+                // gap the same midnight it happens.
+                for (var i = 0; i < roster.Members.Count; i++)
+                {
+                    var member = roster.Members[i];
+                    GreedLadder.Tick(member, Wages.WageFor(member),
+                        Wages.WorthOf(member), Campaign.Day, Incidents, CharacterChanges);
+                }
 
                 var back = RosterOps.Discharge(roster, Campaign.Day);
                 if (back > 0 || Rises.Count > 0 || Declines.Count > 0)

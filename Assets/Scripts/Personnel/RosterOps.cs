@@ -68,6 +68,48 @@ namespace LivingCity.Personnel
         /// the scale - records nothing. The feed prints what happened, not what was
         /// attempted.
         /// </summary>
+        /// <summary>
+        /// Yes. His envelope is brought up to what he asked, and the asking stops -
+        /// the bargain moves, which is the one thing that closes a pay gap for good.
+        /// A man who was skimming over it stops that too: he was taking what he thought
+        /// he was owed.
+        /// </summary>
+        public static OpResult GrantRaise(Roster roster, int id)
+        {
+            var member = roster?.Find(id);
+            if (member == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            if (member.WageDemand <= 0)
+                return OpResult.Fail(LedgerText.ReasonNoDemand);
+
+            member.WageAsked = member.WageDemand;
+            member.WageDemand = 0;
+            member.UnderpaidSince = 0;
+            member.Skimming = false;
+            return OpResult.Success;
+        }
+
+        /// <summary>
+        /// No. He goes on drawing what he drew, and he remembers being told. The clock
+        /// is NOT reset - he is still underpaid, and the ladder goes on from where it
+        /// was.
+        /// </summary>
+        public static OpResult RefuseRaise(Roster roster, int id,
+            System.Collections.Generic.List<PersonalityChange> into = null)
+        {
+            var member = roster?.Find(id);
+            if (member == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            if (member.WageDemand <= 0)
+                return OpResult.Fail(LedgerText.ReasonNoDemand);
+
+            member.WageDemand = 0;
+            NudgePersonality(member, PersonalityTrait.Loyalty,
+                -GreedLadder.RefusalLoyaltyHit, "asked for the rate and was refused",
+                into);
+            return OpResult.Success;
+        }
+
         /// <returns>The movement. Its <c>Delta</c> is 0 when nothing moved.</returns>
         public static PersonalityChange NudgePersonality(Character man,
             PersonalityTrait trait, int delta, string reason,

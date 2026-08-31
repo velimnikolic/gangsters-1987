@@ -29,6 +29,11 @@ namespace LivingCity.Tests
             ("TheUndisciplinedTakeTheirOwnChoices", TheUndisciplinedTakeTheirOwnChoices),
             ("OneNightOneStoryAboutAMan", OneNightOneStoryAboutAMan),
             ("EveryIncidentIsReadyForThePaper", EveryIncidentIsReadyForThePaper),
+            ("TheLieutenantsFlatPremiumOpensAGap", TheLieutenantsFlatPremiumOpensAGap),
+            ("TheGreedyClimbTheLadderOnSchedule", TheGreedyClimbTheLadderOnSchedule),
+            ("AWellPaidManIsQuietHoweverGreedy", AWellPaidManIsQuietHoweverGreedy),
+            ("TheSkimIsMoneyThatIsActuallyGone", TheSkimIsMoneyThatIsActuallyGone),
+            ("ARaiseClosesItAndARefusalCosts", ARaiseClosesItAndARefusalCosts),
         };
 
         public static List<string> Run()
@@ -399,6 +404,205 @@ namespace LivingCity.Tests
                     failures.Add($"EveryIncidentIsReadyForThePaper: {kind} has no line " +
                                  "when the place is unknown.");
             }
+        }
+
+        // ------------------------------------------------------------- greed and pay
+
+        /// <summary>A lieutenant good enough to know what he is worth, on the house's
+        /// flat premium.</summary>
+        static Character Underpaid(Roster roster, int greed)
+        {
+            var man = new Character
+            {
+                Id = roster.NextCharacterId(), FirstName = "Rocco", Surname = "Vale",
+                Rank = Rank.Lieutenant,
+            };
+            for (var s = 0; s < AttributeScale.Count; s++)
+                man.SetHalfSteps((CharacterAttribute)s, AttributeScale.MaxHalfSteps);
+            Personality.Set(man, PersonalityTrait.Greed, greed);
+            roster.Members.Add(man);
+            return man;
+        }
+
+        static void TheLieutenantsFlatPremiumOpensAGap(List<string> failures)
+        {
+            var roster = new Roster();
+            var good = Underpaid(roster, 50);
+            if (Wages.PayGap(good) <= 0)
+                failures.Add("TheLieutenantsFlatPremiumOpensAGap: a five-star lieutenant " +
+                             "on the flat premium is not short of anything, so nobody " +
+                             "can ever be underpaid.");
+
+            // A plain hood on the house scale is paid exactly what he is worth.
+            var hood = new Character { Id = roster.NextCharacterId() };
+            for (var s = 0; s < AttributeScale.Count; s++)
+                hood.SetHalfSteps((CharacterAttribute)s, 7);
+            roster.Members.Add(hood);
+            if (Wages.PayGap(hood) != 0)
+                failures.Add($"TheLieutenantsFlatPremiumOpensAGap: a hood on the house " +
+                             $"scale reads {Wages.PayGap(hood)} short of it.");
+        }
+
+        static void TheGreedyClimbTheLadderOnSchedule(List<string> failures)
+        {
+            var roster = new Roster();
+            var man = Underpaid(roster, 90);
+
+            var incidents = new List<Incident>();
+            var changes = new List<PersonalityChange>();
+            var loyaltyBefore = man.Loyalty;
+            var skimStartedOn = -1;
+            var rivalOn = -1;
+            var demandOn = -1;
+
+            for (var day = 1; day <= 60; day++)
+            {
+                var wasSkimming = man.Skimming;
+                var count = incidents.Count;
+                GreedLadder.Tick(man, Wages.WageFor(man), Wages.WorthOf(man), day, incidents, changes);
+
+                if (!wasSkimming && man.Skimming)
+                    skimStartedOn = day;
+                for (var i = count; i < incidents.Count; i++)
+                {
+                    if (incidents[i].Kind == IncidentKind.TookRivalMoney) rivalOn = day;
+                    if (incidents[i].Kind == IncidentKind.DemandedARaise) demandOn = day;
+                }
+            }
+
+            // The clock starts the first day he is short, so each rung lands one day
+            // after its stated wait.
+            if (skimStartedOn != 1 + GreedLadder.SkimAfterDays)
+                failures.Add($"TheGreedyClimbTheLadder: he started skimming on day " +
+                             $"{skimStartedOn}, not {1 + GreedLadder.SkimAfterDays}.");
+            if (rivalOn != 1 + GreedLadder.RivalAfterDays)
+                failures.Add($"TheGreedyClimbTheLadder: rival money on day {rivalOn}, " +
+                             $"not {1 + GreedLadder.RivalAfterDays}.");
+            if (demandOn != 1 + GreedLadder.DemandAfterDays)
+                failures.Add($"TheGreedyClimbTheLadder: he asked on day {demandOn}, not " +
+                             $"{1 + GreedLadder.DemandAfterDays}.");
+            if (man.Loyalty >= loyaltyBefore)
+                failures.Add("TheGreedyClimbTheLadder: somebody else's money cost the " +
+                             "outfit nothing.");
+            if (changes.Count == 0 || changes[0].Reason.Length == 0)
+                failures.Add("TheGreedyClimbTheLadder: the loyalty drop carried no reason.");
+            if (man.WageDemand <= man.WageAsked)
+                failures.Add("TheGreedyClimbTheLadder: he asked for no more than he was " +
+                             "already getting.");
+
+            // The same gap, the same days, a man who is not greedy: nothing at all.
+            var second = new Roster();
+            var content = Underpaid(second, 20);
+            var quiet = new List<Incident>();
+            for (var day = 1; day <= 60; day++)
+                GreedLadder.Tick(content, Wages.WageFor(content), Wages.WorthOf(content), day, quiet, null);
+            if (quiet.Count != 0 || content.Skimming || content.WageDemand != 0)
+                failures.Add("TheGreedyClimbTheLadder: a man with no greed in him " +
+                             "climbed the ladder anyway.");
+        }
+
+        static void AWellPaidManIsQuietHoweverGreedy(List<string> failures)
+        {
+            var roster = new Roster();
+            var man = Underpaid(roster, 95);
+            man.WageAsked = Wages.WorthOf(man);
+
+            var incidents = new List<Incident>();
+            for (var day = 1; day <= 90; day++)
+                GreedLadder.Tick(man, Wages.WageFor(man), Wages.WorthOf(man), day, incidents, null);
+
+            if (incidents.Count != 0 || man.Skimming || man.UnderpaidSince != 0)
+                failures.Add("AWellPaidManIsQuietHoweverGreedy: he is paid the rate and " +
+                             "still went looking.");
+        }
+
+        static void TheSkimIsMoneyThatIsActuallyGone(List<string> failures)
+        {
+            // Two identical collections, one crew clean and one with a hand in it.
+            var honest = CollectionPayout(skimming: false);
+            var short_ = CollectionPayout(skimming: true);
+
+            if (honest <= 0)
+                failures.Add("TheSkimIsMoneyThatIsActuallyGone: the clean collection " +
+                             "paid nothing, so the comparison proves nothing.");
+            if (short_ >= honest)
+                failures.Add($"TheSkimIsMoneyThatIsActuallyGone: the crew with a skimmer " +
+                             $"on it brought back {short_} against {honest} - the money " +
+                             "is not actually missing.");
+        }
+
+        static int CollectionPayout(bool skimming)
+        {
+            var roster = new Roster();
+            var lieutenant = new Character
+            {
+                Id = roster.NextCharacterId(), FirstName = "Lt", Rank = Rank.Lieutenant,
+            };
+            // Blind and disorganised, so the catch roll cannot change the money.
+            lieutenant.SetHalfSteps(CharacterAttribute.Awareness, AttributeScale.MinHalfSteps);
+            lieutenant.SetHalfSteps(CharacterAttribute.Organization, AttributeScale.MinHalfSteps);
+            Personality.Set(lieutenant, PersonalityTrait.Temper, 10);
+            Personality.Set(lieutenant, PersonalityTrait.Discipline, 90);
+            roster.Members.Add(lieutenant);
+
+            var crew = new Crew { Id = roster.NextCrewId(), LieutenantId = lieutenant.Id };
+            var hood = new Character { Id = roster.NextCharacterId(), FirstName = "Man" };
+            Personality.Set(hood, PersonalityTrait.Temper, 10);
+            Personality.Set(hood, PersonalityTrait.Discipline, 90);
+            hood.Skimming = skimming;
+            roster.Members.Add(hood);
+            crew.HoodIds.Add(hood.Id);
+            roster.Crews.Add(crew);
+
+            var job = new Job
+            {
+                Id = 1, CrewId = crew.Id, Type = OrderType.CollectProtection, Men = 2,
+                IssuedDay = 5, TargetLabel = "Pearl Street", TargetWorth = 400,
+            };
+            var outcome = OrderResolution.Resolve(
+                OrderTable.SpecOf(OrderType.CollectProtection), job, roster, crew,
+                new System.Random(11), OrderOutcome.Completed, null);
+            return outcome.Payout;
+        }
+
+        static void ARaiseClosesItAndARefusalCosts(List<string> failures)
+        {
+            var roster = new Roster();
+            var man = Underpaid(roster, 90);
+            var incidents = new List<Incident>();
+            for (var day = 1; day <= 40; day++)
+                GreedLadder.Tick(man, Wages.WageFor(man), Wages.WorthOf(man), day, incidents, null);
+
+            if (man.WageDemand <= 0)
+                failures.Add("ARaiseClosesIt: he never asked, so there is nothing to " +
+                             "answer.");
+
+            var asked = man.WageDemand;
+            var granted = RosterOps.GrantRaise(roster, man.Id);
+            if (!granted.Ok || man.WageAsked != asked || man.WageDemand != 0 ||
+                man.Skimming || man.UnderpaidSince != 0)
+                failures.Add("ARaiseClosesIt: saying yes did not close it.");
+            if (Wages.PayGap(man) != 0)
+                failures.Add($"ARaiseClosesIt: he is still {Wages.PayGap(man)} short " +
+                             "after being given exactly what he asked for.");
+
+            // And the other answer.
+            var second = new Roster();
+            var other = Underpaid(second, 90);
+            for (var day = 1; day <= 40; day++)
+                GreedLadder.Tick(other, Wages.WageFor(other), Wages.WorthOf(other), day, incidents, null);
+            var loyaltyBefore = other.Loyalty;
+            var changes = new List<PersonalityChange>();
+            var refused = RosterOps.RefuseRaise(second, other.Id, changes);
+            if (!refused.Ok || other.Loyalty >= loyaltyBefore || changes.Count == 0)
+                failures.Add("ARaiseClosesIt: saying no cost the outfit nothing.");
+            if (other.UnderpaidSince == 0)
+                failures.Add("ARaiseClosesIt: refusing him reset the clock, so he " +
+                             "starts the whole ladder again from nothing.");
+
+            // Nobody can be answered twice.
+            if (RosterOps.RefuseRaise(second, other.Id).Ok)
+                failures.Add("ARaiseClosesIt: he was refused a demand he had not made.");
         }
 
         static void TheScaleHoldsAtBothEnds(List<string> failures)

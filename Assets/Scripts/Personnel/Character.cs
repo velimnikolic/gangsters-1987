@@ -109,6 +109,21 @@ namespace LivingCity.Personnel
         /// BARGAIN, not a rate - training him up must not quietly raise it.</summary>
         public int WageAsked;
 
+        /// <summary>The campaign day the outfit started paying him under the rate for
+        /// a man of his stats; 0 when it is not. A DAY rather than a count of them,
+        /// for the reason every other clock in this class is: a counter drifts across
+        /// a long soak and a stored day cannot.</summary>
+        public int UnderpaidSince;
+
+        /// <summary>He is taking a cut of whatever he handles. Nothing tells the player
+        /// this - it shows as thin takes on a block until somebody catches him.</summary>
+        public bool Skimming;
+
+        /// <summary>What he has asked to be paid, a day; 0 when he has asked for
+        /// nothing. The player answers it - granting it moves his bargain, refusing it
+        /// costs loyalty.</summary>
+        public int WageDemand;
+
         /// <summary>The campaign day he is back on his feet. Meaningful only while he
         /// is Jailed or Hospitalized; the day tick reads it and puts him back to work.
         /// A day rather than a countdown so the figure survives a save and cannot drift
