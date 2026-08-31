@@ -1008,6 +1008,7 @@ namespace RoadDemo
                 "FLOORS: ~" + building.Floors;
             if (building.Rent > 0)
                 text += "\nTAKE: $" + building.Rent + " a week";
+            text += StreetReading(building);
 
             // Ground is not taken off a map any more. The button walks the men to the
             // door and nothing else: what happens there is the racket's business, and
@@ -1039,11 +1040,93 @@ namespace RoadDemo
                     : district.GangId < 0 ? "UNCLAIMED" : district.House.Name) + "\n" +
                 "FOOTPRINTS: " + held + "   OURS: " + ours + "\n" +
                 "GROUND: " + (district.World.width / 1000f).ToString("0.0") + " × " +
-                    (district.World.height / 1000f).ToString("0.0") + " km";
+                    (district.World.height / 1000f).ToString("0.0") + " km" +
+                QuarterReading(district);
 
             return FileSheet(width, top, "DISTRICT FILE", text,
                 "pencil marks are this month's · ink is last year's", null, null,
                 _hud.Survey.Plan.MetresPerUnit);
+        }
+
+        /// <summary>
+        /// How the quarter's own streets read, counted off them at the moment of asking.
+        /// A quarter is not a thing anybody takes - it is what its streets add up to, and
+        /// the file says so in the same words the streets use.
+        /// </summary>
+        string QuarterReading(TurfDistrict district)
+        {
+            var runtime = TerritoryRuntime.Instance;
+            var control = runtime?.Control;
+            var geography = runtime?.Geography;
+            if (control == null || geography == null)
+                return "";
+
+            int outright = 0, heldStreets = 0, contested = 0, influenced = 0, quiet = 0;
+            var ids = geography.BlockIds;
+            for (int i = 0; i < ids.Count; i++)
+            {
+                if (!geography.TryGetBlock(ids[i], out var definition))
+                    continue;
+                var centre = definition.Center;
+                if (!district.World.Contains(new Vector2(centre.X, centre.Z)))
+                    continue;
+
+                switch (control.StateOf(ids[i]))
+                {
+                    case LivingCity.Territory.TerritoryControlState.Dominated: outright++; break;
+                    case LivingCity.Territory.TerritoryControlState.Controlled: heldStreets++; break;
+                    case LivingCity.Territory.TerritoryControlState.Contested: contested++; break;
+                    case LivingCity.Territory.TerritoryControlState.Influenced: influenced++; break;
+                    default: quiet++; break;
+                }
+            }
+
+            if (outright + heldStreets + contested + influenced + quiet == 0)
+                return "";
+
+            return "\nSTREETS: " + outright + " outright · " + heldStreets + " held · " +
+                   contested + " contested · " + influenced + " leaning · " + quiet + " quiet";
+        }
+
+        /// <summary>
+        /// What the street this building stands on reads as, in the player's words and
+        /// nobody else's: no scores, no percentages, and nothing the page could write back.
+        /// </summary>
+        string StreetReading(TurfBuilding building)
+        {
+            var runtime = TerritoryRuntime.Instance;
+            if (runtime?.PlayerQuery == null || runtime.Control == null ||
+                !runtime.TryGetBlockAtWorld(
+                    new Vector3(building.World.center.x, 0f, building.World.center.y),
+                    out var blockId))
+                return "";
+
+            if (!runtime.PlayerQuery.TryGetBlock(blockId, out var view) || view == null)
+                return "";
+
+            var leader = runtime.Control.LeaderOf(blockId);
+            var line = "\nSTREET: " + view.Control;
+            if (leader.IsValid)
+                line += " · " + (leader.Value == LivingCity.Gangs.GangCatalog.PlayerGangId
+                    ? "ours"
+                    : LivingCity.Gangs.GangRegistry.NameOf(leader.Value));
+            line += "\nOUR MEN: " + view.Presence + " · FEAR OF US: " + view.FearOfUs +
+                    "\nSHOPS: " + view.Businesses +
+                    "\nRIVALS: " + view.RivalPresence;
+
+            // Responsibility is a different claim from control and is printed as one: a
+            // street can be somebody's to answer for and nobody's to hold.
+            if (runtime.DebugTruth != null &&
+                runtime.DebugTruth.TryGetBlock(blockId, out var truth) &&
+                truth.Responsibility.Responsibility.IsAssigned)
+            {
+                var who = truth.Responsibility.LieutenantName.Length > 0
+                    ? truth.Responsibility.LieutenantName
+                    : truth.Responsibility.BossName;
+                line += "\nANSWERS FOR IT: " + (who.Length > 0 ? who : "assigned");
+            }
+
+            return line;
         }
 
         float FileSheet(float width, float top, string number, string body, string foot,

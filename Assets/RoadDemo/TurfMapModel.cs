@@ -514,6 +514,25 @@ namespace RoadDemo
 
     /// <summary>A quarter of the city, as a rectangle of authored ground with a name
     /// and whoever holds most of it.</summary>
+    /// <summary>
+    /// One canonical block as the plate draws it: where it is, what it currently reads as,
+    /// and who leads it. A SNAPSHOT - taken on the main thread with the rest of the
+    /// ownership read, so the worker draw never touches the simulation.
+    /// </summary>
+    public struct TurfBlockReading
+    {
+        public Rect World;
+        public Rect Plan;
+        public LivingCity.Territory.TerritoryControlState State;
+
+        /// <summary>The family the street answers to, or -1 while nobody leads it.</summary>
+        public int GangId;
+
+        /// <summary>The other house in a fight, for the two-tone hatch. -1 when there is
+        /// only one name on the street.</summary>
+        public int RivalGangId;
+    }
+
     public sealed class TurfDistrict
     {
         public string Name = "";

@@ -379,10 +379,21 @@ namespace RoadDemo
         /// between the live city and a draw that runs off the main thread: called here,
         /// on the main thread, immediately before a survey is handed to a worker.
         /// </summary>
+        /// <summary>
+        /// What each canonical block currently READS as, taken on the main thread with
+        /// the rest of the ownership snapshot. The plate is a picture of the simulation,
+        /// so it asks the control ledger rather than counting deeds under a rectangle -
+        /// a street with our men, our name and our shops on it is ours on the paper even
+        /// if the premises are still in somebody else's name.
+        /// </summary>
+        public readonly List<TurfBlockReading> BlockReadings = new List<TurfBlockReading>();
+
         public void ReadOwners()
         {
             for (int i = 0; i < Buildings.Count; i++)
                 Buildings[i].Owner = Buildings[i].GangId;
+
+            ReadBlocks();
 
             // Core territory is campaign data, not an average of building markers. Snapshot it
             // here on the main thread before the survey is handed to its worker.
@@ -396,6 +407,62 @@ namespace RoadDemo
                     : state.Conflict == QuarterConflictState.Contested ? -2
                     : state.OwnerGangId;
             }
+        }
+
+        void ReadBlocks()
+        {
+            BlockReadings.Clear();
+            var runtime = TerritoryRuntime.Instance;
+            var control = runtime?.Control;
+            var geography = runtime?.Geography;
+            if (control == null || geography == null)
+                return;
+
+            var ids = geography.BlockIds;
+            for (int i = 0; i < ids.Count; i++)
+            {
+                var state = control.StateOf(ids[i]);
+                if (state == LivingCity.Territory.TerritoryControlState.Unknown ||
+                    state == LivingCity.Territory.TerritoryControlState.Uncontrolled)
+                    continue;
+                if (!geography.TryGetBlock(ids[i], out var definition))
+                    continue;
+
+                var leader = control.LeaderOf(ids[i]);
+                var bounds = definition.WorldBounds;
+                BlockReadings.Add(new TurfBlockReading
+                {
+                    World = new Rect(bounds.XMin, bounds.ZMin, bounds.Width, bounds.Depth),
+                    State = state,
+                    GangId = leader.IsValid ? leader.Value : -1,
+                    RivalGangId = RivalOn(ids[i], leader),
+                });
+            }
+        }
+
+        /// <summary>The other house in a fight, so the hatch has two colours to run.</summary>
+        int RivalOn(
+            LivingCity.Territory.TerritoryBlockId blockId, LivingCity.Territory.TerritoryGangId leader)
+        {
+            var truth = TerritoryRuntime.Instance?.DebugTruth;
+            if (truth == null || !truth.TryGetBlock(blockId, out var block))
+                return -1;
+
+            var best = 0f;
+            var rival = -1;
+            for (int i = 0; i < block.Signals.Gangs.Count; i++)
+            {
+                var gang = block.Signals.Gangs[i];
+                if (gang.GangId == leader)
+                    continue;
+                var worth = gang.Presence + gang.Fear;
+                if (worth <= best)
+                    continue;
+                best = worth;
+                rival = gang.GangId.Value;
+            }
+
+            return rival;
         }
 
         /// <summary>Grows a world rectangle to the plate's own 8:5, so a draw of it
@@ -546,6 +613,12 @@ namespace RoadDemo
                 landmark.Plan = _plan.ToPlan(landmark.World);
             foreach (var district in Districts)
                 district.Plan = _plan.ToPlan(district.World);
+            for (int i = 0; i < BlockReadings.Count; i++)
+            {
+                var reading = BlockReadings[i];
+                reading.Plan = _plan.ToPlan(reading.World);
+                BlockReadings[i] = reading;
+            }
         }
 
         // ------------------------------------------------------------------ paper
@@ -2159,7 +2232,81 @@ namespace RoadDemo
                     }
                 }
             }
+
+            PaintBlockReadings();
         }
+
+        /// <summary>
+        /// What each street READS as, over the quarter wash: the derived state, not a
+        /// count of deeds under a rectangle. Five treatments, and none of them is a
+        /// progress bar - a contested street is hatched between the two houses, which
+        /// says "two names here" without implying a timer or a percentage.
+        ///
+        ///   influenced  a breath of the family's colour
+        ///   controlled  the colour, plainly
+        ///   dominated   the colour at full weight, with a ruled edge
+        ///   contested   diagonal hatch, one house each way
+        /// </summary>
+        void PaintBlockReadings()
+        {
+            for (int i = 0; i < BlockReadings.Count; i++)
+            {
+                var reading = BlockReadings[i];
+                if (!OnSheet(reading.Plan))
+                    continue;
+
+                var house = TurfHouses.For(reading.GangId);
+                var rival = reading.RivalGangId >= 0
+                    ? TurfHouses.For(reading.RivalGangId)
+                    : house;
+
+                int x0 = Mathf.Max(0, PxX(reading.Plan.xMin));
+                int x1 = Mathf.Min(TurfPlate.RW, PxX(reading.Plan.xMax));
+                int y0 = Mathf.Max(0, PxY(reading.Plan.yMin));
+                int y1 = Mathf.Min(TurfPlate.RH, PxY(reading.Plan.yMax));
+                if (x1 <= x0 || y1 <= y0)
+                    continue;
+
+                var contested =
+                    reading.State == LivingCity.Territory.TerritoryControlState.Contested;
+                var weight =
+                    reading.State == LivingCity.Territory.TerritoryControlState.Influenced ? 0.12f
+                    : reading.State == LivingCity.Territory.TerritoryControlState.Controlled ? 0.30f
+                    : reading.State == LivingCity.Territory.TerritoryControlState.Dominated ? 0.48f
+                    : 0.30f;
+
+                for (int ry = y0; ry < y1; ry++)
+                {
+                    for (int rx = x0; rx < x1; rx++)
+                    {
+                        if (_water[ry * TurfPlate.RW + rx])
+                            continue;
+
+                        // The hatch runs on the diagonal, six pixels on and six off, so
+                        // the two names read as one contested street rather than as a
+                        // measured share of it.
+                        var colour = contested && ((rx + ry) / 6) % 2 == 1
+                            ? rival.Wash
+                            : house.Wash;
+                        Turf.Px(rx, ry, 1, 1, Tint(colour, weight));
+                    }
+                }
+
+                if (reading.State != LivingCity.Territory.TerritoryControlState.Dominated)
+                    continue;
+
+                // Held outright gets a ruled edge - the one line of detail the wash is
+                // allowed, because "outright" has to be legible at a glance.
+                var edge = Tint(house.Wash, 0.75f);
+                Turf.Px(x0, y0, x1 - x0, 1, edge);
+                Turf.Px(x0, y1 - 1, x1 - x0, 1, edge);
+                Turf.Px(x0, y0, 1, y1 - y0, edge);
+                Turf.Px(x1 - 1, y0, 1, y1 - y0, edge);
+            }
+        }
+
+        static Color32 Tint(Color32 wash, float weight) =>
+            new Color32(wash.r, wash.g, wash.b, (byte)Mathf.Clamp(wash.a * weight, 0f, 255f));
 
         // ----------------------------------------------------------------- picks
 

@@ -260,6 +260,7 @@ namespace RoadDemo
             }
 
             BuildCanvas();
+            WatchControl();
             _inspectedCrew = null;
             _crewFileRequested = false;
             _inspectedBuilding = null;
@@ -318,6 +319,14 @@ namespace RoadDemo
 
         void OnDestroy()
         {
+            if (_watchingControl)
+            {
+                var watched = TerritoryRuntime.Instance?.Events;
+                if (watched != null)
+                    watched.BlockControl -= OnBlockControl;
+                _watchingControl = false;
+            }
+
             Blank(false);
             foreach (var texture in new[] { _groundTex, _liveTex })
                 if (texture != null)
@@ -330,6 +339,26 @@ namespace RoadDemo
             // rest of the session, waiting on a map that no longer exists.
             Installed = false;
         }
+
+        /// <summary>
+        /// The plate is a picture of the simulation, so it is redrawn when the simulation
+        /// says something changed - not every frame, and not off a poll. A street that
+        /// changes hands is exactly one event, and one repaint.
+        /// </summary>
+        void WatchControl()
+        {
+            var events = TerritoryRuntime.Instance?.Events;
+            if (events == null || _watchingControl)
+                return;
+
+            events.BlockControl += OnBlockControl;
+            _watchingControl = true;
+        }
+
+        void OnBlockControl(LivingCity.Territory.BlockControlChanged change) =>
+            _ownershipStale = true;
+
+        bool _watchingControl;
 
         void OnDisable()
         {

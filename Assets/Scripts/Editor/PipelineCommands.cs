@@ -580,6 +580,162 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_scenario_takeover",
+                    "TEST-001: a neutral street taken the only way there is - men, fear, " +
+                    "shops that pay - with no capture and no claim anywhere in it.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "scenario" })]
+        public static object ScenarioTakeover() => Scenario(LivingCity.Tests.ScenarioTests.Takeover());
+
+        [CliCommand("gangsters_scenario_withdrawal",
+                    "TEST-002: the men go home; Presence fades without wiping what was earned.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "scenario" })]
+        public static object ScenarioWithdrawal() =>
+            Scenario(LivingCity.Tests.ScenarioTests.Withdrawal());
+
+        [CliCommand("gangsters_scenario_contest",
+                    "TEST-003: a rival works the same street by the same rules until it is a fight.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "scenario" })]
+        public static object ScenarioContest() => Scenario(LivingCity.Tests.ScenarioTests.Contest());
+
+        [CliCommand("gangsters_scenario_loss",
+                    "TEST-004: ground goes the way it came - men gone, shops turned, street lost.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "scenario" })]
+        public static object ScenarioLoss() => Scenario(LivingCity.Tests.ScenarioTests.Loss());
+
+        [CliCommand("gangsters_scenario_responsibility",
+                    "TEST-005/006: paperwork is not ground - a block on paper produces no " +
+                    "Presence, no fear and no control.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "scenario" })]
+        public static object ScenarioResponsibility() =>
+            Scenario(LivingCity.Tests.ScenarioTests.Responsibility());
+
+        [CliCommand("gangsters_scenario_ui_authority",
+                    "TEST-007: nothing the player can see is anything the player can write.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "scenario" })]
+        public static object ScenarioUiAuthority() =>
+            Scenario(LivingCity.Tests.ScenarioTests.UiAuthority());
+
+        /// <summary>
+        /// TEST-008. Ground is taken by simulation or it is not taken: this reads the tree
+        /// and names anything that still writes ownership behind the simulation's back.
+        /// An audit that repaired what it found would hide the very fault it is for.
+        /// </summary>
+        [CliCommand("gangsters_scenario_capture_audit",
+                    "TEST-008: name every path that still claims ground directly - a marker " +
+                    "write, a revived TAKE IT, or a public owner field on a territory type.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "scenario", "audit" })]
+        public static object ScenarioCaptureAudit()
+        {
+            var failures = new List<string>();
+            var root = System.IO.Path.Combine(
+                System.IO.Directory.GetCurrentDirectory(), "Assets");
+
+            // 1. Nobody writes the deed directly any more. The marker keeps the field for
+            //    the legacy front/presentation systems, and the population pass sets it -
+            //    a write anywhere in gameplay is the fault this audit is for.
+            var allowed = new[]
+            {
+                "Assets/Scripts/Entities/BusinessMarker.cs",
+                "Assets/Scripts/Gameplay/PropertyDirector.cs",
+                "Assets/Scripts/Business/",
+                // This file: the audit's own patterns are not the thing it hunts.
+                "Assets/Scripts/Editor/PipelineCommands.cs",
+            };
+            foreach (var file in System.IO.Directory.GetFiles(root, "*.cs",
+                         System.IO.SearchOption.AllDirectories))
+            {
+                var relative = file.Substring(
+                    System.IO.Directory.GetCurrentDirectory().Length + 1).Replace('\\', '/');
+                var skip = false;
+                for (var i = 0; i < allowed.Length; i++)
+                    skip |= relative.StartsWith(allowed[i], StringComparison.Ordinal);
+                if (skip)
+                    continue;
+
+                var lines = System.IO.File.ReadAllLines(file);
+                for (var i = 0; i < lines.Length; i++)
+                {
+                    var line = lines[i];
+                    // An assignment, not a comparison: "a.GangId == b" is a question and
+                    // "a.GangId = b" is a claim, and only the second one is a fault.
+                    if (line.Contains(".GangId =") && !line.Contains(".GangId ==") &&
+                        line.Contains("Business"))
+                        failures.Add(relative + ":" + (i + 1) +
+                                     " writes a business deed directly.");
+                    if (line.Contains("TAKE IT"))
+                        failures.Add(relative + ":" + (i + 1) + " revives the TAKE IT claim.");
+                }
+            }
+
+            // 2. No territory type carries a settable owner. The block model is geography
+            //    and identity; who holds it is a reading, and a reading has no setter.
+            foreach (var type in typeof(LivingCity.Territory.TerritoryBlockDefinition).Assembly
+                         .GetTypes())
+            {
+                if (type.Namespace != "LivingCity.Territory")
+                    continue;
+                foreach (var property in type.GetProperties())
+                {
+                    if (!property.CanWrite || !property.GetSetMethod(false)?.IsPublic == true)
+                        continue;
+                    var name = property.Name;
+                    if (name.Contains("Owner") || name.Contains("Controlled") ||
+                        name.Contains("Capture"))
+                        failures.Add(type.Name + "." + name + " is a settable owner.");
+                }
+            }
+
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
+        /// <summary>
+        /// TEST-009. The whole slice in one run, plus the architectural audits. Balance
+        /// notes are reported beside the failures, never as failures: a street that takes
+        /// ten threats instead of three is a tuning question, not a broken rule.
+        /// </summary>
+        [CliCommand("gangsters_scenario_phase1",
+                    "TEST-009: the full Phase-1 chain - organization, takeover, withdrawal, " +
+                    "contest, loss - with the architectural audits, and balance notes kept apart.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "scenario" })]
+        public static object ScenarioPhase1()
+        {
+            var architectural = new List<string>();
+            architectural.AddRange(LivingCity.Tests.ScenarioTests.Run());
+
+            var audit = ScenarioCaptureAudit();
+            var auditFailures = (string[])audit.GetType()
+                .GetProperty("failures").GetValue(audit);
+            architectural.AddRange(auditFailures);
+
+            architectural.AddRange(LivingCity.Tests.ControlTests.Run()
+                .Select(failure => "Control: " + failure));
+            architectural.AddRange(LivingCity.Tests.RackTests.Run()
+                .Select(failure => "Racket: " + failure));
+            architectural.AddRange(LivingCity.Tests.FearTests.Run()
+                .Select(failure => "Fear: " + failure));
+            architectural.AddRange(LivingCity.Tests.PresenceTests.Run()
+                .Select(failure => "Presence: " + failure));
+            architectural.AddRange(LivingCity.Tests.TerritoryFoundationTests.Run()
+                .Select(failure => "Territory: " + failure));
+
+            return new
+            {
+                passed = architectural.Count == 0,
+                architectural_failures = architectural.ToArray(),
+                balance_observations = LivingCity.Tests.ScenarioTests.BalanceNotes().ToArray(),
+            };
+        }
+
+        static object Scenario(List<string> failures) => new
+        {
+            passed = failures.Count == 0,
+            failures = failures.ToArray(),
+        };
+
         [CliCommand("gangsters_control_tests",
                     "Run GAN-120 contracts for derived block control: the weighted inputs, the " +
                     "ladder from neutral to held outright, contested detection with hysteresis, " +
