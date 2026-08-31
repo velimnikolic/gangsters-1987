@@ -108,7 +108,7 @@ namespace LivingCity.Outfit
             // the outfit happened to run yesterday.
             var rng = new System.Random(Mix(seed + SeedOffsets.Personnel, day));
             for (var slot = 0; slot < AdsPerEdition; slot++)
-                ads.Add(DealOne(roster, rng, day, slot));
+                ads.Add(DealOne(roster, rng, seed, day, slot));
 
             Revision++;
         }
@@ -138,15 +138,16 @@ namespace LivingCity.Outfit
             Revision++;
         }
 
-        HireAd DealOne(Roster roster, System.Random rng, int day, int slot)
+        HireAd DealOne(Roster roster, System.Random rng, int seed, int day, int slot)
         {
-            var man = RosterSeeder.Deal(roster, rng, AdvertisedCeilingHalfSteps);
+            var man = RosterSeeder.Deal(roster, rng, AdvertisedCeilingHalfSteps,
+                Potential.Mix(Potential.StreamFor(seed, -1), day * AdsPerEdition + slot));
 
-            // The head a lieutenancy lives on, floored before the price is read off him.
-            if (man.GetHalfSteps(CharacterAttribute.Awareness) < HeadFloorHalfSteps)
-                man.SetHalfSteps(CharacterAttribute.Awareness, HeadFloorHalfSteps);
-            if (man.GetHalfSteps(CharacterAttribute.Organization) < HeadFloorHalfSteps)
-                man.SetHalfSteps(CharacterAttribute.Organization, HeadFloorHalfSteps);
+            // The head a lieutenancy lives on, floored before the price is read off
+            // him - his CEILING first, or the floor would be clamped back down by a
+            // man who was never going to be much of a head.
+            FloorHead(man, CharacterAttribute.Awareness);
+            FloorHead(man, CharacterAttribute.Organization);
 
             // He advertises as what he is: a lieutenant, and priced as one - the ask is
             // stamped on him here and paid for the rest of his life on the books.
@@ -164,6 +165,19 @@ namespace LivingCity.Outfit
                 From = from,
                 Box = box,
             };
+        }
+
+        /// <summary>Raises one of the two head stats to the promotion line, ceiling and
+        /// all. A man who advertises for a crew claims he can run one; the paper is not
+        /// allowed to print an offer the outfit's own promotion rule would warn
+        /// against.</summary>
+        static void FloorHead(Character man, CharacterAttribute attribute)
+        {
+            if (man.PotentialValue(attribute) <
+                AttributeScale.ValueOf(HeadFloorHalfSteps))
+                man.SetPotential(attribute, AttributeScale.ValueOf(HeadFloorHalfSteps));
+            if (man.GetHalfSteps(attribute) < HeadFloorHalfSteps)
+                man.SetHalfSteps(attribute, HeadFloorHalfSteps);
         }
 
         /// <summary>The stat the ad is headed with: his best, ties broken by attribute

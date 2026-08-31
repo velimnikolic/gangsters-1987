@@ -48,6 +48,12 @@ namespace LivingCity.Personnel
         /// <summary>The member managing headquarters; -1 when the desk is empty.</summary>
         public int FrontId = -1;
 
+        /// <summary>The seed this roster was dealt from, kept so a man taken on later -
+        /// off a corner or out of the paper - can roll his hidden ceilings off the same
+        /// campaign's stream instead of whatever rng happened to be in the caller's
+        /// hand. Zero on a roster built by hand.</summary>
+        public int Seed;
+
         int nextCharacterId;
         int nextCrewId;
         int nextEquipmentId;

@@ -77,6 +77,21 @@ namespace LivingCity.Personnel
 
         public static float Stars(int halfSteps) => Clamp(halfSteps) * 0.5f;
 
+        /// <summary>
+        /// The 0-100 reading of a half-step, which is the scale the design spec, the
+        /// hidden ceilings and the ledger's flag thresholds are all written on: value
+        /// = half-steps x 10, so three stars is 60 and five is 100.
+        /// </summary>
+        public static int ValueOf(int halfSteps) => Clamp(halfSteps) * 10;
+
+        /// <summary>
+        /// The half-step a 0-100 value lands on, rounded UP at the midpoint: 55 is six
+        /// half-steps, 54 is five. Stated once here because a threshold written as
+        /// "at least 55" has to mean the same thing in the growth curve, the aging
+        /// schedule and the ledger's flags.
+        /// </summary>
+        public static int HalfStepsFor(int value) => Clamp((value + 5) / 10);
+
         public static int Clamp(int halfSteps)
         {
             if (halfSteps < MinHalfSteps)

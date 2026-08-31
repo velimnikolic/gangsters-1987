@@ -113,11 +113,41 @@ namespace LivingCity.Personnel
         /// (Practice.Convert) and never in the middle of the job that earned it.</summary>
         readonly int[] practice = new int[AttributeScale.Count];
 
+        /// <summary>How far he could ever get at each trade, on the 0-100 convention -
+        /// rolled once when he is dealt (<see cref="Potential"/>) and never shown. Zero
+        /// means UNSET, which reads as no ceiling at all: a character built by hand in
+        /// a test or a fixture is not silently pinned to one star.
+        ///
+        /// Private with no property over it on purpose. The growth code asks
+        /// <see cref="PotentialHalfSteps"/> for one number at a time; nothing that
+        /// paints a page is given the array to iterate, so no ledger row can ever
+        /// grow a ceiling column by accident.</summary>
+        readonly int[] potential = new int[AttributeScale.Count];
+
         public string FullName => FirstName + " " + Surname;
 
         public int GetHalfSteps(CharacterAttribute attribute) => halfSteps[(int)attribute];
 
         public int GetPractice(CharacterAttribute attribute) => practice[(int)attribute];
+
+        /// <summary>His ceiling at this trade in half-steps - what the growth curve
+        /// prices against and stops at. Five stars when the ceiling was never rolled.</summary>
+        public int PotentialHalfSteps(CharacterAttribute attribute)
+        {
+            var value = potential[(int)attribute];
+            return value <= 0
+                ? AttributeScale.MaxHalfSteps
+                : AttributeScale.HalfStepsFor(value);
+        }
+
+        /// <summary>The raw 0-100 ceiling, for the balance dumps that tune the roll.
+        /// Nothing the player can see may call this.</summary>
+        public int PotentialValue(CharacterAttribute attribute) => potential[(int)attribute];
+
+        /// <summary>Sets the ceiling. Only <see cref="Potential"/> and the doors that
+        /// deal a man call this; a ceiling is rolled once and never edited afterwards.</summary>
+        public void SetPotential(CharacterAttribute attribute, int value) =>
+            potential[(int)attribute] = value < 0 ? 0 : value;
 
         /// <summary>Banks work done. Negative points are ignored rather than clamped
         /// away silently - nothing in the design takes practice back.</summary>
@@ -144,7 +174,14 @@ namespace LivingCity.Personnel
             return total;
         }
 
-        public void SetHalfSteps(CharacterAttribute attribute, int value) =>
-            halfSteps[(int)attribute] = AttributeScale.Clamp(value);
+        /// <summary>Sets a stat, never above the man's ceiling. The cap binds HERE
+        /// rather than at each caller so no door - the seeder, the classified column,
+        /// a future event - can deal a man a star he was never capable of.</summary>
+        public void SetHalfSteps(CharacterAttribute attribute, int value)
+        {
+            var capped = AttributeScale.Clamp(value);
+            var ceiling = PotentialHalfSteps(attribute);
+            halfSteps[(int)attribute] = capped > ceiling ? ceiling : capped;
+        }
     }
 }

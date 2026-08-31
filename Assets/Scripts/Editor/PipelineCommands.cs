@@ -247,6 +247,22 @@ namespace GangstersTools
                 .Select(failure => "Personnel regression: " + failure));
             failures.AddRange(LivingCity.Tests.GangTests.Run()
                 .Select(failure => "Gang regression: " + failure));
+            failures.AddRange(LivingCity.Tests.SkillFoundationTests.Run()
+                .Select(failure => "Skill regression: " + failure));
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
+        [CliCommand("gangsters_skill_tests",
+                    "Run EPIC 11 contracts for the skill foundation: the eleven general " +
+                    "skills, hidden ceilings, the growth curve and aging.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "skill", "tests" })]
+        public static object SkillTests()
+        {
+            var failures = LivingCity.Tests.SkillFoundationTests.Run();
             return new
             {
                 passed = failures.Count == 0,

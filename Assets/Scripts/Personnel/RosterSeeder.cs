@@ -38,7 +38,7 @@ namespace LivingCity.Personnel
         public static Roster Generate(int seed)
         {
             var rng = new System.Random(seed + SeedOffsets.Personnel);
-            var roster = new Roster();
+            var roster = new Roster { Seed = seed };
 
             // Draws 1..N, per man in id order: first name, surname (both redrawn together
             // on a full-name collision among the six), his rap sheet (a count, then three
@@ -51,6 +51,12 @@ namespace LivingCity.Personnel
                 var member = new Character { Id = roster.NextCharacterId() };
                 DrawName(rng, roster, member);
                 RapSheet.Deal(rng, member);
+
+                // Ceilings first, off his own stream - the stats below are dealt into
+                // them, so nobody starts above what he could ever reach. Consumes no
+                // draw from the sequence above, which is why the starting six kept
+                // their names and their numbers when this landed.
+                Potential.Roll(member, Potential.StreamFor(roster.Seed, member.Id));
 
                 for (var a = 0; a < AttributeScale.Count; a++)
                     member.SetHalfSteps((CharacterAttribute)a,
@@ -95,8 +101,10 @@ namespace LivingCity.Personnel
         /// </summary>
         public static Roster GenerateLarge(int seed, int memberCount)
         {
+            // +250 on the seed as well as on the stream: the scale fixture's ceilings
+            // sit on their own band, the same way its draws do.
             var rng = new System.Random(seed + SeedOffsets.Personnel + 250);
-            var roster = new Roster();
+            var roster = new Roster { Seed = seed + 250 };
 
             var ordinaryCount = System.Math.Max(0, memberCount - 1);
             for (var i = 0; i < ordinaryCount; i++)
@@ -110,6 +118,7 @@ namespace LivingCity.Personnel
                 var member = new Character { Id = roster.NextCharacterId() };
                 DrawName(rng, roster, member);
                 RapSheet.Deal(rng, member);
+                Potential.Roll(member, Potential.StreamFor(roster.Seed, member.Id));
 
                 for (var a = 0; a < AttributeScale.Count; a++)
                     member.SetHalfSteps((CharacterAttribute)a,
@@ -179,6 +188,11 @@ namespace LivingCity.Personnel
                 Look = GangCatalog.BossModel,
                 Loyalty = 100,
             };
+            // The Don is the one man with no ceiling: his numbers are scripted rather
+            // than dealt, and a rolled cap would quietly cut the story character the
+            // seeder exists to keep stable.
+            for (var a = 0; a < AttributeScale.Count; a++)
+                boss.SetPotential((CharacterAttribute)a, 100);
             for (var a = 0; a < AttributeScale.Count; a++)
                 boss.SetHalfSteps((CharacterAttribute)a, 8);
             boss.SetHalfSteps(CharacterAttribute.Awareness, AttributeScale.MaxHalfSteps);
@@ -217,6 +231,7 @@ namespace LivingCity.Personnel
             };
             DrawName(rng, roster, member);
             RapSheet.Deal(rng, member);
+            Potential.Roll(member, Potential.StreamFor(roster.Seed, member.Id));
 
             for (var a = 0; a < AttributeScale.Count; a++)
                 member.SetHalfSteps((CharacterAttribute)a,
@@ -263,9 +278,14 @@ namespace LivingCity.Personnel
         /// <see cref="RecruitCeilingHalfSteps"/>; a man who advertises rolls higher,
         /// and charges for it. His name is still drawn against the roster, so the
         /// column never offers the outfit a man it already employs.
+        ///
+        /// potentialStream is the stream his hidden ceilings roll off. He carries no
+        /// id to mix with until somebody signs him, so the caller supplies it - the
+        /// column derives one from (seed, day, slot), which is what makes this
+        /// morning's paper the same paper on a reload.
         /// </summary>
         public static Character Deal(Roster roster, System.Random rng,
-            int ceilingHalfSteps)
+            int ceilingHalfSteps, int potentialStream)
         {
             if (ceilingHalfSteps < AttributeScale.MinHalfSteps)
                 ceilingHalfSteps = AttributeScale.MinHalfSteps;
@@ -275,6 +295,7 @@ namespace LivingCity.Personnel
             var member = new Character { Id = -1 };
             DrawName(rng, roster, member);
             RapSheet.Deal(rng, member);
+            Potential.Roll(member, potentialStream);
 
             for (var a = 0; a < AttributeScale.Count; a++)
                 member.SetHalfSteps((CharacterAttribute)a,
