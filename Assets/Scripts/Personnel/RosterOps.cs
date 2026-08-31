@@ -59,16 +59,6 @@ namespace LivingCity.Personnel
         }
 
         /// <summary>
-        /// Moves one of a man's traits, and says why. This is the ONLY door: nothing
-        /// else in the codebase writes a personality field, and the reason string is
-        /// what makes that rule enforceable rather than merely stated - a caller who
-        /// cannot say why a man got greedier has no business making him greedier.
-        ///
-        /// A nudge that moves nothing - a zero delta, or a man already at the end of
-        /// the scale - records nothing. The feed prints what happened, not what was
-        /// attempted.
-        /// </summary>
-        /// <summary>
         /// Yes. His envelope is brought up to what he asked, and the asking stops -
         /// the bargain moves, which is the one thing that closes a pay gap for good.
         /// A man who was skimming over it stops that too: he was taking what he thought
@@ -110,6 +100,16 @@ namespace LivingCity.Personnel
             return OpResult.Success;
         }
 
+        /// <summary>
+        /// Moves one of a man's traits, and says why. This is the ONLY door: nothing
+        /// else in the codebase writes a personality field, and the reason string is
+        /// what makes that rule enforceable rather than merely stated - a caller who
+        /// cannot say why a man got greedier has no business making him greedier.
+        ///
+        /// A nudge that moves nothing - a zero delta, or a man already at the end of
+        /// the scale - records nothing. The feed prints what happened, not what was
+        /// attempted.
+        /// </summary>
         /// <returns>The movement. Its <c>Delta</c> is 0 when nothing moved.</returns>
         public static PersonalityChange NudgePersonality(Character man,
             PersonalityTrait trait, int delta, string reason,
@@ -206,9 +206,33 @@ namespace LivingCity.Personnel
             if (crew.HoodIds.Contains(id))
                 return OpResult.Fail(LedgerText.ReasonAlreadyInCrew);
 
+            // What his Leadership can actually hold. The player is refused here; the
+            // WORLD is not - a recruit who comes back to an overloaded lieutenant is
+            // still a man on the books, and the overload is then something the ledger
+            // shows rather than something the sim quietly fixes by losing him.
+            var lieutenant = roster.Find(crew.LieutenantId);
+            var men = CountLiveHoods(roster, crew);
+            if (lieutenant != null &&
+                men >= Command.ManCap(lieutenant, roster.Organization.Limits))
+                return OpResult.Fail(
+                    LedgerText.CrewFull(lieutenant.FullName, men));
+
             Detach(roster, id);
             crew.HoodIds.Add(id);
             return OpResult.Success;
+        }
+
+        /// <summary>Men in the crew who are still on the books.</summary>
+        static int CountLiveHoods(Roster roster, Crew crew)
+        {
+            var men = 0;
+            for (var i = 0; i < crew.HoodIds.Count; i++)
+            {
+                var hood = roster.Find(crew.HoodIds[i]);
+                if (hood != null && !hood.Gone)
+                    men++;
+            }
+            return men;
         }
 
         /// <summary>Moves one real Hood directly under the one authoritative Boss.</summary>
@@ -279,6 +303,16 @@ namespace LivingCity.Personnel
                 if (crew == null || crew.LieutenantId != leader.Id)
                     return OpResult.Fail(LedgerText.ReasonInvalidCommandParent);
             }
+
+            // Ground he cannot carry is ground the outfit does not really hold. This
+            // binds at assignment: growth has to force the player to promote somebody,
+            // and a cap he can walk past is not a cap.
+            var held = 0;
+            for (var i = 0; i < roster.Organization.BlockResponsibilities.Count; i++)
+                if (roster.Organization.BlockResponsibilities[i].LeaderId == leaderId)
+                    held++;
+            if (held >= Command.BlockCap(leader, roster.Organization.Limits))
+                return OpResult.Fail(LedgerText.BlocksFull(leader.FullName, held));
 
             var assignments = roster.Organization.BlockResponsibilities;
             for (var i = 0; i < assignments.Count; i++)

@@ -386,6 +386,17 @@ namespace LivingCity.UI
 
         public const string ReasonNoSuchMember = "No such man on the books.";
         public const string ReasonNoDemand = "He has not asked for anything.";
+
+        /// <summary>Why a man cannot be put under this lieutenant: he already holds
+        /// everybody he can hold. Names him and the count, because the answer to it is
+        /// either a better lieutenant or another one.</summary>
+        public static string CrewFull(string lieutenant, int men) =>
+            lieutenant + " already holds " + men +
+            (men == 1 ? " man" : " men") + " - as many as he can lead.";
+
+        public static string BlocksFull(string leader, int blocks) =>
+            leader + " already answers for " + blocks +
+            (blocks == 1 ? " block" : " blocks") + " - as much ground as he can carry.";
         public const string ReasonNoSuchCrew = "No such crew.";
         public const string ReasonNoSuchItem = "No such item in the stock.";
         public const string ReasonFinanceUnavailable =

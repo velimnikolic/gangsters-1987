@@ -356,14 +356,14 @@ namespace LivingCity.Personnel
                 if (assignments[i].LeaderId == leaderId)
                     blocks++;
 
+            // The ceiling is the config's; what THIS man can actually hold of it is
+            // his Leadership's (Command.ManCap). Every page that prints "17 / 32 men"
+            // reads it from here, so a lieutenant who gets better at command visibly
+            // holds more the same day.
             var limits = roster.Organization.Limits;
-            return leader.Rank == Rank.Boss
-                ? new OrganizationCapacityView(
-                    new CapacityMeasure(manpower, limits.BossManpower),
-                    new CapacityMeasure(blocks, limits.BossBlocks))
-                : new OrganizationCapacityView(
-                    new CapacityMeasure(manpower, limits.LieutenantManpower),
-                    new CapacityMeasure(blocks, limits.LieutenantBlocks));
+            return new OrganizationCapacityView(
+                new CapacityMeasure(manpower, Command.ManCap(leader, limits)),
+                new CapacityMeasure(blocks, Command.BlockCap(leader, limits)));
         }
 
         public void CollectPhysicalMappings(List<TacticalPersonnelMapping> into)

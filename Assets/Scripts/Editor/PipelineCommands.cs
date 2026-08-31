@@ -253,6 +253,8 @@ namespace GangstersTools
                 .Select(failure => "Learning regression: " + failure));
             failures.AddRange(LivingCity.Tests.PersonalityTests.Run()
                 .Select(failure => "Personality regression: " + failure));
+            failures.AddRange(LivingCity.Tests.CommandTests.Run()
+                .Select(failure => "Command regression: " + failure));
             return new
             {
                 passed = failures.Count == 0,
@@ -306,6 +308,21 @@ namespace GangstersTools
                 passed = failures.Count == 0,
                 failures = failures.ToArray(),
                 contracts = LivingCity.Tests.PersonalityTests.ContractNames(),
+            };
+        }
+
+        [CliCommand("gangsters_command_tests",
+                    "Run EPIC 14 contracts for hierarchy and command limits: what a man " +
+                    "can hold, what is refused him, and what overload looks like.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "skill", "tests" })]
+        public static object CommandTests()
+        {
+            var failures = LivingCity.Tests.CommandTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+                contracts = LivingCity.Tests.CommandTests.ContractNames(),
             };
         }
 
