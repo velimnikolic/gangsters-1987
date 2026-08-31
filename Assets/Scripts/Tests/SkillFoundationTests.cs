@@ -26,8 +26,24 @@ namespace LivingCity.Tests
             CeilingsSitInTheBandAndCentreOnFifty(failures);
             NoPageCanReachTheCeiling(failures);
             TheValueConventionRoundsUpAtTheHalf(failures);
+            TheCurveSteepensTowardTheCeiling(failures);
+            TheClimbSlowsAndThenStops(failures);
+            NothingIsBankedPastTheCeiling(failures);
 
             return failures;
+        }
+
+        /// <summary>A man with one ceiling and nothing else on him.</summary>
+        static Character Capped(Roster roster, string name, int potentialValue,
+            CharacterAttribute skill = CharacterAttribute.Combat)
+        {
+            var man = new Character { Id = roster.NextCharacterId(), FirstName = name };
+            for (var s = 0; s < AttributeScale.Count; s++)
+                man.SetPotential((CharacterAttribute)s, potentialValue);
+            for (var s = 0; s < AttributeScale.Count; s++)
+                man.SetHalfSteps((CharacterAttribute)s, AttributeScale.MinHalfSteps);
+            roster.Members.Add(man);
+            return man;
         }
 
         // ------------------------------------------------------------- determinism
@@ -169,6 +185,108 @@ namespace LivingCity.Tests
             foreach (var field in typeof(Improvement).GetFields())
                 if (field.Name.IndexOf("potential", StringComparison.OrdinalIgnoreCase) >= 0)
                     failures.Add($"NoPageCanReachTheCeiling: Improvement.{field.Name}.");
+        }
+
+        // ----------------------------------------------------------------- the curve
+
+        static void TheCurveSteepensTowardTheCeiling(List<string> failures)
+        {
+            foreach (var value in new[] { 50, 70, 95 })
+            {
+                var ceiling = AttributeScale.HalfStepsFor(value);
+                var climb = 0;
+                for (var step = AttributeScale.MinHalfSteps + 1; step < ceiling; step++)
+                    climb += Practice.CostOf(step, ceiling);
+                var last = Practice.CostOf(ceiling, ceiling);
+
+                if (last <= climb)
+                    failures.Add($"TheCurveSteepens: at ceiling {value} the last " +
+                                 $"half-step costs {last} against {climb} for the whole " +
+                                 "climb before it - the last one is meant to be a career.");
+                if (Practice.CostOf(ceiling + 1, ceiling) != 0)
+                    failures.Add($"TheCurveSteepens: ceiling {value} still sells a step " +
+                                 "above itself.");
+
+                // Every step costs more than the one before it, all the way up.
+                for (var step = AttributeScale.MinHalfSteps + 2; step <= ceiling; step++)
+                    if (Practice.CostOf(step, ceiling) <=
+                        Practice.CostOf(step - 1, ceiling))
+                        failures.Add($"TheCurveSteepens: at ceiling {value}, half-step " +
+                                     $"{step} is not dearer than {step - 1}.");
+            }
+
+            // The spec's bands, on a man who could reach five stars: 1 to 2.5 stars is
+            // a season's work, 2.5 to 3.5 several times that.
+            var early = 0;
+            for (var step = 3; step <= 5; step++)
+                early += Practice.CostOf(step, 10);
+            var middle = 0;
+            for (var step = 6; step <= 7; step++)
+                middle += Practice.CostOf(step, 10);
+            if (middle < early * 2)
+                failures.Add($"TheCurveSteepens: the 50-75 band cost {middle} against " +
+                             $"{early} for 20-50; it is meant to be several times as dear.");
+        }
+
+        static void TheClimbSlowsAndThenStops(List<string> failures)
+        {
+            // Twenty points a day, every day, for four scripted years. A man capped at
+            // two and a half stars must stop there and stay stopped; a man who could
+            // reach five must still be climbing when the other has been finished for
+            // years.
+            const int daily = 20;
+            const int days = 1_460;
+
+            var roster = new Roster();
+            var short_ = Capped(roster, "Short", 50);
+            var tall = Capped(roster, "Tall", 95);
+
+            var stoppedOn = -1;
+            var rises = new List<Improvement>();
+            for (var day = 1; day <= days; day++)
+            {
+                short_.AddPractice(CharacterAttribute.Combat, daily);
+                tall.AddPractice(CharacterAttribute.Combat, daily);
+                rises.Clear();
+                Practice.Convert(roster, rises);
+
+                for (var i = 0; i < rises.Count; i++)
+                    if (rises[i].CharacterId == short_.Id)
+                        stoppedOn = day;
+            }
+
+            if (short_.GetHalfSteps(CharacterAttribute.Combat) != 5)
+                failures.Add("TheClimbSlowsAndThenStops: the 50-ceiling man finished on " +
+                             $"{short_.GetHalfSteps(CharacterAttribute.Combat)} half-steps, " +
+                             "not 5.");
+            if (tall.GetHalfSteps(CharacterAttribute.Combat) <= 5)
+                failures.Add("TheClimbSlowsAndThenStops: the 95-ceiling man is no better " +
+                             "off than the 50-ceiling one after four years.");
+            if (stoppedOn < 0 || stoppedOn > days / 4)
+                failures.Add($"TheClimbSlowsAndThenStops: the short man's last rise was " +
+                             $"on day {stoppedOn}; a low ceiling is meant to be reached " +
+                             "early and then held for the rest of his life.");
+        }
+
+        static void NothingIsBankedPastTheCeiling(List<string> failures)
+        {
+            var roster = new Roster();
+            var man = Capped(roster, "Done", 50);
+
+            var rises = new List<Improvement>();
+            man.AddPractice(CharacterAttribute.Combat, 100_000);
+            Practice.Convert(roster, rises);
+
+            if (man.GetHalfSteps(CharacterAttribute.Combat) != 5)
+                failures.Add("NothingIsBankedPastTheCeiling: a big enough bank bought " +
+                             "its way past the ceiling.");
+            if (Practice.NextCost(man, CharacterAttribute.Combat) != 0)
+                failures.Add("NothingIsBankedPastTheCeiling: a finished man still has " +
+                             "a price on his next star.");
+            if (man.GetPractice(CharacterAttribute.Combat) != 0)
+                failures.Add($"NothingIsBankedPastTheCeiling: he is still carrying " +
+                             $"{man.GetPractice(CharacterAttribute.Combat)} points he " +
+                             "can never spend.");
         }
 
         static void TheValueConventionRoundsUpAtTheHalf(List<string> failures)

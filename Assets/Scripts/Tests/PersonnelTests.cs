@@ -71,11 +71,16 @@ namespace LivingCity.Tests
             var roster = new Roster();
             var man = Make(roster, "Sal", "Renna");
             var at = man.GetHalfSteps(CharacterAttribute.Combat);
-            if (Practice.NextCost(man, CharacterAttribute.Combat) != Practice.CostOf(at + 1))
+            var price = Practice.NextCost(man, CharacterAttribute.Combat);
+            if (price != Practice.CostOf(at + 1,
+                    man.PotentialHalfSteps(CharacterAttribute.Combat)))
                 failures.Add("PracticeCostsRiseWithTheStars: the next step is mispriced.");
+            if (price <= Practice.CostOf(at + 1))
+                failures.Add("PracticeCostsRiseWithTheStars: the ceiling stopped " +
+                             "charging for headroom.");
 
             // One point short buys nothing; the point that completes it buys the step.
-            man.AddPractice(CharacterAttribute.Combat, Practice.CostOf(at + 1) - 1);
+            man.AddPractice(CharacterAttribute.Combat, price - 1);
             Practice.Convert(roster, null);
             if (man.GetHalfSteps(CharacterAttribute.Combat) != at)
                 failures.Add("PracticeCostsRiseWithTheStars: a short bank still bought a star.");
@@ -101,7 +106,8 @@ namespace LivingCity.Tests
             var man = Make(roster, "Vito", "Carre");
             var driving = man.GetHalfSteps(CharacterAttribute.Driving);
 
-            man.AddPractice(CharacterAttribute.Intimidation, 400);
+            // Enough to buy every half-step left to a man with no ceiling on him.
+            man.AddPractice(CharacterAttribute.Intimidation, 2_000);
             Practice.Convert(roster, null);
 
             if (man.GetHalfSteps(CharacterAttribute.Driving) != driving)
@@ -137,8 +143,9 @@ namespace LivingCity.Tests
             man.SetHalfSteps(CharacterAttribute.Combat, AttributeScale.MinHalfSteps);
 
             // Enough for both the third and the fourth half-step, banked in one go.
+            var ceiling = man.PotentialHalfSteps(CharacterAttribute.Combat);
             man.AddPractice(CharacterAttribute.Combat,
-                Practice.CostOf(3) + Practice.CostOf(4));
+                Practice.CostOf(3, ceiling) + Practice.CostOf(4, ceiling));
             var rises = new List<Improvement>();
             Practice.Convert(roster, rises);
 
@@ -152,8 +159,8 @@ namespace LivingCity.Tests
             var man = Make(roster, "Gino", "Rossi");
             var before = Wages.WageFor(man);
 
-            man.AddPractice(CharacterAttribute.Stealth, Practice.CostOf(
-                man.GetHalfSteps(CharacterAttribute.Stealth) + 1));
+            man.AddPractice(CharacterAttribute.Stealth,
+                Practice.NextCost(man, CharacterAttribute.Stealth));
             Practice.Convert(roster, null);
 
             // Training men IS raising the payroll - the tension comes free from Wages
