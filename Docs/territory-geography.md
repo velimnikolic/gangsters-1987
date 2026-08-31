@@ -67,9 +67,18 @@ their kind is on the record.
 * `Gameplay.CityBlocks` is a **shim** over the geography wherever a plan exists (the ledger's
   orders page and the strategic map speak the legacy integer block id). Only the older
   CityBuilder city still falls back to the ground-slab name parse.
-* `StrategicMapHud` draws canonical blocks when there is a plan; that is what re-enabled
-  ASSIGN BLOCK in CoreDemo, together with `GameplayBootstrap` installing the map for a
-  planned city and not only for a `CityBuilder` one (it absorbed the old `RoadDemoLedger`).
+* The **turf map is the map** in a planned city. `TurfMapHud` draws the canonical blocks as
+  dashed parcel lines over the plate (BLOCKS switch in the turf key, beside TURF) and serves
+  the ledger's block picks. It draws them into the LIVE layer only - the survey's ground,
+  streets and building footprints are untouched.
+* `MapTargeting` is the seam the ledger talks to: a page asks for ground, the highest-ranked
+  registered map serves it, and the book never learns which map it got. SEE ALL BLOCKS IN THE
+  CITY summons that map - for the turf plate that means running the boom out past the map line
+  for the player, the gesture he would have made himself - and the map hands the view back to
+  the street he was standing in once the pick lands. A player who was already on the map keeps
+  his own view.
+* `StrategicMapHud` keeps its own canonical projection for the older CityBuilder city, where
+  there is no plate. `GameplayBootstrap` installs it only there.
 * `TerritoryRuntime` resolves actors through it every PhysicalPresence tick.
 * `PropertyDirector` and `BlockOverlayHud` keep their own parses: they only ever run in the
   generated CityBuilder city, which has no canonical plan to diverge from.

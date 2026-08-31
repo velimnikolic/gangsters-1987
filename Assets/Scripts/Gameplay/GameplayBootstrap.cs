@@ -23,17 +23,14 @@ namespace LivingCity.Gameplay
         static void EnsureGameplay()
         {
             // Two kinds of city are served here. The older GENERATED city is a CityBuilder
-            // and gets the whole layer. A city built on a canonical TERRITORY PLAN - every
-            // RoadDemoBuilder scene, CoreDemo the game among them - has no CityBuilder and
-            // none of the ground-slab machinery, but it does have blocks, an outfit and a
-            // ledger, so it gets the organization and map layer. Anything else (the pack
-            // scenes, the shooting bench) gets nothing.
+            // and gets the whole layer, its own top-down map included. A city built on a
+            // canonical TERRITORY PLAN - every RoadDemoBuilder scene, CoreDemo the game
+            // among them - has no CityBuilder and none of the ground-slab machinery, but
+            // it does have blocks, an outfit and a ledger, so it gets the organization
+            // layer. Anything else (the pack scenes, the shooting bench) gets nothing.
             //
-            // The canonical branch is why the map is here at all: the ledger's ASSIGN BLOCK
-            // needs a StrategicMapHud to pick a block on, and gating the map on CityBuilder
-            // left that button dead in the one scene that is the game. Per the project's
-            // scenes-are-test-rigs rule the widening belongs in this shared bootstrap and
-            // not in a CoreDemo adapter.
+            // Per the project's scenes-are-test-rigs rule this gate belongs in the shared
+            // bootstrap and not in a CoreDemo adapter; it absorbed the old RoadDemoLedger.
             var city = Object.FindAnyObjectByType<CityBuilder>();
             var planned = !city && Object.FindAnyObjectByType<RoadDemo.RoadDemoBuilder>();
             if (!city && !planned)
@@ -46,13 +43,14 @@ namespace LivingCity.Gameplay
 
             if (planned)
             {
-                // The two directors the book reads from, the book, and the map it picks
-                // blocks on. No PropertyDirector, GangDirector or pedestrian director:
-                // those measure a generated city's hierarchy, which this city has not got.
+                // The two directors the book reads from, and the book. No
+                // PropertyDirector, GangDirector or pedestrian director: those measure a
+                // generated city's hierarchy, which this city has not got - and NO
+                // StrategicMapHud, because this city already has a map. The turf plate on
+                // the wheel is it, and the ledger picks blocks there (MapTargeting).
                 EnsureUnique<PersonnelDirector>(host);
                 EnsureUnique<OutfitDirector>(host);
                 EnsureUnique<UI.PersonnelAlmanac>(host);
-                EnsureUnique<UI.StrategicMapHud>(host);
                 return;
             }
 

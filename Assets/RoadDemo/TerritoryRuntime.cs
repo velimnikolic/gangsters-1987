@@ -46,6 +46,13 @@ namespace RoadDemo
             new Dictionary<ActorKey, ActorLocation>();
         readonly HashSet<TerritoryBlockId> occupiedBlocks = new HashSet<TerritoryBlockId>();
 
+        /// <summary>One premise tally per block that has deeds on it, reused between
+        /// control passes so the quarter-hour sweep over the whole city allocates
+        /// nothing.</summary>
+        readonly Dictionary<TerritoryBlockId, TerritoryControlDerivation.Tally> controlTallies =
+            new Dictionary<TerritoryBlockId, TerritoryControlDerivation.Tally>();
+        readonly List<TerritoryGangSignals> controlScratch = new List<TerritoryGangSignals>();
+
         public ITerritoryTruthQuery DebugTruth => truth;
 
         /// <summary>The canonical geography: blocks, neighborhoods, the block neighbor
@@ -69,6 +76,19 @@ namespace RoadDemo
         /// off the sampling that already ran, so a view can ask it of every block on
         /// screen without walking every crew again for each one.</summary>
         public bool Occupied(TerritoryBlockId blockId) => occupiedBlocks.Contains(blockId);
+
+        /// <summary>Every block one family has a man standing on, as of the last Presence
+        /// tick. Collected in one pass so a view can ask the question once per repaint
+        /// instead of once per block.</summary>
+        public void CollectOccupiedBlocks(int gangId, HashSet<TerritoryBlockId> into)
+        {
+            if (into == null)
+                return;
+            into.Clear();
+            foreach (var pair in actorLocations)
+                if (pair.Value.Actor.GangId.IsValid && pair.Value.Actor.GangId.Value == gangId)
+                    into.Add(pair.Value.BlockId);
+        }
 
         void Awake()
         {
@@ -280,6 +300,53 @@ namespace RoadDemo
             // Fear/compliance/control mechanics ahead of their tickets.
             if (tick.Channel == TerritoryTickChannel.PhysicalPresence)
                 SampleActorBlocks(tick.GameHour);
+            else if (tick.Channel == TerritoryTickChannel.DerivedControl)
+                DeriveControl();
+        }
+
+        /// <summary>
+        /// Publishes who holds each block, read off the deeds standing on it. This is the
+        /// DerivedControl channel's whole job: the arithmetic is pure
+        /// (TerritoryControlDerivation) and the only thing written back is the block's
+        /// control and each family's standing - fear and business compliance are carried
+        /// forward untouched, because they belong to their own tickets.
+        /// </summary>
+        void DeriveControl()
+        {
+            if (state == null)
+                return;
+
+            foreach (var tally in controlTallies.Values)
+                tally.Clear();
+
+            var deeds = PropertyRegistry.Businesses;
+            for (var i = 0; i < deeds.Count; i++)
+            {
+                var business = deeds[i];
+                if (!business || business.GangId < 0 || !business.CanonicalBlockId.IsValid)
+                    continue;
+                if (!controlTallies.TryGetValue(business.CanonicalBlockId, out var tally))
+                {
+                    tally = new TerritoryControlDerivation.Tally();
+                    controlTallies[business.CanonicalBlockId] = tally;
+                }
+                tally.Add(business.GangId);
+            }
+
+            // Every block is read, not just the ones with deeds: a block whose last
+            // premise changed hands has to stop saying it is held. The change guard is
+            // what keeps that from bumping the state version of the whole city every
+            // quarter hour - after the first pass almost nothing is written.
+            var ids = state.BlockIds;
+            for (var i = 0; i < ids.Count; i++)
+            {
+                var blockId = ids[i];
+                controlTallies.TryGetValue(blockId, out var tally);
+                var current = state.SignalsOf(blockId);
+                var next = TerritoryControlDerivation.Signals(tally, current, controlScratch);
+                if (!TerritoryControlDerivation.Same(current, next))
+                    state.SetSignals(blockId, next);
+            }
         }
 
         void SampleActorBlocks(double gameHour)

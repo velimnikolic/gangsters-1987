@@ -38,6 +38,12 @@ namespace LivingCity.Gameplay
         public Tribute Tribute => Runner.Tribute;
         public int Heat => Runner.Heat;
 
+        /// <summary>The outfit's filing office - every organizational order the ledger
+        /// asks for stands here until it is granted or refused. It lives on the
+        /// director rather than on the book so a ruling still lands while the ledger is
+        /// shut.</summary>
+        public OutfitFilings Filings { get; } = new OutfitFilings();
+
         public int Version { get; private set; }
 
         /// <summary>Game-hours the clock read last frame, as one number (day × 24 +
@@ -129,6 +135,11 @@ namespace LivingCity.Gameplay
 
         void Update()
         {
+            // The office answers in REAL seconds and before the clock is read: a
+            // filing has to be ruled on whether or not a day clock exists in the scene.
+            if (Filings.Tick(Time.deltaTime))
+                Version++;
+
             var clock = Ambient.DayClock.Current;
             if (clock == null)
                 return;

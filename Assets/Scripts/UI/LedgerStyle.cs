@@ -156,6 +156,10 @@ namespace LivingCity.UI
         /// <summary>The green a form marks ACTIVE in.</summary>
         public static readonly Color GreenOk = Rgb(0x3f6b3a);
 
+        /// <summary>The warning between ink and the red pen - a figure that is at its
+        /// limit rather than over it, ground somebody else is pushing on.</summary>
+        public static readonly Color PenAmber = Rgb(0x8a6412);
+
         /// <summary>Ballpoint blue - anything written by hand in the margin.</summary>
         public static readonly Color Ballpoint = Rgb(0x2f4a7a);
 
@@ -468,7 +472,7 @@ namespace LivingCity.UI
 
         static Sprite rounded, softShadow, roundedSmall, disc, ring;
         static Texture2D paperGrain, radialLight, hatch, deskFall, sheetFall, deskStripe;
-        static Texture2D dotRule, fadeUp;
+        static Texture2D dotRule, dotRuleDown, fadeUp;
         static Texture2D halftone, foxing, crease, vignette, speckle;
 
         /// <summary>A 9-sliced rounded rectangle, 6-unit corners - the folder's shell.</summary>
@@ -512,6 +516,11 @@ namespace LivingCity.UI
         /// and the figure it belongs to. Tiled along a 1-unit-tall rect.</summary>
         public static Texture2D DotRule => dotRule ??= MakeDotRule();
 
+        /// <summary>The same dotted leader stood on end, for a spine drawn DOWN a
+        /// chain of command. A 4x1 texture cannot be turned by a uvRect, so the
+        /// vertical run gets its own 1x4.</summary>
+        public static Texture2D DotRuleDown => dotRuleDown ??= MakeDotRuleDown();
+
         /// <summary>Transparent at the head, opaque at the foot. Tint it with a stock's
         /// darker stop and lay it over the flat fill: that is a two-stop gradient for
         /// any pair of colours, at the cost of one shared 64-texel column.</summary>
@@ -554,7 +563,7 @@ namespace LivingCity.UI
             missing.Clear();
             rounded = roundedSmall = softShadow = disc = ring = null;
             paperGrain = radialLight = hatch = deskFall = sheetFall = deskStripe = null;
-            dotRule = fadeUp = null;
+            dotRule = dotRuleDown = fadeUp = null;
             halftone = foxing = crease = vignette = speckle = null;
         }
 
@@ -786,6 +795,22 @@ namespace LivingCity.UI
                 pixels[y] = new Color32(255, 255, 255, (byte)(down * 255f));
             }
             tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        static Texture2D MakeDotRuleDown()
+        {
+            const int size = 4;
+            var tex = new Texture2D(1, size, TextureFormat.RGBA32, false);
+            tex.name = "Ledger Dot Rule Down";
+            tex.wrapMode = TextureWrapMode.Repeat;
+            tex.filterMode = FilterMode.Point;
+            tex.SetPixels32(new[]
+            {
+                new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255),
+                new Color32(255, 255, 255, 0), new Color32(255, 255, 255, 0),
+            });
             tex.Apply(false, true);
             return tex;
         }

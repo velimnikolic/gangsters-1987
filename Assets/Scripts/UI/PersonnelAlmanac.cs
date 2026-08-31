@@ -229,12 +229,14 @@ namespace LivingCity.UI
             if (keyboard == null)
                 return;
 
-            if (!IsOpen && OrganizationTargetingActive &&
-                keyboard.pKey.wasPressedThisFrame)
+            if (!IsOpen && keyboard.pKey.wasPressedThisFrame &&
+                (OrganizationTargetingActive || OrdersTargetingActive))
             {
-                if (StrategicMapHud.Instance && StrategicMapHud.IsOpen)
-                    StrategicMapHud.Instance.Close();
-                CancelOrganizationTargetingAndReturn();
+                MapTargeting.Surface?.Dismiss();
+                if (OrganizationTargetingActive)
+                    CancelOrganizationTargetingAndReturn();
+                else
+                    CancelOrderTargetingAndReturn();
                 return;
             }
 
@@ -248,11 +250,17 @@ namespace LivingCity.UI
 
             if (!IsOpen)
             {
-                // StrategicMapHud has no cancel callback. When Esc closes it during an
+                // A summonable map has no cancel callback. When Esc closes it during an
                 // Organization pick, return to the exact dossier instead of leaving an
-                // invisible targeting consumer armed behind the world.
-                if (OrganizationTargetingActive && !StrategicMapHud.IsOpen)
+                // invisible targeting consumer armed behind the world. A map that CANNOT
+                // be summoned - the turf plate, which is a zoom level - is not up yet by
+                // design, so the pick waits there instead of cancelling itself.
+                var surface = MapTargeting.Surface;
+                var mapGone = surface != null && surface.CanSummon && !surface.IsShowing;
+                if (OrganizationTargetingActive && mapGone)
                     CancelOrganizationTargetingAndReturn();
+                else if (OrdersTargetingActive && mapGone)
+                    CancelOrderTargetingAndReturn();
                 return;
             }
 
@@ -399,11 +407,15 @@ namespace LivingCity.UI
 
             if (pageKind != LedgerPage.Organization && OrganizationTargetingActive)
             {
-                organizationTargetLeaderId = -1;
-                StrategicMapHud.ClearTargeting(this);
+                StopOrganizationTargeting();
+                MapTargeting.Clear(this);
             }
-            if (StrategicMapHud.Instance && StrategicMapHud.IsOpen)
-                StrategicMapHud.Instance.Close();
+            if (pageKind != LedgerPage.Orders && OrdersTargetingActive)
+            {
+                StopOrderTargeting();
+                MapTargeting.Clear(this);
+            }
+            MapTargeting.Surface?.Dismiss();
             page.SetActive(true);
             IsOpen = true;
             SuspendOtherCanvases();
@@ -418,8 +430,7 @@ namespace LivingCity.UI
             RestoreOtherCanvases();
             DismissOrganizationTransient();
             RefreshTargeting();
-            if (StrategicMapHud.Instance)
-                StrategicMapHud.Instance.SetTargetHighlights(null, Color.clear);
+            MapTargeting.Surface?.SetTargetHighlights(null, Color.clear);
             lastCloseFrame = Time.frameCount;
             pendingConfirm = Confirm.None;
             lastRefusal = "";
@@ -435,7 +446,8 @@ namespace LivingCity.UI
         {
             RestoreOtherCanvases();
             IsOpen = false;
-            organizationTargetLeaderId = -1;
+            StopOrganizationTargeting();
+            StopOrderTargeting();
             DismissOrganizationTransient();
             RefreshTargeting();
         }
@@ -495,8 +507,8 @@ namespace LivingCity.UI
                     pageRoots[i].SetActive(i == (int)pageKind);
 
             // Leaving the orders page clears whatever it lit on the map.
-            if (pageKind != LedgerPage.Orders && StrategicMapHud.Instance)
-                StrategicMapHud.Instance.SetTargetHighlights(null, Color.clear);
+            if (pageKind != LedgerPage.Orders)
+                MapTargeting.Surface?.SetTargetHighlights(null, Color.clear);
             RefreshTargeting();
 
             if (pageKind != LedgerPage.Personnel)

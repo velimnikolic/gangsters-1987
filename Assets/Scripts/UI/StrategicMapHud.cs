@@ -42,24 +42,7 @@ namespace LivingCity.UI
     /// 300m up would otherwise be inside the smog); clouds and birds move to a cull-only
     /// layer because they live exactly between this camera and the ground.
     /// </summary>
-    public interface IMapTargetingConsumer
-    {
-        /// <summary>True = this order type drags a box; false = one click, one target.</summary>
-        bool WantsArea { get; }
-
-        /// <summary>Fires every frame the box is being dragged - blocks highlight as
-        /// the box captures them, before anything is selected.</summary>
-        void OnAreaPreview(Rect worldXZ);
-
-        /// <summary>The button came up on a dragged box.</summary>
-        void OnAreaSelected(Rect worldXZ);
-
-        /// <summary>The button came up on a click - the block under it, or -1 on a
-        /// street outside every slab and the nearest block id alongside.</summary>
-        void OnPointClicked(Vector2 worldXZ, int blockId);
-    }
-
-    public sealed class StrategicMapHud : MonoBehaviour
+    public sealed class StrategicMapHud : MonoBehaviour, IMapTargetingSurface
     {
         /// <summary>Above the clock bar's 100, below the personnel ledger's 110 - the
         /// book must stay readable if P is pressed over the map.</summary>
@@ -133,7 +116,7 @@ namespace LivingCity.UI
             IsOpen = false;
             lastCloseFrame = -1;
             Instance = null;
-            Targeting = null;
+            // The targeting seam is MapTargeting's now, and it resets itself.
         }
 
         /// <summary>The scene's map, for the ledger's Orders page - which must open the
@@ -141,37 +124,41 @@ namespace LivingCity.UI
         public static StrategicMapHud Instance { get; private set; }
 
         /// <summary>
-        /// The order-targeting seam: while non-null, LMB belongs to the consumer - a
-        /// drag becomes an area box (world-XZ rect), a click a point - and the map's
-        /// own card selection stands down. Clicks over clickable UI (the ledger's
-        /// panel has the raycaster) are ignored here. Taken by the Orders page while it
-        /// is picking targets (<see cref="SetTargeting"/>), given back on page leave
-        /// (<see cref="ClearTargeting"/>) and at Play reset.
+        /// The order-targeting seam lives in <see cref="MapTargeting"/> now, because
+        /// this is no longer the only map that can serve a pick: while a consumer is
+        /// set, LMB belongs to it - a drag becomes an area box (world-XZ rect), a click
+        /// a point - and the map's own card selection stands down. Clicks over
+        /// clickable UI (the ledger's panel has the raycaster) are ignored here.
         /// </summary>
-        public static IMapTargetingConsumer Targeting { get; private set; }
-
-        public static void SetTargeting(IMapTargetingConsumer consumer)
-        {
-            Targeting = consumer;
-            if (Instance)
-                Instance.RefreshHint();
-        }
-
-        /// <summary>Only the consumer that holds the seam gives it back - a page
-        /// closing must not knock another's targeting out from under it.</summary>
-        public static void ClearTargeting(IMapTargetingConsumer consumer)
-        {
-            if (Targeting == consumer)
-            {
-                Targeting = null;
-                if (Instance)
-                    Instance.RefreshHint();
-            }
-        }
+        static IMapTargetingConsumer Targeting => MapTargeting.Consumer;
 
         public Camera MapCamera => mapCamera;
 
-        void Awake() => Instance = this;
+        void Awake()
+        {
+            Instance = this;
+            // The generated city's map. Where a turf plate exists it outranks this one
+            // and the ledger picks blocks there instead.
+            MapTargeting.Register(this, MapTargeting.CameraMapRank);
+            MapTargeting.Changed += RefreshHint;
+        }
+
+        // ------------------------------------------------- IMapTargetingSurface
+
+        bool IMapTargetingSurface.IsShowing => IsOpen;
+
+        /// <summary>This map IS a screen: the ledger opens and closes it.</summary>
+        bool IMapTargetingSurface.CanSummon => true;
+
+        bool IMapTargetingSurface.Summon()
+        {
+            Open();
+            return IsOpen;
+        }
+
+        void IMapTargetingSurface.Dismiss() => Close();
+
+        string IMapTargetingSurface.SummonHint => "";
 
         sealed class Block
         {
@@ -285,10 +272,7 @@ namespace LivingCity.UI
             if (PersonnelAlmanac.IsOpen)
                 return;
 
-            // Plain M is the map. Shift+M is the demo's audio mute (DemoAudio), which
-            // shares the key in every RoadDemo scene now that the map installs there too.
-            var shift = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
-            if (!PersonnelAlmanac.IsOpen && !shift && keyboard.mKey.wasPressedThisFrame)
+            if (!PersonnelAlmanac.IsOpen && keyboard.mKey.wasPressedThisFrame)
             {
                 if (IsOpen) Close();
                 else Open();
@@ -574,6 +558,9 @@ namespace LivingCity.UI
 
         void OnDestroy()
         {
+            MapTargeting.Changed -= RefreshHint;
+            MapTargeting.Unregister(this);
+
             // Play-stop (or a scene tear-down) mid-map: the world must get its camera,
             // its fog and its occlusion hider back.
             if (IsOpen)

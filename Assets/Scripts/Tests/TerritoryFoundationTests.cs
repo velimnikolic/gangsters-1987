@@ -19,8 +19,71 @@ namespace LivingCity.Tests
             PlayerKnowledgeIsSeparateFromDebugTruth(failures);
             EventsAnnounceButDoNotOwnState(failures);
             SchedulerIsFrameIndependentAndPauseSafe(failures);
+            ControlIsReadOffTheDeedsOnTheBlock(failures);
 
             return failures;
+        }
+
+        /// <summary>
+        /// Ground is taken premise by premise, so control is a reading of the deeds on
+        /// the block and nothing else. One family on it holds it, two make it contested,
+        /// no deeds make it nobody's - and a control pass must carry forward the signals
+        /// it does not own.
+        /// </summary>
+        static void ControlIsReadOffTheDeedsOnTheBlock(List<string> failures)
+        {
+            var scratch = new List<TerritoryGangSignals>();
+            var empty = new TerritoryControlDerivation.Tally();
+            if (TerritoryControlDerivation.Read(empty, out var nobody) !=
+                    TerritoryControlState.Uncontrolled || nobody != -1)
+                failures.Add("Control: a block with no deeds on it is not uncontrolled.");
+
+            var ours = new TerritoryControlDerivation.Tally();
+            ours.Add(0);
+            ours.Add(0);
+            if (TerritoryControlDerivation.Read(ours, out var holder) !=
+                    TerritoryControlState.Controlled || holder != 0)
+                failures.Add("Control: one family holding every premise does not hold the block.");
+            if (System.Math.Abs(TerritoryControlDerivation.ShareOf(ours, 0) - 100f) > 0.001f ||
+                TerritoryControlDerivation.ShareOf(ours, 3) != 0f)
+                failures.Add("Control: a family's share of the block is wrong.");
+
+            var pushed = new TerritoryControlDerivation.Tally();
+            pushed.Add(0);
+            pushed.Add(0);
+            pushed.Add(4);
+            if (TerritoryControlDerivation.Read(pushed, out var leading) !=
+                    TerritoryControlState.Contested || leading != 0)
+                failures.Add("Control: a second house on the block did not make it contested.");
+
+            var tied = new TerritoryControlDerivation.Tally();
+            tied.Add(1);
+            tied.Add(4);
+            if (TerritoryControlDerivation.Read(tied, out var neither) !=
+                    TerritoryControlState.Contested || neither != -1)
+                failures.Add("Control: an even split named a leader anyway.");
+
+            // Fear and business compliance belong to other tickets: a control pass must
+            // hand them back untouched.
+            var previous = new TerritoryBlockSignals(
+                localFear: 40f, businessCompliance: 30f,
+                compliantBusinesses: 2, totalBusinesses: 5,
+                control: TerritoryControlState.Unknown);
+            var next = TerritoryControlDerivation.Signals(pushed, previous, scratch);
+            if (next.LocalFear != previous.LocalFear ||
+                next.BusinessCompliance != previous.BusinessCompliance ||
+                next.CompliantBusinesses != 2 || next.TotalBusinesses != 5)
+                failures.Add("Control: a control pass wiped signals it does not own.");
+            if (next.Control != TerritoryControlState.Contested ||
+                next.LeadingGangId.Value != 0 || next.Gangs.Count != 2)
+                failures.Add("Control: the published signals do not match the deeds.");
+
+            var repeat = TerritoryControlDerivation.Signals(pushed, next, scratch);
+            if (!TerritoryControlDerivation.Same(next, repeat))
+                failures.Add("Control: an unchanged block would be rewritten every tick.");
+            if (TerritoryControlDerivation.Same(next,
+                    TerritoryControlDerivation.Signals(ours, next, scratch)))
+                failures.Add("Control: a changed block would not be rewritten.");
         }
 
         static TerritoryBlockDefinition Definition() =>

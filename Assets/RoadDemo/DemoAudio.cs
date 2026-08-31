@@ -203,13 +203,9 @@ namespace RoadDemo
             PlaceEar();
 
             // Mute is unscaled and outside the pause fade: it must work on a frozen
-            // demo, and it must be instant. SHIFT+M, not M: plain M opens the strategic
-            // map, which now installs in this scene as well as in the generated city.
+            // demo, and it must be instant.
             var keyboard = Keyboard.current;
-            var shift = keyboard != null &&
-                        (keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed);
-            if (keyboard != null && shift && keyboard.mKey.wasPressedThisFrame &&
-                !LivingCity.UI.PersonnelAlmanac.IsOpen)
+            if (keyboard != null && keyboard.mKey.wasPressedThisFrame && !LivingCity.UI.PersonnelAlmanac.IsOpen)
             {
                 _muted = !_muted;
                 AudioListener.volume = _muted ? 0f : 1f;

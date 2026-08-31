@@ -360,6 +360,15 @@ namespace RoadDemo
                 _hud.TurfOn, () => _hud.SetTurf(!_hud.TurfOn));
             x += switchWide + 9f;
 
+            // The parcel lines, on the same strip and the same switch shape: the survey
+            // is the picture of the city and the blocks are a reading laid over it, so
+            // the player asks for them the way he asks for the ownership wash.
+            string blockLabel = _hud.BlocksOn ? "BLOCKS ON" : "BLOCKS OFF";
+            float blockWide = Wide(blockLabel, 9f, LedgerStyle.Condensed, 10f) + 18f;
+            SmallButton(_keyRect, x, Mid(tall, switchH), blockWide, switchH, blockLabel,
+                _hud.BlocksOn, () => _hud.SetBlocks(!_hud.BlocksOn));
+            x += blockWide + 9f;
+
             const float ruleTall = 12f;
             LedgerKit.VRule(_keyRect, x, Mid(tall, ruleTall), ruleTall, RuleFaint, 1f);
             x += 11f;
@@ -395,7 +404,7 @@ namespace RoadDemo
         {
             // Read straight off the districts rather than through KeyHouses: this runs
             // every frame the map is up, and the roll builds a set to dedupe with.
-            int stamp = _hud.TurfOn ? 1 : 0;
+            int stamp = (_hud.TurfOn ? 1 : 0) * 31 + (_hud.BlocksOn ? 1 : 0);
             if (_hud.Survey == null)
                 return stamp;
             foreach (var district in _hud.Survey.Districts)

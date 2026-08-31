@@ -44,8 +44,9 @@ namespace RoadDemo
         /// </summary>
         const float CardWide = 256f, CardTall = 160f;
         const float Inset = 0f, Border = 5f;
-        const float ViewOverscan = 1.75f;
+        const float ViewOverscan = 1.25f;
         const float RedrawPanShare = 0.08f;
+        const float RedrawZoomShare = 1.08f;
         const float RedrawAfterStillSeconds = 0.14f;
         const float MovingRedrawInterval = 0.9f;
         // The card is only 256 x 160 canvas pixels. A 480 x 300 upload was almost
@@ -66,16 +67,20 @@ namespace RoadDemo
         DemoCamera _rig;
         DemoCrews _crews;
         RoadDemoBuilder _builder;
+        TurfMapHud _owner;
+        TurfMapBuildingLayer _buildingLayer;
         float _viewHeight = CityViewConfig.DefaultMinimapViewHeight;
 
         readonly TurfMapSurvey _survey = new TurfMapSurvey();
 
         Canvas _canvas;
-        RectTransform _card, _view, _sheetRect;
+        RectTransform _card, _view, _sheetPose, _sheetRect;
         Texture2D _paper;
         readonly Color32[] _uploadPixels = new Color32[
             TurfPlate.RW / UploadDownsample * (TurfPlate.RH / UploadDownsample)];
+        readonly Vector3[] _clipCorners = new Vector3[4];
         Vector2 _lastPivot;
+        float _lastHeading, _lastPitch;
         float _lastMotionAt = -10f, _lastKickAt = -10f;
         int _draws, _uploads;
         long _lastDrawMs;
@@ -125,6 +130,7 @@ namespace RoadDemo
 
         /// <summary>Who held what when the plate on the card was drawn.</summary>
         int _painted = -1;
+        bool _paintedTurf = true, _kickTurf = true;
 
         /// <summary>Whether a plate has ever been published. Until one has, the survey's
         /// projection is a default struct whose scale is zero, and every world point put
@@ -140,13 +146,18 @@ namespace RoadDemo
         public long LastDrawMs => _lastDrawMs;
 
         public void Init(RoadDemoBuilder city, Transform blocks, DemoCamera camera,
-            DemoCrews streetCrews, TurfMapSurvey shareHeight)
+            DemoCrews streetCrews, TurfMapSurvey shareHeight, TurfMapHud owner)
         {
             _builder = city;
             _rig = camera;
             _crews = streetCrews;
+            _owner = owner;
             if (camera != null)
+            {
                 _lastPivot = new Vector2(camera.pivot.x, camera.pivot.z);
+                _lastHeading = camera.yaw;
+                _lastPitch = camera.pitch;
+            }
             if (city != null)
                 _viewHeight = city.MinimapViewHeight;
 
@@ -213,12 +224,20 @@ namespace RoadDemo
             // one place on the map where the paper is read smaller than it was printed.
             _paper.filterMode = FilterMode.Bilinear;
 
-            _sheetRect = DemoUi.NewRect("Sheet", _view);
+            _sheetPose = DemoUi.NewRect("Sheet Pose", _view);
+            _sheetPose.anchorMin = _sheetPose.anchorMax = new Vector2(0.5f, 0.5f);
+            _sheetPose.pivot = new Vector2(0.5f, 0.5f);
+            _sheetPose.sizeDelta = Vector2.zero;
+
+            _sheetRect = DemoUi.NewRect("Sheet", _sheetPose);
             _sheetRect.anchorMin = _sheetRect.anchorMax = new Vector2(0.5f, 0.5f);
             _sheetRect.pivot = new Vector2(0.5f, 0.5f);
+            _sheetRect.sizeDelta = new Vector2(TurfPlate.RW, TurfPlate.RH);
             var paperImage = _sheetRect.gameObject.AddComponent<RawImage>();
             paperImage.texture = _paper;
             paperImage.raycastTarget = false;
+
+            AdoptBuildingLayer();
 
             BuildDistrictTags();
 
@@ -317,6 +336,7 @@ namespace RoadDemo
 
             _survey.ReadOwners();
             _painted = TurfMapHud.OwnershipStamp(_builder);
+            _kickTurf = _owner == null || _owner.TurfOn;
             _kickView = view;
             _fault = null;
             _state = Drawing;
@@ -328,7 +348,8 @@ namespace RoadDemo
                 try
                 {
                     _survey.Draw(_kickView);
-                    _survey.Composite.Downsample(UploadDownsample, _uploadPixels);
+                    (_kickTurf ? _survey.Composite : _survey.Plain)
+                        .Downsample(UploadDownsample, _uploadPixels);
                 }
                 catch (System.Exception fault)
                 {
@@ -357,6 +378,7 @@ namespace RoadDemo
                     _paper.Apply(false);
                     _uploads++;
                     _printed = true;
+                    _paintedTurf = _kickTurf;
                 }
                 _state = Idle;
             }
@@ -375,9 +397,15 @@ namespace RoadDemo
             var pivot = _rig != null
                 ? new Vector2(_rig.pivot.x, _rig.pivot.z)
                 : _lastPivot;
-            if ((pivot - _lastPivot).sqrMagnitude > 0.0025f)
+            float heading = Heading;
+            float pitch = Pitch;
+            if ((pivot - _lastPivot).sqrMagnitude > 0.0025f ||
+                Mathf.Abs(Mathf.DeltaAngle(_lastHeading, heading)) > 0.01f ||
+                Mathf.Abs(_lastPitch - pitch) > 0.01f)
             {
                 _lastPivot = pivot;
+                _lastHeading = heading;
+                _lastPitch = pitch;
                 _lastMotionAt = Time.unscaledTime;
             }
 
@@ -385,8 +413,13 @@ namespace RoadDemo
             {
                 var wanted = WantedView();
                 if (_survey.RefreshGeometryIfNeeded())
+                {
+                    AdoptBuildingLayer();
                     Kick(wanted);
+                }
                 else if (_painted != TurfMapHud.OwnershipStamp(_builder))
+                    Kick(wanted);
+                else if (_paintedTurf != (_owner == null || _owner.TurfOn))
                     Kick(wanted);
                 else
                 {
@@ -394,9 +427,12 @@ namespace RoadDemo
                     float pan = drawn.height > 0f
                         ? (wanted.center - drawn.center).magnitude / drawn.height
                         : float.MaxValue;
+                    float zoom = drawn.height > 0f ? wanted.height / drawn.height : float.MaxValue;
+                    if (zoom > 0f && zoom < 1f) zoom = 1f / zoom;
                     bool settled = Time.unscaledTime - _lastMotionAt >= RedrawAfterStillSeconds;
                     bool movingRefreshDue = Time.unscaledTime - _lastKickAt >= MovingRedrawInterval;
-                    if (pan >= RedrawPanShare && (settled || movingRefreshDue))
+                    if ((pan >= RedrawPanShare || zoom >= RedrawZoomShare) &&
+                        (settled || movingRefreshDue))
                         Kick(wanted);
                 }
             }
@@ -420,72 +456,134 @@ namespace RoadDemo
             }
         }
 
-        /// <summary>The ground visible inside the card right now. Unlike the survey's
-        /// larger redraw request, this follows the camera every frame.</summary>
-        Rect VisibleView()
-        {
-            if (_rig == null)
-                return _survey.CityView;
+        float Heading => _rig != null ? _rig.yaw : 0f;
+        float Pitch => _rig != null ? _rig.pitch : 90f;
+        float Tilt => TurfMapHud.PitchTilt(Pitch);
 
-            float height = Mathf.Max(120f, _viewHeight);
-            float width = height * TurfPlate.AW / TurfPlate.AH;
-            var centre = new Vector2(_rig.pivot.x, _rig.pivot.z);
-            return new Rect(centre - new Vector2(width, height) * 0.5f,
-                new Vector2(width, height));
+        Vector2 ViewSize()
+        {
+            if (_view == null) return new Vector2(CardWide, CardTall);
+            var size = _view.rect.size;
+            return new Vector2(size.x > 1f ? size.x : CardWide,
+                size.y > 1f ? size.y : CardTall);
         }
+
+        float CanvasPerMetre => ViewSize().y / Mathf.Max(120f, _viewHeight);
 
         /// <summary>The worker draws beyond the card edges. That spare paper lets the
         /// published texture slide every frame while the next survey is in flight,
         /// instead of standing still and snapping when the replacement arrives.</summary>
         Rect WantedView()
         {
-            var visible = VisibleView();
-            var size = visible.size * ViewOverscan;
-            return new Rect(visible.center - size * 0.5f, size);
+            if (_rig == null)
+                return _survey.CityView;
+
+            var card = ViewSize();
+            float height = Mathf.Max(120f, _viewHeight);
+            float cover = TurfMapHud.ViewCover(Heading, Tilt, card.x, card.y);
+            float metresPerPixel = height * cover * ViewOverscan /
+                Mathf.Max(1f, card.y);
+            var span = new Vector2(TurfPlate.RW * metresPerPixel,
+                TurfPlate.RH * metresPerPixel);
+            var centre = new Vector2(_rig.pivot.x, _rig.pivot.z);
+            return new Rect(centre - span * 0.5f, span);
         }
 
         void FitSheet()
         {
             var drawn = _survey.DrawnView;
-            var visible = VisibleView();
-            if (drawn.width <= 0f || drawn.height <= 0f ||
-                visible.width <= 0f || visible.height <= 0f)
+            if (drawn.width <= 0f || drawn.height <= 0f)
                 return;
 
-            // A script reload can add this field while the already-running card still
-            // owns the old child. Adopt it in place so Play does not need restarting.
-            if (_sheetRect == null && _view != null)
-            {
-                _sheetRect = _view.Find("Sheet") as RectTransform;
-                if (_sheetRect != null)
-                {
-                    _sheetRect.anchorMin = _sheetRect.anchorMax = new Vector2(0.5f, 0.5f);
-                    _sheetRect.pivot = new Vector2(0.5f, 0.5f);
-                }
-            }
+            EnsureSheetPose();
+            if (_sheetRect == null || _sheetPose == null) return;
+
+            float canvasPerMetre = CanvasPerMetre;
+            float sheetScale = drawn.height / TurfPlate.RH * canvasPerMetre;
+            _sheetRect.sizeDelta = new Vector2(TurfPlate.RW, TurfPlate.RH);
+            _sheetRect.localScale = Vector3.one * sheetScale;
+            _sheetRect.localRotation = Quaternion.Euler(0f, 0f, Heading);
+            _sheetPose.localScale = new Vector3(1f, Tilt, 1f);
+
+            var pivot = _rig != null
+                ? new Vector2(_rig.pivot.x, _rig.pivot.z)
+                : drawn.center;
+            _sheetRect.anchoredPosition = TurfMapHud.RotateForHeading(
+                drawn.center - pivot, Heading) * canvasPerMetre;
+
+            AdoptBuildingLayer();
+        }
+
+        /// <summary>Upgrade an already-live north-up minimap after script reload by
+        /// inserting the same outer tilt pose used by TurfMap around its existing sheet.</summary>
+        void EnsureSheetPose()
+        {
+            if (_view == null) return;
+
+            if (_sheetPose == null)
+                _sheetPose = _view.Find("Sheet Pose") as RectTransform;
             if (_sheetRect == null)
-                return;
+                _sheetRect = _sheetPose != null
+                    ? _sheetPose.Find("Sheet") as RectTransform
+                    : _view.Find("Sheet") as RectTransform;
+            if (_sheetRect == null) return;
 
-            var pixelsPerMetre = new Vector2(
-                _view.rect.width / visible.width,
-                _view.rect.height / visible.height);
-            _sheetRect.sizeDelta = new Vector2(
-                drawn.width * pixelsPerMetre.x,
-                drawn.height * pixelsPerMetre.y);
-            _sheetRect.anchoredPosition = Vector2.Scale(
-                drawn.center - visible.center, pixelsPerMetre);
+            if (_sheetPose == null)
+            {
+                int sibling = _sheetRect.GetSiblingIndex();
+                _sheetPose = DemoUi.NewRect("Sheet Pose", _view);
+                _sheetPose.SetSiblingIndex(sibling);
+            }
+
+            _sheetPose.anchorMin = _sheetPose.anchorMax = new Vector2(0.5f, 0.5f);
+            _sheetPose.pivot = new Vector2(0.5f, 0.5f);
+            _sheetPose.anchoredPosition = Vector2.zero;
+            _sheetPose.sizeDelta = Vector2.zero;
+            _sheetPose.localRotation = Quaternion.identity;
+            if (_sheetRect.parent != _sheetPose)
+                _sheetRect.SetParent(_sheetPose, false);
+            _sheetRect.anchorMin = _sheetRect.anchorMax = new Vector2(0.5f, 0.5f);
+            _sheetRect.pivot = new Vector2(0.5f, 0.5f);
+        }
+
+        /// <summary>Move the shared true-height city layer onto the visible postcard.</summary>
+        internal void AdoptBuildingLayer()
+        {
+            if (_owner == null || _sheetRect == null) return;
+            _buildingLayer = _owner.ShareBuildingLayer(_sheetRect, _survey,
+                Heading, Pitch, 0);
+            if (_buildingLayer == null) return;
+            _buildingLayer.SetClipRect(CardClipRect(), true);
+            if (_buildingLayer.gameObject.activeSelf != _printed)
+                _buildingLayer.gameObject.SetActive(_printed);
+            if (!_printed) return;
+            _buildingLayer.SetView(_survey.Plan, Heading, Pitch);
+        }
+
+        Rect CardClipRect()
+        {
+            if (_view == null || _canvas == null) return default;
+            _view.GetWorldCorners(_clipCorners);
+            var root = _canvas.rootCanvas != null
+                ? _canvas.rootCanvas.transform : _canvas.transform;
+            var min = (Vector2)root.InverseTransformPoint(_clipCorners[0]);
+            var max = (Vector2)root.InverseTransformPoint(_clipCorners[2]);
+            return Rect.MinMaxRect(min.x, min.y, max.x, max.y);
         }
 
         /// <summary>A world point on the local card, in the camera's current view.</summary>
         bool OnCard(Vector2 worldXZ, out Vector2 at)
         {
-            var visible = VisibleView();
-            var relative = worldXZ - visible.min;
-            at = new Vector2(
-                relative.x / visible.width * _view.rect.width,
-                relative.y / visible.height * _view.rect.height);
-            return relative.x >= 0f && relative.y >= 0f &&
-                   relative.x <= visible.width && relative.y <= visible.height;
+            var size = ViewSize();
+            var pivot = _rig != null
+                ? new Vector2(_rig.pivot.x, _rig.pivot.z)
+                : _survey.DrawnView.center;
+            var local = TurfMapHud.ApplyTilt(
+                TurfMapHud.RotateForHeading(worldXZ - pivot, Heading), Tilt) *
+                CanvasPerMetre;
+            at = size * 0.5f + local;
+            return at.x >= 0f && at.y >= 0f &&
+                   at.x <= size.x && at.y <= size.y;
         }
 
         /// <summary>The crews, every one the same size and in its family's ink - the
@@ -534,6 +632,12 @@ namespace RoadDemo
         /// he is standing.</summary>
         void DrawFrame()
         {
+            // The card draws before its own furniture exists on the frame the minimap
+            // first ticks: the four rules are built with the canvas, and Update runs
+            // whether or not that has happened yet.
+            if (_frame[0] == null)
+                return;
+
             if (_rig == null)
             {
                 foreach (var side in _frame)
@@ -547,12 +651,9 @@ namespace RoadDemo
             float across = down * Mathf.Max(0.1f,
                 (float)Screen.width / Mathf.Max(1, Screen.height));
 
-            var centre = new Vector2(_rig.pivot.x, _rig.pivot.z);
-            OnCard(centre, out var at);
-            OnCard(centre + new Vector2(across, down) * 0.5f, out var corner);
-
-            float halfW = Mathf.Abs(corner.x - at.x);
-            float halfH = Mathf.Abs(corner.y - at.y);
+            OnCard(new Vector2(_rig.pivot.x, _rig.pivot.z), out var at);
+            float halfW = across * CanvasPerMetre * 0.5f;
+            float halfH = down * CanvasPerMetre * 0.5f;
 
             // top, bottom, left, right - one pixel of rule, which is what the plate
             // draws every other hairline at

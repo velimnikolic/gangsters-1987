@@ -77,6 +77,8 @@ namespace RoadDemo
             public Vector2[] Uvs;
             public int[] Triangles;
             public int VisibleStamp;
+            public float MeshHeading = float.NaN;
+            public float MeshPitch = float.NaN;
         }
 
         sealed class View
@@ -118,6 +120,8 @@ namespace RoadDemo
         float _heading = float.NaN;
         float _pitch = float.NaN;
         bool _hasProjection;
+        bool _hasClip;
+        Rect _clipRect;
         int _visibleStamp;
 
         public TurfMapBuildingProxyReport Report { get; private set; }
@@ -131,6 +135,57 @@ namespace RoadDemo
         public int ViewRebuilds { get; private set; }
         public int TileRebinds { get; private set; }
         public int MeshBuilds { get; private set; }
+
+        /// <summary>
+        /// Mount the one prepared building layer on whichever survey sheet is visible.
+        /// TurfMap and its corner minimap are mutually exclusive, so sharing this layer
+        /// keeps their building geometry identical without retaining a second city-wide
+        /// mesh catalogue for the postcard.
+        /// </summary>
+        public void Attach(RectTransform sheet, int siblingIndex)
+        {
+            if (sheet == null) return;
+
+            var rect = (RectTransform)transform;
+            if (rect.parent != sheet)
+                rect.SetParent(sheet, false);
+            if (rect.localScale != Vector3.one)
+                rect.localScale = Vector3.one;
+            if (rect.localRotation != Quaternion.identity)
+                rect.localRotation = Quaternion.identity;
+            if (rect.anchorMin != Vector2.zero || rect.anchorMax != Vector2.one ||
+                rect.offsetMin != Vector2.zero || rect.offsetMax != Vector2.zero)
+                DemoUi.Fill(rect);
+            if (!Mathf.Approximately(rect.localPosition.z, 0f))
+            {
+                var local = rect.localPosition;
+                rect.localPosition = new Vector3(local.x, local.y, 0f);
+            }
+            int wanted = Mathf.Clamp(siblingIndex, 0,
+                Mathf.Max(0, sheet.childCount - 1));
+            if (rect.GetSiblingIndex() != wanted)
+                rect.SetSiblingIndex(wanted);
+        }
+
+        /// <summary>Clip direct CanvasRenderer tile meshes to a compact map card.
+        /// The full-screen sheet passes <c>false</c>; the minimap supplies its card in
+        /// root-canvas coordinates because bare CanvasRenderers are not MaskableGraphic
+        /// instances and therefore do not register themselves with RectMask2D.</summary>
+        public void SetClipRect(Rect rect, bool enabled)
+        {
+            if (_hasClip == enabled && (!enabled || _clipRect == rect)) return;
+            _hasClip = enabled;
+            _clipRect = rect;
+            for (int i = 0; i < _allViews.Count; i++)
+                ApplyClip(_allViews[i].Renderer);
+        }
+
+        void ApplyClip(CanvasRenderer renderer)
+        {
+            if (renderer == null) return;
+            if (_hasClip) renderer.EnableRectClipping(_clipRect);
+            else renderer.DisableRectClipping();
+        }
 
         /// <summary>Bank the shared camera pose before a geometry catalogue rebuild,
         /// so its prepared meshes are born in the pose the map will actually open at.</summary>
@@ -188,9 +243,11 @@ namespace RoadDemo
             if (pitchChanged) _pitch = pitch;
             if ((headingChanged || pitchChanged) && _tiles.Count > 0)
             {
-                RebuildTileMeshes(_heading, _pitch);
                 for (int i = 0; i < _activeViews.Count; i++)
+                {
+                    EnsureTileMesh(_activeViews[i].Tile);
                     _activeViews[i].Renderer.SetMesh(_activeViews[i].Tile.Mesh);
+                }
             }
 
             bool membershipChanged = projectionChanged && RefreshVisible(force: false);
@@ -338,6 +395,7 @@ namespace RoadDemo
                 renderer.SetTexture(Texture2D.whiteTexture);
                 renderer.cullTransparentMesh = true;
                 renderer.cull = true;
+                ApplyClip(renderer);
                 var view = new View { Rect = rect, Renderer = renderer };
                 _allViews.Add(view);
                 _pool.Push(view);
@@ -354,6 +412,7 @@ namespace RoadDemo
         {
             view.Tile = tile;
             view.Rect.localPosition = new Vector3(tile.Origin.x, tile.Origin.y, 0f);
+            EnsureTileMesh(tile);
             view.Renderer.SetMesh(tile.Mesh);
             view.Renderer.cull = false;
             _activeViews.Add(view);
@@ -397,6 +456,19 @@ namespace RoadDemo
         {
             _depth.Heading = heading;
             for (int i = 0; i < _tiles.Count; i++) BuildMesh(_tiles[i], heading, pitch);
+        }
+
+        void EnsureTileMesh(Tile tile)
+        {
+            if (tile == null) return;
+            float heading = float.IsNaN(_heading) ? 0f : _heading;
+            float pitch = float.IsNaN(_pitch) ? 45f : _pitch;
+            if (tile.Mesh != null &&
+                Mathf.Abs(Mathf.DeltaAngle(tile.MeshHeading, heading)) < HeadingStep &&
+                Mathf.Abs(tile.MeshPitch - pitch) < PitchStep)
+                return;
+            _depth.Heading = heading;
+            BuildMesh(tile, heading, pitch);
         }
 
         void BuildMesh(Tile tile, float heading, float pitch)
@@ -482,6 +554,8 @@ namespace RoadDemo
             tile.Mesh.uv = tile.Uvs;
             tile.Mesh.triangles = tile.Triangles;
             tile.Mesh.RecalculateBounds();
+            tile.MeshHeading = heading;
+            tile.MeshPitch = pitch;
             MeshBuilds++;
         }
 

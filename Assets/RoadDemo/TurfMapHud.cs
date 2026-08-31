@@ -72,7 +72,7 @@ namespace RoadDemo
     /// Sizes and line weights all come off <see cref="TurfPlate.S"/> rather than being
     /// written per element, so the same code draws the corner minimap.
     /// </summary>
-    public sealed class TurfMapHud : MonoBehaviour
+    public sealed class TurfMapHud : MonoBehaviour, LivingCity.UI.IMapTargetingSurface
     {
         /// <summary>Over the demo's own bars (20, 22) and the world overlays, under
         /// the personnel ledger (110) - the book must stay readable if P is pressed
@@ -173,6 +173,7 @@ namespace RoadDemo
         readonly TurfPlate _live = new TurfPlate();
         TurfMapLabels _lettering;
         TurfMapBuildingLayer _buildingLayer;
+        TurfMinimap _minimapView;
 
         Texture2D _groundTex, _liveTex;
         RawImage _groundImage, _liveImage;
@@ -196,6 +197,17 @@ namespace RoadDemo
         int _seenPersonnelVersion = -1;
 
         bool _dragging, _dragMoved;
+
+        /// <summary>The canonical blocks, drawn over the plate. Off by default and
+        /// switched on in the turf key beside TURF - the survey is a picture of the
+        /// city, and the parcel lines are a reading of it that the player asks for.
+        /// A pick armed by the ledger turns them on for as long as it lasts, because
+        /// nobody can choose a block he cannot see.</summary>
+        public bool BlocksOn { get; private set; }
+
+        readonly List<Rect> _targetRects = new List<Rect>();
+        Color32 _targetInk = TurfInk.Red;
+
         float _lastRightOrderAt = -10f;
         Vector2 _lastRightOrderScreen;
 
@@ -303,11 +315,15 @@ namespace RoadDemo
             {
                 var corner = new GameObject("Turf Minimap");
                 corner.transform.SetParent(transform, false);
-                corner.AddComponent<TurfMinimap>()
-                    .Init(_builder, _blockRoot, _rig, _crews, _survey);
+                _minimapView = corner.AddComponent<TurfMinimap>();
+                _minimapView.Init(_builder, _blockRoot, _rig, _crews, _survey, this);
             }
 
             Installed = true;
+
+            // The book picks its blocks HERE. This plate outranks the generated city's
+            // camera map: where both exist, the game's own map serves the pick.
+            LivingCity.UI.MapTargeting.Register(this, LivingCity.UI.MapTargeting.PlateRank);
 
             // Down until the wheel goes past the map line. Not Show(false): the map has
             // never been open, so Show would see no change and leave the canvas
@@ -321,6 +337,8 @@ namespace RoadDemo
             foreach (var texture in new[] { _groundTex, _liveTex })
                 if (texture != null)
                     Destroy(texture);
+
+            LivingCity.UI.MapTargeting.Unregister(this);
 
             // The statics describe THIS map. A scene unloaded with the map up would
             // otherwise leave the camera's hint off and the top bar retracted for the
@@ -447,6 +465,12 @@ namespace RoadDemo
             if (!on)
                 _lastCloseFrame = Time.frameCount;
 
+            // TurfMap and minimap share the exact same prepared building layer. Bring
+            // it home before exposing the full canvas; the minimap takes it back when
+            // the map closes.
+            if (on)
+                EnsureBuildingLayer();
+
             _canvas.gameObject.SetActive(on);
             Blank(on);
 
@@ -487,6 +511,7 @@ namespace RoadDemo
                 _dragging = false;
                 _mapChrome.CloseMenu();
                 PointerOverChrome = false;
+                _minimapView?.AdoptBuildingLayer();
             }
         }
 
@@ -981,27 +1006,69 @@ namespace RoadDemo
         /// volumes, street names, then live tactical marks.</summary>
         void EnsureBuildingLayer()
         {
-            if (_buildingLayer == null && _sheet != null)
+            if (_sheet == null) return;
+            int afterGround = _groundImage != null
+                ? _groundImage.transform.GetSiblingIndex() + 1 : 0;
+            ShareBuildingLayer(_sheet, _survey, Heading,
+                _rig != null ? _rig.pitch : 90f, afterGround);
+            if (_buildingLayer != null)
             {
-                var root = _sheet.Find("Building Volumes") as RectTransform;
-                if (root == null)
-                {
-                    root = DemoUi.NewRect("Building Volumes", _sheet);
-                    DemoUi.Fill(root);
-                }
-                _buildingLayer = root.GetComponent<TurfMapBuildingLayer>();
-                if (_buildingLayer == null)
-                    _buildingLayer = root.gameObject.AddComponent<TurfMapBuildingLayer>();
-            }
-
-            if (_buildingLayer != null && _builder != null &&
-                _buildingLayer.GeometryVersion != _builder.ResidentialGeometryVersion)
-            {
-                _buildingLayer.PreparePose(Heading, _rig != null ? _rig.pitch : 90f);
-                _buildingLayer.Rebuild(_builder, _survey);
+                if (!_buildingLayer.gameObject.activeSelf)
+                    _buildingLayer.gameObject.SetActive(true);
+                _buildingLayer.SetClipRect(default, false);
             }
 
             EnsureMapLayerOrder();
+        }
+
+        /// <summary>
+        /// Resolve, mount and refresh the one building presentation shared by the full
+        /// TurfMap and the corner minimap. The two canvases are mutually exclusive, so
+        /// retaining two copies would only invite another visual drift.
+        /// </summary>
+        internal TurfMapBuildingLayer ShareBuildingLayer(RectTransform sheet,
+            TurfMapSurvey survey, float heading, float pitch, int siblingIndex)
+        {
+            if (sheet == null) return null;
+
+            if (_buildingLayer == null)
+            {
+                var root = sheet.Find("Building Volumes") as RectTransform;
+                if (root != null)
+                    _buildingLayer = root.GetComponent<TurfMapBuildingLayer>();
+
+                // A domain reload can clear this field while the live shared layer is
+                // mounted under the other canvas. Recover that object before creating
+                // a second city-wide mesh catalogue.
+                if (_buildingLayer == null)
+                {
+                    var candidates = Object.FindObjectsByType<TurfMapBuildingLayer>(
+                        FindObjectsInactive.Include);
+                    for (int i = 0; i < candidates.Length; i++)
+                        if (candidates[i] != null &&
+                            candidates[i].transform.IsChildOf(transform))
+                        {
+                            _buildingLayer = candidates[i];
+                            break;
+                        }
+                }
+
+                if (_buildingLayer == null)
+                {
+                    root = DemoUi.NewRect("Building Volumes", sheet);
+                    DemoUi.Fill(root);
+                    _buildingLayer = root.gameObject.AddComponent<TurfMapBuildingLayer>();
+                }
+            }
+
+            _buildingLayer.Attach(sheet, siblingIndex);
+            if (_builder != null && survey != null &&
+                _buildingLayer.GeometryVersion != _builder.ResidentialGeometryVersion)
+            {
+                _buildingLayer.PreparePose(heading, pitch);
+                _buildingLayer.Rebuild(_builder, survey);
+            }
+            return _buildingLayer;
         }
 
         /// <summary>Live people and order graphics must win over street lettering.
@@ -1012,7 +1079,8 @@ namespace RoadDemo
             if (_sheet == null)
                 return;
 
-            if (_buildingLayer != null && _groundImage != null)
+            if (_buildingLayer != null && _groundImage != null &&
+                _buildingLayer.transform.parent == _sheet)
             {
                 var volumes = _buildingLayer.transform;
                 int afterGround = _groundImage.transform.GetSiblingIndex() + 1;
@@ -1172,6 +1240,83 @@ namespace RoadDemo
             if (TurfOn == on) return;
             TurfOn = on;
             PushStatic();
+        }
+
+        /// <summary>The parcel lines. Live layer, so switching them costs a redraw of
+        /// the layer that is redrawn every frame anyway and never a new survey.</summary>
+        public void SetBlocks(bool on)
+        {
+            if (BlocksOn == on) return;
+            BlocksOn = on;
+        }
+
+        /// <summary>Whether the block lines are on the paper right now - the switch, or
+        /// a pick the ledger has armed.</summary>
+        public bool ShowingBlocks =>
+            BlocksOn || LivingCity.UI.MapTargeting.Consumer != null;
+
+        // ------------------------------------------------- IMapTargetingSurface
+
+        /// <summary>Where the boom stood before the book took it up to the plan, so the
+        /// pick can put the player back in the street he was standing in. Null when the
+        /// player got here himself, and then the book never moves his camera.</summary>
+        float? _summonedFrom;
+
+        /// <summary>The map is a zoom level and takes a frame or two to come up. While
+        /// the boom is on its way the surface counts as showing, or the book - which
+        /// cancels a pick the moment its map is gone - would cancel this one before the
+        /// paper had arrived.</summary>
+        float _summonedAt = -10f;
+
+        bool LivingCity.UI.IMapTargetingSurface.IsShowing =>
+            IsOpen || (_summonedFrom.HasValue && Time.unscaledTime - _summonedAt < 2f);
+
+        /// <summary>
+        /// The map opens itself. It is still a zoom level rather than a screen - what
+        /// the book does is take the wheel out past the map line for the player, which
+        /// is the same gesture he would have made, and hand the boom back afterwards.
+        /// </summary>
+        bool LivingCity.UI.IMapTargetingSurface.CanSummon => _rig != null;
+
+        bool LivingCity.UI.IMapTargetingSurface.Summon()
+        {
+            if (_rig == null)
+                return false;
+
+            if (!IsOpen)
+            {
+                _summonedFrom = _rig.distance;
+                _summonedAt = Time.unscaledTime;
+                // Past the line, not at it: the map opens on the far side of mapAt and
+                // the rig's own ceiling clamps whatever is asked for beyond it.
+                _rig.distance = _rig.mapAt + 40f;
+            }
+
+            return true;
+        }
+
+        /// <summary>Back to the street the player was standing in - and ONLY if the book
+        /// brought him up here. A player who pulled the wheel out himself keeps his own
+        /// view when the book opens over it.</summary>
+        void LivingCity.UI.IMapTargetingSurface.Dismiss()
+        {
+            if (_rig == null || !_summonedFrom.HasValue)
+                return;
+
+            _rig.distance = _summonedFrom.Value;
+            _summonedFrom = null;
+        }
+
+        string LivingCity.UI.IMapTargetingSurface.SummonHint =>
+            "there is no camera to take to the plan";
+
+        void LivingCity.UI.IMapTargetingSurface.SetTargetHighlights(
+            List<Rect> worldRects, Color colour)
+        {
+            _targetRects.Clear();
+            if (worldRects != null)
+                _targetRects.AddRange(worldRects);
+            _targetInk = colour.a <= 0.01f ? TurfInk.Red : (Color32)colour;
         }
 
         // ------------------------------------------------------------------- crews
@@ -1538,6 +1683,14 @@ namespace RoadDemo
                 var to = _survey.Plan.ToPlan(_dragTo);
                 if (Mathf.Abs(to.x - from.x) > DragSlop || Mathf.Abs(to.y - from.y) > DragSlop)
                     _dragMoved = true;
+
+                // The waiting page lights the blocks the box has swallowed so far,
+                // every frame of the drag - the same preview the camera map gives.
+                var dragging = LivingCity.UI.MapTargeting.Consumer;
+                if (_dragMoved && dragging != null && dragging.WantsArea)
+                    dragging.OnAreaPreview(Rect.MinMaxRect(
+                        Mathf.Min(_dragFrom.x, _dragTo.x), Mathf.Min(_dragFrom.y, _dragTo.y),
+                        Mathf.Max(_dragFrom.x, _dragTo.x), Mathf.Max(_dragFrom.y, _dragTo.y)));
             }
 
             if (!mouse.leftButton.wasReleasedThisFrame || !_dragging)
@@ -1562,6 +1715,15 @@ namespace RoadDemo
                 Mathf.Min(_dragFrom.x, _dragTo.x), Mathf.Min(_dragFrom.y, _dragTo.y),
                 Mathf.Max(_dragFrom.x, _dragTo.x), Mathf.Max(_dragFrom.y, _dragTo.y));
 
+            // An area order drags its box on this paper; a crew marquee is what the
+            // same gesture means when no page is waiting for ground.
+            var consumer = LivingCity.UI.MapTargeting.Consumer;
+            if (consumer != null && consumer.WantsArea)
+            {
+                consumer.OnAreaSelected(box);
+                return;
+            }
+
             _selected.Clear();
             foreach (var crew in _units)
                 if (crew.Mine && crew.Alive &&
@@ -1576,9 +1738,14 @@ namespace RoadDemo
         }
 
         /// <summary>One click, in the design's priority order: our crew, then anyone
-        /// else's, then a footprint, then the ground it stands on.</summary>
+        /// else's, then a footprint, then the ground it stands on. A pick armed by the
+        /// ledger comes FIRST and takes the whole click - the book asked for ground and
+        /// must not be answered with a dossier.</summary>
         void Click(Vector2 plan)
         {
+            if (TargetClick(plan))
+                return;
+
             var mine = NearestCrew(plan, true);
             if (mine != null)
             {
@@ -1613,6 +1780,25 @@ namespace RoadDemo
             _inspectedBuilding = null;
             _inspectedDistrict = _survey.DistrictAtPlan(plan);
             Changed();
+        }
+
+        /// <summary>
+        /// The click a waiting ledger page asked for. The block comes from the canonical
+        /// geography (through the CityBlocks shim, which is the legacy integer id the
+        /// book speaks): the block under the point, else the nearest one, so a click on
+        /// the street between two blocks still names one rather than nothing.
+        /// </summary>
+        bool TargetClick(Vector2 plan)
+        {
+            var consumer = LivingCity.UI.MapTargeting.Consumer;
+            if (consumer == null)
+                return false;
+
+            var world = _survey.Plan.ToWorld(plan);
+            var block = LivingCity.Gameplay.CityBlocks.At(world) ??
+                        LivingCity.Gameplay.CityBlocks.Nearest(world);
+            consumer.OnPointClicked(world, block?.Id ?? -1);
+            return true;
         }
 
         TurfCrew NearestCrew(Vector2 plan, bool oursOnly)
@@ -2058,6 +2244,7 @@ namespace RoadDemo
         {
             _live.Clear(new Color32(0, 0, 0, 0));
 
+            DrawBlocks();
             DrawTraffic();
             DrawPickedBuilding();
             DrawMovementIndicators();
@@ -2469,6 +2656,73 @@ namespace RoadDemo
                 _live.Px(rx - size, ry - size, 1, size * 2, colour);
                 _live.Px(rx + size, ry - size, 1, size * 2, colour);
             }
+        }
+
+        /// <summary>
+        /// The canonical blocks as parcel lines over the survey: a dashed boundary per
+        /// block, and a solid one round whatever the waiting page has highlighted (the
+        /// draft of an area order, the block a pick has just taken). Live layer, culled
+        /// to the sheet, and drawn only while the switch or a pick asks for them.
+        /// </summary>
+        void DrawBlocks()
+        {
+            if (!ShowingBlocks)
+                return;
+
+            var blocks = LivingCity.Gameplay.CityBlocks.Blocks;
+            for (var i = 0; i < blocks.Count; i++)
+                DashedPlan(blocks[i].Union, TurfInk.Ink2);
+
+            for (var i = 0; i < _targetRects.Count; i++)
+                SolidPlan(_targetRects[i], _targetInk);
+        }
+
+        /// <summary>A world-metre rectangle as a dashed outline on the plate.</summary>
+        void DashedPlan(Rect worldXZ, Color32 ink)
+        {
+            if (!PlanRect(worldXZ, out var x0, out var y0, out var w, out var h))
+                return;
+
+            for (var x = 0; x < w; x += 6)
+            {
+                _live.Px(x0 + x, y0, 3, 1, ink);
+                _live.Px(x0 + x, y0 + h, 3, 1, ink);
+            }
+
+            for (var y = 0; y < h; y += 6)
+            {
+                _live.Px(x0, y0 + y, 1, 3, ink);
+                _live.Px(x0 + w, y0 + y, 1, 3, ink);
+            }
+        }
+
+        void SolidPlan(Rect worldXZ, Color32 ink)
+        {
+            if (!PlanRect(worldXZ, out var x0, out var y0, out var w, out var h))
+                return;
+
+            _live.Px(x0, y0, w, 1, ink);
+            _live.Px(x0, y0 + h, w + 1, 1, ink);
+            _live.Px(x0, y0, 1, h, ink);
+            _live.Px(x0 + w, y0, 1, h + 1, ink);
+        }
+
+        /// <summary>World metres to raster pixels, false when the rectangle is off the
+        /// sheet. The survey republishes its projection whenever the boom moves, so this
+        /// is done per frame from world coordinates and never cached in plate units.</summary>
+        bool PlanRect(Rect worldXZ, out int x0, out int y0, out int w, out int h)
+        {
+            var min = _survey.Plan.ToPlan(new Vector2(worldXZ.xMin, worldXZ.yMin));
+            var max = _survey.Plan.ToPlan(new Vector2(worldXZ.xMax, worldXZ.yMax));
+
+            x0 = Mathf.RoundToInt(Mathf.Min(min.x, max.x) * TurfPlate.S);
+            y0 = Mathf.RoundToInt(Mathf.Min(min.y, max.y) * TurfPlate.S);
+            w = Mathf.RoundToInt(Mathf.Abs(max.x - min.x) * TurfPlate.S);
+            h = Mathf.RoundToInt(Mathf.Abs(max.y - min.y) * TurfPlate.S);
+
+            return w > 1 && h > 1 &&
+                   x0 + w >= 0 && y0 + h >= 0 &&
+                   x0 <= TurfPlate.RW && y0 <= TurfPlate.RH;
         }
 
         void DrawMarquee()

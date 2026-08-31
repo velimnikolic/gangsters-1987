@@ -41,6 +41,11 @@ namespace LivingCity.UI
         int draftMen = 1;
         string ordersNote = "";
         int selectedOrderId = -1;
+
+        /// <summary>The book has sent the player to the map to point at ground for the
+        /// job being drafted. The book is shut while this stands - the plate is the whole
+        /// screen and the two cannot share it - and comes back with the pick.</summary>
+        bool ordersTargetingMap;
         readonly List<Rect> highlightRects = new List<Rect>();
 
         void BuildOrdersPage(RectTransform sheet)
@@ -114,15 +119,18 @@ namespace LivingCity.UI
                     categorySpecs.Add(spec);
         }
 
+        bool OrdersTargetingActive => ordersTargetingMap;
+
         void RefreshTargeting()
         {
-            var wantsOrders = IsOpen && currentPage == LedgerPage.Orders && ordersCrewId >= 0;
+            var wantsOrders = (IsOpen && currentPage == LedgerPage.Orders && ordersCrewId >= 0) ||
+                              (!IsOpen && ordersTargetingMap);
             var wantsOrganization = !IsOpen && OrganizationTargetingActive;
             var wants = wantsOrders || wantsOrganization;
             if (wants)
-                StrategicMapHud.SetTargeting(this);
+                MapTargeting.Set(this);
             else
-                StrategicMapHud.ClearTargeting(this);
+                MapTargeting.Clear(this);
         }
 
         // ---- IMapTargetingConsumer ----
@@ -147,6 +155,7 @@ namespace LivingCity.UI
             CaptureArea(worldXZ, preview: false);
             selectedOrderId = -1;
             dirty = true;
+            FinishOrderTargeting();
         }
 
         public void OnPointClicked(Vector2 worldXZ, int blockId)
@@ -169,7 +178,66 @@ namespace LivingCity.UI
 
             selectedOrderId = -1;
             dirty = true;
+            FinishOrderTargeting();
         }
+
+        /// <summary>
+        /// Send the player to the map to point at the ground this job wants. The book
+        /// shuts and the map comes up by itself - on the turf plate that is the boom
+        /// running out past the map line, the same gesture the player would have made -
+        /// and the pick brings the book straight back to this page.
+        /// </summary>
+        void BeginOrderTargeting()
+        {
+            var map = MapTargeting.Surface;
+            if (map == null || ordersCrewId < 0)
+            {
+                ordersNote = "no map to point at.";
+                dirty = true;
+                return;
+            }
+
+            ordersTargetingMap = true;
+            ordersNote = CurrentDraftSpec().Mode == Outfit.TargetMode.Area
+                ? "Drag a box over the blocks on the map."
+                : "Click the target on the map.";
+            Close();
+
+            if (!map.CanSummon || !map.Summon())
+            {
+                ordersTargetingMap = false;
+                ordersNote = map.CanSummon ? "The map would not open." : map.SummonHint;
+                OpenAtPage(LedgerPage.Orders);
+                return;
+            }
+
+            RefreshTargeting();
+        }
+
+        /// <summary>The pick landed: the map hands the view back and the book reopens on
+        /// the job it was drafting, target in hand.</summary>
+        void FinishOrderTargeting()
+        {
+            if (!ordersTargetingMap)
+                return;
+
+            ordersTargetingMap = false;
+            MapTargeting.Clear(this);
+            MapTargeting.Surface?.Dismiss();
+            OpenAtPage(LedgerPage.Orders);
+        }
+
+        /// <summary>The player left the map without picking - Esc, or the wheel back
+        /// down. The draft is untouched and the book returns to it.</summary>
+        void CancelOrderTargetingAndReturn()
+        {
+            ordersTargetingMap = false;
+            MapTargeting.Clear(this);
+            ordersNote = "Target selection cancelled.";
+            OpenAtPage(LedgerPage.Orders);
+        }
+
+        void StopOrderTargeting() => ordersTargetingMap = false;
 
         void CaptureArea(Rect worldRect, bool preview)
         {
@@ -362,7 +430,8 @@ namespace LivingCity.UI
 
         void PushHighlights()
         {
-            if (!StrategicMapHud.Instance)
+            var map = MapTargeting.Surface;
+            if (map == null)
                 return;
 
             highlightRects.Clear();
@@ -395,7 +464,7 @@ namespace LivingCity.UI
                     highlightRects.Add(new Rect(draftX - 14f, draftZ - 14f, 28f, 28f));
             }
 
-            StrategicMapHud.Instance.SetTargetHighlights(highlightRects, color);
+            map.SetTargetHighlights(highlightRects, color);
         }
 
         void AddBlockRect(int blockId)
@@ -624,6 +693,16 @@ namespace LivingCity.UI
                 }, size: 11f);
             }
             y -= 24f;
+
+            // The map is where ground is pointed at, and the book takes the player there
+            // rather than asking him to find it: one press shuts the book, opens the map
+            // and comes back with the target.
+            var pick = Tape(ordersContent,
+                spec.Mode == Outfit.TargetMode.Area ? "PICK THE BLOCKS ON THE MAP"
+                                                    : "PICK THE TARGET ON THE MAP",
+                4f, y, 240f, 22f, BeginOrderTargeting, size: 11f);
+            SetActionEnabled(pick, MapTargeting.Available);
+            y -= 26f;
 
             if (targetCount > 0)
             {

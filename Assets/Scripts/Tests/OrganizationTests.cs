@@ -23,7 +23,92 @@ namespace LivingCity.Tests
             ResponsibilityUsesCanonicalIdsWithoutChangingTerritorySignals(failures);
             QueryProjectsHierarchyAndPhysicalMappings(failures);
             ValidationReportsCorruptionWithoutRepairingIt(failures);
+            FilingOfficeAnswersOnlyAfterItsDelay(failures);
+            FilingOfficeIsWhereCapacityIsHard(failures);
             return failures;
+        }
+
+        /// <summary>The sheet ASKS and the outfit ANSWERS: nothing the resolver does may
+        /// happen at the moment the order is filed, and it must happen exactly once.</summary>
+        static void FilingOfficeAnswersOnlyAfterItsDelay(List<string> failures)
+        {
+            var office = new OutfitFilings { RulingSeconds = 1f };
+            var ran = 0;
+            var filing = office.File("D1 09:00", "A man put under Artie Byrne.", () =>
+            {
+                ran++;
+                return FilingRuling.Grant("he reports to him from today");
+            });
+
+            if (ran != 0 || filing.Status != FilingStatus.Filed || office.AwaitingCount != 1)
+                failures.Add("Filings: an order took effect at the moment it was filed.");
+
+            if (office.Tick(0.5f) || ran != 0 || filing.Status != FilingStatus.Filed)
+                failures.Add("Filings: the office answered before its delay ran out.");
+
+            if (!office.Tick(0.6f) || ran != 1 ||
+                filing.Status != FilingStatus.Granted ||
+                filing.Ruling != "he reports to him from today")
+                failures.Add("Filings: the ruling did not land exactly once.");
+
+            if (office.Tick(10f) || ran != 1 || office.AwaitingCount != 0)
+                failures.Add("Filings: a settled order was ruled on a second time.");
+
+            // Newest first, and both answered in the order they were asked.
+            var order = new List<int>();
+            var second = new OutfitFilings { RulingSeconds = 0.5f };
+            second.File("D1 09:01", "first", () =>
+            {
+                order.Add(1);
+                return FilingRuling.Grant("");
+            });
+            second.File("D1 09:02", "second", () =>
+            {
+                order.Add(2);
+                return FilingRuling.Refuse("no room");
+            });
+            second.Tick(1f);
+            if (order.Count != 2 || order[0] != 1 || order[1] != 2)
+                failures.Add("Filings: orders were not answered in the order they were asked.");
+            if (second.All.Count != 2 || second.All[0].Text != "second" ||
+                second.All[0].Status != FilingStatus.Refused)
+                failures.Add("Filings: the sheet does not read newest order first.");
+        }
+
+        /// <summary>Capacity stays SOFT in the roster - a fight or a promotion can leave a
+        /// man over his limit and he stays there. The one hard edge is the filing office,
+        /// which will not put the order that CREATES an overage on paper.</summary>
+        static void FilingOfficeIsWhereCapacityIsHard(List<string> failures)
+        {
+            var atLimit = new CapacityMeasure(3, 3);
+            var room = new CapacityMeasure(2, 3);
+            var over = new CapacityMeasure(4, 3);
+
+            if (OutfitFilingRules.AcceptsAnotherMan(atLimit) ||
+                OutfitFilingRules.AcceptsAnotherMan(over) ||
+                !OutfitFilingRules.AcceptsAnotherMan(room))
+                failures.Add("Filings: the office does not refuse the man who would not fit.");
+            if (OutfitFilingRules.AcceptsAnotherBlock(atLimit) ||
+                !OutfitFilingRules.AcceptsAnotherBlock(room))
+                failures.Add("Filings: the office does not refuse the block that would not fit.");
+
+            if (!OutfitFilingRules.ManRefusal("Artie Byrne", atLimit).Contains("3/3") ||
+                !OutfitFilingRules.BlockRefusal("Artie Byrne", atLimit).Contains("3/3"))
+                failures.Add("Filings: a refusal does not print the figure it refused on.");
+
+            // The roster itself must still carry an overage the office never filed.
+            var roster = RosterSeeder.Generate(23);
+            RosterOps.ConfigureOrganization(roster, new OrganizationLimits(1, 1, 1, 1));
+            var crew = roster.Crews[0];
+            var rng = new System.Random(23);
+            var hood = RosterSeeder.Recruit(roster, rng);
+            var second = RosterSeeder.Recruit(roster, rng);
+            if (!RosterOps.AssignToCrew(roster, hood.Id, crew.Id).Ok ||
+                !RosterOps.AssignToCrew(roster, second.Id, crew.Id).Ok)
+                failures.Add("Filings: the roster stopped carrying a soft overage.");
+            if (!new OrganizationQuery(roster).CapacityOf(crew.LieutenantId)
+                    .Manpower.IsOverCapacity)
+                failures.Add("Filings: the soft overage did not survive in the roster.");
         }
 
         static void RecruitmentPaysThenCreatesOneUnassignedHood(List<string> failures)

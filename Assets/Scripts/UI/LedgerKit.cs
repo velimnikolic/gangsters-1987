@@ -172,6 +172,20 @@ namespace LivingCity.UI
             raw.raycastTarget = false;
         }
 
+        /// <summary>A dotted leader run DOWNWARDS - the spine a chain of command
+        /// hangs off. One tiled quad, same as the horizontal leader.</summary>
+        public static void DottedVRule(Transform parent, float x, float y, float h,
+            Color color)
+        {
+            var rect = NewRect("Dotted down", parent);
+            PlaceTopLeft(rect, x, y, 1f, h);
+            var raw = rect.gameObject.AddComponent<RawImage>();
+            raw.texture = LedgerStyle.DotRuleDown;
+            raw.color = color;
+            raw.uvRect = new Rect(0f, 0f, 1f, h / 4f);
+            raw.raycastTarget = false;
+        }
+
         /// <summary>The design's heading rule: 2 units of ink over a 1-unit ghost of
         /// it. Every section on the sheet is closed with this pair.</summary>
         public static void DoubleRule(Transform parent, float x, float y, float w, Color color)
