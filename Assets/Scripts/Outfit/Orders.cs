@@ -214,6 +214,62 @@ namespace LivingCity.Outfit
                     return Specs[i];
             return Specs[0];
         }
+
+        /// <summary>
+        /// Which work in the improvement table an order actually is. Several orders are
+        /// the same lesson - a raid, a killing, an ambush and a kidnapping are all going
+        /// at a rival, and a torching is leaning on somebody with fire - so the book's
+        /// twenty-three types collapse onto far fewer rows. The map runs this way only:
+        /// <see cref="Personnel.ActivityXp"/> knows nothing about order types, which is
+        /// what lets the street layer bank practice for work nobody wrote in the book.
+        /// </summary>
+        public static Activity ActivityOf(OrderType type)
+        {
+            switch (type)
+            {
+                case OrderType.CollectProtection:
+                case OrderType.AdjustProtection:
+                    return Activity.RacketCollection;
+
+                case OrderType.Extort:
+                case OrderType.Intimidate:
+                case OrderType.SmashUp:
+                case OrderType.Torch:
+                case OrderType.Bomb:
+                    return Activity.Leaning;
+
+                case OrderType.Assault:
+                case OrderType.Raid:
+                case OrderType.Kill:
+                case OrderType.Kidnap:
+                case OrderType.Ambush:
+                    return Activity.AttackOnARival;
+
+                case OrderType.Patrol:
+                case OrderType.Guard:
+                    return Activity.BlockPatrol;
+
+                case OrderType.Explore:
+                    return Activity.Scouting;
+
+                case OrderType.BuyPremises:
+                case OrderType.SetUpBusiness:
+                case OrderType.RunBusiness:
+                case OrderType.Audit:
+                    return Activity.RunningABusiness;
+
+                case OrderType.Recruit:
+                    return Activity.Recruiting;
+
+                case OrderType.Bribe:
+                case OrderType.EmployPolice:
+                case OrderType.Donate:
+                    return Activity.Negotiation;
+
+                default:
+                    return Activity.BlockPatrol;
+            }
+        }
     }
 
     /// <summary>Where a job has got to. A crew works its queue one job at a time, so

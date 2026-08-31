@@ -249,6 +249,8 @@ namespace GangstersTools
                 .Select(failure => "Gang regression: " + failure));
             failures.AddRange(LivingCity.Tests.SkillFoundationTests.Run()
                 .Select(failure => "Skill regression: " + failure));
+            failures.AddRange(LivingCity.Tests.LearningTests.Run()
+                .Select(failure => "Learning regression: " + failure));
             return new
             {
                 passed = failures.Count == 0,
@@ -272,6 +274,21 @@ namespace GangstersTools
                 failures = failures.ToArray(),
                 contracts = LivingCity.Tests.SkillFoundationTests.ContractNames(),
                 skills = LivingCity.Tests.SkillFoundationTests.SkillNames(),
+            };
+        }
+
+        [CliCommand("gangsters_learning_tests",
+                    "Run EPIC 12 contracts for learning by doing: the activity table, " +
+                    "the passive command drip and the danger ordering.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "skill", "tests" })]
+        public static object LearningTests()
+        {
+            var failures = LivingCity.Tests.LearningTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+                contracts = LivingCity.Tests.LearningTests.ContractNames(),
             };
         }
 
