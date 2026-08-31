@@ -108,14 +108,16 @@ namespace RoadDemo
         // ------------------------------------------------------------------ plan
 
         /// <summary>
-        /// Deal only this many blocks from the catalogue. Zero is the whole city, which is
-        /// what every real build wants; a small number is the test rig - two quarters and
-        /// a handful of streets that stand up in seconds instead of a minute and a half,
-        /// so a territory check does not cost a coffee break. The catalogue's own order is
-        /// kept, so a budgeted plan is the first N blocks of the real one and not a
-        /// different city.
+        /// Build only this many quarters of the city. Zero is all of it, which is what
+        /// every real build wants; two is the test rig.
+        ///
+        /// The city is dealt whole - the deal is what makes a coherent plan, and half a
+        /// deal is not a smaller city, it is a broken one - and then everything outside
+        /// the kept quarters is taken back off it and the roads are read again over what
+        /// is left. So the rig is a real piece of the real city, at a size a territory
+        /// check can stand up in seconds.
         /// </summary>
-        public int blockBudget;
+        public int quarterBudget;
 
         /// <summary>
         /// Reads the roads off baked block descriptions and deals every generated block as
@@ -127,20 +129,11 @@ namespace RoadDemo
             _seed = seed;
             _blocks.Clear();
             _blocks.AddRange(CoreBlockCatalog.CreateBlocks());
-            if (blockBudget > 0 && _blocks.Count > blockBudget)
-            {
-                // The SMALLEST blocks, not the first ones: the catalogue opens with the
-                // harbour and the works, and a test rig built out of those is the heavy
-                // city again under another name. Sorted by footprint so a budget of a
-                // dozen is a dozen streets of shops, which is what a territory check
-                // actually needs.
-                _blocks.Sort((a, b) => Area(a).CompareTo(Area(b)));
-                _blocks.RemoveRange(blockBudget, _blocks.Count - blockBudget);
-            }
             _homes.Clear();
             // the seed deals the rows and the drawing is judged before it is taken; the
             // Synty seed asks for the demo's own arrangement instead
             _plan = CoreLayout.Arrange(_blocks, seed, out _raster);
+            KeepQuarters();
             AcceptedRoadFaults = _raster != null ? _raster.Faults : 0;
             PlanAmenities();
             DevelopRemainders();
@@ -149,10 +142,194 @@ namespace RoadDemo
                                       _raster.X(_raster.NX), _raster.Z(_raster.NZ));
         }
 
-        static int Area(CoreLayout.Block block)
+        /// <summary>
+        /// Take the city back down to the quarters the rig asked for. Everything - the
+        /// harvested blocks, the made-up housing, the parks, the quays, the leftover
+        /// parcels - is dropped unless it stands on the kept ground, the territory is
+        /// rebuilt from what survived, and the roads are read again so the tarmac stops
+        /// where the city now does. A budget of zero does nothing at all, which is what
+        /// every real build wants.
+        /// </summary>
+        void KeepQuarters()
         {
-            var box = block.Box;
-            return Mathf.RoundToInt(box.width * box.height);
+            if (quarterBudget <= 0 || _plan?.Territory == null)
+                return;
+
+            var quarters = new List<CoreQuarterDefinition>();
+            foreach (var quarter in _plan.Territory.Quarters)
+                if (quarter.BlockIds.Count > 0)
+                    quarters.Add(quarter);
+            if (quarters.Count <= quarterBudget)
+                return;
+
+            var kept = Pick(quarters, quarterBudget);
+
+            // The rig is cut to the SHORTEST kept quarter's latitude. Downtown is a spine
+            // running the whole height of the city - keeping it whole would put most of the
+            // city back on the rig - but the shops are all on it, and a rig with no shop on
+            // it cannot test a protection racket. So downtown comes in beside its neighbour
+            // and stops where the neighbour does.
+            var shortest = kept[0];
+            for (int i = 1; i < kept.Count; i++)
+                if (kept[i].LocalBounds.height < shortest.LocalBounds.height)
+                    shortest = kept[i];
+            float bandLow = shortest.LocalBounds.yMin - CoreLayout.Cell;
+            float bandHigh = shortest.LocalBounds.yMax + CoreLayout.Cell;
+
+            var keptGround = new List<Rect>(kept.Count);
+            foreach (var quarter in kept)
+            {
+                var bounds = quarter.LocalBounds;
+                float low = Mathf.Max(bounds.yMin - CoreLayout.Cell, bandLow);
+                float high = Mathf.Min(bounds.yMax + CoreLayout.Cell, bandHigh);
+                if (high <= low) continue;
+                // A little slack sideways, so a block whose kerb sits a metre past its
+                // quarter's line is not sliced off the rig it plainly belongs to.
+                keptGround.Add(Rect.MinMaxRect(bounds.xMin - CoreLayout.Cell, low,
+                                               bounds.xMax + CoreLayout.Cell, high));
+            }
+
+            Drop(_blocks, keptGround);
+            Drop(_plan.Residential, keptGround);
+            Drop(_plan.Parks, keptGround);
+            Drop(_plan.Quays, keptGround);
+            Drop(_plan.Aprons, keptGround);
+            DropRects(_plan.Lots, keptGround);
+            DropRects(_plan.Outside, keptGround);
+            _plan.BeltParks.RemoveWhere(block => !Inside(block.Box, keptGround));
+
+            // The bank stands where the deal put it, which may be a quarter away.
+            if (_plan.Bank != null && !Inside(_plan.Bank.Box, keptGround))
+                _plan.Bank = null;
+
+            // NO RIVER ON A RIG. It runs the whole length of the city whatever is kept -
+            // three and a half kilometres of water, promenade, far bank and bridges - and
+            // a rig is two quarters of blocks and the ledger over them.
+            _plan.Quays.Clear();
+            _plan.Aprons.Clear();
+            _plan.Bridges.Clear();
+            _plan.RiverApproaches.Clear();
+            _plan.Water = new Rect();
+            var dry = _plan.River;
+            dry.Z0 = 0f;
+            dry.Z1 = 0f;
+            _plan.River = dry;
+            _plan.RiverCityZ0 = 0f;
+            _plan.RiverCityZ1 = 0f;
+
+            // Read the ground the way every other pass does - the deal's own parks, the
+            // promenade, the far kerb - or the roads are laid over holes.
+            var standing = CoreLayout.WithGround(_blocks, _plan);
+            _plan.Territory = CoreTerritoryPlan.Build(_seed, standing);
+            _raster = CoreRoads.Build(standing, _plan);
+
+            var names = new List<string>(kept.Count);
+            foreach (var quarter in kept) names.Add(quarter.Id.ToString());
+            Debug.Log($"[CoreDemo] {quarterBudget} quarters: {string.Join(" + ", names)} - " +
+                      $"{_blocks.Count} blocks, {_plan.Residential.Count} housing rows, " +
+                      $"roads {_raster.NX}x{_raster.NZ} cells.");
+        }
+
+        /// <summary>
+        /// Which quarters the rig is built out of: the most compact one there is, and then
+        /// whichever of its neighbours adds the least ground. Compactness is the whole
+        /// point - downtown is a spine running the full height of the city, so a rig that
+        /// starts there is the whole city again whatever else it keeps.
+        /// </summary>
+        List<CoreQuarterDefinition> Pick(List<CoreQuarterDefinition> quarters, int budget)
+        {
+            // The rig starts where the trade is. Every shopfront in the city stands on a
+            // catalogue block, and they are not spread evenly: a rig dealt out of two
+            // quarters of housing has nothing to lean on and nothing to buy.
+            var shops = new Dictionary<CoreQuarterId, int>();
+            foreach (var block in _blocks)
+            {
+                shops.TryGetValue(block.QuarterId, out int count);
+                shops[block.QuarterId] = count + 1;
+            }
+
+            var kept = new List<CoreQuarterDefinition>();
+            var first = quarters[0];
+            for (int i = 1; i < quarters.Count; i++)
+                if (Shops(shops, quarters[i]) > Shops(shops, first))
+                    first = quarters[i];
+            kept.Add(first);
+
+            // Then whichever neighbour of it is the most compact: the rig wants a second
+            // quarter to have a border with, not a second city.
+            while (kept.Count < budget)
+            {
+                CoreQuarterDefinition best = null;
+                foreach (var candidate in quarters)
+                {
+                    if (kept.Contains(candidate) || !Touches(kept, candidate))
+                        continue;
+                    if (best == null || Area(candidate.LocalBounds) < Area(best.LocalBounds))
+                        best = candidate;
+                }
+                if (best == null)
+                    break;
+                kept.Add(best);
+            }
+            return kept;
+        }
+
+        static int Shops(Dictionary<CoreQuarterId, int> shops, CoreQuarterDefinition quarter) =>
+            shops.TryGetValue(quarter.Id, out int count) ? count : 0;
+
+        static bool Touches(List<CoreQuarterDefinition> kept, CoreQuarterDefinition candidate)
+        {
+            for (int i = 0; i < kept.Count; i++)
+            {
+                var neighbours = kept[i].Neighbours;
+                for (int n = 0; n < neighbours.Count; n++)
+                    if (neighbours[n] == candidate.Id)
+                        return true;
+            }
+            return false;
+        }
+
+        static float Area(Rect box) => box.width * box.height;
+
+        static void Drop(List<CoreLayout.Block> blocks, List<Rect> keptGround)
+        {
+            for (int i = blocks.Count - 1; i >= 0; i--)
+                if (!Inside(blocks[i].Box, keptGround))
+                    blocks.RemoveAt(i);
+        }
+
+        static void DropRects(List<Rect> rects, List<Rect> keptGround)
+        {
+            for (int i = rects.Count - 1; i >= 0; i--)
+                if (!Inside(rects[i], keptGround))
+                    rects.RemoveAt(i);
+        }
+
+        /// <summary>
+        /// Whether this piece of ground belongs to the rig. Its middle has to stand on kept
+        /// ground AND most of it has to lie there: the quays run the whole length of the
+        /// river, and one of those kept for its middle would stretch the road reader's
+        /// grid over a mile of city that is no longer being built.
+        /// </summary>
+        static bool Inside(Rect box, List<Rect> keptGround)
+        {
+            bool middle = false;
+            float covered = 0f;
+            for (int i = 0; i < keptGround.Count; i++)
+            {
+                if (keptGround[i].Contains(box.center)) middle = true;
+                covered += Overlap(box, keptGround[i]);
+            }
+            if (!middle) return false;
+            float area = Mathf.Max(0.01f, Area(box));
+            return covered / area >= 0.6f;
+        }
+
+        static float Overlap(Rect box, Rect ground)
+        {
+            float width = Mathf.Min(box.xMax, ground.xMax) - Mathf.Max(box.xMin, ground.xMin);
+            float height = Mathf.Min(box.yMax, ground.yMax) - Mathf.Max(box.yMin, ground.yMin);
+            return width <= 0f || height <= 0f ? 0f : width * height;
         }
 
         /// <summary>
@@ -171,15 +348,6 @@ namespace RoadDemo
                 _raster, candidates, _seed,
                 Mathf.Max(0, parkingLotCount), Mathf.Max(0, fuelStationCount),
                 _parkingSites, _fuelSites, _developmentSites);
-
-            // A budgeted plan is a test rig, and filling every remainder with housing
-            // would put the whole city back on it through the back door.
-            if (blockBudget > 0)
-            {
-                int keep = Mathf.Max(2, blockBudget / 2);
-                if (_developmentSites.Count > keep)
-                    _developmentSites.RemoveRange(keep, _developmentSites.Count - keep);
-            }
         }
 
         /// <summary>
@@ -450,7 +618,7 @@ namespace RoadDemo
             // The quays are the heaviest thing in the city and a budgeted plan is a rig,
             // not a port: skipped whole rather than dealt small, because half a harbour
             // is a worse lie than none.
-            if (blockBudget <= 0)
+            if (quarterBudget <= 0)
                 StandQuays();
 
             if (host is IStreamedDistrictHost streamed)
@@ -478,7 +646,9 @@ namespace RoadDemo
                           RiverBridge.Skip(_plan, _raster), layCarParks: true,
                           skipParking: ComposedSurfaceAt);
             StandCityEdgePavement(roads);
-            if (blockBudget <= 0)
+            // A rig does not need the grid overhead: thousands of renderers of pole and
+            // wire over ground a territory test never looks up from.
+            if (quarterBudget <= 0)
                 CorePowerlines.Stand(_plan, _raster, quarter, _seed);
             var river = new GameObject("River").transform;
             river.SetParent(quarter, false);

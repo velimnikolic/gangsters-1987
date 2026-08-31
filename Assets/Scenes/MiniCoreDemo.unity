@@ -166,7 +166,7 @@ MonoBehaviour:
   parkingLots: 1
   parkingCarsPerLot: 2
   fuelStations: 1
-  blockBudget: 14
+  quarterBudget: 2
 --- !u!4 &242302771
 Transform:
   m_ObjectHideFlags: 0
