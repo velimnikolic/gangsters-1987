@@ -141,7 +141,7 @@ namespace LivingCity.Outfit
             // Extortion & Territory
             new OrderSpec(OrderType.Extort, OrderCategory.Extortion, TargetMode.Area,
                 16f, JobResolution.Roll, CharacterAttribute.Intimidation, 6,
-                payout: 120, heat: 2),
+                payout: EconomyPrices.Shakedown, heat: 2),
             new OrderSpec(OrderType.Intimidate, OrderCategory.Extortion, TargetMode.Point,
                 16f, JobResolution.Roll, CharacterAttribute.Intimidation, 7, heat: 2),
             new OrderSpec(OrderType.CollectProtection, OrderCategory.Extortion,
@@ -158,7 +158,7 @@ namespace LivingCity.Outfit
                 8f, JobResolution.Street, CharacterAttribute.Fists, 6, heat: 5),
             new OrderSpec(OrderType.Raid, OrderCategory.Violence, TargetMode.Point,
                 10f, JobResolution.Street, CharacterAttribute.Firearms, 6,
-                payout: 300, heat: 8),
+                payout: EconomyPrices.Raid, heat: 8),
             new OrderSpec(OrderType.Torch, OrderCategory.Violence, TargetMode.Point,
                 10f, JobResolution.Street, CharacterAttribute.Arson, 6, heat: 10),
             new OrderSpec(OrderType.Bomb, OrderCategory.Violence, TargetMode.Point,
@@ -167,7 +167,7 @@ namespace LivingCity.Outfit
                 12f, JobResolution.Street, CharacterAttribute.Firearms, 6, heat: 12),
             new OrderSpec(OrderType.Kidnap, OrderCategory.Violence, TargetMode.Point,
                 14f, JobResolution.Street, CharacterAttribute.Fists, 6,
-                payout: 800, heat: 9),
+                payout: EconomyPrices.KidnapCut, heat: 9),
 
             // Defense & Reconnaissance - a watch is stood, never finished.
             new OrderSpec(OrderType.Patrol, OrderCategory.Defense, TargetMode.Area,
@@ -181,9 +181,11 @@ namespace LivingCity.Outfit
 
             // Business
             new OrderSpec(OrderType.BuyPremises, OrderCategory.Business, TargetMode.Point,
-                6f, JobResolution.Roll, CharacterAttribute.Business, 0, cost: 2_500),
+                6f, JobResolution.Roll, CharacterAttribute.Business, 0,
+                cost: EconomyPrices.EmptyStorefront),
             new OrderSpec(OrderType.SetUpBusiness, OrderCategory.Business, TargetMode.Point,
-                40f, JobResolution.Roll, CharacterAttribute.Business, 6, cost: 1_200),
+                40f, JobResolution.Roll, CharacterAttribute.Business, 6,
+                cost: EconomyPrices.SetUpBusiness),
             new OrderSpec(OrderType.RunBusiness, OrderCategory.Business, TargetMode.Point,
                 24f, JobResolution.Standing, CharacterAttribute.Business, 6, payout: 90),
             new OrderSpec(OrderType.Audit, OrderCategory.Business, TargetMode.Point,
@@ -195,11 +197,14 @@ namespace LivingCity.Outfit
             new OrderSpec(OrderType.Recruit, OrderCategory.Influence, TargetMode.Point,
                 12f, JobResolution.Roll, CharacterAttribute.Intelligence, 7, cost: 500),
             new OrderSpec(OrderType.Bribe, OrderCategory.Influence, TargetMode.Point,
-                8f, JobResolution.Roll, CharacterAttribute.Intelligence, 6, cost: 400),
+                8f, JobResolution.Roll, CharacterAttribute.Intelligence, 6,
+                cost: EconomyPrices.Bribe),
             new OrderSpec(OrderType.EmployPolice, OrderCategory.Influence, TargetMode.Point,
-                10f, JobResolution.Roll, CharacterAttribute.Intelligence, 6, cost: 600),
+                10f, JobResolution.Roll, CharacterAttribute.Intelligence, 6,
+                cost: EconomyPrices.PoliceOnThePad),
             new OrderSpec(OrderType.Donate, OrderCategory.Influence, TargetMode.Point,
-                4f, JobResolution.Roll, CharacterAttribute.Business, 0, cost: 500),
+                4f, JobResolution.Roll, CharacterAttribute.Business, 0,
+                cost: EconomyPrices.Donation),
         };
 
         public static OrderSpec SpecOf(OrderType type)
@@ -243,6 +248,15 @@ namespace LivingCity.Outfit
 
         /// <summary>Area targets - block ids.</summary>
         public readonly List<int> BlockTargets = new List<int>();
+
+        /// <summary>
+        /// What the target itself is worth, when the caller knows: the week's protection
+        /// from a shop of that kind, a day's net from one we own, the asking price of the
+        /// premises. Zero means the caller could not say, and the order falls back on its
+        /// book figure. This is how a barber and a casino stop paying the same money
+        /// without every order growing a business lookup of its own.
+        /// </summary>
+        public int TargetWorth;
 
         /// <summary>Point target: where it is and what to call it.</summary>
         public int TargetBlockId = -1;

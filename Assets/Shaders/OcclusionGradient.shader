@@ -116,6 +116,7 @@ Shader "LivingCity/Occlusion Gradient"
 
                 half4 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv) * _BaseColor;
                 clip(albedo.a - _Cutoff);
+                half3 normalWS = NormalizeNormalPerPixel(input.normalWS);
 
                 half height01 = saturate((input.positionWS.y - _BoundsMinY) * _BoundsInvHeight);
                 half verticalAlpha = saturate((1.0h - height01) / max(0.001h, 1.0h - _OpaqueFloor));
@@ -140,10 +141,17 @@ Shader "LivingCity/Occlusion Gradient"
                 half rearKeep = lerp(1.0h, cameraSide, firstHundred);
                 profileAlpha *= rearKeep;
 
+                // Above 100%, remove upward-facing roof, balcony and modular floor slabs
+                // independently of their renderer bounds. A roof authored as a separate
+                // storey otherwise computes its own local gradient and remains visible.
+                half upwardSurface = smoothstep(0.35h, 0.75h, normalWS.y);
+                half horizontalCut = upwardSurface *
+                    saturate((_FadeAmount - 1.0h) * 2.0h);
+                profileAlpha *= 1.0h - horizontalCut;
+
                 half alpha = albedo.a * profileAlpha;
                 clip(alpha - 0.001h);
 
-                half3 normalWS = NormalizeNormalPerPixel(input.normalWS);
                 Light mainLight = GetMainLight(TransformWorldToShadowCoord(input.positionWS));
                 half diffuse = saturate(dot(normalWS, mainLight.direction));
                 half3 ambient = max(SampleSH(normalWS), half3(0.06h, 0.06h, 0.06h));

@@ -23,10 +23,14 @@ namespace RoadDemo
             public bool Enabled;
             public ShadowCastingMode Shadows;
             public MergedChunk Chunk;
+            public bool HideCompletely;
         }
 
-        const string ProxyName = "Cutaway footprint";
+        const string ProxyName = "Cutaway ground cap";
         const int IgnoreRaycastLayer = 2;
+        const float GroundCapThickness = 0.08f;
+        const float GroundCapSink = 0.01f;
+        const float GroundCapOverhang = 0.04f;
         public const float DeclaredHeight = 3.5f;
         public const float DefaultGradientAmount = 1.6f;
 
@@ -284,6 +288,8 @@ namespace RoadDemo
                     Enabled = renderer.enabled,
                     Shadows = renderer.shadowCastingMode,
                     Chunk = chunk,
+                    HideCompletely = ResidentialBlocks.IsGeneratedStorefrontVisual(
+                        renderer.transform, transform),
                 });
                 anyDrawable |= renderer.enabled || chunk != null;
             }
@@ -317,6 +323,12 @@ namespace RoadDemo
                 var state = _states[i];
                 var renderer = state.Renderer;
                 if (renderer == null || (!state.Enabled && state.Chunk == null)) continue;
+                if (state.HideCompletely)
+                {
+                    renderer.enabled = false;
+                    renderer.shadowCastingMode = ShadowCastingMode.Off;
+                    continue;
+                }
                 if (useGradient && _opacity.Handles(renderer))
                 {
                     // An authored shadows-only renderer must not become a visible facade.
@@ -346,10 +358,12 @@ namespace RoadDemo
             _gradientAmount = gradientAmount;
             _usingGradient = useGradient;
             _cut = true;
-            // The physical building remains; only its visual shell is cut. A generated
-            // footprint cannot safely infer the authored parcel from a facade collider
-            // and was the source of the dark bars that appeared while panning.
-            if (_proxy != null) _proxy.SetActive(false);
+            // Residential cells deliberately omit paving beneath real buildings. Once the
+            // facade fades that can expose the island water, so keep one pooled, very thin
+            // opaque cap at the building's actual ground plane. It is visual-only and is
+            // never included in the gradient renderer set or collider lookup.
+            if (useGradient && EnsureProxy() && PlaceProxy()) _proxy.SetActive(true);
+            else if (_proxy != null) _proxy.SetActive(false);
             return true;
         }
 
@@ -408,29 +422,43 @@ namespace RoadDemo
             return true;
         }
 
-        void PlaceProxy()
+        bool PlaceProxy()
         {
-            if (_proxy == null || !TryFootprint(out var bounds)) return;
-            float inset = Mathf.Min(0.12f, Mathf.Min(bounds.size.x, bounds.size.z) * 0.08f);
-            float width = Mathf.Max(0.4f, bounds.size.x - inset * 2f);
-            float depth = Mathf.Max(0.4f, bounds.size.z - inset * 2f);
+            if (_proxy == null || !TryFootprint(out var bounds)) return false;
+            float width = Mathf.Max(0.4f, bounds.size.x + GroundCapOverhang * 2f);
+            float depth = Mathf.Max(0.4f, bounds.size.z + GroundCapOverhang * 2f);
             float ground = bounds.min.y;
-            if (transform.position.y >= bounds.min.y - 0.5f && transform.position.y <= bounds.max.y)
-                ground = Mathf.Max(ground, transform.position.y);
 
             var proxy = _proxy.transform;
             proxy.SetParent(null, true);
             proxy.SetPositionAndRotation(
-                new Vector3(bounds.center.x, ground + _proxyHeight * 0.5f + 0.015f, bounds.center.z),
+                new Vector3(bounds.center.x,
+                    ground - GroundCapThickness * 0.5f - GroundCapSink,
+                    bounds.center.z),
                 Quaternion.identity);
-            proxy.localScale = new Vector3(width, _proxyHeight, depth);
+            proxy.localScale = new Vector3(width, GroundCapThickness, depth);
             proxy.SetParent(transform, true);
+            return true;
         }
 
         bool TryFootprint(out Bounds bounds)
         {
             bounds = default;
             bool any = false;
+
+            // Catalogue buildings normally carry an exact lot collider on their root.
+            // Prefer it over signs, fire escapes and storefront prop colliders below it;
+            // composed modular buildings fall through to the combined-child bounds.
+            for (int i = 0; i < _colliders.Count; i++)
+            {
+                var collider = _colliders[i];
+                if (collider == null || !collider.enabled || collider.isTrigger ||
+                    collider.transform != transform) continue;
+                if (!any) { bounds = collider.bounds; any = true; }
+                else bounds.Encapsulate(collider.bounds);
+            }
+            if (any) return bounds.size.x > 0.05f && bounds.size.z > 0.05f;
+
             for (int i = 0; i < _colliders.Count; i++)
             {
                 var collider = _colliders[i];
@@ -457,9 +485,10 @@ namespace RoadDemo
             if (shader == null) return null;
             _proxyMaterial = new Material(shader)
             {
-                name = "Building Cutaway Footprint",
-                color = new Color(0.17f, 0.145f, 0.125f, 1f),
+                name = "Building Cutaway Ground Cap",
+                color = new Color(0.19f, 0.19f, 0.175f, 1f),
                 hideFlags = HideFlags.HideAndDontSave,
+                enableInstancing = true,
             };
             if (_proxyMaterial.HasProperty("_BaseColor"))
                 _proxyMaterial.SetColor("_BaseColor", _proxyMaterial.color);

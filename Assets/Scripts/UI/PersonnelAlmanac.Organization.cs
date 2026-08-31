@@ -312,9 +312,10 @@ namespace LivingCity.UI
         float BuildBossCard(
             IOrganizationQuery query, OrganizationPerson boss, float cursor)
         {
-            // The design's 78 | 1fr | max-330 grid at a fourteen-unit gutter, over a
-            // 104-unit floor. Two stacked meters and their notes set the real height.
-            const float height = 112f;
+            // The design's 78 | 1fr | max-330 grid at a fourteen-unit gutter. The
+            // 104-unit floor is a FLOOR: two stacked meters with their notes come to
+            // more than that, and a card sized to the floor clips the second note.
+            const float height = 128f;
             const float plateW = 78f;
             const float gutter = 14f;
             const float meterMax = 330f;
@@ -338,14 +339,17 @@ namespace LivingCity.UI
                 x, -32f, 440f, LineBox(23f), boss.Name);
             name.characterSpacing = 1f;
 
-            Block("Name rule", card, x, -64f, 190f, 1f, LedgerV2.Red);
+            // Under the name's own line box, not through it: the design's rule is a
+            // five-unit margin below a 23-point line, and 23 points of Oswald stand
+            // over thirty-five units tall.
+            Block("Name rule", card, x, -(32f + LineBox(23f) + 3f), 190f, 1f, LedgerV2.Red);
 
             var under = Line(card, LedgerStyle.Mono, 10f, LedgerV2.HeadDim,
-                x, -70f, 440f, LineBox(10f), "HEAD OF THE FAMILY · ANSWERS TO NOBODY");
+                x, -78f, 440f, LineBox(10f), "HEAD OF THE FAMILY · ANSWERS TO NOBODY");
             under.characterSpacing = 3f;
 
             var hire = DarkTape(card, "HIRE · " + LedgerText.Cash(director.HoodRecruitmentCost),
-                x, -88f, 150f, 22f, () => FileRecruit(-1));
+                x, -98f, 150f, 22f, () => FileRecruit(-1));
             SetActionEnabled(hire, director != null);
 
             // The file's own corner marks, top right and bottom right: what a photograph
@@ -454,9 +458,10 @@ namespace LivingCity.UI
             var top = cursor;
             cursor += 8f;
             var contentX = BranchX + 22f + 14f;
+            var branchId = lieutenant.Id;
             cursor = BuildFaceStrip(men, contentX, cursor, lieutenant.Name,
                 BranchSummary(men), organizationOpenBranches.Contains(lieutenant.Id),
-                () => ToggleBranch(lieutenant.Id));
+                () => ToggleBranch(branchId), () => FileRecruit(branchId));
 
             if (organizationOpenBranches.Contains(lieutenant.Id))
                 cursor = BuildRosterGrid(men, contentX, cursor, recall: true);
@@ -483,8 +488,10 @@ namespace LivingCity.UI
                     ? "UNDER YOU DIRECTLY · " + pool.Count +
                       " IDLE, NO BRANCH, NO EARNINGS — CLICK A MAN TO PLACE HIM"
                     : "UNDER YOU DIRECTLY · NOBODY IS SITTING IDLE";
-            Caps(organizationContent, BranchX + 8f, -cursor, PageWidth - BranchX - 8f,
-                hint, 9.5f, LedgerV2.Red, 3f);
+            var hintLine = Line(organizationContent, LedgerStyle.MonoBold, 11f,
+                LedgerV2.Red, BranchX + 8f, -cursor, PageWidth - BranchX - 8f,
+                LineBox(11f), hint);
+            hintLine.overflowMode = TextOverflowModes.Ellipsis;
 
             var top = cursor + 16f;
             cursor += 22f;
@@ -678,8 +685,8 @@ namespace LivingCity.UI
             };
             var headColours = new[]
             {
-                LedgerV2.HeadCream, LedgerV2.Red, LedgerV2.Amber,
-                LedgerV2.HeadCream, LedgerV2.HeadCream,
+                LedgerV2.HeadInk, LedgerV2.HeadPaper, LedgerV2.HeadStreet,
+                LedgerV2.HeadInk, LedgerV2.HeadInk,
             };
             var x = 0f;
             for (var i = 0; i < headings.Length; i++)
@@ -750,16 +757,17 @@ namespace LivingCity.UI
             x += columns[0];
 
             var paperColour = leader.IsValid ? LedgerV2.PaperBlue : LedgerV2.Red;
-            var paperMark = NewRect("Paper mark", row);
-            PlaceTopLeft(paperMark, x + 14f, -21f, 12f, 12f);
-            Frame(paperMark, 2f, paperColour);
+            // Hatched, not solid: the design draws what is written on PAPER as a
+            // ruled square and what is true on the STREET as a filled one, so the two
+            // columns can never be read for each other at a glance.
+            LedgerV2.PaperMark(row, x + 14f, -21f, paperColour);
             Line(row, LedgerStyle.MonoBold, 12f, paperColour,
                 x + 32f, -20f, columns[1] - 42f, 18f,
                 leader.IsValid ? leader.Name : "NOBODY NAMED");
             x += columns[1];
 
             var streetColour = ControlColour(control);
-            Block("Street mark", row, x + 14f, -21f, 11f, 11f, streetColour);
+            LedgerV2.StreetMark(row, x + 14f, -21f, streetColour);
             Line(row, LedgerStyle.MonoBold, 12f, streetColour,
                 x + 32f, -20f, columns[2] - 42f, 18f, ControlWord(control));
             x += columns[2];
@@ -1624,7 +1632,7 @@ namespace LivingCity.UI
         {
             Outfit.FilingStatus.Granted => LedgerV2.Green,
             Outfit.FilingStatus.Refused => LedgerV2.Red,
-            _ => LedgerV2.PaperBlue,
+            _ => LedgerV2.Filed,
         };
 
         static string StatusWord(Outfit.FilingStatus status) => status switch

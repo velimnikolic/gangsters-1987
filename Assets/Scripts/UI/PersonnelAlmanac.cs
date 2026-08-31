@@ -786,15 +786,27 @@ namespace LivingCity.UI
             page.transform.SetParent(canvas.transform, false);
             Stretch((RectTransform)page.transform);
 
-            // ---- the frame: the whole window, and the modal shield ----
+            // ---- the backdrop: the whole screen, and the modal shield ----
+            //
+            // OVERSCANNED on purpose. A CanvasScaler solves its rect against the game
+            // view, and that rect can sit a few units inside the actual backbuffer -
+            // enough for a hairline of the city to show down an edge of a modal that is
+            // supposed to be the only thing on screen. Four hundred units of overscan
+            // costs one quad and closes the question for good. It carries no mask, so
+            // nothing clips it back to the canvas.
             //
             // It is a raycast target ON PURPOSE - it IS the shield: with it under the
             // pointer every world picker's IsPointerOverGameObject guard stands down,
             // so the city cannot be clicked through the ledger.
+            var backdrop = NewRect("Backdrop", page.transform);
+            Stretch(backdrop, -400f);
+            var ground = Fill(backdrop, LedgerStyle.Ground);
+            ground.raycastTarget = true;
+
+            // The frame proper: canvas-sized, masked, and everything the ledger draws
+            // lives inside it.
             var frame = NewRect("Frame", page.transform);
             Stretch(frame);
-            var ground = Fill(frame, LedgerStyle.Ground);
-            ground.raycastTarget = true;
             frame.gameObject.AddComponent<RectMask2D>();
 
             BuildChrome(frame);
@@ -1260,8 +1272,8 @@ namespace LivingCity.UI
             var heat = outfit ? outfit.Heat : 0;
             var heatSteps = Mathf.Clamp(Mathf.CeilToInt(heat / 10f), 0, 10);
             hudValue[1].text = HeatWord(heat);
-            hudValue[1].color = heat < 25 ? LedgerStyle.RailGold : LedgerStyle.RailRed;
-            SetMeter(1, heatSteps, 10, LedgerStyle.HudMeterWarm);
+            hudValue[1].color = heat < 25 ? LedgerStyle.RailAmber : LedgerStyle.RailRed;
+            SetMeter(1, heatSteps, 10, LedgerStyle.RailAmber);
             hudNote[1].text = heat == 0
                 ? "nobody downtown has your name yet"
                 : heat + " on the precinct's board";
@@ -1278,8 +1290,8 @@ namespace LivingCity.UI
             }
             var respectSteps = all > 0 ? Mathf.Clamp(Mathf.RoundToInt(10f * mine / all), 0, 10) : 0;
             hudValue[2].text = RespectWord(respectSteps);
-            hudValue[2].color = LedgerStyle.RailValue;
-            SetMeter(2, respectSteps, 10, LedgerStyle.RailGold);
+            hudValue[2].color = LedgerStyle.RailAmber;
+            SetMeter(2, respectSteps, 10, LedgerStyle.RailAmber);
             hudNote[2].text = all > 0
                 ? mine + " of " + all + " houses in the city are yours"
                 : "no business in the city answers to you";
@@ -1290,7 +1302,7 @@ namespace LivingCity.UI
             {
                 hudValue[3].text = "NOTHING";
                 hudValue[3].color = LedgerStyle.RailValue;
-                SetMeter(3, 0, Outfit.Tribute.CycleDays, LedgerStyle.RailGold);
+                SetMeter(3, 0, Outfit.Tribute.CycleDays, LedgerStyle.RailAmber);
                 hudNote[3].text = "no house in this city is above you";
             }
             else
@@ -1304,7 +1316,7 @@ namespace LivingCity.UI
                 hudValue[3].color = levy.Overdue || away <= 1
                     ? LedgerStyle.RailRed
                     : LedgerStyle.RailValue;
-                SetMeter(3, away, Outfit.Tribute.CycleDays, LedgerStyle.HudMeterWarm);
+                SetMeter(3, away, Outfit.Tribute.CycleDays, LedgerStyle.RailAmber);
                 hudNote[3].text = levy.Overdue
                     ? "OVERDUE to " + houseName + " · they have not forgotten"
                     : "to " + houseName + " · " +
@@ -1320,7 +1332,7 @@ namespace LivingCity.UI
             hudValue[4].color = perDay > 0 && runway <= 3
                 ? LedgerStyle.RailRed
                 : LedgerStyle.RailGold;
-            SetMeter(4, Mathf.Clamp(runway, 0, 10), 10, LedgerStyle.RailGold);
+            SetMeter(4, Mathf.Clamp(runway, 0, 10), 10, LedgerStyle.RailSafeGold);
             hudNote[4].text = perDay > 0
                 ? "-" + LedgerText.Cash(perDay).Substring(1) + " a day · " +
                   (runway >= 10 ? "ten days or better" : runway + " days of payroll left")
@@ -1329,8 +1341,10 @@ namespace LivingCity.UI
 
         void RefreshRailOutfit()
         {
-            SetRailMeter(0, "MEN ON THE BOOKS", railMen, railManCap);
-            SetRailMeter(1, "BLOCKS HELD", railHeld, railBlockCap);
+            // Each rail meter has a colour of its own in the design - men are warm
+            // stock, ground is green - and both turn red only at the ceiling.
+            SetRailMeter(0, "MEN ON THE BOOKS", railMen, railManCap, LedgerStyle.RailBright);
+            SetRailMeter(1, "BLOCKS HELD", railHeld, railBlockCap, LedgerStyle.RailGreen);
 
             SetRailRow(railRowLabel, railRowValue, 0, "lieutenants",
                 railLieutenants.ToString(), LedgerStyle.RailBright);
@@ -1397,15 +1411,12 @@ namespace LivingCity.UI
             railFlagText[index].text = text;
         }
 
-        void SetRailMeter(int index, string label, int current, int maximum)
+        void SetRailMeter(int index, string label, int current, int maximum, Color ink)
         {
             if (!railMeterLabel[index])
                 return;
-            var over = maximum > 0 && current > maximum;
             var full = maximum > 0 && current >= maximum;
-            var colour = over ? LedgerStyle.RailRed
-                : full ? LedgerStyle.RailGold
-                : LedgerStyle.RailValue;
+            var colour = full ? LedgerStyle.RailRed : ink;
 
             railMeterLabel[index].text = label;
             railMeterText[index].text = current + " / " + maximum;
@@ -1438,8 +1449,8 @@ namespace LivingCity.UI
                 Destroy(meter.GetChild(i).gameObject);
             if (steps <= 0)
                 return;
-            var x = RailInner - StepBarWidth(steps, 5f, 7f);
-            StepBar(meter, x, -15f, steps, filled, colour, 5f, 10f, 7f);
+            var x = RailInner - LedgerV2.PipsWidth(steps, 5f, 7f);
+            LedgerV2.Pips(meter, x, -15f, steps, filled, colour, 5f, 10f, 7f);
         }
 
         // -------------------------------------------------------------- what is true

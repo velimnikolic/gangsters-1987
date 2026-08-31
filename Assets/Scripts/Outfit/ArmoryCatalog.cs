@@ -52,16 +52,16 @@ namespace LivingCity.Outfit
             // counter reads as a ladder: what a man can hit, how hard, how far. The
             // .38 is not for sale: every man of the outfit carries one by default,
             // and the counter sells what is BETTER than the gun in his coat.
-            new ArmoryItem(EquipmentKind.TwinPistols, "Twin Pack Pistols", 250,
+            new ArmoryItem(EquipmentKind.TwinPistols, "Twin Pack Pistols", 150,
                 "A pistol for each hand - twice the lead at the same range.",
                 "SM_Wep_Pistol_Revolver_01"),
-            new ArmoryItem(EquipmentKind.Shotgun, "Shotgun", 750,
+            new ArmoryItem(EquipmentKind.Shotgun, "Shotgun", 300,
                 "Devastating up close; nothing past the kerb.",
                 "SM_Wep_Shotgun_01"),
-            new ArmoryItem(EquipmentKind.MachinePistol, "Machine Pistol", 1_250,
+            new ArmoryItem(EquipmentKind.MachinePistol, "Machine Pistol", 600,
                 "Empties a clip across a room and hits what it pleases.",
                 "SM_Wep_Machine_Pistol_01"),
-            new ArmoryItem(EquipmentKind.Rifle, "Rifle", 1_750,
+            new ArmoryItem(EquipmentKind.Rifle, "Rifle", 800,
                 "Longest range, highest accuracy - a street away.",
                 "SM_Wep_Rifle_01"),
             new ArmoryItem(EquipmentKind.TommyGun, "Tommy Gun", 2_000,
@@ -90,11 +90,11 @@ namespace LivingCity.Outfit
         {
             new ArmoryItem(EquipmentKind.Vehicle, "Jalopy", 800,
                 "Runs, mostly. Gets a crew off its feet."),
-            new ArmoryItem(EquipmentKind.Vehicle, "Sedan", 1_500,
+            new ArmoryItem(EquipmentKind.Vehicle, "Sedan", 4_000,
                 "The working car - seats a crew, raises no eyebrows."),
-            new ArmoryItem(EquipmentKind.Vehicle, "Panel Van", 2_400,
+            new ArmoryItem(EquipmentKind.Vehicle, "Panel Van", 5_000,
                 "Slow and anonymous; swallows anything."),
-            new ArmoryItem(EquipmentKind.Vehicle, "Armoured Wagon", 6_000,
+            new ArmoryItem(EquipmentKind.Vehicle, "Armoured Wagon", 30_000,
                 "Plated doors, barred glass, a bar on the nose - and every eye on the street."),
         };
 
@@ -141,11 +141,11 @@ namespace LivingCity.Outfit
         /// </summary>
         public static readonly ArmoryItem[] Motorcycles =
         {
-            new ArmoryItem(EquipmentKind.Motorcycle, "Tourer", 1_400,
+            new ArmoryItem(EquipmentKind.Motorcycle, "Tourer", 8_545,
                 "Big, black and built for two - the machine for a job across town."),
-            new ArmoryItem(EquipmentKind.Motorcycle, "Motorbike", 1_200,
+            new ArmoryItem(EquipmentKind.Motorcycle, "Motorbike", 2_500,
                 "Two men, a gun off the back, and gone before the street looks up."),
-            new ArmoryItem(EquipmentKind.Motorcycle, "Enduro", 900,
+            new ArmoryItem(EquipmentKind.Motorcycle, "Enduro", 1_500,
                 "A dirt bike. Down an alley, over a lot, gone where a car cannot follow."),
             new ArmoryItem(EquipmentKind.Motorcycle, "Moped", 500,
                 "Nobody looks twice at a delivery boy. Nobody hears one coming either."),

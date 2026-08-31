@@ -235,6 +235,11 @@ namespace LivingCity.UI
         public static readonly Color RailRed = Rgb(0xf2716a);
         public static readonly Color RailGold = Rgb(0xf2c86c);
 
+        /// <summary>The two golds the rail's pip runs are struck in - the design's own
+        /// amber for a reading with a ceiling, and the brighter one the safe gets.</summary>
+        public static readonly Color RailAmber = Rgb(0xa66d00);
+        public static readonly Color RailSafeGold = Rgb(0xd4a73e);
+
         /// <summary>The telex strip: light stock, its dark source badge, and the
         /// three voices a wire message can be printed in.</summary>
         public static readonly Color TelexPaper = Rgb(0xe1d9d0);

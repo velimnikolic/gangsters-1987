@@ -85,6 +85,19 @@ namespace RoadDemo
         static Material storefrontShellMaterial;
         static Material storefrontShutterMaterial;
 
+        /// <summary>The shallow room and display silhouettes only sell the storefront
+        /// while its facade exists. They must disappear outright during a cutaway rather
+        /// than remain as free-standing semi-transparent furniture.</summary>
+        internal static bool IsGeneratedStorefrontVisual(Transform candidate,
+                                                           Transform buildingRoot)
+        {
+            for (Transform at = candidate; at != null && at != buildingRoot; at = at.parent)
+                if (at.name == StorefrontShellName ||
+                    at.name.StartsWith(StorefrontPropName, StringComparison.Ordinal))
+                    return true;
+            return false;
+        }
+
         /// <summary>
         /// Add one combined shallow-room renderer to a shop-bearing building and one pooled,
         /// single-renderer silhouette to every open facade. This is intentionally one cheap
@@ -107,7 +120,18 @@ namespace RoadDemo
                 };
                 StorefrontLayouts[key] = layout;
             }
-            if (layout.Openings.Length == 0) yield break;
+            if (layout.Openings.Length == 0)
+            {
+                // A harvested unit can be labelled as a shop yet expose no usable panes.
+                // Its caller deliberately deferred the ordinary prepare, so finish that
+                // one required registration here without doing a second scan.
+                if (building.GetComponent<BuildingCutaway>() == null)
+                {
+                    BuildingCutaway.Prepare(building);
+                    yield return 0;
+                }
+                yield break;
+            }
 
             var plan = PlanStorefronts(layout.Openings, seed);
             ClearGeneratedStorefrontProps(building, out _);
@@ -141,6 +165,12 @@ namespace RoadDemo
                 }
                 yield return i + 1;
             }
+
+            // Cutaway preparation is deliberately deferred until the fake room and display
+            // props exist, so a recycled building scans its final topology exactly once on
+            // both eager and incremental composition paths.
+            BuildingCutaway.Prepare(building);
+            yield return plan.Styles.Length + 1;
         }
 
         internal static StorefrontDecorationPlan PlanStorefronts(int count, int seed)

@@ -137,14 +137,16 @@ namespace RoadDemo
                 int colourway = ResidentialUnits.IsLot(spot.Unit)
                     ? 0
                     : ((mix % 3) + 3) % 3;
-                var go = StandUnit(spot.Unit, spot.Yaw, spot.I, spot.J, root, colourway);
+                bool dressStorefront = NeedsStorefrontDressing(spot.Unit);
+                var go = StandUnit(spot.Unit, spot.Yaw, spot.I, spot.J, root, colourway,
+                                   dressStorefront);
                 if (go != null)
                 {
                     if (ResidentialUnits.IsLot(spot.Unit)) stood.Parks++;
                     else stood.Units++;
                 }
                 yield return null;
-                if (go != null && NeedsStorefrontDressing(spot.Unit))
+                if (go != null && dressStorefront)
                 {
                     int interiorSeed = StorefrontSeed(
                         plan.Seed, spot.Unit.Name, spot.I, spot.J, spot.Yaw);

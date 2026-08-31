@@ -937,10 +937,12 @@ namespace RoadDemo
                 int mix = unchecked((plan.W * 73856093) ^ (plan.D * 19349663) ^
                                     (spot.I * 83492791) ^ (spot.J * 486187739) ^
                                     (nth++ * 2038074743));
+                bool dressStorefront = NeedsStorefrontDressing(spot.Unit);
                 var go = StandUnit(spot.Unit, spot.Yaw, spot.I, spot.J, root,
-                                   ResidentialUnits.IsLot(spot.Unit) ? 0 : ((mix % 3) + 3) % 3);
+                                   ResidentialUnits.IsLot(spot.Unit) ? 0 : ((mix % 3) + 3) % 3,
+                                   dressStorefront);
                 if (go == null) continue;
-                if (NeedsStorefrontDressing(spot.Unit))
+                if (dressStorefront)
                 {
                     int interiorSeed = StorefrontSeed(
                         plan.Seed, spot.Unit.Name, spot.I, spot.J, spot.Yaw);
@@ -954,10 +956,10 @@ namespace RoadDemo
         }
 
         static GameObject StandUnit(ResidentialUnit unit, int yaw, int i, int j, Transform root,
-                                   int way = 0)
+                                   int way = 0, bool deferCutaway = false)
         {
             if (ResidentialUnits.IsFrontage(unit))
-                return StandFrontageUnit(unit, yaw, i, j, root, way);
+                return StandFrontageUnit(unit, yaw, i, j, root, way, deferCutaway);
 
             var go = Raise($"{Units}{unit.Name}.prefab", root);
             if (go == null) return null;
@@ -977,8 +979,9 @@ namespace RoadDemo
             go.name = $"{unit.Name} ({i},{j}) {yaw}";
             // Parks and complete amenity lots may contain several unrelated tall props.
             // Houses and storefronts are one logical shell and must cut as one, otherwise
-            // roofs and upper floors remain floating over the revealed street.
-            if (!ResidentialUnits.IsLot(unit)) BuildingCutaway.Prepare(go);
+            // roofs and upper floors remain floating over the revealed street. Storefronts
+            // defer this one scan until their generated interior renderers also exist.
+            if (!ResidentialUnits.IsLot(unit) && !deferCutaway) BuildingCutaway.Prepare(go);
             return go;
         }
 
@@ -988,7 +991,8 @@ namespace RoadDemo
         /// lets a one-cell Core remainder carry housing without squashing a normal house.
         /// </summary>
         static GameObject StandFrontageUnit(
-            ResidentialUnit unit, int yaw, int i, int j, Transform root, int way)
+            ResidentialUnit unit, int yaw, int i, int j, Transform root, int way,
+            bool deferCutaway)
         {
             int style = 0;
             for (int n = 0; n < ResidentialUnits.Frontages.Length; n++)
@@ -1030,7 +1034,7 @@ namespace RoadDemo
                 return null;
             }
             Colourway(go, way);
-            BuildingCutaway.Prepare(go);
+            if (!deferCutaway) BuildingCutaway.Prepare(go);
             return go;
         }
 
@@ -1434,7 +1438,8 @@ namespace RoadDemo
             GameObject go;
             if (cafe.Unit != null)
             {
-                go = StandUnit(cafe.Unit, cafe.Yaw, cafe.I, cafe.J, root);
+                go = StandUnit(cafe.Unit, cafe.Yaw, cafe.I, cafe.J, root,
+                               deferCutaway: true);
                 if (go != null) Claim(cafe.Foot);
             }
             else go = Building(cafe.Path, root, cafe.X, cafe.Z, cafe.YawF, 1f);

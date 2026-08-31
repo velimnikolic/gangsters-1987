@@ -103,6 +103,12 @@ namespace LivingCity.UI
         /// <summary>A filing still awaiting a ruling.</summary>
         public static readonly Color Filed = Rgb(0x4075aa);
 
+        /// <summary>The block ledger's column heads, printed on the dark band in the
+        /// colour of the thing each column reports: what the paper says is blue, what
+        /// the street says is green, and the rest is plain cream.</summary>
+        public static readonly Color HeadPaper = Rgb(0xa0bbd7);
+        public static readonly Color HeadStreet = Rgb(0x99ce9a);
+
         /// <summary>Copy set for reading, and the caption under a cut.</summary>
         public static readonly Color Copy = Rgb(0x37322e);
         public static readonly Color Caption = Rgb(0x49403b);

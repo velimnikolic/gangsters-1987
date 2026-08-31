@@ -38,7 +38,7 @@ namespace LivingCity.UI
 
         // ---- the stock book ----
 
-        const float StockPitch = 26f;
+        const float StockPitch = 34f;
         static float StockWidth = PageWidth;
         static float StockTop = CatalogueTop - CatalogueHeight - 16f;
         static float StockHeight = -(PageBottom - StockTop);
@@ -122,13 +122,12 @@ namespace LivingCity.UI
             // scroll - a sixty-man outfit's stock outgrows the page.
             var carbon = LedgerV2.Card("Stock Book", root, PageLeft, StockTop, StockWidth, StockHeight, LedgerV2.Carbon);
 
-            stockHeading = Caps(carbon, StockPad, -10f, 600f, "STOCK BOOK · CARBON COPY",
-                13f, LedgerV2.CarbonInk, 5f);
-            stockCount = Caps(carbon, StockWidth - StockPad - 400f, -11f, 400f, "", 10f,
-                new Color(107f / 255f, 43f / 255f, 35f / 255f, 0.7f), 3f,
-                TextAlignmentOptions.MidlineRight);
-            Rule(carbon, StockPad, -36f, StockInner,
-                new Color(107f / 255f, 43f / 255f, 35f / 255f, 0.35f));
+            stockHeading = Caps(carbon, StockPad, -12f, 600f, "STOCK BOOK · CARBON COPY",
+                15f, LedgerV2.CarbonInk, 5f);
+            stockCount = LedgerV2.Mono(carbon, StockWidth - StockPad - 400f, -14f, 400f,
+                "", 10.5f, LedgerV2.CarbonLabel, 6f, TextAlignmentOptions.MidlineRight);
+            Block("Stock rule", carbon, StockPad, -38f, StockInner, 1f,
+                LedgerV2.CarbonRule);
 
             stockViewport = NewRect("Rows", carbon);
             PlaceTopLeft(stockViewport, StockPad, -44f, StockInner, StockHeight - 52f);
@@ -260,9 +259,9 @@ namespace LivingCity.UI
             const float pad = 14f;
             var inner = CardW - pad * 2f;
 
-            var name = Line(card, LedgerStyle.Condensed, 15f, LedgerV2.Ink, pad, -8f,
-                inner - 76f, LineBox(15f), item.DisplayName.ToUpperInvariant());
-            name.characterSpacing = 3f;
+            var name = Line(card, LedgerStyle.Condensed, 17f, LedgerV2.Ink, pad, -8f,
+                inner - 76f, LineBox(17f), item.DisplayName.ToUpperInvariant());
+            name.characterSpacing = 2f;
             name.overflowMode = TextOverflowModes.Ellipsis;
             Caps(card, pad + inner - 76f, -11f, 76f,
                 "CAT. " + ShelfCodes[Mathf.Clamp(shelf, 0, ShelfCodes.Length - 1)] + "-" +
@@ -273,8 +272,13 @@ namespace LivingCity.UI
             // case. The turntable studio owns the render rig and stops it whenever this
             // card or page is inactive. The hatched plate is only the honest fallback
             // while a model cannot be resolved.
-            var raw = LedgerV2.PortraitPlate(card, pad, -36f, inner, 86f,
-                item.DisplayName.ToUpperInvariant());
+            // The design rules the card into four bands: what it is, what it looks
+            // like, what it is for, and what it costs.
+            Block("Head rule", card, 0f, -32f, CardW, 1f, LedgerV2.Rule);
+
+            var raw = LedgerV2.PortraitPlate(card, 0f, -33f, CardW, 90f,
+                item.DisplayName.ToUpperInvariant(), LedgerV2.Plate, LedgerV2.Muted);
+            Block("Art rule", card, 0f, -123f, CardW, 1f, LedgerV2.Rule);
             var vehicle = item.Kind == EquipmentKind.Vehicle ||
                           item.Kind == EquipmentKind.Motorcycle;
             var model = vehicle
@@ -284,8 +288,8 @@ namespace LivingCity.UI
             CatalogueTurntableStudio.Show(model, vehicle, raw,
                 item.Kind == EquipmentKind.TwinPistols ? 2 : 1);
 
-            var blurb = Paragraph(card, LedgerStyle.Serif, 13f, LedgerV2.Body, pad,
-                -130f, inner, 40f, item.Note, lineSpacing: 2f);
+            var blurb = Paragraph(card, LedgerStyle.Serif, 13.5f, LedgerV2.Copy, pad,
+                -132f, inner, 42f, item.Note, lineSpacing: 3f);
             blurb.overflowMode = TextOverflowModes.Ellipsis;
 
             // What it does, in the two words a catalogue is allowed. Both are derived
@@ -295,6 +299,8 @@ namespace LivingCity.UI
             SpecRow(card, pad, -176f, inner, vehicle ? "SPEED" : "RANGE", band);
             SpecRow(card, pad, -194f, inner, vehicle ? "ROOM" : "STOPPING",
                 Mathf.Clamp(7 - band, 1, 6));
+
+            Block("Foot rule", card, 0f, -206f, CardW, 1f, LedgerV2.Rule);
 
             var price = Line(card, LedgerStyle.Condensed, 20f, LedgerV2.Ink, pad, -212f,
                 inner - 110f, 26f, LedgerText.Cash(item.Price));
@@ -324,10 +330,13 @@ namespace LivingCity.UI
 
         void SpecRow(Transform card, float x, float y, float w, string label, int marks)
         {
-            Caps(card, x, y, 120f, label, 9f, LedgerV2.Label, 3f);
-            var bar = LedgerV2.PipsWidth(6);
-            LedgerV2.Pips(card, x + w - bar, y - 8f, 6, marks, LedgerV2.Red);
-            LedgerV2.Leader(card, x + 76f, y - 9f, w - bar - 86f);
+            // Label left, pips held to the right margin, and nothing between them. The
+            // design leaves that gap empty on purpose: a leader would tie the two into
+            // one line, and these are a label AND a reading, not a label with a figure.
+            var name = LedgerV2.Mono(card, x, y, 90f, label, 9.5f, LedgerV2.Label, 8f);
+            name.overflowMode = TextOverflowModes.Ellipsis;
+            LedgerV2.Pips(card, x + w - LedgerV2.PipsWidth(6), y - 8f, 6, marks,
+                LedgerV2.Red);
         }
 
         void BuildStock(Roster roster)
@@ -357,7 +366,7 @@ namespace LivingCity.UI
                     LedgerText.EquipmentLabel(item.Kind), 9.5f, carbonFaint, 3f);
                 FillRow(kind.rectTransform, StockKindX, 100f);
 
-                var name = Text("Name", row, LedgerStyle.Mono, 13.5f, carbonInk,
+                var name = Text("Name", row, LedgerStyle.Condensed, 15f, carbonInk,
                     TextAlignmentOptions.MidlineLeft);
                 FillRow(name.rectTransform, StockItemX, StockHolderX - StockItemX - 20f);
                 name.overflowMode = TextOverflowModes.Ellipsis;

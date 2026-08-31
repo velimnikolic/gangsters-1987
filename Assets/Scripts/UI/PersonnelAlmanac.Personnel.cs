@@ -876,9 +876,10 @@ namespace LivingCity.UI
         float BuildDossier(Roster roster, Character member)
         {
             // ---- the mug shot, and the particulars beside it ----
-            const float plateW = 128f;
-            const float plateH = 156f;
-            var raw = LedgerV2.PortraitPlate(cardContent, 0f, -8f, plateW, plateH, "MUG SHOT");
+            const float plateW = 94f;
+            const float plateH = 116f;
+            var raw = LedgerV2.PortraitPlate(cardContent, 0f, -8f, plateW, plateH,
+                InitialsOf(member.FullName), LedgerV2.DarkPlate, LedgerV2.DarkPlateInk);
             PortraitStudio.Request(MemberModel(member), PortraitStudio.Framing.Bust, raw);
             Caps(cardContent, 0f, -(plateH + 12f), plateW,
                 "P-" + (1100 + member.Id).ToString("0000") + " · 1987", 9f,
@@ -887,9 +888,10 @@ namespace LivingCity.UI
             var textX = plateW + 22f;
             var textW = CardInner - textX;
 
-            var name = Line(cardContent, LedgerStyle.Condensed, 26f, LedgerV2.Ink,
-                textX, -6f, textW, 34f, member.FullName);
+            var name = Line(cardContent, LedgerStyle.Condensed, 24f, LedgerV2.Ink,
+                textX, -20f, textW, LineBox(24f), member.FullName);
             name.characterSpacing = 1f;
+            name.overflowMode = TextOverflowModes.Ellipsis;
 
             var assignment = roster.AssignmentOf(member.Id);
             var crewName = "";
@@ -905,11 +907,20 @@ namespace LivingCity.UI
             var rankLine = member.Specialty != Specialty.None
                 ? LedgerText.SpecialtyLabel(member.Specialty)
                 : LedgerText.RankLabel(member.Rank);
-            Caps(cardContent, textX, -40f, textW,
-                rankLine + " · " + (crewName.Length > 0 ? crewName : "no crew"), 12f,
-                LedgerV2.Red, 5f);
+            // The design's order: rank over the name, then a red rule, then the two
+            // lines that say who he answers to and where he stands.
+            var rank = LedgerV2.Mono(cardContent, textX, -4f, textW,
+                rankLine.ToUpperInvariant(), 9.5f,
+                member.Rank == Rank.Lieutenant ? LedgerV2.Lieutenant : LedgerV2.Muted, 12f);
+            rank.font = LedgerStyle.MonoBold;
 
-            var y = -70f;
+            Block("Name rule", cardContent, textX, -50f, Mathf.Min(textW, 220f), 1f,
+                LedgerV2.Red);
+
+            LedgerV2.Mono(cardContent, textX, -58f, textW,
+                crewName.Length > 0 ? "IN " + crewName : "NO CREW", 11f, LedgerV2.Muted, 3f);
+
+            var y = -84f;
             y = Particular("POST", LedgerText.AssignmentLine(assignment, crewName), textX,
                 textW, y);
             if (member.Rank == Rank.Boss)
@@ -1040,14 +1051,17 @@ namespace LivingCity.UI
             return y - 10f;
         }
 
-        /// <summary>One LABEL / value line of the particulars grid.</summary>
+        /// <summary>One particular on the file: the label on the left, the answer held
+        /// to the right margin, and the dotted rule the design closes every one of them
+        /// with. Answers the y below.</summary>
         float Particular(string label, string value, float x, float w, float y, Color? ink = null)
         {
-            Caps(cardContent, x, y, 96f, label, 9.5f, LedgerV2.Label, 3f);
-            var text = Line(cardContent, LedgerStyle.Mono, 13.5f, ink ?? LedgerV2.Ink,
-                x + 100f, y, w - 100f, 20f, value);
+            LedgerV2.Mono(cardContent, x, y, 130f, label, 10.5f, LedgerV2.Label, 6f);
+            var text = LedgerV2.Figure(cardContent, x + 134f, y, w - 134f, value, 12.5f,
+                ink ?? LedgerV2.Ink);
             text.overflowMode = TextOverflowModes.Ellipsis;
-            return y - 22f;
+            LedgerV2.Leader(cardContent, x, y - 19f, w);
+            return y - 24f;
         }
 
         /// <summary>

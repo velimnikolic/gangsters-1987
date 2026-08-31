@@ -189,6 +189,36 @@ namespace LivingCity.UI
         readonly List<Territory.TerritoryRacketOrder> racketRows =
             new List<Territory.TerritoryRacketOrder>();
 
+        /// <summary>
+        /// What the drafted target is worth, when it is a business we can name: a week's
+        /// protection from a shop of that kind, a day's net from one we own, or its asking
+        /// price. Zero when the ground carries no business - the order then falls back on
+        /// its book figure, which is what a shakedown of nothing is worth.
+        /// </summary>
+        int DraftedWorth(Outfit.OrderType type)
+        {
+            if (type != Outfit.OrderType.CollectProtection &&
+                type != Outfit.OrderType.RunBusiness &&
+                type != Outfit.OrderType.BuyPremises)
+                return 0;
+            if (!TryDraftedBusiness(out var businessId, out _))
+                return 0;
+
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            if (business == null || !business.Populated ||
+                !business.Directory.TryGet(businessId, out var record))
+                return 0;
+
+            return type switch
+            {
+                Outfit.OrderType.CollectProtection =>
+                    Outfit.EconomyPrices.ProtectionPerWeek(record.Archetype),
+                Outfit.OrderType.RunBusiness =>
+                    Outfit.EconomyPrices.NetPerDay(record.Archetype),
+                _ => Outfit.EconomyPrices.BuyPrice(record.Archetype),
+            };
+        }
+
         /// <summary>How far a drafted point may be from a door and still mean it.</summary>
         const float DraftBusinessRange = 22f;
 
@@ -869,6 +899,7 @@ namespace LivingCity.UI
                         TargetX = draftX,
                         TargetZ = draftZ,
                         TargetLabel = draftLabel,
+                        TargetWorth = DraftedWorth(issueSpec.Type),
                     };
                     job.BlockTargets.AddRange(draftBlocks);
 

@@ -443,16 +443,19 @@ namespace LivingCity.UI
             return y - pitch;
         }
 
-        /// <summary>A money column's head: what it is on the left, DOLLARS on the
-        /// right, and the rule the machine strikes under both.</summary>
+        /// <summary>The dark band over a money column: what the column is, in the
+        /// colour of which way the money runs, and the unit held to its right.</summary>
         void FinanceColumnHead(float x, float y, string label)
         {
-            Caps(financesContent, GreenPad + x, y, FinColW - 120f, label, 10f,
-                LedgerV2.MoneyEdge, 5f);
-            Caps(financesContent, GreenPad + x + FinColW - 120f, y, 120f, "DOLLARS", 10f,
-                LedgerV2.MoneyEdge, 5f, TextAlignmentOptions.MidlineRight);
-            Rule(financesContent, GreenPad + x, y - 18f, FinColW,
-                new Color(34f / 255f, 48f / 255f, 28f / 255f, 0.35f));
+            var band = NewRect("Column head", financesContent);
+            PlaceTopLeft(band, GreenPad + x, y + 8f, FinColW, 28f);
+            Fill(band, LedgerV2.Head);
+
+            var name = LedgerV2.Mono(band, 12f, -7f, FinColW - 100f, label, 10f,
+                label == "MONEY IN" ? LedgerV2.HeadStreet : LedgerV2.Boss, 13f);
+            name.font = LedgerStyle.MonoBold;
+            LedgerV2.Mono(band, FinColW - 112f, -7f, 100f, "DOLLARS", 10f,
+                LedgerV2.HeadDim, 8f, TextAlignmentOptions.MidlineRight);
         }
 
         void FinanceRow(float x, float y, string label, int amount, bool bold = false,

@@ -356,22 +356,31 @@ namespace LivingCity.UI
             }
         }
 
+        /// <summary>One line of a card's particulars: the label on the left, the answer
+        /// held to the right margin over a dotted rule, and a hairline under the pair.
+        /// The label takes only what it needs - "OWED" is four letters and the answer to
+        /// it is a sentence, so a fixed ninety-unit label was eating the sentence.</summary>
         static void CardRow(Transform card, float x, float y, float w, string label,
             string value, Color ink)
         {
-            Caps(card, x, y, 90f, label, 9.5f, LedgerV2.Label, 3f);
-            var text = Line(card, LedgerStyle.Mono, 12.5f, ink, x + 90f, y, w - 90f, 18f,
-                value);
+            const float labelW = 56f;
+            LedgerV2.Mono(card, x, y, labelW, label, 9.5f, LedgerV2.Label, 6f);
+            var text = Line(card, LedgerStyle.MonoBold, 12f, ink, x + labelW + 6f, y,
+                w - labelW - 6f, LineBox(12f), value,
+                TextAlignmentOptions.MidlineRight);
             text.overflowMode = TextOverflowModes.Ellipsis;
+            LedgerV2.Leader(card, x, y - 17f, w);
         }
 
         /// <summary>The legend under the drawer - the page must never be the opaque
         /// system. Two columns so it takes a band and not a third of the sheet.</summary>
         void BuildStanceLegend()
         {
-            Caps(diplomacyContent, PageLeft, LegendTop, PageWidth, "WHAT A STANCE DOES",
-                12f, LedgerV2.Body, 5f);
-            Rule(diplomacyContent, PageLeft, LegendTop - 20f, PageWidth, LedgerV2.Rule);
+            var head = Line(diplomacyContent, LedgerStyle.Condensed, 14f, LedgerV2.Ink,
+                PageLeft, LegendTop, PageWidth, LineBox(14f), "WHAT A STANCE DOES");
+            head.characterSpacing = 7f;
+            Block("Legend rule", diplomacyContent, PageLeft, LegendTop - 22f, PageWidth,
+                1f, LedgerV2.SheetRule);
 
             var half = (PageWidth - 40f) * 0.5f;
             Paragraph(diplomacyContent, LedgerStyle.Mono, 12f, LedgerV2.Muted, PageLeft,

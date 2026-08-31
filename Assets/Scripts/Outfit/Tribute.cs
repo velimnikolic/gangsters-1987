@@ -45,10 +45,10 @@ namespace LivingCity.Outfit
 
         /// <summary>What a house asks per block it holds over the outfit's own count -
         /// the levy is the GAP, so closing it is the way out from under.</summary>
-        public const int PerBlockAhead = 90;
+        public const int PerBlockAhead = 500;
 
         /// <summary>No house sends a man across town for less than this.</summary>
-        public const int Floor = 150;
+        public const int Floor = 1_000;
 
         /// <summary>Every standing claim, one per house that has one.</summary>
         public readonly List<Levy> Levies = new List<Levy>();

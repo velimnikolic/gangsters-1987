@@ -39,7 +39,13 @@ namespace LivingCity.Outfit
     public sealed class Accounts
     {
         /// <summary>Day one's stake.</summary>
-        public const int StartingSafe = 1_000_000;
+        /// <summary>
+        /// What is in the safe on day one. A million bought the whole price list before a
+        /// single shop had been leaned on; twenty-five thousand is a few weeks of payroll,
+        /// a cheap front and some guns - which means the racket has to come first, which
+        /// is the game. (Docs/economy-prices.md §9.)
+        /// </summary>
+        public const int StartingSafe = 25_000;
 
         /// <summary>How many days of closed sheets are kept. A year of them: enough for
         /// the finances page to page back through a long campaign, bounded so a machine
@@ -97,8 +103,8 @@ namespace LivingCity.Outfit
         /// <summary>Flat rate on declared (positive) profit.</summary>
         public const int TaxRatePercent = 30;
 
-        public const int RiskLowCeiling = 5_000;
-        public const int RiskModerateCeiling = 20_000;
+        public const int RiskLowCeiling = 25_000;
+        public const int RiskModerateCeiling = 100_000;
 
         public static int TotalIncome(DaySheet sheet) =>
             sheet == null ? 0 : sheet.LegalIncome + sheet.IllegalIncome + sheet.SalesIncome;

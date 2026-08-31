@@ -129,13 +129,18 @@ namespace LivingCity.Outfit
 
         /// <summary>Money the job pays when it comes off, the crew's best man at its own
         /// trade scaling the take.</summary>
-        public static int PayoutFor(in OrderSpec spec, int targetCount, int statHalfSteps)
+        public static int PayoutFor(
+            in OrderSpec spec, int targetCount, int statHalfSteps, int unitWorth = 0)
         {
-            if (spec.Payout <= 0)
+            // What the target is actually worth beats the book figure. A round of
+            // collections off ten barbers and a round off a nightclub were the same
+            // sixty dollars while this read a constant.
+            var unit = unitWorth > 0 ? unitWorth : spec.Payout;
+            if (unit <= 0)
                 return 0;
             if (targetCount < 1)
                 targetCount = 1;
-            return (int)(spec.Payout * targetCount * YieldScale(statHalfSteps));
+            return (int)(unit * targetCount * YieldScale(statHalfSteps));
         }
 
         /// <summary>
@@ -145,9 +150,15 @@ namespace LivingCity.Outfit
         /// the building work. Never below a third of the book price - everybody's money
         /// is worth something.
         /// </summary>
-        public static int CostFor(in OrderSpec spec, int targetCount, int statHalfSteps)
+        public static int CostFor(
+            in OrderSpec spec, int targetCount, int statHalfSteps, int unitWorth = 0)
         {
-            if (spec.Cost <= 0)
+            // Buying premises reads the asking price of THOSE premises when the caller
+            // knows it; everything else is priced by the book.
+            var book = spec.Type == OrderType.BuyPremises && unitWorth > 0
+                ? unitWorth
+                : spec.Cost;
+            if (book <= 0)
                 return 0;
             if (targetCount < 1)
                 targetCount = 1;
@@ -159,7 +170,7 @@ namespace LivingCity.Outfit
             var factor = 1f - discountPerHalfStep * (over > 0 ? over : 0);
             if (factor < 0.33f)
                 factor = 0.33f;
-            return (int)(spec.Cost * targetCount * factor);
+            return (int)(book * targetCount * factor);
         }
 
         /// <summary>
@@ -196,7 +207,7 @@ namespace LivingCity.Outfit
         {
             var targets = job?.TargetCount ?? 1;
             var stat = CrewKit.BestAt(roster, crew, spec.PrimaryAttribute);
-            var cost = CostFor(spec, targets, stat);
+            var cost = CostFor(spec, targets, stat, job.TargetWorth);
 
             OrderOutcome outcome;
             if (streetOutcome.HasValue)
@@ -214,7 +225,7 @@ namespace LivingCity.Outfit
             }
 
             var completed = outcome == OrderOutcome.Completed;
-            var payout = completed ? PayoutFor(spec, targets, stat) : 0;
+            var payout = completed ? PayoutFor(spec, targets, stat, job.TargetWorth) : 0;
             var heat = HeatFor(spec, targets,
                 CrewKit.BestAt(roster, crew, CharacterAttribute.Stealth),
                 CrewKit.BestAt(roster, crew, CharacterAttribute.Knives));
