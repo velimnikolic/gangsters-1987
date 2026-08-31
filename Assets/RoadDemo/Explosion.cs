@@ -37,6 +37,13 @@ namespace RoadDemo
             if (car != null) CarShatter.Shatter(car, at);
             ShopDamage.ScorchNear(at, groundY);   // a shopfront in the blast catches fire
 
+            // and if that shopfront is somebody's business, the house that threw it has
+            // just answered for it: the racket records the damage and the street files
+            // the fear. A blast in open road finds no business and reports nothing.
+            TerritoryRuntime.ReportViolenceAt(
+                at, faction, LivingCity.Territory.TerritoryEscalationKind.PropertyDamage,
+                ShopDamage.ScorchRange);
+
             // the loudest thing on the street by far: heard three streets over, so the
             // whole quarter reacts and the police are called to it. The deaths are not
             // reported here: each man killed reports his own (CivilianAgent.Kill), and

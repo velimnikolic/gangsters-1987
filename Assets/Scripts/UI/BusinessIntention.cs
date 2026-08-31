@@ -120,6 +120,23 @@ namespace LivingCity.UI
                 ? Line(owner, weeklyIncome, isProtected)
                 : $"{owner ?? "Unknown owner"} · {Money(weeklyIncome)}/wk · {gang}";
 
+        /// <summary>
+        /// The racket's line: where the shop stands with US replaces the protection word,
+        /// for the same reason the gang name does - the card has about forty characters and
+        /// "Paying us" says more than "Protected" ever did. A shop paying somebody else is
+        /// named by the house that holds it, because that is the fact worth reading.
+        /// </summary>
+        public static string Line(
+            string owner, int weeklyIncome, string standing, string protector)
+        {
+            var word = string.IsNullOrEmpty(protector) || protector == "us"
+                ? standing
+                : protector;
+            return string.IsNullOrEmpty(word)
+                ? Line(owner, weeklyIncome, false)
+                : $"{owner ?? "Unknown owner"} · {Money(weeklyIncome)}/wk · {word}";
+        }
+
         /// <summary>$850, then $1.2k from a thousand up. Invariant culture: a popup that says
         /// $1,2k on one machine and $1.2k on another is the same bug twice.</summary>
         public static string Money(int perWeek) =>

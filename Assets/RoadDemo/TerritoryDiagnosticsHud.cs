@@ -47,6 +47,7 @@ namespace RoadDemo
             sections.Add(new PhysicalActorsSection());
             sections.Add(new PresenceSection());
             sections.Add(new FearSection());
+            sections.Add(new RacketSection());
             // The businesses page installs itself rather than waiting to be registered:
             // the business pass runs BEFORE this HUD is built, so a push from that side
             // would depend on component start order.
@@ -514,6 +515,79 @@ namespace RoadDemo
                     if (i < gangs.Count - 1)
                         text.AppendLine();
                 }
+            }
+        }
+
+        /// <summary>
+        /// The shops on this block and where each stands with each family, with the terms
+        /// the owner would answer on today. Read off the racket ledger; the page computes
+        /// nothing and can change nothing.
+        /// </summary>
+        sealed class RacketSection : ITerritoryDiagnosticsSection
+        {
+            readonly List<TerritoryProtectionRelationship> relationships =
+                new List<TerritoryProtectionRelationship>();
+
+            public string Title => "The racket (per shop, per family)";
+
+            public void Append(
+                StringBuilder text, TerritoryBlockTruth block, TerritoryRuntime runtime)
+            {
+                var racket = runtime?.Racket;
+                var geography = runtime?.Geography;
+                if (racket == null || geography == null)
+                {
+                    text.Append("no racket ledger in this scene");
+                    return;
+                }
+
+                var here = geography.BusinessesOf(block.Definition.Id);
+                if (here.Count == 0)
+                {
+                    text.Append("no businesses stand on this block");
+                    return;
+                }
+
+                var signals = block.Signals;
+                text.Append("paying: ").Append(signals.CompliantBusinesses)
+                    .Append('/').Append(signals.TotalBusinesses > 0
+                        ? signals.TotalBusinesses
+                        : here.Count);
+                if (signals.BusinessCompliance.HasValue)
+                    text.Append("  ·  street compliance ")
+                        .Append(signals.BusinessCompliance.Value.ToString("0.0"));
+                text.AppendLine();
+
+                var shown = 0;
+                for (var i = 0; i < here.Count && shown < 6; i++)
+                {
+                    var businessId = here[i].BusinessId;
+                    racket.CollectRelationships(businessId, relationships);
+                    if (relationships.Count == 0)
+                        continue;
+
+                    shown++;
+                    text.Append(here[i].Label.Length > 0 ? here[i].Label : businessId.Value)
+                        .AppendLine();
+                    for (var r = 0; r < relationships.Count; r++)
+                    {
+                        var row = relationships[r];
+                        text.Append("  · gang #").Append(row.GangId.Value)
+                            .Append("  ").Append(row.State)
+                            .Append("  since ").Append(row.StateSince.ToString("0.0")).Append('h');
+                        if (row.Demands > 0 || row.Threats > 0 || row.Escalations > 0)
+                            text.Append("  [").Append(row.Demands).Append(" asked, ")
+                                .Append(row.Threats).Append(" leaned on, ")
+                                .Append(row.Escalations).Append(" hit]");
+                        if (runtime.TryExplainDemand(businessId, row.GangId, out var terms))
+                            text.Append("  would say ").Append(terms.Verdict)
+                                .Append(" (").Append(terms.Score.ToString("0.0")).Append(')');
+                        text.AppendLine();
+                    }
+                }
+
+                if (shown == 0)
+                    text.Append("no family has spoken to any shop on this block");
             }
         }
 

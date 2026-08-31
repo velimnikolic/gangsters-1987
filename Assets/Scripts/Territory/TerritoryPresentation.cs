@@ -225,6 +225,73 @@ namespace LivingCity.Territory
         public TerritoryOwnerTone OwnerTone { get; }
     }
 
+    /// <summary>
+    /// What the player may read about one business. Words only: no exact fear, no
+    /// presence number, no capture percentage, and no setter - the only way anything here
+    /// changes is a valid intent going the other way through the command gateway.
+    /// </summary>
+    public sealed class TerritoryBusinessPresentation
+    {
+        public TerritoryBusinessPresentation(
+            TerritoryBusinessId businessId,
+            string businessName,
+            string blockName,
+            string standing,
+            string protector,
+            string localSituation,
+            TerritoryOwnerTone ownerTone,
+            bool hasRecentTrouble)
+        {
+            BusinessId = businessId;
+            BusinessName = businessName ?? "";
+            BlockName = blockName ?? "";
+            Standing = standing ?? "Unknown";
+            Protector = protector ?? "";
+            LocalSituation = localSituation ?? "Unknown";
+            OwnerTone = ownerTone;
+            HasRecentTrouble = hasRecentTrouble;
+        }
+
+        public TerritoryBusinessId BusinessId { get; }
+        public string BusinessName { get; }
+        public string BlockName { get; }
+
+        /// <summary>Where the shop stands with the VIEWING family, in words.</summary>
+        public string Standing { get; }
+
+        /// <summary>The family it pays, when the viewer can be expected to know - empty
+        /// when it pays nobody, or when the knowledge filter has not shown it.</summary>
+        public string Protector { get; }
+
+        /// <summary>What the street around it feels.</summary>
+        public string LocalSituation { get; }
+
+        public TerritoryOwnerTone OwnerTone { get; }
+
+        /// <summary>Something happened here lately. Not how much, not to whom.</summary>
+        public bool HasRecentTrouble { get; }
+    }
+
+    /// <summary>The words a shop's standing is read in. Config, never a rule.</summary>
+    public sealed class TerritoryStandingVocabulary
+    {
+        public static TerritoryStandingVocabulary Default { get; } =
+            new TerritoryStandingVocabulary();
+
+        public string Describe(TerritoryProtectionState state)
+        {
+            switch (state)
+            {
+                case TerritoryProtectionState.Approached: return "Approached";
+                case TerritoryProtectionState.Hesitant: return "Wavering";
+                case TerritoryProtectionState.Intimidated: return "Leaned on";
+                case TerritoryProtectionState.Compliant: return "Paying us";
+                case TerritoryProtectionState.Defiant: return "Refused us";
+                default: return "Nothing yet";
+            }
+        }
+    }
+
     public interface ITerritoryPlayerQuery
     {
         IReadOnlyList<TerritoryBlockId> BlockIds { get; }

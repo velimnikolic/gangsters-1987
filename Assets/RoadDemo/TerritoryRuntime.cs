@@ -60,6 +60,25 @@ namespace RoadDemo
                  "in the road, which belongs to no block; the street beside it still hears it.")]
         [SerializeField, Min(0f)] float violenceReachMetres = 30f;
 
+        [Header("The racket (GAN-103)")]
+        [Tooltip("How close a man must stand to the door for a demand to be a real one.")]
+        [SerializeField, Min(1f)] float approachRadiusMetres = 14f;
+        [SerializeField, Min(0f)] float complianceFearWeight = 0.55f;
+        [SerializeField, Min(0f)] float compliancePresenceWeight = 0.35f;
+        [Tooltip("What the street having just seen trouble is worth to a demand.")]
+        [SerializeField, Min(0f)] float complianceTroubleWeight = 0.15f;
+        [Tooltip("How heavily another family's claim counts against the one asking.")]
+        [SerializeField, Min(0f)] float complianceRivalWeight = 0.5f;
+        [SerializeField] float complianceAcceptAt = 40f;
+        [SerializeField] float complianceHesitateAt = 16f;
+        [Tooltip("How far ahead a challenger must be to take a shop, and for how many " +
+                 "business ticks running.")]
+        [SerializeField, Min(0f)] float switchMargin = 18f;
+        [SerializeField, Min(1)] int switchTicks = 3;
+        [Tooltip("The Presence a family needs on a block before it leans on the shops there.")]
+        [SerializeField, Min(0f)] float rivalDemandPresence = 25f;
+        [SerializeField, Min(0)] int rivalDemandsPerTick = 2;
+
         public static TerritoryRuntime Instance { get; private set; }
 
         RoadDemoBuilder builder;
@@ -104,6 +123,15 @@ namespace RoadDemo
         readonly List<TerritoryFearEvent> defianceEmitted = new List<TerritoryFearEvent>();
         double lastGameHour;
 
+        TerritoryRacketLedger racket;
+        readonly List<TerritoryProtectionChange> racketChanges =
+            new List<TerritoryProtectionChange>();
+        readonly List<PendingApproach> pendingApproaches = new List<PendingApproach>();
+        readonly List<TerritoryProtectionRelationship> relationScratch =
+            new List<TerritoryProtectionRelationship>();
+        readonly List<TerritoryBusinessId> blockBusinessScratch = new List<TerritoryBusinessId>();
+        int rivalDemandCursor;
+
         public ITerritoryTruthQuery DebugTruth => truth;
 
         /// <summary>Who is really standing on which block, family by family. Simulation
@@ -113,6 +141,10 @@ namespace RoadDemo
         /// <summary>What each street is afraid of, and how hard the law is looking at it.
         /// Written only by the Fear channel and the street's own violence.</summary>
         public TerritoryFearLedger Fear => fear;
+
+        /// <summary>Who pays whom, shop by shop. Written only by resolved interactions -
+        /// a click never reaches it, and neither does a marker.</summary>
+        public TerritoryRacketLedger Racket => racket;
 
         /// <summary>The last game hour territory was ticked at - the stamp every Fear
         /// record is filed under, so an act that happens between ticks is not filed at a
@@ -217,6 +249,13 @@ namespace RoadDemo
                 policeAttentionHalfLifeHours: policeAttentionHalfLifeHours,
                 policeEscalation: policeEscalation,
                 presenceFloor: presenceFloorUnderHeat));
+            racket = new TerritoryRacketLedger(new TerritoryRacketConfig(
+                complianceFearWeight, compliancePresenceWeight, complianceTroubleWeight,
+                complianceRivalWeight, complianceAcceptAt, complianceHesitateAt,
+                switchMargin: switchMargin, switchTicks: switchTicks,
+                rivalDemandPresence: rivalDemandPresence,
+                rivalDemandsPerTick: rivalDemandsPerTick,
+                approachRadiusMetres: approachRadiusMetres));
             StreetAlarm.OnShot += OnStreetShot;
             StreetAlarm.OnDeath += OnStreetDeath;
 
@@ -383,7 +422,7 @@ namespace RoadDemo
             else if (tick.Channel == TerritoryTickChannel.Fear)
                 SettleFear(tick.GameHour);
             else if (tick.Channel == TerritoryTickChannel.Business)
-                SweepDefiance(tick.GameHour);
+                SettleBusinesses(tick.GameHour);
             else if (tick.Channel == TerritoryTickChannel.DerivedControl)
                 DeriveControl();
         }
@@ -441,6 +480,11 @@ namespace RoadDemo
             var blockless = 0;
             VisitActors((unit, actor, observation, blockId) =>
             {
+                // Men at a door are men who have arrived: an approach order becomes a real
+                // interaction here, off the same sampling, rather than in a command. It is
+                // asked before the block test, because a compound's gate stands on the road.
+                NoteApproachArrival(unit, actor, observation, gameHour);
+
                 if (!blockId.IsValid)
                 {
                     blockless++;
@@ -873,6 +917,567 @@ namespace RoadDemo
             public double GameHour { get; }
         }
 
+        // --------------------------------------------------------------- the racket
+        //
+        // A demand is a thing men do standing in a doorway, so every path in here asks the
+        // same two questions first: is this a real business, and is one of that family's
+        // men actually at its door. A click on a map is an intent; this is the interaction.
+
+        /// <summary>Where the door is, as the plan describes it - not as a streamed view
+        /// happens to stand.</summary>
+        public bool TryGetBusinessApproach(TerritoryBusinessId businessId, out Vector3 point) =>
+            LivingCity.Business.CityBusinesses.TryApproachPoint(businessId, out point);
+
+        /// <summary>
+        /// Whether this family has a man standing close enough to the door to be having a
+        /// conversation. The one precondition every racket interaction shares.
+        /// </summary>
+        public bool HasManAt(TerritoryGangId gangId, Vector3 point, float radius)
+        {
+            if (crews == null || !gangId.IsValid)
+                return false;
+
+            var r2 = radius * radius;
+            for (var i = 0; i < crews.Units.Count; i++)
+            {
+                var unit = crews.Units[i];
+                if (unit == null || unit.IsPolice || unit.Faction != gangId.Value)
+                    continue;
+                foreach (var man in unit.All())
+                {
+                    if (man == null || man.Dead || man.Tf == null ||
+                        !man.Tf.gameObject.activeInHierarchy)
+                        continue;
+                    if ((man.Tf.position - point).sqrMagnitude <= r2)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>Which family a named man belongs to, read off the street he is on.</summary>
+        public bool TryGetActorGang(TerritoryCharacterId actorId, out TerritoryGangId gangId)
+        {
+            gangId = default;
+            if (crews == null || !actorId.IsValid)
+                return false;
+
+            for (var i = 0; i < crews.Units.Count; i++)
+            {
+                var unit = crews.Units[i];
+                if (unit == null || unit.IsPolice)
+                    continue;
+                foreach (var man in unit.All())
+                {
+                    if (man == null || man.CharacterId != actorId.Value)
+                        continue;
+                    gangId = new TerritoryGangId(unit.Faction);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Everything an owner weighs, gathered from the block his shop stands on: how
+        /// much this street fears the family asking, how heavily it stands here, what the
+        /// street has just been through, and whose claim stands against them.
+        /// </summary>
+        bool TryComplianceInputs(
+            TerritoryBusinessId businessId,
+            TerritoryGangId gangId,
+            out TerritoryComplianceInputs inputs,
+            out TerritoryBlockId blockId)
+        {
+            inputs = default;
+            blockId = default;
+            if (geography == null || fear == null || presence == null ||
+                !geography.TryGetBusinessBlock(businessId, out blockId))
+                return false;
+
+            // What was done to HIM weighs heaviest: the shop's own memory of this family,
+            // which already carries the street's share of every incident near it
+            // (FEAR-007). Reading the block alone made a threat at the counter worth no
+            // more to the man behind it than a rumour two doors down.
+            var asking = fear.BusinessFear(blockId, businessId, gangId, lastGameHour);
+            var standing = presence.TotalOf(blockId, gangId);
+            var trouble = fear.BlockFear(blockId, lastGameHour);
+
+            var strongestRival = 0f;
+            fear.CollectGangs(blockId, lastGameHour, fearGangs);
+            for (var i = 0; i < fearGangs.Count; i++)
+            {
+                if (fearGangs[i].GangId == gangId)
+                    continue;
+                strongestRival = Math.Max(strongestRival, Standing(blockId, fearGangs[i].GangId));
+            }
+
+            presence.CollectGangs(blockId, presenceGangs);
+            for (var i = 0; i < presenceGangs.Count; i++)
+            {
+                if (presenceGangs[i].GangId == gangId)
+                    continue;
+                strongestRival = Math.Max(strongestRival, Standing(blockId, presenceGangs[i].GangId));
+            }
+
+            var protectorStanding = 0f;
+            var protectedByAsker = false;
+            if (racket != null && racket.TryGetProtector(businessId, out var protector))
+            {
+                protectedByAsker = protector == gangId;
+                if (!protectedByAsker)
+                    protectorStanding = Standing(blockId, protector);
+            }
+
+            inputs = new TerritoryComplianceInputs(
+                asking, standing, trouble, strongestRival, protectorStanding, protectedByAsker);
+            return true;
+        }
+
+        /// <summary>What one family is worth on a block: what it is feared for and what it
+        /// has standing there, in one number, because an owner does not weigh them apart.</summary>
+        float Standing(TerritoryBlockId blockId, TerritoryGangId gangId) =>
+            0.5f * fear.FearOf(blockId, gangId, lastGameHour) +
+            0.5f * presence.TotalOf(blockId, gangId);
+
+        /// <summary>
+        /// What the owner would say if he were asked right now, and out of what. Reads
+        /// only - the inspector and the audit explain a standing verdict with it.
+        /// </summary>
+        public bool TryExplainDemand(
+            TerritoryBusinessId businessId,
+            TerritoryGangId gangId,
+            out TerritoryComplianceTerms terms)
+        {
+            terms = default;
+            if (racket == null || !TryComplianceInputs(businessId, gangId, out var inputs, out _))
+                return false;
+            terms = TerritoryComplianceEvaluation.Evaluate(inputs, racket.Config);
+            return true;
+        }
+
+        /// <summary>
+        /// The demand, resolved. This is the authoritative path: the command executor and
+        /// the rival driver both come through here, so a rival leans on a shop by exactly
+        /// the rules the player does.
+        /// </summary>
+        public bool ResolveDemand(
+            TerritoryGangId gangId,
+            TerritoryBusinessId businessId,
+            out TerritoryComplianceVerdict verdict,
+            out TerritoryComplianceTerms terms)
+        {
+            verdict = TerritoryComplianceVerdict.Refuse;
+            terms = default;
+            if (racket == null || !IsRacketable(businessId) ||
+                !TryComplianceInputs(businessId, gangId, out var inputs, out var blockId))
+                return false;
+
+            racketChanges.Clear();
+            verdict = racket.Demand(
+                businessId, gangId, inputs, lastGameHour, out terms, racketChanges);
+            PublishRacket(blockId);
+
+            // A refusal starts the clock the street judges the family by (FEAR-010).
+            if (verdict == TerritoryComplianceVerdict.Refuse)
+                fear?.OpenDefiance(gangId, blockId, businessId, lastGameHour);
+            else
+                fear?.AnswerDefiance(gangId, businessId);
+            return true;
+        }
+
+        /// <summary>
+        /// The threat, resolved: the Fear it causes is filed as an act, the shop is marked
+        /// as freshly leaned on, and then the owner is asked again - because that is the
+        /// whole point of leaning on him.
+        /// </summary>
+        public bool ResolveThreat(
+            TerritoryGangId gangId,
+            TerritoryBusinessId businessId,
+            TerritoryCharacterId actorId,
+            out TerritoryComplianceVerdict verdict,
+            out TerritoryComplianceTerms terms)
+        {
+            verdict = TerritoryComplianceVerdict.Refuse;
+            terms = default;
+            if (racket == null || !IsRacketable(businessId))
+                return false;
+
+            RecordResolvedThreat(
+                gangId, businessId, racket.Config.ThreatSeverity,
+                TerritoryFearVisibility.Seen, actorId);
+
+            racketChanges.Clear();
+            racket.Threaten(businessId, gangId, lastGameHour, racketChanges);
+            if (geography != null && geography.TryGetBusinessBlock(businessId, out var threatBlock))
+                PublishRacket(threatBlock);
+
+            return ResolveDemand(gangId, businessId, out verdict, out terms);
+        }
+
+        /// <summary>
+        /// Violence landed on a business and a physical system resolved it. The escalation
+        /// is recorded against the relationship, the matching act is filed as Fear, and it
+        /// counts as the family having answered an earlier refusal.
+        /// </summary>
+        public bool ResolveEscalation(
+            TerritoryGangId gangId,
+            TerritoryBusinessId businessId,
+            TerritoryEscalationKind kind,
+            float severity = 1f,
+            TerritoryFearVisibility visibility = TerritoryFearVisibility.Public)
+        {
+            if (racket == null || fear == null || geography == null || !gangId.IsValid ||
+                !IsRacketable(businessId) ||
+                !geography.TryGetBusinessBlock(businessId, out var blockId))
+                return false;
+
+            racketChanges.Clear();
+            racket.Escalate(businessId, gangId, kind, lastGameHour, racketChanges);
+            RecordFear(new TerritoryFearEvent(
+                gangId,
+                blockId,
+                kind == TerritoryEscalationKind.Assault
+                    ? TerritoryFearCategory.Assault
+                    : TerritoryFearCategory.PropertyDamage,
+                severity,
+                visibility,
+                lastGameHour,
+                businessId));
+            fear.AnswerDefiance(gangId, businessId);
+            PublishRacket(blockId);
+            return true;
+        }
+
+        /// <summary>
+        /// The seam the street's own violence reports through: a blast, a beating, a window
+        /// put in at a place that turns out to be somebody's shop. The position is resolved
+        /// to a business rather than the caller having to know about the racket at all.
+        /// </summary>
+        public static void ReportViolenceAt(
+            Vector3 world, int faction, TerritoryEscalationKind kind, float radius = 10f)
+        {
+            var runtime = Instance;
+            if (runtime == null || faction < 0 ||
+                !runtime.TryGetBusinessNear(world, radius, out var businessId))
+                return;
+            runtime.ResolveEscalation(new TerritoryGangId(faction), businessId, kind);
+        }
+
+        /// <summary>The nearest business door to a point, within reach.</summary>
+        public bool TryGetBusinessNear(
+            Vector3 world, float radius, out TerritoryBusinessId businessId)
+        {
+            businessId = default;
+            if (geography == null || !TryGetBlockForAct(world, out var blockId))
+                return false;
+
+            var here = geography.BusinessesOf(blockId);
+            var best = radius * radius;
+            for (var i = 0; i < here.Count; i++)
+            {
+                if (!TryGetBusinessApproach(here[i].BusinessId, out var door))
+                    continue;
+                var distance = (door - world).sqrMagnitude;
+                if (distance > best)
+                    continue;
+                best = distance;
+                businessId = here[i].BusinessId;
+            }
+
+            return businessId.IsValid;
+        }
+
+        /// <summary>
+        /// Whether a place can carry a racket at all. One test, in one place: a civic
+        /// building and a block prefab that never had a business record are not shops, and
+        /// no relationship is ever created for them.
+        /// </summary>
+        public bool IsRacketable(TerritoryBusinessId businessId)
+        {
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            if (!businessId.IsValid || business == null || !business.Populated)
+                return false;
+            if (!business.Directory.TryGet(businessId, out _))
+                return false;
+            return !business.TryGetSite(businessId, out var site) || site == null || site.Eligible;
+        }
+
+        void PublishRacket(TerritoryBlockId blockId)
+        {
+            for (var i = 0; i < racketChanges.Count; i++)
+            {
+                var change = racketChanges[i];
+                // The event carries how much the shop COMPLIES, not which state it is in:
+                // paying is one, wavering is the configured fraction of a yes, everything
+                // else is nothing. A listener that wants the state asks the ledger.
+                events.Publish(new BusinessComplianceChanged(
+                    blockId,
+                    change.BusinessId,
+                    change.GangId,
+                    ComplianceValue(change.Previous),
+                    ComplianceValue(change.Current),
+                    change.GameHour));
+            }
+
+            racketChanges.Clear();
+            WriteCompliance(blockId);
+        }
+
+        /// <summary>How much of a yes a standing is worth, on the same scale the block's
+        /// compliance is counted in.</summary>
+        float ComplianceValue(TerritoryProtectionState state)
+        {
+            switch (state)
+            {
+                case TerritoryProtectionState.Compliant: return 1f;
+                case TerritoryProtectionState.Hesitant:
+                case TerritoryProtectionState.Intimidated:
+                    return racket?.Config.HesitantComplianceShare ?? 0f;
+                default: return 0f;
+            }
+        }
+
+        /// <summary>
+        /// What the street's shops add up to, written into the block's signals. Compliance
+        /// is an INPUT to the control reading, never a claim on the block itself.
+        /// </summary>
+        void WriteCompliance(TerritoryBlockId blockId)
+        {
+            if (state == null || racket == null || geography == null || !blockId.IsValid)
+                return;
+
+            var here = geography.BusinessesOf(blockId);
+            blockBusinessScratch.Clear();
+            for (var i = 0; i < here.Count; i++)
+                blockBusinessScratch.Add(here[i].BusinessId);
+
+            racket.Compliance(blockBusinessScratch, out var compliant, out var total, out var share);
+            var current = state.SignalsOf(blockId);
+            if (current.CompliantBusinesses == compliant && current.TotalBusinesses == total &&
+                Math.Abs((current.BusinessCompliance ?? 0f) - share) < 0.01f)
+                return;
+
+            state.SetSignals(blockId, new TerritoryBlockSignals(
+                current.LocalFear,
+                total > 0 ? share : (float?)null,
+                compliant,
+                total,
+                current.Control,
+                current.LeadingGangId,
+                current.Gangs));
+        }
+
+        /// <summary>
+        /// The business channel: what every street's shops now add up to, whether any of
+        /// them has been leant on hard enough to change hands, and the rival families
+        /// leaning on the shops where they stand.
+        /// </summary>
+        void SettleBusinesses(double gameHour)
+        {
+            SweepDefiance(gameHour);
+            SweepProtectionSwitches();
+            DriveRivalDemands();
+        }
+
+        /// <summary>
+        /// A shop changes hands when a challenger has been worth more than the family
+        /// being paid for several ticks running. One loud afternoon is not enough, and the
+        /// block itself does not change hands with the shop.
+        /// </summary>
+        void SweepProtectionSwitches()
+        {
+            if (racket == null || geography == null)
+                return;
+
+            var ids = racket.Businesses;
+            for (var i = ids.Count - 1; i >= 0; i--)
+            {
+                var businessId = ids[i];
+                if (!racket.TryGetProtector(businessId, out var protector))
+                    continue;
+                if (!geography.TryGetBusinessBlock(businessId, out var blockId))
+                    continue;
+
+                var incumbent = Standing(blockId, protector);
+                var challenger = default(TerritoryGangId);
+                var best = 0f;
+                presence.CollectGangs(blockId, presenceGangs);
+                for (var g = 0; g < presenceGangs.Count; g++)
+                {
+                    var gangId = presenceGangs[g].GangId;
+                    if (gangId == protector)
+                        continue;
+                    var worth = Standing(blockId, gangId);
+                    if (worth <= best)
+                        continue;
+                    best = worth;
+                    challenger = gangId;
+                }
+
+                var ahead = challenger.IsValid && best - incumbent >= racket.Config.SwitchMargin;
+                var ticks = racket.PressTowardSwitch(businessId, challenger, ahead);
+                if (!ahead || ticks < racket.Config.SwitchTicks)
+                    continue;
+
+                racketChanges.Clear();
+                if (racket.Switch(businessId, challenger, lastGameHour, racketChanges))
+                {
+                    racket.PressTowardSwitch(businessId, challenger, false);
+                    PublishRacket(blockId);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Families lean on the shops where they stand. No planner and no schedule: a
+        /// family with men on a street tries the shops on it, through the same demand the
+        /// player uses, and the owner answers by the same rules.
+        /// </summary>
+        void DriveRivalDemands()
+        {
+            if (racket == null || presence == null || geography == null ||
+                racket.Config.RivalDemandsPerTick <= 0)
+                return;
+
+            var made = 0;
+            var blocks = presence.Blocks;
+            for (var i = 0; i < blocks.Count && made < racket.Config.RivalDemandsPerTick; i++)
+            {
+                // Start where the last tick left off, so one busy block does not soak up
+                // every attempt the city ever makes.
+                var blockId = blocks[(i + rivalDemandCursor) % blocks.Count];
+                var here = geography.BusinessesOf(blockId);
+                if (here.Count == 0)
+                    continue;
+
+                presence.CollectGangs(blockId, presenceGangs);
+                for (var g = 0; g < presenceGangs.Count && made < racket.Config.RivalDemandsPerTick; g++)
+                {
+                    var gangId = presenceGangs[g].GangId;
+                    if (presenceGangs[g].Total < racket.Config.RivalDemandPresence)
+                        continue;
+
+                    for (var b = 0; b < here.Count; b++)
+                    {
+                        var businessId = here[b].BusinessId;
+                        var standing = racket.StateOf(businessId, gangId);
+                        if (standing == TerritoryProtectionState.Compliant ||
+                            standing == TerritoryProtectionState.Defiant)
+                            continue;
+                        if (!ResolveDemand(businessId: businessId, gangId: gangId,
+                                verdict: out _, terms: out _))
+                            continue;
+                        made++;
+                        break;
+                    }
+                }
+            }
+
+            rivalDemandCursor++;
+        }
+
+        /// <summary>Men who were sent to a door and have got there.</summary>
+        void NoteApproachArrival(
+            DemoCrews.Unit unit, CrewWalker actor,
+            TerritoryActorObservation observation, double gameHour)
+        {
+            if (racket == null || pendingApproaches.Count == 0 || actor?.Tf == null)
+                return;
+
+            for (var i = pendingApproaches.Count - 1; i >= 0; i--)
+            {
+                var pending = pendingApproaches[i];
+                if (pending.CrewId != unit.CrewId)
+                    continue;
+                if ((actor.Tf.position - pending.Door).sqrMagnitude >
+                    approachRadiusMetres * approachRadiusMetres)
+                    continue;
+
+                pendingApproaches.RemoveAt(i);
+                racketChanges.Clear();
+                racket.Approach(pending.BusinessId, observation.GangId, gameHour, racketChanges);
+                if (geography != null &&
+                    geography.TryGetBusinessBlock(pending.BusinessId, out var blockId))
+                    PublishRacket(blockId);
+            }
+        }
+
+        /// <summary>What the player may read about a shop: words, and only the ones his
+        /// own house could plausibly know.</summary>
+        public bool TryGetBusinessView(
+            TerritoryBusinessId businessId, out TerritoryBusinessPresentation view)
+        {
+            view = null;
+            if (racket == null || geography == null ||
+                !geography.TryGetBusinessBlock(businessId, out var blockId))
+                return false;
+
+            var playerGang = new TerritoryGangId(GangCatalog.PlayerGangId);
+            var name = businessId.Value;
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            if (business != null && business.Populated &&
+                business.Directory.TryGet(businessId, out var record))
+                name = record.DisplayName;
+
+            var protector = "";
+            if (racket.TryGetProtector(businessId, out var protectorGang))
+                protector = protectorGang == playerGang
+                    ? "us"
+                    : GangName(protectorGang);
+
+            var situation = "Unknown";
+            var tone = TerritoryOwnerTone.Unknown;
+            if (player != null && player.TryGetBlock(blockId, out var blockView))
+            {
+                situation = blockView.LocalFear;
+                tone = blockView.OwnerTone;
+            }
+
+            var blockName = geography.TryGetBlock(blockId, out var definition)
+                ? definition.DisplayName
+                : "";
+            var trouble = fear != null && fear.BlockFear(blockId, lastGameHour) > 0.5f;
+
+            view = new TerritoryBusinessPresentation(
+                businessId,
+                name,
+                blockName,
+                TerritoryStandingVocabulary.Default.Describe(
+                    racket.StateOf(businessId, playerGang)),
+                protector,
+                situation,
+                tone,
+                trouble);
+            return true;
+        }
+
+        static string GangName(TerritoryGangId gangId)
+        {
+            var gangs = GangRegistry.Gangs;
+            for (var i = 0; i < gangs.Count; i++)
+                if (gangs[i] != null && gangs[i].Id == gangId.Value)
+                    return gangs[i].Name;
+            return "gang #" + gangId.Value;
+        }
+
+        readonly struct PendingApproach
+        {
+            public PendingApproach(
+                int crewId, TerritoryBusinessId businessId, Vector3 door)
+            {
+                CrewId = crewId;
+                BusinessId = businessId;
+                Door = door;
+            }
+
+            public int CrewId { get; }
+            public TerritoryBusinessId BusinessId { get; }
+            public Vector3 Door { get; }
+        }
+
         public void CollectActors(
             TerritoryBlockId blockId, List<TerritoryActorObservation> into)
         {
@@ -1165,23 +1770,117 @@ namespace RoadDemo
             // The doorstep comes from the simulated site, so an order can be given to a
             // business whose block is streamed out - which is most of the city most of the
             // time. A live marker is used only for the ground height under it.
-            if (!LivingCity.Business.CityBusinesses.TryApproachPoint(
-                    command.BusinessId, out var door))
+            if (!TryGetBusinessApproach(command.BusinessId, out var door))
                 return TerritoryCommandExecution.Reject("No such business in this city.");
+            if (!IsRacketable(command.BusinessId))
+                return TerritoryCommandExecution.Reject("That place carries no business.");
 
-            return crews.MarchTo(unit, door)
-                ? TerritoryCommandExecution.Pending(
-                    "The group is approaching; the business state is unchanged.")
-                : TerritoryCommandExecution.Reject("The physical crew refused the order.");
+            if (!crews.MarchTo(unit, door))
+                return TerritoryCommandExecution.Reject("The physical crew refused the order.");
+
+            // Intent only. The interaction begins when the men are actually at the door -
+            // the presence sampling notices that, not this command.
+            for (var i = pendingApproaches.Count - 1; i >= 0; i--)
+                if (pendingApproaches[i].CrewId == unit.CrewId)
+                    pendingApproaches.RemoveAt(i);
+            pendingApproaches.Add(new PendingApproach(unit.CrewId, command.BusinessId, door));
+
+            return TerritoryCommandExecution.Pending(
+                "The group is approaching; the business state is unchanged.");
         }
 
-        public TerritoryCommandExecution Execute(DemandProtectionCommand command) =>
-            TerritoryCommandExecution.Reject(
-                "Protection demands are outside the simulation-foundation scope.");
+        /// <summary>
+        /// The demand. The UI submits the intent; the state moves only because a man of
+        /// that family was standing at the door when it was asked, and only by the answer
+        /// the owner actually gave.
+        /// </summary>
+        public TerritoryCommandExecution Execute(DemandProtectionCommand command)
+        {
+            if (!TryResolveInteraction(command.ActorId, command.BusinessId,
+                    out var gangId, out var refusal))
+                return TerritoryCommandExecution.Reject(refusal);
 
-        public TerritoryCommandExecution Execute(ThreatenBusinessOwnerCommand command) =>
-            TerritoryCommandExecution.Reject(
-                "Business intimidation is outside the simulation-foundation scope.");
+            if (!ResolveDemand(gangId, command.BusinessId, out var verdict, out _))
+                return TerritoryCommandExecution.Reject("The demand could not be resolved.");
+
+            switch (verdict)
+            {
+                case TerritoryComplianceVerdict.Accept:
+                    return TerritoryCommandExecution.Succeed();
+                case TerritoryComplianceVerdict.Hesitate:
+                    return TerritoryCommandExecution.Pending("The owner is wavering.");
+                default:
+                    return TerritoryCommandExecution.Fail("The owner refused.");
+            }
+        }
+
+        /// <summary>
+        /// Leaning on the owner. The threat is a Fear act first and a question second: it
+        /// is filed, and then the owner is asked again.
+        /// </summary>
+        public TerritoryCommandExecution Execute(ThreatenBusinessOwnerCommand command)
+        {
+            if (!TryResolveInteraction(command.ActorId, command.BusinessId,
+                    out var gangId, out var refusal))
+                return TerritoryCommandExecution.Reject(refusal);
+
+            if (!ResolveThreat(gangId, command.BusinessId, command.ActorId,
+                    out var verdict, out _))
+                return TerritoryCommandExecution.Reject("The threat could not be resolved.");
+
+            switch (verdict)
+            {
+                case TerritoryComplianceVerdict.Accept:
+                    return TerritoryCommandExecution.Succeed();
+                case TerritoryComplianceVerdict.Hesitate:
+                    return TerritoryCommandExecution.Pending("The owner is still wavering.");
+                default:
+                    return TerritoryCommandExecution.Fail("The owner refused again.");
+            }
+        }
+
+        /// <summary>The two questions every racket interaction asks: whose man is this,
+        /// and is he standing at the door of a real business.</summary>
+        bool TryResolveInteraction(
+            TerritoryCharacterId actorId,
+            TerritoryBusinessId businessId,
+            out TerritoryGangId gangId,
+            out string refusal)
+        {
+            gangId = default;
+            refusal = "";
+            if (racket == null)
+            {
+                refusal = "The racket is not running in this scene.";
+                return false;
+            }
+
+            if (!IsRacketable(businessId))
+            {
+                refusal = "That place carries no business.";
+                return false;
+            }
+
+            if (!TryGetActorGang(actorId, out gangId))
+            {
+                refusal = "That man is not on the street.";
+                return false;
+            }
+
+            if (!TryGetBusinessApproach(businessId, out var door))
+            {
+                refusal = "No such business in this city.";
+                return false;
+            }
+
+            if (!HasManAt(gangId, door, racket.Config.ApproachRadiusMetres))
+            {
+                refusal = "Nobody of that house is standing at the door.";
+                return false;
+            }
+
+            return true;
+        }
 
         DemoCrews.Unit FindPlayerUnit(
             TerritoryCommandNodeId groupId, out string refusal)

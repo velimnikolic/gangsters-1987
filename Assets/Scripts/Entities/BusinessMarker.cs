@@ -156,17 +156,49 @@ namespace LivingCity.Entities
         Color UI.IOverlaySubject.OverlayColor => UI.IntentionPalette.Place;
         string UI.IOverlaySubject.OverlayTitle => BusinessName ?? name;
 
-        string UI.IOverlaySubject.OverlayLine =>
-            UI.BusinessIntention.Line(Owner?.DisplayName ?? OwnerName, WeeklyIncome, Protected,
-                Gangs.GangRegistry.NameOf(GangId));
+        /// <summary>
+        /// What the card says. The racket is the authority when it is running: where this
+        /// shop stands with US, or the house that holds it. The old marker fields are the
+        /// fallback for the scenes that have no territory simulation in them - they are a
+        /// view's own guess, and a guess loses to the ledger every time.
+        /// </summary>
+        string UI.IOverlaySubject.OverlayLine
+        {
+            get
+            {
+                var owner = Owner?.DisplayName ?? OwnerName;
+                var runtime = RoadDemo.TerritoryRuntime.Instance;
+                if (runtime != null && BusinessId.IsValid &&
+                    runtime.TryGetBusinessView(BusinessId, out var view))
+                    return UI.BusinessIntention.Line(
+                        owner, WeeklyIncome, view.Standing, view.Protector);
+
+                return UI.BusinessIntention.Line(
+                    owner, WeeklyIncome, Protected, Gangs.GangRegistry.NameOf(GangId));
+            }
+        }
 
         // Gang bits sit at 48+, clear of the owner's at 32+ (owner counts stay far below
         // 2^16 - one per building); +2 keeps unflagged (-1) distinct from gang 0.
-        long UI.IOverlaySubject.OverlayKey =>
-            ((long)(GangId + 2) << 48)
-            | ((long)((Owner?.Index ?? -1) + 1) << 32)
-            | ((uint)WeeklyIncome << 1)
-            | (Protected ? 1u : 0u);
+        long UI.IOverlaySubject.OverlayKey
+        {
+            get
+            {
+                var key = ((long)(GangId + 2) << 48)
+                          | ((long)((Owner?.Index ?? -1) + 1) << 32)
+                          | ((uint)WeeklyIncome << 1)
+                          | (Protected ? 1u : 0u);
+
+                // The racket can change the words without any marker field moving, so its
+                // standing has to be part of what the HUD compares.
+                var runtime = RoadDemo.TerritoryRuntime.Instance;
+                if (runtime?.Racket != null && BusinessId.IsValid)
+                    key ^= (long)runtime.Racket.StateOf(
+                        BusinessId, new Territory.TerritoryGangId(
+                            Gangs.GangCatalog.PlayerGangId)) << 24;
+                return key;
+            }
+        }
 
         UI.MarkerStyle UI.IOverlayStyledSubject.MarkerStyle =>
             new UI.MarkerStyle { SizeScale = 1f, SelectedOnly = true };

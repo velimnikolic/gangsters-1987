@@ -580,6 +580,136 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_rack_tests",
+                    "Run GAN-103 contracts for the racket: per Business x Gang standing, the " +
+                    "owner's evaluation, accept/hesitate/refuse, threats, escalation, " +
+                    "protector switching and what the player is allowed to read.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "rack", "tests" })]
+        public static object RackTests()
+        {
+            var failures = LivingCity.Tests.RackTests.Run();
+            failures.AddRange(LivingCity.Tests.FearTests.Run()
+                .Select(failure => "Fear regression: " + failure));
+            failures.AddRange(LivingCity.Tests.PresenceTests.Run()
+                .Select(failure => "Presence regression: " + failure));
+            failures.AddRange(LivingCity.Tests.TerritoryFoundationTests.Run()
+                .Select(failure => "Territory regression: " + failure));
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
+        /// <summary>
+        /// Where a shop stands with every family, and why: the evaluation's own terms, the
+        /// fear and presence behind them, and what has passed at that door. Report only.
+        /// </summary>
+        [CliCommand("gangsters_rack_audit",
+                    "Break down the live racket for a business (or the most contested shops): " +
+                    "relationships, the compliance terms, and the interaction history.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "rack", "audit" })]
+        public static object RackAudit(
+            [CliArg("business", "Business id to break down. Omitted, the shops with the most " +
+                                "relationships are reported.")]
+            string business = "",
+            [CliArg("limit", "How many shops to report when none is named.")] int limit = 5)
+        {
+            var runtime = UnityEngine.Object.FindAnyObjectByType<RoadDemo.TerritoryRuntime>();
+            var racket = runtime?.Racket;
+            if (runtime == null || racket == null)
+                return new { ok = false, reason = "No TerritoryRuntime is running in this scene." };
+
+            var wanted = new List<LivingCity.Territory.TerritoryBusinessId>();
+            if (!string.IsNullOrEmpty(business))
+                wanted.Add(new LivingCity.Territory.TerritoryBusinessId(business));
+            else
+                for (var i = 0; i < racket.Businesses.Count && i < System.Math.Max(1, limit); i++)
+                    wanted.Add(racket.Businesses[i]);
+
+            var rows = new List<object>();
+            var relationships = new List<LivingCity.Territory.TerritoryProtectionRelationship>();
+            var history = new List<LivingCity.Territory.TerritoryRacketEntry>();
+            for (var i = 0; i < wanted.Count; i++)
+            {
+                var businessId = wanted[i];
+                racket.CollectRelationships(businessId, relationships);
+                racket.CollectHistory(businessId, history);
+
+                var houses = new List<object>();
+                for (var r = 0; r < relationships.Count; r++)
+                {
+                    var row = relationships[r];
+                    // The terms as they stand RIGHT NOW, so a verdict can be explained
+                    // from the same numbers the owner would answer with today.
+                    runtime.TryExplainDemand(businessId, row.GangId, out var terms);
+                    houses.Add(new
+                    {
+                        gang = row.GangId.Value,
+                        state = row.State.ToString(),
+                        stateSince = row.StateSince,
+                        lastInteraction = row.LastInteraction,
+                        refusedAt = row.RefusedAt,
+                        demands = row.Demands,
+                        threats = row.Threats,
+                        escalations = row.Escalations,
+                        terms = new
+                        {
+                            fear = terms.Fear,
+                            presence = terms.Presence,
+                            trouble = terms.Trouble,
+                            rivalPressure = terms.RivalPressure,
+                            score = terms.Score,
+                            wouldSay = terms.Verdict.ToString(),
+                        },
+                    });
+                }
+
+                var told = new List<object>();
+                for (var h = 0; h < history.Count; h++)
+                    told.Add(new
+                    {
+                        gang = history[h].GangId.Value,
+                        what = history[h].What,
+                        state = history[h].State.ToString(),
+                        atGameHour = history[h].GameHour,
+                        score = history[h].Score,
+                    });
+
+                racket.TryGetProtector(businessId, out var protector);
+                rows.Add(new
+                {
+                    business = businessId.Value,
+                    protector = protector.IsValid ? protector.Value : -1,
+                    racketable = runtime.IsRacketable(businessId),
+                    houses = houses.ToArray(),
+                    history = told.ToArray(),
+                });
+            }
+
+            return new
+            {
+                ok = true,
+                gameHour = runtime.GameHour,
+                shopsWithRelationships = racket.Businesses.Count,
+                config = new
+                {
+                    fearWeight = racket.Config.FearWeight,
+                    presenceWeight = racket.Config.PresenceWeight,
+                    troubleWeight = racket.Config.TroubleWeight,
+                    rivalWeight = racket.Config.RivalWeight,
+                    acceptAt = racket.Config.AcceptAt,
+                    hesitateAt = racket.Config.HesitateAt,
+                    hesitantShare = racket.Config.HesitantComplianceShare,
+                    switchMargin = racket.Config.SwitchMargin,
+                    switchTicks = racket.Config.SwitchTicks,
+                    rivalDemandPresence = racket.Config.RivalDemandPresence,
+                    approachRadiusMetres = racket.Config.ApproachRadiusMetres,
+                },
+                businesses = rows.ToArray(),
+            };
+        }
+
         [CliCommand("gangsters_business_tests",
                     "Run GAN-154 contracts for the business registry, site providers, archetype " +
                     "catalogue, deterministic owners and city population.",
