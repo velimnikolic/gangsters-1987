@@ -194,8 +194,8 @@ namespace LivingCity.Outfit
 
             OrderResolution.AwardPractice(spec, roster, crew, job.Men,
                 result.Outcome == OrderOutcome.Completed
-                    ? OrderResolution.PracticeCompleted
-                    : OrderResolution.PracticeFailed);
+                    ? XpOutcome.Completed
+                    : XpOutcome.Failed);
 
             Record(roster, job, result.Outcome, result.Payout - result.Cost, result.Heat);
             job.Stage = JobStage.Finished;
@@ -329,8 +329,11 @@ namespace LivingCity.Outfit
                     continue;
 
                 job.DaysStood++;
+                // A day of a standing watch is a day's work done, not a fraction of a
+                // job: the watch is never FINISHED, so the day is the only piece of it
+                // there is.
                 OrderResolution.AwardPractice(spec, roster, crew, job.Men,
-                    OrderResolution.PracticeStood);
+                    XpOutcome.Completed);
 
                 if (spec.Payout <= 0)
                     continue;

@@ -28,6 +28,8 @@ namespace LivingCity.Tests
             ("AnEmptyCrewTeachesNobody", AnEmptyCrewTeachesNobody),
             ("ACommanderInACellStopsDripping", ACommanderInACellStopsDripping),
             ("TheDripLandsBeforeTheBooksTurn", TheDripLandsBeforeTheBooksTurn),
+            ("AFinishedJobBanksExactlyTheTable", AFinishedJobBanksExactlyTheTable),
+            ("OnlyTheMenOnTheJobLearnFromIt", OnlyTheMenOnTheJobLearnFromIt),
         };
 
         public static List<string> Run()
@@ -362,6 +364,70 @@ namespace LivingCity.Tests
             if (lieutenant.GetHalfSteps(CharacterAttribute.Leadership) != before + 1)
                 failures.Add("TheDripLandsBeforeTheBooksTurn: today's command day was " +
                              "banked after the books turned, so it counted tomorrow.");
+        }
+
+        // ----------------------------------------------------------------- the wiring
+
+        static void AFinishedJobBanksExactlyTheTable(List<string> failures)
+        {
+            foreach (OrderType type in Enum.GetValues(typeof(OrderType)))
+                foreach (var outcome in new[] { XpOutcome.Completed, XpOutcome.Failed })
+                {
+                    var roster = new Roster();
+                    var lieutenant = MakeCrew(roster, 2, out var hoods);
+                    var crew = roster.CrewOf(lieutenant.Id);
+                    var spec = OrderTable.SpecOf(type);
+                    var activity = OrderTable.ActivityOf(type);
+                    var row = ActivityXp.RowOf(activity);
+                    var expected = ActivityXp.Points(activity, outcome);
+
+                    OrderResolution.AwardPractice(spec, roster, crew, 3, outcome);
+
+                    for (var h = 0; h < hoods.Count; h++)
+                        for (var s = 0; s < AttributeScale.Count; s++)
+                        {
+                            var skill = (CharacterAttribute)s;
+                            var trained = false;
+                            for (var t = 0; t < row.Trains.Length; t++)
+                                if (row.Trains[t] == skill)
+                                    trained = true;
+
+                            var got = hoods[h].GetPractice(skill);
+                            var want = trained ? expected : 0;
+                            if (got != want)
+                                failures.Add($"AFinishedJobBanksExactlyTheTable: a " +
+                                             $"{outcome} {type} ({activity}) banked {got} " +
+                                             $"of {skill} against {want} on the table.");
+                        }
+                }
+        }
+
+        static void OnlyTheMenOnTheJobLearnFromIt(List<string> failures)
+        {
+            var roster = new Roster();
+            var lieutenant = MakeCrew(roster, 4, out var hoods);
+            var crew = roster.CrewOf(lieutenant.Id);
+
+            // Two men went; the other three stayed in.
+            OrderResolution.AwardPractice(OrderTable.SpecOf(OrderType.Raid), roster, crew,
+                2, XpOutcome.Completed);
+
+            var learned = 0;
+            for (var i = 0; i < roster.Members.Count; i++)
+                if (roster.Members[i].GetPractice(CharacterAttribute.Combat) > 0)
+                    learned++;
+            if (learned != 2)
+                failures.Add($"OnlyTheMenOnTheJobLearnFromIt: {learned} men came back " +
+                             "from a raid two of them went on.");
+
+            var dead = hoods[0];
+            dead.Status = CharacterStatus.Dead;
+            var before = dead.GetPractice(CharacterAttribute.Combat);
+            OrderResolution.AwardPractice(OrderTable.SpecOf(OrderType.Raid), roster, crew,
+                5, XpOutcome.Completed);
+            if (dead.GetPractice(CharacterAttribute.Combat) != before)
+                failures.Add("OnlyTheMenOnTheJobLearnFromIt: the dead man got better " +
+                             "at shooting.");
         }
 
         static void TheDeadLearnNothing(List<string> failures)

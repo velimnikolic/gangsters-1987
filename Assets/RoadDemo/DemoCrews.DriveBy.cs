@@ -1121,6 +1121,11 @@ namespace RoadDemo
             // and asking that while he is still sitting on the saddle answered no every
             // single time - a run where both men walked home read as a run that lost one.
             LastRaidBothUp = Standing(raid.Rider) && Standing(raid.Pillion);
+            // The wheel is the one job on a drive-by that never fires a shot, so it is
+            // the one that would otherwise teach the man doing it nothing. Banked here,
+            // where the run is actually over, and only for a man still on his feet.
+            if (Standing(raid.Rider))
+                CrewSkill.Drove(raid.Rider.CharacterId, LastRaidBothUp);
             if (raid.Rider != null) { _mountBest.Remove(raid.Rider); _mountRefused.Remove(raid.Rider); }
             if (raid.Pillion != null) { _mountBest.Remove(raid.Pillion); _mountRefused.Remove(raid.Pillion); }
             Rejoin(raid.Rider);

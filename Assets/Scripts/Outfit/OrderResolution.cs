@@ -284,26 +284,25 @@ namespace LivingCity.Outfit
             return Scratch.Count == 0 ? -1 : Scratch[rng.Next(Scratch.Count)];
         }
 
-        /// <summary>Points a finished job banks for each man who worked it. A botch
-        /// still teaches, less.</summary>
-        public const int PracticeCompleted = 3;
-        public const int PracticeFailed = 1;
-
-        /// <summary>A day of a standing watch - dull work, and dull work is practice.</summary>
-        public const int PracticeStood = 1;
-
-        /// <summary>Banks the job's lesson with every man who was on it. The stat is
-        /// the job's own trade, never a general pool: a month of collecting protection
-        /// makes a man better at leaning on shopkeepers and no better at driving.</summary>
+        /// <summary>
+        /// Banks the job's lesson with every man who was on it, through the one table
+        /// that says what work teaches. The order's TYPE decides the lesson, not its
+        /// primary skill: a month of collecting protection makes a man better at
+        /// leaning on shopkeepers and at reading a street, and no better at driving.
+        ///
+        /// No number lives here. What a night is worth is <see cref="ActivityXp"/>'s
+        /// to say and XP-004's to tune, in one place.
+        /// </summary>
         public static void AwardPractice(in OrderSpec spec, Roster roster, Crew crew,
-            int men, int points)
+            int men, XpOutcome outcome)
         {
-            if (roster == null || crew == null || points <= 0)
+            if (roster == null || crew == null)
                 return;
 
+            var activity = OrderTable.ActivityOf(spec.Type);
             CrewKit.MenOnJob(roster, crew, men, Scratch);
             for (var i = 0; i < Scratch.Count; i++)
-                roster.Find(Scratch[i])?.AddPractice(spec.PrimaryAttribute, points);
+                ActivityXp.Award(roster.Find(Scratch[i]), activity, outcome);
         }
 
         /// <summary>One buffer for the two places that need a crew's headcount listed.

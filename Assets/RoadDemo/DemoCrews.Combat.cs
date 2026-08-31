@@ -956,7 +956,7 @@ namespace RoadDemo
             target.TakeHit(stats.Damage, shooter);
             // A round that found its mark is the only shooting practice the game
             // recognises - firing off a magazine into a wall teaches nobody anything.
-            CrewSkill.Landed(shooter.CharacterId, CharacterAttribute.Combat);
+            CrewSkill.Landed(shooter.CharacterId);
             if (DriveTrace.On)
                 DriveTrace.Event("hit", shooter.DisplayName, target.DisplayName,
                     $"\"dist\":{dist:F1},\"dead\":{(target.Dead ? "true" : "false")}");
