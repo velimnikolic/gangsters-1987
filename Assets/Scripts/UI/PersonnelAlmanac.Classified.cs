@@ -47,9 +47,14 @@ namespace LivingCity.UI
         // two deep would run off the foot of the paper.
         const int AdColumns = 4;
         const float AdGap = 20f;
-        const float AdWidth = (NewsWidth - AdGap * (AdColumns - 1)) / AdColumns;
+        static float AdWidth = (NewsWidth - AdGap * (AdColumns - 1)) / AdColumns;
         const float AdHeight = 430f;
         const float AdsTop = -172f;
+
+        /// <summary>The column is set to the newsprint's own measure, which the full
+        /// bleed sheet only settles at runtime. Struck with the front page's grid.</summary>
+        static void MeasureClassifiedLayout() =>
+            AdWidth = (NewsWidth - AdGap * (AdColumns - 1)) / AdColumns;
 
         void BuildClassifiedPage(RectTransform root)
         {
@@ -87,41 +92,41 @@ namespace LivingCity.UI
             var date = News.NewsDate.FromClockDay(day - 1);
 
             // ---- the page's own head ----
-            var flag = Line(classifiedContent, LedgerStyle.SerifBold, 26f, LedgerStyle.Ink,
+            var flag = Line(classifiedContent, LedgerStyle.SerifBold, 26f, LedgerV2.Ink,
                 NewsLeft, -12f, 420f, 38f, "THE CITY WIRE");
             flag.characterSpacing = 2f;
 
-            Tape(classifiedContent, "FRONT PAGE", NewsRight - 160f, -14f, 160f, 32f,
+            LedgerV2.Button(classifiedContent, "FRONT PAGE", NewsRight - 160f, -14f, 160f, 32f,
                 () => SetClassified(false));
 
-            Rule(classifiedContent, NewsLeft, -60f, NewsWidth, LedgerStyle.Ink, 2f);
+            Rule(classifiedContent, NewsLeft, -60f, NewsWidth, LedgerV2.Ink, 2f);
 
-            var head = Line(classifiedContent, LedgerStyle.Condensed, 34f, LedgerStyle.Ink,
+            var head = Line(classifiedContent, LedgerStyle.Condensed, 34f, LedgerV2.Ink,
                 NewsLeft, -66f, NewsWidth, 44f, "CLASSIFIED  ·  SITUATIONS WANTED",
                 TextAlignmentOptions.Center);
             head.characterSpacing = 5f;
 
-            var sub = Line(classifiedContent, LedgerStyle.SerifItalic, 13f, LedgerStyle.Ink,
+            var sub = Line(classifiedContent, LedgerStyle.SerifItalic, 13f, LedgerV2.Ink,
                 NewsLeft, -112f, NewsWidth, 20f,
                 date.Masthead() + "   ·   MEN OF ABILITY SEEKING PLACES   ·   " +
                 "TERMS BY THE DAY, PAID BY THE WEEK", TextAlignmentOptions.Center);
             sub.characterSpacing = 1f;
 
-            Rule(classifiedContent, NewsLeft, -134f, NewsWidth, LedgerStyle.Ink, 3f);
+            Rule(classifiedContent, NewsLeft, -134f, NewsWidth, LedgerV2.Ink, 3f);
 
-            Line(classifiedContent, LedgerStyle.MonoBold, 14f, LedgerStyle.Ink,
+            Line(classifiedContent, LedgerStyle.MonoBold, 14f, LedgerV2.Ink,
                 NewsRight - 300f, -140f, 300f, 22f, "IN THE SAFE:  " + LedgerText.Cash(safe),
                 TextAlignmentOptions.MidlineRight);
 
             if (classifiedNote.Length > 0)
-                Line(classifiedContent, LedgerStyle.MonoItalic, 13.5f, LedgerStyle.RedPen,
+                Line(classifiedContent, LedgerStyle.MonoItalic, 13.5f, LedgerV2.Red,
                     NewsLeft, -140f, 540f, 22f, classifiedNote);
 
             // ---- the column ----
             var ads = market.Ads;
             if (ads.Count == 0)
             {
-                Line(classifiedContent, LedgerStyle.SerifItalic, 16f, LedgerStyle.InkDim,
+                Line(classifiedContent, LedgerStyle.SerifItalic, 16f, LedgerV2.Muted,
                     NewsLeft, AdsTop, NewsWidth, 30f,
                     "Every man in this morning's column has found a place. " +
                     "Try tomorrow's paper.", TextAlignmentOptions.Center);
@@ -141,27 +146,27 @@ namespace LivingCity.UI
 
             var box = NewRect("Ad " + man.Surname, classifiedContent);
             PlaceTopLeft(box, x, y, AdWidth, AdHeight);
-            Frame(box, 2f, LedgerStyle.Ink);
+            Frame(box, 2f, LedgerV2.Ink);
             var inner = NewRect("Inner", box);
             Stretch(inner, 4f);
-            Frame(inner, 1f, LedgerStyle.Ink);
+            Frame(inner, 1f, LedgerV2.Ink);
 
-            var trade = Line(box, LedgerStyle.Condensed, 20f, LedgerStyle.Ink, 12f, -12f,
+            var trade = Line(box, LedgerStyle.Condensed, 20f, LedgerV2.Ink, 12f, -12f,
                 AdWidth - 24f, 26f, HireMarket.TradeName(ad.Trade),
                 TextAlignmentOptions.Center);
             trade.characterSpacing = 5f;
-            Rule(box, 34f, -40f, AdWidth - 68f, LedgerStyle.Ink);
+            Rule(box, 34f, -40f, AdWidth - 68f, LedgerV2.Ink);
 
             const float cutW = 200f;
             AdCut(box, man, (AdWidth - cutW) * 0.5f, -50f, cutW, 120f);
 
-            var name = Line(box, LedgerStyle.SerifBold, 17f, LedgerStyle.Ink, 12f, -176f,
+            var name = Line(box, LedgerStyle.SerifBold, 17f, LedgerV2.Ink, 12f, -176f,
                 AdWidth - 24f, 24f, man.FullName.ToUpperInvariant(),
                 TextAlignmentOptions.Center);
             name.characterSpacing = 1f;
             name.overflowMode = TextOverflowModes.Ellipsis;
 
-            var late = Line(box, LedgerStyle.SerifItalic, 11.5f, LedgerStyle.InkDim, 12f,
+            var late = Line(box, LedgerStyle.SerifItalic, 11.5f, LedgerV2.Muted, 12f,
                 -198f, AdWidth - 24f, 18f,
                 "Late of " + Titled(ad.From) + "  ·  " + ad.Box,
                 TextAlignmentOptions.Center);
@@ -173,13 +178,13 @@ namespace LivingCity.UI
             for (var slot = 0; slot < 3; slot++)
             {
                 var attribute = NthBest(man, slot);
-                Line(box, LedgerStyle.Serif, 12.5f, LedgerStyle.Ink, 14f, y0 - slot * 22f,
+                Line(box, LedgerStyle.Serif, 12.5f, LedgerV2.Ink, 14f, y0 - slot * 22f,
                     150f, 20f, LedgerText.AttributeLabel(attribute));
                 Stars(box, 172f, y0 - slot * 22f - 10f, man.GetHalfSteps(attribute),
                     15f, 16f);
             }
 
-            var copy = Paragraph(box, LedgerStyle.Serif, 12.5f, LedgerStyle.Ink, 14f, -292f,
+            var copy = Paragraph(box, LedgerStyle.Serif, 12.5f, LedgerV2.Ink, 14f, -292f,
                 AdWidth - 28f, 52f, "\u201C" + HireMarket.Pitch(ad.Trade) + "\u201D",
                 lineSpacing: 3f);
             copy.alignment = TextAlignmentOptions.Top;
@@ -188,20 +193,20 @@ namespace LivingCity.UI
             // The terms sit ABOVE the price rule, not under the price: the box's own
             // frame is drawn over its bottom edge, and a line laid against it is a line
             // cut in half.
-            Line(box, LedgerStyle.Mono, 11f, LedgerStyle.InkDim, 14f, -350f,
+            Line(box, LedgerStyle.Mono, 11f, LedgerV2.Muted, 14f, -350f,
                 AdWidth - 28f, 16f,
                 LedgerText.Cash(ad.Down) + " down  \u00B7  " + Outfit.Wages.DaysDown +
                 " days in his hand before he works one");
 
-            Rule(box, 14f, -370f, AdWidth - 28f, LedgerStyle.Ink);
+            Rule(box, 14f, -370f, AdWidth - 28f, LedgerV2.Ink);
 
             // The price the column is read for: what he costs A DAY.
-            var price = Line(box, LedgerStyle.Condensed, 24f, LedgerStyle.Ink, 14f, -374f,
+            var price = Line(box, LedgerStyle.Condensed, 24f, LedgerV2.Ink, 14f, -374f,
                 AdWidth - 130f, LineBox(24f), LedgerText.Cash(ad.Daily) + " A DAY");
             price.characterSpacing = 2f;
 
             var captured = ad;
-            var hire = Tape(box, "HIRE", AdWidth - 112f, -378f, 98f, 32f, () =>
+            var hire = LedgerV2.Button(box, "HIRE", AdWidth - 112f, -378f, 98f, 32f, () =>
             {
                 var result = director.HireFromAd(captured, out var newId);
                 if (result.Ok)
@@ -213,7 +218,7 @@ namespace LivingCity.UI
                 else
                     classifiedNote = result.Reason;
                 dirty = true;
-            }, size: 13f);
+            }, red: false, size: 13f);
 
             // Short money reads at a glance; the click still spells out how short.
             if (safe < ad.Down)
@@ -225,9 +230,9 @@ namespace LivingCity.UI
         /// picture in the book stands on until its print lands.</summary>
         void AdCut(RectTransform parent, Character man, float x, float y, float w, float h)
         {
-            var raw = Plate(parent, x, y, w, h, "PRESS PHOTO",
-                new Color(LedgerStyle.Newsprint.r * 0.94f, LedgerStyle.Newsprint.g * 0.94f,
-                    LedgerStyle.Newsprint.b * 0.94f));
+            var raw = LedgerV2.PortraitPlate(parent, x, y, w, h, "PRESS PHOTO",
+                new Color(LedgerV2.Panel.r * 0.94f, LedgerV2.Panel.g * 0.94f,
+                    LedgerV2.Panel.b * 0.94f));
 
             // The studio's prints are square and this slot is wider than it is tall:
             // show the middle band rather than stretching the man in it.

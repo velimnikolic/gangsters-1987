@@ -18,8 +18,8 @@ namespace LivingCity.UI
     {
         // ---- the counter ----
 
-        const float ShelfHeadH = 46f;
-        const float CatalogueTop = PageTop - ShelfHeadH;
+        const float ShelfHeadH = 100f;
+        static float CatalogueTop = PageTop - ShelfHeadH;
 
         /// <summary>The board is one row of plates deep, because every shelf the
         /// catalogue stocks is five listings or fewer and five fit across the sheet. It
@@ -29,26 +29,45 @@ namespace LivingCity.UI
         /// that space instead.</summary>
         const float CatalogueHeight = CardH + 8f;
 
-        const int CatalogueColumns = 5;
         const float CatalogueGap = 16f;
-        const float CardW = (PageWidth - CatalogueGap * (CatalogueColumns - 1))
-                            / CatalogueColumns;
+        const float CardMin = 250f;
+        static int CatalogueColumns = 5;
+        static float CardW = (PageWidth - CatalogueGap * (CatalogueColumns - 1))
+                             / CatalogueColumns;
         const float CardH = 250f;
 
         // ---- the stock book ----
 
         const float StockPitch = 26f;
-        const float StockWidth = PageWidth;
-        const float StockTop = CatalogueTop - CatalogueHeight - 16f;
-        const float StockHeight = -(PageBottom - StockTop);
+        static float StockWidth = PageWidth;
+        static float StockTop = CatalogueTop - CatalogueHeight - 16f;
+        static float StockHeight = -(PageBottom - StockTop);
         const float StockPad = 18f;
-        const float StockInner = StockWidth - StockPad * 2f;
+        static float StockInner = StockWidth - StockPad * 2f;
 
         // The carbon's column grid, in stock-inner coordinates.
         const float StockKindX = 0f;
         const float StockItemX = 110f;
         const float StockHolderX = 500f;
-        const float StockActionX = StockInner - 110f;
+        static float StockActionX = StockInner - 110f;
+
+        /// <summary>The counter and the stock book both take the width the window
+        /// gives them. The board follows the design's auto-fill at a 250-unit minimum,
+        /// so a wider window earns a sixth plate on the shelf rather than five wide
+        /// ones - and the stock book takes whatever is left down to the sheet's foot.
+        /// </summary>
+        static void MeasureArmoryLayout()
+        {
+            CatalogueTop = PageTop - ShelfHeadH;
+            CatalogueColumns = Mathf.Max(5,
+                Mathf.FloorToInt((PageWidth + CatalogueGap) / (CardMin + CatalogueGap)));
+            CardW = (PageWidth - CatalogueGap * (CatalogueColumns - 1)) / CatalogueColumns;
+            StockWidth = PageWidth;
+            StockTop = CatalogueTop - CatalogueHeight - 16f;
+            StockHeight = -(PageBottom - StockTop);
+            StockInner = StockWidth - StockPad * 2f;
+            StockActionX = StockInner - 110f;
+        }
 
         RectTransform armoryContent;
         RectTransform catalogueViewport;
@@ -101,11 +120,10 @@ namespace LivingCity.UI
 
             // The stock book: the supplier's pink carbon, kept in the folder. Its own
             // scroll - a sixty-man outfit's stock outgrows the page.
-            var carbon = Card("Stock Book", root, PageLeft, StockTop, StockWidth,
-                StockHeight, LedgerStyle.Carbon, shadowSpread: 12f, low: LedgerStyle.CarbonLow);
+            var carbon = LedgerV2.Card("Stock Book", root, PageLeft, StockTop, StockWidth, StockHeight, LedgerV2.Carbon);
 
             stockHeading = Caps(carbon, StockPad, -10f, 600f, "STOCK BOOK · CARBON COPY",
-                13f, LedgerStyle.CarbonInk, 5f);
+                13f, LedgerV2.CarbonInk, 5f);
             stockCount = Caps(carbon, StockWidth - StockPad - 400f, -11f, 400f, "", 10f,
                 new Color(107f / 255f, 43f / 255f, 35f / 255f, 0.7f), 3f,
                 TextAlignmentOptions.MidlineRight);
@@ -139,15 +157,13 @@ namespace LivingCity.UI
 
             var safe = outfit ? outfit.Accounts.Safe : 0;
 
-            var heading = Line(armoryContent, LedgerStyle.Condensed, 19f, LedgerStyle.Ink,
-                PageLeft, PageTop, 600f, 26f, "MAIL-ORDER CATALOGUE");
-            heading.characterSpacing = 5f;
-            Caps(armoryContent, PageLeft, PageTop - 22f, 600f,
-                "NO NAMES · NO PAPERWORK · KERBSIDE DELIVERY", 10f, LedgerStyle.InkLabel, 4f);
+            LedgerV2.PageHead(armoryContent, PageLeft, PageTop, PageWidth, "ARMORY",
+                "MAIL-ORDER CATALOGUE · NO NAMES · NO PAPERWORK · KERBSIDE DELIVERY");
 
             if (armoryNote.Length > 0)
-                Line(armoryContent, LedgerStyle.MonoItalic, 12.5f, LedgerStyle.RedPen,
-                    PageLeft + 620f, PageTop - 22f, PageWidth - 620f, 18f, armoryNote);
+                LedgerV2.Mono(armoryContent, PageRight - 620f, PageTop - 34f, 620f,
+                    armoryNote, 10.5f, LedgerV2.Red, 2f,
+                    TextAlignmentOptions.MidlineRight);
 
             BuildShelfPills();
             BuildCatalogue(safe);
@@ -174,13 +190,13 @@ namespace LivingCity.UI
             // by no face in Assets/Fonts/Ledger1987, so both marks were printing tofu.
             // IBM Plex Mono does cut U+2191 and U+2193.
             if (catalogueScroll > 1f)
-                Line(armoryContent, LedgerStyle.MonoItalic, 11.5f, LedgerStyle.InkDim,
+                Line(armoryContent, LedgerStyle.MonoItalic, 11.5f, LedgerV2.Muted,
                     PageLeft, CatalogueTop + 15f, PageWidth, 14f,
                     "\u2191  more of the counter above",
                     TextAlignmentOptions.MidlineRight);
 
             if (catalogueScroll < hidden - 1f)
-                Line(armoryContent, LedgerStyle.MonoItalic, 11.5f, LedgerStyle.InkDim,
+                Line(armoryContent, LedgerStyle.MonoItalic, 11.5f, LedgerV2.Muted,
                     PageLeft, CatalogueTop - CatalogueHeight - 1f, PageWidth, 14f,
                     "\u2193  more of the counter below - roll the wheel over it",
                     TextAlignmentOptions.MidlineRight);
@@ -219,7 +235,7 @@ namespace LivingCity.UI
             for (var i = 0; i < ShelfNames.Length; i++)
             {
                 var pick = i;
-                Pill(armoryContent, ShelfNames[i],
+                LedgerV2.Chip(armoryContent, ShelfNames[i],
                     PageRight - (ShelfNames.Length - i) * (width + 6f) + 6f,
                     PageTop - 2f, width, height, i == shelf, () =>
                     {
@@ -240,25 +256,24 @@ namespace LivingCity.UI
         /// </summary>
         void CataloguePlate(Outfit.ArmoryItem item, int safe, int index, float x, float y)
         {
-            var card = Card("Plate", catalogueContent, x, y, CardW, CardH,
-                LedgerStyle.Printout, shadowSpread: 8f, low: LedgerStyle.PrintoutLow);
+            var card = LedgerV2.Card("Plate", catalogueContent, x, y, CardW, CardH);
             const float pad = 14f;
             var inner = CardW - pad * 2f;
 
-            var name = Line(card, LedgerStyle.Condensed, 15f, LedgerStyle.Ink, pad, -8f,
+            var name = Line(card, LedgerStyle.Condensed, 15f, LedgerV2.Ink, pad, -8f,
                 inner - 76f, LineBox(15f), item.DisplayName.ToUpperInvariant());
             name.characterSpacing = 3f;
             name.overflowMode = TextOverflowModes.Ellipsis;
             Caps(card, pad + inner - 76f, -11f, 76f,
                 "CAT. " + ShelfCodes[Mathf.Clamp(shelf, 0, ShelfCodes.Length - 1)] + "-" +
-                (char)('A' + Mathf.Clamp(index, 0, 25)), 9f, LedgerStyle.InkLabel, 2f,
+                (char)('A' + Mathf.Clamp(index, 0, 25)), 9f, LedgerV2.Label, 2f,
                 TextAlignmentOptions.MidlineRight);
 
             // The merchandise itself: the real street prefab in a live, colour display
             // case. The turntable studio owns the render rig and stops it whenever this
             // card or page is inactive. The hatched plate is only the honest fallback
             // while a model cannot be resolved.
-            var raw = Plate(card, pad, -36f, inner, 86f,
+            var raw = LedgerV2.PortraitPlate(card, pad, -36f, inner, 86f,
                 item.DisplayName.ToUpperInvariant());
             var vehicle = item.Kind == EquipmentKind.Vehicle ||
                           item.Kind == EquipmentKind.Motorcycle;
@@ -269,7 +284,7 @@ namespace LivingCity.UI
             CatalogueTurntableStudio.Show(model, vehicle, raw,
                 item.Kind == EquipmentKind.TwinPistols ? 2 : 1);
 
-            var blurb = Paragraph(card, LedgerStyle.Serif, 13f, LedgerStyle.InkSoft, pad,
+            var blurb = Paragraph(card, LedgerStyle.Serif, 13f, LedgerV2.Body, pad,
                 -130f, inner, 40f, item.Note, lineSpacing: 2f);
             blurb.overflowMode = TextOverflowModes.Ellipsis;
 
@@ -281,12 +296,12 @@ namespace LivingCity.UI
             SpecRow(card, pad, -194f, inner, vehicle ? "ROOM" : "STOPPING",
                 Mathf.Clamp(7 - band, 1, 6));
 
-            var price = Line(card, LedgerStyle.Condensed, 20f, LedgerStyle.Ink, pad, -212f,
+            var price = Line(card, LedgerStyle.Condensed, 20f, LedgerV2.Ink, pad, -212f,
                 inner - 110f, 26f, LedgerText.Cash(item.Price));
             price.characterSpacing = 1f;
 
             var captured = item;
-            var order = Tape(card, "ORDER", pad + inner - 104f, -210f, 104f, 28f, () =>
+            var order = LedgerV2.Button(card, "ORDER", pad + inner - 104f, -210f, 104f, 28f, () =>
             {
                 var result = outfit
                     ? outfit.Purchase(captured.Price, captured.DisplayName)
@@ -300,7 +315,7 @@ namespace LivingCity.UI
                 else
                     armoryNote = result.Reason;
                 dirty = true;
-            }, size: 11f);
+            }, red: false, size: 11f);
             // Short money reads at a glance - the button fades; the click still
             // explains exactly how short.
             if (safe < item.Price)
@@ -309,10 +324,10 @@ namespace LivingCity.UI
 
         void SpecRow(Transform card, float x, float y, float w, string label, int marks)
         {
-            Caps(card, x, y, 120f, label, 9f, LedgerStyle.InkLabel, 3f);
-            var bar = StepBarWidth(6, 5f, 7f);
-            StepBar(card, x + w - bar, y - 8f, 6, marks, LedgerStyle.RedPen, 5f, 9f, 7f);
-            DottedRule(card, x + 76f, y - 9f, w - bar - 86f, LedgerStyle.InkDotted);
+            Caps(card, x, y, 120f, label, 9f, LedgerV2.Label, 3f);
+            var bar = LedgerV2.PipsWidth(6);
+            LedgerV2.Pips(card, x + w - bar, y - 8f, 6, marks, LedgerV2.Red);
+            LedgerV2.Leader(card, x + 76f, y - 9f, w - bar - 86f);
         }
 
         void BuildStock(Roster roster)
@@ -327,7 +342,7 @@ namespace LivingCity.UI
             if (stockCount)
                 stockCount.text = out_ + (out_ == 1 ? " ITEM SIGNED OUT" : " ITEMS SIGNED OUT");
 
-            var carbonInk = LedgerStyle.CarbonInk;
+            var carbonInk = LedgerV2.CarbonInk;
             var carbonFaint = new Color(107f / 255f, 43f / 255f, 35f / 255f, 0.55f);
 
             var y = 0f;
@@ -336,8 +351,7 @@ namespace LivingCity.UI
                 var item = roster.Equipment[i];
                 var row = NewRect("Item", stockContent);
                 PlaceTopLeft(row, 0f, y, StockInner, StockPitch);
-                DottedRule(row, 0f, -StockPitch + 2f, StockInner,
-                    new Color(107f / 255f, 43f / 255f, 35f / 255f, 0.28f));
+                LedgerV2.Leader(row, 0f, -StockPitch + 2f, StockInner);
 
                 var kind = Caps(row, 0f, 0f, 100f,
                     LedgerText.EquipmentLabel(item.Kind), 9.5f, carbonFaint, 3f);
@@ -362,19 +376,19 @@ namespace LivingCity.UI
 
                 var itemId = item.Id;
                 if (item.OwnerId != RosterEquipment.Unheld)
-                    Tape(row, "RECALL", StockActionX, -2f, 100f, 22f, () =>
+                    LedgerV2.Button(row, "RECALL", StockActionX, -2f, 100f, 22f, () =>
                     {
                         var result = director.ReturnEquipment(itemId);
                         armoryNote = result.Ok ? "" : result.Reason;
                         dirty = true;
                     }, red: true, size: 10f, outline: true);
                 else
-                    Tape(row, "ISSUE", StockActionX, -2f, 100f, 22f, () =>
+                    LedgerV2.Button(row, "ISSUE", StockActionX, -2f, 100f, 22f, () =>
                     {
                         givePickerItemId = itemId;
                         armoryNote = "";
                         dirty = true;
-                    }, size: 10f);
+                    }, red: false, size: 10f);
 
                 y -= StockPitch;
             }
@@ -407,11 +421,11 @@ namespace LivingCity.UI
             if (stockCount)
                 stockCount.text = "GEAR GOES TO A CREW'S HEAD, NEVER TO A HOOD";
 
-            Tape(stockContent, "CANCEL", StockActionX, 0f, 100f, 22f, () =>
+            LedgerV2.Button(stockContent, "CANCEL", StockActionX, 0f, 100f, 22f, () =>
             {
                 givePickerItemId = -1;
                 dirty = true;
-            }, size: 10f, outline: true);
+            }, red: false, size: 10f, outline: true);
 
             // CANCEL owns the first line of the carbon on its own - the picks start
             // under it, or the FRONT row's click surface would sit beneath the button.
@@ -470,9 +484,9 @@ namespace LivingCity.UI
             PlaceTopLeft(row, 0f, y, StockInner, StockPitch);
             var surface = ClickSurface(row);
             RowButton(row, surface, pick);
-            Highlight(row, LedgerStyle.HighlighterGreen);
+            Highlight(row, LedgerV2.Picked);
 
-            var carbonInk = LedgerStyle.CarbonInk;
+            var carbonInk = LedgerV2.CarbonInk;
             var nameText = Text("Name", row, LedgerStyle.MonoBold, 13.5f, carbonInk,
                 TextAlignmentOptions.MidlineLeft);
             FillRow(nameText.rectTransform, 12f, 320f);

@@ -172,36 +172,6 @@ namespace LivingCity.Gameplay
                     CrimeKind.Murder, target.transform.position, transform, target.transform));
         }
 
-        /// <summary>
-        /// The police side of the trigger: same flash, same impact beat, but the verdict is
-        /// an accuracy ROLL rather than a certainty - a deliberate miss model, because
-        /// perfect police make escape impossible and the roll is where distance and a
-        /// running target buy the player his life. No CrimeFeed report: returning fire is
-        /// not a crime.
-        /// </summary>
-        public void ResolveShotAtPlayer(PlayerMafioso target, float hitChance, float damage)
-        {
-            if (target)
-                StartCoroutine(PoliceShotRoutine(target, hitChance, damage));
-        }
-
-        IEnumerator PoliceShotRoutine(PlayerMafioso target, float hitChance, float damage)
-        {
-            var combat = Combat;
-
-            StartCoroutine(FlashOnce(combat));
-
-            yield return HitWait(combat);
-
-            if (!target || target.IsDead)
-                yield break;
-
-            if (!HasLineOfSightTo(target.transform.position + Vector3.up * TargetChestHeight))
-                yield break;
-
-            if (Random.value <= hitChance)
-                target.TakeDamage(damage);
-        }
 
         /// <summary>Muzzle to an arbitrary chest-height point - the officers' aiming check.</summary>
         public bool HasLineOfSightTo(Vector3 worldPoint)

@@ -100,7 +100,7 @@ namespace LivingCity.Gameplay
             // own. The case is born delivered so civilian calls do not stack a second
             // murder's heat on top; they still panic below.
             if (crime.Kind == CrimeKind.Murder && crime.Victim &&
-                crime.Victim.GetComponentInParent<PoliceResponseOfficer>())
+                crime.Victim.GetComponentInParent<PoliceOfficerAgent>())
             {
                 openCase.Delivered = true;
                 if (WantedSystem.Instance && crime.Perpetrator)
@@ -146,9 +146,8 @@ namespace LivingCity.Gameplay
                 if (!npc || npc.IsDead || seenThisCrime.Contains(npc))
                     continue;
 
-                // Response officers carry InteractableNpc so the player can shoot them -
-                // but they answer crimes through their FSM, not by panicking.
-                if (npc.GetComponent<PoliceResponseOfficer>())
+                // An officer answers a crime through his own duty, not by panicking at it.
+                if (npc.GetComponent<PoliceOfficerAgent>())
                     continue;
 
                 // Hidden means inside a shop or building - and hidden does NOT mean the
@@ -239,7 +238,7 @@ namespace LivingCity.Gameplay
                 for (var i = 0; i < count; i++)
                 {
                     var npc = Overlaps[i] ? Overlaps[i].GetComponentInParent<InteractableNpc>() : null;
-                    if (!npc || npc.IsDead || npc.GetComponent<PoliceResponseOfficer>())
+                    if (!npc || npc.IsDead || npc.GetComponent<PoliceOfficerAgent>())
                         continue;
                     if (npc.GetComponent<NpcWitness>())
                         continue;

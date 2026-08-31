@@ -77,7 +77,6 @@ namespace LivingCity.UI
         /// deliberately a beacon, not a portrait.</summary>
         const float DotSize = 6f;
 
-        const float PlayerDotSize = 10f;
 
         /// <summary>The outfit's front reads as a place, not a person - bigger than any
         /// dot, with the family name floating over it.</summary>
@@ -186,7 +185,6 @@ namespace LivingCity.UI
         Camera isoCamera;
         Behaviour isoController;
         Behaviour occlusionHider;
-        Gameplay.PlayerMafioso player;
         Camera mapCamera;
 
         Canvas canvas;
@@ -485,11 +483,6 @@ namespace LivingCity.UI
             HideAmbientFlyers();
             FrameCamera();
 
-            // A context menu drawn over the city makes no sense over the map.
-            var menu = FindAnyObjectByType<Gameplay.ContextMenuUI>();
-            if (menu && menu.IsOpen)
-                menu.Close();
-
             if (isoController) isoController.enabled = false;
             if (isoCamera) isoCamera.enabled = false;
             if (occlusionHider) occlusionHider.enabled = false;
@@ -583,7 +576,6 @@ namespace LivingCity.UI
             isoController = controller;
             isoCamera = controller ? controller.GetComponent<Camera>() : Camera.main;
             occlusionHider = FindAnyObjectByType<Gameplay.PlayerOcclusionHider>();
-            player = FindAnyObjectByType<Gameplay.PlayerMafioso>();
 
             BuildCamera();
             BuildCanvas();
@@ -1182,17 +1174,11 @@ namespace LivingCity.UI
             PaintTargets();
             SyncTrackedPeople();
 
-            // No eyes anywhere (the playable-mafioso layer is parked, so there may be no
-            // player to register) means no fog yet - the map shows everyone rather than
+            // No eyes anywhere means no fog yet - the map shows everyone rather than
             // no one. Decided once per frame, not per dot.
             visionUnrestricted = !MapVisionRegistry.HasActiveSources;
 
             dotCursor = 0;
-
-            // The player is his own vision source - always on the map, and the anchor
-            // the white circle of dots visibly forms around.
-            if (player)
-                EmitDot(player.transform.position, PlayerGold, PlayerDotSize, square: true);
 
             // The outfit's base, before police - the MaxDots cap must never swallow it.
             PaintHeadquarters();
@@ -1295,9 +1281,6 @@ namespace LivingCity.UI
                 switch (subject)
                 {
                     case PoliceOfficerAgent officer:
-                        policeDots.Add(new Tracked { Subject = subject, Body = officer });
-                        break;
-                    case Gameplay.PoliceResponseOfficer officer:
                         policeDots.Add(new Tracked { Subject = subject, Body = officer });
                         break;
                     case SchoolChildAgent child:

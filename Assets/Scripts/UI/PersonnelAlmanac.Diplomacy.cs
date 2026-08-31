@@ -20,23 +20,46 @@ namespace LivingCity.UI
     {
         // ---- the boss's own line, over the index ----
 
-        const float FamilyMineY = PageTop - 48f;
+        /// <summary>The page's own head, over the index.</summary>
+        const float FamiliesHeadH = 72f;
+
+        static float FamilyMineY = PageTop - FamiliesHeadH;
         const float FamilyMineH = 56f;
 
         // ---- the index itself ----
 
-        const int FamilyColumns = 5;
         const float FamilyGap = 18f;
-        const float FamilyCardW = (PageWidth - FamilyGap * (FamilyColumns - 1)) / FamilyColumns;
+        const float FamilyCardMin = 272f;
+        static int FamilyColumns = 5;
+        static float FamilyCardW = (PageWidth - FamilyGap * (FamilyColumns - 1)) / FamilyColumns;
         /// <summary>Four rows deep: standing, turf, capos and what is OWED upward. The
         /// tribute line is the reason the card grew - a house you are behind with is a
         /// house that is about to be a problem, and it belongs on its own card.</summary>
         const float FamilyCardH = 272f;
 
-        const float FamiliesTop = FamilyMineY - FamilyMineH - 10f;
-        const float FamiliesHeight = 452f;
+        static float FamiliesTop = FamilyMineY - FamilyMineH - 10f;
+        static float FamiliesHeight = 452f;
 
-        const float LegendTop = FamiliesTop - FamiliesHeight - 8f;
+        /// <summary>What the legend under the index takes off the foot of the sheet.</summary>
+        const float LegendH = 116f;
+
+        static float LegendTop = FamiliesTop - FamiliesHeight - 8f;
+
+        /// <summary>The card index takes the sheet between the boss's own line and the
+        /// legend that closes it. Full bleed, so a taller window is another row of cards
+        /// and a wider one is another column - the drawer is deeper, not the cards.
+        /// </summary>
+        static void MeasureDiplomacyLayout()
+        {
+            FamilyMineY = PageTop - FamiliesHeadH;
+            FamiliesTop = FamilyMineY - FamilyMineH - 10f;
+            FamilyColumns = Mathf.Max(5,
+                Mathf.FloorToInt((PageWidth + FamilyGap) / (FamilyCardMin + FamilyGap)));
+            FamilyCardW = (PageWidth - FamilyGap * (FamilyColumns - 1)) / FamilyColumns;
+            FamiliesHeight = Mathf.Max(FamilyCardH,
+                -(PageBottom - FamiliesTop) - LegendH);
+            LegendTop = FamiliesTop - FamiliesHeight - 8f;
+        }
 
         /// <summary>The ruling on an index card - the design's 26-unit blue lines.</summary>
         const float FamilyRulePitch = 26f;
@@ -79,17 +102,14 @@ namespace LivingCity.UI
                 if (!gang.IsPlayer)
                     rivals++;
 
-            var heading = Line(diplomacyContent, LedgerStyle.Condensed, 19f, LedgerStyle.Ink,
-                PageLeft, PageTop, 700f, 26f,
-                "THE CARD INDEX · " + (rivals == 1 ? "ONE HOUSE" : rivals + " HOUSES"));
-            heading.characterSpacing = 5f;
-            Caps(diplomacyContent, PageRight - 600f, PageTop - 1f, 600f,
-                "PULLED FROM THE ROLODEX · KEEP IN ORDER", 10f, LedgerStyle.InkLabel, 4f,
-                TextAlignmentOptions.MidlineRight);
+            LedgerV2.PageHead(diplomacyContent, PageLeft, PageTop, PageWidth, "FAMILIES",
+                "THE CARD INDEX · " +
+                (rivals == 1 ? "ONE HOUSE" : rivals + " HOUSES") +
+                " · PULLED FROM THE ROLODEX");
 
             if (gangs.Count == 0)
             {
-                Line(diplomacyContent, LedgerStyle.MonoItalic, 14f, LedgerStyle.InkDim,
+                Line(diplomacyContent, LedgerStyle.MonoItalic, 14f, LedgerV2.Muted,
                     PageLeft, PageTop - 46f, 800f, 24f,
                     "The families have not shown themselves yet.");
 
@@ -97,7 +117,7 @@ namespace LivingCity.UI
                 // seen dressed before the street layer seeds the real ones. The real
                 // generator with a fixed seed, so the preview IS the live layout.
                 if (Application.isEditor)
-                    Tape(diplomacyContent, "DEAL DUMMY FAMILIES", PageLeft, PageTop - 82f,
+                    LedgerV2.Button(diplomacyContent, "DEAL DUMMY FAMILIES", PageLeft, PageTop - 82f,
                         220f, 28f, () => Gangs.GangRegistry.Install(
                             Gangs.GangSeeder.Generate(1987, director.Roster)));
                 return;
@@ -138,7 +158,7 @@ namespace LivingCity.UI
             // in the drawer and the wheel says how to reach it. Printed once, on the
             // fixed layer: a rebuild per wheel notch would re-photograph twenty capos.
             if (slot > 0)
-                Line(diplomacyContent, LedgerStyle.MonoItalic, 12f, LedgerStyle.InkDim,
+                Line(diplomacyContent, LedgerStyle.MonoItalic, 12f, LedgerV2.Muted,
                     PageLeft, FamiliesTop + 18f, PageWidth, 16f,
                     slot + " card" + (slot == 1 ? "" : "s") + " in the drawer" +
                     (cardRows * (FamilyCardH + FamilyGap) > FamiliesHeight
@@ -163,9 +183,9 @@ namespace LivingCity.UI
                 var strip = NewRect("Yours", diplomacyContent);
                 PlaceTopLeft(strip, PageLeft, FamilyMineY, PageWidth, FamilyMineH);
                 Fill(strip, new Color(143f / 255f, 33f / 255f, 25f / 255f, 0.06f));
-                Block("Edge", strip, 0f, 0f, 3f, FamilyMineH, LedgerStyle.RedPen);
+                Block("Edge", strip, 0f, 0f, 3f, FamilyMineH, LedgerV2.Red);
 
-                var raw = Plate(strip, 12f, -6f, 44f, 44f, "");
+                var raw = LedgerV2.PortraitPlate(strip, 12f, -6f, 44f, 44f, "");
                 var boss = director.Roster?.FindBoss();
                 PortraitStudio.Request(
                     PortraitStudio.FindPeoplePrefab(
@@ -175,17 +195,17 @@ namespace LivingCity.UI
                 Swatch(gang.Id, 68f, -8f, strip);
 
                 var held = Outfit.Turf.CountOf(holdings, gang.Id);
-                var name = Line(strip, LedgerStyle.Condensed, 20f, LedgerStyle.Ink, 92f, -6f,
+                var name = Line(strip, LedgerStyle.Condensed, 20f, LedgerV2.Ink, 92f, -6f,
                     620f, 26f, gang.Name.ToUpperInvariant() + " · YOURS");
                 name.characterSpacing = 3f;
-                Line(strip, LedgerStyle.Mono, 13f, LedgerStyle.InkDim, 92f, -30f, 620f, 20f,
+                Line(strip, LedgerStyle.Mono, 13f, LedgerV2.Muted, 92f, -30f, 620f, 20f,
                     "Boss: " + (boss != null ? boss.FullName : Gangs.GangCatalog.BossName) +
                     "  ·  " + held +
                     (held == 1 ? " building" : " buildings") + " on the map");
 
                 var mine = Gangs.GangRegistry.FrontBusinessOf(gang.Id);
                 var myBooks = Gangs.GangRegistry.FrontBooksOf(gang.Id);
-                var front = Line(strip, LedgerStyle.SerifItalic, 15f, LedgerStyle.Ballpoint,
+                var front = Line(strip, LedgerStyle.SerifItalic, 15f, LedgerV2.PaperBlue,
                     PageWidth - 700f, -18f, 688f, 22f,
                     mine ? "Front: " + mine.BusinessName
                     : myBooks != null
@@ -208,21 +228,24 @@ namespace LivingCity.UI
 
             // Square on the page: a tilted card turns every hairline on it into a
             // staircase. The Polaroid pinned to it carries the crookedness instead.
-            var card = Card("Family " + gang.Name, familiesContent, x, y, FamilyCardW,
-                FamilyCardH, LedgerStyle.IndexCard, shadowSpread: 8f,
-                low: LedgerStyle.IndexCardLow);
+            var card = LedgerV2.Card("Family " + gang.Name, familiesContent, x, y, FamilyCardW, FamilyCardH);
 
             const float pad = 12f;
             var inner = FamilyCardW - pad * 2f;
 
-            // The tag band a filed card carries across its head.
+            // The house's own colour across the card's head - the same colour its
+            // turf is painted in on the map, so a card and a block answer to each other
+            // without a legend.
+            Block("Colour", card, 0f, 0f, FamilyCardW, 4f, GangPalette.Of(gang.Id));
+
+            // The tag band a filed card carries under it.
             var band = NewRect("Tag", card);
-            PlaceTopLeft(band, 0f, 0f, FamilyCardW, 30f);
-            Fill(band, new Color(143f / 255f, 33f / 255f, 25f / 255f, 0.10f));
+            PlaceTopLeft(band, 0f, -4f, FamilyCardW, 26f);
+            Fill(band, LedgerV2.PanelDark);
             Caps(band, pad, -8f, 120f, "HOUSE " + (slot + 1).ToString("00"), 9.5f,
-                LedgerStyle.DeepRed, 3f);
+                LedgerV2.Red, 3f);
             Caps(band, FamilyCardW - pad - 100f, -8f, 100f,
-                "R-" + (100 + gang.Id).ToString("000"), 9.5f, LedgerStyle.InkLabel, 3f,
+                "R-" + (100 + gang.Id).ToString("000"), 9.5f, LedgerV2.Label, 3f,
                 TextAlignmentOptions.MidlineRight);
             Swatch(gang.Id, FamilyCardW * 0.5f - 8f, -7f, band);
 
@@ -230,8 +253,6 @@ namespace LivingCity.UI
             var ruling = NewRect("Ruling", card);
             PlaceTopLeft(ruling, 0f, -30f, FamilyCardW, FamilyCardH - 30f);
             ruling.gameObject.AddComponent<RectMask2D>();
-            for (var line = FamilyRulePitch; line < FamilyCardH - 30f; line += FamilyRulePitch)
-                Rule(ruling, 0f, -line, FamilyCardW, LedgerStyle.RuleBlue);
 
             // The face of the family: its capo, wearing the model his soldiers answer
             // to on the street. A family is as many crews as it has capos, and the
@@ -242,23 +263,22 @@ namespace LivingCity.UI
                 if (man.Lieutenant)
                     capos++;
 
-            var raw = Polaroid(card, FamilyCardW - 84f, -36f, 56f,
-                InitialsOf(leader.Length > 0 ? leader : gang.Name),
-                gang.Id % 2 == 0 ? -4f : 3f, out _);
+            var raw = LedgerV2.PortraitPlate(card, FamilyCardW - 66f, -36f, 54f, 62f,
+                InitialsOf(leader.Length > 0 ? leader : gang.Name), LedgerV2.Thumb);
             PortraitStudio.Request(
                 PortraitStudio.FindPeoplePrefab(Gangs.GangCatalog.LieutenantModels[gang.Id]),
                 PortraitStudio.Framing.Bust, raw);
 
             // LineBox, not 28: a truncating line in the condensed gothic vanishes
             // WHOLE when its rect cannot hold the face's line box, and this name did.
-            var name = Line(card, LedgerStyle.Condensed, 22f, LedgerStyle.Ink, pad, -36f,
+            var name = Line(card, LedgerStyle.Condensed, 22f, LedgerV2.Ink, pad, -36f,
                 inner - 88f, LineBox(22f), gang.Name);
             name.characterSpacing = 1f;
             name.overflowMode = TextOverflowModes.Ellipsis;
 
             var runBy = Caps(card, pad, -72f, inner - 88f,
                 leader.Length > 0 ? "RUN BY " + leader : "RUN BY PERSONS UNKNOWN", 9.5f,
-                LedgerStyle.InkLabel, 2f);
+                LedgerV2.Label, 2f);
             runBy.overflowMode = TextOverflowModes.Ellipsis;
 
             // ---- the three rows a card carries ----
@@ -269,20 +289,20 @@ namespace LivingCity.UI
             CardRow(card, pad, -98f, inner, "STANDING",
                 LedgerText.StanceLabel(current) + (hasPending
                     ? " → " + LedgerText.StanceLabel(pending) : ""),
-                hasPending ? LedgerStyle.RedPen : LedgerStyle.Ink);
+                hasPending ? LedgerV2.Red : LedgerV2.Ink);
 
             // The meter is CENTRED on its label's line, not hung off the top of it -
             // hung off the top it climbed into the standing row above.
             var held = Outfit.Turf.CountOf(holdings, gang.Id);
-            Caps(card, pad, -120f, 90f, "TURF", 9.5f, LedgerStyle.InkLabel, 3f);
-            StepBar(card, pad + 90f, -128f, 10,
+            Caps(card, pad, -120f, 90f, "TURF", 9.5f, LedgerV2.Label, 3f);
+            LedgerV2.Pips(card, pad + 90f, -128f, 10,
                 Mathf.Clamp(Mathf.RoundToInt(10f * held / mostTurf), 0, 10),
-                LedgerStyle.Ink, 5f, 10f, 7f);
-            Line(card, LedgerStyle.Mono, 12f, LedgerStyle.InkDim, pad + inner - 90f, -120f,
+                LedgerV2.Ink, 5f, 10f, 7f);
+            Line(card, LedgerStyle.Mono, 12f, LedgerV2.Muted, pad + inner - 90f, -120f,
                 90f, 18f, held.ToString(), TextAlignmentOptions.MidlineRight);
 
             CardRow(card, pad, -142f, inner, "CAPOS",
-                capos > 0 ? capos.ToString() : "not known", LedgerStyle.Ink);
+                capos > 0 ? capos.ToString() : "not known", LedgerV2.Ink);
 
             // What the outfit kicks up to this house, and when. A house below the
             // outfit levies nothing, and the row says so rather than printing $0 -
@@ -298,16 +318,16 @@ namespace LivingCity.UI
                           ? "OVERDUE"
                           : LedgerText.DueIn(levy.DueDay, today, hourNow)),
                 levy != null && levy.Amount > 0
-                    ? (levy.Overdue ? LedgerStyle.RedPen : LedgerStyle.Ink)
-                    : LedgerStyle.InkDim);
+                    ? (levy.Overdue ? LedgerV2.Red : LedgerV2.Ink)
+                    : LedgerV2.Muted);
 
             // The door it operates behind, written in the margin in pen. The generated
             // city binds a business marker; the street city binds only the books -
             // either one names the door.
             var front = Gangs.GangRegistry.FrontBusinessOf(gang.Id);
             var books = Gangs.GangRegistry.FrontBooksOf(gang.Id);
-            Rule(card, pad, -188f, inner, LedgerStyle.InkFaint);
-            var note = Paragraph(card, LedgerStyle.SerifItalic, 13.5f, LedgerStyle.Ballpoint,
+            Rule(card, pad, -188f, inner, LedgerV2.Rule);
+            var note = Paragraph(card, LedgerStyle.SerifItalic, 13.5f, LedgerV2.PaperBlue,
                 pad, -196f, inner, 38f,
                 front ? front.BusinessName + " is the door."
                 : books != null
@@ -325,7 +345,7 @@ namespace LivingCity.UI
             {
                 var choice = (Outfit.Stance)s;
                 var gangId = gang.Id;
-                var button = Tape(card, LedgerText.StanceLabel(choice),
+                var button = LedgerV2.Button(card, LedgerText.StanceLabel(choice),
                     pad + s * (buttonW + 4f), -234f, buttonW, 26f, () =>
                     {
                         if (outfit)
@@ -333,15 +353,13 @@ namespace LivingCity.UI
                         dirty = true;
                     }, red: choice == Outfit.Stance.War, size: 10f,
                     outline: choice != effective);
-                if (choice == effective)
-                    PenRing((RectTransform)button.transform.parent, LedgerStyle.RedPen);
             }
         }
 
         static void CardRow(Transform card, float x, float y, float w, string label,
             string value, Color ink)
         {
-            Caps(card, x, y, 90f, label, 9.5f, LedgerStyle.InkLabel, 3f);
+            Caps(card, x, y, 90f, label, 9.5f, LedgerV2.Label, 3f);
             var text = Line(card, LedgerStyle.Mono, 12.5f, ink, x + 90f, y, w - 90f, 18f,
                 value);
             text.overflowMode = TextOverflowModes.Ellipsis;
@@ -352,17 +370,17 @@ namespace LivingCity.UI
         void BuildStanceLegend()
         {
             Caps(diplomacyContent, PageLeft, LegendTop, PageWidth, "WHAT A STANCE DOES",
-                12f, LedgerStyle.InkMid, 5f);
-            Rule(diplomacyContent, PageLeft, LegendTop - 20f, PageWidth, LedgerStyle.InkFaint);
+                12f, LedgerV2.Body, 5f);
+            Rule(diplomacyContent, PageLeft, LegendTop - 20f, PageWidth, LedgerV2.Rule);
 
             var half = (PageWidth - 40f) * 0.5f;
-            Paragraph(diplomacyContent, LedgerStyle.Mono, 12f, LedgerStyle.InkDim, PageLeft,
+            Paragraph(diplomacyContent, LedgerStyle.Mono, 12f, LedgerV2.Muted, PageLeft,
                 LegendTop - 28f, half, 72f,
                 LedgerText.StanceEffect(Outfit.Stance.Peace) + "\n" +
                 LedgerText.StanceEffect(Outfit.Stance.Truce) + "\n" +
                 LedgerText.StanceEffect(Outfit.Stance.War), lineSpacing: 3f);
 
-            Paragraph(diplomacyContent, LedgerStyle.Mono, 12f, LedgerStyle.InkDim,
+            Paragraph(diplomacyContent, LedgerStyle.Mono, 12f, LedgerV2.Muted,
                 PageLeft + half + 40f, LegendTop - 28f, half, 72f,
                 LedgerText.StanceTakesEffect + "  Strength reads " +
                 LedgerText.StrengthUnknown + " until you have eyes inside a family - " +

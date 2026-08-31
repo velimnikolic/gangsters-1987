@@ -102,7 +102,6 @@ namespace LivingCity.UI
         int registryVersion = -1;
 
         Camera cam;
-        ContextMenuUI menu;
         Canvas canvas;
         RectTransform markerRoot;
 
@@ -137,7 +136,6 @@ namespace LivingCity.UI
 
             BuildCanvas();
             BuildPopup();
-            menu = FindAnyObjectByType<ContextMenuUI>();
         }
 
         void BuildCanvas()
@@ -245,12 +243,6 @@ namespace LivingCity.UI
             }
 
             if (PersonnelAlmanac.IsOpen)
-            {
-                SetHover(null);
-                return;
-            }
-
-            if (menu && menu.IsOpen)
             {
                 SetHover(null);
                 return;
@@ -602,9 +594,6 @@ namespace LivingCity.UI
             if (!component)
                 return false;
 
-            if (component.GetComponentInParent<PlayerMafioso>())
-                return true;
-
             var member = component.GetComponentInParent<GangMemberAgent>();
             return member && member.GangId == GangCatalog.PlayerGangId;
         }
@@ -615,12 +604,10 @@ namespace LivingCity.UI
             if (!component)
                 return false;
 
-            return component.GetComponentInParent<PlayerMafioso>() ||
-                   component.GetComponentInParent<PedestrianAgent>() ||
+            return component.GetComponentInParent<PedestrianAgent>() ||
                    component.GetComponentInParent<PoliceOfficerAgent>() ||
                    component.GetComponentInParent<SchoolChildAgent>() ||
                    component.GetComponentInParent<GangMemberAgent>() ||
-                   component.GetComponentInParent<PoliceResponseOfficer>() ||
                    component.GetComponentInParent<NpcWitness>() ||
                    component.GetComponentInParent<InteractableNpc>();
         }

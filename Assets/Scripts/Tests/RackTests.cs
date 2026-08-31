@@ -32,6 +32,7 @@ namespace LivingCity.Tests
             TheStreetsTroubleReachesTheShopNextDoor(failures);
             ThePlayerReadsWordsAboutAShop(failures);
             TheCardSaysWhereTheShopStands(failures);
+            EverySurfaceOffersTheSameOrders(failures);
 
             return failures;
         }
@@ -398,6 +399,86 @@ namespace LivingCity.Tests
             var blank = LivingCity.UI.BusinessIntention.Line("Sal Moretti", 850, "", "");
             if (!blank.Contains("Unprotected"))
                 failures.Add("RACK-015: a shop with no standing at all lost its line.");
+        }
+
+        // ------------------------------------------------------------- EPIC 6.5 orders
+
+        /// <summary>
+        /// One list of what can be put to a shopkeeper, so the street card, the paper map
+        /// and the ledger cannot offer different things. What is available follows the two
+        /// facts that matter: where the shop stands with us, and whether our men are at
+        /// its door.
+        /// </summary>
+        static void EverySurfaceOffersTheSameOrders(List<string> failures)
+        {
+            var rows = new List<TerritoryRacketOrder>();
+
+            // A place that carries no business has nothing to ask.
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, false, true, true, rows);
+            if (rows.Count != 0)
+                failures.Add("ORDER: a civic building offered a racket order.");
+
+            // Nobody picked to send: the approach row stands, faded, saying why.
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, true, false, false, rows);
+            if (rows.Count != 1 || rows[0].Available || rows[0].Note.Length == 0)
+                failures.Add("ORDER: with no crew picked the card says nothing useful.");
+
+            // Men elsewhere: approach can be given, the conversations cannot - and they
+            // are still listed, with the reason, rather than silently missing.
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, true, true, false, rows);
+            if (rows.Count != 3)
+                failures.Add("ORDER: the rows vanish instead of explaining themselves.");
+            else
+            {
+                if (!Offers(rows, TerritoryRacketIntent.Approach, true))
+                    failures.Add("ORDER: the men could not be sent to the door.");
+                if (Offers(rows, TerritoryRacketIntent.Demand, true) ||
+                    Offers(rows, TerritoryRacketIntent.Threaten, true))
+                    failures.Add("ORDER: a demand was offered from across the city.");
+            }
+
+            // Men at the door: the conversations open, and walking up again does not.
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Defiant, true, true, true, rows);
+            if (!Offers(rows, TerritoryRacketIntent.Demand, true) ||
+                !Offers(rows, TerritoryRacketIntent.Threaten, true))
+                failures.Add("ORDER: with the men at the door there is nothing to say.");
+            if (Offers(rows, TerritoryRacketIntent.Approach, true))
+                failures.Add("ORDER: the men were sent to a door they are standing at.");
+
+            // A shop already paying us has nothing left to be asked in Phase 1.
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Compliant, true, true, true, rows);
+            for (var i = 0; i < rows.Count; i++)
+                if (rows[i].Available)
+                    failures.Add("ORDER: a shop that already pays us was asked again.");
+            if (rows.Count == 0)
+                failures.Add("ORDER: a paying shop's card is empty instead of saying why.");
+
+            // Every intent is named exactly once, whatever the situation.
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Hesitant, true, true, true, rows);
+            var seen = new List<TerritoryRacketIntent>();
+            for (var i = 0; i < rows.Count; i++)
+            {
+                if (seen.Contains(rows[i].Intent))
+                    failures.Add("ORDER: the same intent is on the card twice.");
+                seen.Add(rows[i].Intent);
+                if (string.IsNullOrEmpty(rows[i].Label))
+                    failures.Add("ORDER: a row has no words on it.");
+            }
+        }
+
+        static bool Offers(
+            List<TerritoryRacketOrder> rows, TerritoryRacketIntent intent, bool available)
+        {
+            for (var i = 0; i < rows.Count; i++)
+                if (rows[i].Intent == intent && rows[i].Available == available)
+                    return true;
+            return false;
         }
 
         // ------------------------------------------------------------------- fixtures

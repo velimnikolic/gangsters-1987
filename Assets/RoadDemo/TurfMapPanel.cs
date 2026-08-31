@@ -1094,7 +1094,26 @@ namespace RoadDemo
         internal void OpenEnemyMenu(Vector2 screen, DemoCrews.Unit actor,
             DemoCrews.Unit target, IReadOnlyList<CrewEnemyAction> actions)
         {
-            if (actor == null || target == null || actions == null || actions.Count == 0)
+            if (target == null)
+            {
+                CloseMenu();
+                return;
+            }
+
+            OpenActionMenu(screen, actor, target,
+                target.GangName + " · " + target.Standing() + " MEN", actions);
+        }
+
+        /// <summary>
+        /// The same paper menu over anything the map can name - a rival's crew, or a
+        /// shopkeeper's premises. The rows and what they do belong to whoever asked for
+        /// them; this only draws them, so the street and the map can never offer
+        /// different things.
+        /// </summary>
+        internal void OpenActionMenu(Vector2 screen, DemoCrews.Unit actor,
+            DemoCrews.Unit target, string title, IReadOnlyList<CrewEnemyAction> actions)
+        {
+            if (actor == null || actions == null || actions.Count == 0)
             {
                 CloseMenu();
                 return;
@@ -1108,8 +1127,7 @@ namespace RoadDemo
             const float itemH = TurfContextMenuStyle.EnemyRowHeight;
             const float w = TurfContextMenuStyle.EnemyWidth;
 
-            TurfContextMenuStyle.Header(_menuRect, w,
-                target.GangName + " · " + target.Standing() + " MEN");
+            TurfContextMenuStyle.Header(_menuRect, w, title);
 
             float y = -headH;
             foreach (var action in actions)

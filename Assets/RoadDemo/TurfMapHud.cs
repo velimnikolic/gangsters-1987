@@ -1649,6 +1649,11 @@ namespace RoadDemo
                 if (_selected.Count == 0 || _crews == null)
                     return;
 
+                // A shopkeeper answers with the exact street choices too. The plate owns
+                // the paper; CrewOverlay owns what the racket rows mean and do.
+                if (TryOpenRacketMenu(screen, plan))
+                    return;
+
                 // CrewOverlay's gesture is authored on a 1080-line canvas. TurfMap's
                 // furniture uses a 720-line canvas, so using its scale factor here would
                 // make the same double click fifty percent looser on the map.
@@ -1925,6 +1930,39 @@ namespace RoadDemo
         /// <summary>A bare TurfMap right click is the street's ordinary move command,
         /// issued immediately. An explicit unit path preserves driving/boarding behavior;
         /// a gathered group simply receives that same command once per crew.</summary>
+        /// <summary>
+        /// A business under the pointer on the plate: the same rows the street card shows,
+        /// on the map's own paper menu. Nothing here decides what an order means.
+        /// </summary>
+        bool TryOpenRacketMenu(Vector2 screen, Vector2 plan)
+        {
+            var runtime = TerritoryRuntime.Instance;
+            if (runtime == null || _survey?.Plan == null || _crews == null)
+                return false;
+
+            var at = _survey.Plan.ToWorld(plan);
+            if (!runtime.TryGetBusinessNear(at, MapBusinessPickRange, out var businessId))
+                return false;
+
+            if (_crewOverlay == null)
+                _crewOverlay = _crews.GetComponent<CrewOverlay>();
+            if (_enemyActions == null)
+                _enemyActions = new List<CrewEnemyAction>();
+            if (_crewOverlay == null ||
+                !_crewOverlay.TryGetRacketActions(businessId, _enemyActions))
+                return false;
+
+            var title = runtime.TryGetBusinessView(businessId, out var view)
+                ? view.BusinessName + " · " + view.Standing
+                : businessId.Value;
+            _mapChrome.OpenActionMenu(screen, _crews.Selected, null, title, _enemyActions);
+            return true;
+        }
+
+        /// <summary>How far from a door a pick on the plate still means that door. Wider
+        /// than the street's, because a finger on paper is a coarser instrument.</summary>
+        const float MapBusinessPickRange = 22f;
+
         void MoveHere(Vector2 plan, bool run)
         {
             if (_selected.Count == 0 || _crews == null)

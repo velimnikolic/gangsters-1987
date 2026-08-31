@@ -22,8 +22,14 @@ namespace LivingCity.UI
     /// </summary>
     public sealed partial class PersonnelAlmanac
     {
-        const float OrdersTop = PageTop - 36f;
-        const float OrdersInner = PageWidth - 8f;
+        static float OrdersTop = PageTop - 36f;
+        static float OrdersInner = PageWidth - 8f;
+
+        static void MeasureOrdersLayout()
+        {
+            OrdersTop = PageTop - 36f;
+            OrdersInner = PageWidth - 8f;
+        }
 
         RectTransform ordersViewport;
         RectTransform ordersContent;
@@ -52,12 +58,12 @@ namespace LivingCity.UI
         {
             var root = NewPageRoot(sheet, LedgerPage.Orders);
 
-            var heading = Line(root, LedgerStyle.Type, 18f, LedgerStyle.Ink, PageLeft, PageTop,
+            var heading = Line(root, LedgerStyle.Type, 18f, LedgerV2.Ink, PageLeft, PageTop,
                 400f, 30f, "ORDERS");
             heading.characterSpacing = 4f;
-            ordersWeek = Line(root, LedgerStyle.Mono, 14.5f, LedgerStyle.InkDim, PageLeft + 140f,
+            ordersWeek = Line(root, LedgerStyle.Mono, 14.5f, LedgerV2.Muted, PageLeft + 140f,
                 PageTop + 2f, PageWidth - 140f, 26f, "", TextAlignmentOptions.MidlineRight);
-            Rule(root, PageLeft, PageTop - 30f, PageWidth, LedgerStyle.Ink);
+            Rule(root, PageLeft, PageTop - 30f, PageWidth, LedgerV2.Ink);
 
             ordersViewport = NewRect("Viewport", root);
             PlaceTopLeft(ordersViewport, PageLeft, OrdersTop, PageWidth,
@@ -157,6 +163,34 @@ namespace LivingCity.UI
             dirty = true;
             FinishOrderTargeting();
         }
+
+        /// <summary>
+        /// The premises the drafted target is standing on, if any. The ground a point
+        /// order was aimed at is often a doorway, and the page has no business knowing
+        /// which - it asks the territory runtime and takes the answer.
+        /// </summary>
+        bool TryDraftedBusiness(out Territory.TerritoryBusinessId businessId, out string label)
+        {
+            businessId = default;
+            label = "";
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            if (runtime == null || (draftX == 0f && draftZ == 0f))
+                return false;
+            if (!runtime.TryGetBusinessNear(
+                    new Vector3(draftX, 0f, draftZ), DraftBusinessRange, out businessId))
+                return false;
+
+            label = runtime.TryGetBusinessView(businessId, out var view)
+                ? view.BusinessName.ToUpperInvariant()
+                : "PREMISES";
+            return runtime.IsRacketable(businessId);
+        }
+
+        readonly List<Territory.TerritoryRacketOrder> racketRows =
+            new List<Territory.TerritoryRacketOrder>();
+
+        /// <summary>How far a drafted point may be from a door and still mean it.</summary>
+        const float DraftBusinessRange = 22f;
 
         public void OnPointClicked(Vector2 worldXZ, int blockId)
         {
@@ -495,7 +529,7 @@ namespace LivingCity.UI
 
             if (ordersNote.Length > 0)
             {
-                Paragraph(ordersContent, LedgerStyle.MonoItalic, 14f, LedgerStyle.RedPen, 4f, y,
+                Paragraph(ordersContent, LedgerStyle.MonoItalic, 14f, LedgerV2.Red, 4f, y,
                     OrdersInner, 40f, ordersNote, lineSpacing: 0f);
                 y -= 44f;
             }
@@ -525,7 +559,7 @@ namespace LivingCity.UI
 
             if (roster.Crews.Count == 0)
             {
-                Line(ordersContent, LedgerStyle.MonoItalic, 14.5f, LedgerStyle.InkDim, 4f, y,
+                Line(ordersContent, LedgerStyle.MonoItalic, 14.5f, LedgerV2.Muted, 4f, y,
                     OrdersInner, 20f, "Nobody runs a crew. Promote a man on the PERSONNEL page.");
                 return y - 28f;
             }
@@ -555,19 +589,19 @@ namespace LivingCity.UI
                     dirty = true;
                 });
                 if (chosen)
-                    Highlight(row, LedgerStyle.Highlighter, inset: 2f);
+                    Highlight(row, LedgerV2.Picked, inset: 2f);
 
-                var name = Text("Name", row, LedgerStyle.MonoBold, 14.5f, LedgerStyle.Ink,
+                var name = Text("Name", row, LedgerStyle.MonoBold, 14.5f, LedgerV2.Ink,
                     TextAlignmentOptions.MidlineLeft);
                 FillRow(name.rectTransform, 8f, 260f);
                 name.text = lieutenant != null ? lieutenant.FullName : "?";
 
-                var kit = Text("Kit", row, LedgerStyle.Mono, 14.5f, LedgerStyle.InkDim,
+                var kit = Text("Kit", row, LedgerStyle.Mono, 14.5f, LedgerV2.Muted,
                     TextAlignmentOptions.MidlineLeft);
                 FillRow(kit.rectTransform, 280f, 300f);
                 kit.text = men + " men  ·  " + (hasVehicle ? "by car" : "on foot");
 
-                var busy = Text("Out", row, LedgerStyle.Mono, 14f, LedgerStyle.InkDim,
+                var busy = Text("Out", row, LedgerStyle.Mono, 14f, LedgerV2.Muted,
                     TextAlignmentOptions.MidlineRight);
                 FillRow(busy.rectTransform, OrdersInner - 260f, 252f);
                 busy.text = LedgerText.MenOutLine(menOut, men);
@@ -581,7 +615,7 @@ namespace LivingCity.UI
                       LedgerText.StageLine(current);
                 var queued = book.LiveCount(crew.Id) - (current != null ? 1 : 0);
                 Line(ordersContent, LedgerStyle.MonoItalic, 13.5f,
-                    current == null ? LedgerStyle.InkDim : LedgerStyle.Ink, 12f, y,
+                    current == null ? LedgerV2.Muted : LedgerV2.Ink, 12f, y,
                     OrdersInner - 16f, 18f,
                     doing + (queued > 0 ? "   (" + queued + " more waiting)" : ""));
                 y -= 22f;
@@ -604,7 +638,7 @@ namespace LivingCity.UI
             var spec = CurrentDraftSpec();
 
             // Category and type cyclers - the whole order table, four small tapes.
-            Tape(ordersContent, "<", 4f, y, 26f, 22f, () =>
+            LedgerV2.Button(ordersContent, "<", 4f, y, 26f, 22f, () =>
             {
                 ordersCategoryIndex = (ordersCategoryIndex + CategoryCount - 1) % CategoryCount;
                 ordersTypeIndex = 0;
@@ -612,12 +646,12 @@ namespace LivingCity.UI
                 draftLabel = "";
                 dirty = true;
             });
-            var category = Line(ordersContent, LedgerStyle.Type, 14f, LedgerStyle.InkDim, 36f, y,
+            var category = Line(ordersContent, LedgerStyle.Type, 14f, LedgerV2.Muted, 36f, y,
                 OrdersInner - 72f, 22f,
                 LedgerText.CategoryLabel((Outfit.OrderCategory)ordersCategoryIndex)
                     .ToUpperInvariant(), TextAlignmentOptions.Center);
             category.characterSpacing = 2f;
-            Tape(ordersContent, ">", 4f + OrdersInner - 30f, y, 26f, 22f, () =>
+            LedgerV2.Button(ordersContent, ">", 4f + OrdersInner - 30f, y, 26f, 22f, () =>
             {
                 ordersCategoryIndex = (ordersCategoryIndex + 1) % CategoryCount;
                 ordersTypeIndex = 0;
@@ -627,7 +661,7 @@ namespace LivingCity.UI
             });
             y -= 26f;
 
-            Tape(ordersContent, "<", 4f, y, 26f, 26f, () =>
+            LedgerV2.Button(ordersContent, "<", 4f, y, 26f, 26f, () =>
             {
                 var count = Mathf.Max(1, categorySpecs.Count);
                 ordersTypeIndex = (ordersTypeIndex + count - 1) % count;
@@ -635,11 +669,11 @@ namespace LivingCity.UI
                 draftLabel = "";
                 dirty = true;
             });
-            var type = Line(ordersContent, LedgerStyle.Type, 17f, LedgerStyle.Ink, 36f, y,
+            var type = Line(ordersContent, LedgerStyle.Type, 17f, LedgerV2.Ink, 36f, y,
                 OrdersInner - 72f, 26f, LedgerText.OrderLabel(spec.Type).ToUpperInvariant(),
                 TextAlignmentOptions.Center);
             type.characterSpacing = 3f;
-            Tape(ordersContent, ">", 4f + OrdersInner - 30f, y, 26f, 26f, () =>
+            LedgerV2.Button(ordersContent, ">", 4f + OrdersInner - 30f, y, 26f, 26f, () =>
             {
                 ordersTypeIndex = (ordersTypeIndex + 1) % Mathf.Max(1, categorySpecs.Count);
                 draftBlocks.Clear();
@@ -648,7 +682,7 @@ namespace LivingCity.UI
             });
             y -= 32f;
 
-            Line(ordersContent, LedgerStyle.Mono, 14f, LedgerStyle.InkDim, 4f, y, OrdersInner, 18f,
+            Line(ordersContent, LedgerStyle.Mono, 14f, LedgerV2.Muted, 4f, y, OrdersInner, 18f,
                 LedgerText.RequirementLine(spec.PrimaryAttribute, spec.PrimaryFloorHalfSteps));
             y -= 20f;
 
@@ -657,14 +691,14 @@ namespace LivingCity.UI
                 var best = Outfit.CrewKit.BestAt(roster, crew, spec.PrimaryAttribute);
                 if (best < spec.PrimaryFloorHalfSteps)
                 {
-                    Line(ordersContent, LedgerStyle.MonoItalic, 14f, LedgerStyle.RedPen, 4f, y,
+                    Line(ordersContent, LedgerStyle.MonoItalic, 14f, LedgerV2.Red, 4f, y,
                         OrdersInner, 18f,
                         "Best man has " + LedgerText.Stars(best) + " - they can try anyway.");
                     y -= 20f;
                 }
             }
 
-            Paragraph(ordersContent, LedgerStyle.Mono, 14f, LedgerStyle.InkDim, 4f, y,
+            Paragraph(ordersContent, LedgerStyle.Mono, 14f, LedgerV2.Muted, 4f, y,
                 OrdersInner, 38f, LedgerText.TargetModeHint(spec.Mode), lineSpacing: 0f);
             y -= 42f;
 
@@ -674,7 +708,7 @@ namespace LivingCity.UI
 
             var targets = Line(ordersContent,
                 targetCount > 0 ? LedgerStyle.MonoBold : LedgerStyle.Mono, 14.5f,
-                targetCount > 0 ? LedgerStyle.Ink : LedgerStyle.InkDim, 4f, y,
+                targetCount > 0 ? LedgerV2.Ink : LedgerV2.Muted, 4f, y,
                 OrdersInner - 100f, 20f,
                 targetCount == 0
                     ? "TARGETS: none yet - unconfirmed"
@@ -683,24 +717,24 @@ namespace LivingCity.UI
                         : draftLabel) + " - unconfirmed");
             if (targetCount > 0)
             {
-                Highlight((RectTransform)targets.transform, LedgerStyle.Highlighter, inset: 0f);
-                Tape(ordersContent, "CLEAR", 4f + OrdersInner - 84f, y, 84f, 20f, () =>
+                Highlight((RectTransform)targets.transform, LedgerV2.Picked, inset: 0f);
+                LedgerV2.Button(ordersContent, "CLEAR", 4f + OrdersInner - 84f, y, 84f, 20f, () =>
                 {
                     draftBlocks.Clear();
                     draftLabel = "";
                     ordersNote = "";
                     dirty = true;
-                }, size: 11f);
+                }, red: false, size: 11f);
             }
             y -= 24f;
 
             // The map is where ground is pointed at, and the book takes the player there
             // rather than asking him to find it: one press shuts the book, opens the map
             // and comes back with the target.
-            var pick = Tape(ordersContent,
+            var pick = LedgerV2.Button(ordersContent,
                 spec.Mode == Outfit.TargetMode.Area ? "PICK THE BLOCKS ON THE MAP"
                                                     : "PICK THE TARGET ON THE MAP",
-                4f, y, 240f, 22f, BeginOrderTargeting, size: 11f);
+                4f, y, 240f, 22f, BeginOrderTargeting, red: false, size: 11f);
             SetActionEnabled(pick, MapTargeting.Available);
             y -= 26f;
 
@@ -723,7 +757,7 @@ namespace LivingCity.UI
                 var standing = spec.Resolution == Outfit.JobResolution.Standing;
 
                 Line(ordersContent, LedgerStyle.Mono, 14f,
-                    travel > 8f ? LedgerStyle.RedPen : LedgerStyle.InkDim, 4f, y,
+                    travel > 8f ? LedgerV2.Red : LedgerV2.Muted, 4f, y,
                     OrdersInner, 18f,
                     "Travel: " + Mathf.RoundToInt(distance) + "m from HQ " +
                     (hasVehicle ? "by " + (vehicle.Length > 0 ? vehicle.ToUpperInvariant() : "car")
@@ -731,7 +765,7 @@ namespace LivingCity.UI
                     " - " + LedgerText.Hours(travel) + " each way.");
                 y -= 20f;
 
-                Line(ordersContent, LedgerStyle.Mono, 14f, LedgerStyle.InkDim, 4f, y, OrdersInner,
+                Line(ordersContent, LedgerStyle.Mono, 14f, LedgerV2.Muted, 4f, y, OrdersInner,
                     18f, standing
                         ? "A standing watch - they hold it until you call them off."
                         : "The work itself: " + LedgerText.Hours(work) + " with " +
@@ -753,7 +787,7 @@ namespace LivingCity.UI
                     var chance = Outfit.OrderResolution.ChanceFor(spec, best, depth,
                         organization);
                     Line(ordersContent, LedgerStyle.Mono, 14f,
-                        chance < 0.4f ? LedgerStyle.RedPen : LedgerStyle.InkDim, 4f, y,
+                        chance < 0.4f ? LedgerV2.Red : LedgerV2.Muted, 4f, y,
                         OrdersInner, 18f,
                         spec.Resolution == Outfit.JobResolution.Street
                             ? "The street will decide this one."
@@ -762,7 +796,7 @@ namespace LivingCity.UI
                 }
                 y -= 4f;
 
-                Tape(ordersContent, "-", 4f, y, 26f, 24f, () =>
+                LedgerV2.Button(ordersContent, "-", 4f, y, 26f, 24f, () =>
                 {
                     if (draftMen > 1)
                     {
@@ -770,22 +804,61 @@ namespace LivingCity.UI
                         dirty = true;
                     }
                 });
-                Line(ordersContent, LedgerStyle.MonoBold, 14f, LedgerStyle.Ink, 34f, y, 110f, 24f,
+                Line(ordersContent, LedgerStyle.MonoBold, 14f, LedgerV2.Ink, 34f, y, 110f, 24f,
                     "MEN: " + draftMen, TextAlignmentOptions.Center);
-                Tape(ordersContent, "+", 148f, y, 26f, 24f, () =>
+                LedgerV2.Button(ordersContent, "+", 148f, y, 26f, 24f, () =>
                 {
                     draftMen++;
                     dirty = true;
                 });
 
                 if (draftMen >= available)
-                    Line(ordersContent, LedgerStyle.MonoItalic, 14f, LedgerStyle.InkDim, 190f, y,
+                    Line(ordersContent, LedgerStyle.MonoItalic, 14f, LedgerV2.Muted, 190f, y,
                         OrdersInner - 190f, 24f, "That is the whole crew.");
                 y -= 32f;
 
                 var crewId = crew.Id;
                 var issueSpec = spec;
-                Tape(ordersContent, "SEND THEM", 4f, y, 200f, 28f, () =>
+
+                // The racket is not a paper job: it is men standing in a doorway. When the
+                // ground this order was drafted over turns out to be somebody's premises,
+                // the page offers the street order beside the paper one - it goes through
+                // the territory gateway, the crew walks, and the demand is put to the
+                // owner when they get there. Nothing about the drafted Job changes.
+                if (TryDraftedBusiness(out var racketBusiness, out var racketName) &&
+                    RoadDemo.TerritoryRuntime.Instance.TryGetCrewNode(crewId, out var racketNode))
+                {
+                    var businessId = racketBusiness;
+                    var node = racketNode;
+                    // The word on the button is the shared list's word, not the page's:
+                    // an order given from a desk is the approach, and the demand follows
+                    // when the men arrive. One place decides that, for every surface.
+                    var racketLedger = RoadDemo.TerritoryRuntime.Instance.Racket;
+                    Territory.TerritoryRacketOrders.For(
+                        racketLedger != null
+                            ? racketLedger.StateOf(businessId, new Territory.TerritoryGangId(
+                                Gangs.GangCatalog.PlayerGangId))
+                            : Territory.TerritoryProtectionState.Unaffiliated,
+                        racketable: true, hasCrew: true, atDoor: false, racketRows);
+                    var word = racketRows.Count > 0
+                        ? racketRows[0].Label
+                        : Territory.TerritoryRacketOrders.ApproachLabel;
+                    LedgerV2.Button(ordersContent, word + ": " + racketName, 212f, y, 240f, 28f,
+                        () =>
+                        {
+                            var runtime = RoadDemo.TerritoryRuntime.Instance;
+                            if (runtime?.Commands == null)
+                                return;
+                            var sent = runtime.Commands.Submit(
+                                new Territory.ApproachBusinessCommand(node, businessId));
+                            ordersNote = sent.Status == Territory.TerritoryCommandStatus.Rejected
+                                ? sent.Reason
+                                : "They are on their way to the door.";
+                            dirty = true;
+                        });
+                }
+
+                LedgerV2.Button(ordersContent, "SEND THEM", 4f, y, 200f, 28f, () =>
                 {
                     var job = new Outfit.Job
                     {
@@ -824,7 +897,7 @@ namespace LivingCity.UI
 
             if (book.Jobs.Count == 0)
             {
-                Line(ordersContent, LedgerStyle.MonoItalic, 14.5f, LedgerStyle.InkDim, 4f, y,
+                Line(ordersContent, LedgerStyle.MonoItalic, 14.5f, LedgerV2.Muted, 4f, y,
                     OrdersInner, 18f, "Nobody is out. The city is somebody else's tonight.");
                 return y - 26f;
             }
@@ -846,10 +919,10 @@ namespace LivingCity.UI
                     dirty = true;
                 });
                 if (chosen)
-                    Highlight(row, LedgerStyle.Highlighter, inset: 2f);
+                    Highlight(row, LedgerV2.Picked, inset: 2f);
 
                 var text = Text("Line", row, LedgerStyle.Mono, 14.5f,
-                    underway ? LedgerStyle.Ink : LedgerStyle.InkDim,
+                    underway ? LedgerV2.Ink : LedgerV2.Muted,
                     TextAlignmentOptions.MidlineLeft);
                 FillRow(text.rectTransform, 8f, OrdersInner - 116f);
                 text.text = (lieutenant != null ? lieutenant.Surname : "?") +
@@ -863,12 +936,12 @@ namespace LivingCity.UI
                 // there - so the arrows only appear on work still waiting its turn.
                 if (!underway)
                 {
-                    Tape(ordersContent, "^", 4f + OrdersInner - 92f, y, 26f, 22f,
-                        () => { outfit.MoveOrder(jobId, -1); dirty = true; }, size: 11f);
-                    Tape(ordersContent, "v", 4f + OrdersInner - 62f, y, 26f, 22f,
-                        () => { outfit.MoveOrder(jobId, 1); dirty = true; }, size: 11f);
+                    LedgerV2.Button(ordersContent, "^", 4f + OrdersInner - 92f, y, 26f, 22f,
+                        () => { outfit.MoveOrder(jobId, -1); dirty = true; }, red: false, size: 11f);
+                    LedgerV2.Button(ordersContent, "v", 4f + OrdersInner - 62f, y, 26f, 22f,
+                        () => { outfit.MoveOrder(jobId, 1); dirty = true; }, red: false, size: 11f);
                 }
-                Tape(ordersContent, "X", 4f + OrdersInner - 32f, y, 26f, 22f, () =>
+                LedgerV2.Button(ordersContent, "X", 4f + OrdersInner - 32f, y, 26f, 22f, () =>
                 {
                     outfit.CancelOrder(jobId);
                     if (selectedOrderId == jobId)
@@ -891,7 +964,7 @@ namespace LivingCity.UI
             y = OrdersHeader("Come along", y);
             foreach (var rise in outfit.Rises)
             {
-                Line(ordersContent, LedgerStyle.Mono, 14f, LedgerStyle.Ink, 4f, y,
+                Line(ordersContent, LedgerStyle.Mono, 14f, LedgerV2.Ink, 4f, y,
                     OrdersInner, 18f,
                     rise.Name + " - " + LedgerText.AttributeLabel(rise.Attribute) +
                     " now " + LedgerText.Stars(rise.HalfSteps) + ".");
@@ -907,7 +980,7 @@ namespace LivingCity.UI
 
             if (outfit.Records.Count == 0)
             {
-                Line(ordersContent, LedgerStyle.MonoItalic, 14.5f, LedgerStyle.InkDim, 4f, y,
+                Line(ordersContent, LedgerStyle.MonoItalic, 14.5f, LedgerV2.Muted, 4f, y,
                     OrdersInner, 18f, "Nothing has come back yet.");
                 return y - 26f;
             }
@@ -916,9 +989,9 @@ namespace LivingCity.UI
             {
                 var color = record.Outcome switch
                 {
-                    Outfit.OrderOutcome.Completed => LedgerStyle.Ink,
-                    Outfit.OrderOutcome.Failed => LedgerStyle.RedPen,
-                    _ => LedgerStyle.InkDim,
+                    Outfit.OrderOutcome.Completed => LedgerV2.Ink,
+                    Outfit.OrderOutcome.Failed => LedgerV2.Red,
+                    _ => LedgerV2.Muted,
                 };
                 Line(ordersContent, LedgerStyle.Mono, 14f, color, 4f, y, OrdersInner, 18f,
                     "D" + record.Day + "  ·  " + record.Lieutenant + "  ·  " +

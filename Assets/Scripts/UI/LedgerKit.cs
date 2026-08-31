@@ -868,12 +868,24 @@ namespace LivingCity.UI
             button.onClick.AddListener(onClick);
         }
 
-        /// <summary>A clickable transparent surface over a rect.</summary>
+        /// <summary>
+        /// A clickable transparent surface over a rect.
+        ///
+        /// A GameObject may hold only ONE Image, and Unity answers a second
+        /// AddComponent&lt;Image&gt; with null rather than an exception - which then
+        /// takes the caller down on the next line, far from the cause. So a rect that
+        /// already has a face gets that face made clickable instead of a second one:
+        /// the surface a caller asked for is the surface it gets, either way.
+        /// </summary>
         public static Image ClickSurface(RectTransform rect)
         {
-            var image = rect.gameObject.AddComponent<Image>();
-            image.sprite = null;
-            image.color = Color.clear;
+            var image = rect.GetComponent<Image>();
+            if (image == null)
+            {
+                image = rect.gameObject.AddComponent<Image>();
+                image.sprite = null;
+                image.color = Color.clear;
+            }
             image.raycastTarget = true;
             return image;
         }

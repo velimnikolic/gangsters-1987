@@ -187,6 +187,77 @@ namespace LivingCity.UI
         /// <summary>A meter running warm - the heat bar.</summary>
         public static readonly Color HudMeterWarm = Rgb(0xc97a4a);
 
+        // ---- the 1987 chrome: the bar, the rail, the telex strip, the footer ----
+        //
+        // The v2 ledger is a terminal frame, not a folder on a desk: a dark bar over
+        // the sheet, a dark rail down its left, a light telex strip between them, and
+        // a dark footer under. Every colour below is the design's own oklch converted
+        // to sRGB - nothing here is eyeballed, and nothing duplicates a colour the
+        // sheet already has (the pen inks, the reds and the ambers are shared).
+
+        /// <summary>The chrome bar over the sheet, and the footer under it.</summary>
+        public static readonly Color Chrome = Rgb(0x110c09);
+
+        /// <summary>The hairline that closes a chrome or rail panel.</summary>
+        public static readonly Color ChromeRule = Rgb(0x332c28);
+
+        /// <summary>The title in the chrome bar's left block, and the file number
+        /// printed small beside it.</summary>
+        public static readonly Color ChromeTitle = Rgb(0xf0eae4);
+        public static readonly Color ChromeFile = Rgb(0x8a7d75);
+
+        /// <summary>The page the boss is on, and the five he is not.</summary>
+        public static readonly Color TabRed = Rgb(0xa51e24);
+        public static readonly Color TabActiveText = Rgb(0xfdf7f1);
+        public static readonly Color TabIdle = Rgb(0xa89c93);
+
+        /// <summary>The status rail down the left of the frame.</summary>
+        public static readonly Color Rail = Rgb(0x1f1915);
+
+        /// <summary>The rule between two rail rows - finer than the panel border.</summary>
+        public static readonly Color RailHair = Rgb(0x2b2521);
+
+        /// <summary>The empty trough a rail meter fills.</summary>
+        public static readonly Color RailTrough = Rgb(0x302a26);
+
+        /// <summary>A rail section head - THE OUTFIT, THIS WEEK, NEEDS AN ANSWER.</summary>
+        public static readonly Color RailKicker = Rgb(0xb14e49);
+
+        /// <summary>The rail's three weights of small print: the label over a figure,
+        /// the note under it, and a figure that is only furniture.</summary>
+        public static readonly Color RailLabel = Rgb(0x90837b);
+        public static readonly Color RailNote = Rgb(0x84776f);
+        public static readonly Color RailBright = Rgb(0xdbcec4);
+
+        /// <summary>A rail figure, and the three readings one can take.</summary>
+        public static readonly Color RailValue = Rgb(0xe9e4de);
+        public static readonly Color RailGreen = Rgb(0x6dba70);
+        public static readonly Color RailRed = Rgb(0xf2716a);
+        public static readonly Color RailGold = Rgb(0xf2c86c);
+
+        /// <summary>The telex strip: light stock, its dark source badge, and the
+        /// three voices a wire message can be printed in.</summary>
+        public static readonly Color TelexPaper = Rgb(0xe1d9d0);
+        public static readonly Color TelexRule = Rgb(0xb5a89f);
+        public static readonly Color TelexBadge = Rgb(0x18120f);
+        public static readonly Color TelexBadgeInk = Rgb(0xc8bbb1);
+        public static readonly Color TelexStamp = Rgb(0x6d6059);
+        public static readonly Color TelexUrgent = Rgb(0x971a20);
+        public static readonly Color TelexWarn = Rgb(0x6f4100);
+        public static readonly Color TelexPlain = Rgb(0x37322e);
+        public static readonly Color TelexDot = Rgb(0xb02a2d);
+        public static readonly Color TelexDotWarn = Rgb(0xa66d00);
+        public static readonly Color TelexDotPlain = Rgb(0xa89c92);
+
+        /// <summary>The sheet body itself: flat warm ground, no grain and no fold.
+        /// Cards laid on it keep Printout and Card, which are already a shade lighter
+        /// than this - which is what makes a card read as laid ON something.</summary>
+        public static readonly Color Ground = Rgb(0xebe3da);
+
+        /// <summary>The two halves of the footer line under the sheet.</summary>
+        public static readonly Color FooterInk = Rgb(0xa2968c);
+        public static readonly Color FooterInkDim = Rgb(0x7b6f67);
+
         // ---- rules and marks ----
 
         /// <summary>The blue horizontal rules of ledger paper.</summary>

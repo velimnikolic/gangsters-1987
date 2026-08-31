@@ -956,6 +956,31 @@ namespace RoadDemo
             return false;
         }
 
+        /// <summary>
+        /// The street's own handle on a crew the ledger names. The outfit's units carry
+        /// the roster crew's id (DemoCrews builds them that way), so the ledger can order
+        /// a crew about without knowing anything about the men standing in the road.
+        /// </summary>
+        public bool TryGetCrewNode(int crewId, out TerritoryCommandNodeId node)
+        {
+            node = default;
+            if (crews == null)
+                return false;
+
+            for (var i = 0; i < crews.Units.Count; i++)
+            {
+                var unit = crews.Units[i];
+                if (unit == null || unit.IsPolice || unit.Faction != 0 || unit.Wiped)
+                    continue;
+                if (unit.CrewId != crewId)
+                    continue;
+                node = TerritoryCommandNodeId.Crew(unit.CrewId);
+                return true;
+            }
+
+            return false;
+        }
+
         /// <summary>Which family a named man belongs to, read off the street he is on.</summary>
         public bool TryGetActorGang(TerritoryCharacterId actorId, out TerritoryGangId gangId)
         {

@@ -11,7 +11,7 @@ namespace LivingCity.Gameplay
     /// off-graph legs honest, the entry-node pick, and the animator parameter probe.
     /// Stateless on purpose - the callers own transform, body and animator and hand
     /// them in - so the loop exists once. The code is the PlayerMafioso original,
-    /// unchanged; PoliceResponseOfficer carried a verbatim copy until this file.
+    /// unchanged; the response officer carried a verbatim copy until this file.
     ///
     /// Deliberately NOT shared with the pack's own walkers (PedestrianAgent,
     /// PoliceOfficerAgent): those keep their copies per the copy-not-share convention

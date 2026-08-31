@@ -81,13 +81,11 @@ namespace LivingCity.Gameplay
         const int MaxClipsPerFrame = 1;
         const long ClipReportMs = 50;           // below this a clip is not worth a log line
 
-        // The player layer is parked (GameplayBootstrap), so in the shipping scene there is
-        // no PlayerMafioso to find - ever. A per-frame scene search for him would be the
-        // most expensive no-op in Update; the miss is remembered and asked again this often.
+        // A per-frame scene search for the Buildings root would be the most expensive
+        // no-op in Update; a miss is remembered and asked again this often.
         const float MissingLookupSeconds = 2f;
 
-        // Everything except pedestrians (the player himself) and the park-nav
-        // proxy roots on layer 10 - the same idiom as PlayerMafioso.WallMask.
+        // Everything except pedestrians and the park-nav proxy roots on layer 10.
         static readonly int Mask = ~((1 << PedestrianSpawner.PedestrianLayer) | (1 << LivingCity.Generation.ParkNavBuilder.ProxyLayer));
 
         struct HiddenEntry
@@ -99,7 +97,6 @@ namespace LivingCity.Gameplay
 
         static PlayerOcclusionHider instance;
 
-        PlayerMafioso player;
         Camera cam;
         Transform buildingsRoot;
 
@@ -159,38 +156,32 @@ namespace LivingCity.Gameplay
             Restore();
         }
 
+        /// <summary>
+        /// There is no man of ours on the map to sweep in front of any more - the ground
+        /// the camera is actually looking at is the only thing worth clearing, and that is
+        /// the zoomed-in pass's job. Kept as the seam it always was: whatever stands in
+        /// front of the subject calls HideOccluders with its own cast.
+        /// </summary>
         void Sweep()
         {
             ResolveSceneReferences();
-            if (!player || !cam || !buildingsRoot)
-                return;
-
-            // Orthographic, so player-to-camera is simply -forward everywhere.
-            var forward = cam.transform.forward;
-            var origin = player.transform.position + Vector3.up * ChestHeight + forward * BackOffset;
-            var count = Physics.SphereCastNonAlloc(origin, CastRadius, -forward, hits,
-                                                   CastDistance + BackOffset, Mask,
-                                                   QueryTriggerInteraction.Ignore);
-            HideOccluders(count);
         }
 
         /// <summary>
-        /// Lazily fills the camera, the player and the Buildings root. The camera is a tag
-        /// lookup and free to retry; the other two are scene searches, retried on the
-        /// MissingLookupSeconds timer while they keep coming up empty.
+        /// Lazily fills the camera and the Buildings root. The camera is a tag lookup and
+        /// free to retry; the root is a scene search, retried on the MissingLookupSeconds
+        /// timer while it keeps coming up empty.
         /// </summary>
         void ResolveSceneReferences()
         {
             if (!cam)
                 cam = Camera.main;
-            if (player && buildingsRoot)
+            if (buildingsRoot)
                 return;
             if (Time.unscaledTime < nextLookupAt)
                 return;
             nextLookupAt = Time.unscaledTime + MissingLookupSeconds;
 
-            if (!player)
-                player = FindAnyObjectByType<PlayerMafioso>();
             if (!buildingsRoot)
             {
                 var builder = FindAnyObjectByType<CityBuilder>();

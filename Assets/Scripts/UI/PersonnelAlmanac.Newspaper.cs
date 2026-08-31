@@ -18,24 +18,60 @@ namespace LivingCity.UI
     public sealed partial class PersonnelAlmanac
     {
         /// <summary>The newsprint is a sheet laid ON the ledger page, not the page
-        /// itself: the file's masthead, blotter and telex slips stay printed above it,
-        /// the way the design has the boss reading the paper on top of his own book.</summary>
-        const float NewsH = -(PageBottom - PageTop);
+        /// itself: the rail's readouts and the telex strip stay printed round it, the
+        /// way the design has the boss reading the paper on top of his own book.
+        ///
+        /// Measured, not const: the sheet is full bleed and takes whatever the window
+        /// leaves, so every column below is struck in MeasureNewspaperLayout.</summary>
+        static float NewsH = -(PageBottom - PageTop);
         const float NewsPad = 24f;
         const float NewsLeft = NewsPad;
-        const float NewsRight = PageWidth - NewsPad;
-        const float NewsWidth = NewsRight - NewsLeft;
+        static float NewsRight = PageWidth - NewsPad;
+        static float NewsWidth = NewsRight - NewsLeft;
 
         /// <summary>The briefs across the foot - the design's auto-fit at a 230-unit
-        /// minimum, which comes out at five columns on this sheet.</summary>
-        const int BriefColumns = 5;
+        /// minimum, which comes out at five columns on a 16:9 sheet and more on a
+        /// wider one.</summary>
         const float BriefGap = 22f;
-        const float BriefW = (NewsWidth - BriefGap * (BriefColumns - 1)) / BriefColumns;
-        const float BriefTop = -420f;
-        const float BriefH = 194f;
+        const float BriefMin = 230f;
+        static int BriefColumns = 5;
+        static float BriefW = (NewsWidth - BriefGap * (BriefColumns - 1)) / BriefColumns;
+        static float BriefTop = -420f;
+        static float BriefH = 194f;
+
+        /// <summary>The flag: the ears, the masthead and the dateline over their rule.
+        /// Fixed - a masthead is the same size on a broadsheet and a tabloid.</summary>
+        const float NewsFlagH = 102f;
+
+        /// <summary>What the briefs take of the sheet under the flag. A front page gives
+        /// its foot about a third, and never less than the row was drawn for.</summary>
+        const float BriefShare = 0.34f;
+
+        /// <summary>Where the lead's deck and its press cut start, under the flag.</summary>
+        const float CutTop = -112f;
+
+        static void MeasureNewspaperLayout()
+        {
+            NewsH = -(PageBottom - PageTop);
+            NewsRight = PageWidth - NewsPad;
+            NewsWidth = NewsRight - NewsLeft;
+            // The design's grid is repeat(auto-fit, minmax(230px, 1fr)): as many columns
+            // as fit at the minimum, and never fewer than the five the copy is written
+            // for. A wider window earns another brief rather than five wider ones.
+            BriefColumns = Mathf.Max(5,
+                Mathf.FloorToInt((NewsWidth + BriefGap) / (BriefMin + BriefGap)));
+            BriefW = (NewsWidth - BriefGap * (BriefColumns - 1)) / BriefColumns;
+            // The foot takes its share of whatever height the window gave the sheet, and
+            // the lead takes the rest. A full-bleed page must FILL: a front page that
+            // stops two thirds down reads as one that failed to print.
+            BriefH = Mathf.Max(194f, (NewsH - NewsFlagH) * BriefShare);
+            BriefTop = -(NewsH - 24f - BriefH);
+            LeadRuleY = BriefTop + 14f;
+            MeasureClassifiedLayout();
+        }
 
         /// <summary>The rule that closes the lead and opens the briefs.</summary>
-        const float LeadRuleY = -406f;
+        static float LeadRuleY = -406f;
 
         RectTransform newsContent;
 
@@ -49,10 +85,7 @@ namespace LivingCity.UI
 
             // The paper as an object on the desk: greyer, colder stock than the ledger's,
             // with its own shadow where it overhangs the file.
-            var stock = Card("Newsprint", root, PageLeft, PageTop, PageWidth, NewsH,
-                LedgerStyle.Newsprint, tiltDegrees: 0.14f, shadowSpread: 14f,
-                low: LedgerStyle.NewsprintLow);
-            Aging(stock, PageWidth, NewsH);
+            var stock = LedgerV2.Card("Newsprint", root, PageLeft, PageTop, PageWidth, NewsH);
 
             newsContent = NewRect("Edition", stock);
             Stretch(newsContent);
@@ -88,8 +121,8 @@ namespace LivingCity.UI
             // ---- the flag ----
             var ear = NewRect("EarLeft", newsContent);
             PlaceTopLeft(ear, NewsLeft, -14f, 118f, 46f);
-            Frame(ear, 1f, LedgerStyle.Ink);
-            var earText = Text("Text", ear, LedgerStyle.Serif, 10.5f, LedgerStyle.Ink,
+            Frame(ear, 1f, LedgerV2.Ink);
+            var earText = Text("Text", ear, LedgerStyle.Serif, 10.5f, LedgerV2.Ink,
                 TextAlignmentOptions.Center);
             Stretch(earText.rectTransform, 4f);
             earText.textWrappingMode = TextWrappingModes.Normal;
@@ -97,34 +130,34 @@ namespace LivingCity.UI
 
             // The right ear is where a paper prints its pointer to the inside pages,
             // and this one points at the men advertising for work.
-            var adsTape = Tape(newsContent, "ADS", NewsRight - 118f, -14f, 118f, 46f,
-                () => SetClassified(true), size: 19f);
+            var adsTape = LedgerV2.Button(newsContent, "ADS", NewsRight - 118f, -14f, 118f, 46f,
+                () => SetClassified(true), red: false, size: 19f);
             adsTape.rectTransform.offsetMin = new Vector2(0f, 14f);
             var earNote = Text("Note", adsTape.transform.parent, LedgerStyle.Condensed,
-                10f, LedgerStyle.TapeText, TextAlignmentOptions.Center);
+                10f, LedgerV2.HeadCream, TextAlignmentOptions.Center);
             PlaceTopLeft(earNote.rectTransform, 0f, -30f, 118f, 14f);
             earNote.characterSpacing = 3f;
             earNote.text = "SITUATIONS WANTED";
 
-            var masthead = Line(newsContent, LedgerStyle.SerifBold, 48f, LedgerStyle.Ink,
+            var masthead = Line(newsContent, LedgerStyle.SerifBold, 48f, LedgerV2.Ink,
                 NewsLeft, -8f, NewsWidth, 62f, "THE CITY WIRE", TextAlignmentOptions.Center);
             masthead.characterSpacing = 6f;
 
-            Rule(newsContent, NewsLeft, -74f, NewsWidth, LedgerStyle.Ink, 2f);
-            var dateline = Line(newsContent, LedgerStyle.SerifItalic, 13f, LedgerStyle.Ink,
+            Rule(newsContent, NewsLeft, -74f, NewsWidth, LedgerV2.Ink, 2f);
+            var dateline = Line(newsContent, LedgerStyle.SerifItalic, 13f, LedgerV2.Ink,
                 NewsLeft, -80f, NewsWidth, 20f,
                 date.Masthead() + "   ·   VOL. LXI, No. " +
                 ((day - 1) % Outfit.Campaign.DaysPerYear + 1) +
                 "   ·   MORNING EDITION   ·   25 CENTS", TextAlignmentOptions.Center);
             dateline.characterSpacing = 1f;
-            Rule(newsContent, NewsLeft, -102f, NewsWidth, LedgerStyle.Ink, 3f);
+            Rule(newsContent, NewsLeft, -102f, NewsWidth, LedgerV2.Ink, 3f);
 
             if (stories.Length == 0)
                 return;
 
             BuildLead(stories[0], seed + date.DayOfYear);
 
-            Rule(newsContent, NewsLeft, LeadRuleY, NewsWidth, LedgerStyle.Ink, 2f);
+            Rule(newsContent, NewsLeft, LeadRuleY, NewsWidth, LedgerV2.Ink, 2f);
 
             // ---- the briefs, one row across the foot ----
             var slot = 0;
@@ -135,7 +168,7 @@ namespace LivingCity.UI
                     seed + date.DayOfYear + i);
                 if (slot > 0)
                     VRule(newsContent, x - BriefGap * 0.5f, BriefTop, BriefH,
-                        LedgerStyle.InkFaint);
+                        LedgerV2.Rule);
             }
 
             // The paper's own furniture fills whatever the wire left empty - an
@@ -145,7 +178,7 @@ namespace LivingCity.UI
                 var x = NewsLeft + slot * (BriefW + BriefGap);
                 if (slot > 0)
                     VRule(newsContent, x - BriefGap * 0.5f, BriefTop, BriefH,
-                        LedgerStyle.InkFaint);
+                        LedgerV2.Rule);
                 BuildAdvert(x, BriefTop, BriefW);
                 slot++;
             }
@@ -154,11 +187,11 @@ namespace LivingCity.UI
                 var x = NewsLeft + slot * (BriefW + BriefGap);
                 if (slot > 0)
                     VRule(newsContent, x - BriefGap * 0.5f, BriefTop, BriefH,
-                        LedgerStyle.InkFaint);
+                        LedgerV2.Rule);
                 Caps(newsContent, x, BriefTop, BriefW, "WEATHER", 11f,
-                    LedgerStyle.InkDim, 4f);
-                Rule(newsContent, x, BriefTop - 18f, BriefW, LedgerStyle.InkFaint);
-                Paragraph(newsContent, LedgerStyle.Serif, 13f, LedgerStyle.Ink, x,
+                    LedgerV2.Muted, 4f);
+                Rule(newsContent, x, BriefTop - 18f, BriefW, LedgerV2.Rule);
+                Paragraph(newsContent, LedgerStyle.Serif, 13f, LedgerV2.Ink, x,
                     BriefTop - 26f, BriefW, BriefH - 30f, WeatherLine(date), lineSpacing: 3f);
             }
         }
@@ -173,8 +206,8 @@ namespace LivingCity.UI
             var cutX = NewsLeft + leadW + gap;
             var cutW = NewsRight - cutX;
 
-            const float headlineTop = -112f;
-            var headline = Paragraph(newsContent, LedgerStyle.Condensed, 44f, LedgerStyle.Ink,
+            const float headlineTop = CutTop;
+            var headline = Paragraph(newsContent, LedgerStyle.Condensed, 44f, LedgerV2.Ink,
                 NewsLeft, headlineTop, leadW, 100f, lead.Text, lineSpacing: -8f);
             headline.overflowMode = TextOverflowModes.Overflow;
 
@@ -186,7 +219,7 @@ namespace LivingCity.UI
             var kicker = lead.Historical
                 ? DeskName(lead.Desk) + "  ·  FROM THE WIRE"
                 : DeskName(lead.Desk) + "  ·  BY A STAFF CORRESPONDENT";
-            Caps(newsContent, NewsLeft, kickerY, leadW, kicker, 11f, LedgerStyle.InkDim, 4f);
+            Caps(newsContent, NewsLeft, kickerY, leadW, kicker, 11f, LedgerV2.Muted, 4f);
 
             // Two columns of copy, the way a lead is set. TMP wraps within one rect, so
             // the columns are two rects with the same run split between them - which is
@@ -197,14 +230,18 @@ namespace LivingCity.UI
             var bodyY = kickerY - 24f;
             var bodyH = Mathf.Max(60f, bodyY - LeadRuleY - 10f);
             var columnW = (leadW - 22f) * 0.5f;
-            Paragraph(newsContent, LedgerStyle.Serif, 15f, LedgerStyle.Ink, NewsLeft, bodyY,
+            Paragraph(newsContent, LedgerStyle.Serif, 15f, LedgerV2.Ink, NewsLeft, bodyY,
                 columnW, bodyH, Blurb(lead.Desk, salt), lineSpacing: 5f);
-            Paragraph(newsContent, LedgerStyle.Serif, 15f, LedgerStyle.Ink,
+            Paragraph(newsContent, LedgerStyle.Serif, 15f, LedgerV2.Ink,
                 NewsLeft + columnW + 22f, bodyY, columnW, bodyH,
                 Blurb(lead.Desk, salt + 1) + "  Continued on page 3.", lineSpacing: 5f);
 
+            // The cut takes the lead's height, capped a little wider than square: a
+            // press photograph on a tall sheet is a big photograph, but a tower is a
+            // poster and this is a newspaper. What the cap leaves goes to the copy.
             if (lead.Photo.HasPicture)
-                NewsCut(lead, cutX, -112f, cutW, 250f);
+                NewsCut(lead, cutX, CutTop, cutW,
+                    Mathf.Clamp(-LeadRuleY + CutTop - 26f, 250f, cutW * 1.15f));
         }
 
         /// <summary>The paper's own advertisement - furniture, and the one thing on the
@@ -213,18 +250,18 @@ namespace LivingCity.UI
         {
             var ad = NewRect("Advert", newsContent);
             PlaceTopLeft(ad, x, y, w, 150f);
-            Frame(ad, 2f, LedgerStyle.Ink);
+            Frame(ad, 2f, LedgerV2.Ink);
             var inner = NewRect("Inner", ad);
             Stretch(inner, 4f);
-            Frame(inner, 1f, LedgerStyle.Ink);
+            Frame(inner, 1f, LedgerV2.Ink);
 
-            var head = Line(ad, LedgerStyle.SerifBold, 17f, LedgerStyle.Ink, 10f, -14f,
+            var head = Line(ad, LedgerStyle.SerifBold, 17f, LedgerV2.Ink, 10f, -14f,
                 w - 20f, 26f, "MARLOWE'S", TextAlignmentOptions.Center);
             head.characterSpacing = 4f;
-            Caps(ad, 10f, -40f, w - 20f, "FINE TAILORING", 12f, LedgerStyle.Ink, 4f,
+            Caps(ad, 10f, -40f, w - 20f, "FINE TAILORING", 12f, LedgerV2.Ink, 4f,
                 TextAlignmentOptions.Center);
-            Rule(ad, 30f, -64f, w - 60f, LedgerStyle.Ink);
-            var body = Paragraph(ad, LedgerStyle.SerifItalic, 12.5f, LedgerStyle.Ink, 12f,
+            Rule(ad, 30f, -64f, w - 60f, LedgerV2.Ink);
+            var body = Paragraph(ad, LedgerStyle.SerifItalic, 12.5f, LedgerV2.Ink, 12f,
                 -70f, w - 24f, 70f,
                 "Suits cut for the discreet professional. Wide in the shoulder, quiet " +
                 "in the cloth. Fittings by appointment only.", lineSpacing: 2f);
@@ -236,15 +273,15 @@ namespace LivingCity.UI
         {
             Caps(newsContent, x, y, w, story.Historical
                 ? DeskName(story.Desk) + "  ·  WIRE REPORT"
-                : DeskName(story.Desk), 10.5f, LedgerStyle.InkDim, 4f);
+                : DeskName(story.Desk), 10.5f, LedgerV2.Muted, 4f);
 
             // Two lines of the condensed gothic, measured - at 52 units a two-line head
             // could not fit its second line and TMP dropped BOTH, ellipsing mid-word.
-            var head = Paragraph(newsContent, LedgerStyle.Condensed, 21f, LedgerStyle.Ink,
+            var head = Paragraph(newsContent, LedgerStyle.Condensed, 21f, LedgerV2.Ink,
                 x, y - 18f, w, LineBox(21f, 2), story.Text, lineSpacing: -4f);
             head.overflowMode = TextOverflowModes.Ellipsis;
 
-            Rule(newsContent, x, y - 90f, w, LedgerStyle.InkFaint);
+            Rule(newsContent, x, y - 90f, w, LedgerV2.Rule);
 
             var bodyTop = y - 98f;
             var bodyHeight = h - 98f;
@@ -255,7 +292,7 @@ namespace LivingCity.UI
                 bodyHeight -= 100f;
             }
 
-            Paragraph(newsContent, LedgerStyle.Serif, 13f, LedgerStyle.Ink, x, bodyTop, w,
+            Paragraph(newsContent, LedgerStyle.Serif, 13f, LedgerV2.Ink, x, bodyTop, w,
                 bodyHeight, Blurb(story.Desk, salt), lineSpacing: 3f);
         }
 
@@ -264,9 +301,9 @@ namespace LivingCity.UI
         /// it lands (or when no model resolves) the hatched plate simply stays.</summary>
         void NewsCut(Headline story, float x, float y, float w, float h)
         {
-            var raw = Plate(newsContent, x, y, w, h, "PRESS PHOTO",
-                new Color(LedgerStyle.Newsprint.r * 0.94f, LedgerStyle.Newsprint.g * 0.94f,
-                    LedgerStyle.Newsprint.b * 0.94f));
+            var raw = LedgerV2.PortraitPlate(newsContent, x, y, w, h, "PRESS PHOTO",
+                new Color(LedgerV2.Panel.r * 0.94f, LedgerV2.Panel.g * 0.94f,
+                    LedgerV2.Panel.b * 0.94f));
 
             // A wide slot shows the middle band of the square print - the subject is
             // centred, so a landscape window keeps it whole.
@@ -287,7 +324,7 @@ namespace LivingCity.UI
                 raw, PortraitStudio.Treatment.Newsprint);
 
             var caption = Paragraph(newsContent, LedgerStyle.SerifItalic, 12.5f,
-                LedgerStyle.Ink, x, y - h - 4f, w, 30f, photo.Caption, lineSpacing: 0f);
+                LedgerV2.Ink, x, y - h - 4f, w, 30f, photo.Caption, lineSpacing: 0f);
             caption.overflowMode = TextOverflowModes.Ellipsis;
         }
 

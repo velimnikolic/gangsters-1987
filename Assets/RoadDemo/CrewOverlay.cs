@@ -738,6 +738,16 @@ namespace RoadDemo
                 return;
             }
 
+            // a shopkeeper's premises under the click: nothing to fight and nothing to
+            // blow, but everything the racket can put to him. The rows come from the one
+            // shared list, so the card and the paper map cannot offer different things.
+            var business = BusinessAt(up);
+            if (business.IsValid)
+            {
+                OpenBusinessOrders(business, up);
+                return;
+            }
+
             // the ground all sits on one plane; the pick lands there
             var plane = new Plane(Vector3.up, new Vector3(0f, _crews.GroundY, 0f));
             var ray = _cam.ScreenPointToRay(up);
@@ -963,6 +973,203 @@ namespace RoadDemo
 
             LayoutAndShow(screen);
         }
+
+        /// <summary>
+        /// The business under the pointer: the click lands on the street, and the nearest
+        /// authored door within reach owns it. Resolved through the territory runtime
+        /// rather than off a marker, so a shop whose view is streamed out is still a shop.
+        /// </summary>
+        LivingCity.Territory.TerritoryBusinessId BusinessAt(Vector2 screen)
+        {
+            var runtime = TerritoryRuntime.Instance;
+            if (runtime == null || _cam == null)
+                return default;
+
+            var ray = _cam.ScreenPointToRay(screen);
+            var plane = new Plane(Vector3.up, new Vector3(0f, _crews.GroundY, 0f));
+            if (!plane.Raycast(ray, out float enter))
+                return default;
+
+            return runtime.TryGetBusinessNear(ray.GetPoint(enter), BusinessPickRange, out var id)
+                ? id
+                : default;
+        }
+
+        /// <summary>How far from a door a click still means that door.</summary>
+        const float BusinessPickRange = 12f;
+
+        /// <summary>The card over a shop: what the picked crew can put to its owner - or,
+        /// with nobody picked, which crew is to go.</summary>
+        void OpenBusinessOrders(
+            LivingCity.Territory.TerritoryBusinessId businessId, Vector2 screen)
+        {
+            if (!businessId.IsValid)
+                return;
+            _cardScreen = screen;
+            if (!TryGetRacketActions(businessId, _enemyActions) || _enemyActions.Count == 0)
+                return;
+            if (!BuildCard())
+                return;
+
+            _cardTarget = null;
+            _cardFront = null;
+            _cardPlantCar = null;
+            _cardCrew = _crews.Selected;
+            _cardShown = 0;
+
+            var runtime = TerritoryRuntime.Instance;
+            _cardTitle.text = runtime != null &&
+                              runtime.TryGetBusinessView(businessId, out var view)
+                ? view.BusinessName.ToUpperInvariant() + " · " + view.Standing.ToUpperInvariant()
+                : businessId.Value.ToUpperInvariant();
+
+            foreach (var action in _enemyActions)
+                Row(action.Label, action.Note, action.Run, action.Run != null);
+
+            LayoutAndShow(screen);
+        }
+
+        /// <summary>
+        /// The single source for what right-clicking a shop means. The paper map asks for
+        /// these same rows, so what is offered, what it says and what it does cannot drift
+        /// between the street and the map. Every row submits through the command gateway -
+        /// none of them touches the racket's state.
+        /// </summary>
+        internal bool TryGetRacketActions(
+            LivingCity.Territory.TerritoryBusinessId businessId, List<CrewEnemyAction> actions)
+        {
+            actions.Clear();
+            var runtime = TerritoryRuntime.Instance;
+            var crew = _crews != null ? _crews.Selected : null;
+            if (runtime == null || !businessId.IsValid)
+                return false;
+
+            // Nobody picked to send: the card asks that question first and answers itself
+            // - pick a lieutenant and it comes straight back with what he can do. With a
+            // crew already picked this stage never appears, because there is nothing to
+            // ask.
+            if (crew == null)
+                return CrewPicker(businessId, actions);
+
+            var gang = new LivingCity.Territory.TerritoryGangId(
+                LivingCity.Gangs.GangCatalog.PlayerGangId);
+            var standing = runtime.Racket != null
+                ? runtime.Racket.StateOf(businessId, gang)
+                : LivingCity.Territory.TerritoryProtectionState.Unaffiliated;
+
+            var atDoor = crew != null &&
+                         runtime.TryGetBusinessApproach(businessId, out var door) &&
+                         runtime.HasManAt(gang, door, ApproachSlack(runtime));
+
+            LivingCity.Territory.TerritoryRacketOrders.For(
+                standing, runtime.IsRacketable(businessId), crew != null, atDoor, _racketOrders);
+
+            for (var i = 0; i < _racketOrders.Count; i++)
+            {
+                var order = _racketOrders[i];
+                var intent = order.Intent;
+                actions.Add(new CrewEnemyAction(
+                    order.Label, order.Note,
+                    order.Available ? () => Submit(intent, businessId) : (System.Action)null));
+            }
+
+            return actions.Count > 0;
+        }
+
+        /// <summary>
+        /// Who goes. One row per crew of the outfit that still has men on its feet; taking
+        /// one picks that crew and opens the same card again, now carrying the orders.
+        /// </summary>
+        bool CrewPicker(
+            LivingCity.Territory.TerritoryBusinessId businessId, List<CrewEnemyAction> actions)
+        {
+            for (var i = 0; i < _crews.Units.Count; i++)
+            {
+                var unit = _crews.Units[i];
+                if (unit == null || unit.IsPolice || unit.Faction != 0 || unit.Wiped)
+                    continue;
+
+                var picked = unit;
+                var name = string.IsNullOrEmpty(unit.Name)
+                    ? "EKIPA #" + unit.CrewId
+                    : unit.Name.ToUpperInvariant();
+                actions.Add(new CrewEnemyAction(
+                    name,
+                    Spell(unit.Standing()) + " on their feet",
+                    () =>
+                    {
+                        _crews.Select(picked);
+                        OpenBusinessOrders(businessId, _cardScreen);
+                    }));
+            }
+
+            if (actions.Count == 0)
+                actions.Add(new CrewEnemyAction(
+                    "NEMA KOGA", "not a man of ours left standing", null));
+            return true;
+        }
+
+        Vector2 _cardScreen;
+
+        static float ApproachSlack(TerritoryRuntime runtime) =>
+            runtime.Racket != null ? runtime.Racket.Config.ApproachRadiusMetres : 14f;
+
+        /// <summary>
+        /// The order itself, through the gateway and nowhere else. Approach marches the
+        /// crew; the demand and the threat are conversations, so they need a man of ours
+        /// at the door and the runtime refuses them when there is none.
+        /// </summary>
+        void Submit(
+            LivingCity.Territory.TerritoryRacketIntent intent,
+            LivingCity.Territory.TerritoryBusinessId businessId)
+        {
+            var runtime = TerritoryRuntime.Instance;
+            var crew = _crews != null ? _crews.Selected : null;
+            if (runtime?.Commands == null || crew == null)
+                return;
+
+            LivingCity.Territory.TerritoryCommandResult result;
+            if (intent == LivingCity.Territory.TerritoryRacketIntent.Approach)
+            {
+                result = runtime.Commands.Submit(
+                    new LivingCity.Territory.ApproachBusinessCommand(
+                        LivingCity.Territory.TerritoryCommandNodeId.Crew(crew.CrewId),
+                        businessId));
+            }
+            else
+            {
+                var speaker = Speaker(crew);
+                result = intent == LivingCity.Territory.TerritoryRacketIntent.Demand
+                    ? runtime.Commands.Submit(
+                        new LivingCity.Territory.DemandProtectionCommand(speaker, businessId))
+                    : runtime.Commands.Submit(
+                        new LivingCity.Territory.ThreatenBusinessOwnerCommand(speaker, businessId));
+            }
+
+            if (result.Status == LivingCity.Territory.TerritoryCommandStatus.Rejected ||
+                result.Status == LivingCity.Territory.TerritoryCommandStatus.Failed)
+            {
+                if (!string.IsNullOrEmpty(result.Reason))
+                    _refusal = (result.Reason, Time.unscaledTime + 2.5f);
+                return;
+            }
+
+            if (runtime.TryGetBusinessApproach(businessId, out var door))
+                ShowMark(door + Vector3.up * 1.0f, MarkTint);
+        }
+
+        /// <summary>Whoever of the crew is nearest the front of it does the talking.</summary>
+        static LivingCity.Territory.TerritoryCharacterId Speaker(DemoCrews.Unit crew)
+        {
+            foreach (var man in crew.All())
+                if (man != null && !man.Dead && man.Tf != null &&
+                    man.Tf.gameObject.activeInHierarchy)
+                    return new LivingCity.Territory.TerritoryCharacterId(man.CharacterId);
+            return default;
+        }
+
+        readonly List<LivingCity.Territory.TerritoryRacketOrder> _racketOrders =
+            new List<LivingCity.Territory.TerritoryRacketOrder>();
 
         /// <summary>The card over a rival's CAR: lay a charge under it, to spring when
         /// they next drive it off.</summary>
