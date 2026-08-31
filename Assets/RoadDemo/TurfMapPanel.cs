@@ -235,6 +235,17 @@ namespace RoadDemo
             _menuRect = DemoUi.NewRect("Menu", root);
             TurfContextMenuStyle.Dress(_menuRect);
             _menuRect.gameObject.SetActive(false);
+
+            // The hover tip: the same paper as the menu, six lines of words and no
+            // controls at all - it answers "what is this street" while the pointer
+            // passes over it, and disappears the moment it does not.
+            _tipRect = DemoUi.NewRect("Block Tip", root);
+            TurfContextMenuStyle.Dress(_tipRect);
+            _tipText = LedgerKit.Paragraph(_tipRect, LedgerStyle.Mono, 11f,
+                TurfContextMenuStyle.Body, TipPad, -TipPad, TipWidth - TipPad * 2f,
+                TipHeight - TipPad * 2f, "", 6f);
+            _tipText.raycastTarget = false;
+            _tipRect.gameObject.SetActive(false);
         }
 
         // ----------------------------------------------------------------- the ruler
@@ -1126,7 +1137,94 @@ namespace RoadDemo
                 line += "\nANSWERS FOR IT: " + (who.Length > 0 ? who : "assigned");
             }
 
+            line += ShopsOn(runtime, blockId);
+            line += RecentOn(runtime, blockId);
             return line;
+        }
+
+        /// <summary>
+        /// The shops on this street and where each one stands with us - in the same words
+        /// the shop's own card uses, so a street read from the map and a shop read from
+        /// the pavement never say different things.
+        /// </summary>
+        string ShopsOn(TerritoryRuntime runtime, LivingCity.Territory.TerritoryBlockId blockId)
+        {
+            var geography = runtime.Geography;
+            if (geography == null)
+                return "";
+
+            var here = geography.BusinessesOf(blockId);
+            if (here.Count == 0)
+                return "";
+
+            var text = "\nON THIS STREET:";
+            var shown = 0;
+            for (int i = 0; i < here.Count && shown < 5; i++)
+            {
+                if (!runtime.TryGetBusinessView(here[i].BusinessId, out var shop))
+                    continue;
+                shown++;
+                text += "\n  " + shop.BusinessName + " — " + shop.Standing;
+                if (shop.Protector.Length > 0 && shop.Protector != "us")
+                    text += " (" + shop.Protector + ")";
+            }
+
+            if (here.Count > shown)
+                text += "\n  … " + (here.Count - shown) + " more";
+            return shown == 0 ? "" : text;
+        }
+
+        /// <summary>
+        /// What has happened here lately, in words. The event stream is the simulation's
+        /// own account of itself; the file quotes it rather than keeping a second one.
+        /// </summary>
+        string RecentOn(TerritoryRuntime runtime, LivingCity.Territory.TerritoryBlockId blockId)
+        {
+            var events = runtime.Events?.Recent;
+            if (events == null)
+                return "";
+
+            var text = "";
+            var shown = 0;
+            for (int i = events.Count - 1; i >= 0 && shown < 3; i--)
+            {
+                var record = events[i];
+                if (record.Value == null || record.Value.BlockId != blockId)
+                    continue;
+
+                var line = Told(record.Value);
+                if (line.Length == 0)
+                    continue;
+                if (shown == 0)
+                    text += "\nLATELY:";
+                text += "\n  " + line;
+                shown++;
+            }
+
+            return text;
+        }
+
+        /// <summary>One event, as the player would hear it told. Never a number.</summary>
+        static string Told(LivingCity.Territory.ITerritoryEvent value)
+        {
+            switch (value)
+            {
+                case LivingCity.Territory.BlockControlChanged control:
+                    return "the street went " +
+                           LedgerText.ControlWord(control.Current).ToLowerInvariant();
+                case LivingCity.Territory.BlockBecameContested _:
+                    return "two houses started arguing over it";
+                case LivingCity.Territory.BlockControlLost _:
+                    return "a house lost its hold on it";
+                case LivingCity.Territory.FearEventRecorded _:
+                    return "something happened on it";
+                case LivingCity.Territory.BusinessComplianceChanged compliance:
+                    return compliance.Current > compliance.Previous
+                        ? "a shop came round"
+                        : "a shop stopped paying";
+                default:
+                    return "";
+            }
         }
 
         float FileSheet(float width, float top, string number, string body, string foot,
@@ -1251,6 +1349,46 @@ namespace RoadDemo
             Anchor(_menuRect, 0f, 0f, px, py);
             _menuRect.pivot = new Vector2(0f, 1f);
             _menuRect.gameObject.SetActive(true);
+        }
+
+        const float TipWidth = 240f;
+        const float TipHeight = 118f;
+        const float TipPad = 8f;
+
+        RectTransform _tipRect;
+        TMP_Text _tipText;
+
+        /// <summary>
+        /// What the street under the pointer is, in the player's words. Six short lines,
+        /// no numbers, and nothing to click - a tip is a look, never an order.
+        /// </summary>
+        public void ShowBlockTip(string text, Vector2 screen)
+        {
+            if (_tipRect == null || string.IsNullOrEmpty(text))
+            {
+                HideBlockTip();
+                return;
+            }
+
+            _tipText.text = text;
+            _tipRect.sizeDelta = new Vector2(TipWidth, TipHeight);
+
+            // Same ladder as the menu: real pixels onto canvas units, then nudged back
+            // inside the window so a tip near an edge is still readable.
+            float ui = _hud.UiScale;
+            var at = screen / ui;
+            float px = Mathf.Min(at.x + 18f, Screen.width / ui - TipWidth - 4f);
+            float py = Mathf.Max(at.y - 12f, TipHeight + 4f);
+            Anchor(_tipRect, 0f, 0f, px, py);
+            _tipRect.pivot = new Vector2(0f, 1f);
+            if (!_tipRect.gameObject.activeSelf)
+                _tipRect.gameObject.SetActive(true);
+        }
+
+        public void HideBlockTip()
+        {
+            if (_tipRect != null && _tipRect.gameObject.activeSelf)
+                _tipRect.gameObject.SetActive(false);
         }
 
         public void CloseMenu()

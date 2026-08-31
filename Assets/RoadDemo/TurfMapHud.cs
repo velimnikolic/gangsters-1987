@@ -529,6 +529,50 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>
+        /// The street under the pointer, in the player's words, while the pointer is over
+        /// it. Six lines and no numbers: what it is called, what it reads as, how our men
+        /// and our name stand there, how its shops are going, and what the rivals are
+        /// worth. Everything comes off the player query - the tip cannot see, and could
+        /// not print, an exact value.
+        /// </summary>
+        void HoverBlock(Vector2 screen, bool overChrome)
+        {
+            var runtime = TerritoryRuntime.Instance;
+            if (overChrome || _mapChrome.MenuOpen || runtime?.PlayerQuery == null ||
+                !TryGroundAt(screen, out var ground))
+            {
+                _mapChrome.HideBlockTip();
+                _hoverBlock = default;
+                return;
+            }
+
+            if (!runtime.TryGetBlockAtWorld(new Vector3(ground.x, 0f, ground.y), out var blockId) ||
+                !runtime.PlayerQuery.TryGetBlock(blockId, out var view))
+            {
+                _mapChrome.HideBlockTip();
+                _hoverBlock = default;
+                return;
+            }
+
+            if (blockId != _hoverBlock)
+            {
+                _hoverBlock = blockId;
+                _hoverText =
+                    view.NeighborhoodName + " — " + view.BlockName + "\n" +
+                    view.Control.ToUpperInvariant() + "\n" +
+                    "Our men: " + view.Presence + "\n" +
+                    "The street: " + view.LocalFear + "\n" +
+                    "Shops: " + view.Businesses + "\n" +
+                    "Rivals: " + view.RivalPresence;
+            }
+
+            _mapChrome.ShowBlockTip(_hoverText, screen);
+        }
+
+        LivingCity.Territory.TerritoryBlockId _hoverBlock;
+        string _hoverText = "";
+
         /// <summary>Puts the boom back on the street side of the map line - what Esc
         /// means on a map that is a zoom level.</summary>
         void Descend()
@@ -1629,6 +1673,8 @@ namespace RoadDemo
                               _crewPanel.ClaimsPointer(screen) ||
                               (EventSystem.current && EventSystem.current.IsPointerOverGameObject());
             PointerOverChrome = overChrome;
+
+            HoverBlock(screen, overChrome);
 
             if (mouse.rightButton.wasPressedThisFrame)
             {

@@ -1155,7 +1155,10 @@ namespace RoadDemo
             }
 
             if (runtime.TryGetBusinessApproach(businessId, out var door))
-                ShowMark(door + Vector3.up * 1.0f, MarkTint);
+                ShowMark(door + Vector3.up * 1.0f,
+                    intent == LivingCity.Territory.TerritoryRacketIntent.Threaten
+                        ? AttackTint
+                        : MarkTint);
         }
 
         /// <summary>Whoever of the crew is nearest the front of it does the talking.</summary>
@@ -1363,6 +1366,20 @@ namespace RoadDemo
             TurfContextMenuStyle.EnemyText(rect, CardWidth, out var label, out var note);
 
             return new OrderRow { Rect = rect, Face = face, Label = label, Note = note };
+        }
+
+        void PulseApproachMark()
+        {
+            if (_markAge < MarkLife)
+                return;
+
+            var runtime = TerritoryRuntime.Instance;
+            var crew = _crews != null ? _crews.Selected : null;
+            if (runtime == null || crew == null ||
+                !runtime.TryGetPendingApproach(crew.CrewId, out var door))
+                return;
+
+            ShowMark(door + Vector3.up * 1.0f, MarkTint);
         }
 
         void ShowMark(Vector3 world, Color tint)
@@ -1916,6 +1933,11 @@ namespace RoadDemo
 
         void UpdateMark()
         {
+            // The men are on their way to somebody's door: the doorstep keeps its mark
+            // while they walk, re-lit as the old one dies. Order given, order visible -
+            // and it is only a mark, never a claim on anything.
+            PulseApproachMark();
+
             if (_markAge >= MarkLife)
             {
                 if (_mark.enabled) _mark.enabled = false;

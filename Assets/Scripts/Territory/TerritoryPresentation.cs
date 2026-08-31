@@ -321,9 +321,12 @@ namespace LivingCity.Territory
 
             observed ??= TerritoryBlockSignals.Empty;
 
-            float? ownPresence = null;
-            float? ownHolding = null;
-            float? ownFear = null;
+            // Our OWN numbers are never unknown to us: a street we have nobody on reads
+            // None, not Unknown. The knowledge filter is about what we can see of other
+            // houses, and it has never been about what we can see of ourselves.
+            float? ownPresence = 0f;
+            float? ownHolding = 0f;
+            float? ownFear = 0f;
             float? strongestRival = null;
             float? strongestRivalPresence = null;
             for (var i = 0; i < observed.Gangs.Count; i++)

@@ -1610,6 +1610,25 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>
+        /// The door a crew is currently walking to, if it is walking to one. The street
+        /// overlay reads it to keep a mark on that doorstep while they are on their way -
+        /// the order is visible in the world, not only in the card that issued it.
+        /// </summary>
+        public bool TryGetPendingApproach(int crewId, out Vector3 door)
+        {
+            door = default;
+            for (var i = 0; i < pendingApproaches.Count; i++)
+            {
+                if (pendingApproaches[i].CrewId != crewId)
+                    continue;
+                door = pendingApproaches[i].Door;
+                return true;
+            }
+
+            return false;
+        }
+
         /// <summary>What the player may read about a shop: words, and only the ones his
         /// own house could plausibly know.</summary>
         public bool TryGetBusinessView(
