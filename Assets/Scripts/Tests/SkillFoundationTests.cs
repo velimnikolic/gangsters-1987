@@ -29,6 +29,11 @@ namespace LivingCity.Tests
             TheCurveSteepensTowardTheCeiling(failures);
             TheClimbSlowsAndThenStops(failures);
             NothingIsBankedPastTheCeiling(failures);
+            TheCalendarAgreesWithTheCampaign(failures);
+            TheYearsTakeTheFieldTradesOnly(failures);
+            YoungMenAreLeftAlone(failures);
+            DecayStopsAtOneStarAndIsPrinted(failures);
+            EverybodyIsDealtADateOfBirth(failures);
 
             return failures;
         }
@@ -287,6 +292,171 @@ namespace LivingCity.Tests
                 failures.Add($"NothingIsBankedPastTheCeiling: he is still carrying " +
                              $"{man.GetPractice(CharacterAttribute.Combat)} points he " +
                              "can never spend.");
+        }
+
+        // ----------------------------------------------------------------- the years
+
+        /// <summary>A man of a stated age, every trade at five stars, no ceiling.</summary>
+        static Character Aged(Roster roster, string name, int age, int year)
+        {
+            var man = new Character
+            {
+                Id = roster.NextCharacterId(),
+                FirstName = name,
+                Surname = "Vecchi",
+                BirthYear = year - age,
+                BirthDayOfYear = 0,
+            };
+            for (var s = 0; s < AttributeScale.Count; s++)
+                man.SetHalfSteps((CharacterAttribute)s, AttributeScale.MaxHalfSteps);
+            roster.Members.Add(man);
+            return man;
+        }
+
+        static void TheCalendarAgreesWithTheCampaign(List<string> failures)
+        {
+            // The Personnel core names the calendar itself so it never has to reference
+            // the Outfit layer. The two have to say the same thing.
+            if (RosterSeeder.CalendarStartYear != Outfit.Campaign.StartYear)
+                failures.Add("TheCalendarAgrees: the seeder opens in " +
+                             RosterSeeder.CalendarStartYear + ", the campaign in " +
+                             Outfit.Campaign.StartYear + ".");
+            if (RosterSeeder.CalendarDaysPerYear != Outfit.Campaign.DaysPerYear)
+                failures.Add("TheCalendarAgrees: the seeder's year is " +
+                             RosterSeeder.CalendarDaysPerYear + " days, the campaign's " +
+                             Outfit.Campaign.DaysPerYear + ".");
+        }
+
+        static void TheYearsTakeTheFieldTradesOnly(List<string> failures)
+        {
+            const int start = 1987;
+            var roster = new Roster();
+            var man = Aged(roster, "Aldo", 50, start);
+            var wear = Aging.WearYears(man);
+
+            var declines = new List<Decline>();
+            var expected = 0;
+            for (var year = start; year < start + 8; year++)
+            {
+                var age = year - man.BirthYear;
+                if (age > Aging.PeakAge && (age - Aging.PeakAge) % wear == 0)
+                    expected++;
+                Aging.Tick(roster, year, 0, declines);
+            }
+
+            var lost = AttributeScale.MaxHalfSteps -
+                       man.GetHalfSteps(CharacterAttribute.Combat);
+            if (lost != expected)
+                failures.Add($"TheYearsTakeTheFieldTrades: Aldo (wear every {wear} " +
+                             $"year(s)) lost {lost} half-steps of Combat over eight " +
+                             $"years, not {expected}.");
+
+            for (var t = 0; t < Aging.FieldTrades.Length; t++)
+                if (man.GetHalfSteps(Aging.FieldTrades[t]) !=
+                    man.GetHalfSteps(CharacterAttribute.Combat))
+                    failures.Add($"TheYearsTakeTheFieldTrades: {Aging.FieldTrades[t]} " +
+                                 "did not fall with Combat.");
+
+            for (var t = 0; t < Aging.CommandTrades.Length; t++)
+                if (man.GetHalfSteps(Aging.CommandTrades[t]) != AttributeScale.MaxHalfSteps)
+                    failures.Add($"TheYearsTakeTheFieldTrades: {Aging.CommandTrades[t]} " +
+                                 "fell, and what a man knows about running men does not.");
+
+            if (declines.Count != expected * Aging.FieldTrades.Length)
+                failures.Add($"TheYearsTakeTheFieldTrades: {declines.Count} losses were " +
+                             $"printed against {expected * Aging.FieldTrades.Length} taken.");
+
+            // Same man, same seed, same timeline - run it again from scratch.
+            var second = new Roster();
+            var twin = Aged(second, "Aldo", 50, start);
+            for (var year = start; year < start + 8; year++)
+                Aging.Tick(second, year, 0, null);
+            if (twin.GetHalfSteps(CharacterAttribute.Combat) !=
+                man.GetHalfSteps(CharacterAttribute.Combat))
+                failures.Add("TheYearsTakeTheFieldTrades: the same man aged differently " +
+                             "the second time.");
+        }
+
+        static void YoungMenAreLeftAlone(List<string> failures)
+        {
+            const int start = 1987;
+            var roster = new Roster();
+            var young = Aged(roster, "Nico", 30, start);
+            var onTheLine = Aged(roster, "Bruno", Aging.PeakAge, start);
+
+            for (var year = start; year < start + 10; year++)
+                Aging.Tick(roster, year, 0, null);
+
+            if (young.GetHalfSteps(CharacterAttribute.Combat) != AttributeScale.MaxHalfSteps)
+                failures.Add("YoungMenAreLeftAlone: a man of thirty lost a step - and by " +
+                             "forty he would be finished.");
+            // Bruno turns 46 in the second scripted year and must lose something by the end.
+            if (onTheLine.GetHalfSteps(CharacterAttribute.Combat) ==
+                AttributeScale.MaxHalfSteps)
+                failures.Add("YoungMenAreLeftAlone: nobody ever gets old.");
+        }
+
+        static void DecayStopsAtOneStarAndIsPrinted(List<string> failures)
+        {
+            const int start = 1987;
+            var roster = new Roster();
+            var man = Aged(roster, "Ugo", 60, start);
+
+            var declines = new List<Decline>();
+            for (var year = start; year < start + 40; year++)
+                Aging.Tick(roster, year, 0, declines);
+
+            if (man.GetHalfSteps(CharacterAttribute.Combat) != AttributeScale.MinHalfSteps)
+                failures.Add("DecayStopsAtOneStar: Ugo ended on " +
+                             man.GetHalfSteps(CharacterAttribute.Combat) +
+                             " half-steps, and the floor is " +
+                             AttributeScale.MinHalfSteps + ".");
+            if (declines.Count == 0)
+                failures.Add("DecayStopsAtOneStar: forty years and not one printed line.");
+
+            for (var i = 0; i < declines.Count; i++)
+            {
+                if (declines[i].HalfSteps < AttributeScale.MinHalfSteps)
+                    failures.Add("DecayStopsAtOneStar: a printed line went under the floor.");
+                if (declines[i].Age <= Aging.PeakAge || declines[i].Name.Length == 0)
+                    failures.Add("DecayStopsAtOneStar: a line named nobody, or named a " +
+                                 "man too young to be slowing down.");
+            }
+
+            // Nothing is left to take, so the pass must go quiet rather than keep
+            // printing a loss it never made.
+            var after = new List<Decline>();
+            Aging.Tick(roster, start + 41, 0, after);
+            if (after.Count != 0)
+                failures.Add("DecayStopsAtOneStar: the pass printed a loss it never took.");
+        }
+
+        static void EverybodyIsDealtADateOfBirth(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(1987);
+            for (var i = 0; i < roster.Members.Count; i++)
+            {
+                var member = roster.Members[i];
+                var age = Aging.AgeOn(member, RosterSeeder.CalendarStartYear);
+                var boss = member.Rank == Rank.Boss;
+                var min = boss ? RosterSeeder.BossAge : Aging.MinAge;
+                var max = boss ? RosterSeeder.BossAge : Aging.MaxAge;
+                if (age < min || age > max)
+                    failures.Add($"EverybodyIsDealtADateOfBirth: {member.FullName} is " +
+                                 $"{age} in 1987.");
+                if (member.BirthDayOfYear < 0 ||
+                    member.BirthDayOfYear >= RosterSeeder.CalendarDaysPerYear)
+                    failures.Add($"EverybodyIsDealtADateOfBirth: {member.FullName}'s " +
+                                 $"birthday is day {member.BirthDayOfYear} of the year.");
+            }
+
+            // Same seed, same dates.
+            var again = RosterSeeder.Generate(1987);
+            for (var i = 0; i < roster.Members.Count; i++)
+                if (roster.Members[i].BirthYear != again.Members[i].BirthYear ||
+                    roster.Members[i].BirthDayOfYear != again.Members[i].BirthDayOfYear)
+                    failures.Add("EverybodyIsDealtADateOfBirth: the dates moved between " +
+                                 "two deals of the same seed.");
         }
 
         static void TheValueConventionRoundsUpAtTheHalf(List<string> failures)

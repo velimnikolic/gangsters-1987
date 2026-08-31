@@ -569,6 +569,7 @@ namespace LivingCity.UI
                 y = OrdersJobCard(roster, y);
             y = OrdersInHand(roster, y);
             y = OrdersRises(y);
+            y = OrdersDeclines(y);
             y = OrdersRecord(y);
 
             ordersContent.sizeDelta = new Vector2(0f, Mathf.Max(400f, -y + 20f));
@@ -999,6 +1000,29 @@ namespace LivingCity.UI
                     OrdersInner, 18f,
                     rise.Name + " - " + LedgerText.AttributeLabel(rise.Attribute) +
                     " now " + LedgerText.Stars(rise.HalfSteps) + ".");
+                y -= 20f;
+            }
+
+            return y - 4f;
+        }
+
+        /// <summary>Who the year caught up with overnight. Printed beside the rises
+        /// rather than buried on the personal file: a man losing a step is the news
+        /// that makes a player promote him or replace him, and news that is not on
+        /// the page is news that did not happen.</summary>
+        float OrdersDeclines(float y)
+        {
+            if (outfit.Declines.Count == 0)
+                return y;
+
+            y = OrdersHeader("Slowing down", y);
+            foreach (var loss in outfit.Declines)
+            {
+                Line(ordersContent, LedgerStyle.Mono, 14f, LedgerV2.Red, 4f, y,
+                    OrdersInner, 18f,
+                    loss.Name + ", " + loss.Age + " - " +
+                    LedgerText.AttributeLabel(loss.Attribute) + " down to " +
+                    LedgerText.Stars(loss.HalfSteps) + ".");
                 y -= 20f;
             }
 

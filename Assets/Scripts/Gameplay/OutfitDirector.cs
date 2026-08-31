@@ -35,6 +35,7 @@ namespace LivingCity.Gameplay
         public OrderBook Book => Runner.Book;
         public List<OrderRecord> Records => Runner.Records;
         public List<Improvement> Rises => Runner.Rises;
+        public List<Decline> Declines => Runner.Declines;
         public Tribute Tribute => Runner.Tribute;
         public int Heat => Runner.Heat;
 
@@ -180,6 +181,9 @@ namespace LivingCity.Gameplay
                 if (Rises.Count > 0)
                     Debug.Log("[Outfit] Day " + Campaign.Day + " - " + Rises.Count +
                               " rise(s) on the books.");
+                if (Declines.Count > 0)
+                    Debug.Log("[Outfit] Day " + Campaign.Day + " - " + Declines.Count +
+                              " man-year(s) caught up with somebody.");
             }
         }
 

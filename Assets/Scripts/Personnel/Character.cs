@@ -76,6 +76,17 @@ namespace LivingCity.Personnel
         /// displays it; the police layer will own setting it.</summary>
         public bool Wanted;
 
+        /// <summary>The year he was born, on the campaign's calendar. A year rather
+        /// than an age for the same reason <see cref="BackOnDay"/> is a day rather than
+        /// a countdown: a stored age would have to be ticked, and anything that is
+        /// ticked drifts across a long soak or a save. Zero on a man dealt without a
+        /// date, who then never ages.</summary>
+        public int BirthYear;
+
+        /// <summary>Which day of the campaign year his birthday falls on, 0-based -
+        /// the one day the aging pass looks at him.</summary>
+        public int BirthDayOfYear;
+
         /// <summary>What he signed for, a week - 0 when he is paid the house scale.
         /// Only a man taken on out of the newspaper's classified column carries one
         /// (see Outfit.HireMarket): he named his price in print, and the outfit agreed

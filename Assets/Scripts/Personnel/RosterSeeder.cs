@@ -25,6 +25,19 @@ namespace LivingCity.Personnel
     /// </summary>
     public static class RosterSeeder
     {
+        /// <summary>The campaign's opening year and the length of its year, named here
+        /// rather than read from Outfit.Campaign so the Personnel core stays free of
+        /// that layer - the same discipline <see cref="OrderResolutionRecruitFloor"/>
+        /// keeps. The two must agree, and SkillFoundationTests asserts that they do.</summary>
+        public const int CalendarStartYear = 1987;
+
+        public const int CalendarDaysPerYear = 364;
+
+        /// <summary>Don Salvatore's age in the opening year. Scripted like the rest of
+        /// him: a Don in his early fifties, old enough that the years have started
+        /// taking his hands back and young enough to still be holding the outfit.</summary>
+        public const int BossAge = 52;
+
         public const int StartingStaffCount = 6;
         public const int MemberCount = StartingStaffCount + 1;
         public const int BossCharacterId = StartingStaffCount;
@@ -55,8 +68,11 @@ namespace LivingCity.Personnel
                 // Ceilings first, off his own stream - the stats below are dealt into
                 // them, so nobody starts above what he could ever reach. Consumes no
                 // draw from the sequence above, which is why the starting six kept
-                // their names and their numbers when this landed.
-                Potential.Roll(member, Potential.StreamFor(roster.Seed, member.Id));
+                // their names and their numbers when this landed. His date of birth
+                // rides the same stream, for the same reason.
+                var stream = Potential.StreamFor(roster.Seed, member.Id);
+                Potential.Roll(member, stream);
+                Aging.RollBirth(member, stream, YearOf(roster), CalendarDaysPerYear);
 
                 for (var a = 0; a < AttributeScale.Count; a++)
                     member.SetHalfSteps((CharacterAttribute)a,
@@ -118,7 +134,9 @@ namespace LivingCity.Personnel
                 var member = new Character { Id = roster.NextCharacterId() };
                 DrawName(rng, roster, member);
                 RapSheet.Deal(rng, member);
-                Potential.Roll(member, Potential.StreamFor(roster.Seed, member.Id));
+                var stream = Potential.StreamFor(roster.Seed, member.Id);
+                Potential.Roll(member, stream);
+                Aging.RollBirth(member, stream, YearOf(roster), CalendarDaysPerYear);
 
                 for (var a = 0; a < AttributeScale.Count; a++)
                     member.SetHalfSteps((CharacterAttribute)a,
@@ -177,6 +195,11 @@ namespace LivingCity.Personnel
             }
         }
 
+        /// <summary>The campaign year a man dealt right now is dealt INTO. Zero on the
+        /// roster means the books have not turned yet, which is the opening year.</summary>
+        static int YearOf(Roster roster) =>
+            roster != null && roster.Year > 0 ? roster.Year : CalendarStartYear;
+
         static void AddBoss(Roster roster)
         {
             var boss = new Character
@@ -187,6 +210,8 @@ namespace LivingCity.Personnel
                 Rank = Rank.Boss,
                 Look = GangCatalog.BossModel,
                 Loyalty = 100,
+                BirthYear = CalendarStartYear - BossAge,
+                BirthDayOfYear = 0,
             };
             // The Don is the one man with no ceiling: his numbers are scripted rather
             // than dealt, and a rolled cap would quietly cut the story character the
@@ -231,7 +256,9 @@ namespace LivingCity.Personnel
             };
             DrawName(rng, roster, member);
             RapSheet.Deal(rng, member);
-            Potential.Roll(member, Potential.StreamFor(roster.Seed, member.Id));
+            var stream = Potential.StreamFor(roster.Seed, member.Id);
+            Potential.Roll(member, stream);
+            Aging.RollBirth(member, stream, YearOf(roster), CalendarDaysPerYear);
 
             for (var a = 0; a < AttributeScale.Count; a++)
                 member.SetHalfSteps((CharacterAttribute)a,
@@ -296,6 +323,7 @@ namespace LivingCity.Personnel
             DrawName(rng, roster, member);
             RapSheet.Deal(rng, member);
             Potential.Roll(member, potentialStream);
+            Aging.RollBirth(member, potentialStream, YearOf(roster), CalendarDaysPerYear);
 
             for (var a = 0; a < AttributeScale.Count; a++)
                 member.SetHalfSteps((CharacterAttribute)a,

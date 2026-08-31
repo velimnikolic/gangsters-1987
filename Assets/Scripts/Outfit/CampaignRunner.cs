@@ -44,6 +44,11 @@ namespace LivingCity.Outfit
         /// tick, so a page shows today's rises and not the campaign's.</summary>
         public readonly List<Improvement> Rises = new List<Improvement>();
 
+        /// <summary>Men the year took something off overnight - the mirror of
+        /// <see cref="Rises"/>, on the same clear-and-refill cycle, so a page shows
+        /// today's losses and not the campaign's.</summary>
+        public readonly List<Decline> Declines = new List<Decline>();
+
         /// <summary>Police attention the outfit has drawn. Nothing spends it yet; the
         /// jobs pay into it so the police layer inherits a history when it lands.</summary>
         public int Heat;
@@ -271,12 +276,23 @@ namespace LivingCity.Outfit
             Campaign.Day++;
 
             Rises.Clear();
+            Declines.Clear();
             if (roster != null)
             {
+                // The calendar, written through before anything reads it: a man taken
+                // on today is dealt a date of birth in THIS year.
+                roster.Year = Campaign.Year;
+
                 StandingDay(roster);
                 Practice.Convert(roster, Rises);
+                // What the day gave and what it took, in one pass and in that order,
+                // so a man who earned a half-step this morning and lost one to his
+                // birthday tonight reads as both and not as neither.
+                Aging.Tick(roster, Campaign.Year,
+                    (Campaign.Day - 1) % Campaign.DaysPerYear, Declines);
+
                 var back = RosterOps.Discharge(roster, Campaign.Day);
-                if (back > 0 || Rises.Count > 0)
+                if (back > 0 || Rises.Count > 0 || Declines.Count > 0)
                     RosterMoved?.Invoke();
             }
 

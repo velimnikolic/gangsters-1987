@@ -54,6 +54,13 @@ namespace LivingCity.Personnel
         /// hand. Zero on a roster built by hand.</summary>
         public int Seed;
 
+        /// <summary>The campaign year as of the last day tick, written through by the
+        /// runner. The Personnel core has no business knowing about the Outfit layer's
+        /// calendar, but a man taken on in the third year has to be dealt a date of
+        /// birth in the third year - otherwise every late recruit reads three years
+        /// older than he is. Zero means "the campaign's opening year".</summary>
+        public int Year;
+
         int nextCharacterId;
         int nextCrewId;
         int nextEquipmentId;
