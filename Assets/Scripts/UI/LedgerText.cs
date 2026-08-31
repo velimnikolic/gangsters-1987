@@ -394,6 +394,13 @@ namespace LivingCity.UI
             lieutenant + " already holds " + men +
             (men == 1 ? " man" : " men") + " - as many as he can lead.";
 
+        /// <summary>Why nobody else can be made a lieutenant: the Boss already has as
+        /// many branches as he can keep an eye on.</summary>
+        public static string SpanFull(string boss, int lieutenants) =>
+            boss + " already has " + lieutenants +
+            (lieutenants == 1 ? " lieutenant" : " lieutenants") +
+            " - as many as he can hold.";
+
         public static string BlocksFull(string leader, int blocks) =>
             leader + " already answers for " + blocks +
             (blocks == 1 ? " block" : " blocks") + " - as much ground as he can carry.";

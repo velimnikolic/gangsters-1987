@@ -143,6 +143,18 @@ namespace LivingCity.Personnel
             if (member.Rank == Rank.Boss)
                 return new PromoteCheck(false, false, LedgerText.ReasonBossMoves);
 
+            // The outfit can only hold as many branches as its Boss can keep an eye
+            // on. Past that the answer is not "promote him anyway" - it is that the
+            // Boss himself has to get better at command first.
+            var boss = roster.FindBoss();
+            if (boss != null)
+            {
+                var held = Command.LieutenantsHeld(roster);
+                if (held >= Command.LieutenantCap(boss))
+                    return new PromoteCheck(false, false,
+                        LedgerText.SpanFull(boss.FullName, held));
+            }
+
             var low = member.GetHalfSteps(CharacterAttribute.Awareness) < LowStatHalfSteps ||
                       member.GetHalfSteps(CharacterAttribute.Organization) < LowStatHalfSteps;
             return new PromoteCheck(true, low, "");

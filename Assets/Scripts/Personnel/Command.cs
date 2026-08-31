@@ -61,5 +61,54 @@ namespace LivingCity.Personnel
                 return 0;
             return leader.Rank == Rank.Boss ? limits.BossBlocks : limits.LieutenantBlocks;
         }
+
+        /// <summary>The most lieutenants any Boss could ever hold, however good he
+        /// gets. Eight branches is already an outfit nobody can keep an eye on.</summary>
+        public const int MaxLieutenants = 8;
+
+        /// <summary>A Boss can always have one man under him. An outfit with no
+        /// lieutenant at all is a Boss doing every job himself, which is the opening
+        /// position and not a permanent sentence.</summary>
+        public const int FloorLieutenants = 1;
+
+        /// <summary>
+        /// How many branches the outfit can hold at all - the Boss's own span of
+        /// control, on his Leadership AND what the street concedes him. Both, because
+        /// a man commands lieutenants with the same two things he would need to command
+        /// anybody: they will follow him, and they have heard of him.
+        ///
+        /// The same square curve the man-cap uses, for the same reason. Don Salvatore
+        /// opens on 5; a Boss the street has never heard of holds one, and has to go
+        /// out and do the work himself - which is exactly when he is likeliest to be
+        /// killed, and that arc comes out of the arithmetic rather than a script.
+        /// </summary>
+        public static int LieutenantCap(Character boss)
+        {
+            if (boss == null || boss.Rank != Rank.Boss)
+                return 0;
+
+            var reach = (AttributeScale.ValueOf(
+                             boss.GetHalfSteps(CharacterAttribute.Leadership)) +
+                         AttributeScale.ValueOf(
+                             boss.GetHalfSteps(CharacterAttribute.StreetAuthority))) / 2;
+
+            return FloorLieutenants +
+                   (MaxLieutenants - FloorLieutenants) * reach * reach / 10_000;
+        }
+
+        /// <summary>Lieutenants on the books who are still on their feet.</summary>
+        public static int LieutenantsHeld(Roster roster)
+        {
+            if (roster == null)
+                return 0;
+            var held = 0;
+            for (var i = 0; i < roster.Members.Count; i++)
+            {
+                var member = roster.Members[i];
+                if (member.Rank == Rank.Lieutenant && !member.Gone)
+                    held++;
+            }
+            return held;
+        }
     }
 }

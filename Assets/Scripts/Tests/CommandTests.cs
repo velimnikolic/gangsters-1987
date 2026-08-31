@@ -23,6 +23,9 @@ namespace LivingCity.Tests
             ("GroundIsRefusedBeyondWhatHeCanCarry", GroundIsRefusedBeyondWhatHeCanCarry),
             ("NineBlocksNeedThreeLieutenants", NineBlocksNeedThreeLieutenants),
             ("OverCapacityIsFlaggedNeverFixed", OverCapacityIsFlaggedNeverFixed),
+            ("TheSpanOfControlBindsPromotion", TheSpanOfControlBindsPromotion),
+            ("TheDonsDeathEndsIt", TheDonsDeathEndsIt),
+            ("DeathReachesTheRosterByOnePathOnly", DeathReachesTheRosterByOnePathOnly),
         };
 
         public static List<string> Run()
@@ -236,6 +239,125 @@ namespace LivingCity.Tests
             if (placed >= 9)
                 failures.Add("NineBlocksNeedThreeLieutenants: two men held nine blocks, " +
                              "so growth never forces a promotion.");
+        }
+
+        // ------------------------------------------------------------------- the Boss
+
+        static Character MakeBoss(Roster roster, int leadershipHalf, int authorityHalf)
+        {
+            var boss = new Character
+            {
+                Id = roster.NextCharacterId(), FirstName = "Don", Surname = "Ricci",
+                Rank = Rank.Boss,
+            };
+            boss.SetHalfSteps(CharacterAttribute.Leadership, leadershipHalf);
+            boss.SetHalfSteps(CharacterAttribute.StreetAuthority, authorityHalf);
+            boss.SetHalfSteps(CharacterAttribute.Awareness, AttributeScale.MaxHalfSteps);
+            boss.SetHalfSteps(CharacterAttribute.Organization, AttributeScale.MaxHalfSteps);
+            roster.Members.Add(boss);
+            roster.Organization.BossId = boss.Id;
+            return boss;
+        }
+
+        static void TheSpanOfControlBindsPromotion(List<string> failures)
+        {
+            var roster = new Roster();
+            // A Boss the street has never heard of: he holds one branch and has to do
+            // the rest himself.
+            var boss = MakeBoss(roster, AttributeScale.MinHalfSteps,
+                AttributeScale.MinHalfSteps);
+            if (Command.LieutenantCap(boss) != Command.FloorLieutenants)
+                failures.Add($"TheSpanOfControlBindsPromotion: an unknown Boss holds " +
+                             $"{Command.LieutenantCap(boss)} branches.");
+
+            var first = MakeHood(roster);
+            if (!RosterOps.Promote(roster, first.Id, out _).Ok)
+                failures.Add("TheSpanOfControlBindsPromotion: he could not make even one.");
+
+            var second = MakeHood(roster);
+            var refused = RosterOps.Promote(roster, second.Id, out _);
+            if (refused.Ok)
+                failures.Add("TheSpanOfControlBindsPromotion: an outfit nobody has heard " +
+                             "of grew a second branch.");
+            if (!refused.Ok && !refused.Reason.Contains(boss.FullName))
+                failures.Add("TheSpanOfControlBindsPromotion: the refusal does not name " +
+                             "the man whose span it is.");
+
+            // The span GROWS with him - which is what the command drip is for.
+            boss.SetHalfSteps(CharacterAttribute.Leadership, AttributeScale.MaxHalfSteps);
+            boss.SetHalfSteps(CharacterAttribute.StreetAuthority, AttributeScale.MaxHalfSteps);
+            if (Command.LieutenantCap(boss) != Command.MaxLieutenants)
+                failures.Add("TheSpanOfControlBindsPromotion: a Boss at five stars in " +
+                             "both does not reach the ceiling.");
+            if (!RosterOps.Promote(roster, second.Id, out _).Ok)
+                failures.Add("TheSpanOfControlBindsPromotion: the span grew and the " +
+                             "promotion was still refused.");
+        }
+
+        static void TheDonsDeathEndsIt(List<string> failures)
+        {
+            var roster = new Roster();
+            var boss = MakeBoss(roster, 8, 8);
+            var runner = new Outfit.CampaignRunner();
+
+            var announced = 0;
+            runner.BossFell += () => announced++;
+
+            runner.DayTick(roster);
+            var dayBefore = runner.Campaign.Day;
+            if (runner.Fallen)
+                failures.Add("TheDonsDeathEndsIt: it ended before anybody died.");
+
+            RosterOps.Kill(roster, boss.Id);
+
+            // The very next tick observes it, and nothing advances.
+            runner.DayTick(roster);
+            if (!runner.Fallen)
+                failures.Add("TheDonsDeathEndsIt: the Don is dead and the campaign " +
+                             "carried on.");
+            if (runner.Campaign.Day != dayBefore)
+                failures.Add($"TheDonsDeathEndsIt: the calendar moved to day " +
+                             $"{runner.Campaign.Day} after the end.");
+            if (runner.FallenOnDay != dayBefore)
+                failures.Add("TheDonsDeathEndsIt: it is not recorded which day it was.");
+            if (announced != 1)
+                failures.Add($"TheDonsDeathEndsIt: the end was announced {announced} " +
+                             "times.");
+
+            // The other door time comes through is shut too, and stays shut.
+            if (runner.AdvanceHours(roster, 8f))
+                failures.Add("TheDonsDeathEndsIt: hours still passed after the end.");
+            runner.DayTick(roster);
+            runner.DayTick(roster);
+            if (runner.Campaign.Day != dayBefore || announced != 1)
+                failures.Add("TheDonsDeathEndsIt: the end kept happening.");
+        }
+
+        static void DeathReachesTheRosterByOnePathOnly(List<string> failures)
+        {
+            // The game-over check watches the Boss's status, and that is only safe
+            // while there is ONE way for a status to become Dead. This asserts the
+            // observable half: whatever route a death took, the check sees it.
+            var roster = new Roster();
+            var boss = MakeBoss(roster, 8, 8);
+            var runner = new Outfit.CampaignRunner();
+
+            boss.Status = CharacterStatus.Dead;
+            runner.DayTick(roster);
+            if (!runner.Fallen)
+                failures.Add("DeathReachesTheRosterByOnePathOnly: a Boss whose status " +
+                             "was set dead by some other route did not end the campaign.");
+
+            // A dead LIEUTENANT is not the end of anything.
+            var second = new Roster();
+            MakeBoss(second, 8, 8);
+            var lieutenant = MakeLieutenant(second, 8, out _);
+            var quiet = new Outfit.CampaignRunner();
+            RosterOps.Kill(second, lieutenant.Id);
+            quiet.DayTick(second);
+            if (quiet.Fallen)
+                failures.Add("DeathReachesTheRosterByOnePathOnly: losing a lieutenant " +
+                             "ended the campaign.");
         }
 
         static void OverCapacityIsFlaggedNeverFixed(List<string> failures)

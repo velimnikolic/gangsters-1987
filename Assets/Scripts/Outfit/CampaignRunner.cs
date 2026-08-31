@@ -111,9 +111,48 @@ namespace LivingCity.Outfit
         /// that a page would want to show - a crew set off, arrived, or came back with
         /// an answer.
         /// </summary>
+        /// <summary>
+        /// The Don is dead and the campaign is over. Set once, at the first tick that
+        /// observes it, and never cleared - there is nothing after this.
+        /// </summary>
+        public bool Fallen { get; private set; }
+
+        /// <summary>The day the outfit ended; 0 while it has not.</summary>
+        public int FallenOnDay { get; private set; }
+
+        /// <summary>Raised once, when the campaign ends. The scene edge presents it;
+        /// the sim never touches a screen.</summary>
+        public event System.Action BossFell;
+
+        /// <summary>
+        /// Has the outfit lost its head? Death reaches the roster through exactly one
+        /// path (RosterOps.Kill), so this is the only place that needs to notice, and
+        /// it notices before anything else in the tick moves.
+        ///
+        /// It is checked at both doors time comes through, so nothing resolves after
+        /// the Don goes down - not a job finishing at ten to midnight, not the
+        /// midnight pass itself.
+        /// </summary>
+        bool CampaignOver(Roster roster)
+        {
+            if (Fallen)
+                return true;
+            if (roster == null)
+                return false;
+
+            var boss = roster.FindBoss();
+            if (boss == null || boss.Status != CharacterStatus.Dead)
+                return false;
+
+            Fallen = true;
+            FallenOnDay = Campaign.Day;
+            BossFell?.Invoke();
+            return true;
+        }
+
         public bool AdvanceHours(Roster roster, float hours)
         {
-            if (roster == null || hours <= 0f)
+            if (roster == null || hours <= 0f || CampaignOver(roster))
                 return false;
 
             var moved = false;
@@ -321,6 +360,11 @@ namespace LivingCity.Outfit
         /// <returns>Wages paid; 0 on the campaign's first day, which settles nothing.</returns>
         public int DayTick(Roster roster)
         {
+            // Before the day even turns: a campaign with no Boss does not have another
+            // morning in it.
+            if (CampaignOver(roster))
+                return 0;
+
             Campaign.Day++;
 
             // Last night's page is set before the new day clears the desk, and the

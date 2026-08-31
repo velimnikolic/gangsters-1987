@@ -36,6 +36,11 @@ namespace LivingCity.Gameplay
         public List<OrderRecord> Records => Runner.Records;
         public List<Improvement> Rises => Runner.Rises;
         public List<Decline> Declines => Runner.Declines;
+        /// <summary>The campaign is over - the Don is dead. The scene edge presents
+        /// it; the sim decided it.</summary>
+        public bool Fallen => Runner.Fallen;
+        public int FallenOnDay => Runner.FallenOnDay;
+
         public List<Incident> Incidents => Runner.Incidents;
         public List<Incident> LastNight => Runner.LastNight;
         public List<Incident> IncidentBook => Runner.IncidentBook;
@@ -210,6 +215,16 @@ namespace LivingCity.Gameplay
             Runner.HoldingsOf = CollectHoldings;
             Runner.RosterMoved = () =>
             {
+                if (PersonnelDirector.Instance)
+                    PersonnelDirector.Instance.Touch();
+            };
+            // The one thing the sim cannot do for itself: say so. The rule that the
+            // campaign is over is the runner's; announcing it is the scene's.
+            Runner.BossFell += () =>
+            {
+                Debug.LogWarning("[Outfit] THE DON IS DEAD - day " + Campaign.Day +
+                                 ". The outfit is finished; nothing advances from here.");
+                Version++;
                 if (PersonnelDirector.Instance)
                     PersonnelDirector.Instance.Touch();
             };

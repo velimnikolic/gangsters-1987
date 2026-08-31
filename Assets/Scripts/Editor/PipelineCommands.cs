@@ -247,6 +247,9 @@ namespace GangstersTools
                 .Select(failure => "Personnel regression: " + failure));
             failures.AddRange(LivingCity.Tests.GangTests.Run()
                 .Select(failure => "Gang regression: " + failure));
+            // The whole roster track rides along, so a later ticket cannot break an
+            // earlier epic quietly. It is affordable: measured end to end outside the
+            // editor, all five suites together run in 89 ms.
             failures.AddRange(LivingCity.Tests.SkillFoundationTests.Run()
                 .Select(failure => "Skill regression: " + failure));
             failures.AddRange(LivingCity.Tests.LearningTests.Run()

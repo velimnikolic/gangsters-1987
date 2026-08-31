@@ -148,6 +148,22 @@ namespace LivingCity.Personnel
                 roster.Members.Add(member);
             }
 
+            // The fixture wants six crews out of sixty men, and the span of control
+            // (Command.LieutenantCap) says a Boss holds as many branches as his
+            // Leadership and his name will carry. Don Salvatore's scripted 4-star
+            // reading holds five, so the DEBUG Don is dealt the full reading - the
+            // fixture's whole job is to stand sixty men up on a page, and its own doc
+            // promises it can never encode a state the rules forbid. The real Don is
+            // untouched: growing past five branches is work he has to do.
+            var fixtureBoss = roster.FindBoss();
+            if (fixtureBoss != null)
+            {
+                fixtureBoss.SetHalfSteps(CharacterAttribute.Leadership,
+                    AttributeScale.MaxHalfSteps);
+                fixtureBoss.SetHalfSteps(CharacterAttribute.StreetAuthority,
+                    AttributeScale.MaxHalfSteps);
+            }
+
             // One crew per full ten men: ids k*10 lead, k*10+1..+4 follow; the back half
             // of each ten stays pooled. Deterministic in the ids alone - no draws.
             var crews = memberCount / 10;
