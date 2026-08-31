@@ -72,8 +72,7 @@ namespace LivingCity.Personnel
             RapSheet.Add(skimmer, "", "Short in the count", "Established");
             incidents?.Add(new Incident(skimmer.Id, skimmer.FullName,
                 IncidentKind.CaughtSkimming, day, where, 0,
-                skimmer.FullName + " has been taking a cut off the top" +
-                (string.IsNullOrEmpty(where) ? "" : " at " + where) + "."));
+                IncidentText.Line(IncidentKind.CaughtSkimming, skimmer.FullName, where)));
             return true;
         }
 
@@ -124,10 +123,9 @@ namespace LivingCity.Personnel
             {
                 RosterOps.NudgePersonality(man, PersonalityTrait.Loyalty,
                     -RivalLoyaltyHit, "took money from somebody else", changes);
-                incidents?.Add(new Incident(man.Id, man.FullName, IncidentKind.TookRivalMoney,
-                    day, "", 0,
-                    "Word is " + man.FullName + " has been drinking with men who are " +
-                    "not ours."));
+                incidents?.Add(new Incident(man.Id, man.FullName,
+                    IncidentKind.TookRivalMoney, day, "", 0,
+                    IncidentText.Line(IncidentKind.TookRivalMoney, man.FullName, "")));
                 return;
             }
 
@@ -136,9 +134,9 @@ namespace LivingCity.Personnel
                 // What he asks is the rate for a man like him, and not a cent over: he
                 // wants what he is worth, not a windfall.
                 man.WageDemand = worth;
-                incidents?.Add(new Incident(man.Id, man.FullName, IncidentKind.DemandedARaise,
-                    day, "", 0,
-                    man.FullName + " wants his envelope brought up to the rate."));
+                incidents?.Add(new Incident(man.Id, man.FullName,
+                    IncidentKind.DemandedARaise, day, "", 0,
+                    IncidentText.Line(IncidentKind.DemandedARaise, man.FullName, "")));
             }
         }
     }

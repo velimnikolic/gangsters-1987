@@ -59,6 +59,23 @@ namespace LivingCity.Outfit
         public readonly List<PersonalityChange> CharacterChanges =
             new List<PersonalityChange>();
 
+        /// <summary>
+        /// What the morning paper prints: everything the outfit's own men did between
+        /// one midnight and the next. A paper reports YESTERDAY - which is also what
+        /// keeps the page still, since a sheet that repainted every time a crew came
+        /// home would be a sheet nobody could read.
+        /// </summary>
+        public readonly List<Incident> LastNight = new List<Incident>();
+
+        /// <summary>The last few weeks of incidents, newest last - the stream the
+        /// notability score reads. Scored from the FIELDS; nothing downstream ever
+        /// parses the sentence back into facts.</summary>
+        public readonly List<Incident> IncidentBook = new List<Incident>();
+
+        /// <summary>How far back the incident book reaches. A rolling window rather
+        /// than the whole campaign, for the reason <see cref="RecordsKept"/> is one.</summary>
+        public const int IncidentsKept = 120;
+
         /// <summary>Police attention the outfit has drawn. Nothing spends it yet; the
         /// jobs pay into it so the police layer inherits a history when it lands.</summary>
         public int Heat;
@@ -306,6 +323,14 @@ namespace LivingCity.Outfit
         {
             Campaign.Day++;
 
+            // Last night's page is set before the new day clears the desk, and the
+            // book keeps what the score will want to read next week.
+            LastNight.Clear();
+            LastNight.AddRange(Incidents);
+            IncidentBook.AddRange(Incidents);
+            if (IncidentBook.Count > IncidentsKept)
+                IncidentBook.RemoveRange(0, IncidentBook.Count - IncidentsKept);
+
             Rises.Clear();
             Declines.Clear();
             Incidents.Clear();
@@ -327,6 +352,22 @@ namespace LivingCity.Outfit
                 // birthday tonight reads as both and not as neither.
                 Aging.Tick(roster, Campaign.Year,
                     (Campaign.Day - 1) % Campaign.DaysPerYear, Declines);
+
+                // A birthday that took something off a man is news too. ONE line per
+                // man, not one per trade: "losing his hands, his eye and his nerve" is
+                // three ways of saying he turned forty-seven.
+                var last = -1;
+                for (var i = 0; i < Declines.Count; i++)
+                {
+                    var loss = Declines[i];
+                    if (loss.CharacterId == last)
+                        continue;
+                    last = loss.CharacterId;
+                    Incidents.Add(new Incident(loss.CharacterId, loss.Name,
+                        IncidentKind.SlowingDown, Campaign.Day, "", 0,
+                        IncidentText.SlowingLine(loss.Name, loss.Age,
+                            UI.LedgerText.AttributeLabel(loss.Attribute).ToLowerInvariant())));
+                }
 
                 // What the underpaid are doing about it. Read against the wage table
                 // rather than stored on the man, so a raise or a promotion closes the

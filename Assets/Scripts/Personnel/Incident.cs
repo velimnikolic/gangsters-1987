@@ -24,6 +24,53 @@ namespace LivingCity.Personnel
 
         /// <summary>Caught with his hand in the count.</summary>
         CaughtSkimming,
+
+        /// <summary>The years took something off him.</summary>
+        SlowingDown,
+    }
+
+    /// <summary>
+    /// The sentence, for every kind of incident, in ONE place. The paper, the ledger
+    /// and the man's own file all print the string this builds; none of them writes its
+    /// own, which is what stops a re-worded line from making three pages disagree about
+    /// what happened.
+    ///
+    /// 1987 tabloid brevity: one sentence, the man named, the street named when there
+    /// is one, and no adjectives the wire would have cut.
+    /// </summary>
+    public static class IncidentText
+    {
+        public static string Line(IncidentKind kind, string name, string where)
+        {
+            var place = string.IsNullOrEmpty(where) ? "" : " at " + where;
+            switch (kind)
+            {
+                case IncidentKind.Froze:
+                    return name + " froze when it started" + place + ".";
+                case IncidentKind.Fled:
+                    return name + " ran" + place + " and did not come back.";
+                case IncidentKind.Escalated:
+                    return "A job" + place + " ended in gunfire nobody ordered - " +
+                           name + " lost his temper.";
+                case IncidentKind.Deviated:
+                    return name + " did the job" + place +
+                           ", but not the way it was written.";
+                case IncidentKind.TookRivalMoney:
+                    return "Word is " + name + " has been drinking with men who are " +
+                           "not ours.";
+                case IncidentKind.DemandedARaise:
+                    return name + " wants his envelope brought up to the rate.";
+                case IncidentKind.CaughtSkimming:
+                    return name + " has been taking a cut off the top" + place + ".";
+                default:
+                    return name + " is slowing down.";
+            }
+        }
+
+        /// <summary>The aging line, which is the one that wants the number: a man
+        /// losing a step reads differently at forty-six and at sixty.</summary>
+        public static string SlowingLine(string name, int age, string trade) =>
+            name + ", " + age + ", is losing his " + trade + ".";
     }
 
     /// <summary>

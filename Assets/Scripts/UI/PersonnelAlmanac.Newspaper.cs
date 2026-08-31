@@ -171,6 +171,19 @@ namespace LivingCity.UI
                         LedgerV2.Rule);
             }
 
+            // What the outfit's own men did last night, ahead of the paper's own
+            // furniture: a player who has to hunt for the news that his best gun ran
+            // is a player who will never find it.
+            if (slot < BriefColumns && outfit && outfit.LastNight.Count > 0)
+            {
+                var x = NewsLeft + slot * (BriefW + BriefGap);
+                if (slot > 0)
+                    VRule(newsContent, x - BriefGap * 0.5f, BriefTop, BriefH,
+                        LedgerV2.Rule);
+                BuildOurOwn(x, BriefTop, BriefW);
+                slot++;
+            }
+
             // The paper's own furniture fills whatever the wire left empty - an
             // advertisement, then the weather.
             if (slot < BriefColumns)
@@ -266,6 +279,36 @@ namespace LivingCity.UI
                 "Suits cut for the discreet professional. Wide in the shoulder, quiet " +
                 "in the cloth. Fittings by appointment only.", lineSpacing: 2f);
             body.alignment = TextAlignmentOptions.Top;
+        }
+
+        /// <summary>
+        /// The column the outfit reads first: what its own men did between one midnight
+        /// and the next, in the paper's own voice. The sentences are the incident
+        /// records' own - the sim wrote them when the thing happened, and the page does
+        /// not get to reword them.
+        /// </summary>
+        void BuildOurOwn(float x, float y, float w)
+        {
+            Caps(newsContent, x, y, w, "CITY DESK  ·  LATE", 10.5f, LedgerV2.Muted, 4f);
+            var head = Line(newsContent, LedgerStyle.Condensed, 22f, LedgerV2.Ink,
+                x, y - 18f, w, 26f, "ON OUR STREETS");
+            head.characterSpacing = 1f;
+            Rule(newsContent, x, y - 48f, w, LedgerV2.Ink, 2f);
+
+            var line = y - 54f;
+            var room = BriefH - 60f;
+            for (var i = 0; i < outfit.LastNight.Count && room > 30f; i++)
+            {
+                var text = outfit.LastNight[i].Line;
+                if (text.Length == 0)
+                    continue;
+
+                var height = text.Length > 70 ? 46f : 32f;
+                Paragraph(newsContent, LedgerStyle.Serif, 12.5f, LedgerV2.Ink, x, line,
+                    w, height, text, lineSpacing: 2f);
+                line -= height;
+                room -= height;
+            }
         }
 
         /// <summary>One brief in the row: desk label, condensed head, a hairline, copy.</summary>

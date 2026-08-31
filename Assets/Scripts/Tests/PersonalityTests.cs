@@ -34,6 +34,8 @@ namespace LivingCity.Tests
             ("AWellPaidManIsQuietHoweverGreedy", AWellPaidManIsQuietHoweverGreedy),
             ("TheSkimIsMoneyThatIsActuallyGone", TheSkimIsMoneyThatIsActuallyGone),
             ("ARaiseClosesItAndARefusalCosts", ARaiseClosesItAndARefusalCosts),
+            ("TheMorningPaperCarriesLastNight", TheMorningPaperCarriesLastNight),
+            ("TheYearsReachThePaperOnceAMan", TheYearsReachThePaperOnceAMan),
         };
 
         public static List<string> Run()
@@ -395,9 +397,16 @@ namespace LivingCity.Tests
                 if (!line.Contains("Rocco Vale"))
                     failures.Add($"EveryIncidentIsReadyForThePaper: {kind}'s line does " +
                                  "not name the man it is about.");
-                if (!line.Contains("Pearl Street"))
+                // Only the things that happen SOMEWHERE name a street. A man taking
+                // rival money, asking for a raise or turning forty-seven did not do it
+                // on a corner.
+                var placed = kind == IncidentKind.Froze || kind == IncidentKind.Fled ||
+                             kind == IncidentKind.Escalated ||
+                             kind == IncidentKind.Deviated ||
+                             kind == IncidentKind.CaughtSkimming;
+                if (placed && !line.Contains("Pearl Street"))
                     failures.Add($"EveryIncidentIsReadyForThePaper: {kind}'s line does " +
-                                 "not say where.");
+                                 "not say where it happened.");
 
                 // And it still reads when nobody could say where.
                 if (PersonalityChecks.Line(kind, "Rocco Vale", "").Length == 0)
@@ -603,6 +612,88 @@ namespace LivingCity.Tests
             // Nobody can be answered twice.
             if (RosterOps.RefuseRaise(second, other.Id).Ok)
                 failures.Add("ARaiseClosesIt: he was refused a demand he had not made.");
+        }
+
+        // ------------------------------------------------------------------ the feed
+
+        static void TheMorningPaperCarriesLastNight(List<string> failures)
+        {
+            var roster = new Roster();
+            var runner = new CampaignRunner();
+
+            runner.Incidents.Add(new Incident(1, "Rocco Vale", IncidentKind.Froze, 1,
+                "Pearl Street", 0,
+                IncidentText.Line(IncidentKind.Froze, "Rocco Vale", "Pearl Street")));
+
+            runner.DayTick(roster);
+
+            if (runner.LastNight.Count != 1)
+                failures.Add($"TheMorningPaperCarriesLastNight: the page carries " +
+                             $"{runner.LastNight.Count} lines against the one that " +
+                             "happened.");
+            if (runner.Incidents.Count != 0)
+                failures.Add("TheMorningPaperCarriesLastNight: the desk was not cleared " +
+                             "for the new day.");
+            if (runner.IncidentBook.Count != 1 ||
+                runner.IncidentBook[0].CharacterId != 1)
+                failures.Add("TheMorningPaperCarriesLastNight: the book did not keep it.");
+
+            // A quiet night prints a paper with no such column, and does not carry
+            // yesterday's lines into it.
+            runner.DayTick(roster);
+            if (runner.LastNight.Count != 0)
+                failures.Add("TheMorningPaperCarriesLastNight: a quiet night reprinted " +
+                             "the night before.");
+            if (runner.IncidentBook.Count != 1)
+                failures.Add("TheMorningPaperCarriesLastNight: the book forgot, or " +
+                             "double-counted.");
+
+            // The window holds. Fill it past its limit and the oldest fall off the front.
+            for (var i = 0; i < CampaignRunner.IncidentsKept + 20; i++)
+            {
+                runner.Incidents.Add(new Incident(i + 100, "Man " + i,
+                    IncidentKind.Deviated, 3, "", 0, "line " + i));
+                runner.DayTick(roster);
+            }
+            if (runner.IncidentBook.Count > CampaignRunner.IncidentsKept)
+                failures.Add($"TheMorningPaperCarriesLastNight: the book is " +
+                             $"{runner.IncidentBook.Count} deep and the window is " +
+                             $"{CampaignRunner.IncidentsKept}.");
+        }
+
+        static void TheYearsReachThePaperOnceAMan(List<string> failures)
+        {
+            var roster = new Roster();
+            var runner = new CampaignRunner();
+
+            // A man who turns fifty-one on the campaign's own opening day-of-year, so
+            // the first tick that reaches his birthday takes something off him.
+            var man = new Character
+            {
+                Id = roster.NextCharacterId(), FirstName = "Aldo", Surname = "Vecchi",
+                BirthYear = RosterSeeder.CalendarStartYear - 51,
+                BirthDayOfYear = 4,
+            };
+            for (var s = 0; s < AttributeScale.Count; s++)
+                man.SetHalfSteps((CharacterAttribute)s, AttributeScale.MaxHalfSteps);
+            roster.Members.Add(man);
+
+            var slowing = 0;
+            for (var day = 0; day < 10; day++)
+            {
+                runner.DayTick(roster);
+                for (var i = 0; i < runner.LastNight.Count; i++)
+                    if (runner.LastNight[i].Kind == IncidentKind.SlowingDown)
+                        slowing++;
+            }
+
+            if (slowing == 0)
+                failures.Add("TheYearsReachThePaperOnceAMan: a man losing his hands on " +
+                             "his fifty-second birthday never made the paper.");
+            if (slowing > 1)
+                failures.Add($"TheYearsReachThePaperOnceAMan: {slowing} lines about one " +
+                             "man's birthday - three ways of saying he turned " +
+                             "fifty-two is not three stories.");
         }
 
         static void TheScaleHoldsAtBothEnds(List<string> failures)

@@ -128,27 +128,9 @@ namespace LivingCity.Personnel
             return rng.Next(100) < chance;
         }
 
-        /// <summary>
-        /// The sentence, in one place. The paper, the ledger and the man's own file all
-        /// print this string; none of them builds its own, which is what keeps a
-        /// re-worded line from changing what three pages say.
-        /// </summary>
-        public static string Line(IncidentKind kind, string name, string where)
-        {
-            var place = string.IsNullOrEmpty(where) ? "" : " at " + where;
-            switch (kind)
-            {
-                case IncidentKind.Froze:
-                    return name + " froze when it started" + place + ".";
-                case IncidentKind.Fled:
-                    return name + " ran" + place + " and did not come back.";
-                case IncidentKind.Escalated:
-                    return "A job" + place + " ended in gunfire nobody ordered - " +
-                           name + " lost his temper.";
-                default:
-                    return name + " did the job" + place +
-                           ", but not the way it was written.";
-            }
-        }
+        /// <summary>The sentence for a check that fired. One line only, and it is
+        /// <see cref="IncidentText"/>'s - kept as a name the checks read against.</summary>
+        public static string Line(IncidentKind kind, string name, string where) =>
+            IncidentText.Line(kind, name, where);
     }
 }

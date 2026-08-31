@@ -36,6 +36,9 @@ namespace LivingCity.Gameplay
         public List<OrderRecord> Records => Runner.Records;
         public List<Improvement> Rises => Runner.Rises;
         public List<Decline> Declines => Runner.Declines;
+        public List<Incident> Incidents => Runner.Incidents;
+        public List<Incident> LastNight => Runner.LastNight;
+        public List<Incident> IncidentBook => Runner.IncidentBook;
         public Tribute Tribute => Runner.Tribute;
         public int Heat => Runner.Heat;
 
