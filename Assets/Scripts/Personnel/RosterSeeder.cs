@@ -73,6 +73,7 @@ namespace LivingCity.Personnel
                 var stream = Potential.StreamFor(roster.Seed, member.Id);
                 Potential.Roll(member, stream);
                 Aging.RollBirth(member, stream, YearOf(roster), CalendarDaysPerYear);
+                Personality.Roll(member, stream);
 
                 for (var a = 0; a < AttributeScale.Count; a++)
                     member.SetHalfSteps((CharacterAttribute)a,
@@ -137,6 +138,7 @@ namespace LivingCity.Personnel
                 var stream = Potential.StreamFor(roster.Seed, member.Id);
                 Potential.Roll(member, stream);
                 Aging.RollBirth(member, stream, YearOf(roster), CalendarDaysPerYear);
+                Personality.Roll(member, stream);
 
                 for (var a = 0; a < AttributeScale.Count; a++)
                     member.SetHalfSteps((CharacterAttribute)a,
@@ -259,6 +261,7 @@ namespace LivingCity.Personnel
             var stream = Potential.StreamFor(roster.Seed, member.Id);
             Potential.Roll(member, stream);
             Aging.RollBirth(member, stream, YearOf(roster), CalendarDaysPerYear);
+            Personality.Roll(member, stream);
 
             for (var a = 0; a < AttributeScale.Count; a++)
                 member.SetHalfSteps((CharacterAttribute)a,
@@ -324,6 +327,7 @@ namespace LivingCity.Personnel
             RapSheet.Deal(rng, member);
             Potential.Roll(member, potentialStream);
             Aging.RollBirth(member, potentialStream, YearOf(roster), CalendarDaysPerYear);
+            Personality.Roll(member, potentialStream);
 
             for (var a = 0; a < AttributeScale.Count; a++)
                 member.SetHalfSteps((CharacterAttribute)a,

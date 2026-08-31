@@ -58,6 +58,35 @@ namespace LivingCity.Personnel
                 roster.Organization.Limits = limits;
         }
 
+        /// <summary>
+        /// Moves one of a man's traits, and says why. This is the ONLY door: nothing
+        /// else in the codebase writes a personality field, and the reason string is
+        /// what makes that rule enforceable rather than merely stated - a caller who
+        /// cannot say why a man got greedier has no business making him greedier.
+        ///
+        /// A nudge that moves nothing - a zero delta, or a man already at the end of
+        /// the scale - records nothing. The feed prints what happened, not what was
+        /// attempted.
+        /// </summary>
+        /// <returns>The movement. Its <c>Delta</c> is 0 when nothing moved.</returns>
+        public static PersonalityChange NudgePersonality(Character man,
+            PersonalityTrait trait, int delta, string reason,
+            System.Collections.Generic.List<PersonalityChange> into = null)
+        {
+            if (man == null)
+                return default;
+
+            var from = Personality.Get(man, trait);
+            Personality.Set(man, trait, from + delta);
+            var to = Personality.Get(man, trait);
+
+            var change = new PersonalityChange(man.Id, man.FullName, trait, from, to,
+                reason ?? "");
+            if (to != from)
+                into?.Add(change);
+            return change;
+        }
+
         public static PromoteCheck CheckPromote(Roster roster, int id)
         {
             var member = roster.Find(id);

@@ -72,6 +72,21 @@ namespace LivingCity.Personnel
         /// and a five-step scale would make every nudge invisible or enormous.</summary>
         public int Loyalty = 50;
 
+        /// <summary>What he does when it turns dangerous.</summary>
+        public int Courage = 50;
+
+        /// <summary>What he does when he is underpaid and the money is right there.</summary>
+        public int Greed = 50;
+
+        /// <summary>How long he will stand being what he currently is.</summary>
+        public int Ambition = 50;
+
+        /// <summary>Whether the job happens the way it was ordered.</summary>
+        public int Discipline = 50;
+
+        /// <summary>Whether a job that needed no shooting ends in shooting anyway.</summary>
+        public int Temper = 50;
+
         /// <summary>Flagged men are shot on sight by unbribed police - the ledger only
         /// displays it; the police layer will own setting it.</summary>
         public bool Wanted;

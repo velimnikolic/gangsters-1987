@@ -251,6 +251,8 @@ namespace GangstersTools
                 .Select(failure => "Skill regression: " + failure));
             failures.AddRange(LivingCity.Tests.LearningTests.Run()
                 .Select(failure => "Learning regression: " + failure));
+            failures.AddRange(LivingCity.Tests.PersonalityTests.Run()
+                .Select(failure => "Personality regression: " + failure));
             return new
             {
                 passed = failures.Count == 0,
@@ -289,6 +291,21 @@ namespace GangstersTools
                 passed = failures.Count == 0,
                 failures = failures.ToArray(),
                 contracts = LivingCity.Tests.LearningTests.ContractNames(),
+            };
+        }
+
+        [CliCommand("gangsters_personality_tests",
+                    "Run EPIC 13 contracts for personality: the six traits, their roll, " +
+                    "their words, and the one door that moves them.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "skill", "tests" })]
+        public static object PersonalityTests()
+        {
+            var failures = LivingCity.Tests.PersonalityTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+                contracts = LivingCity.Tests.PersonalityTests.ContractNames(),
             };
         }
 
