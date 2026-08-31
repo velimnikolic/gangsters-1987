@@ -30,6 +30,7 @@ namespace LivingCity.Tests
             ("TheDripLandsBeforeTheBooksTurn", TheDripLandsBeforeTheBooksTurn),
             ("AFinishedJobBanksExactlyTheTable", AFinishedJobBanksExactlyTheTable),
             ("OnlyTheMenOnTheJobLearnFromIt", OnlyTheMenOnTheJobLearnFromIt),
+            ("ThePaceMatchesTheStatedTargets", ThePaceMatchesTheStatedTargets),
         };
 
         public static List<string> Run()
@@ -428,6 +429,83 @@ namespace LivingCity.Tests
             if (dead.GetPractice(CharacterAttribute.Combat) != before)
                 failures.Add("OnlyTheMenOnTheJobLearnFromIt: the dead man got better " +
                              "at shooting.");
+        }
+
+        // ------------------------------------------------------------------ the pace
+
+        /// <summary>One man doing one kind of work every nth day. Returns the day the
+        /// watched skill first reached the wanted half-step, or -1.</summary>
+        static int DayItLands(int ceilingValue, Activity activity, CharacterAttribute watch,
+            int wantHalfSteps, int everyNthDay, int days, out int pieces)
+        {
+            var roster = new Roster();
+            var man = new Character { Id = roster.NextCharacterId() };
+            for (var s = 0; s < AttributeScale.Count; s++)
+                man.SetPotential((CharacterAttribute)s, ceilingValue);
+            roster.Members.Add(man);
+
+            pieces = 0;
+            for (var day = 1; day <= days; day++)
+            {
+                if (day % everyNthDay == 0)
+                {
+                    ActivityXp.Award(man, activity, XpOutcome.Completed);
+                    pieces++;
+                }
+                Practice.Convert(roster, null);
+                if (man.GetHalfSteps(watch) >= wantHalfSteps)
+                    return day;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// The three targets the table's numbers were derived from, measured. This is
+        /// the contract that catches somebody nudging a base_xp and quietly turning a
+        /// two-month climb into a fortnight - the bands are the twenty per cent the
+        /// balance pass allows.
+        /// </summary>
+        static void ThePaceMatchesTheStatedTargets(List<string> failures)
+        {
+            // 1. The median man - ceiling 50 - on one patrol a day reaches Awareness 50
+            //    in about two months.
+            var patrol = DayItLands(50, Activity.BlockPatrol, CharacterAttribute.Awareness,
+                5, 1, 365, out _);
+            if (patrol < 45 || patrol > 67)
+                failures.Add($"ThePaceMatchesTheStatedTargets: a hood on daily patrols " +
+                             $"reached Awareness 50 on day {patrol}; the target is 56 " +
+                             "days, give or take a fifth.");
+
+            // 2. A driver with room - ceiling 95 - reaches Driving 70 in about fifteen
+            //    runs. Measured at twelve, which is the low edge of the band.
+            DayItLands(95, Activity.Getaway, CharacterAttribute.Driving, 7, 3, 365,
+                out var runs);
+            if (runs < 11 || runs > 19)
+                failures.Add($"ThePaceMatchesTheStatedTargets: a getaway driver reached " +
+                             $"Driving 70 on run {runs}; the target is fifteen, give or " +
+                             "take a fifth.");
+
+            // 3. A lieutenant at 2.5 stars with a ceiling of 70 crosses to 3 stars on
+            //    the drip alone in about three quiet weeks.
+            var roster = new Roster();
+            var lieutenant = new Character { Id = 0, Rank = Rank.Lieutenant };
+            for (var s = 0; s < AttributeScale.Count; s++)
+                lieutenant.SetPotential((CharacterAttribute)s, 70);
+            lieutenant.SetHalfSteps(CharacterAttribute.Leadership, 5);
+            roster.Members.Add(lieutenant);
+
+            var crossed = -1;
+            for (var day = 1; day <= 365 && crossed < 0; day++)
+            {
+                ActivityXp.AwardCommand(lieutenant, 4);
+                Practice.Convert(roster, null);
+                if (lieutenant.GetHalfSteps(CharacterAttribute.Leadership) >= 6)
+                    crossed = day;
+            }
+            if (crossed < 17 || crossed > 25)
+                failures.Add($"ThePaceMatchesTheStatedTargets: a quiet lieutenant crossed " +
+                             $"to three stars of Leadership on day {crossed}; the target " +
+                             "is 21 days, give or take a fifth.");
         }
 
         static void TheDeadLearnNothing(List<string> failures)

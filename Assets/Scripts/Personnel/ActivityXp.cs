@@ -96,20 +96,40 @@ namespace LivingCity.Personnel
     /// Pure and free of UnityEngine, so the headless suite can run a scripted campaign
     /// and assert a man's whole sheet to the point.
     ///
-    /// THE NUMBERS HERE ARE PLACEHOLDERS. They are three tiers apart in the right order
-    /// and nothing more; the pace they produce - how many months of patrols make a
-    /// watchful man - is XP-004's business, and it sets them from measured timelines
-    /// against the growth curve. Change them there, in one place, and nowhere else.
+    /// THE THREE NUMBERS BELOW ARE THE WHOLE BALANCE. They were not picked; they were
+    /// derived backwards from three stated targets and the SKILL-003 cost curve, and
+    /// then measured against a scripted year. The arithmetic:
+    ///
+    ///   TARGET 1 - a hood on daily patrols reaches Awareness 50 in about two months.
+    ///     50 on the x10 scale is 5 half-steps. The median man's ceiling is 50 (measured
+    ///     over a thousand rolls), and climbing 2 -> 5 against a ceiling of 50 costs
+    ///     13 + 32 + 112 = 157 points. Two months is 56 days of one patrol a day, so
+    ///     base = 157 / 56 = 2.8 -> LowXp 3. MEASURED: he crosses on day 53.
+    ///
+    ///   TARGET 2 - a getaway driver reaches Driving 70 in about fifteen runs.
+    ///     70 is 7 half-steps. A driver with room above the target - ceiling 95 - climbs
+    ///     2 -> 7 for 9 + 14 + 22 + 34 + 56 = 135 points, so base = 135 / 15 = 9. Round
+    ///     up for the risk: a run he can be killed or arrested on has to out-teach three
+    ///     patrols outright. HighXp 12. MEASURED: he crosses on his 12th run.
+    ///
+    ///   TARGET 3 - a lieutenant's passive drip crosses one half-step in three quiet
+    ///     weeks. Take him where a promoted hood actually stands, 2.5 stars with a
+    ///     ceiling of 70: the step to 3 stars costs 79 points. Three weeks is 21 days,
+    ///     so base = 79 / 21 = 3.8 -> MidXp 4. MEASURED: he crosses on day 20.
+    ///
+    /// All three land inside the twenty per cent the balance pass allows. Change a
+    /// number here and nowhere else; if the SHAPE feels wrong rather than the pace,
+    /// that is the growth curve's problem and not this table's.
     /// </summary>
     public static class ActivityXp
     {
-        /// <summary>Dull work that carries no real danger.</summary>
+        /// <summary>Dull work that carries no real danger. Target 1 above.</summary>
         public const int LowXp = 3;
 
-        /// <summary>Work that draws attention.</summary>
-        public const int MidXp = 6;
+        /// <summary>Work that draws attention. Target 3 above.</summary>
+        public const int MidXp = 4;
 
-        /// <summary>Work a man can fail to come home from.</summary>
+        /// <summary>Work a man can fail to come home from. Target 2 above.</summary>
         public const int HighXp = 12;
 
         /// <summary>Men per extra share of the command drip. Commanding thirty teaches
