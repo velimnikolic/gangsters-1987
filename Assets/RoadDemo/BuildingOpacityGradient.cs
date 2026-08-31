@@ -9,11 +9,12 @@ namespace RoadDemo
     /// The building keeps its original renderers, colliders and full shadow. While the
     /// effect is active, only its material set is swapped for the transparent gradient
     /// shader. At zero effect the exact original shared materials are restored, so the
-    /// ordinary city batching path pays nothing while the building is not an occluder.
+    /// ordinary city rendering path pays nothing while the building is not an occluder.
     ///
-    /// This component deliberately does not decide which building occludes a subject;
-    /// StreetCutaway (or another shared visibility policy) owns that decision. The
-    /// OcclusionDemo exercises this rendering primitive before it is wired into the city.
+    /// Pooled residential roots retain this component. A recycled bind refreshes only
+    /// renderer/material references and world bounds; gradient variants are cached per
+    /// source material for the lifetime of that pooled instance and are not recreated on
+    /// every block bind.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class BuildingOpacityGradient : MonoBehaviour
@@ -35,6 +36,8 @@ namespace RoadDemo
         static readonly int OpaqueFloor = Shader.PropertyToID("_OpaqueFloor");
         static readonly int BoundsMinY = Shader.PropertyToID("_BoundsMinY");
         static readonly int BoundsInvHeight = Shader.PropertyToID("_BoundsInvHeight");
+        static readonly int BoundsCenter = Shader.PropertyToID("_BoundsCenter");
+        static Shader _sharedShader;
 
         sealed class RendererState
         {
@@ -44,9 +47,20 @@ namespace RoadDemo
         }
 
         readonly List<RendererState> _states = new List<RendererState>();
+        readonly HashSet<Renderer> _renderers = new HashSet<Renderer>();
+        readonly Dictionary<Material, Material> _variants =
+            new Dictionary<Material, Material>();
+        readonly List<Material> _materialScratch = new List<Material>();
 
+        Shader _shader;
+        Material _nullSourceVariant;
         bool _prepared;
         bool _gradientMaterialsActive;
+        bool _loggedShaderError;
+        bool _loggedNoRenderers;
+        float _boundsMinY;
+        float _boundsInvHeight = 1f;
+        Vector3 _boundsCenter;
         float _lastAmount = -1f;
         float _lastOpaqueFloor = -1f;
         Profile _lastProfile;
@@ -58,33 +72,47 @@ namespace RoadDemo
 
         /// <summary>
         /// Captures every mesh renderer below this logical building and prepares its
-        /// gradient-material counterpart. This does not touch colliders or current visuals.
+        /// gradient-material counterpart. The demo uses this path; recycled city buildings
+        /// pass the renderer list already collected by <see cref="BuildingCutaway"/>.
         /// </summary>
         public bool Prepare()
         {
             if (_prepared)
                 return _states.Count > 0;
 
-            _prepared = true;
-            var shader = Shader.Find(ShaderName);
-            if (!shader)
-            {
-                Debug.LogError($"[BuildingOpacityGradient] Shader '{ShaderName}' was not found.", this);
-                return false;
-            }
+            var renderers = GetComponentsInChildren<Renderer>(includeInactive: true);
+            return Bind(renderers);
+        }
 
-            var renderers = GetComponentsInChildren<MeshRenderer>(includeInactive: true);
-            if (renderers.Length == 0)
-            {
-                Debug.LogWarning("[BuildingOpacityGradient] The building has no mesh renderers.", this);
+        /// <summary>
+        /// Refresh a pooled building after it has been positioned and colourised for its
+        /// next block. Existing gradient variants survive the bind; only newly encountered
+        /// source materials create another variant.
+        /// </summary>
+        internal bool PrepareForRecycledBinding(IReadOnlyList<Renderer> renderers)
+        {
+            if (_gradientMaterialsActive)
+                RestoreOriginals();
+            return Bind(renderers);
+        }
+
+        internal bool Handles(Renderer renderer) =>
+            renderer != null && _renderers.Contains(renderer);
+
+        /// <summary>Refresh world-space bounds immediately before a cut. Recycler binding
+        /// composes at the origin and moves the completed holder afterwards, so the final
+        /// block position is intentionally read here rather than assumed at prepare time.</summary>
+        internal bool RefreshBounds()
+        {
+            if (!_prepared || _states.Count == 0)
                 return false;
-            }
 
             Bounds bounds = default;
             bool hasBounds = false;
-            foreach (var renderer in renderers)
+            for (int i = 0; i < _states.Count; i++)
             {
-                if (!renderer) continue;
+                var renderer = _states[i].Renderer;
+                if (renderer == null) continue;
                 if (!hasBounds)
                 {
                     bounds = renderer.bounds;
@@ -92,42 +120,173 @@ namespace RoadDemo
                 }
                 else bounds.Encapsulate(renderer.bounds);
             }
-
             if (!hasBounds)
                 return false;
 
-            float minY = bounds.min.y;
-            float invHeight = 1f / Mathf.Max(0.01f, bounds.size.y);
-            foreach (var renderer in renderers)
-            {
-                if (!renderer) continue;
-                var original = renderer.sharedMaterials;
-                var gradient = new Material[original.Length];
-                for (var i = 0; i < original.Length; i++)
-                    gradient[i] = GradientMaterial(original[i], shader, minY, invHeight);
+            _boundsMinY = bounds.min.y;
+            _boundsInvHeight = 1f / Mathf.Max(0.01f, bounds.size.y);
+            _boundsCenter = bounds.center;
+            ApplyBoundsToVariants();
+            return true;
+        }
 
-                _states.Add(new RendererState
+        bool Bind(IReadOnlyList<Renderer> renderers)
+        {
+            if (!EnsureShader())
+                return false;
+            if (!TryBounds(renderers, out Bounds bounds, out int meshRendererCount))
+            {
+                _prepared = false;
+                if (!_loggedNoRenderers)
                 {
-                    Renderer = renderer,
-                    Original = original,
-                    Gradient = gradient,
-                });
+                    Debug.LogWarning("[BuildingOpacityGradient] The building has no mesh renderers.", this);
+                    _loggedNoRenderers = true;
+                }
+                return false;
             }
 
-            return _states.Count > 0;
+            _boundsMinY = bounds.min.y;
+            _boundsInvHeight = 1f / Mathf.Max(0.01f, bounds.size.y);
+            _boundsCenter = bounds.center;
+
+            if (!SameTopology(renderers, meshRendererCount))
+                RebuildRendererStates(renderers);
+
+            for (int i = 0; i < _states.Count; i++)
+                CaptureMaterials(_states[i]);
+            ApplyBoundsToVariants();
+
+            _prepared = _states.Count > 0;
+            _lastAmount = -1f;
+            _lastOpaqueFloor = -1f;
+            return _prepared;
+        }
+
+        bool EnsureShader()
+        {
+            if (_shader != null)
+                return true;
+
+            if (_sharedShader == null)
+                _sharedShader = Shader.Find(ShaderName);
+            _shader = _sharedShader;
+            if (_shader != null)
+                return true;
+
+            if (!_loggedShaderError)
+            {
+                Debug.LogError($"[BuildingOpacityGradient] Shader '{ShaderName}' was not found.", this);
+                _loggedShaderError = true;
+            }
+            return false;
+        }
+
+        static bool TryBounds(IReadOnlyList<Renderer> renderers, out Bounds bounds,
+            out int meshRendererCount)
+        {
+            bounds = default;
+            meshRendererCount = 0;
+            bool hasBounds = false;
+            if (renderers == null)
+                return false;
+
+            for (int i = 0; i < renderers.Count; i++)
+            {
+                if (!(renderers[i] is MeshRenderer renderer) || renderer == null)
+                    continue;
+                meshRendererCount++;
+                if (!hasBounds)
+                {
+                    bounds = renderer.bounds;
+                    hasBounds = true;
+                }
+                else bounds.Encapsulate(renderer.bounds);
+            }
+            return hasBounds;
+        }
+
+        bool SameTopology(IReadOnlyList<Renderer> renderers, int meshRendererCount)
+        {
+            if (_states.Count != meshRendererCount)
+                return false;
+
+            int stateIndex = 0;
+            for (int i = 0; i < renderers.Count; i++)
+            {
+                if (!(renderers[i] is MeshRenderer renderer) || renderer == null)
+                    continue;
+                if (_states[stateIndex++].Renderer != renderer)
+                    return false;
+            }
+            return true;
+        }
+
+        void RebuildRendererStates(IReadOnlyList<Renderer> renderers)
+        {
+            _states.Clear();
+            _renderers.Clear();
+            for (int i = 0; i < renderers.Count; i++)
+            {
+                if (!(renderers[i] is MeshRenderer renderer) || renderer == null)
+                    continue;
+                _states.Add(new RendererState { Renderer = renderer });
+                _renderers.Add(renderer);
+            }
+        }
+
+        void CaptureMaterials(RendererState state)
+        {
+            var renderer = state.Renderer;
+            if (renderer == null)
+                return;
+
+            _materialScratch.Clear();
+            renderer.GetSharedMaterials(_materialScratch);
+            int count = _materialScratch.Count;
+            if (state.Original == null || state.Original.Length != count)
+                state.Original = new Material[count];
+            if (state.Gradient == null || state.Gradient.Length != count)
+                state.Gradient = new Material[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                var source = _materialScratch[i];
+                state.Original[i] = source;
+                state.Gradient[i] = Variant(source);
+            }
+            _materialScratch.Clear();
+        }
+
+        Material Variant(Material source)
+        {
+            if (source == null)
+            {
+                if (_nullSourceVariant == null)
+                    _nullSourceVariant = GradientMaterial(null, _shader);
+                return _nullSourceVariant;
+            }
+
+            if (_variants.TryGetValue(source, out var variant) && variant != null)
+                return variant;
+
+            variant = GradientMaterial(source, _shader);
+            _variants[source] = variant;
+            return variant;
         }
 
         /// <summary>
         /// Sets the visual treatment. Amount zero is the untouched opaque building.
-        /// Amount one is either fully invisible (Uniform) or alpha 1 at the base grading
-        /// continuously to alpha 0 at the roof (Vertical).
+        /// In Vertical mode, amount one (100%) is alpha 1 at the base grading to alpha 0
+        /// at the roof; amount two (200%) continues the wipe until the whole shell is clear.
+        /// The camera-opposite half is fully clear from 100% onward. Uniform uses the same
+        /// 0..200% range but fades the whole shell evenly.
         /// </summary>
         public bool Set(float amount, Profile profile = Profile.Vertical, float opaqueFloor = 0.08f)
         {
             if (!Prepare())
                 return false;
 
-            amount = Mathf.Clamp01(amount);
+            amount = Mathf.Clamp(amount, 0f, 2f);
             opaqueFloor = Mathf.Clamp(opaqueFloor, 0f, 0.45f);
             bool profileChanged = profile != _lastProfile;
 
@@ -152,24 +311,34 @@ namespace RoadDemo
             _lastAmount = amount;
             _lastOpaqueFloor = opaqueFloor;
             float vertical = profile == Profile.Vertical ? 1f : 0f;
-            foreach (var state in _states)
-            {
-                foreach (var material in state.Gradient)
-                {
-                    if (!material) continue;
-                    material.SetFloat(FadeAmount, amount);
-                    material.SetFloat(GradientMode, vertical);
-                    material.SetFloat(OpaqueFloor, opaqueFloor);
-                }
-            }
-
+            ApplyValuesToVariants(amount, vertical, opaqueFloor);
             return true;
+        }
+
+        void ApplyValuesToVariants(float amount, float vertical, float opaqueFloor)
+        {
+            foreach (var pair in _variants)
+                SetValues(pair.Value, amount, vertical, opaqueFloor);
+            SetValues(_nullSourceVariant, amount, vertical, opaqueFloor);
+        }
+
+        static void SetValues(Material material, float amount, float vertical, float opaqueFloor)
+        {
+            if (material == null)
+                return;
+            material.SetFloat(FadeAmount, amount);
+            material.SetFloat(GradientMode, vertical);
+            material.SetFloat(OpaqueFloor, opaqueFloor);
         }
 
         void UseGradientMaterials()
         {
-            foreach (var state in _states)
-                if (state.Renderer) state.Renderer.sharedMaterials = state.Gradient;
+            for (int i = 0; i < _states.Count; i++)
+            {
+                var state = _states[i];
+                if (state.Renderer != null)
+                    state.Renderer.sharedMaterials = state.Gradient;
+            }
             _gradientMaterialsActive = true;
         }
 
@@ -178,12 +347,16 @@ namespace RoadDemo
             if (!_gradientMaterialsActive)
                 return;
 
-            foreach (var state in _states)
-                if (state.Renderer) state.Renderer.sharedMaterials = state.Original;
+            for (int i = 0; i < _states.Count; i++)
+            {
+                var state = _states[i];
+                if (state.Renderer != null)
+                    state.Renderer.sharedMaterials = state.Original;
+            }
             _gradientMaterialsActive = false;
         }
 
-        static Material GradientMaterial(Material source, Shader shader, float minY, float invHeight)
+        Material GradientMaterial(Material source, Shader shader)
         {
             var material = new Material(shader)
             {
@@ -217,12 +390,28 @@ namespace RoadDemo
                     cutoff = source.GetFloat("_Alpha_Clip_Threshold");
             }
             material.SetFloat(Cutoff, Mathf.Clamp01(cutoff));
-            material.SetFloat(BoundsMinY, minY);
-            material.SetFloat(BoundsInvHeight, invHeight);
+            SetBounds(material);
             material.SetFloat(FadeAmount, 0f);
             material.SetFloat(GradientMode, 1f);
             material.SetFloat(OpaqueFloor, 0.08f);
             return material;
+        }
+
+        void ApplyBoundsToVariants()
+        {
+            foreach (var pair in _variants)
+                SetBounds(pair.Value);
+            SetBounds(_nullSourceVariant);
+        }
+
+        void SetBounds(Material material)
+        {
+            if (material == null)
+                return;
+            material.SetFloat(BoundsMinY, _boundsMinY);
+            material.SetFloat(BoundsInvHeight, _boundsInvHeight);
+            material.SetVector(BoundsCenter, new Vector4(_boundsCenter.x, _boundsCenter.y,
+                _boundsCenter.z, 1f));
         }
 
         static string TextureProperty(Material source)
@@ -239,16 +428,20 @@ namespace RoadDemo
         void OnDestroy()
         {
             RestoreOriginals();
-            foreach (var state in _states)
-            {
-                foreach (var material in state.Gradient)
-                {
-                    if (!material) continue;
-                    if (Application.isPlaying) Destroy(material);
-                    else DestroyImmediate(material);
-                }
-            }
+            foreach (var pair in _variants)
+                DestroyVariant(pair.Value);
+            DestroyVariant(_nullSourceVariant);
+            _variants.Clear();
+            _renderers.Clear();
             _states.Clear();
+        }
+
+        static void DestroyVariant(Material material)
+        {
+            if (material == null)
+                return;
+            if (Application.isPlaying) Destroy(material);
+            else DestroyImmediate(material);
         }
     }
 }

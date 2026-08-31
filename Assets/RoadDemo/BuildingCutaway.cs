@@ -9,11 +9,10 @@ namespace RoadDemo
     /// catalogue renderer or a root made from a base, upper floors, roof and signs; the
     /// cutaway must move all of those renderers together or it leaves pieces floating.
     ///
-    /// The full building remains physically present. While cut away its ordinary renderers
-    /// become shadow-only, so navigation, bullets, cover, sight and the building's
-    /// collider keep exactly the same answer. No replacement mesh is spawned: those
-    /// blocks were visible as dark cuboids when a recycled view entered the camera.
-    /// Runtime source meshes are never read or sliced.
+    /// The full building remains physically present. While it occludes the street its mesh
+    /// renderers use the shared opacity gradient; unsupported renderers retain the older
+    /// shadows-only cut. Navigation, bullets, cover, sight and the building's collider keep
+    /// exactly the same answer. Runtime source meshes are never read or sliced.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class BuildingCutaway : MonoBehaviour
@@ -29,6 +28,7 @@ namespace RoadDemo
         const string ProxyName = "Cutaway footprint";
         const int IgnoreRaycastLayer = 2;
         public const float DeclaredHeight = 3.5f;
+        public const float DefaultGradientAmount = 1.6f;
 
         static readonly Dictionary<Collider, BuildingCutaway> ByCollider =
             new Dictionary<Collider, BuildingCutaway>();
@@ -43,14 +43,18 @@ namespace RoadDemo
         readonly List<MergedChunk> _heldChunks = new List<MergedChunk>();
 
         GameObject _proxy;
+        BuildingOpacityGradient _opacity;
         bool _configured;
         bool _registered;
         bool _cut;
+        bool _usingGradient;
         bool _keptShadows;
         float _minimumHeight = DeclaredHeight;
         float _proxyHeight = 0.95f;
+        float _gradientAmount;
 
         public bool IsCut => _cut;
+        public bool UsesGradient => _usingGradient;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
@@ -167,6 +171,12 @@ namespace RoadDemo
             _configured = tall && _renderers.Count > 0 && _colliders.Count > 0;
             if (_configured)
             {
+                if (_opacity == null)
+                {
+                    _opacity = GetComponent<BuildingOpacityGradient>();
+                    if (_opacity == null) _opacity = gameObject.AddComponent<BuildingOpacityGradient>();
+                }
+                _opacity.PrepareForRecycledBinding(_renderers);
                 RegisterRenderers();
                 if (isActiveAndEnabled) Register();
             }
@@ -229,13 +239,19 @@ namespace RoadDemo
             _registered = false;
         }
 
-        /// <summary>Switch the visual state. False means the chunk merge has not finished
-        /// and the caller should ask again on its next sweep.</summary>
-        internal bool Cut(bool keepShadows, float proxyHeight)
+        /// <summary>Switch the visual state. Mesh renderers use the recyclable gradient;
+        /// if it is unavailable, the former shadows-only treatment remains the fallback.
+        /// False means the chunk merge has not finished and the caller should ask again on
+        /// its next sweep.</summary>
+        internal bool Cut(bool keepShadows, float proxyHeight,
+                          float gradientAmount = DefaultGradientAmount)
         {
             if (!_configured) return false;
             proxyHeight = Mathf.Clamp(proxyHeight, 0.35f, 1.5f);
-            if (_cut && _keptShadows == keepShadows && Mathf.Abs(_proxyHeight - proxyHeight) < 0.001f)
+            gradientAmount = Mathf.Clamp(gradientAmount, 0f, 2f);
+            if (_cut && _keptShadows == keepShadows &&
+                Mathf.Abs(_proxyHeight - proxyHeight) < 0.001f &&
+                Mathf.Abs(_gradientAmount - gradientAmount) < 0.001f)
                 return true;
             if (_cut) Restore();
 
@@ -293,11 +309,31 @@ namespace RoadDemo
                 _heldChunks.Add(chunk);
             }
 
+            bool useGradient = gradientAmount > 0.001f && _opacity != null &&
+                               _opacity.Ready && _opacity.RefreshBounds() && _opacity.Set(
+                                   gradientAmount, BuildingOpacityGradient.Profile.Vertical);
             for (int i = 0; i < _states.Count; i++)
             {
                 var state = _states[i];
                 var renderer = state.Renderer;
                 if (renderer == null || (!state.Enabled && state.Chunk == null)) continue;
+                if (useGradient && _opacity.Handles(renderer))
+                {
+                    // An authored shadows-only renderer must not become a visible facade.
+                    if (state.Shadows == ShadowCastingMode.ShadowsOnly)
+                    {
+                        renderer.enabled = keepShadows;
+                        renderer.shadowCastingMode = ShadowCastingMode.ShadowsOnly;
+                    }
+                    else
+                    {
+                        renderer.enabled = true;
+                        renderer.shadowCastingMode = keepShadows
+                            ? state.Shadows
+                            : ShadowCastingMode.Off;
+                    }
+                    continue;
+                }
                 if (keepShadows && state.Shadows != ShadowCastingMode.Off)
                 {
                     renderer.enabled = true;
@@ -307,6 +343,8 @@ namespace RoadDemo
             }
 
             _keptShadows = keepShadows;
+            _gradientAmount = gradientAmount;
+            _usingGradient = useGradient;
             _cut = true;
             // The physical building remains; only its visual shell is cut. A generated
             // footprint cannot safely infer the authored parcel from a facade collider
@@ -318,6 +356,8 @@ namespace RoadDemo
         internal void Restore()
         {
             if (_proxy != null) _proxy.SetActive(false);
+            if (_opacity != null && _opacity.GradientMaterialsActive)
+                _opacity.Set(0f);
             if (!_cut && _states.Count == 0) return;
 
             // Restore source state before releasing a chunk. Its last Release may turn all
@@ -336,6 +376,8 @@ namespace RoadDemo
 
             _heldChunks.Clear();
             _states.Clear();
+            _usingGradient = false;
+            _gradientAmount = 0f;
             _cut = false;
         }
 

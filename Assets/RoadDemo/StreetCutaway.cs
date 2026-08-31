@@ -1,7 +1,6 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using UnityEngine.Rendering;
 
 namespace RoadDemo
 {
@@ -25,12 +24,11 @@ namespace RoadDemo
     /// would hide the building in front of it, then the one in front of that, until half
     /// the quarter had gone.
     ///
-    /// HIDING, not transparent sorting. <see cref="BuildingCutaway"/> groups every piece
-    /// of one logical building, leaves a low footprint behind, and uses
-    /// <see cref="ShadowCastingMode.ShadowsOnly"/> for the full shell. The shadow stays,
-    /// the collider never moves, and bullets, sightlines and men on foot go on treating
-    /// the missing wall as the wall it still is. No guessed replacement footprint is
-    /// drawn over the authored street.
+    /// <see cref="BuildingCutaway"/> groups every piece of one logical building and applies
+    /// the shared camera-facing opacity gradient. The shadow stays, the collider never
+    /// moves, and bullets, sightlines and men on foot go on treating the faded wall as the
+    /// wall it still is. If the gradient cannot be prepared, the established shadows-only
+    /// cut remains the safe fallback.
     ///
     /// The merge is the complication. By the time the player is down in the street the
     /// block is one combined mesh and its buildings have no renderers of their own left
@@ -60,8 +58,12 @@ namespace RoadDemo
 
         /// <summary>Absolute height of the closed footprint left behind. A percentage of
         /// building height made towers leave a two-storey wall; street readability needs
-        /// the same low rim for a shop and a tower.</summary>
+        /// the same low rim for a shop and a tower. Retained for the fallback cut path.</summary>
         public float proxyHeight = 0.95f;
+
+        /// <summary>Shared gradient strength for an occluding building. The approved city
+        /// value is 1.6 (160%): the rear is clear and only the low front remains.</summary>
+        [Range(0f, 2f)] public float gradientAmount = 1.6f;
 
         /// <summary>How long an occluder remains cut after the last sample met it. Longer
         /// than the grid refresh so rotating or resting on a facade edge cannot blink it.</summary>
@@ -319,7 +321,7 @@ namespace RoadDemo
 
             // The group owns merged-chunk holds and all renderers belonging to this one
             // logical building. A merge still folding returns false and is asked again.
-            if (!building.Cut(keepShadows, proxyHeight)) return;
+            if (!building.Cut(keepShadows, proxyHeight, gradientAmount)) return;
             _gone[building] = Time.unscaledTime;
         }
 

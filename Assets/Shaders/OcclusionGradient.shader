@@ -12,11 +12,12 @@ Shader "LivingCity/Occlusion Gradient"
         [MainTexture] _BaseMap("Albedo", 2D) = "white" {}
         [MainColor] _BaseColor("Color", Color) = (1, 1, 1, 1)
         _Cutoff("Source alpha cutoff", Range(0, 1)) = 0.01
-        _FadeAmount("Occlusion amount", Range(0, 1)) = 0
+        _FadeAmount("Occlusion amount", Range(0, 2)) = 0
         _GradientMode("Vertical gradient", Float) = 1
         _OpaqueFloor("Opaque floor", Range(0, 0.45)) = 0.08
         _BoundsMinY("Bounds min Y", Float) = 0
         _BoundsInvHeight("Bounds inverse height", Float) = 1
+        _BoundsCenter("Bounds center", Vector) = (0, 0, 0, 1)
 
         // Read by the borrowed URP/Lit ShadowCaster pass. Keeping this opaque is
         // deliberate: the visual shell fades, its established ground shadow does not.
@@ -70,6 +71,7 @@ Shader "LivingCity/Occlusion Gradient"
                 half _OpaqueFloor;
                 float _BoundsMinY;
                 float _BoundsInvHeight;
+                float4 _BoundsCenter;
             CBUFFER_END
 
             struct Attributes
@@ -117,9 +119,27 @@ Shader "LivingCity/Occlusion Gradient"
 
                 half height01 = saturate((input.positionWS.y - _BoundsMinY) * _BoundsInvHeight);
                 half verticalAlpha = saturate((1.0h - height01) / max(0.001h, 1.0h - _OpaqueFloor));
-                half uniformAlpha = 1.0h - _FadeAmount;
-                half gradedAlpha = lerp(1.0h, verticalAlpha, _FadeAmount);
+                half firstHundred = saturate(_FadeAmount);
+                half beyondHundred = max(0.0h, _FadeAmount - 1.0h);
+
+                // 0..100% establishes the requested base-to-roof gradient. 100..200%
+                // carries that same edge below the pavement until no shell remains.
+                half gradedAlpha = _FadeAmount <= 1.0h
+                    ? lerp(1.0h, verticalAlpha, firstHundred)
+                    : saturate(verticalAlpha - beyondHundred);
+                half uniformAlpha = 1.0h - saturate(_FadeAmount * 0.5h);
                 half profileAlpha = lerp(uniformAlpha, gradedAlpha, step(0.5h, _GradientMode));
+
+                // The half opposite the camera is already fading during 0..100% and is
+                // completely transparent at 100%+. This removes the far-facade/balcony
+                // layers that otherwise show through the front facade as a ghost shell.
+                float2 cameraPlanar = _WorldSpaceCameraPos.xz - _BoundsCenter.xz;
+                float cameraPlanarInvLength = rsqrt(max(dot(cameraPlanar, cameraPlanar), 0.0001));
+                half cameraSide = step(0.0, dot(input.positionWS.xz - _BoundsCenter.xz,
+                    cameraPlanar * cameraPlanarInvLength));
+                half rearKeep = lerp(1.0h, cameraSide, firstHundred);
+                profileAlpha *= rearKeep;
+
                 half alpha = albedo.a * profileAlpha;
                 clip(alpha - 0.001h);
 

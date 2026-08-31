@@ -7,13 +7,13 @@ using UnityEngine.Rendering.Universal;
 namespace OcclusionDemo
 {
     /// <summary>
-    /// One ordinary CityKit building, three bright crew stand-ins behind it and no city
+    /// One Residential 01 building, three bright crew stand-ins behind it and no city
     /// generation noise. The scene animates between the exact original materials and a
     /// bottom-to-top alpha gradient so transparency/sorting can be judged in isolation.
     /// </summary>
     public sealed class OcclusionDemoBuilder : MonoBehaviour
     {
-        const string BuildingPath = "Assets/CityKit/Buildings/building-apartment-01.prefab";
+        const string BuildingPath = "Assets/Prefabs/Residential/residential-01.prefab";
         const float DefaultOpaqueFloor = 0.08f;
 
         BuildingOpacityGradient _gradient;
@@ -89,9 +89,24 @@ namespace OcclusionDemo
                 building.GetComponent<MeshRenderer>().sharedMaterial =
                     Lit("Fallback building", new Color(0.72f, 0.48f, 0.30f), 0.18f);
             }
-            else building.transform.position = Vector3.zero;
+            else
+            {
+                building.transform.position = Vector3.zero;
 
-            building.name = "Ordinary Building - collider remains solid";
+                // Residential prefabs use the pavement corner as their origin. Centre the
+                // lot in this isolated stage while keeping its ground plane at y = 0.
+                var footprint = building.GetComponent<Collider>();
+                if (footprint)
+                {
+                    Bounds bounds = footprint.bounds;
+                    building.transform.position += new Vector3(
+                        -bounds.center.x,
+                        -bounds.min.y,
+                        -bounds.center.z);
+                }
+            }
+
+            building.name = "Residential 01 - collider remains solid";
             building.transform.SetParent(root, true);
             return building;
         }
@@ -204,14 +219,15 @@ namespace OcclusionDemo
                 {
                     _animate = false;
                     float direction = keyboard.rightArrowKey.isPressed ? 1f : -1f;
-                    _amount = Mathf.Clamp01(_amount + direction * Time.unscaledDeltaTime * 0.35f);
+                    _amount = Mathf.Clamp(_amount + direction * Time.unscaledDeltaTime * 0.5f,
+                        0f, 2f);
                 }
             }
 
             if (_animate)
             {
-                float phase = (Time.unscaledTime - _startedAt) / 6f;
-                _amount = 0.5f - 0.5f * Mathf.Cos(phase * Mathf.PI * 2f);
+                float phase = (Time.unscaledTime - _startedAt) / 8f;
+                _amount = 1f - Mathf.Cos(phase * Mathf.PI * 2f);
             }
 
             _gradient.Set(_amount, _profile, DefaultOpaqueFloor);
@@ -228,40 +244,46 @@ namespace OcclusionDemo
         {
             EnsureStyles();
             const float width = 460f;
-            var panel = new Rect(16f, 16f, width, 224f);
+            var panel = new Rect(16f, 16f, width, 248f);
             GUI.Box(panel, GUIContent.none);
             GUI.Label(new Rect(30f, 28f, width - 28f, 30f), "OCCLUSION GRADIENT DEMO", _titleStyle);
 
+            float baseAlpha = _amount <= 1f ? 1f : Mathf.Clamp01(2f - _amount);
+            float roofAlpha = _amount < 1f ? 1f - _amount : 0f;
             string profile = _profile == BuildingOpacityGradient.Profile.Vertical
-                ? $"VERTICAL: pavement alpha 1.00  ->  roof alpha {1f - _amount:0.00}"
-                : $"UNIFORM CONTROL: alpha {1f - _amount:0.00} over the whole shell";
+                ? $"VERTICAL: pavement alpha {baseAlpha:0.00}  ->  roof alpha {roofAlpha:0.00}"
+                : $"UNIFORM CONTROL: alpha {1f - _amount * 0.5f:0.00} over the whole shell";
             GUI.Label(new Rect(30f, 62f, width - 28f, 24f), profile, _stateStyle);
-            GUI.Label(new Rect(30f, 88f, width - 28f, 22f),
+            GUI.Label(new Rect(30f, 86f, width - 28f, 22f),
+                "100%: full-height gradient + rear clear   |   200%: shell clear",
+                _bodyStyle);
+            GUI.Label(new Rect(30f, 108f, width - 28f, 22f),
                 $"Effect {_amount * 100f:0}%   |   collider ON ({_colliderCount})   |   full shadow ON",
                 _bodyStyle);
 
-            float chosen = GUI.HorizontalSlider(new Rect(30f, 118f, width - 60f, 20f), _amount, 0f, 1f);
+            float chosen = GUI.HorizontalSlider(new Rect(30f, 136f, width - 60f, 20f),
+                _amount, 0f, 2f);
             if (Mathf.Abs(chosen - _amount) > 0.001f)
             {
                 _animate = false;
                 _amount = chosen;
             }
 
-            if (GUI.Button(new Rect(30f, 146f, 118f, 28f), _animate ? "Pause auto" : "Play auto"))
+            if (GUI.Button(new Rect(30f, 164f, 118f, 28f), _animate ? "Pause auto" : "Play auto"))
             {
                 _animate = !_animate;
                 _startedAt = Time.unscaledTime;
             }
-            if (GUI.Button(new Rect(156f, 146f, 150f, 28f),
+            if (GUI.Button(new Rect(156f, 164f, 150f, 28f),
                 _profile == BuildingOpacityGradient.Profile.Vertical ? "Show uniform" : "Show gradient"))
                 ToggleProfile();
-            if (GUI.Button(new Rect(314f, 146f, 116f, 28f), "Reset opaque"))
+            if (GUI.Button(new Rect(314f, 164f, 116f, 28f), "Reset opaque"))
             {
                 _animate = false;
                 _amount = 0f;
             }
 
-            GUI.Label(new Rect(30f, 181f, width - 40f, 42f),
+            GUI.Label(new Rect(30f, 199f, width - 40f, 42f),
                 "Space: auto   G: compare modes   arrows: scrub   R: opaque\n" +
                 "WASD / Q E / right-drag / wheel: inspect transparent sorting",
                 _bodyStyle);

@@ -4210,6 +4210,7 @@ namespace RoadDemo
             cutaway.cutIn = ResolvedCityView.CutawayEnterDistance;
             cutaway.cutOut = ResolvedCityView.CutawayExitDistance;
             cutaway.proxyHeight = ResolvedCityView.CutawayProxyHeight;
+            cutaway.gradientAmount = ResolvedCityView.CutawayGradientAmount;
             cutaway.keepHiddenSeconds = ResolvedCityView.CutawayRestoreDelay;
             cutaway.crewSamplesPerFrame = ResolvedCityView.CutawayCrewSamples;
             cutaway.keepShadows = ResolvedCityView.CutawayKeepShadows;

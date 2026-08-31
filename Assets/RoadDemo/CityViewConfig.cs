@@ -24,7 +24,7 @@ namespace RoadDemo
         [Range(MinimumStreetPitch, MaximumStreetPitch)] public float streetPitch = DefaultStreetPitch;
         [Tooltip("Pitch movement allowed above and below the normal angle. Zero disables vertical right-drag while preserving yaw rotation.")]
         [Range(0f, 10f)] public float streetPitchFreedom = 0f;
-        [Tooltip("Replace only camera-blocking buildings with a low footprint at close tactical zoom.")]
+        [Tooltip("Fade only camera-blocking buildings at close tactical zoom.")]
         public bool streetCutaway = true;
         [Tooltip("Camera boom in metres at which blocking buildings begin cutting away.")]
         [Min(10f)] public float cutawayEnterDistance = 55f;
@@ -32,6 +32,8 @@ namespace RoadDemo
         [Min(10f)] public float cutawayExitDistance = 68f;
         [Tooltip("Absolute height in metres of the closed footprint left by a cut building.")]
         [Range(0.35f, 1.5f)] public float cutawayProxyHeight = 0.95f;
+        [Tooltip("Opacity-gradient effect applied to an occluding building. 1.6 is the city-approved 160% cutaway.")]
+        [Range(0f, 2f)] public float cutawayGradientAmount = 1.6f;
         [Tooltip("Seconds a building stays cut after the last sample met it, preventing edge flicker.")]
         [Range(0.2f, 1f)] public float cutawayRestoreDelay = 0.55f;
         [Tooltip("Visible crew samples checked immediately each frame before the slower street grid.")]
@@ -88,6 +90,7 @@ namespace RoadDemo
         public float CutawayEnterDistance => Mathf.Max(10f, cutawayEnterDistance);
         public float CutawayExitDistance => Mathf.Max(CutawayEnterDistance + 1f, cutawayExitDistance);
         public float CutawayProxyHeight => Mathf.Clamp(cutawayProxyHeight, 0.35f, 1.5f);
+        public float CutawayGradientAmount => Mathf.Clamp(cutawayGradientAmount, 0f, 2f);
         public float CutawayRestoreDelay => Mathf.Clamp(cutawayRestoreDelay, 0.2f, 1f);
         public int CutawayCrewSamples => Mathf.Clamp(cutawayCrewSamples, 0, 12);
         public bool CutawayKeepShadows => cutawayKeepShadows;
