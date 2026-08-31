@@ -656,8 +656,10 @@ namespace LivingCity.Tests
             var accounts = new Accounts();
             accounts.Open(1);
 
-            if (accounts.Safe != 1_000_000)
-                failures.Add("PurchaseGateDebitsAndBooks: the starting safe is not $1,000,000.");
+            // Docs/economy-prices.md §9: the safe opens at $25,000, not a million. A
+            // million bought the whole price list before a shop had been leaned on.
+            if (accounts.Safe != 25_000)
+                failures.Add("PurchaseGateDebitsAndBooks: the starting safe is not $25,000.");
 
             if (BalanceMath.TryPurchase(accounts, 750) != null)
                 failures.Add("PurchaseGateDebitsAndBooks: an affordable buy refused.");
@@ -678,8 +680,11 @@ namespace LivingCity.Tests
             var expected = new Dictionary<string, int>
             {
                 // Weakest to strongest, priced in that order (the plated pieces are gone).
-                { "Twin Pack Pistols", 250 }, { "Shotgun", 750 },
-                { "Machine Pistol", 1250 }, { "Rifle", 1750 }, { "Tommy Gun", 2000 },
+                // Docs/economy-prices.md §5, anchored to 1987 street prices: handguns
+                // under a hundred retail, a MAC-10 about six hundred right after the '86
+                // ban, and a transferable full-auto two thousand and up.
+                { "Twin Pack Pistols", 150 }, { "Shotgun", 300 },
+                { "Machine Pistol", 600 }, { "Rifle", 800 }, { "Tommy Gun", 2000 },
             };
 
             foreach (var item in ArmoryCatalog.Weapons)
@@ -706,8 +711,7 @@ namespace LivingCity.Tests
         }
 
         /// <summary>The counter's third shelf. Four machines, every one of them wheels
-        /// rather than a gun, every one priced under the working car - what is bought
-        /// here is a pass down a street, not a crew's transport - and every one of them
+        /// rather than a gun, and every one of them
         /// named so that the body the catalogue photographs is the body that turns up at
         /// the kerb (PortraitStudio.VehicleModelFor is the single table, and CrewCars
         /// reads it too).</summary>
@@ -720,20 +724,17 @@ namespace LivingCity.Tests
             if (ArmoryCatalog.Motorcycles.Length != 4)
                 failures.Add("MotorcyclesAreOnTheCounter: the shelf is not four deep.");
 
-            var sedan = 0;
-            foreach (var car in ArmoryCatalog.Vehicles)
-                if (car.DisplayName == "Sedan")
-                    sedan = car.Price;
-
             var seen = new List<string>();
             foreach (var item in ArmoryCatalog.Motorcycles)
             {
                 if (item.Kind != EquipmentKind.Motorcycle)
                     failures.Add($"MotorcyclesAreOnTheCounter: {item.DisplayName} is not " +
                                  "a motorcycle.");
-                if (item.Price <= 0 || item.Price >= sedan)
-                    failures.Add($"MotorcyclesAreOnTheCounter: {item.DisplayName} at " +
-                                 $"{item.Price} against the working car's {sedan}.");
+                // Priced by what the machine actually cost in 1987, not by a rule of
+                // thumb: a new Harley tourer listed at $8,545 while a clean used sedan
+                // went for four thousand, and the counter says so (economy-prices §4).
+                if (item.Price <= 0)
+                    failures.Add($"MotorcyclesAreOnTheCounter: {item.DisplayName} is free.");
                 if (item.Note.Length == 0)
                     failures.Add($"MotorcyclesAreOnTheCounter: {item.DisplayName} has no note.");
                 if (seen.Contains(item.DisplayName))

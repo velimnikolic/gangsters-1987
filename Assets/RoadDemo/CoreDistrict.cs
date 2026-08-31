@@ -108,6 +108,16 @@ namespace RoadDemo
         // ------------------------------------------------------------------ plan
 
         /// <summary>
+        /// Deal only this many blocks from the catalogue. Zero is the whole city, which is
+        /// what every real build wants; a small number is the test rig - two quarters and
+        /// a handful of streets that stand up in seconds instead of a minute and a half,
+        /// so a territory check does not cost a coffee break. The catalogue's own order is
+        /// kept, so a budgeted plan is the first N blocks of the real one and not a
+        /// different city.
+        /// </summary>
+        public int blockBudget;
+
+        /// <summary>
         /// Reads the roads off baked block descriptions and deals every generated block as
         /// data. No scene object is made here: the host still needs these bounds before it
         /// can lay the island, camera and map.
@@ -117,6 +127,16 @@ namespace RoadDemo
             _seed = seed;
             _blocks.Clear();
             _blocks.AddRange(CoreBlockCatalog.CreateBlocks());
+            if (blockBudget > 0 && _blocks.Count > blockBudget)
+            {
+                // The SMALLEST blocks, not the first ones: the catalogue opens with the
+                // harbour and the works, and a test rig built out of those is the heavy
+                // city again under another name. Sorted by footprint so a budget of a
+                // dozen is a dozen streets of shops, which is what a territory check
+                // actually needs.
+                _blocks.Sort((a, b) => Area(a).CompareTo(Area(b)));
+                _blocks.RemoveRange(blockBudget, _blocks.Count - blockBudget);
+            }
             _homes.Clear();
             // the seed deals the rows and the drawing is judged before it is taken; the
             // Synty seed asks for the demo's own arrangement instead
@@ -127,6 +147,12 @@ namespace RoadDemo
             PlanHomes();
             _bounds = Rect.MinMaxRect(_raster.X0, _raster.Z0,
                                       _raster.X(_raster.NX), _raster.Z(_raster.NZ));
+        }
+
+        static int Area(CoreLayout.Block block)
+        {
+            var box = block.Box;
+            return Mathf.RoundToInt(box.width * box.height);
         }
 
         /// <summary>
@@ -145,6 +171,15 @@ namespace RoadDemo
                 _raster, candidates, _seed,
                 Mathf.Max(0, parkingLotCount), Mathf.Max(0, fuelStationCount),
                 _parkingSites, _fuelSites, _developmentSites);
+
+            // A budgeted plan is a test rig, and filling every remainder with housing
+            // would put the whole city back on it through the back door.
+            if (blockBudget > 0)
+            {
+                int keep = Mathf.Max(2, blockBudget / 2);
+                if (_developmentSites.Count > keep)
+                    _developmentSites.RemoveRange(keep, _developmentSites.Count - keep);
+            }
         }
 
         /// <summary>
@@ -412,7 +447,11 @@ namespace RoadDemo
             _yard.SetParent(quarter, false);
             StandCoreBlocks(host);
             StandParks();
-            StandQuays();
+            // The quays are the heaviest thing in the city and a budgeted plan is a rig,
+            // not a port: skipped whole rather than dealt small, because half a harbour
+            // is a worse lie than none.
+            if (blockBudget <= 0)
+                StandQuays();
 
             if (host is IStreamedDistrictHost streamed)
             {
@@ -439,7 +478,8 @@ namespace RoadDemo
                           RiverBridge.Skip(_plan, _raster), layCarParks: true,
                           skipParking: ComposedSurfaceAt);
             StandCityEdgePavement(roads);
-            CorePowerlines.Stand(_plan, _raster, quarter, _seed);
+            if (blockBudget <= 0)
+                CorePowerlines.Stand(_plan, _raster, quarter, _seed);
             var river = new GameObject("River").transform;
             river.SetParent(quarter, false);
             RiverBridge.Dress(_plan, river, (prefab, parent) => Object.Instantiate(prefab, parent));

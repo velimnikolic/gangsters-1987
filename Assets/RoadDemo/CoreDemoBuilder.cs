@@ -54,6 +54,10 @@ namespace RoadDemo
                  "an existing building.")]
         [Range(0, 8)] public int fuelStations = 5;
 
+        [Tooltip("Blocks dealt from the catalogue. 0 is the whole city; a small number " +
+                 "is the test rig - a couple of quarters that stand up in seconds.")]
+        [Min(0)] public int blockBudget;
+
         void Awake()
         {
 #if UNITY_EDITOR
@@ -78,6 +82,7 @@ namespace RoadDemo
                 parkingLotCount = Mathf.Max(0, parkingLots),
                 parkingCarsPerLot = Mathf.Max(0, parkingCarsPerLot),
                 fuelStationCount = Mathf.Max(0, fuelStations),
+                blockBudget = Mathf.Max(0, blockBudget),
             };
 
             // Inactive while it is configured: RoadDemoBuilder.Awake must see Core as
