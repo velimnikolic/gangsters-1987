@@ -118,6 +118,28 @@ static class Program
                               $"parking {raster.ParkingArea} spare {raster.SpareArea} water {raster.WaterArea}  " +
                               $"quay {plan.Quays.Count}/{plan.Bridges.Count}  " +
                               $"parks {plan.Parks.Count} (run {plan.ParkRuns}) res {plan.Residential.Count}  {roads}");
+            if (count == 1)
+            {
+                // what the quarters actually ask the catalogue for: the INNER rectangle of
+                // every residential block (the block less its 1-cell pavement ring), which is
+                // the ground a unit has to fit in
+                var sizes = new Dictionary<string, int>();
+                foreach (var block in plan.Residential)
+                {
+                    int w = (int)Math.Round(block.Box.width / CoreLayout.Cell) - 2;
+                    int d = (int)Math.Round(block.Box.height / CoreLayout.Cell) - 2;
+                    if (w > d) { int t = w; w = d; d = t; }
+                    string key = $"{w}x{d}";
+                    sizes[key] = sizes.TryGetValue(key, out var had) ? had + 1 : 1;
+                }
+                Console.WriteLine($"   inner rectangles of {plan.Residential.Count} residential block(s):");
+                foreach (var pair in sizes.OrderByDescending(x => x.Value))
+                {
+                    var bits = pair.Key.Split('x');
+                    Console.WriteLine($"      {pair.Value,4} x  {pair.Key,-7} cells = " +
+                                      $"{int.Parse(bits[0]) * 5,3} x {int.Parse(bits[1]) * 5,3} m");
+                }
+            }
             if (rows) foreach (var row in plan.Rows) Console.WriteLine("   " + row);
             if (raster.Faults > 0 || rows)
                 foreach (var line in raster.Report.Split('\n'))

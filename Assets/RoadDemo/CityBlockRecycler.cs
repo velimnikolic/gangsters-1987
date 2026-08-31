@@ -231,6 +231,7 @@ namespace RoadDemo
         {
             Instances.Clear();
             BindingOwner = null;
+            _holding = false;
         }
 
         public void Init(ResidentialBlockModel model, DistrictFrame frame, CityViewConfig config,
@@ -403,10 +404,30 @@ namespace RoadDemo
             _candidates.Sort((a, b) => a.Priority.CompareTo(b.Priority));
         }
 
+        /// <summary>Ground somebody outside the camera is looking at - the ledger's block
+        /// file films a real block, and a block the streamer had put away is a block the
+        /// file would have to draw a guess of. While it is held the block counts as
+        /// visible: it composes if it is not standing, it stays activated, and the LRU
+        /// never reaches it, because eviction only ever takes an INACTIVE view.</summary>
+        static Rect _held;
+        static bool _holding;
+
+        public static void Hold(Rect worldRect)
+        {
+            _held = worldRect;
+            _holding = worldRect.width > 0f && worldRect.height > 0f;
+        }
+
+        public static void Release() => _holding = false;
+
+        static bool Held(Rect world) =>
+            _holding && world.Overlaps(_held, allowInverse: true);
+
         bool Visible(ResidentialBlockRecipe recipe, float padding)
         {
             if (recipe == null) return false;
             var world = _frame.ToWorldRect(recipe.LocalBounds);
+            if (Held(world)) return true;
             // Pitch is locked in street mode, so the ground footprint is the bounded
             // visibility contract. Give it the horizontal projection of the tallest
             // facade: a roof may enter the image shortly before its ground rectangle,

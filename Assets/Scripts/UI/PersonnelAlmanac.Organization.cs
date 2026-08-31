@@ -54,6 +54,27 @@ namespace LivingCity.UI
         internal RectTransform organizationContent;
         internal float organizationScroll;
 
+        /// <summary>
+        /// The column the sections are being laid into, and how wide it is. A narrow
+        /// sheet runs one column down the page; a wide one runs the chain of command
+        /// down the left and the ledger down the right, because a 2000-unit line of a
+        /// four-word heading is not a page, it is a banner with a page inside it.
+        ///
+        /// Every section builder places against THESE and never against the page, so a
+        /// section can be dropped into either column without knowing which it is in.
+        /// </summary>
+        RectTransform organizationColumn;
+        float organizationW;
+
+        /// <summary>Under this the sheet is one column. Above it the chain and the block
+        /// ledger stand side by side - the ledger needs about 900 units for its five
+        /// columns and the chain about 700 for a branch, so a sheet is split only when
+        /// both still get what they need.</summary>
+        const float TwoColumnSheet = 1640f;
+
+        /// <summary>Air between the two columns.</summary>
+        const float ColumnGutter = 30f;
+
         /// <summary>The line the sheet writes when an order goes in. It is cleared the
         /// moment the office has nothing left to answer, so a stale "not answered yet"
         /// never stands over a page where everything has been ruled on.</summary>
@@ -183,12 +204,48 @@ namespace LivingCity.UI
             if (organizationPickedHoodId >= 0 && !IsPooled(organizationPickedHoodId))
                 organizationPickedHoodId = -1;
 
+
             var cursor = 0f;
             cursor = BuildOrganizationTiles(query, cursor);
-            cursor = BuildChainOfCommand(query, boss, cursor);
-            cursor = BuildBlockLedger(cursor);
-            cursor = BuildFiledOrders(cursor);
+
+            // A wide sheet is read in two columns. The chain of command goes down the
+            // left because it is the thing a reader scans; the ledger, the file it opens
+            // and the orders the sheet has filed go down the right, in that order,
+            // because a block file belongs directly under the row that opened it.
+            if (PageWidth >= TwoColumnSheet)
+            {
+                var left = (PageWidth - ColumnGutter) * 0.44f;
+                var right = PageWidth - ColumnGutter - left;
+
+                InColumn(0f, left);
+                var chain = BuildChainOfCommand(query, boss, cursor);
+
+                InColumn(left + ColumnGutter, right);
+                var ledger = BuildBlockLedger(cursor);
+                ledger = BuildBlockFile(ledger);
+                ledger = BuildFiledOrders(ledger);
+
+                cursor = Mathf.Max(chain, ledger);
+            }
+            else
+            {
+                InColumn(0f, PageWidth);
+                cursor = BuildChainOfCommand(query, boss, cursor);
+                cursor = BuildBlockLedger(cursor);
+                cursor = BuildBlockFile(cursor);
+                cursor = BuildFiledOrders(cursor);
+            }
             CloseOrganization(cursor);
+        }
+
+        /// <summary>Opens a column inside the page and points every section builder at
+        /// it. The column carries no fill and no mask of its own - it is where a section
+        /// stands, not something the reader ever sees.</summary>
+        void InColumn(float x, float width)
+        {
+            organizationColumn = NewRect("Column", organizationContent);
+            PlaceTopLeft(organizationColumn, x, 0f, width, 1f);
+            organizationW = width;
         }
 
         void CloseOrganization(float cursor)
@@ -292,7 +349,7 @@ namespace LivingCity.UI
             if (organizationLeaders.Count == 1)
             {
                 Stub(cursor + 10f);
-                Line(organizationContent, LedgerStyle.MonoItalic, 12f, LedgerV2.Muted,
+                Line(organizationColumn, LedgerStyle.MonoItalic, 12f, LedgerV2.Muted,
                     BranchX, -cursor, 700f, 20f,
                     "No lieutenant branches are on the books.");
                 cursor += 30f;
@@ -300,14 +357,14 @@ namespace LivingCity.UI
 
             cursor = BuildPoolBranch(cursor);
 
-            DottedVRule(organizationContent, SpineX, -spineTop,
+            DottedVRule(organizationColumn, SpineX, -spineTop,
                 Mathf.Max(0f, cursor - spineTop - 8f), LedgerV2.Dotted);
             return cursor + 14f;
         }
 
         /// <summary>The dashed stub that reaches out of the spine to one branch.</summary>
         void Stub(float cursor) =>
-            LedgerV2.Leader(organizationContent, SpineX, -cursor, SpineStub);
+            LedgerV2.Leader(organizationColumn, SpineX, -cursor, SpineStub);
 
         float BuildBossCard(
             IOrganizationQuery query, OrganizationPerson boss, float cursor)
@@ -321,10 +378,10 @@ namespace LivingCity.UI
             const float meterMax = 330f;
             const float pad = 12f;
 
-            var card = NewRect("Boss", organizationContent);
-            PlaceTopLeft(card, 0f, -cursor, PageWidth, height);
+            var card = NewRect("Boss", organizationColumn);
+            PlaceTopLeft(card, 0f, -cursor, organizationW, height);
             Fill(card, LedgerV2.Head);
-            Block("Rank", card, 0f, 0f, PageWidth, 4f, LedgerV2.Red);
+            Block("Rank", card, 0f, 0f, organizationW, 4f, LedgerV2.Red);
 
             var member = director.Roster != null ? director.Roster.Find(boss.Id) : null;
             Face(card, 0f, -4f, plateW, height - 4f, member, "BOSS",
@@ -354,12 +411,12 @@ namespace LivingCity.UI
 
             // The file's own corner marks, top right and bottom right: what a photograph
             // mounted on a card carries. Twelve units, one thick, and nothing else.
-            CornerMark(card, PageWidth - 18f, -9f, true);
-            CornerMark(card, PageWidth - 18f, -(height - 17f), false);
+            CornerMark(card, organizationW - 18f, -9f, true);
+            CornerMark(card, organizationW - 18f, -(height - 17f), false);
 
             var capacity = query.CapacityOf(boss.Id);
-            var meterW = Mathf.Min(meterMax, PageWidth - x - 460f);
-            var meterX = PageWidth - meterW - pad;
+            var meterW = Mathf.Clamp(organizationW - x - 460f, 150f, meterMax);
+            var meterX = organizationW - meterW - pad;
             var took = Meter(card, meterX, 14f, meterW, "MEN ON THE BOOKS",
                 capacity.Manpower, "man", "men", dark: true);
             // The outfit's ground against the ground the Boss can administer: the second
@@ -394,8 +451,8 @@ namespace LivingCity.UI
             Stub(cursor + height * 0.5f);
 
             var capacity = query.CapacityOf(lieutenant.Id);
-            var card = NewRect("Lieutenant " + lieutenant.Name, organizationContent);
-            var width = PageWidth - BranchX;
+            var card = NewRect("Lieutenant " + lieutenant.Name, organizationColumn);
+            var width = organizationW - BranchX;
             PlaceTopLeft(card, BranchX, -cursor, width, height);
             Fill(card, LedgerV2.Panel);
             Block("Rank", card, 0f, 0f, flashW, height,
@@ -466,7 +523,7 @@ namespace LivingCity.UI
             if (organizationOpenBranches.Contains(lieutenant.Id))
                 cursor = BuildRosterGrid(men, contentX, cursor, recall: true);
 
-            DottedVRule(organizationContent, BranchX + 22f, -top,
+            DottedVRule(organizationColumn, BranchX + 22f, -top,
                 Mathf.Max(0f, cursor - top - 6f), LedgerV2.Hair);
             return cursor + 10f;
         }
@@ -488,8 +545,8 @@ namespace LivingCity.UI
                     ? "UNDER YOU DIRECTLY · " + pool.Count +
                       " IDLE, NO BRANCH, NO EARNINGS — CLICK A MAN TO PLACE HIM"
                     : "UNDER YOU DIRECTLY · NOBODY IS SITTING IDLE";
-            var hintLine = Line(organizationContent, LedgerStyle.MonoBold, 11f,
-                LedgerV2.Red, BranchX + 8f, -cursor, PageWidth - BranchX - 8f,
+            var hintLine = Line(organizationColumn, LedgerStyle.MonoBold, 11f,
+                LedgerV2.Red, BranchX + 8f, -cursor, organizationW - BranchX - 8f,
                 LineBox(11f), hint);
             hintLine.overflowMode = TextOverflowModes.Ellipsis;
 
@@ -503,7 +560,7 @@ namespace LivingCity.UI
             if (organizationPoolOpen)
                 cursor = BuildRosterGrid(pool, contentX, cursor, recall: false);
 
-            DottedVRule(organizationContent, BranchX + 22f, -top,
+            DottedVRule(organizationColumn, BranchX + 22f, -top,
                 Mathf.Max(0f, cursor - top - 6f), LedgerV2.Hair);
             return cursor + 8f;
         }
@@ -525,18 +582,18 @@ namespace LivingCity.UI
             var run = x + shown * pitch + 7f;
             if (men.Count > ThumbLimit)
             {
-                Line(organizationContent, LedgerStyle.MonoBold, 11f, LedgerV2.Body,
+                Line(organizationColumn, LedgerStyle.MonoBold, 11f, LedgerV2.Body,
                     run, -(cursor + 12f), 60f, LineBox(11f), "+" + (men.Count - ThumbLimit));
                 run += 46f;
             }
 
-            var note = Line(organizationContent, LedgerStyle.Mono, 11f, LedgerV2.Muted,
+            var note = Line(organizationColumn, LedgerStyle.Mono, 11f, LedgerV2.Muted,
                 run, -(cursor + 12f), 460f, LineBox(11f), summary);
             note.overflowMode = TextOverflowModes.Ellipsis;
 
             var keyY = -(cursor + 6f);
-            var right = PageWidth;
-            var roster = LedgerV2.Button(organizationContent,
+            var right = organizationW;
+            var roster = LedgerV2.Button(organizationColumn,
                 open ? "HIDE ROSTER" : "OPEN ROSTER · " + men.Count + " →",
                 right - 200f, keyY, 200f, 26f, onToggle, red: false, outline: true,
                 size: 10f);
@@ -546,7 +603,7 @@ namespace LivingCity.UI
             // a man is taken on for a branch, and this is the line the branch owns.
             if (onHire != null)
             {
-                var hire = LedgerV2.Button(organizationContent,
+                var hire = LedgerV2.Button(organizationColumn,
                     "HIRE A MAN FOR HIM · " + LedgerText.Cash(director.HoodRecruitmentCost),
                     run + note.preferredWidth + 16f, keyY, 250f, 26f, onHire,
                     red: false, outline: true, size: 10f);
@@ -560,7 +617,7 @@ namespace LivingCity.UI
             float x, float cursor, float w, float h)
         {
             var member = director.Roster != null ? director.Roster.Find(person.Id) : null;
-            var slot = NewRect("Face " + person.Name, organizationContent);
+            var slot = NewRect("Face " + person.Name, organizationColumn);
             PlaceTopLeft(slot, x, -cursor, w, h);
             Face(slot, 0f, 0f, w, h, member, "", LedgerV2.Thumb, LedgerV2.Muted);
 
@@ -587,18 +644,18 @@ namespace LivingCity.UI
             // sets: a roster is read down a column, not across a line of empty paper.
             const float minCell = 290f;
             const float columnGap = 12f;
-            var width = PageWidth - x;
+            var width = organizationW - x;
             var columns = Mathf.Clamp(
                 Mathf.FloorToInt((width + columnGap) / (minCell + columnGap)), 1, 4);
             const float rowH = 24f;
             var cell = (width - columnGap * (columns - 1)) / columns;
 
-            Rule(organizationContent, x, -cursor, width, LedgerV2.Rule);
+            Rule(organizationColumn, x, -cursor, width, LedgerV2.Rule);
             cursor += 6f;
 
             if (men.Count == 0)
             {
-                Line(organizationContent, LedgerStyle.MonoItalic, 11.5f, LedgerV2.Muted,
+                Line(organizationColumn, LedgerStyle.MonoItalic, 11.5f, LedgerV2.Muted,
                     x, -cursor, width, 20f,
                     recall ? "Nobody reports to him." : "Nobody is sitting idle.");
                 return cursor + 26f;
@@ -612,7 +669,7 @@ namespace LivingCity.UI
                 var rowX = x + column * (cell + columnGap);
                 var rowY = cursor + line * rowH;
 
-                var row = NewRect("Man " + person.Name, organizationContent);
+                var row = NewRect("Man " + person.Name, organizationColumn);
                 PlaceTopLeft(row, rowX, -rowY, cell, rowH);
                 // One Graphic per object: the pool row's own stock IS its click surface.
                 Image stock = null;
@@ -661,22 +718,22 @@ namespace LivingCity.UI
             cursor = Section(cursor, "II. BLOCK LEDGER", "");
             var mapReady = MapTargeting.Available &&
                            TerritoryRuntime.Instance?.Commands != null;
-            var seeAll = LedgerV2.Button(organizationContent, "SEE ALL BLOCKS IN THE CITY",
-                PageWidth - 300f, -(cursor - 46f), 300f, 28f,
+            var seeAll = LedgerV2.Button(organizationColumn, "SEE ALL BLOCKS IN THE CITY",
+                organizationW - 300f, -(cursor - 46f), 300f, 28f,
                 BeginBlockTargeting, red: false, outline: true, size: 9.5f);
             SetActionEnabled(seeAll, mapReady);
 
             CollectBlockRows();
             var action = 230f;
-            var span = PageWidth - action;
+            var span = organizationW - action;
             var c0 = span * 1.5f / 5.3f;
             var c1 = span * 1.2f / 5.3f;
             var c2 = c1;
             var c3 = span - c0 - c1 - c2;
             var columns = new[] { c0, c1, c2, c3, action };
 
-            var head = NewRect("Ledger head", organizationContent);
-            PlaceTopLeft(head, 0f, -cursor, PageWidth, 32f);
+            var head = NewRect("Ledger head", organizationColumn);
+            PlaceTopLeft(head, 0f, -cursor, organizationW, 32f);
             Fill(head, LedgerV2.Head);
             var headings = new[]
             {
@@ -699,30 +756,30 @@ namespace LivingCity.UI
 
             if (organizationBlockRows.Count == 0)
             {
-                var empty = NewRect("Ledger empty", organizationContent);
-                PlaceTopLeft(empty, 0f, -cursor, PageWidth, 44f);
+                var empty = NewRect("Ledger empty", organizationColumn);
+                PlaceTopLeft(empty, 0f, -cursor, organizationW, 44f);
                 Fill(empty, LedgerV2.Panel);
                 Frame(empty, 1f, LedgerV2.Rule);
                 Line(empty, LedgerStyle.MonoItalic, 12f, LedgerV2.Muted,
-                    14f, -12f, PageWidth - 28f, 20f,
+                    14f, -12f, organizationW - 28f, 20f,
                     "No block is on our paper and none is ours on the street.");
                 return cursor + 56f;
             }
 
-            var frame = NewRect("Ledger", organizationContent);
-            PlaceTopLeft(frame, 0f, -cursor, PageWidth, 1f);
+            var frame = NewRect("Ledger", organizationColumn);
+            PlaceTopLeft(frame, 0f, -cursor, organizationW, 1f);
             Frame(frame, 1f, LedgerV2.Rule);
 
             var rows = Mathf.Min(organizationBlockRows.Count, BlockRowLimit);
             var height = 0f;
             for (var i = 0; i < rows; i++)
                 height = BuildBlockRow(organizationBlockRows[i], columns, cursor, height);
-            frame.sizeDelta = new Vector2(PageWidth, height);
+            frame.sizeDelta = new Vector2(organizationW, height);
             cursor += height;
 
             if (organizationBlockRows.Count > rows)
             {
-                Caps(organizationContent, 0f, -(cursor + 6f), PageWidth,
+                Caps(organizationColumn, 0f, -(cursor + 6f), organizationW,
                     "AND " + (organizationBlockRows.Count - rows) +
                     " MORE ON THE BOOKS · OPEN THE MAP TO READ THE WHOLE CITY",
                     9f, LedgerV2.Label, 3f);
@@ -742,12 +799,19 @@ namespace LivingCity.UI
             var orphan = !leader.IsValid && control == BlockControl.Held;
             var menuOpen = organizationBlockMenu == blockId;
 
-            var row = NewRect("Block " + blockId.Value, organizationContent);
-            PlaceTopLeft(row, 0f, -(top + offset), PageWidth, rowH);
+            var open = blockCardId == blockId;
+
+            var row = NewRect("Block " + blockId.Value, organizationColumn);
+            PlaceTopLeft(row, 0f, -(top + offset), organizationW, rowH);
             Fill(row, menuOpen
                 ? LedgerV2.Money
                 : mismatch || orphan ? LedgerV2.Carbon : LedgerV2.Panel);
-            Rule(row, 0f, 0f, PageWidth, LedgerV2.Rule);
+            // The row itself opens the block's file. The key at the right end still only
+            // changes the paper, so a reader after one thing never gets the other.
+            RowButton(row, ClickSurface(row), () => OpenBlockCard(blockId));
+            if (open)
+                Block("Open mark", row, 0f, 0f, 3f, rowH, LedgerV2.Red);
+            Rule(row, 0f, 0f, organizationW, LedgerV2.Rule);
 
             var x = 0f;
             Line(row, LedgerStyle.Condensed, 17f, LedgerV2.Ink,
@@ -796,8 +860,8 @@ namespace LivingCity.UI
             var options = organizationLeaders.Count + (leaderId >= 0 ? 1 : 0);
             var height = 30f + options * 30f;
             var width = 340f;
-            var menu = NewRect("Menu " + blockId.Value, organizationContent);
-            PlaceTopLeft(menu, PageWidth - width - 14f, -top, width, height);
+            var menu = NewRect("Menu " + blockId.Value, organizationColumn);
+            PlaceTopLeft(menu, organizationW - width - 14f, -top, width, height);
             Fill(menu, LedgerV2.Head);
             Frame(menu, 1f, LedgerV2.Head);
             Caps(menu, 12f, -9f, width - 24f,
@@ -853,9 +917,9 @@ namespace LivingCity.UI
             var filings = outfit ? outfit.Filings : null;
             var count = filings != null ? Mathf.Min(filings.All.Count, 6) : 0;
 
-            var frame = NewRect("Filings", organizationContent);
+            var frame = NewRect("Filings", organizationColumn);
             var height = count * 40f + 30f;
-            PlaceTopLeft(frame, 0f, -cursor, PageWidth, height);
+            PlaceTopLeft(frame, 0f, -cursor, organizationW, height);
             Fill(frame, LedgerV2.Panel);
             Frame(frame, 1f, LedgerV2.Rule);
 
@@ -863,14 +927,14 @@ namespace LivingCity.UI
             {
                 var filing = filings.All[i];
                 var row = NewRect("Filing " + filing.Id, frame);
-                PlaceTopLeft(row, 0f, -(i * 40f), PageWidth, 40f);
-                Rule(row, 14f, -39f, PageWidth - 28f, LedgerV2.Hair);
+                PlaceTopLeft(row, 0f, -(i * 40f), organizationW, 40f);
+                Rule(row, 14f, -39f, organizationW - 28f, LedgerV2.Hair);
 
                 const float stampW = 80f;
                 const float chipW = 112f;
                 const float rulingW = 320f;
                 var textX = 20f + stampW + 16f;
-                var chipX = PageWidth - 20f - rulingW - 16f - chipW;
+                var chipX = organizationW - 20f - rulingW - 16f - chipW;
 
                 Line(row, LedgerStyle.Mono, 11f, LedgerV2.Label,
                     20f, -12f, stampW, 18f, filing.Stamp);
@@ -884,7 +948,7 @@ namespace LivingCity.UI
                     LedgerV2.Panel, 4f, TextAlignmentOptions.Center);
 
                 Line(row, LedgerStyle.Mono, 10.5f, LedgerV2.Label,
-                    PageWidth - 20f - rulingW, -12f, rulingW, 18f, filing.Ruling)
+                    organizationW - 20f - rulingW, -12f, rulingW, 18f, filing.Ruling)
                     .alignment = TextAlignmentOptions.MidlineRight;
             }
 
@@ -899,7 +963,7 @@ namespace LivingCity.UI
                           awaiting + "."
                         : "Every order on this sheet has been ruled on.";
             Line(frame, LedgerStyle.Mono, 11f, LedgerV2.Muted,
-                16f, -(count * 40f + 6f), PageWidth - 32f, 18f, footer);
+                16f, -(count * 40f + 6f), organizationW - 32f, 18f, footer);
             return cursor + height;
         }
 
@@ -907,15 +971,16 @@ namespace LivingCity.UI
 
         float Section(float cursor, string title, string caption)
         {
-            var heading = Line(organizationContent, LedgerStyle.Condensed, 20f,
-                LedgerV2.Ink, 0f, -cursor, 760f, 26f, title);
+            var half = organizationW * 0.5f;
+            var heading = Line(organizationColumn, LedgerStyle.Condensed, 20f,
+                LedgerV2.Ink, 0f, -cursor, half, 26f, title);
             heading.characterSpacing = 4f;
             if (caption.Length > 0)
-                Caps(organizationContent, PageWidth - 760f, -(cursor + 4f), 760f,
+                Caps(organizationColumn, half, -(cursor + 4f), half,
                     caption, 9.5f, LedgerV2.Label, 3f,
                     TextAlignmentOptions.MidlineRight);
             cursor += 30f;
-            Rule(organizationContent, 0f, -cursor, PageWidth, LedgerV2.Rule);
+            Rule(organizationColumn, 0f, -cursor, organizationW, LedgerV2.Rule);
             return cursor + 12f;
         }
 
@@ -1456,6 +1521,9 @@ namespace LivingCity.UI
             organizationPickedHoodId = -1;
             ClearOrganizationPendingBlock();
             HideThumbNote();
+            // A shut book films nothing and holds no ground up: the second lens and the
+            // streamer's hold on the block both belong to an OPEN file.
+            StopBlockFilm();
         }
 
         // ---------------------------------------------------------------- the reading

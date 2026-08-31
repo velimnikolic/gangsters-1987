@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -141,16 +141,23 @@ namespace LivingCity.UI
 
         static int lastCloseFrame = -1;
 
+        /// <summary>The tab the book was last left on. Closing and reopening returns the
+        /// boss to the page he was working, not to the paper. Static so a scene reload
+        /// keeps it; only pages with a tab are remembered - ORDERS is off the book.</summary>
+        static LedgerPage lastTab = LedgerPage.Newspaper;
+
         // Static state outlives Play when domain reload is off - same fix as OverlayRegistry.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
         {
             IsOpen = false;
             lastCloseFrame = -1;
+            lastTab = LedgerPage.Newspaper;
         }
 
-        /// <summary>The book's tabs, in strip order. The paper is the entry page - the
-        /// boss opens the folder on what the city thinks of him, then turns to work.</summary>
+        /// <summary>The book's tabs, in strip order. The paper is where a fresh game
+        /// opens - the boss reads what the city thinks of him - and after that the book
+        /// reopens wherever he closed it.</summary>
         public enum LedgerPage
         {
             Newspaper,
@@ -449,11 +456,11 @@ namespace LivingCity.UI
             return true;
         }
 
-        void Open() => OpenAtPage(LedgerPage.Newspaper);
+        void Open() => OpenAtPage(lastTab);
 
         /// <summary>
-        /// Opens the same modal folder at a specific leaf. Normal P-key entry still uses
-        /// the newspaper; map targeting is the sole flow that returns to a working page.
+        /// Opens the same modal folder at a specific leaf. Normal P-key entry reopens on
+        /// the tab the book was left on; map targeting names its own working page.
         /// </summary>
         void OpenAtPage(LedgerPage pageKind)
         {
@@ -557,6 +564,8 @@ namespace LivingCity.UI
         public void SetPage(LedgerPage pageKind)
         {
             currentPage = pageKind;
+            if ((int)pageKind < TabNames.Length)
+                lastTab = pageKind;
             for (var i = 0; i < pageRoots.Length; i++)
                 if (pageRoots[i])
                     pageRoots[i].SetActive(i == (int)pageKind);

@@ -31,6 +31,12 @@ namespace LivingCity.UI
         static Color Rgb(int hex) => new Color(
             ((hex >> 16) & 0xFF) / 255f, ((hex >> 8) & 0xFF) / 255f, (hex & 0xFF) / 255f);
 
+        /// <summary>The same conversion, for a page that carries a colour of its own -
+        /// the block file's four ownership inks, say. It is still the design's oklch,
+        /// converted once and written as the sRGB it comes out as; nothing eyeballs a
+        /// value and nothing tints one at runtime.</summary>
+        public static Color Rgb2(int hex) => Rgb(hex);
+
         /// <summary>A panel laid on the sheet, and the two bands it is striped with.</summary>
         public static readonly Color Panel = Rgb(0xf4efe9);
         public static readonly Color PanelBand = Rgb(0xede7df);
@@ -448,6 +454,70 @@ namespace LivingCity.UI
             float size = 10.5f) =>
             Button(parent, label, x, y, w, h, onClick,
                 active ? Key.Dark : Key.Outline, size);
+
+        /// <summary>
+        /// A segmented run: one question with one answer, drawn as a single hairline
+        /// box divided into butted cells with the chosen cell struck dark. What the
+        /// design uses where a row of separate keys would read as a toolbar - separate
+        /// keys say "here are four things you may press", a segmented bar says "the
+        /// sheet is showing this one of these three". Answers the width it took, so a
+        /// caller laying right to left can step back past it.
+        /// </summary>
+        public static float Segmented(Transform parent, float x, float y, float h,
+            string[] labels, int active, System.Action<int> pick, float cellW = 0f,
+            float size = 9.5f)
+        {
+            if (labels == null || labels.Length == 0)
+                return 0f;
+
+            var w = cellW;
+            if (w <= 0f)
+                for (var i = 0; i < labels.Length; i++)
+                    w = Mathf.Max(w, ButtonWidth(labels[i], size, 5f, 13f));
+
+            var bar = NewRect("Segmented", parent);
+            PlaceTopLeft(bar, x, y, w * labels.Length, h);
+
+            for (var i = 0; i < labels.Length; i++)
+            {
+                var index = i;
+                var cell = NewRect("Segment " + labels[i], bar);
+                PlaceTopLeft(cell, i * w, 0f, w, h);
+
+                var face = cell.gameObject.AddComponent<Image>();
+                face.color = i == active
+                    ? Head
+                    : new Color(Panel.r, Panel.g, Panel.b, 0f);
+                face.raycastTarget = true;
+
+                var button = cell.gameObject.AddComponent<Button>();
+                button.targetGraphic = face;
+                var colours = button.colors;
+                colours.normalColor = Color.white;
+                colours.highlightedColor = i == active
+                    ? new Color(1.3f, 1.3f, 1.3f)
+                    : new Color(0.9f, 0.88f, 0.86f);
+                colours.selectedColor = colours.highlightedColor;
+                colours.pressedColor = new Color(0.72f, 0.72f, 0.72f);
+                button.colors = colours;
+                if (pick != null)
+                    button.onClick.AddListener(() => pick(index));
+
+                var label = Text("Label", cell, LedgerStyle.MonoBold, size,
+                    i == active ? HeadCream : Ink, TextAlignmentOptions.Center);
+                Stretch(label.rectTransform, 4f);
+                label.characterSpacing = 5f;
+                label.overflowMode = TextOverflowModes.Ellipsis;
+                label.text = labels[i].ToUpperInvariant();
+            }
+
+            // The dividers and the box go on LAST: a dark cell laid over them would
+            // otherwise break the bar's outline at whichever segment is chosen.
+            for (var i = 1; i < labels.Length; i++)
+                Block("Divider", bar, i * w, 0f, 1f, h, SheetRule);
+            Frame(bar, 1f, SheetRule);
+            return w * labels.Length;
+        }
 
         /// <summary>The Button behind a key's label, for a caller that wants to disable
         /// it.</summary>

@@ -561,3 +561,25 @@ istočna strana broja 4 seže 4,6 m preko prstena (stepeništa; `Over` kaže 0,1
 | `CorePavement` oko bloka: 0 pločica sa pogrešnim uglom, prilaz ima rampu | — |
 | nijedan blok sa dve radnje; kafić ≤ 1; uličica uvek izlazi na ulicu | — |
 | pogled u lab-u: jedan blok svake klase, slika u §5.2 | — |
+
+---
+
+## Povučena pravila (2026-08-27)
+
+Dva pravila su skinuta na korisnikovu reč, oba izmerena pre i posle:
+
+1. **„Radnja samo na jednom ćošku"** — *nije bilo korisnikovo*, nego moja pretpostavka upisana u
+   §3 ovog plana. Koštalo je: od šest kuća četiri nose radnje, pa su bile isključene iz celog
+   bloka čim ćošak uzme radnju → **jedna zgrada = 63 % svih jedinica u gradu**. Sada bez
+   ograničenja (`ResidentialLot.ShopsPerStreet = 0`). Posle: najčešća 39 %, svih šest u upotrebi.
+2. **„Nijedna kuća veća od pola bloka"** — *ovo jeste bilo korisnikovo* („izbegavaj velike
+   residential blokove, ovaj drugi je preogroman", prvi crtež), pretočeno u kutiju jedinice
+   ≤ 50 % unutrašnjosti + greška `Monolith`. Skinuto 2026-08-27 („makni i to"):
+   `ResidentialLot.ShareMost = 100`. **Mera: ništa se nije promenilo** — najveća jedinica u
+   `block` klasi meri **24 %**, u `court` **35 %**, pa pravilo nikad nije ni okidalo.
+
+**Šta je onda ostalo kao uzrok neravnomernosti** (`residential-01` uzima 532 od ~1360 ćoškova):
+nije pravilo nego **mera bloka**. Kvartovi dele kolone 12–17 ćelija i trake 6–8 (jedna ili dve),
+pa u većinu blokova stane samo najmanja ugaona kuća; velikim L jedinicama (10×9) treba blok
+12×11 i više. Poluge: **više kuća u katalogu** ili **krupniji blokovi u kvartu**
+(`CoreLayout.Ring.cs`: `BlockWideMin/Max`, `BandMin/Max`, `DeepOdds`).

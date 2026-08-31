@@ -718,13 +718,20 @@ namespace RoadDemo
             unit.Plan.Any(row => row.IndexOf(':') >= 0 || row.IndexOf(',') >= 0);
 
         /// <summary>
-        /// A unit's box may cover at most this much of the inner ground, percent - on the
-        /// classes built on all four corners. The 50 x 45 m L stood on a 50 x 60 m block WAS
-        /// the block: one building with a row stuck on the side (the user, 2026-08-27: "ovaj
-        /// drugi je preogroman"). A corner block is one house and its garden and a row block
-        /// is the through-row by definition, so the rule is not asked of those.
+        /// The most of a block's inner ground one unit's box may cover, percent.
+        ///
+        /// 100 IS NO LIMIT, and no limit is what the city is built with (2026-08-27: "zasto
+        /// pravilo nijedna kuca veca od pola bloka, makni i to").
+        ///
+        /// It was 50, and unlike the shopfront rule this one WAS the user's - his word on the
+        /// first drawing was "izbegavaj velike residential blokove, ovaj drugi je preogroman",
+        /// and 50% is what I made of it. What it was holding off is a block that is one
+        /// building and nothing else; what it cost is the big L units, which are the only
+        /// thing in a catalogue of six that does not fit in a small block - so the small
+        /// corner house won 532 of the sweep's 1360 corners. Turn it back to 50 and the
+        /// Monolith fault comes back with it.
         /// </summary>
-        public const int ShareMost = 50;
+        public const int ShareMost = 100;
 
         /// <summary>The least of a block's inner ground that its buildings, their forecourts
         /// and its lot may stand on. Below this the block is paving with something in the

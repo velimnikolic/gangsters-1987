@@ -68,3 +68,9 @@ mono_crash.*.json
 Tools/CoreSim/bin/
 Tools/CoreSim/obj/
 !Tools/CoreSim/CoreSim.csproj
+
+# Scratch of a working session: probe scripts, screenshots, the accidental dev/null
+dev/
+# Editor screenshot dumps
+Assets/Logs/
+Assets/Logs.meta
