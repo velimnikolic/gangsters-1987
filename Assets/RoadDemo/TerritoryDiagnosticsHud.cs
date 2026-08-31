@@ -45,6 +45,8 @@ namespace RoadDemo
             sections.Add(new GeographySection());
             sections.Add(new ResponsibilitySection());
             sections.Add(new PhysicalActorsSection());
+            sections.Add(new PresenceSection());
+            sections.Add(new FearSection());
             // The businesses page installs itself rather than waiting to be registered:
             // the business pass runs BEFORE this HUD is built, so a push from that side
             // would depend on component start order.
@@ -368,6 +370,153 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>
+        /// What this block's Presence is MADE of, family by family. Every number here is
+        /// read off the ledger the simulation writes - the page computes nothing - and the
+        /// parts are printed above the total so a reader can see them reconcile.
+        /// </summary>
+        sealed class PresenceSection : ITerritoryDiagnosticsSection
+        {
+            readonly List<TerritoryGangPresence> gangs = new List<TerritoryGangPresence>();
+            readonly List<TerritoryPresenceContributor> contributors =
+                new List<TerritoryPresenceContributor>();
+
+            public string Title => "Presence (physical)";
+
+            public void Append(
+                StringBuilder text, TerritoryBlockTruth block, TerritoryRuntime runtime)
+            {
+                var ledger = runtime?.Presence;
+                if (ledger == null)
+                {
+                    text.Append("no Presence ledger in this scene");
+                    return;
+                }
+
+                var blockId = block.Definition.Id;
+                ledger.CollectGangs(blockId, gangs);
+                if (gangs.Count == 0)
+                {
+                    text.Append("nobody stands here and the block remembers nobody");
+                    return;
+                }
+
+                var config = ledger.Config;
+                for (var i = 0; i < gangs.Count; i++)
+                {
+                    var gang = gangs[i];
+                    if (i > 0)
+                        text.AppendLine();
+
+                    text.Append("gang #").Append(gang.GangId.Value).AppendLine();
+                    ledger.CollectContributors(blockId, gang.GangId, contributors);
+                    var summed = 0f;
+                    for (var c = 0; c < contributors.Count; c++)
+                    {
+                        var man = contributors[c];
+                        summed += man.Contribution;
+                        text.Append("  · ")
+                            .Append(man.DisplayName.Length > 0
+                                ? man.DisplayName
+                                : "actor #" + man.CharacterId.Value)
+                            .Append("  ").Append(man.Rank.ToString().ToLowerInvariant())
+                            .Append('/').Append(man.Activity.ToString().ToLowerInvariant())
+                            .Append("  +").Append(man.Contribution.ToString("0.0"))
+                            .AppendLine();
+                    }
+
+                    if (contributors.Count == 0)
+                        text.AppendLine("  · nobody standing here now");
+
+                    text.Append("  bodies ").Append(summed.ToString("0.0"))
+                        .Append("  +  memory ").Append(gang.Residual.ToString("0.0"))
+                        .Append("  =  ").Append(gang.Total.ToString("0.0"));
+                    if (gang.Total >= config.PresenceCap - 0.01f)
+                        text.Append("  [capped at ").Append(config.PresenceCap.ToString("0"))
+                            .Append(']');
+                    text.AppendLine();
+                    text.Append("  memory fades to ")
+                        .Append((gang.Residual * 0.5f).ToString("0.0"))
+                        .Append(" in ").Append(config.ResidualHalfLifeHours.ToString("0.##"))
+                        .Append(" game hours");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Why this street is afraid, act by act. Everything shown is read off the Fear
+        /// ledger - the page computes nothing - and the remembered acts are printed with
+        /// what is left of each, so the current number can be explained from its history.
+        /// </summary>
+        sealed class FearSection : ITerritoryDiagnosticsSection
+        {
+            readonly List<TerritoryGangValue> gangs = new List<TerritoryGangValue>();
+            readonly List<TerritoryFearMemoryEntry> memory =
+                new List<TerritoryFearMemoryEntry>();
+
+            public string Title => "Fear (per family) · police attention";
+
+            public void Append(
+                StringBuilder text, TerritoryBlockTruth block, TerritoryRuntime runtime)
+            {
+                var ledger = runtime?.Fear;
+                if (ledger == null)
+                {
+                    text.Append("no Fear ledger in this scene");
+                    return;
+                }
+
+                var blockId = block.Definition.Id;
+                var now = runtime.GameHour;
+                var attention = ledger.PoliceAttention(blockId, now);
+                text.Append("police attention: ").Append(attention.ToString("0.0"))
+                    .Append("  ·  presence here counts x")
+                    .Append(ledger.PresenceScale(blockId, now).ToString("0.00"))
+                    .AppendLine();
+
+                ledger.CollectGangs(blockId, now, gangs);
+                if (gangs.Count == 0)
+                {
+                    text.Append("this street is afraid of nobody");
+                    return;
+                }
+
+                for (var i = 0; i < gangs.Count; i++)
+                {
+                    var gang = gangs[i];
+                    text.Append("gang #").Append(gang.GangId.Value)
+                        .Append("  fear ").Append(gang.Value.ToString("0.0")).AppendLine();
+
+                    ledger.CollectMemory(blockId, gang.GangId, memory);
+                    var summed = 0f;
+                    for (var m = 0; m < memory.Count; m++)
+                    {
+                        var entry = memory[m];
+                        var left = entry.At(now);
+                        summed += left;
+                        if (m >= 6)
+                            continue;
+                        text.Append("  · ").Append(entry.Category)
+                            .Append('/').Append(entry.Visibility)
+                            .Append("  worth ").Append(entry.Amount.ToString("0.0"))
+                            .Append("  left ").Append(left.ToString("0.0"))
+                            .Append("  @ ").Append(entry.GameHour.ToString("0.0")).Append('h');
+                        if (entry.BusinessId.IsValid)
+                            text.Append("  [").Append(entry.BusinessId.Value).Append(']');
+                        text.AppendLine();
+                    }
+
+                    if (memory.Count > 6)
+                        text.Append("  · … ").Append(memory.Count - 6)
+                            .AppendLine(" older acts");
+                    text.Append("  remembered sum ").Append(summed.ToString("0.0"))
+                        .Append("  =  ").Append(gang.Value.ToString("0.0"));
+                    if (i < gangs.Count - 1)
+                        text.AppendLine();
+                }
+            }
+        }
+
         sealed class EventSection : ITerritoryDiagnosticsSection
         {
             public string Title => "Territory events / future sections";
@@ -396,8 +545,7 @@ namespace RoadDemo
                 if (shown == 0)
                     text.Append("no territory events recorded for this block");
 
-                text.AppendLine().Append("reserved: Presence · Fear · businesses/compliance · ")
-                    .Append("rival influence · derived control");
+                text.AppendLine().Append("reserved: businesses/compliance · derived control");
             }
         }
     }

@@ -273,6 +273,313 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_presence_tests",
+                    "Run GAN-79 contracts for Outfit x block Presence: physical bodies, rank and " +
+                    "activity weighting, group aggregation, recent memory, decay, rival symmetry " +
+                    "and the player's qualitative reading.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "presence", "tests" })]
+        public static object PresenceTests()
+        {
+            var failures = LivingCity.Tests.PresenceTests.Run();
+            failures.AddRange(LivingCity.Tests.TerritoryFoundationTests.Run()
+                .Select(failure => "Territory regression: " + failure));
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
+        /// <summary>
+        /// What a block's Presence is actually made of, family by family: the men standing
+        /// there, what each is worth and why, what the block still remembers, and the sum
+        /// those parts make. Report only - it never ticks the simulation to get a number.
+        /// </summary>
+        [CliCommand("gangsters_presence_audit",
+                    "Break down live Presence per family for a block (or the busiest blocks in " +
+                    "the city) into contributors, rank and activity weights, memory and total.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "presence", "audit" })]
+        public static object PresenceAudit(
+            [CliArg("block", "Canonical block id, or the legacy plan index, to break down. " +
+                             "Omitted, the blocks carrying the most Presence are reported.")]
+            string block = "",
+            [CliArg("limit", "How many blocks to report when none is named.")] int limit = 5)
+        {
+            var runtime = UnityEngine.Object.FindAnyObjectByType<RoadDemo.TerritoryRuntime>();
+            var presence = runtime?.Presence;
+            if (runtime == null || presence == null)
+                return new { ok = false, reason = "No TerritoryRuntime is running in this scene." };
+
+            var wanted = new List<LivingCity.Territory.TerritoryBlockId>();
+            if (!string.IsNullOrEmpty(block))
+            {
+                if (int.TryParse(block, out var legacy) &&
+                    runtime.TryGetBlock(legacy, out var byIndex))
+                    wanted.Add(byIndex);
+                else
+                    wanted.Add(new LivingCity.Territory.TerritoryBlockId(block));
+            }
+            else
+            {
+                var ranked = new List<LivingCity.Territory.TerritoryBlockId>(presence.Blocks);
+                var gangs = new List<LivingCity.Territory.TerritoryGangPresence>();
+                ranked.Sort((left, right) => Weight(presence, right, gangs)
+                    .CompareTo(Weight(presence, left, gangs)));
+                for (var i = 0; i < ranked.Count && i < System.Math.Max(1, limit); i++)
+                    wanted.Add(ranked[i]);
+            }
+
+            var rows = new List<object>();
+            var gangScratch = new List<LivingCity.Territory.TerritoryGangPresence>();
+            var contributors = new List<LivingCity.Territory.TerritoryPresenceContributor>();
+            for (var i = 0; i < wanted.Count; i++)
+            {
+                var blockId = wanted[i];
+                runtime.DebugTruth.TryGetBlock(blockId, out var truth);
+                presence.CollectGangs(blockId, gangScratch);
+                var families = new List<object>();
+                for (var g = 0; g < gangScratch.Count; g++)
+                {
+                    var gang = gangScratch[g];
+                    presence.CollectContributors(blockId, gang.GangId, contributors);
+                    var men = new List<object>();
+                    var summed = 0f;
+                    for (var c = 0; c < contributors.Count; c++)
+                    {
+                        var man = contributors[c];
+                        summed += man.Contribution;
+                        men.Add(new
+                        {
+                            character = man.CharacterId.Value,
+                            name = man.DisplayName,
+                            crew = man.GroupId.ToString(),
+                            rank = man.Rank.ToString(),
+                            activity = man.Activity.ToString(),
+                            contribution = man.Contribution,
+                        });
+                    }
+
+                    families.Add(new
+                    {
+                        gang = gang.GangId.Value,
+                        physical = gang.Physical,
+                        residual = gang.Residual,
+                        total = gang.Total,
+                        contributors = men.ToArray(),
+                        // The sum of the parts, printed beside the total so a reader can
+                        // see them reconcile rather than take the total on trust.
+                        contributorSum = summed,
+                        reconciles = System.Math.Abs(
+                            summed + gang.Residual - gang.Total) < 0.01f ||
+                            gang.Total >= presence.Config.PresenceCap - 0.01f,
+                    });
+                }
+
+                rows.Add(new
+                {
+                    block = blockId.Value,
+                    name = truth?.Definition.DisplayName ?? "",
+                    families = families.ToArray(),
+                });
+            }
+
+            return new
+            {
+                ok = true,
+                blocksWithPresence = presence.Blocks.Count,
+                config = new
+                {
+                    pointsPerContributor = presence.Config.PointsPerContributor,
+                    hood = presence.Config.HoodWeight,
+                    lieutenant = presence.Config.LieutenantWeight,
+                    boss = presence.Config.BossWeight,
+                    transit = presence.Config.TransitWeight,
+                    moving = presence.Config.MovingWeight,
+                    stationed = presence.Config.StationedWeight,
+                    cap = presence.Config.PresenceCap,
+                    residualDepositPerHour = presence.Config.ResidualDepositPerHour,
+                    residualCap = presence.Config.ResidualCap,
+                    residualHalfLifeHours = presence.Config.ResidualHalfLifeHours,
+                },
+                blocks = rows.ToArray(),
+            };
+        }
+
+        static float Weight(
+            LivingCity.Territory.TerritoryPresenceLedger presence,
+            LivingCity.Territory.TerritoryBlockId blockId,
+            List<LivingCity.Territory.TerritoryGangPresence> scratch)
+        {
+            presence.CollectGangs(blockId, scratch);
+            var total = 0f;
+            for (var i = 0; i < scratch.Count; i++)
+                total += scratch[i].Total;
+            return total;
+        }
+
+        [CliCommand("gangsters_fear_tests",
+                    "Run GAN-90 contracts for Gang x Block fear: the act model, severity and " +
+                    "visibility weighting, in-block propagation, memory, decay, ignored defiance, " +
+                    "the police counterweight and the player's qualitative reading.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "fear", "tests" })]
+        public static object FearTests()
+        {
+            var failures = LivingCity.Tests.FearTests.Run();
+            failures.AddRange(LivingCity.Tests.PresenceTests.Run()
+                .Select(failure => "Presence regression: " + failure));
+            failures.AddRange(LivingCity.Tests.TerritoryFoundationTests.Run()
+                .Select(failure => "Territory regression: " + failure));
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
+        /// <summary>
+        /// Why a street is afraid: every act it still remembers, what each was worth when
+        /// it happened and what is left of it now, so the current number can be explained
+        /// from its history alone. Report only.
+        /// </summary>
+        [CliCommand("gangsters_fear_audit",
+                    "Break down live Fear per family for a block (or the most frightened blocks) " +
+                    "into remembered acts, their decay and the police attention on the block.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "fear", "audit" })]
+        public static object FearAudit(
+            [CliArg("block", "Canonical block id, or the legacy plan index. Omitted, the most " +
+                             "frightened blocks are reported.")]
+            string block = "",
+            [CliArg("limit", "How many blocks to report when none is named.")] int limit = 5)
+        {
+            var runtime = UnityEngine.Object.FindAnyObjectByType<RoadDemo.TerritoryRuntime>();
+            var fear = runtime?.Fear;
+            if (runtime == null || fear == null)
+                return new { ok = false, reason = "No TerritoryRuntime is running in this scene." };
+
+            var now = runtime.GameHour;
+            var wanted = new List<LivingCity.Territory.TerritoryBlockId>();
+            if (!string.IsNullOrEmpty(block))
+            {
+                if (int.TryParse(block, out var legacy) &&
+                    runtime.TryGetBlock(legacy, out var byIndex))
+                    wanted.Add(byIndex);
+                else
+                    wanted.Add(new LivingCity.Territory.TerritoryBlockId(block));
+            }
+            else
+            {
+                var ranked = new List<LivingCity.Territory.TerritoryBlockId>(fear.Blocks);
+                ranked.Sort((left, right) =>
+                    fear.BlockFear(right, now).CompareTo(fear.BlockFear(left, now)));
+                for (var i = 0; i < ranked.Count && i < System.Math.Max(1, limit); i++)
+                    wanted.Add(ranked[i]);
+            }
+
+            var rows = new List<object>();
+            var gangs = new List<LivingCity.Territory.TerritoryGangValue>();
+            var memory = new List<LivingCity.Territory.TerritoryFearMemoryEntry>();
+            for (var i = 0; i < wanted.Count; i++)
+            {
+                var blockId = wanted[i];
+                runtime.DebugTruth.TryGetBlock(blockId, out var truth);
+                fear.CollectGangs(blockId, now, gangs);
+                var families = new List<object>();
+                for (var g = 0; g < gangs.Count; g++)
+                {
+                    var gang = gangs[g];
+                    fear.CollectMemory(blockId, gang.GangId, memory);
+                    var acts = new List<object>();
+                    var summed = 0f;
+                    for (var m = 0; m < memory.Count; m++)
+                    {
+                        var entry = memory[m];
+                        var left = entry.At(now);
+                        summed += left;
+                        acts.Add(new
+                        {
+                            category = entry.Category.ToString(),
+                            visibility = entry.Visibility.ToString(),
+                            business = entry.BusinessId.Value,
+                            atGameHour = entry.GameHour,
+                            worth = entry.Amount,
+                            remaining = left,
+                            halfLifeHours = entry.HalfLifeHours,
+                        });
+                    }
+
+                    families.Add(new
+                    {
+                        gang = gang.GangId.Value,
+                        fear = gang.Value,
+                        rememberedSum = summed,
+                        reconciles = System.Math.Abs(summed - gang.Value) < 0.05f ||
+                                     gang.Value >= fear.Config.FearCap - 0.05f,
+                        acts = acts.ToArray(),
+                    });
+                }
+
+                rows.Add(new
+                {
+                    block = blockId.Value,
+                    name = truth?.Definition.DisplayName ?? "",
+                    localFear = fear.BlockFear(blockId, now),
+                    policeAttention = fear.PoliceAttention(blockId, now),
+                    presenceScale = fear.PresenceScale(blockId, now),
+                    families = families.ToArray(),
+                });
+            }
+
+            var open = new List<object>();
+            for (var i = 0; i < fear.OpenDefiances.Count; i++)
+            {
+                var watch = fear.OpenDefiances[i];
+                open.Add(new
+                {
+                    gang = watch.GangId.Value,
+                    block = watch.BlockId.Value,
+                    business = watch.BusinessId.Value,
+                    openedAt = watch.OpenedAt,
+                    hoursLeft = fear.Config.DefianceWindowHours - (now - watch.OpenedAt),
+                });
+            }
+
+            var table = new List<object>();
+            foreach (var category in LivingCity.Territory.TerritoryFearConfig.Categories)
+            {
+                var impact = fear.Config.Of(category);
+                table.Add(new
+                {
+                    category = category.ToString(),
+                    impact = impact.Impact,
+                    halfLifeHours = impact.MemoryHalfLifeHours,
+                    policeWeight = impact.PoliceWeight,
+                });
+            }
+
+            return new
+            {
+                ok = true,
+                gameHour = now,
+                blocksWithFear = fear.Blocks.Count,
+                config = new
+                {
+                    hidden = fear.Config.HiddenWeight,
+                    seen = fear.Config.SeenWeight,
+                    publicly = fear.Config.PublicWeight,
+                    propagationFraction = fear.Config.PropagationFraction,
+                    fearCap = fear.Config.FearCap,
+                    defianceWindowHours = fear.Config.DefianceWindowHours,
+                    policeAttentionCap = fear.Config.PoliceAttentionCap,
+                    policeAttentionHalfLifeHours = fear.Config.PoliceAttentionHalfLifeHours,
+                    policeEscalation = fear.Config.PoliceEscalation,
+                    presenceFloor = fear.Config.PresenceFloor,
+                    categories = table.ToArray(),
+                },
+                openDefiances = open.ToArray(),
+                blocks = rows.ToArray(),
+            };
+        }
+
         [CliCommand("gangsters_business_tests",
                     "Run GAN-154 contracts for the business registry, site providers, archetype " +
                     "catalogue, deterministic owners and city population.",

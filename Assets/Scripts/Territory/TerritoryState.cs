@@ -110,16 +110,26 @@ namespace LivingCity.Territory
     /// <summary>Exact per-gang values as seen by the simulation/debug query.</summary>
     public readonly struct TerritoryGangSignals
     {
-        public TerritoryGangSignals(TerritoryGangId gangId, float presence, float influence)
+        public TerritoryGangSignals(
+            TerritoryGangId gangId, float presence, float influence, float fear = 0f)
         {
             GangId = gangId;
             Presence = presence;
             Influence = influence;
+            Fear = fear;
         }
 
         public TerritoryGangId GangId { get; }
+
+        /// <summary>Bodies on the ground, weighted - EPIC 4 owns it.</summary>
         public float Presence { get; }
+
+        /// <summary>Share of the block's premises held - the control pass owns it.</summary>
         public float Influence { get; }
+
+        /// <summary>How much this street fears THIS family - EPIC 5 owns it. Fear is
+        /// per family: a block can be terrified of one house and unbothered by another.</summary>
+        public float Fear { get; }
     }
 
     /// <summary>
@@ -175,6 +185,10 @@ namespace LivingCity.Territory
             }
         }
 
+        /// <summary>What the street feels at all, whoever caused it: the STRONGEST
+        /// per-family fear on the block (see <see cref="TerritoryGangSignals.Fear"/>), so
+        /// a page that only wants "is this street frightened" has one number to read.
+        /// Who exactly they are afraid of is the per-gang value, never this one.</summary>
         public float? LocalFear { get; }
         public float? BusinessCompliance { get; }
         public int CompliantBusinesses { get; }
@@ -208,7 +222,9 @@ namespace LivingCity.Territory
             TerritoryCommandNodeId groupId,
             string displayName,
             string gangName,
-            bool leadsGroup)
+            bool leadsGroup,
+            TerritoryRank rank = TerritoryRank.Unknown,
+            TerritoryActorActivity activity = TerritoryActorActivity.Unknown)
         {
             CharacterId = characterId;
             GangId = gangId;
@@ -216,6 +232,8 @@ namespace LivingCity.Territory
             DisplayName = displayName ?? "";
             GangName = gangName ?? "";
             LeadsGroup = leadsGroup;
+            Rank = rank;
+            Activity = activity;
         }
 
         public TerritoryCharacterId CharacterId { get; }
@@ -224,6 +242,14 @@ namespace LivingCity.Territory
         public string DisplayName { get; }
         public string GangName { get; }
         public bool LeadsGroup { get; }
+
+        /// <summary>What this body IS, resolved from real personnel identity. Presence
+        /// weights it; command responsibility for the block does not enter into it.</summary>
+        public TerritoryRank Rank { get; }
+
+        /// <summary>What this body is DOING here, read off the physical truth the project
+        /// already keeps. A man riding through is not a man holding the ground.</summary>
+        public TerritoryActorActivity Activity { get; }
     }
 
     public interface ITerritoryActorSource

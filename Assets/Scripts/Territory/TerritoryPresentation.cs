@@ -10,32 +10,42 @@ namespace LivingCity.Territory
             float weakAt,
             float moderateAt,
             float strongAt,
+            float dominantAt = float.PositiveInfinity,
             string noneLabel = "None",
             string weakLabel = "Weak",
             string moderateLabel = "Moderate",
             string strongLabel = "Strong",
+            string dominantLabel = "Dominant",
             string unknownLabel = "Unknown")
         {
-            if (weakAt > moderateAt || moderateAt > strongAt)
+            if (weakAt > moderateAt || moderateAt > strongAt || strongAt > dominantAt)
                 throw new ArgumentException("Territory presentation thresholds must be ascending.");
 
             WeakAt = weakAt;
             ModerateAt = moderateAt;
             StrongAt = strongAt;
+            DominantAt = dominantAt;
             NoneLabel = noneLabel ?? "None";
             WeakLabel = weakLabel ?? "Weak";
             ModerateLabel = moderateLabel ?? "Moderate";
             StrongLabel = strongLabel ?? "Strong";
+            DominantLabel = dominantLabel ?? "Dominant";
             UnknownLabel = unknownLabel ?? "Unknown";
         }
 
         public float WeakAt { get; }
         public float ModerateAt { get; }
         public float StrongAt { get; }
+
+        /// <summary>The top band. Left at infinity a scale simply never reaches it, so a
+        /// signal that has no "dominant" to speak of keeps the four words it had.</summary>
+        public float DominantAt { get; }
+
         public string NoneLabel { get; }
         public string WeakLabel { get; }
         public string ModerateLabel { get; }
         public string StrongLabel { get; }
+        public string DominantLabel { get; }
         public string UnknownLabel { get; }
 
         public string Describe(float? exact)
@@ -48,7 +58,9 @@ namespace LivingCity.Territory
                 return WeakLabel;
             if (exact.Value < StrongAt)
                 return ModerateLabel;
-            return StrongLabel;
+            if (exact.Value < DominantAt)
+                return StrongLabel;
+            return DominantLabel;
         }
     }
 
@@ -63,6 +75,7 @@ namespace LivingCity.Territory
             TerritoryQualitativeScale fear,
             TerritoryQualitativeScale compliance,
             TerritoryQualitativeScale rivalActivity,
+            TerritoryQualitativeScale holding = null,
             string uncontrolled = "Uncontrolled",
             string influenced = "Influenced",
             string contested = "Contested",
@@ -73,6 +86,8 @@ namespace LivingCity.Territory
             Fear = fear ?? throw new ArgumentNullException(nameof(fear));
             Compliance = compliance ?? throw new ArgumentNullException(nameof(compliance));
             RivalActivity = rivalActivity ?? throw new ArgumentNullException(nameof(rivalActivity));
+            // Deeds held, in the same words the deed share was always read in.
+            Holding = holding ?? new TerritoryQualitativeScale(0.01f, 25f, 60f);
             Uncontrolled = uncontrolled ?? "Uncontrolled";
             Influenced = influenced ?? "Influenced";
             Contested = contested ?? "Contested";
@@ -84,6 +99,10 @@ namespace LivingCity.Territory
         public TerritoryQualitativeScale Fear { get; }
         public TerritoryQualitativeScale Compliance { get; }
         public TerritoryQualitativeScale RivalActivity { get; }
+
+        /// <summary>The words for a family's share of the premises on a block.</summary>
+        public TerritoryQualitativeScale Holding { get; }
+
         public string Uncontrolled { get; }
         public string Influenced { get; }
         public string Contested { get; }
@@ -92,8 +111,13 @@ namespace LivingCity.Territory
 
         public static TerritoryPresentationProfile Default { get; } =
             new TerritoryPresentationProfile(
-                new TerritoryQualitativeScale(0.01f, 25f, 60f),
-                new TerritoryQualitativeScale(0.01f, 25f, 60f),
+                // Presence carries the fifth word: a street can be held so heavily that
+                // "Strong" stops saying anything (PRES-009).
+                new TerritoryQualitativeScale(0.01f, 25f, 60f, 85f),
+                // What a street feels, in the words a street uses.
+                new TerritoryQualitativeScale(
+                    0.01f, 25f, 60f, float.PositiveInfinity,
+                    "Calm", "Uneasy", "Afraid", "Terrified"),
                 new TerritoryQualitativeScale(0.01f, 35f, 70f),
                 new TerritoryQualitativeScale(0.01f, 25f, 60f));
     }
@@ -121,6 +145,20 @@ namespace LivingCity.Territory
             truth?.Signals ?? TerritoryBlockSignals.Empty;
     }
 
+    /// <summary>
+    /// How an owner on this block is likely to take a visit from the viewing family -
+    /// a hint for interaction tone and status lines, not a dialogue system. It is read
+    /// off Fear and nothing else, and it decides nothing.
+    /// </summary>
+    public enum TerritoryOwnerTone
+    {
+        Unknown,
+        Easy,
+        Wary,
+        Fearful,
+        Cowed,
+    }
+
     /// <summary>Immutable qualitative model consumed by normal territory UI.</summary>
     public sealed class TerritoryBlockPresentation
     {
@@ -133,7 +171,11 @@ namespace LivingCity.Territory
             string localFear,
             string businesses,
             string rivalActivity,
-            string control)
+            string control,
+            string holding = "Unknown",
+            string rivalPresence = "Unknown",
+            string fearOfUs = "Unknown",
+            TerritoryOwnerTone ownerTone = TerritoryOwnerTone.Unknown)
         {
             BlockId = blockId;
             BlockName = blockName ?? "";
@@ -144,17 +186,43 @@ namespace LivingCity.Territory
             Businesses = businesses ?? "Unknown";
             RivalActivity = rivalActivity ?? "Unknown";
             Control = control ?? "Unknown";
+            Holding = holding ?? "Unknown";
+            RivalPresence = rivalPresence ?? "Unknown";
+            FearOfUs = fearOfUs ?? "Unknown";
+            OwnerTone = ownerTone;
         }
 
         public TerritoryBlockId BlockId { get; }
         public string BlockName { get; }
         public TerritoryNeighborhoodId NeighborhoodId { get; }
         public string NeighborhoodName { get; }
+        /// <summary>How heavily the viewing family's own men stand on this block.</summary>
         public string Presence { get; }
+
         public string LocalFear { get; }
         public string Businesses { get; }
+
+        /// <summary>The strongest rival's hold on the block's premises, as far as the
+        /// viewer is allowed to know it.</summary>
         public string RivalActivity { get; }
+
         public string Control { get; }
+
+        /// <summary>The viewing family's own share of the block's premises. Standing on a
+        /// street and holding deeds on it are two different claims and the ledger says
+        /// which is which.</summary>
+        public string Holding { get; }
+
+        /// <summary>The strongest rival's physical Presence, filtered by what the viewer
+        /// knows - never the rival's exact number.</summary>
+        public string RivalPresence { get; }
+
+        /// <summary>How much this street fears the VIEWING family. LocalFear says the
+        /// street is frightened; this says whether it is frightened of us.</summary>
+        public string FearOfUs { get; }
+
+        /// <summary>How an owner here is likely to take our visit.</summary>
+        public TerritoryOwnerTone OwnerTone { get; }
     }
 
     public interface ITerritoryPlayerQuery
@@ -182,18 +250,26 @@ namespace LivingCity.Territory
             observed ??= TerritoryBlockSignals.Empty;
 
             float? ownPresence = null;
+            float? ownHolding = null;
+            float? ownFear = null;
             float? strongestRival = null;
+            float? strongestRivalPresence = null;
             for (var i = 0; i < observed.Gangs.Count; i++)
             {
                 var gang = observed.Gangs[i];
                 if (gang.GangId == viewingGangId)
                 {
                     ownPresence = gang.Presence;
+                    ownHolding = gang.Influence;
+                    ownFear = gang.Fear;
                     continue;
                 }
 
                 if (!strongestRival.HasValue || gang.Influence > strongestRival.Value)
                     strongestRival = gang.Influence;
+                if (!strongestRivalPresence.HasValue ||
+                    gang.Presence > strongestRivalPresence.Value)
+                    strongestRivalPresence = gang.Presence;
             }
 
             var businesses = observed.HasBusinessCount
@@ -209,7 +285,26 @@ namespace LivingCity.Territory
                 profile.Fear.Describe(observed.LocalFear),
                 businesses,
                 profile.RivalActivity.Describe(strongestRival),
-                ControlLabel(observed.Control));
+                ControlLabel(observed.Control),
+                profile.Holding.Describe(ownHolding),
+                profile.Presence.Describe(strongestRivalPresence),
+                profile.Fear.Describe(ownFear),
+                Tone(ownFear));
+        }
+
+        /// <summary>The same thresholds the words are read off, as a hint an interaction
+        /// can branch on without parsing a label string.</summary>
+        TerritoryOwnerTone Tone(float? fear)
+        {
+            if (!fear.HasValue)
+                return TerritoryOwnerTone.Unknown;
+            if (fear.Value < profile.Fear.WeakAt)
+                return TerritoryOwnerTone.Easy;
+            if (fear.Value < profile.Fear.ModerateAt)
+                return TerritoryOwnerTone.Wary;
+            if (fear.Value < profile.Fear.StrongAt)
+                return TerritoryOwnerTone.Fearful;
+            return TerritoryOwnerTone.Cowed;
         }
 
         string ControlLabel(TerritoryControlState control)

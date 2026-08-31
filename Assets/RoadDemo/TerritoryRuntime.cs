@@ -26,6 +26,40 @@ namespace RoadDemo
         [SerializeField, Min(0.01f)] float businessHours = 4f;
         [SerializeField, Min(0.01f)] float controlHours = 0.25f;
 
+        [Header("Presence (GAN-79)")]
+        [Tooltip("What one ordinary body standing on a block is worth.")]
+        [SerializeField, Min(0f)] float pointsPerContributor = 10f;
+        [SerializeField, Min(0f)] float hoodWeight = 1f;
+        [SerializeField, Min(0f)] float lieutenantWeight = 2f;
+        [SerializeField, Min(0f)] float bossWeight = 3f;
+        [Tooltip("A crew riding through contributes a fraction of a crew standing there.")]
+        [SerializeField, Min(0f)] float transitWeight = 0.2f;
+        [SerializeField, Min(0f)] float movingWeight = 0.6f;
+        [SerializeField, Min(0f)] float stationedWeight = 1f;
+        [SerializeField, Min(1f)] float presenceCap = 100f;
+        [Tooltip("How much of the current Presence a block remembers per game hour worked.")]
+        [SerializeField, Min(0f)] float residualDepositPerHour = 0.5f;
+        [SerializeField, Min(0f)] float residualCap = 30f;
+        [Tooltip("Game hours for half of what a block remembers to fade.")]
+        [SerializeField, Min(0.01f)] float residualHalfLifeHours = 6f;
+
+        [Header("Fear (GAN-90)")]
+        [Tooltip("How much of an incident at one premise the whole block feels.")]
+        [SerializeField, Range(0f, 1f)] float fearPropagationFraction = 0.35f;
+        [Tooltip("Game hours a house has to answer an open refusal.")]
+        [SerializeField, Min(0.01f)] float defianceWindowHours = 12f;
+        [SerializeField, Min(1f)] float policeAttentionCap = 100f;
+        [SerializeField, Min(0.01f)] float policeAttentionHalfLifeHours = 8f;
+        [Tooltip("How much dearer violence gets while the police are already looking.")]
+        [SerializeField, Min(0f)] float policeEscalation = 0.5f;
+        [Tooltip("How far police attention can hold Presence down on a block.")]
+        [SerializeField, Range(0f, 1f)] float presenceFloorUnderHeat = 0.25f;
+        [Tooltip("Shots in one incident before the street calls it a public gunfight.")]
+        [SerializeField, Min(1)] int publicIncidentShots = 3;
+        [Tooltip("How far off a block an act still belongs to it. Most shooting happens " +
+                 "in the road, which belongs to no block; the street beside it still hears it.")]
+        [SerializeField, Min(0f)] float violenceReachMetres = 30f;
+
         public static TerritoryRuntime Instance { get; private set; }
 
         RoadDemoBuilder builder;
@@ -53,7 +87,37 @@ namespace RoadDemo
             new Dictionary<TerritoryBlockId, TerritoryControlDerivation.Tally>();
         readonly List<TerritoryGangSignals> controlScratch = new List<TerritoryGangSignals>();
 
+        TerritoryPresenceLedger presence;
+        readonly List<TerritoryPresenceChange> presenceChanges =
+            new List<TerritoryPresenceChange>();
+        readonly List<TerritoryGangPresence> presenceGangs = new List<TerritoryGangPresence>();
+        readonly List<TerritoryGangSignals> presenceScratch = new List<TerritoryGangSignals>();
+        readonly HashSet<TerritoryBlockId> presenceDirty = new HashSet<TerritoryBlockId>();
+
+        TerritoryFearLedger fear;
+        readonly List<TerritoryFearChange> fearChanges = new List<TerritoryFearChange>();
+        readonly List<TerritoryGangValue> fearGangs = new List<TerritoryGangValue>();
+        readonly List<TerritoryGangSignals> fearScratch = new List<TerritoryGangSignals>();
+        readonly HashSet<TerritoryBlockId> fearDirty = new HashSet<TerritoryBlockId>();
+        readonly List<PendingIncident> pendingIncidents = new List<PendingIncident>();
+        readonly List<RecentShot> recentShots = new List<RecentShot>();
+        readonly List<TerritoryFearEvent> defianceEmitted = new List<TerritoryFearEvent>();
+        double lastGameHour;
+
         public ITerritoryTruthQuery DebugTruth => truth;
+
+        /// <summary>Who is really standing on which block, family by family. Simulation
+        /// writes it on the scheduler's ticks; the inspector and the audit only read it.</summary>
+        public TerritoryPresenceLedger Presence => presence;
+
+        /// <summary>What each street is afraid of, and how hard the law is looking at it.
+        /// Written only by the Fear channel and the street's own violence.</summary>
+        public TerritoryFearLedger Fear => fear;
+
+        /// <summary>The last game hour territory was ticked at - the stamp every Fear
+        /// record is filed under, so an act that happens between ticks is not filed at a
+        /// time the scheduler has never seen.</summary>
+        public double GameHour => lastGameHour;
 
         /// <summary>The canonical geography: blocks, neighborhoods, the block neighbor
         /// graph, road-space resolution and business membership. Every consumer that used
@@ -142,6 +206,19 @@ namespace RoadDemo
                 FullTerritoryKnowledgeFilter.Instance);
             events = new TerritoryEventStream();
             commands = new TerritoryCommandGateway(this);
+            presence = new TerritoryPresenceLedger(new TerritoryPresenceConfig(
+                pointsPerContributor, hoodWeight, lieutenantWeight, bossWeight,
+                transitWeight, movingWeight, stationedWeight, presenceCap,
+                residualDepositPerHour, residualCap, residualHalfLifeHours));
+            fear = new TerritoryFearLedger(new TerritoryFearConfig(
+                propagationFraction: fearPropagationFraction,
+                defianceWindowHours: defianceWindowHours,
+                policeAttentionCap: policeAttentionCap,
+                policeAttentionHalfLifeHours: policeAttentionHalfLifeHours,
+                policeEscalation: policeEscalation,
+                presenceFloor: presenceFloorUnderHeat));
+            StreetAlarm.OnShot += OnStreetShot;
+            StreetAlarm.OnDeath += OnStreetDeath;
 
             scheduler = new TerritorySimulationScheduler();
             scheduler.SetCadence(
@@ -228,7 +305,8 @@ namespace RoadDemo
             if (clock == null)
                 return;
 
-            scheduler.AdvanceTo(clock.Day * 24.0 + clock.Hour + debugTimeOffset);
+            lastGameHour = clock.Day * 24.0 + clock.Hour + debugTimeOffset;
+            scheduler.AdvanceTo(lastGameHour);
         }
 
         void RegisterOrganizationBlocks()
@@ -295,11 +373,17 @@ namespace RoadDemo
 
         void OnTerritoryTick(TerritorySimulationTick tick)
         {
-            // SIM-006 schedules all future subsystems independently. This foundation only
-            // samples physical block transitions; it does not aggregate Presence or run
-            // Fear/compliance/control mechanics ahead of their tickets.
+            // SIM-006 schedules every subsystem independently: physical sampling and its
+            // Presence arithmetic on one channel, what the block remembers on another,
+            // control on a third. Fear and compliance still belong to their own tickets.
             if (tick.Channel == TerritoryTickChannel.PhysicalPresence)
-                SampleActorBlocks(tick.GameHour);
+                SampleActorBlocks(tick.GameHour, tick.CadenceHours);
+            else if (tick.Channel == TerritoryTickChannel.ResidualPresence)
+                DecayPresence(tick.GameHour, tick.CadenceHours);
+            else if (tick.Channel == TerritoryTickChannel.Fear)
+                SettleFear(tick.GameHour);
+            else if (tick.Channel == TerritoryTickChannel.Business)
+                SweepDefiance(tick.GameHour);
             else if (tick.Channel == TerritoryTickChannel.DerivedControl)
                 DeriveControl();
         }
@@ -349,9 +433,10 @@ namespace RoadDemo
             }
         }
 
-        void SampleActorBlocks(double gameHour)
+        void SampleActorBlocks(double gameHour, double cadenceHours)
         {
             sampledLocations.Clear();
+            presence?.BeginSample();
             var changed = false;
             var blockless = 0;
             VisitActors((unit, actor, observation, blockId) =>
@@ -364,6 +449,13 @@ namespace RoadDemo
 
                 sampledLocations[new ActorKey(observation.GangId, observation.CharacterId)] =
                     new ActorLocation(blockId, observation);
+
+                // The same pass that reports who crossed a kerb is the pass that counts
+                // Presence: one walk over the city's bodies, one truth out of it. A block
+                // the police are watching is worth less to stand on (FEAR-013).
+                presence?.Contribute(
+                    blockId, observation,
+                    fear == null ? 1f : fear.PresenceScale(blockId, gameHour));
             });
             BlocklessActors = blockless;
 
@@ -409,6 +501,376 @@ namespace RoadDemo
 
             if (changed)
                 ObservationVersion++;
+
+            CommitPresence(gameHour, cadenceHours);
+        }
+
+        /// <summary>
+        /// Close the Presence sample and publish what moved. Presence is written ONLY
+        /// here and in the residual pass - never by a command, never by a view - and it
+        /// assigns nothing: control is still read off the deeds on the block.
+        /// </summary>
+        void CommitPresence(double gameHour, double cadenceHours)
+        {
+            if (presence == null)
+                return;
+
+            presenceChanges.Clear();
+            presence.CommitSample(cadenceHours, presenceChanges);
+            PublishPresence(gameHour);
+        }
+
+        void DecayPresence(double gameHour, double cadenceHours)
+        {
+            if (presence == null)
+                return;
+
+            presenceChanges.Clear();
+            presence.DecayResidual(cadenceHours, presenceChanges);
+            PublishPresence(gameHour);
+        }
+
+        void PublishPresence(double gameHour)
+        {
+            if (presenceChanges.Count == 0)
+                return;
+
+            presenceDirty.Clear();
+            for (var i = 0; i < presenceChanges.Count; i++)
+            {
+                var change = presenceChanges[i];
+                presenceDirty.Add(change.BlockId);
+                events.Publish(new PresenceChanged(
+                    change.BlockId, change.GangId, change.Previous, change.Current, gameHour));
+            }
+
+            foreach (var blockId in presenceDirty)
+            {
+                var current = state.SignalsOf(blockId);
+                presence.CollectGangs(blockId, presenceGangs);
+                var next = TerritoryPresenceSignals.Merge(current, presenceGangs, presenceScratch);
+                if (!TerritoryControlDerivation.Same(current, next))
+                    state.SetSignals(blockId, next);
+            }
+
+            presenceChanges.Clear();
+        }
+
+        // ------------------------------------------------------------------ fear
+        //
+        // The street already reports its own violence: StreetAlarm fires on every shot
+        // and every death. This is the adapter that turns those into territory acts -
+        // it redesigns no combat, no police and no alarm, it only asks where it happened,
+        // whose it was, and how loud it was.
+
+        /// <summary>
+        /// One bullet is not one act. Shots are gathered per StreetAlarm incident, per
+        /// family, per block, and filed as a single act on the Fear tick - so a gunfight
+        /// is one thing the street remembers rather than thirty.
+        /// </summary>
+        void OnStreetShot(StreetAlarm.Shot shot)
+        {
+            if (fear == null || geography == null)
+                return;
+
+            RememberShot(shot);
+            if (!TryGetBlockForAct(shot.Pos, out var blockId))
+                return;
+
+            // The law's own shots frighten a street and bring more law, but they make no
+            // family feared: an unattributed act stays unattributed.
+            var gangId = shot.Faction == StreetAlarm.PoliceFaction
+                ? default
+                : new TerritoryGangId(shot.Faction);
+
+            for (var i = 0; i < pendingIncidents.Count; i++)
+            {
+                var pending = pendingIncidents[i];
+                if (pending.Incident != StreetAlarm.IncidentNumber ||
+                    pending.BlockId != blockId || pending.GangId != gangId)
+                    continue;
+                pending.Shots++;
+                pendingIncidents[i] = pending;
+                return;
+            }
+
+            pendingIncidents.Add(new PendingIncident(
+                StreetAlarm.IncidentNumber, blockId, gangId, 1, lastGameHour));
+        }
+
+        /// <summary>
+        /// A killing is filed against the house that was shooting here, and against
+        /// nobody at all when more than one was. A guess would be worse than a blank.
+        /// </summary>
+        void OnStreetDeath(Vector3 position, StreetAlarm.DeathOf who)
+        {
+            if (fear == null || geography == null)
+                return;
+            if (!TryGetBlockForAct(position, out var blockId))
+                return;
+
+            var severity = who == StreetAlarm.DeathOf.Officer ? 1.6f
+                : who == StreetAlarm.DeathOf.Civilian ? 1.3f
+                : 1f;
+            RecordFear(new TerritoryFearEvent(
+                AttributeRecentViolence(position),
+                blockId,
+                TerritoryFearCategory.Killing,
+                severity,
+                // A body in the street is a public fact whoever saw the shot.
+                TerritoryFearVisibility.Public,
+                lastGameHour));
+        }
+
+        /// <summary>
+        /// Where an ACT belongs. Not where a body stands: almost all shooting happens in
+        /// the road, and road space belongs to no block, so an act is allowed to land on
+        /// the street beside it. Presence is never resolved this way - a man standing in
+        /// a boulevard still holds nothing.
+        /// </summary>
+        public bool TryGetBlockForAct(Vector3 world, out TerritoryBlockId blockId)
+        {
+            blockId = default;
+            return geography != null && geography.TryGetBlockNear(
+                new TerritoryPoint(world.x, world.z), violenceReachMetres, out blockId);
+        }
+
+        void RememberShot(StreetAlarm.Shot shot)
+        {
+            recentShots.Add(new RecentShot(shot.Pos, shot.Faction, shot.Time));
+            // A short window: only what was being fired around this body, moments ago.
+            for (var i = recentShots.Count - 1; i >= 0; i--)
+                if (shot.Time - recentShots[i].Time > AttributionSeconds)
+                    recentShots.RemoveAt(i);
+        }
+
+        const float AttributionSeconds = 6f;
+        const float AttributionRange = 40f;
+
+        /// <summary>The one faction that was shooting here just now, or nobody.</summary>
+        TerritoryGangId AttributeRecentViolence(Vector3 position)
+        {
+            var now = Time.time;
+            var found = -1;
+            for (var i = recentShots.Count - 1; i >= 0; i--)
+            {
+                var shot = recentShots[i];
+                if (now - shot.Time > AttributionSeconds)
+                {
+                    recentShots.RemoveAt(i);
+                    continue;
+                }
+
+                if ((shot.Position - position).sqrMagnitude >
+                    AttributionRange * AttributionRange)
+                    continue;
+                if (shot.Faction == StreetAlarm.PoliceFaction)
+                    continue;
+                if (found >= 0 && found != shot.Faction)
+                    return default;   // two houses were shooting; the street cannot say
+                found = shot.Faction;
+            }
+
+            return found < 0 ? default : new TerritoryGangId(found);
+        }
+
+        /// <summary>
+        /// The authoritative way an act enters territory. Everything - the street's own
+        /// violence, a resolved threat, an unanswered refusal - comes through here, and
+        /// the event stream hears about it in the same breath.
+        /// </summary>
+        float RecordFear(TerritoryFearEvent value)
+        {
+            if (fear == null || !value.BlockId.IsValid)
+                return 0f;
+
+            var impact = fear.Record(value);
+            fearDirty.Add(value.BlockId);
+            events.Publish(new FearEventRecorded(
+                value.BlockId, value.GangId, value.SourceActorId, impact, value.GameHour));
+            return impact;
+        }
+
+        /// <summary>
+        /// A threat that actually landed: a crew stood in front of an owner and said it.
+        /// This is the ONLY door into Fear for the intimidation flow - a command that was
+        /// merely issued, or a button that was merely clicked, never reaches it, because
+        /// the resolution that calls this happens after the physical encounter.
+        /// </summary>
+        public bool RecordResolvedThreat(
+            TerritoryGangId gangId,
+            TerritoryBusinessId businessId,
+            float severity = 1f,
+            TerritoryFearVisibility visibility = TerritoryFearVisibility.Seen,
+            TerritoryCharacterId sourceActorId = default)
+        {
+            if (fear == null || geography == null || !gangId.IsValid)
+                return false;
+            if (!geography.TryGetBusinessBlock(businessId, out var blockId))
+                return false;
+
+            RecordFear(new TerritoryFearEvent(
+                gangId, blockId, TerritoryFearCategory.Threat, severity, visibility,
+                lastGameHour, businessId, sourceActorId));
+            // Whatever was owed for an earlier refusal, the house has now answered it.
+            fear.AnswerDefiance(gangId, businessId);
+            return true;
+        }
+
+        /// <summary>A premise has openly refused a house; the clock on that starts now.</summary>
+        public bool RecordOpenRefusal(TerritoryGangId gangId, TerritoryBusinessId businessId)
+        {
+            if (fear == null || geography == null || !gangId.IsValid)
+                return false;
+            if (!geography.TryGetBusinessBlock(businessId, out var blockId))
+                return false;
+            fear.OpenDefiance(gangId, blockId, businessId, lastGameHour);
+            return true;
+        }
+
+        /// <summary>Violence that landed somewhere other than a shot or a body - a window
+        /// put in, a car burned, a beating. Reported by whoever did it.</summary>
+        public float RecordViolence(
+            TerritoryGangId gangId,
+            TerritoryBlockId blockId,
+            TerritoryFearCategory category,
+            float severity = 1f,
+            TerritoryFearVisibility visibility = TerritoryFearVisibility.Seen,
+            TerritoryBusinessId businessId = default) =>
+            RecordFear(new TerritoryFearEvent(
+                gangId, blockId, category, severity, visibility, lastGameHour, businessId));
+
+        /// <summary>
+        /// File the gunfights that finished, fade what every street remembers, and
+        /// publish. Presence is never consulted: a house whose men have gone home is
+        /// still the house that did this here.
+        /// </summary>
+        void SettleFear(double gameHour)
+        {
+            if (fear == null || state == null)
+                return;
+
+            for (var i = pendingIncidents.Count - 1; i >= 0; i--)
+            {
+                var pending = pendingIncidents[i];
+                pendingIncidents.RemoveAt(i);
+                // Diminishing: the twentieth round of an exchange does not frighten a
+                // street the way the first did, and the config caps it besides.
+                RecordFear(new TerritoryFearEvent(
+                    pending.GangId,
+                    pending.BlockId,
+                    TerritoryFearCategory.Shot,
+                    (float)Math.Sqrt(Math.Max(1, pending.Shots)),
+                    pending.Shots >= publicIncidentShots
+                        ? TerritoryFearVisibility.Public
+                        : TerritoryFearVisibility.Seen,
+                    pending.GameHour));
+            }
+
+            fearChanges.Clear();
+            fear.Evaluate(gameHour, fearChanges);
+            for (var i = 0; i < fearChanges.Count; i++)
+                fearDirty.Add(fearChanges[i].BlockId);
+
+            PublishFear(gameHour);
+        }
+
+        void SweepDefiance(double gameHour)
+        {
+            if (fear == null)
+                return;
+
+            defianceEmitted.Clear();
+            fear.SweepDefiance(gameHour, defianceEmitted);
+            for (var i = 0; i < defianceEmitted.Count; i++)
+            {
+                var value = defianceEmitted[i];
+                fearDirty.Add(value.BlockId);
+                events.Publish(new FearEventRecorded(
+                    value.BlockId, value.GangId, value.SourceActorId,
+                    fear.Config.ImpactOf(value), value.GameHour));
+            }
+
+            if (defianceEmitted.Count > 0)
+                PublishFear(gameHour);
+        }
+
+        /// <summary>
+        /// Write what the streets feel into the one store. The per-family numbers are the
+        /// Fear channel; the block's own LocalFear is the strongest of them, so a page
+        /// that only wants "is this street frightened" has one number to read.
+        /// </summary>
+        void PublishFear(double gameHour)
+        {
+            if (fearDirty.Count == 0)
+                return;
+
+            foreach (var blockId in fearDirty)
+            {
+                var current = state.SignalsOf(blockId);
+                fear.CollectGangs(blockId, gameHour, fearGangs);
+                var merged = TerritoryPresenceSignals.Merge(
+                    current, fearGangs, TerritorySignalChannel.Fear, fearScratch);
+                var ambient = fear.BlockFear(blockId, gameHour);
+                var next = new TerritoryBlockSignals(
+                    ambient > 0f ? ambient : (float?)null,
+                    merged.BusinessCompliance,
+                    merged.CompliantBusinesses,
+                    merged.TotalBusinesses,
+                    merged.Control,
+                    merged.LeadingGangId,
+                    merged.Gangs);
+
+                if (SameFear(current, next))
+                    continue;
+
+                var previous = current.LocalFear ?? 0f;
+                state.SetSignals(blockId, next);
+                if (Math.Abs((next.LocalFear ?? 0f) - previous) >= 0.01f)
+                    events.Publish(new FearChanged(
+                        blockId, previous, next.LocalFear ?? 0f, gameHour));
+            }
+
+            fearDirty.Clear();
+            fearChanges.Clear();
+        }
+
+        static bool SameFear(TerritoryBlockSignals left, TerritoryBlockSignals right) =>
+            TerritoryControlDerivation.Same(left, right) &&
+            Math.Abs((left?.LocalFear ?? 0f) - (right?.LocalFear ?? 0f)) < 0.0001f;
+
+        readonly struct RecentShot
+        {
+            public RecentShot(Vector3 position, int faction, float time)
+            {
+                Position = position;
+                Faction = faction;
+                Time = time;
+            }
+
+            public Vector3 Position { get; }
+            public int Faction { get; }
+            public float Time { get; }
+        }
+
+        struct PendingIncident
+        {
+            public PendingIncident(
+                int incident, TerritoryBlockId blockId, TerritoryGangId gangId,
+                int shots, double gameHour)
+            {
+                Incident = incident;
+                BlockId = blockId;
+                GangId = gangId;
+                Shots = shots;
+                GameHour = gameHour;
+            }
+
+            public int Incident { get; }
+            public TerritoryBlockId BlockId { get; }
+            public TerritoryGangId GangId { get; }
+            public int Shots { get; set; }
+            public double GameHour { get; }
         }
 
         public void CollectActors(
@@ -468,7 +930,61 @@ namespace RoadDemo
                 TerritoryCommandNodeId.Crew(unit.CrewId),
                 actor.DisplayName,
                 unit.GangName,
-                actor.IsLieutenant);
+                actor.IsLieutenant,
+                RankOf(unit, actor),
+                ActivityOf(unit, actor));
+
+        /// <summary>
+        /// What this body is, from real personnel identity. The roster holds the outfit's
+        /// men and only theirs, so a rival's character id is not a roster id and would
+        /// name the wrong man - a rival's rank is read off the street instead, from who
+        /// is leading the crew. The RULE is the same for every family (PRES-008): only
+        /// what is physically here counts, and command responsibility for the block
+        /// counts for nothing.
+        /// </summary>
+        static TerritoryRank RankOf(DemoCrews.Unit unit, CrewWalker actor)
+        {
+            if (unit.Faction == GangCatalog.PlayerGangId)
+            {
+                var character = PersonnelDirector.Instance?.Roster?.Find(actor.CharacterId);
+                if (character != null)
+                {
+                    switch (character.Rank)
+                    {
+                        case Rank.Boss: return TerritoryRank.Boss;
+                        case Rank.Lieutenant: return TerritoryRank.Lieutenant;
+                        default: return TerritoryRank.Hood;
+                    }
+                }
+            }
+
+            return actor.IsLieutenant ? TerritoryRank.Lieutenant : TerritoryRank.Hood;
+        }
+
+        /// <summary>
+        /// What this body is doing here, read off states the street already keeps: a man
+        /// in a saddle or a seat is passing through, a man running away is not holding
+        /// anything, a man on his feet going somewhere counts for less than a man standing
+        /// on the ground or fighting for it. Nothing new is invented and nothing is
+        /// written back into the crew.
+        /// </summary>
+        static TerritoryActorActivity ActivityOf(DemoCrews.Unit unit, CrewWalker actor)
+        {
+            if (actor.Riding || unit.Car != null || unit.Boarding != null)
+                return TerritoryActorActivity.Transit;
+
+            switch (actor.State)
+            {
+                case CrewWalker.Mode.Fleeing:
+                    return TerritoryActorActivity.Transit;
+                case CrewWalker.Mode.Walking:
+                case CrewWalker.Mode.Homing:
+                case CrewWalker.Mode.Striding:
+                    return TerritoryActorActivity.Moving;
+                default:
+                    return TerritoryActorActivity.Stationed;
+            }
+        }
 
         public string CharacterName(TerritoryCharacterId characterId)
         {
@@ -725,6 +1241,8 @@ namespace RoadDemo
 
         void OnDestroy()
         {
+            StreetAlarm.OnShot -= OnStreetShot;
+            StreetAlarm.OnDeath -= OnStreetDeath;
             if (scheduler != null)
                 scheduler.Ticked -= OnTerritoryTick;
             if (Instance == this)

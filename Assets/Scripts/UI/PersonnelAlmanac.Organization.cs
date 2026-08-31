@@ -1464,11 +1464,12 @@ namespace LivingCity.UI
                 block.Control != profile.Influenced)
                 return BlockControl.Unknown;
 
-            // Control alone does not say WHOSE. A held block with no presence of ours on
-            // it belongs to another house, and the sheet has to say so rather than print
-            // it green.
-            var ours = block.Presence != profile.Presence.NoneLabel &&
-                       block.Presence != profile.Presence.UnknownLabel;
+            // Control alone does not say WHOSE. A held block we hold no premise on
+            // belongs to another house, and the sheet has to say so rather than print it
+            // green. It is the DEEDS that answer this, not who happens to be standing
+            // there: a crew passing through a rival street does not make it ours.
+            var ours = block.Holding != profile.Holding.NoneLabel &&
+                       block.Holding != profile.Holding.UnknownLabel;
             if (!ours)
                 return BlockControl.Theirs;
             return block.Control == profile.Controlled

@@ -212,6 +212,11 @@ namespace LivingCity.Territory
         bool TryResolveStanding(
             TerritoryPoint point, TerritoryBlockId previous, out TerritoryBlockId blockId);
 
+        /// <summary>The block an ACT at this point belongs to - the one it happened on,
+        /// or the nearest within reach when it happened on road space. Never used to place
+        /// a standing body: see <see cref="TryResolveStanding"/>.</summary>
+        bool TryGetBlockNear(TerritoryPoint point, float reach, out TerritoryBlockId blockId);
+
         IReadOnlyList<TerritoryBlockId> Neighbours(TerritoryBlockId blockId);
         bool AreNeighbours(TerritoryBlockId one, TerritoryBlockId other);
 
@@ -359,6 +364,46 @@ namespace LivingCity.Territory
                 var area = definition.WorldBounds.Area;
                 if (area >= bestArea)
                     continue;
+                bestArea = area;
+                blockId = definition.Id;
+            }
+
+            return blockId.IsValid;
+        }
+
+        /// <summary>
+        /// The block something that HAPPENED here belongs to: the block it happened on,
+        /// or - when it happened on road space, which belongs to nobody - the nearest
+        /// block within <paramref name="reach"/>.
+        ///
+        /// This is deliberately NOT how a standing body is resolved. A man in the middle
+        /// of a boulevard is on nobody's ground and Presence says so; but a shooting in
+        /// that boulevard is the business of the street it happened in, and a street that
+        /// heard it happen must be allowed to remember it. Ties break on the smaller
+        /// block and then on the id, so the same shot always lands on the same street.
+        /// </summary>
+        public bool TryGetBlockNear(
+            TerritoryPoint point, float reach, out TerritoryBlockId blockId)
+        {
+            if (TryGetBlockAt(point, out blockId))
+                return true;
+
+            var bestDistance = Math.Max(0f, reach);
+            var bestArea = float.MaxValue;
+            for (var i = 0; i < blockIds.Count; i++)
+            {
+                var definition = blocks[blockIds[i]];
+                var distance = definition.WorldBounds.DistanceTo(point);
+                if (distance > bestDistance)
+                    continue;
+                var area = definition.WorldBounds.Area;
+                if (distance == bestDistance && blockId.IsValid &&
+                    (area > bestArea ||
+                     (area == bestArea &&
+                      string.CompareOrdinal(definition.Id.Value, blockId.Value) >= 0)))
+                    continue;
+
+                bestDistance = distance;
                 bestArea = area;
                 blockId = definition.Id;
             }

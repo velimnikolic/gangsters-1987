@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace LivingCity.Territory
@@ -96,24 +97,37 @@ namespace LivingCity.Territory
 
         /// <summary>
         /// The block's signals as the deeds read them, carrying forward every signal this
-        /// derivation does not own - fear and business compliance belong to their own
-        /// tickets and must not be wiped by a control pass.
+        /// derivation does not own - fear, business compliance and each family's PHYSICAL
+        /// Presence belong to their own tickets and must not be wiped by a control pass.
+        /// A family's deed share is its Influence; who is standing on the ground is the
+        /// Presence ledger's number and is only carried through here.
         /// </summary>
         public static TerritoryBlockSignals Signals(
             Tally tally, TerritoryBlockSignals previous, List<TerritoryGangSignals> scratch)
         {
             scratch ??= new List<TerritoryGangSignals>();
-            scratch.Clear();
+            previous ??= TerritoryBlockSignals.Empty;
+
+            var deeds = DeedScratch;
+            deeds.Clear();
             if (tally != null)
                 for (var i = 0; i < tally.GangIds.Count; i++)
                 {
-                    var share = tally.Counts[i] * 100f / tally.Total;
-                    scratch.Add(new TerritoryGangSignals(
-                        new TerritoryGangId(tally.GangIds[i]), share, share));
+                    // Ascending by gang id, the one order every writer publishes, so a
+                    // rewrite is a real change and never a reshuffle of the same numbers.
+                    var value = new TerritoryGangValue(
+                        new TerritoryGangId(tally.GangIds[i]),
+                        tally.Counts[i] * 100f / tally.Total);
+                    var at = deeds.Count;
+                    while (at > 0 && deeds[at - 1].GangId.Value > value.GangId.Value)
+                        at--;
+                    deeds.Insert(at, value);
                 }
 
+            TerritoryPresenceSignals.Merge(
+                previous.Gangs, deeds, TerritorySignalChannel.Influence, scratch);
+
             var control = Read(tally, out var leading);
-            previous ??= TerritoryBlockSignals.Empty;
             return new TerritoryBlockSignals(
                 previous.LocalFear,
                 previous.BusinessCompliance,
@@ -123,6 +137,13 @@ namespace LivingCity.Territory
                 leading >= 0 ? new TerritoryGangId(leading) : default,
                 scratch);
         }
+
+        // Reused between blocks: the control pass runs over the whole city every quarter
+        // hour, so the deed list must not allocate per block.
+        [ThreadStatic] static List<TerritoryGangValue> deedScratch;
+
+        static List<TerritoryGangValue> DeedScratch =>
+            deedScratch ??= new List<TerritoryGangValue>();
 
         /// <summary>True when a rewrite would say exactly what the block already says -
         /// the guard that keeps a quarter-hour control pass from bumping the state
@@ -144,7 +165,8 @@ namespace LivingCity.Territory
                 var b = right.Gangs[i];
                 if (a.GangId != b.GangId ||
                     !Mathf.Approximately(a.Presence, b.Presence) ||
-                    !Mathf.Approximately(a.Influence, b.Influence))
+                    !Mathf.Approximately(a.Influence, b.Influence) ||
+                    !Mathf.Approximately(a.Fear, b.Fear))
                     return false;
             }
             return true;
