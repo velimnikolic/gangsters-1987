@@ -8,6 +8,7 @@ namespace LivingCity.Personnel
         Crew,
         Front,
         Specialist,
+        Boss,
     }
 
     public readonly struct Assignment
@@ -40,6 +41,9 @@ namespace LivingCity.Personnel
         public readonly List<Character> Members = new List<Character>();
         public readonly List<Crew> Crews = new List<Crew>();
         public readonly List<RosterEquipment> Equipment = new List<RosterEquipment>();
+        public OrganizationState Organization { get; } = new OrganizationState();
+
+        public int BossId => Organization.BossId;
 
         /// <summary>The member managing headquarters; -1 when the desk is empty.</summary>
         public int FrontId = -1;
@@ -59,6 +63,8 @@ namespace LivingCity.Personnel
                     return Members[i];
             return null;
         }
+
+        public Character FindBoss() => Find(BossId);
 
         public Crew FindCrew(int crewId)
         {
@@ -85,6 +91,8 @@ namespace LivingCity.Personnel
             var member = Find(id);
             if (member != null && member.Specialty != Specialty.None)
                 return new Assignment(AssignmentKind.Specialist, -1);
+            if (id == BossId)
+                return new Assignment(AssignmentKind.Boss, -1);
             if (id == FrontId)
                 return new Assignment(AssignmentKind.Front, -1);
 

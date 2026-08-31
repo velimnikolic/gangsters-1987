@@ -877,10 +877,31 @@ namespace LivingCity.UI
             var y = -70f;
             y = Particular("POST", LedgerText.AssignmentLine(assignment, crewName), textX,
                 textW, y);
+            if (member.Rank == Rank.Boss)
+            {
+                y = Particular("REPORTS TO", "Nobody · root command", textX, textW, y);
+            }
+            else if (member.Rank == Rank.Lieutenant ||
+                     (member.Rank == Rank.Hood && member.Specialty == Specialty.None))
+            {
+                OrganizationPerson commandParent = default;
+                var hasParent = director.Organization != null &&
+                                director.Organization.TryGetCommandParent(
+                                    member.Id, out commandParent);
+                y = Particular("REPORTS TO",
+                    hasParent ? commandParent.Name : "No valid command parent",
+                    textX, textW, y,
+                    hasParent ? LedgerStyle.Ink : LedgerStyle.RedPen);
+            }
             y = Particular("WAGE", LedgerText.Cash(Outfit.Wages.WageFor(member)) + " / day",
                 textX, textW, y);
             y = Particular("CONDITION", LedgerText.StatusLabel(member.Status), textX, textW, y,
                 member.Status == CharacterStatus.Active ? LedgerStyle.Ink : LedgerStyle.RedPen);
+            if (TryObservedBlock(member.Id, out var currentBlock))
+            {
+                y = Particular("CURRENT STATUS", "On street", textX, textW, y);
+                y = Particular("CURRENT BLOCK", currentBlock, textX, textW, y);
+            }
             y = Particular("LOYALTY", member.Loyalty + " of 100", textX, textW, y,
                 member.Loyalty < 35 ? LedgerStyle.RedPen : LedgerStyle.Ink);
 
@@ -1188,10 +1209,13 @@ namespace LivingCity.UI
         /// straight into the headquarters locker.</summary>
         float BuildFrontDetail(Roster roster)
         {
-            var bossName = Gangs.GangCatalog.BossName;
+            var boss = roster.FindBoss();
+            var bossName = boss != null ? boss.FullName : Gangs.GangCatalog.BossName;
             var raw = Plate(cardContent, 0f, -8f, 128f, 156f, "THE BOSS");
             PortraitStudio.Request(
-                PortraitStudio.FindPeoplePrefab(Gangs.GangCatalog.BossModel),
+                PortraitStudio.FindPeoplePrefab(
+                    boss != null && !string.IsNullOrEmpty(boss.Look)
+                        ? boss.Look : Gangs.GangCatalog.BossModel),
                 PortraitStudio.Framing.Bust, raw);
 
             var textX = 150f;
@@ -1426,6 +1450,14 @@ namespace LivingCity.UI
                 return;
             }
 
+            if (member.Rank == Rank.Boss)
+            {
+                Caps(cardFoot, 0f, -20f, CardInner,
+                    "root command · managed in the organization file",
+                    10f, LedgerStyle.InkLabel, 3f, TextAlignmentOptions.Center);
+                return;
+            }
+
             const float buttonH = 34f;
             var half = (CardInner - 12f) * 0.5f;
 
@@ -1475,8 +1507,8 @@ namespace LivingCity.UI
             }
 
             // PROMOTE and OFF THE BOOKS are the file's ONLY two actions. Where a man
-            // stands is the map's business and the file only reports it - there is no
-            // reassign here, and putting one back would make the book a command screen.
+            // reports is the Organization file's business and this dossier only reports
+            // it - keeping the two views on the same Character without duplicating authority.
             Tape(cardFoot, "PROMOTE", 0f, -14f, half, buttonH, () =>
             {
                 var check = director.CheckPromote(member.Id);

@@ -2,11 +2,13 @@
 
 namespace LivingCity.Personnel
 {
-    /// <summary>Hood is the trade; Lieutenant leads a crew and answers to the boss.</summary>
+    /// <summary>Hood is the trade; Lieutenant leads a branch; Boss is its roster root.</summary>
     public enum Rank
     {
         Hood,
         Lieutenant,
+        // Appended so existing serialized Hood/Lieutenant values keep their meaning.
+        Boss,
     }
 
     /// <summary>

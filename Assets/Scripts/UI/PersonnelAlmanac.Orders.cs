@@ -116,7 +116,9 @@ namespace LivingCity.UI
 
         void RefreshTargeting()
         {
-            var wants = IsOpen && currentPage == LedgerPage.Orders && ordersCrewId >= 0;
+            var wantsOrders = IsOpen && currentPage == LedgerPage.Orders && ordersCrewId >= 0;
+            var wantsOrganization = !IsOpen && OrganizationTargetingActive;
+            var wants = wantsOrders || wantsOrganization;
             if (wants)
                 StrategicMapHud.SetTargeting(this);
             else
@@ -125,10 +127,13 @@ namespace LivingCity.UI
 
         // ---- IMapTargetingConsumer ----
 
-        public bool WantsArea => CurrentDraftSpec().Mode == Outfit.TargetMode.Area;
+        public bool WantsArea => !OrganizationTargetingActive &&
+                                 CurrentDraftSpec().Mode == Outfit.TargetMode.Area;
 
         public void OnAreaPreview(Rect worldXZ)
         {
+            if (OrganizationTargetingActive)
+                return;
             // Blocks light as the box swallows them - preview shares the capture logic
             // so what lights is exactly what a release would take.
             CaptureArea(worldXZ, preview: true);
@@ -137,6 +142,8 @@ namespace LivingCity.UI
 
         public void OnAreaSelected(Rect worldXZ)
         {
+            if (OrganizationTargetingActive)
+                return;
             CaptureArea(worldXZ, preview: false);
             selectedOrderId = -1;
             dirty = true;
@@ -144,6 +151,12 @@ namespace LivingCity.UI
 
         public void OnPointClicked(Vector2 worldXZ, int blockId)
         {
+            if (OrganizationTargetingActive)
+            {
+                CaptureOrganizationBlock(blockId);
+                return;
+            }
+
             var spec = CurrentDraftSpec();
             if (spec.Mode == Outfit.TargetMode.Area)
             {

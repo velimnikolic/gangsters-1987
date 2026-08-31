@@ -600,6 +600,7 @@ namespace RoadDemo
             Pass("SpawnCrews", SpawnCrews);
             Pass("BuildEnvironment", BuildEnvironment);
             Pass("BuildDayNight", BuildDayNight);
+            Pass("BuildTerritoryFoundation", BuildTerritoryFoundation);
             Pass("BuildAudio", BuildAudio);
             Pass("BuildMap", BuildMap);
             Pass("BuildLotOverlay", BuildLotOverlay);
@@ -4318,6 +4319,22 @@ namespace RoadDemo
             go.AddComponent<DemoAudio>().Init(_clock, _rig, _vehicles, _policeCars, _pedestrians);
             // and the frame-time probe, writing Logs/perf-probe.txt every few seconds
             new GameObject("Perf Probe").AddComponent<DemoPerfProbe>();
+        }
+
+        // ---------------------------------------------------- territory foundation
+        //
+        // One scene owner for canonical identity, commands, read models, events and
+        // fixed game-time ticks. Core's plan was registered by CoreDistrict.Build;
+        // the runtime projects it and never measures identity back from renderers.
+        void BuildTerritoryFoundation()
+        {
+            if (Territories.Plan == null || Territories.Plan.Blocks.Count == 0)
+                return;
+
+            var go = new GameObject("Territory Simulation");
+            var runtime = go.AddComponent<TerritoryRuntime>();
+            runtime.Init(this, _crews);
+            go.AddComponent<TerritoryDiagnosticsHud>().Init(runtime);
         }
 
         // ------------------------------------------------------------------- map

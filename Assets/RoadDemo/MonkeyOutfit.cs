@@ -51,7 +51,7 @@ namespace RoadDemo
             var free = new System.Collections.Generic.List<int>();
             foreach (var member in roster.Members)
                 if (!member.Gone && member.Id != roster.FrontId &&
-                    member.Specialty == Specialty.None)
+                    member.Specialty == Specialty.None && member.Rank == Rank.Hood)
                     free.Add(member.Id);
 
             int at = 0, made = 0, hoods = 0, guns = 0;
@@ -61,17 +61,21 @@ namespace RoadDemo
                 if (boss < 0 || !director.Promote(boss, out var crewId).Ok) continue;
                 made++;
 
-                for (var h = 0; h < Mathf.Min(hoodsEach, Crew.MaxHoods); h++)
+                for (var h = 0; h < Mathf.Min(hoodsEach, Crew.MaxTacticalHoods); h++)
                 {
                     var hood = at < free.Count ? free[at++] : -1;
-                    if (hood < 0 && director.Recruit(crewId, out _).Ok) { hoods++; continue; }
+                    if (hood < 0 && RecruitThenAssign(director, crewId))
+                    {
+                        hoods++;
+                        continue;
+                    }
                     if (hood < 0) hood = Sign(roster, rng);
                     if (hood >= 0 && director.AssignToCrew(hood, crewId).Ok) hoods++;
                 }
 
                 // a piece for every hand, handed to the lieutenant: the quartermaster
                 // deals them out behind him, best gun to the best shot
-                for (var k = 0; k <= Mathf.Min(hoodsEach, Crew.MaxHoods); k++)
+                for (var k = 0; k <= Mathf.Min(hoodsEach, Crew.MaxTacticalHoods); k++)
                 {
                     var pick = ArmoryCatalog.Weapons[rng.Next(ArmoryCatalog.Weapons.Length)];
                     var item = director.AddEquipment(pick.Kind, pick.DisplayName, pick.Price);
@@ -90,6 +94,12 @@ namespace RoadDemo
                       $"{guns} guns off the counter" +
                       (wheels ? ", a " + car.ToLowerInvariant() : ", NO CAR") +
                       (machine ? ", a " + motorcycle.ToLowerInvariant() : ", NO MACHINE"));
+        }
+
+        static bool RecruitThenAssign(PersonnelDirector director, int crewId)
+        {
+            var recruited = director.RecruitHood(out var hoodId);
+            return recruited.Ok && director.AssignToCrew(hoodId, crewId).Ok;
         }
 
         /// <summary>One listing off the counter, paid for and signed for by a lieutenant -

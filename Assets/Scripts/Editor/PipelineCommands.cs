@@ -44,6 +44,56 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_territory_foundation_tests",
+                    "Run GAN-46 contracts for stable IDs, commands, projections, events, and fixed game-time scheduling.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "territory", "tests" })]
+        public static object TerritoryFoundationAudit()
+        {
+            var failures = LivingCity.Tests.TerritoryFoundationTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
+        [CliCommand("gangsters_organization_tests",
+                    "Run GAN-55 contracts for Boss identity, hierarchy, soft capacity, " +
+                    "responsibility, recruitment, tactical projection, queries and validation.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "organization", "tests" })]
+        public static object OrganizationTests()
+        {
+            var failures = LivingCity.Tests.OrganizationTests.Run();
+            failures.AddRange(LivingCity.Tests.PersonnelTests.Run()
+                .Select(failure => "Personnel regression: " + failure));
+            failures.AddRange(LivingCity.Tests.GangTests.Run()
+                .Select(failure => "Gang regression: " + failure));
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
+        [CliCommand("gangsters_organization_audit",
+                    "Validate the live organization graph without repairing it.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "organization", "audit" })]
+        public static object OrganizationAudit()
+        {
+            var director = UnityEngine.Object.FindAnyObjectByType<
+                LivingCity.Gameplay.PersonnelDirector>();
+            var failures = new List<string>();
+            if (director == null)
+                failures.Add("ORG: no PersonnelDirector exists in the loaded scene.");
+            else
+                director.ValidateOrganization(failures);
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
         // ---------------------------------------------------------------- the plan
 
         /// <summary>The district roll for a seed, without building anything. This is the

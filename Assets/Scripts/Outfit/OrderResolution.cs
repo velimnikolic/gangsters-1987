@@ -229,9 +229,8 @@ namespace LivingCity.Outfit
 
         /// <summary>
         /// A Recruit order that came off brings a man back with it. He joins the crew
-        /// that went looking if there is room and waits in the pool if there is not -
-        /// a lieutenant already running four men has found the outfit a hood, not
-        /// himself a fifth.
+        /// that went looking. Organization capacity is soft, so a completed recruit is
+        /// never discarded merely because his lieutenant is already overloaded.
         ///
         /// The recruiter's own Intelligence rides along: a sharp man knows a promising
         /// corner boy when he sees one (RosterSeeder.Recruit), which is the only thing
@@ -243,7 +242,7 @@ namespace LivingCity.Outfit
                 return -1;
 
             var member = RosterSeeder.Recruit(roster, rng, stat);
-            if (crew != null && crew.HoodIds.Count < Crew.MaxHoods)
+            if (crew != null)
                 RosterOps.AssignToCrew(roster, member.Id, crew.Id);
             return member.Id;
         }

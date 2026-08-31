@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
+using LivingCity.Gameplay;
 using LivingCity.UI;
 
 namespace RoadDemo
@@ -709,47 +710,34 @@ namespace RoadDemo
             return StatHeight;
         }
 
-        /// <summary>The count and both personnel doors in one row. This is HOODS, not
-        /// total bodies: the lieutenant is not one of his own four recruitable slots.</summary>
+        /// <summary>
+        /// Read-only organization manpower. Assignment and recruitment moved to the
+        /// Ledger's ORGANIZATION dossier; the tactical map no longer edits the roster.
+        /// </summary>
         float CrewCountRow(Transform parent, float x, float y, float w, TurfCrew crew)
         {
-            const float inset = 6f, control = 17f, number = 48f, gap = 3f;
+            const float inset = 6f;
             var row = DemoUi.NewRect("Hoods", parent);
             LedgerKit.PlaceTopLeft(row, x, y, w, StatHeight);
             LedgerKit.Fill(row, Well);
             LedgerKit.Frame(row, 1f, RuleFaint);
-            Caps(row, inset, Mid(StatHeight, LedgerKit.LineBox(MicroType)), 60f, "HOODS",
+            Caps(row, inset, Mid(StatHeight, LedgerKit.LineBox(MicroType)), 72f, "MANPOWER",
                 MicroType, Label, LedgerStyle.Condensed);
 
-            float plusX = w - control;
-            float numberX = plusX - gap - number;
-            float minusX = numberX - gap - control;
-            InlineCountButton(row, minusX, "−", crew.Mine && crew.HoodsOnBooks > 0,
-                () => _hud.ReleaseHood(crew));
-            LedgerKit.Line(row, LedgerStyle.Mono, 11f, Red, numberX, 0f, number,
-                StatHeight, crew.HoodsOnBooks + " / " + LivingCity.Personnel.Crew.MaxHoods,
-                TextAlignmentOptions.Center);
-            InlineCountButton(row, plusX, "+",
-                crew.Mine && crew.HoodsOnBooks < LivingCity.Personnel.Crew.MaxHoods,
-                () => _hud.RecruitHood(crew));
+            var query = PersonnelDirector.Instance?.Organization;
+            var hasCapacity = query != null && crew.Lieutenant != null;
+            var capacity = hasCapacity
+                ? query.CapacityOf(crew.Lieutenant.Id).Manpower
+                : default;
+            Caps(row, 82f, Mid(StatHeight, LedgerKit.LineBox(8f)), w - 150f,
+                "MANAGE IN ORGANIZATION LEDGER", 8f, Dim, LedgerStyle.Condensed);
+            LedgerKit.Line(row, LedgerStyle.Mono, 11f,
+                capacity.IsOverCapacity ? Red : Body, w - 66f, 0f, 60f,
+                StatHeight, hasCapacity
+                    ? capacity.Current + " / " + capacity.Maximum
+                    : "— / —",
+                TextAlignmentOptions.MidlineRight);
             return StatHeight + 4f;
-        }
-
-        void InlineCountButton(Transform parent, float x, string glyph, bool enabled,
-            UnityEngine.Events.UnityAction run)
-        {
-            var rect = DemoUi.NewRect(glyph == "+" ? "Recruit" : "Release", parent);
-            LedgerKit.PlaceTopLeft(rect, x, 0f, StatHeight, StatHeight);
-            var colour = enabled ? (Color)Red : Dim;
-            var face = Clickable(rect, new Color(0f, 0f, 0f, 0f));
-            face.raycastTarget = enabled;
-            LedgerKit.Frame(rect, 1f, enabled ? Red : RuleFaint);
-            var mark = LedgerKit.Line(rect, LedgerStyle.MonoBold, 13f, colour,
-                0f, 0f, StatHeight, StatHeight, glyph, TextAlignmentOptions.Center);
-            if (!enabled)
-                return;
-            LedgerKit.RowButton(rect, face, run);
-            Hover.Add(rect, face, mark, colour, new Color32(242, 230, 204, 255));
         }
 
         float KitBox(Transform parent, float x, float y, float w, string text)
@@ -1012,6 +1000,8 @@ namespace RoadDemo
             if (building.Rent > 0)
                 text += "\nTAKE: $" + building.Rent + " a week";
 
+            // LEGACY / DEPRECATED (CTRL-011): this button keeps the existing demo path
+            // reachable; new territory UI uses the stable-ID command/query boundary.
             return FileSheet(width, top, "PROPERTY FILE", text,
                 "surveyed from the street · owner unaware",
                 building.GangId == 0 ? "ALREADY OURS" : "TAKE IT",

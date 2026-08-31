@@ -1,5 +1,6 @@
 using UnityEngine;
 using LivingCity.Gameplay;
+using LivingCity.Territory;
 
 namespace LivingCity.Entities
 {
@@ -26,6 +27,13 @@ namespace LivingCity.Entities
         public int BlockId { get; private set; }
         public int WeeklyIncome { get; private set; }
 
+        /// <summary>Canonical domain identity, derived from generation data rather than
+        /// this component or its GameObject name.</summary>
+        public TerritoryBusinessId BusinessId { get; private set; }
+
+        /// <summary>The canonical counterpart of the existing integer BlockId.</summary>
+        public TerritoryBlockId CanonicalBlockId { get; private set; }
+
         public PropertyOwner Owner { get; set; }
         public bool Protected { get; set; }
 
@@ -40,11 +48,21 @@ namespace LivingCity.Entities
             BusinessCategory category, string businessName, int blockId,
             PropertyOwner owner, int weeklyIncome)
         {
+            Init(category, businessName, blockId, owner, weeklyIncome, default, default);
+        }
+
+        public void Init(
+            BusinessCategory category, string businessName, int blockId,
+            PropertyOwner owner, int weeklyIncome,
+            TerritoryBusinessId businessId, TerritoryBlockId canonicalBlockId)
+        {
             Category = category;
             BusinessName = businessName;
             BlockId = blockId;
             Owner = owner;
             WeeklyIncome = weeklyIncome;
+            BusinessId = businessId;
+            CanonicalBlockId = canonicalBlockId;
         }
 
         void OnEnable()

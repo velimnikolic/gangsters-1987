@@ -17,10 +17,11 @@ namespace RoadDemo
     // same CrewGlyphs sign that rides over him on the map), and beside the feed
     // his name, the gun he carries (a print of the actual piece, out of the same
     // studio as the ledger's armory, with its name), and his hoods in a row of
-    // small mugshots (Crew.MaxHoods). No health bars: a wounded man's picture
+    // small mugshots (Crew.MaxTacticalHoods). No health bars: a wounded man's picture
     // goes amber, a man one hit from the ground goes red, a dead man's goes dark
-    // under the skull. An empty chip is a dim plus waiting on a recruit. The
-    // selected crew's block wears the gold rim; a click on a block selects that
+    // under the skull. Empty tactical slots stay empty: recruiting and command
+    // assignment live in the Ledger's ORGANIZATION dossier. The selected crew's
+    // block wears the gold rim; a click on a block selects that
     // crew, the same as clicking the man. Dressed out of DemoUi like every other
     // screen in the demo.
     //
@@ -36,7 +37,7 @@ namespace RoadDemo
     {
         public static CrewBar Instance { get; private set; }
 
-        const int MaxHoods = LivingCity.Personnel.Crew.MaxHoods;
+        const int MaxTacticalHoods = LivingCity.Personnel.Crew.MaxTacticalHoods;
         const float BlockWidth = 180f, BlockHeight = 72f, Gap = 6f;
         const float Pad = 6f;                          // the block's margin, all four sides
         const float FeedSize = BlockHeight - 2f * Pad; // the square the man stands in, whole
@@ -55,7 +56,8 @@ namespace RoadDemo
         const float ArmTop = Pad + NameHeight + RowGap;
         const float ChipTop = ArmTop + ArmHeight + RowGap;
         const float ChipHeight = BlockHeight - Pad - ChipTop;
-        const float ChipWidth = (ColumnWidth - (MaxHoods - 1) * ChipGap) / MaxHoods;
+        const float ChipWidth =
+            (ColumnWidth - (MaxTacticalHoods - 1) * ChipGap) / MaxTacticalHoods;
         const float SignSize = 16f;                    // the activity sign's badge in the feed
         // The wheels: a crew the book has given a car wears a key at the end of its
         // name line - the icon pack's little car, pressed to send them to the doors;
@@ -103,7 +105,6 @@ namespace RoadDemo
             public RawImage Portrait;
             public Image Plus, Shade, Skull;
             public CrewWalker Man;
-            public float RefusedUntil; // the plus flashes red after a refused recruit
         }
 
         sealed class Block
@@ -321,8 +322,8 @@ namespace RoadDemo
                 ar.sizeDelta = new Vector2(BlockWidth - Pad - labelX, ArmHeight);
             }
 
-            block.Chips = new Chip[MaxHoods];
-            for (int k = 0; k < MaxHoods; k++)
+            block.Chips = new Chip[MaxTacticalHoods];
+            for (int k = 0; k < MaxTacticalHoods; k++)
                 block.Chips[k] = BuildChip(rect,
                     new Vector2(ColumnX + k * (ChipWidth + ChipGap), -ChipTop));
 
@@ -543,9 +544,8 @@ namespace RoadDemo
                 if (click && RectTransformUtility.RectangleContainsScreenPoint(block.Rect, at))
                 {
                     // the car key sends them to the doors, calls the walk off again, and
-                    // lets them out once they are in; an empty chip is the recruiting
-                    // door - a click on it brings a new man in for that crew; anywhere
-                    // else on the block selects the crew
+                    // lets them out once they are in. Personnel management is not a
+                    // street-panel gesture; anywhere else selects the crew.
                     bool handled = false;
                     if (car != null && block.CarKey.gameObject.activeSelf &&
                         RectTransformUtility.RectangleContainsScreenPoint(block.CarKey, at))
@@ -553,14 +553,6 @@ namespace RoadDemo
                         handled = true;
                         _crews.Select(_shown[i]);
                         if (!OrderCar(_shown[i], car)) block.CarRefusedUntil = Time.unscaledTime + 0.7f;
-                    }
-                    foreach (var chip in block.Chips)
-                    {
-                        if (handled) break;
-                        if (chip.Man != null || !RectTransformUtility.RectangleContainsScreenPoint(chip.Rect, at)) continue;
-                        handled = true;
-                        if (!_crews.Recruit(_shown[i])) chip.RefusedUntil = Time.unscaledTime + 0.7f;
-                        break;
                     }
                     if (!handled) _crews.Select(_shown[i]);
                 }
@@ -601,7 +593,7 @@ namespace RoadDemo
             BindArm(block, boss);
             BindCar(block, unit, car);
 
-            for (int k = 0; k < MaxHoods; k++)
+            for (int k = 0; k < MaxTacticalHoods; k++)
                 BindChip(block.Chips[k], k < unit.Hoods.Count ? unit.Hoods[k] : null);
         }
 
@@ -773,15 +765,11 @@ namespace RoadDemo
                 chip.Man = man;
                 chip.Portrait.enabled = false;
                 chip.Portrait.texture = null;
-                chip.Plus.enabled = man == null;
+                chip.Plus.enabled = false;
                 if (man != null && man.SourcePrefab != null)
                     PortraitStudio.Request(man.SourcePrefab, PortraitStudio.Framing.Bust, chip.Portrait);
             }
             Condition(man, chip.Shade, chip.Skull);
-            if (man == null)
-                chip.Plus.color = Time.unscaledTime < chip.RefusedUntil
-                    ? new Color(1f, 0.36f, 0.30f, 0.9f)
-                    : new Color(DemoUi.InkDim.r, DemoUi.InkDim.g, DemoUi.InkDim.b, 0.35f);
         }
 
         // The demo camera takes up with the crew and stays with it - the lieutenant,

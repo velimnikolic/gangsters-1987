@@ -1,4 +1,5 @@
 using LivingCity.UI;
+using LivingCity.Territory;
 
 namespace LivingCity.Personnel
 {
@@ -51,6 +52,12 @@ namespace LivingCity.Personnel
         /// warned against but allowed - lieutenancy lives on those two stats.</summary>
         public const int LowStatHalfSteps = 6;
 
+        public static void ConfigureOrganization(Roster roster, OrganizationLimits limits)
+        {
+            if (roster != null)
+                roster.Organization.Limits = limits;
+        }
+
         public static PromoteCheck CheckPromote(Roster roster, int id)
         {
             var member = roster.Find(id);
@@ -62,6 +69,8 @@ namespace LivingCity.Personnel
                 return new PromoteCheck(false, false, GoneReason(member));
             if (member.Rank == Rank.Lieutenant)
                 return new PromoteCheck(false, false, LedgerText.ReasonAlreadyLieutenant);
+            if (member.Rank == Rank.Boss)
+                return new PromoteCheck(false, false, LedgerText.ReasonBossMoves);
 
             var low = member.GetHalfSteps(CharacterAttribute.Intelligence) < LowStatHalfSteps ||
                       member.GetHalfSteps(CharacterAttribute.Organization) < LowStatHalfSteps;
@@ -100,10 +109,17 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(LedgerText.ReasonNotLieutenant);
 
             var crew = roster.CrewOf(lieutenantId);
+            var formerHoods = crew != null
+                ? new System.Collections.Generic.List<int>(crew.HoodIds)
+                : null;
             if (crew != null)
                 roster.Crews.Remove(crew);
 
             member.Rank = Rank.Hood;
+            PutUnderBossIfPresent(roster, member.Id);
+            if (formerHoods != null)
+                for (var i = 0; i < formerHoods.Count; i++)
+                    PutUnderBossIfPresent(roster, formerHoods[i]);
             return OpResult.Success;
         }
 
@@ -118,11 +134,27 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(LedgerText.ReasonNoSuchCrew);
             if (crew.HoodIds.Contains(id))
                 return OpResult.Fail(LedgerText.ReasonAlreadyInCrew);
-            if (crew.HoodIds.Count >= Crew.MaxHoods)
-                return OpResult.Fail(LedgerText.ReasonCrewFull);
 
             Detach(roster, id);
             crew.HoodIds.Add(id);
+            return OpResult.Success;
+        }
+
+        /// <summary>Moves one real Hood directly under the one authoritative Boss.</summary>
+        public static OpResult AssignToBoss(Roster roster, int id, int bossId)
+        {
+            var refusal = CheckAssignable(roster, id);
+            if (refusal != null)
+                return OpResult.Fail(refusal);
+
+            var boss = roster.Find(bossId);
+            if (boss == null || boss.Id != roster.BossId || boss.Rank != Rank.Boss)
+                return OpResult.Fail(LedgerText.ReasonNoBoss);
+            if (roster.Organization.BossHoodIds.Contains(id))
+                return OpResult.Fail(LedgerText.ReasonAlreadyUnderBoss);
+
+            Detach(roster, id);
+            roster.Organization.BossHoodIds.Add(id);
             return OpResult.Success;
         }
 
@@ -133,6 +165,7 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(refusal);
 
             Detach(roster, id);
+            PutUnderBossIfPresent(roster, id);
             return OpResult.Success;
         }
 
@@ -148,7 +181,66 @@ namespace LivingCity.Personnel
 
             Detach(roster, id);
             roster.FrontId = id;
+            PutUnderBossIfPresent(roster, id);
             return OpResult.Success;
+        }
+
+        public static OpResult AssignBlockResponsibility(
+            Roster roster, TerritoryBlockId blockId, int leaderId, bool blockExists)
+        {
+            if (roster == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            if (!blockId.IsValid || !blockExists)
+                return OpResult.Fail(LedgerText.ReasonUnknownBlock);
+
+            var leader = roster.Find(leaderId);
+            if (leader == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            if (leader.Gone)
+                return OpResult.Fail(GoneReason(leader));
+            if (leader.Rank != Rank.Boss && leader.Rank != Rank.Lieutenant)
+                return OpResult.Fail(LedgerText.ReasonInvalidCommandParent);
+            if (leader.Rank == Rank.Boss && leader.Id != roster.BossId)
+                return OpResult.Fail(LedgerText.ReasonNoBoss);
+            if (leader.Rank == Rank.Lieutenant)
+            {
+                var crew = roster.CrewOf(leader.Id);
+                if (crew == null || crew.LieutenantId != leader.Id)
+                    return OpResult.Fail(LedgerText.ReasonInvalidCommandParent);
+            }
+
+            var assignments = roster.Organization.BlockResponsibilities;
+            for (var i = 0; i < assignments.Count; i++)
+            {
+                if (assignments[i].BlockId != blockId)
+                    continue;
+                if (assignments[i].LeaderId == leaderId)
+                    return OpResult.Fail("That leader is already responsible for this block.");
+                assignments[i] = new OrganizationBlockResponsibility(blockId, leaderId);
+                return OpResult.Success;
+            }
+
+            assignments.Add(new OrganizationBlockResponsibility(blockId, leaderId));
+            return OpResult.Success;
+        }
+
+        public static OpResult RemoveBlockResponsibility(
+            Roster roster, TerritoryBlockId blockId, int expectedLeaderId = -1)
+        {
+            if (roster == null || !blockId.IsValid)
+                return OpResult.Fail(LedgerText.ReasonUnknownBlock);
+
+            var assignments = roster.Organization.BlockResponsibilities;
+            for (var i = 0; i < assignments.Count; i++)
+            {
+                if (assignments[i].BlockId != blockId)
+                    continue;
+                if (expectedLeaderId >= 0 && assignments[i].LeaderId != expectedLeaderId)
+                    return OpResult.Fail("That block belongs to another command file.");
+                assignments.RemoveAt(i);
+                return OpResult.Success;
+            }
+            return OpResult.Fail("The block has no organization responsibility.");
         }
 
         /// <summary>Guns are dealt by Firearms, vehicles by Driving - the one split
@@ -498,6 +590,8 @@ namespace LivingCity.Personnel
                 return GoneReason(member);
             if (member.Rank == Rank.Lieutenant)
                 return LedgerText.ReasonLieutenantMoves;
+            if (member.Rank == Rank.Boss)
+                return LedgerText.ReasonBossMoves;
             return null;
         }
 
@@ -624,11 +718,17 @@ namespace LivingCity.Personnel
                 if (heir != null)
                 {
                     crew.HoodIds.Remove(heir.Id);
+                    roster.Organization.BossHoodIds.Remove(heir.Id);
                     heir.Rank = Rank.Lieutenant;
                     crew.LieutenantId = heir.Id;
                 }
                 else
+                {
+                    var formerHoods = new System.Collections.Generic.List<int>(crew.HoodIds);
                     roster.Crews.Remove(crew);
+                    for (var i = 0; i < formerHoods.Count; i++)
+                        PutUnderBossIfPresent(roster, formerHoods[i]);
+                }
             }
             else
                 Detach(roster, id);
@@ -641,15 +741,27 @@ namespace LivingCity.Personnel
         static string GoneReason(Character member) =>
             member.Status == CharacterStatus.Deserted ? LedgerText.ReasonDeserted : LedgerText.ReasonDead;
 
-        /// <summary>Removes the member from wherever he stands - crew or front. After this
-        /// he is, by derivation, in the pool.</summary>
+        /// <summary>Removes the Hood from every post and command branch before one
+        /// authoritative destination is written.</summary>
         static void Detach(Roster roster, int id)
         {
             if (roster.FrontId == id)
                 roster.FrontId = -1;
 
-            var crew = roster.CrewOf(id);
-            crew?.HoodIds.Remove(id);
+            roster.Organization.BossHoodIds.Remove(id);
+            for (var i = 0; i < roster.Crews.Count; i++)
+                roster.Crews[i].HoodIds.Remove(id);
+        }
+
+        static void PutUnderBossIfPresent(Roster roster, int id)
+        {
+            var boss = roster.FindBoss();
+            var member = roster.Find(id);
+            if (boss == null || boss.Rank != Rank.Boss || member == null ||
+                member.Rank != Rank.Hood || member.Specialty != Specialty.None || member.Gone ||
+                roster.Organization.BossHoodIds.Contains(id))
+                return;
+            roster.Organization.BossHoodIds.Add(id);
         }
 
         static RosterEquipment FindItem(Roster roster, int itemId)

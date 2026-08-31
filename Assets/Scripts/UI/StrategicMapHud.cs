@@ -150,14 +150,23 @@ namespace LivingCity.UI
         /// </summary>
         public static IMapTargetingConsumer Targeting { get; private set; }
 
-        public static void SetTargeting(IMapTargetingConsumer consumer) => Targeting = consumer;
+        public static void SetTargeting(IMapTargetingConsumer consumer)
+        {
+            Targeting = consumer;
+            if (Instance)
+                Instance.RefreshHint();
+        }
 
         /// <summary>Only the consumer that holds the seam gives it back - a page
         /// closing must not knock another's targeting out from under it.</summary>
         public static void ClearTargeting(IMapTargetingConsumer consumer)
         {
             if (Targeting == consumer)
+            {
                 Targeting = null;
+                if (Instance)
+                    Instance.RefreshHint();
+            }
         }
 
         public Camera MapCamera => mapCamera;
@@ -521,9 +530,20 @@ namespace LivingCity.UI
             mapArea.anchorMin = docked ? new Vector2(0.5f, 0f) : Vector2.zero;
             mapArea.anchorMax = Vector2.one;
             mapArea.offsetMin = mapArea.offsetMax = Vector2.zero;
-            if (hintText)
-                hintText.text = (docked ? "" : "M / Esc - close map    ") +
-                    "LMB - inspect a building    scroll - zoom    WASD - pan";
+            RefreshHint();
+        }
+
+        void RefreshHint()
+        {
+            if (!hintText)
+                return;
+            var action = Targeting == null
+                ? "LMB - inspect a building"
+                : Targeting.WantsArea
+                    ? "LMB drag - select target area"
+                    : "LMB - select target block";
+            hintText.text = (docked ? "" : "M / Esc - close map    ") +
+                action + "    scroll - zoom    WASD - pan";
         }
 
         public void Close()

@@ -25,12 +25,15 @@ namespace RoadDemo
     // a hood is moved between crews, a man goes to the pool or the front, a gun
     // changes hands) the figures are re-dealt to match - new men walk in, gone men
     // walk off, a hood handed to another lieutenant walks over to him.
-    public partial class DemoCrews : MonoBehaviour
+    public partial class DemoCrews : MonoBehaviour, IOrganizationPhysicalSource
     {
         /// <summary>One lieutenant, his root object, and his men.</summary>
         public class Unit
         {
             public int CrewId;
+            /// <summary>The real Lieutenant Character this temporary physical group
+            /// answers to. Moving figures never rewrites this organization parent.</summary>
+            public int CommandParentId = -1;
             public int Faction;              // 0 the outfit, else a rival mob
             public string GangName = "";     // "The Outfit", "Falcone"...
             public Transform Root;
@@ -747,6 +750,7 @@ namespace RoadDemo
             gameObject.AddComponent<FrontOverlay>().Init();
             IntentOverlay = gameObject.AddComponent<CombatIntentOverlay>();
             IntentOverlay.Init(this);
+            PersonnelDirector.Instance?.SetOrganizationPhysicalSource(this);
             CrewWalker.FindCover = CoverNear;
             PrepareCombatPrewarm();
         }
@@ -957,6 +961,7 @@ namespace RoadDemo
         {
             TickCombatPrewarm();
             var director = PersonnelDirector.Instance;
+            director?.SetOrganizationPhysicalSource(this);
             if (director != null && director.Roster != null &&
                 (FreeRoam || (_sidewalks != null && _sidewalks.Count > 0)) &&
                 director.Version != _seenVersion)
@@ -1181,49 +1186,6 @@ namespace RoadDemo
                 if (man != null && !man.Dead && man.Tf != null) return man;
             return null;
         }
-
-        /// <summary>A new man for this crew, off the ledger's recruiting door: paid for
-        /// out of the safe, dealt onto the books, and he walks in beside his boss on
-        /// the next deal. Refused - crew full, no money - with the reason kept for the bar.</summary>
-        public bool Recruit(Unit unit)
-        {
-            LastRefusal = null;
-            if (unit == null || unit.Faction != 0) return false;
-            var director = PersonnelDirector.Instance;
-            if (director == null || director.Roster == null) return false;
-            var result = director.Recruit(unit.CrewId, out _);
-            if (!result.Ok)
-            {
-                LastRefusal = result.Reason;
-                Debug.Log("[Crews] Recruit refused: " + result.Reason);
-            }
-            return result.Ok;
-        }
-
-        /// <summary>Returns the last hood in this crew to the outfit's free personnel
-        /// pool. This is the inverse of the street recruiting chip: the man stays on
-        /// the books, but no longer answers to this lieutenant.</summary>
-        public bool ReleaseHood(Unit unit)
-        {
-            LastRefusal = null;
-            if (unit == null || unit.Faction != 0) return false;
-            var director = PersonnelDirector.Instance;
-            var roster = director != null ? director.Roster : null;
-            var crew = roster != null ? roster.FindCrew(unit.CrewId) : null;
-            if (crew == null || crew.HoodIds.Count == 0) return false;
-
-            int id = crew.HoodIds[crew.HoodIds.Count - 1];
-            var result = director.AssignToPool(id);
-            if (!result.Ok)
-            {
-                LastRefusal = result.Reason;
-                Debug.Log("[Crews] Release refused: " + result.Reason);
-            }
-            return result.Ok;
-        }
-
-        /// <summary>Why the last personnel change was refused, or null.</summary>
-        public string LastRefusal { get; private set; }
 
         /// <summary>Send the selected crew at that one: every man closes and shoots.</summary>
         public bool OrderAttack(Unit target)
@@ -2011,11 +1973,16 @@ namespace RoadDemo
                 var lt = roster.Find(crew.LieutenantId);
                 if (lt == null || lt.Status != CharacterStatus.Active) continue;
                 wanted[lt.Id] = (crew, true);
+                var tacticalHoods = 0;
                 foreach (int id in crew.HoodIds)
                 {
                     var hood = roster.Find(id);
-                    if (hood != null && hood.Status == CharacterStatus.Active)
+                    if (hood != null && hood.Status == CharacterStatus.Active &&
+                        tacticalHoods < Crew.MaxTacticalHoods)
+                    {
                         wanted[id] = (crew, false);
+                        tacticalHoods++;
+                    }
                 }
             }
 
@@ -2037,6 +2004,7 @@ namespace RoadDemo
                 if (!wanted.TryGetValue(crew.LieutenantId, out var w) || w.crew != crew) continue;
                 var unit = Units.Find(u => u.Faction == 0 && u.CrewId == crew.Id)
                            ?? new Unit { CrewId = crew.Id, Faction = 0, GangName = OutfitNames.Player, Bombs = BombsPerCrew };
+                unit.CommandParentId = crew.LieutenantId;
                 unit.Boss = null;
                 unit.Hoods.Clear();
                 liveUnits.Add(unit);
@@ -2086,6 +2054,38 @@ namespace RoadDemo
             BindCars(roster);
             BindBikes(roster);
             BindBombs(roster);
+        }
+
+        /// <summary>
+        /// Read-only organization projection: only the real Characters currently
+        /// represented by each small RTS detachment. A 50-man branch still yields at
+        /// most one lieutenant plus four hoods here.
+        /// </summary>
+        public void CollectPhysicalMappings(List<TacticalPersonnelMapping> into)
+        {
+            if (into == null)
+                return;
+
+            for (var i = 0; i < Units.Count; i++)
+            {
+                var unit = Units[i];
+                if (unit == null || unit.Faction != 0)
+                    continue;
+
+                var count = (unit.Boss != null ? 1 : 0) + unit.Hoods.Count;
+                var ids = new int[count];
+                var at = 0;
+                if (unit.Boss != null)
+                    ids[at++] = unit.Boss.CharacterId;
+                for (var h = 0; h < unit.Hoods.Count; h++)
+                    if (unit.Hoods[h] != null)
+                        ids[at++] = unit.Hoods[h].CharacterId;
+                if (at != ids.Length)
+                    System.Array.Resize(ref ids, at);
+
+                into.Add(new TacticalPersonnelMapping(
+                    unit.CrewId, unit.CommandParentId, ids));
+            }
         }
 
         void Place(Roster roster, int id, Crew crew, bool boss,

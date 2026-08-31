@@ -1,13 +1,14 @@
 using System.Collections.Generic;
 using LivingCity.Entities;
 using LivingCity.Generation;
+using LivingCity.Gangs;
 
 namespace LivingCity.Personnel
 {
     /// <summary>
-    /// The outfit on day one: six men rolled from one rng stream, a lieutenant with two
-    /// hoods under him, one man on the front desk, two in the pool, and a stock of three
-    /// pistols and one car - nothing handed out yet, and no accountant or lawyer.
+    /// The outfit on day one: Don Salvatore as a stable, real Boss Character plus the
+    /// same six men rolled from one rng stream, a lieutenant with two hoods under him,
+    /// one man on the front desk, two directly under the Boss, and one car.
     ///
     /// Deterministic for a given seed, on its own SeedOffsets band so retuning the roster
     /// can never re-lay the city. The draw order is FIXED and documented inline - insert a
@@ -24,7 +25,9 @@ namespace LivingCity.Personnel
     /// </summary>
     public static class RosterSeeder
     {
-        public const int MemberCount = 6;
+        public const int StartingStaffCount = 6;
+        public const int MemberCount = StartingStaffCount + 1;
+        public const int BossCharacterId = StartingStaffCount;
         /// <summary>None: the .38 every man carries is his own, not the outfit's
         /// stock - the armory holds what is BETTER than that. Kept as a named
         /// number because the stock test counts against it.</summary>
@@ -43,7 +46,7 @@ namespace LivingCity.Personnel
             // loyalty. The order is FIXED: inserting a draw mid-sequence re-deals every
             // seed's starting six, which is why the rap sheet went in beside the name
             // rather than anywhere more convenient.
-            for (var i = 0; i < MemberCount; i++)
+            for (var i = 0; i < StartingStaffCount; i++)
             {
                 var member = new Character { Id = roster.NextCharacterId() };
                 DrawName(rng, roster, member);
@@ -61,6 +64,7 @@ namespace LivingCity.Personnel
             var vehicleName = VehicleNames[rng.Next(VehicleNames.Length)];
 
             AssignStartingRoles(roster);
+            AddBossAndRootHoods(roster);
 
             for (var i = 0; i < PistolCount; i++)
                 roster.Equipment.Add(new RosterEquipment
@@ -94,8 +98,15 @@ namespace LivingCity.Personnel
             var rng = new System.Random(seed + SeedOffsets.Personnel + 250);
             var roster = new Roster();
 
-            for (var i = 0; i < memberCount; i++)
+            var ordinaryCount = System.Math.Max(0, memberCount - 1);
+            for (var i = 0; i < ordinaryCount; i++)
             {
+                // Keep the canonical Boss identity on Character 6 in the scale fixture
+                // too. Adding him consumes no draw, and index 6 is deliberately outside
+                // every deterministic lieutenant/initial-Hood slot below.
+                if (i == StartingStaffCount && roster.FindBoss() == null)
+                    AddBoss(roster);
+
                 var member = new Character { Id = roster.NextCharacterId() };
                 DrawName(rng, roster, member);
                 RapSheet.Deal(rng, member);
@@ -113,13 +124,18 @@ namespace LivingCity.Personnel
             var crews = memberCount / 10;
             for (var k = 0; k < crews; k++)
             {
+                if (k * 10 >= ordinaryCount)
+                    break;
                 RosterOps.Promote(roster, roster.Members[k * 10].Id, out var crewId);
-                for (var h = 1; h <= 4 && k * 10 + h < memberCount; h++)
+                for (var h = 1; h <= Crew.MaxTacticalHoods &&
+                    k * 10 + h < ordinaryCount; h++)
                     RosterOps.AssignToCrew(roster, roster.Members[k * 10 + h].Id, crewId);
             }
 
-            if (memberCount > 7)
+            if (ordinaryCount > 7)
                 RosterOps.AssignToFront(roster, roster.Members[7].Id);
+
+            AddBossAndRootHoods(roster);
 
             roster.Equipment.Add(new RosterEquipment
             {
@@ -130,6 +146,46 @@ namespace LivingCity.Personnel
             });
 
             return roster;
+        }
+
+        /// <summary>
+        /// Adds the story Don without consuming the personnel RNG, so every pre-existing
+        /// starting Hood/Lieutenant keeps the same ID, name and stats for a given seed.
+        /// Every ordinary Hood outside a lieutenant branch answers directly to him.
+        /// </summary>
+        static void AddBossAndRootHoods(Roster roster)
+        {
+            if (roster.FindBoss() == null)
+                AddBoss(roster);
+
+            for (var i = 0; i < roster.Members.Count; i++)
+            {
+                var member = roster.Members[i];
+                if (member.Rank == Rank.Hood && member.Specialty == Specialty.None &&
+                    !member.Gone && roster.CrewOf(member.Id) == null &&
+                    !roster.Organization.BossHoodIds.Contains(member.Id))
+                    roster.Organization.BossHoodIds.Add(member.Id);
+            }
+        }
+
+        static void AddBoss(Roster roster)
+        {
+            var boss = new Character
+            {
+                Id = roster.NextCharacterId(),
+                FirstName = "Don Salvatore",
+                Surname = "Ricci",
+                Rank = Rank.Boss,
+                Look = GangCatalog.BossModel,
+                Loyalty = 100,
+            };
+            for (var a = 0; a < AttributeScale.Count; a++)
+                boss.SetHalfSteps((CharacterAttribute)a, 8);
+            boss.SetHalfSteps(CharacterAttribute.Intelligence, AttributeScale.MaxHalfSteps);
+            boss.SetHalfSteps(CharacterAttribute.Organization, AttributeScale.MaxHalfSteps);
+
+            roster.Members.Add(boss);
+            roster.Organization.BossId = boss.Id;
         }
 
         /// <summary>A raw recruit's ceiling - three stars, and most of them well under
@@ -144,8 +200,9 @@ namespace LivingCity.Personnel
         public const int RecruitBonusPerHalfStep = 1;
 
         /// <summary>One more man off the corner: a name nobody on the books has, eleven
-        /// rolled attributes, middling loyalty, and put on the books unassigned. The
-        /// recruiting door - the street bar's empty chip and the Recruit order both.
+        /// rolled attributes, middling loyalty, and put in the operational pool while
+        /// answering directly to the Boss. The
+        /// recruiting door - the Organization Ledger intent and the Recruit order both.
         ///
         /// recruiterHalfSteps is the Intelligence of whoever went looking; pass 0 for a
         /// walk-in, which is what the street bar's chip is.
@@ -153,7 +210,11 @@ namespace LivingCity.Personnel
         public static Character Recruit(Roster roster, System.Random rng,
             int recruiterHalfSteps = 0)
         {
-            var member = new Character { Id = roster.NextCharacterId() };
+            var member = new Character
+            {
+                Id = roster.NextCharacterId(),
+                Rank = Rank.Hood,
+            };
             DrawName(rng, roster, member);
             RapSheet.Deal(rng, member);
 
@@ -177,6 +238,12 @@ namespace LivingCity.Personnel
 
             member.Loyalty = rng.Next(35, 86);
             roster.Members.Add(member);
+            if (roster.FindBoss() != null)
+                roster.Organization.BossHoodIds.Add(member.Id);
+            // Identity includes the body he will wear in both dossier and street. Cast
+            // here, inside the personnel authority, rather than letting whichever UI or
+            // physical projection sees him first become the writer of appearance state.
+            GangLooks.LookFor(member, roster);
             return member;
         }
 

@@ -99,8 +99,8 @@ namespace LivingCity.Gangs
                     return look;
                 }
 
-            // more men in one crew than there are bodies on the table - the crew is over
-            // its own MaxHoods, and a repeat is better than nobody standing there
+            // more physically projected men than there are bodies on the table - a repeat
+            // is better than nobody standing there
             return table[start];
         }
 
@@ -197,7 +197,7 @@ namespace LivingCity.Gangs
             if (crew == null)
                 return Cast(member, null);
 
-            var taken = new List<string>(Crew.MaxHoods + 1);
+            var taken = new List<string>(Crew.MaxTacticalHoods + 1);
             foreach (var id in CastOrder(crew))
             {
                 var man = id == member.Id ? member : roster.Find(id);

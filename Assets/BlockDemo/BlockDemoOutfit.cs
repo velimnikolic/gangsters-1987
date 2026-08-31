@@ -8,7 +8,7 @@ namespace BlockDemo
     /// <summary>
     /// The outfit the lab wants to send out, dealt through the ledger's own ops.
     ///
-    /// The seeded roster is six men in one crew, and a run that wants three
+    /// The seeded roster is the Boss plus six staff, one crew among them, and a run that wants three
     /// lieutenants walking at three full mobs cannot ask the street for them - the
     /// street shows whatever the BOOK says. So the book is written first: the seeded
     /// crew is disbanded, the men promoted one crew each, hoods dealt behind them if
@@ -25,8 +25,8 @@ namespace BlockDemo
                  "book exactly as the seeder wrote it, which is what a run that only " +
                  "wants a machine bought asks for.")]
         [Min(0)] public int lieutenants = 3;
-        [Tooltip("Hoods behind each lieutenant. 4 is a full crew (the ledger's cap); 0 " +
-                 "sends the lieutenants out alone. The books hold six men, so anything " +
+        [Tooltip("Physical Hoods behind each lieutenant. 4 fills the tactical projection; 0 " +
+                 "sends the lieutenants out alone. The books hold six assignable staff, so anything " +
                  "past the second crew is recruited in - paid for while the safe holds " +
                  "out, and signed straight onto the books after that.")]
         [Min(0)] public int hoodsEach = 0;
@@ -64,7 +64,7 @@ namespace BlockDemo
 
             // Nothing asked of the crews: the book stands as the seeder wrote it and
             // the only thing bought is the machine. A run that wants a drive-by out of
-            // the six men the seeder deals has no business rewriting the roster first.
+            // the six assignable staff the seeder deals has no business rewriting the roster first.
             if (lieutenants <= 0)
             {
                 Wrote = BuyMachine(director) ? motorcycle + " off the counter"
@@ -84,11 +84,11 @@ namespace BlockDemo
             var free = new List<int>();
             foreach (var member in roster.Members)
                 if (!member.Gone && member.Id != roster.FrontId &&
-                    member.Specialty == Specialty.None)
+                    member.Specialty == Specialty.None && member.Rank == Rank.Hood)
                     free.Add(member.Id);
 
             int want = Mathf.Max(1, lieutenants);
-            int each = Mathf.Min(Mathf.Max(0, hoodsEach), Crew.MaxHoods);
+            int each = Mathf.Min(Mathf.Max(0, hoodsEach), Crew.MaxTacticalHoods);
             int at = 0, made = 0, hoods = 0, guns = 0;
             for (int i = 0; i < want; i++)
             {
@@ -102,7 +102,11 @@ namespace BlockDemo
                     // outfit's own gate first, so the money is spent the way a player's
                     // would be, and straight onto the books when the safe is empty
                     // (the lab wants the crew it asked for, not the crew it can afford)
-                    if (hood < 0 && director.Recruit(crewId, out _).Ok) { hoods++; continue; }
+                    if (hood < 0 && RecruitThenAssign(director, crewId))
+                    {
+                        hoods++;
+                        continue;
+                    }
                     if (hood < 0) hood = Sign(director, rng);
                     if (hood >= 0 && director.AssignToCrew(hood, crewId).Ok) hoods++;
                 }
@@ -181,6 +185,12 @@ namespace BlockDemo
                           "for - the rest are signed on without paying.");
             }
             return LivingCity.Personnel.RosterSeeder.Recruit(director.Roster, rng).Id;
+        }
+
+        static bool RecruitThenAssign(PersonnelDirector director, int crewId)
+        {
+            var recruited = director.RecruitHood(out var hoodId);
+            return recruited.Ok && director.AssignToCrew(hoodId, crewId).Ok;
         }
 
         bool _saidFree;

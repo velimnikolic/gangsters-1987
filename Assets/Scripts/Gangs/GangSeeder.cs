@@ -127,6 +127,11 @@ namespace LivingCity.Gangs
             for (var pass = 0; pass < 2; pass++)
                 foreach (var member in roster.Members)
                 {
+                    // The Boss is authoritative personnel, not one more ambient guard
+                    // outside the player front. His physical projection is its own story
+                    // actor; this street crew list remains lieutenant-led.
+                    if (member.Rank == Personnel.Rank.Boss)
+                        continue;
                     var isLieutenant = member.Rank == Personnel.Rank.Lieutenant;
                     if (isLieutenant != (pass == 0))
                         continue;

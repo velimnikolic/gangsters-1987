@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using LivingCity.Entities;
 using LivingCity.Generation;
+using LivingCity.Territory;
 
 namespace LivingCity.Gameplay
 {
@@ -175,8 +176,25 @@ namespace LivingCity.Gameplay
                         break;
                 }
 
+                // Stable business identity comes from the same generation seed, logical
+                // block and quantized position that produced the candidate. The display
+                // object/name is deliberately absent: runtime views resolve TO this ID.
+                var x = Mathf.RoundToInt(candidate.Target.position.x * 1000f);
+                var z = Mathf.RoundToInt(candidate.Target.position.z * 1000f);
+
+                var canonicalBlockId = candidate.BlockId >= 0
+                    ? TerritoryIdentity.GeneratedBlock(builder.Config.seed, candidate.BlockId)
+                    : default;
+                var businessId = TerritoryIdentity.GeneratedBusiness(
+                    builder.Config.seed,
+                    candidate.BlockId,
+                    x,
+                    z,
+                    (int)candidate.Category);
+
                 candidate.Target.gameObject.AddComponent<BusinessMarker>()
-                    .Init(candidate.Category, title, candidate.BlockId, owner, income);
+                    .Init(candidate.Category, title, candidate.BlockId, owner, income,
+                        businessId, canonicalBlockId);
             }
 
             Debug.Log($"[PropertyDirector] {candidates.Count} businesses, " +

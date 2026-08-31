@@ -56,6 +56,10 @@ namespace LivingCity.Outfit
                     return LawyerWage;
             }
 
+            // The player character owns the payroll; he does not draw an envelope from it.
+            if (member.Rank == Rank.Boss)
+                return 0;
+
             if (member.Rank == Rank.Lieutenant)
                 return LieutenantWage;
 

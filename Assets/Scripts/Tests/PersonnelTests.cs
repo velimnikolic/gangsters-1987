@@ -303,12 +303,23 @@ namespace LivingCity.Tests
 
                 var names = new HashSet<string>();
                 var lieutenants = 0;
+                var bosses = 0;
                 foreach (var member in roster.Members)
                 {
                     if (!names.Add(member.FullName))
                         failures.Add($"{tag}: duplicate name {member.FullName}.");
                     if (member.Rank == Rank.Lieutenant)
                         lieutenants++;
+                    if (member.Rank == Rank.Boss)
+                    {
+                        bosses++;
+                        if (member.Id != RosterSeeder.BossCharacterId ||
+                            member.FullName != Gangs.GangCatalog.BossName ||
+                            member.Look != Gangs.GangCatalog.BossModel ||
+                            roster.BossId != member.Id)
+                            failures.Add($"{tag}: Boss identity is not canonical.");
+                        continue;
+                    }
                     if (member.Specialty != Specialty.None)
                         failures.Add($"{tag}: specialist in the starting six.");
                     if (member.Status != CharacterStatus.Active || member.Wanted)
@@ -325,6 +336,8 @@ namespace LivingCity.Tests
 
                 if (lieutenants != 1)
                     failures.Add($"{tag}: {lieutenants} lieutenants.");
+                if (bosses != 1)
+                    failures.Add($"{tag}: {bosses} bosses.");
                 if (roster.Crews.Count != 1)
                     failures.Add($"{tag}: {roster.Crews.Count} crews.");
                 else
@@ -373,6 +386,8 @@ namespace LivingCity.Tests
             var roster = RosterSeeder.Generate(7);
             foreach (var member in roster.Members)
             {
+                if (member.Rank == Rank.Boss)
+                    continue;
                 if (!firsts.Contains(member.FirstName))
                     failures.Add($"NamesComeFromTheSharedTables: {member.FirstName}.");
                 if (!surnames.Contains(member.Surname))
@@ -415,7 +430,8 @@ namespace LivingCity.Tests
                 if (isFront && inCrews > 0)
                     failures.Add($"AssignmentOfIsExclusive: the front is also crewed.");
 
-                var expected = isFront ? AssignmentKind.Front
+                var expected = member.Rank == Rank.Boss ? AssignmentKind.Boss
+                    : isFront ? AssignmentKind.Front
                     : inCrews > 0 ? AssignmentKind.Crew
                     : AssignmentKind.Pool;
                 if (assignment.Kind != expected)
@@ -1074,7 +1090,7 @@ namespace LivingCity.Tests
 
             var pool = new List<int>();
             a.PoolIds(pool);
-            if (pool.Count != 60 - 6 - 24 - 1)
+            if (pool.Count != 60 - 1 - 6 - 24 - 1)
                 failures.Add($"LargeRosterShape: pool of {pool.Count}.");
 
             for (var i = 0; i < a.Members.Count; i++)

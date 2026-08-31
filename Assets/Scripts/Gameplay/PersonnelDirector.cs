@@ -1,6 +1,8 @@
+using System.Collections.Generic;
 using UnityEngine;
 using LivingCity.Generation;
 using LivingCity.Personnel;
+using LivingCity.Territory;
 using RoadDemo;
 
 namespace LivingCity.Gameplay
@@ -24,8 +26,23 @@ namespace LivingCity.Gameplay
         /// deterministic roster rather than a null one.</summary>
         const int FallbackSeed = 42;
 
+        [Header("Outfit organization")]
+        [SerializeField] OrganizationCapacityConfig organizationCapacity =
+            new OrganizationCapacityConfig();
+
+        public const int DefaultHoodRecruitmentCost = 50;
+
+        [SerializeField, Min(0)] int hoodRecruitmentCost = DefaultHoodRecruitmentCost;
+
         public Roster Roster { get; private set; }
         public int Version { get; private set; }
+        public IOrganizationQuery Organization => organizationQuery;
+        public int HoodRecruitmentCost => Mathf.Max(0, hoodRecruitmentCost);
+
+        readonly HashSet<TerritoryBlockId> knownOrganizationBlocks =
+            new HashSet<TerritoryBlockId>();
+        OrganizationQuery organizationQuery;
+        IOrganizationPhysicalSource physicalSource;
 
         /// <summary>The city seed the roster was dealt from - the ledger's newspaper
         /// prints its editions off the same number, so the paper is as deterministic
@@ -37,6 +54,7 @@ namespace LivingCity.Gameplay
             if (Instance && Instance != this)
                 return;
             Instance = this;
+            organizationQuery = new OrganizationQuery();
         }
 
         void OnDestroy()
@@ -64,7 +82,12 @@ namespace LivingCity.Gameplay
                                  "roster runs on the fallback seed.", this);
 
             Roster = RosterSeeder.Generate(seed);
+            RosterOps.ConfigureOrganization(Roster,
+                organizationCapacity?.Snapshot() ?? OrganizationLimits.Default);
             RosterOps.NormalizeArms(Roster);
+            organizationQuery ??= new OrganizationQuery();
+            organizationQuery.Bind(Roster);
+            organizationQuery.BindPhysical(physicalSource);
             Version++;
         }
 
@@ -79,47 +102,43 @@ namespace LivingCity.Gameplay
         public void DebugSeedLarge(int memberCount)
         {
             Roster = RosterSeeder.GenerateLarge(seed, memberCount);
+            RosterOps.ConfigureOrganization(Roster,
+                organizationCapacity?.Snapshot() ?? OrganizationLimits.Default);
             RosterOps.NormalizeArms(Roster);
+            organizationQuery ??= new OrganizationQuery();
+            organizationQuery.Bind(Roster);
+            organizationQuery.BindPhysical(physicalSource);
             Version++;
             Debug.Log("[Personnel] Debug roster: " + memberCount + " men on the books.");
         }
 
         // ------------------------------------------------------------------ mutations
 
-        /// <summary>What a new man costs to bring in - the signing money, before wages.</summary>
-        public const int RecruitPrice = 500;
-
         System.Random recruitRng;
 
         /// <summary>
-        /// Brings a new hood onto the books and straight into this crew: the money
-        /// through the outfit's one purchase gate (refused with the shortfall spelled
-        /// out), the man dealt by RosterSeeder off the city seed, the crew's cap
-        /// respected before a dollar moves. The street bar's empty chip.
+        /// Phase-1 Ledger intent: pay through the outfit's one purchase gate, create one
+        /// randomized Hood through the roster authority, and leave him in the unassigned
+        /// pool reporting directly to the Boss. The UI never receives a mutable Character.
         /// </summary>
-        public OpResult Recruit(int crewId, out int newId)
+        public OpResult RecruitHood(out int newId)
         {
             newId = -1;
             if (Roster == null)
-                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchCrew);
-            var crew = Roster.FindCrew(crewId);
-            if (crew == null)
-                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchCrew);
-            if (crew.HoodIds.Count >= Crew.MaxHoods)
-                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonCrewFull);
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
 
             var outfit = OutfitDirector.Instance;
-            if (outfit != null)
-            {
-                var paid = outfit.Purchase(RecruitPrice, "a new man");
-                if (!paid.Ok)
-                    return paid;
-            }
+            if (outfit == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonFinanceUnavailable);
 
             recruitRng ??= new System.Random(seed * 31 + 7);
-            var member = RosterSeeder.Recruit(Roster, recruitRng);
+            var result = HoodRecruitmentAuthority.Execute(
+                Roster, recruitRng, HoodRecruitmentCost, outfit.Purchase, out var member);
+            if (!result.Ok)
+                return result;
+
             newId = member.Id;
-            return Commit(RosterOps.AssignToCrew(Roster, member.Id, crewId), "recruited", member.Id);
+            return Commit(result, "recruited and left available for assignment", member.Id);
         }
 
         // ------------------------------------------------------------ the classified
@@ -250,6 +269,79 @@ namespace LivingCity.Gameplay
             return Commit(RosterOps.AssignToCrew(Roster, id, crewId), "reassigned", id);
         }
 
+        public OpResult AssignToBoss(int id, int bossId)
+        {
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+            return Commit(RosterOps.AssignToBoss(Roster, id, bossId),
+                "assigned directly to the boss", id);
+        }
+
+        public OpResult AssignToLieutenant(int id, int lieutenantId)
+        {
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+            var lieutenant = Roster.Find(lieutenantId);
+            var crew = lieutenant != null ? Roster.CrewOf(lieutenantId) : null;
+            if (lieutenant == null || lieutenant.Rank != Rank.Lieutenant ||
+                crew == null || crew.LieutenantId != lieutenantId)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonInvalidCommandParent);
+            return Commit(RosterOps.AssignToCrew(Roster, id, crew.Id),
+                "transferred in the command chain", id);
+        }
+
+        /// <summary>The geography authority registers the canonical IDs it owns. The
+        /// organization keeps responsibility only for IDs in this catalogue.</summary>
+        public void RegisterOrganizationBlocks(IEnumerable<TerritoryBlockId> blockIds)
+        {
+            knownOrganizationBlocks.Clear();
+            if (blockIds != null)
+                foreach (var blockId in blockIds)
+                    if (blockId.IsValid)
+                        knownOrganizationBlocks.Add(blockId);
+            Version++;
+        }
+
+        public OpResult AssignBlockResponsibility(TerritoryBlockId blockId, int leaderId)
+        {
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+            return Commit(
+                RosterOps.AssignBlockResponsibility(
+                    Roster, blockId, leaderId, knownOrganizationBlocks.Contains(blockId)),
+                "made responsible for " + blockId, leaderId);
+        }
+
+        public OpResult RemoveBlockResponsibility(
+            TerritoryBlockId blockId, int expectedLeaderId = -1)
+        {
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+            var result = RosterOps.RemoveBlockResponsibility(
+                Roster, blockId, expectedLeaderId);
+            if (result.Ok)
+            {
+                Version++;
+                Debug.Log("[Personnel] Responsibility removed from " + blockId + ".");
+            }
+            return result;
+        }
+
+        public void SetOrganizationPhysicalSource(IOrganizationPhysicalSource source)
+        {
+            if (ReferenceEquals(physicalSource, source))
+                return;
+            physicalSource = source;
+            organizationQuery ??= new OrganizationQuery(Roster);
+            organizationQuery.BindPhysical(source);
+        }
+
+        public void ValidateOrganization(List<string> failures)
+        {
+            OrganizationValidator.Validate(
+                Roster, knownOrganizationBlocks, physicalSource, failures);
+        }
+
         public OpResult GiveEquipment(int itemId, int id)
         {
             if (Roster == null)
@@ -332,6 +424,38 @@ namespace LivingCity.Gameplay
             Debug.Log("[Personnel] " + (member != null ? member.FullName : "#" + id) +
                       " " + verb + ".");
             return result;
+        }
+    }
+
+    /// <summary>
+    /// Pure coordinator behind the director's Recruit Hood intent. The finance callback
+    /// is the authoritative account gate supplied by OutfitDirector; only after it accepts
+    /// does Personnel create one Character. Keeping this rule free of scene state makes
+    /// the money/roster boundary headlessly testable without giving the Ledger either side.
+    /// </summary>
+    public static class HoodRecruitmentAuthority
+    {
+        public static OpResult Execute(
+            Roster roster,
+            System.Random rng,
+            int cost,
+            System.Func<int, string, OpResult> purchase,
+            out Character member)
+        {
+            member = null;
+            if (roster == null || rng == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+            if (purchase == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonFinanceUnavailable);
+            if (cost < 0)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonInvalidRecruitmentCost);
+
+            var paid = purchase(cost, "a new Hood");
+            if (!paid.Ok)
+                return paid;
+
+            member = RosterSeeder.Recruit(roster, rng);
+            return OpResult.Success;
         }
     }
 }

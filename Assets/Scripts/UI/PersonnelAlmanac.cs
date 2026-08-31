@@ -7,6 +7,7 @@ using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 using LivingCity.Gameplay;
 using LivingCity.Personnel;
+using RoadDemo;
 using static LivingCity.UI.LedgerKit;
 
 namespace LivingCity.UI
@@ -14,16 +15,17 @@ namespace LivingCity.UI
     /// <summary>
     /// The outfit ledger, 1987: a manila file open on the boss's desk, filling the
     /// screen - centred, so an ultrawide monitor puts the desk lamp's light either
-    /// side of it instead of stretching the file into a billboard. Five divider tabs
-    /// - the morning paper, the personnel roll, the books, the armory catalogue, the
-    /// card index of families - on aged stock, punched down both edges, with a blotter
+    /// side of it instead of stretching the file into a billboard. Six divider tabs
+    /// - the morning paper, personnel, organization, finances, the armory catalogue,
+    /// and the card index of families - on aged stock, punched down both edges, with a blotter
     /// strip of readouts under the masthead and the night's telex slips clipped in
     /// beneath it. Opened with P.
     ///
-    /// The ledger is READ-ONLY bookkeeping in spirit: it reports where the men are and
-    /// what they cost. Orders are laid against the city on the map, never here.
+    /// Most pages are bookkeeping. ORGANIZATION is the administrative exception: it
+    /// transfers real Characters and files block responsibility through the shared
+    /// authority. Tactical street orders are still laid against the city on the map.
     ///
-    /// Built for sixty men even though the game opens with six: grouping, sorting and
+    /// Built for sixty men even though the game opens with the Boss and six staff: grouping, sorting and
     /// filtering are the screen, not decoration.
     ///
     /// The desk under the folder is a raycast target ON PURPOSE - it IS the modal
@@ -121,6 +123,7 @@ namespace LivingCity.UI
         {
             Newspaper,
             Personnel,
+            Organization,
             Finances,
             Armory,
             Diplomacy,
@@ -131,11 +134,11 @@ namespace LivingCity.UI
         /// last page of the enum and deliberately has no tab: the orders panel is off
         /// the book. Its page root still builds, so SetPage can reach it in code.</summary>
         static readonly string[] TabNames =
-            { "THE PAPER", "PERSONNEL", "FINANCES", "ARMORY", "FAMILIES" };
+            { "THE PAPER", "PERSONNEL", "ORGANIZATION", "FINANCES", "ARMORY", "FAMILIES" };
 
         /// <summary>What a real file's tabs say: the sheet is one leaf of a numbered
         /// file, and the ticker prints which one. Pure furniture, and the design's.</summary>
-        static readonly int[] TabFolios = { 1, 4, 7, 11, 15, 17 };
+        static readonly int[] TabFolios = { 1, 4, 7, 10, 13, 16, 18 };
         const int Folios = 18;
 
         Canvas canvas;
@@ -155,7 +158,7 @@ namespace LivingCity.UI
         RectTransform telexRoot;
 
         LedgerPage currentPage = LedgerPage.Newspaper;
-        readonly GameObject[] pageRoots = new GameObject[6];
+        readonly GameObject[] pageRoots = new GameObject[7];
         readonly Image[] tabFaces = new Image[6];
         readonly TMP_Text[] tabLabels = new TMP_Text[6];
         readonly RectTransform[] tabRects = new RectTransform[6];
@@ -171,6 +174,8 @@ namespace LivingCity.UI
         int paintedVersion = -1;
         int paintedOutfitVersion = -1;
         int paintedGangVersion = -1;
+        int paintedTerritoryVersion = -1;
+        int paintedTerritoryObservationVersion = -1;
         bool dirty;
 
         void Start()
@@ -224,6 +229,15 @@ namespace LivingCity.UI
             if (keyboard == null)
                 return;
 
+            if (!IsOpen && OrganizationTargetingActive &&
+                keyboard.pKey.wasPressedThisFrame)
+            {
+                if (StrategicMapHud.Instance && StrategicMapHud.IsOpen)
+                    StrategicMapHud.Instance.Close();
+                CancelOrganizationTargetingAndReturn();
+                return;
+            }
+
             if (keyboard.pKey.wasPressedThisFrame)
             {
                 if (IsOpen)
@@ -233,7 +247,14 @@ namespace LivingCity.UI
             }
 
             if (!IsOpen)
+            {
+                // StrategicMapHud has no cancel callback. When Esc closes it during an
+                // Organization pick, return to the exact dossier instead of leaving an
+                // invisible targeting consumer armed behind the world.
+                if (OrganizationTargetingActive && !StrategicMapHud.IsOpen)
+                    CancelOrganizationTargetingAndReturn();
                 return;
+            }
 
             // Arrest cannot happen while the book is open - H is behind the modal guard -
             // so death is the one ending that can arrive mid-read.
@@ -264,7 +285,12 @@ namespace LivingCity.UI
             if (keyboard.escapeKey.wasPressedThisFrame)
             {
                 // Innermost state first - each Esc peels one layer, closing last.
-                if (pendingConfirm != Confirm.None)
+                if (currentPage == LedgerPage.Organization &&
+                    CloseOrganizationTransient())
+                {
+                    // The organization page consumed this Esc.
+                }
+                else if (pendingConfirm != Confirm.None)
                 {
                     pendingConfirm = Confirm.None;
                     dirty = true;
@@ -289,13 +315,23 @@ namespace LivingCity.UI
             RefreshClock();
 
             var outfitVersion = outfit ? outfit.Version : 0;
+            var territoryVersion = TerritoryRuntime.Instance
+                ? TerritoryRuntime.Instance.StateVersion
+                : -1;
+            var territoryObservationVersion = TerritoryRuntime.Instance
+                ? TerritoryRuntime.Instance.ObservationVersion
+                : -1;
             if (dirty || paintedVersion != director.Version ||
                 paintedOutfitVersion != outfitVersion ||
-                paintedGangVersion != Gangs.GangRegistry.Version)
+                paintedGangVersion != Gangs.GangRegistry.Version ||
+                paintedTerritoryVersion != territoryVersion ||
+                paintedTerritoryObservationVersion != territoryObservationVersion)
             {
                 paintedVersion = director.Version;
                 paintedOutfitVersion = outfitVersion;
                 paintedGangVersion = Gangs.GangRegistry.Version;
+                paintedTerritoryVersion = territoryVersion;
+                paintedTerritoryObservationVersion = territoryObservationVersion;
                 dirty = false;
                 Repaint();
             }
@@ -314,6 +350,9 @@ namespace LivingCity.UI
                 case LedgerPage.Personnel:
                     RebuildList();
                     RebuildDetail();
+                    break;
+                case LedgerPage.Organization:
+                    RebuildOrganization();
                     break;
                 case LedgerPage.Finances:
                     RebuildFinances();
@@ -347,21 +386,28 @@ namespace LivingCity.UI
             return true;
         }
 
-        void Open()
+        void Open() => OpenAtPage(LedgerPage.Newspaper);
+
+        /// <summary>
+        /// Opens the same modal folder at a specific leaf. Normal P-key entry still uses
+        /// the newspaper; map targeting is the sole flow that returns to a working page.
+        /// </summary>
+        void OpenAtPage(LedgerPage pageKind)
         {
             if (!page || director.Roster == null)
                 return;
 
+            if (pageKind != LedgerPage.Organization && OrganizationTargetingActive)
+            {
+                organizationTargetLeaderId = -1;
+                StrategicMapHud.ClearTargeting(this);
+            }
+            if (StrategicMapHud.Instance && StrategicMapHud.IsOpen)
+                StrategicMapHud.Instance.Close();
             page.SetActive(true);
             IsOpen = true;
             SuspendOtherCanvases();
-            // The strategic map is a screen of its own again: if it was up, it comes
-            // down with the folder opening, and it does not come back by itself.
-            if (StrategicMapHud.Instance && StrategicMapHud.IsOpen)
-                StrategicMapHud.Instance.Close();
-            // The folder always opens on the morning paper - the day's frame - and
-            // the working pages keep their state for when the boss turns to them.
-            SetPage(LedgerPage.Newspaper);
+            SetPage(pageKind);
         }
 
         void Close()
@@ -370,6 +416,7 @@ namespace LivingCity.UI
                 page.SetActive(false);
             IsOpen = false;
             RestoreOtherCanvases();
+            DismissOrganizationTransient();
             RefreshTargeting();
             if (StrategicMapHud.Instance)
                 StrategicMapHud.Instance.SetTargetHighlights(null, Color.clear);
@@ -388,6 +435,8 @@ namespace LivingCity.UI
         {
             RestoreOtherCanvases();
             IsOpen = false;
+            organizationTargetLeaderId = -1;
+            DismissOrganizationTransient();
             RefreshTargeting();
         }
 
@@ -462,6 +511,8 @@ namespace LivingCity.UI
                 givePickerItemId = -1;
                 armoryNote = "";
             }
+            if (pageKind != LedgerPage.Organization)
+                DismissOrganizationTransient();
 
             RefreshTabs();
             dirty = true;
@@ -506,6 +557,10 @@ namespace LivingCity.UI
                         viewport = listViewport;
                         content = listContent;
                     }
+                    break;
+                case LedgerPage.Organization:
+                    viewport = organizationViewport;
+                    content = organizationContent;
                     break;
                 case LedgerPage.Armory:
                     if (catalogueViewport && RectTransformUtility
@@ -580,6 +635,12 @@ namespace LivingCity.UI
             {
                 stockScroll = Mathf.Clamp(stockScroll - wheel * WheelStep, 0f, maxScroll);
                 content.anchoredPosition = new Vector2(0f, stockScroll);
+            }
+            else if (viewport == organizationViewport)
+            {
+                organizationScroll = Mathf.Clamp(
+                    organizationScroll - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, organizationScroll);
             }
             else
             {
@@ -698,6 +759,7 @@ namespace LivingCity.UI
             // ---- the pages, in tab order; each is a full-paper root ----
             BuildNewspaperPage(paper);
             BuildPersonnelPage(paper);
+            BuildOrganizationPage(paper);
             BuildFinancesPage(paper);
             BuildArmoryPage(paper);
             BuildDiplomacyPage(paper);

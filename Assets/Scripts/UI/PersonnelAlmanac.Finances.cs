@@ -195,6 +195,11 @@ namespace LivingCity.UI
                         specialists++;
                         specialistWages += wage;
                     }
+                    else if (member.Rank == Rank.Boss)
+                    {
+                        // The player owns the payroll. He is a real roster Character, but
+                        // not a Hood and does not draw an envelope from his own outfit.
+                    }
                     else if (member.Rank == Rank.Lieutenant)
                     {
                         lieutenants++;

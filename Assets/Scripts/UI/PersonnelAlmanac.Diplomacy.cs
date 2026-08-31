@@ -166,8 +166,11 @@ namespace LivingCity.UI
                 Block("Edge", strip, 0f, 0f, 3f, FamilyMineH, LedgerStyle.RedPen);
 
                 var raw = Plate(strip, 12f, -6f, 44f, 44f, "");
+                var boss = director.Roster?.FindBoss();
                 PortraitStudio.Request(
-                    PortraitStudio.FindPeoplePrefab(Gangs.GangCatalog.BossModel),
+                    PortraitStudio.FindPeoplePrefab(
+                        boss != null && !string.IsNullOrEmpty(boss.Look)
+                            ? boss.Look : Gangs.GangCatalog.BossModel),
                     PortraitStudio.Framing.Bust, raw);
                 Swatch(gang.Id, 68f, -8f, strip);
 
@@ -176,7 +179,8 @@ namespace LivingCity.UI
                     620f, 26f, gang.Name.ToUpperInvariant() + " · YOURS");
                 name.characterSpacing = 3f;
                 Line(strip, LedgerStyle.Mono, 13f, LedgerStyle.InkDim, 92f, -30f, 620f, 20f,
-                    "Boss: " + Gangs.GangCatalog.BossName + "  ·  " + held +
+                    "Boss: " + (boss != null ? boss.FullName : Gangs.GangCatalog.BossName) +
+                    "  ·  " + held +
                     (held == 1 ? " building" : " buildings") + " on the map");
 
                 var mine = Gangs.GangRegistry.FrontBusinessOf(gang.Id);

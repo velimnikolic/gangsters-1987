@@ -7,6 +7,7 @@ using UnityEngine.UI;
 using LivingCity.Entities;
 using LivingCity.Gameplay;
 using LivingCity.CameraRig;
+using LivingCity.Territory;
 
 namespace RoadDemo
 {
@@ -150,6 +151,11 @@ namespace RoadDemo
         /// and the ownership it writes is BusinessMarker.GangId, the project's single
         /// source for who holds ground, so the ledger sees a takeover the same frame.
         /// </summary>
+        /// <remarks>
+        /// LEGACY / DEPRECATED: CTRL-011 removes this direct TAKE IT claim path. New
+        /// territory UI must submit stable-ID commands and may not write control or
+        /// compliance through this seam.
+        /// </remarks>
         public static System.Func<TurfBuilding, TurfCrew, bool> ClaimRule;
 
         // ------------------------------------------------------------------ wiring
@@ -1423,21 +1429,6 @@ namespace RoadDemo
                 : LivingCity.UI.LedgerText.EquipmentLabel(item.Kind);
         }
 
-        /// <summary>The Personal File's plus and minus are only views onto the shared
-        /// personnel doors. Recruit pays and respects Crew.MaxHoods; release returns a
-        /// hood to the pool instead of deleting him.</summary>
-        public void RecruitHood(TurfCrew crew)
-        {
-            if (_crews != null && crew != null && _crews.Recruit(crew.Unit))
-                _seenPersonnelVersion = -1;
-        }
-
-        public void ReleaseHood(TurfCrew crew)
-        {
-            if (_crews != null && crew != null && _crews.ReleaseHood(crew.Unit))
-                _seenPersonnelVersion = -1;
-        }
-
         /// <summary>The ledger entry behind a man on the street. Rivals are on
         /// nobody's books and answer null, which is why every read of this is
         /// guarded.</summary>
@@ -1767,8 +1758,7 @@ namespace RoadDemo
                     continue;
 
                 var destination = live > 1 ? Spread(at, ref scatter) : at;
-                var world = new Vector3(destination.x, _crews.GroundY, destination.y);
-                if (!_crews.OrderUnit(crew.Unit, world, out _, run))
+                if (!SubmitMove(crew, destination, run, TacticalMovementMode.StreetOrder))
                     continue;
 
                 crew.Order = TurfOrder.Moving;
@@ -1805,14 +1795,15 @@ namespace RoadDemo
 
             var at = _survey.Plan.ToWorld(plan);
             var scatter = new TurfPlate.Roll(Time.frameCount);
+            bool anyIssued = false;
 
             foreach (var crew in _units)
             {
                 if (!crew.Mine || !crew.Alive || !_selected.Contains(crew.Id))
                     continue;
 
-                crew.Order = order;
                 crew.Taking = null;
+                bool issued = true;
 
                 switch (order)
                 {
@@ -1820,39 +1811,55 @@ namespace RoadDemo
                     case TurfOrder.WalkingIn:
                         // targets are scattered so a gathered lot do not all walk to
                         // the same paving stone and shove each other off it
-                        March(crew, Spread(at, ref scatter), order == TurfOrder.WalkingIn);
+                        issued = March(
+                            crew, Spread(at, ref scatter), order == TurfOrder.WalkingIn);
                         break;
 
                     case TurfOrder.Taking:
-                        crew.Taking = building;
-                        if (building != null)
-                            March(crew, building.World.center, true);
+                        issued = building != null && March(crew, building.World.center, true);
+                        if (issued)
+                            crew.Taking = building;
                         break;
 
                     case TurfOrder.Walking:
                         crew.Zone = new Rect(at.x - ZoneWide * 0.5f, at.y - ZoneDeep * 0.5f,
                             ZoneWide, ZoneDeep);
                         crew.Wander = Spread(at, ref scatter);
-                        March(crew, crew.Wander, false);
+                        issued = March(crew, crew.Wander, false);
                         break;
 
                     case TurfOrder.Holding:
-                        March(crew, Flat(crew.Unit.Position), false);
+                        issued = March(crew, Flat(crew.Unit.Position), false);
                         break;
 
                     case TurfOrder.PullingBack:
-                        March(crew, Flat(crew.Post), false);
+                        issued = March(crew, Flat(crew.Post), false);
                         break;
 
                     case TurfOrder.ToTheOutfit:
-                        SendHome(crew);
+                        issued = SendHome(crew);
                         break;
 
                     case TurfOrder.InTheCar:
+                        crew.Order = order;
                         Board(crew);
+                        issued = crew.Order == order;
                         break;
                 }
+
+                if (!issued)
+                {
+                    crew.Taking = null;
+                    crew.Order = TurfOrder.Holding;
+                    continue;
+                }
+
+                crew.Order = order;
+                anyIssued = true;
             }
+
+            if (!anyIssued)
+                return;
 
             _markers.Add(new Marker { World = at, Life = MarkerSeconds, Order = order });
             Changed();
@@ -1865,20 +1872,46 @@ namespace RoadDemo
         static Vector2 Spread(Vector2 world, ref TurfPlate.Roll roll) =>
             world + new Vector2(roll.Next() - 0.5f, roll.Next() - 0.5f) * 15f;
 
-        void March(TurfCrew crew, Vector2 world, bool run)
+        bool March(TurfCrew crew, Vector2 world, bool run) =>
+            SubmitMove(crew, world, run, TacticalMovementMode.DirectMarch);
+
+        bool SubmitMove(
+            TurfCrew crew, Vector2 world, bool run, TacticalMovementMode mode)
         {
-            _crews.MarchTo(crew.Unit, new Vector3(world.x, _crews.GroundY, world.y), run);
+            var runtime = TerritoryRuntime.Instance;
+            if (runtime != null && runtime.Commands != null)
+            {
+                TerritoryBlockId destinationBlockId = default;
+                runtime.TryGetBlockAtWorld(
+                    new Vector3(world.x, _crews.GroundY, world.y), out destinationBlockId);
+                var result = runtime.Commands.Submit(new MoveTacticalGroupCommand(
+                    TerritoryCommandNodeId.Crew(crew.Id),
+                    new TerritoryPoint(world.x, world.y),
+                    destinationBlockId,
+                    run,
+                    mode));
+                return result.WasAccepted;
+            }
+
+            // Non-Core/demo harness fallback: preserve the old physical order semantics
+            // where no territory runtime is installed.
+            var target = new Vector3(world.x, _crews.GroundY, world.y);
+            return mode == TacticalMovementMode.StreetOrder
+                ? _crews.OrderUnit(crew.Unit, target, out _, run)
+                : _crews.MarchTo(crew.Unit, target, run);
         }
 
-        void SendHome(TurfCrew crew)
+        bool SendHome(TurfCrew crew)
         {
             var outfit = OutfitDirector.Instance;
             if (outfit != null && outfit.TryGetHeadquarters(out var hq, out _))
             {
-                _crews.MarchTo(crew.Unit, hq);
-                return;
+                return SubmitMove(
+                    crew, new Vector2(hq.x, hq.z), false, TacticalMovementMode.DirectMarch);
             }
-            _crews.MarchTo(crew.Unit, crew.Post);
+            return SubmitMove(
+                crew, new Vector2(crew.Post.x, crew.Post.z), false,
+                TacticalMovementMode.DirectMarch);
         }
 
         /// <summary>Back into the car - the nearest of the outfit's own, and only if
@@ -1989,6 +2022,9 @@ namespace RoadDemo
             if (!rule(building, crew))
                 return;
 
+            // LEGACY / DEPRECATED (CTRL-011): TAKE IT still resolves here so the old
+            // demo remains usable, but no new territory feature may copy this direct
+            // BusinessMarker write. It will be removed when the real control loop lands.
             building.Business.GangId = crew.GangId;
 
             // The wash and the footprints are now wrong on a plate nobody is going to

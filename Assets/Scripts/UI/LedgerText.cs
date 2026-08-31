@@ -71,6 +71,7 @@ namespace LivingCity.UI
         {
             Rank.Hood => "Hood",
             Rank.Lieutenant => "Lieutenant",
+            Rank.Boss => "Boss",
             _ => "",
         };
 
@@ -162,6 +163,7 @@ namespace LivingCity.UI
                 AssignmentKind.Crew => crewName,
                 AssignmentKind.Front => "Runs the front",
                 AssignmentKind.Specialist => "On retainer",
+                AssignmentKind.Boss => "Runs the outfit",
                 _ => "Unassigned",
             };
 
@@ -378,14 +380,23 @@ namespace LivingCity.UI
         public const string ReasonNoSuchMember = "No such man on the books.";
         public const string ReasonNoSuchCrew = "No such crew.";
         public const string ReasonNoSuchItem = "No such item in the stock.";
+        public const string ReasonFinanceUnavailable =
+            "The outfit's account book is unavailable.";
+        public const string ReasonInvalidRecruitmentCost =
+            "The recruitment cost is invalid.";
         public const string ReasonDead = "The man is dead.";
         public const string ReasonDeserted = "The man deserted.";
         public const string ReasonSpecialist = "A specialist stays on retainer.";
         public const string ReasonAlreadyLieutenant = "He already runs a crew.";
         public const string ReasonNotLieutenant = "He does not run a crew.";
         public const string ReasonLieutenantMoves = "A lieutenant is demoted, not reassigned.";
+        public const string ReasonBossMoves = "The boss is the root of the outfit.";
         public const string ReasonAlreadyInCrew = "He is already in that crew.";
-        public const string ReasonCrewFull = "A lieutenant runs four men at most.";
+        public const string ReasonAlreadyUnderBoss = "He already answers directly to the boss.";
+        public const string ReasonNoBoss = "The outfit has no authoritative boss.";
+        public const string ReasonUnknownBlock = "No such canonical block.";
+        public const string ReasonInvalidCommandParent =
+            "Only the boss or a lieutenant can carry that responsibility.";
         public const string ReasonAlreadyFront = "He already runs the front.";
         public const string ReasonAlreadyHolds = "He already holds it.";
         public const string ReasonNotHeld = "Nobody holds it.";

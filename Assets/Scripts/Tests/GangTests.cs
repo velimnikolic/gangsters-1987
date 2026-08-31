@@ -209,10 +209,10 @@ namespace LivingCity.Tests
             var roster = RosterSeeder.Generate(99);
             var player = GangSeeder.Generate(99, roster)[GangCatalog.PlayerGangId];
 
-            if (player.Members.Count != roster.Members.Count)
+            if (player.Members.Count != roster.Members.Count - 1)
             {
                 failures.Add($"Mirror: {player.Members.Count} street members for " +
-                             $"{roster.Members.Count} roster members.");
+                             $"{roster.Members.Count - 1} non-Boss roster members.");
                 return;
             }
 
@@ -452,7 +452,7 @@ namespace LivingCity.Tests
                     failures.Add($"Cast: gang {i}'s lieutenant '{capo}' is not an approved capo.");
             }
 
-            if (GangLooks.Hoods.Length < Personnel.Crew.MaxHoods + 1)
+            if (GangLooks.Hoods.Length < Personnel.Crew.MaxTacticalHoods + 1)
                 failures.Add("Cast: fewer hood bodies than a full crew needs - a crew " +
                              "would have to repeat one.");
         }
@@ -496,11 +496,11 @@ namespace LivingCity.Tests
             {
                 var capo = GangCatalog.LieutenantModels[gang];
                 var looks = GangLooks.HoodsFor(capo, GangCatalog.SoldierModels[gang],
-                                               Personnel.Crew.MaxHoods);
+                                               Personnel.Crew.MaxTacticalHoods);
 
-                if (looks.Count != Personnel.Crew.MaxHoods)
+                if (looks.Count != Personnel.Crew.MaxTacticalHoods)
                     failures.Add($"Cast: gang {gang} was dealt {looks.Count} hood bodies " +
-                                 $"for {Personnel.Crew.MaxHoods} men.");
+                                 $"for {Personnel.Crew.MaxTacticalHoods} men.");
 
                 var worn = new HashSet<string> { GangLooks.Bare(capo) };
                 foreach (var look in looks)
