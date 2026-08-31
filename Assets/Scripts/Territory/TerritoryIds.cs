@@ -215,7 +215,40 @@ namespace LivingCity.Territory
         public float ZMin { get; }
         public float Width { get; }
         public float Depth { get; }
+        public float XMax => XMin + Width;
+        public float ZMax => ZMin + Depth;
+        public float Area => Width * Depth;
+        public bool IsEmpty => Width <= 0f || Depth <= 0f;
         public TerritoryPoint Center => new TerritoryPoint(XMin + Width * 0.5f, ZMin + Depth * 0.5f);
+
+        public bool Contains(TerritoryPoint point) =>
+            point.X >= XMin && point.X <= XMax && point.Z >= ZMin && point.Z <= ZMax;
+
+        /// <summary>Metres from the point to the nearest edge; zero inside.</summary>
+        public float DistanceTo(TerritoryPoint point)
+        {
+            var dx = point.X < XMin ? XMin - point.X : point.X > XMax ? point.X - XMax : 0f;
+            var dz = point.Z < ZMin ? ZMin - point.Z : point.Z > ZMax ? point.Z - ZMax : 0f;
+            if (dx <= 0f) return dz;
+            if (dz <= 0f) return dx;
+            return (float)Math.Sqrt(dx * dx + dz * dz);
+        }
+
+        /// <summary>Overlapping area with another rectangle; zero when they only touch.</summary>
+        public float OverlapArea(TerritoryBounds other)
+        {
+            var x = Math.Min(XMax, other.XMax) - Math.Max(XMin, other.XMin);
+            var z = Math.Min(ZMax, other.ZMax) - Math.Max(ZMin, other.ZMin);
+            return x <= 0f || z <= 0f ? 0f : x * z;
+        }
+
+        public static TerritoryBounds Union(TerritoryBounds a, TerritoryBounds b)
+        {
+            var xMin = Math.Min(a.XMin, b.XMin);
+            var zMin = Math.Min(a.ZMin, b.ZMin);
+            return new TerritoryBounds(
+                xMin, zMin, Math.Max(a.XMax, b.XMax) - xMin, Math.Max(a.ZMax, b.ZMax) - zMin);
+        }
     }
 
     /// <summary>

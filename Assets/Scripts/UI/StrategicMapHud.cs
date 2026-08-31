@@ -285,7 +285,10 @@ namespace LivingCity.UI
             if (PersonnelAlmanac.IsOpen)
                 return;
 
-            if (!PersonnelAlmanac.IsOpen && keyboard.mKey.wasPressedThisFrame)
+            // Plain M is the map. Shift+M is the demo's audio mute (DemoAudio), which
+            // shares the key in every RoadDemo scene now that the map installs there too.
+            var shift = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
+            if (!PersonnelAlmanac.IsOpen && !shift && keyboard.mKey.wasPressedThisFrame)
             {
                 if (IsOpen) Close();
                 else Open();
@@ -867,11 +870,19 @@ namespace LivingCity.UI
 
         // -------------------------------------------------------------- block table
 
-        /// <summary>The BlockOverlayHud parse, kept with geometry: each slab's renderer
-        /// bounds becomes a clickable rect, their union the block's highlight and the
-        /// whole city's frame.</summary>
+        /// <summary>
+        /// The map's block table. A city with a canonical territory plan - every Core
+        /// scene, which is the game - is projected straight off the geography, so the
+        /// block the player clicks here is the same canonical block the simulation and
+        /// the ledger speak of. The older CityBuilder city has no such plan, and keeps
+        /// the BlockOverlayHud parse: each slab's renderer bounds becomes a clickable
+        /// rect, their union the block's highlight and the whole city's frame.
+        /// </summary>
         bool CollectBlocks()
         {
+            if (CollectCanonicalBlocks())
+                return true;
+
             var builder = FindAnyObjectByType<CityBuilder>();
             var root = builder ? builder.GeneratedRoot : null;
             var ground = root ? root.Find("Ground") : null;
@@ -881,8 +892,9 @@ namespace LivingCity.UI
                 if (!warnedEmpty)
                 {
                     warnedEmpty = true;
-                    Debug.LogWarning("[StrategicMap] No generated city found - " +
-                                     "the strategic map has nothing to show.", this);
+                    Debug.LogWarning("[StrategicMap] No generated city and no canonical " +
+                                     "territory plan - the strategic map has nothing to show.",
+                                     this);
                 }
                 return false;
             }
@@ -944,6 +956,67 @@ namespace LivingCity.UI
             // Slabs stop at the sidewalks; the streets around the outer blocks are half a
             // cell deep each side, so one whole cell of padding shows the city's edge.
             union.Expand(new Vector3(CityGrid.CellSize, 0f, CityGrid.CellSize));
+            cityBounds = union;
+            return true;
+        }
+
+        /// <summary>
+        /// The canonical projection: one clickable rectangle per plan block, its own
+        /// world bounds. No renderer is measured and no name is parsed - identity comes
+        /// from the plan, which is the whole point of routing the map through it.
+        /// </summary>
+        bool CollectCanonicalBlocks()
+        {
+            var geography = RoadDemo.TerritoryRuntime.Instance?.Geography;
+            if (geography == null || geography.BlockIds.Count == 0)
+                return false;
+
+            blocks.Clear();
+            slabCentres.Clear();
+            buildingsRoot = null;
+
+            var union = new Bounds();
+            var any = false;
+            var ids = geography.BlockIds;
+            for (var i = 0; i < ids.Count; i++)
+            {
+                if (!geography.TryGetBlock(ids[i], out var definition) ||
+                    definition.LegacyBlockId < 0 || blocks.ContainsKey(definition.LegacyBlockId))
+                    continue;
+
+                var bounds = definition.WorldBounds;
+                var rect = new Rect(bounds.XMin, bounds.ZMin, bounds.Width, bounds.Depth);
+                var block = new Block
+                {
+                    Id = definition.LegacyBlockId,
+                    Zone = CityBlocks.Get(definition.LegacyBlockId)?.Zone ?? BlockZone.ResidentialHigh,
+                    Union = rect,
+                };
+                block.Slabs.Add(rect);
+                blocks.Add(block.Id, block);
+                slabCentres.Add((block.Id, new Vector3(rect.center.x, 0f, rect.center.y)));
+
+                var worldBounds = new Bounds(
+                    new Vector3(rect.center.x, 0f, rect.center.y),
+                    new Vector3(rect.width, 1f, rect.height));
+                if (!any)
+                {
+                    any = true;
+                    union = worldBounds;
+                }
+                else
+                {
+                    union.Encapsulate(worldBounds);
+                }
+            }
+
+            if (!any)
+                return false;
+
+            // A street's width of margin, so the outermost blocks are not flush with the
+            // edge of the plate - the same intent as the generated city's cell of padding.
+            union.Expand(new Vector3(geography.Settings.StreetWidth, 0f,
+                                     geography.Settings.StreetWidth));
             cityBounds = union;
             return true;
         }

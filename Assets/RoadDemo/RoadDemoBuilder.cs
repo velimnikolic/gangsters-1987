@@ -4339,6 +4339,8 @@ namespace RoadDemo
             var runtime = go.AddComponent<TerritoryRuntime>();
             runtime.Init(this, _crews);
             go.AddComponent<TerritoryDiagnosticsHud>().Init(runtime);
+            // and the geography drawn on the ground it describes (F9)
+            go.AddComponent<TerritoryGeographyOverlay>().Init(runtime);
         }
 
         // ------------------------------------------------------------------- map

@@ -1410,6 +1410,14 @@ namespace RoadDemo
 
         /// <summary>A street between two neighbours in a row, in cells; and an alley.</summary>
         const int StreetGap = 3, AlleyGap = 1;
+
+        /// <summary>The same two gaps in metres, and the boulevard's kerb-to-kerb width.
+        /// The territory geography measures block adjacency and road space with these
+        /// (TerritoryGeographySettings): a tolerance guessed at instead would go wrong the
+        /// day the streets were widened, which they have been.</summary>
+        public static float AlleyWidth => AlleyGap * Cell;
+        public static float StreetWidth => StreetGap * Cell;
+        public static float BoulevardWidth => MainRoad.y - MainRoad.x;
         /// <summary>How much shallower than its row a block may stand. The ground behind
         /// it is its car park; more than this and the car park is bigger than the block.</summary>
         const int MaxShallow = 4;

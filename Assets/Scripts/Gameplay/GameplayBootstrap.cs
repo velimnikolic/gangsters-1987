@@ -22,12 +22,39 @@ namespace LivingCity.Gameplay
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureGameplay()
         {
-            // Only the generated city - the Shooting Demo and pack scenes have no
-            // CityBuilder and want none of this.
-            if (!Object.FindAnyObjectByType<CityBuilder>())
+            // Two kinds of city are served here. The older GENERATED city is a CityBuilder
+            // and gets the whole layer. A city built on a canonical TERRITORY PLAN - every
+            // RoadDemoBuilder scene, CoreDemo the game among them - has no CityBuilder and
+            // none of the ground-slab machinery, but it does have blocks, an outfit and a
+            // ledger, so it gets the organization and map layer. Anything else (the pack
+            // scenes, the shooting bench) gets nothing.
+            //
+            // The canonical branch is why the map is here at all: the ledger's ASSIGN BLOCK
+            // needs a StrategicMapHud to pick a block on, and gating the map on CityBuilder
+            // left that button dead in the one scene that is the game. Per the project's
+            // scenes-are-test-rigs rule the widening belongs in this shared bootstrap and
+            // not in a CoreDemo adapter.
+            var city = Object.FindAnyObjectByType<CityBuilder>();
+            var planned = !city && Object.FindAnyObjectByType<RoadDemo.RoadDemoBuilder>();
+            if (!city && !planned)
+            {
+                EnsureBenchLedger();
                 return;
+            }
 
             var host = GameObject.Find("Gameplay") ?? new GameObject("Gameplay");
+
+            if (planned)
+            {
+                // The two directors the book reads from, the book, and the map it picks
+                // blocks on. No PropertyDirector, GangDirector or pedestrian director:
+                // those measure a generated city's hierarchy, which this city has not got.
+                EnsureUnique<PersonnelDirector>(host);
+                EnsureUnique<OutfitDirector>(host);
+                EnsureUnique<UI.PersonnelAlmanac>(host);
+                EnsureUnique<UI.StrategicMapHud>(host);
+                return;
+            }
 
             Ensure<GameplayRuntime>(host);
             Ensure<PropertyDirector>(host);
@@ -55,6 +82,23 @@ namespace LivingCity.Gameplay
             EnsureUnique<UI.CityOverlayHud>(host);
             EnsureUnique<UI.PersonnelAlmanac>(host);
             EnsureUnique<UI.StrategicMapHud>(host);
+        }
+
+        /// <summary>
+        /// The combat benches - the crew and cover demos - put the OUTFIT'S OWN men on
+        /// the street (DemoCrews reads PersonnelDirector), so they need the two directors
+        /// and the book, and nothing else. They have no city, so no map.
+        /// </summary>
+        static void EnsureBenchLedger()
+        {
+            if (!Object.FindAnyObjectByType<CrewDemo.CrewDemoBuilder>() &&
+                !Object.FindAnyObjectByType<CoverDemo.CoverDemoBuilder>())
+                return;
+
+            var host = GameObject.Find("Gameplay") ?? new GameObject("Gameplay");
+            EnsureUnique<PersonnelDirector>(host);
+            EnsureUnique<OutfitDirector>(host);
+            EnsureUnique<UI.PersonnelAlmanac>(host);
         }
 
         static void Ensure<T>(GameObject host) where T : Component

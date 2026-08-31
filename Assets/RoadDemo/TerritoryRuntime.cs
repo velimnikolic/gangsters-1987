@@ -31,6 +31,7 @@ namespace RoadDemo
         RoadDemoBuilder builder;
         DemoCrews crews;
         TerritorySimulationState state;
+        TerritoryGeography geography;
         TerritoryTruthQuery truth;
         TerritoryPlayerQuery player;
         TerritorySimulationScheduler scheduler;
@@ -43,14 +44,31 @@ namespace RoadDemo
             new Dictionary<ActorKey, ActorLocation>();
         Dictionary<ActorKey, ActorLocation> sampledLocations =
             new Dictionary<ActorKey, ActorLocation>();
+        readonly HashSet<TerritoryBlockId> occupiedBlocks = new HashSet<TerritoryBlockId>();
 
         public ITerritoryTruthQuery DebugTruth => truth;
+
+        /// <summary>The canonical geography: blocks, neighborhoods, the block neighbor
+        /// graph, road-space resolution and business membership. Every consumer that used
+        /// to reach into CoreTerritoryPlan - the maps, the ledger, the debug overlays -
+        /// asks this instead, so one physical block has one canonical id everywhere.</summary>
+        public ITerritoryGeography Geography => geography;
         public ITerritoryPlayerQuery PlayerQuery => player;
         public TerritoryEventStream Events => events;
         public TerritoryCommandGateway Commands => commands;
         public TerritorySimulationScheduler Scheduler => scheduler;
         public int StateVersion => state?.Version ?? 0;
         public int ObservationVersion { get; private set; }
+
+        /// <summary>Men standing on road space that belongs to no block at this tick -
+        /// the middle of a boulevard, the freeway, the ground between quarters. Reported
+        /// (the geography overlay prints it) rather than smoothed away.</summary>
+        public int BlocklessActors { get; private set; }
+
+        /// <summary>Does anybody stand on this block as of the last Presence tick? Read
+        /// off the sampling that already ran, so a view can ask it of every block on
+        /// screen without walking every crew again for each one.</summary>
+        public bool Occupied(TerritoryBlockId blockId) => occupiedBlocks.Contains(blockId);
 
         void Awake()
         {
@@ -87,10 +105,13 @@ namespace RoadDemo
                         quarter?.Name ?? block.QuarterId.ToString(),
                         block.Name,
                         new TerritoryBounds(bounds.xMin, bounds.yMin, bounds.width, bounds.height),
-                        "CoreTerritoryPlan.StableId"));
+                        "CoreTerritoryPlan.StableId",
+                        block.Kind));
                 }
             }
 
+            geography = new TerritoryGeography(definitions, GeographySettings(), OffGridAreas());
+            BindBusinessGeography();
             state = new TerritorySimulationState(definitions);
             truth = new TerritoryTruthQuery(state, this, this);
             RegisterOrganizationBlocks();
@@ -119,6 +140,62 @@ namespace RoadDemo
                 TerritoryTickChannel.DerivedControl,
                 Math.Max(0.01f, controlHours));
             scheduler.Ticked += OnTerritoryTick;
+        }
+
+        /// <summary>
+        /// The city's own street widths, handed to the geography so adjacency and road
+        /// space are measured against the streets that were actually laid rather than a
+        /// constant. Core publishes them; a host with no Core falls back to Core's
+        /// measures, which every district in this project is built on the beat of.
+        /// </summary>
+        static TerritoryGeographySettings GeographySettings() =>
+            new TerritoryGeographySettings(
+                CoreLayout.AlleyWidth, CoreLayout.StreetWidth, CoreLayout.BoulevardWidth);
+
+        /// <summary>
+        /// The ground that carries no canonical block, named rather than left silent: the
+        /// port, the field and the suburbs are quarters of the CITY, not of the territory
+        /// plan, and Phase 1 says so out loud instead of letting a failed block lookup
+        /// stand in for the statement. The primary structure (DistrictKind.Pad) IS the
+        /// territory, so it is not among them.
+        /// </summary>
+        List<TerritoryOffGridArea> OffGridAreas()
+        {
+            var areas = new List<TerritoryOffGridArea>();
+            var plans = builder?.DistrictPlans;
+            if (plans == null)
+                return areas;
+
+            for (var i = 0; i < plans.Count; i++)
+            {
+                var district = plans[i];
+                if (district.Kind == DistrictKind.Pad)
+                    continue;
+                areas.Add(new TerritoryOffGridArea(
+                    district.Name,
+                    district.Kind.ToString(),
+                    new TerritoryBounds(district.World.xMin, district.World.yMin,
+                                        district.World.width, district.World.height),
+                    "outside the territory plan; no canonical blocks in Phase 1"));
+            }
+
+            return areas;
+        }
+
+        /// <summary>
+        /// Resolve every simulated business to its canonical block, once, off plan data.
+        /// The business pass runs before this one (RoadDemoBuilder.BuildBusinessSimulation),
+        /// so the catalogue is complete and the mapping cannot depend on which blocks
+        /// happen to be streamed in.
+        /// </summary>
+        void BindBusinessGeography()
+        {
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            if (geography == null || business == null || !business.Populated)
+                return;
+
+            geography.BindBusinesses(new LivingCity.Business.BusinessGeographySites(
+                business.Catalog, business.Directory));
         }
 
         void Update()
@@ -160,17 +237,27 @@ namespace RoadDemo
             scheduler.AdvanceTo(clock.Day * 24.0 + clock.Hour + debugTimeOffset);
         }
 
+        /// <summary>The canonical block a world point is on. One implementation, the
+        /// geography's, so UI and simulation cannot resolve the same point differently.</summary>
         public bool TryGetBlockAtWorld(Vector3 world, out TerritoryBlockId blockId)
         {
-            var block = builder?.Territories?.BlockAt(world);
-            if (block == null)
-            {
-                blockId = default;
-                return false;
-            }
+            blockId = default;
+            return geography != null &&
+                   geography.TryGetBlockAt(new TerritoryPoint(world.x, world.z), out blockId);
+        }
 
-            blockId = TerritoryIdentity.ExistingBlock(block.StableId);
-            return true;
+        /// <summary>
+        /// Where a body standing here belongs, given where it stood last tick: on a block
+        /// that block, on the street the block it just left while it is within half the
+        /// widest street, and otherwise nowhere. Road space belongs to nobody, and a man
+        /// in the middle of a boulevard is never quietly handed to the nearest block.
+        /// </summary>
+        public bool TryResolveStanding(
+            Vector3 world, TerritoryBlockId previous, out TerritoryBlockId blockId)
+        {
+            blockId = default;
+            return geography != null && geography.TryResolveStanding(
+                new TerritoryPoint(world.x, world.z), previous, out blockId);
         }
 
         public bool TryGetBlock(int legacyBlockId, out TerritoryBlockId blockId)
@@ -199,12 +286,19 @@ namespace RoadDemo
         {
             sampledLocations.Clear();
             var changed = false;
-            VisitActors((unit, actor, blockId) =>
+            var blockless = 0;
+            VisitActors((unit, actor, observation, blockId) =>
             {
-                var observation = Observation(unit, actor);
+                if (!blockId.IsValid)
+                {
+                    blockless++;
+                    return;
+                }
+
                 sampledLocations[new ActorKey(observation.GangId, observation.CharacterId)] =
                     new ActorLocation(blockId, observation);
             });
+            BlocklessActors = blockless;
 
             foreach (var pair in actorLocations)
             {
@@ -241,6 +335,11 @@ namespace RoadDemo
             var swap = actorLocations;
             actorLocations = sampledLocations;
             sampledLocations = swap;
+
+            occupiedBlocks.Clear();
+            foreach (var pair in actorLocations)
+                occupiedBlocks.Add(pair.Value.BlockId);
+
             if (changed)
                 ObservationVersion++;
         }
@@ -251,16 +350,25 @@ namespace RoadDemo
             if (into == null)
                 return;
 
-            VisitActors((unit, actor, actorBlockId) =>
+            VisitActors((unit, actor, observation, actorBlockId) =>
             {
                 if (actorBlockId == blockId)
-                    into.Add(Observation(unit, actor));
+                    into.Add(observation);
             });
         }
 
-        void VisitActors(Action<DemoCrews.Unit, CrewWalker, TerritoryBlockId> visit)
+        /// <summary>
+        /// Every actor Presence will need - the outfit's men and the rivals', crews and
+        /// the lieutenants who lead them - with the block each stands on. The block is
+        /// resolved AGAINST WHERE THE MAN STOOD LAST TICK, so a man on a pavement or
+        /// crossing a street keeps the block he came from and produces exactly one
+        /// leave/enter pair per crossing rather than a flutter at every kerb. Police
+        /// units stay out: they are the city's, not a gang's.
+        /// </summary>
+        void VisitActors(
+            Action<DemoCrews.Unit, CrewWalker, TerritoryActorObservation, TerritoryBlockId> visit)
         {
-            if (crews == null || builder?.Territories?.Plan == null || visit == null)
+            if (crews == null || geography == null || visit == null)
                 return;
 
             for (var i = 0; i < crews.Units.Count; i++)
@@ -274,9 +382,14 @@ namespace RoadDemo
                     if (actor == null || actor.Dead || actor.Tf == null ||
                         !actor.Tf.gameObject.activeInHierarchy)
                         continue;
-                    if (!TryGetBlockAtWorld(actor.Tf.position, out var blockId))
-                        continue;
-                    visit(unit, actor, blockId);
+
+                    var observation = Observation(unit, actor);
+                    var key = new ActorKey(observation.GangId, observation.CharacterId);
+                    var previous = actorLocations.TryGetValue(key, out var last)
+                        ? last.BlockId
+                        : default;
+                    TryResolveStanding(actor.Tf.position, previous, out var blockId);
+                    visit(unit, actor, observation, blockId);
                 }
             }
         }

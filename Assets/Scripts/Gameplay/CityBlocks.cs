@@ -1,19 +1,24 @@
 using System.Collections.Generic;
 using UnityEngine;
 using LivingCity.Generation;
+using LivingCity.Territory;
 
 namespace LivingCity.Gameplay
 {
     /// <summary>
-    /// The city's blocks as runtime data: id, zone, world-XZ rects, centre. CityGrid is
-    /// generation-time only (null at Play in a saved scene), so runtime block identity
-    /// has always been the ground-slab name parse - "ground_{zone}_{blockId}[_{x}_{y}]"
-    /// under Generated City/Ground. That parse now lives in three private collectors
-    /// (BlockOverlayHud, PropertyDirector, StrategicMapHud); this registry is the fourth
-    /// consumer and the first SHARED one, built for the strategy layer (territory,
-    /// orders, distances). The three existing private collectors are left untouched on
-    /// purpose - they belong to other passes and reworking them buys nothing but risk;
-    /// new code should read from here.
+    /// The city's blocks as runtime data: id, zone, world-XZ rects, centre.
+    ///
+    /// This is a COMPATIBILITY SHIM over the canonical geography, not a second survey of
+    /// the city. Where a territory plan exists (every Core scene, which is the game), the
+    /// table is projected from <see cref="ITerritoryGeography"/>: same rectangles, same
+    /// ids, so the ledger's orders, the strategic map and the simulation all name one
+    /// physical block the same way. Only a scene with NO canonical plan - the older
+    /// CityBuilder-generated city - falls back to the historical ground-slab name parse
+    /// ("ground_{zone}_{blockId}[_{x}_{y}]" under Generated City/Ground), which is what
+    /// runtime identity there has always been.
+    ///
+    /// New code should read canonical geography directly; this exists for the consumers
+    /// that speak the legacy integer block id (PersonnelAlmanac orders, StrategicMapHud).
     /// </summary>
     public static class CityBlocks
     {
@@ -33,6 +38,7 @@ namespace LivingCity.Gameplay
         static readonly List<BlockInfo> Known = new List<BlockInfo>();
         static readonly Dictionary<int, BlockInfo> ById = new Dictionary<int, BlockInfo>();
         static bool collected;
+        static ITerritoryGeography canonical;
 
         public static IReadOnlyList<BlockInfo> Blocks
         {
@@ -86,9 +92,19 @@ namespace LivingCity.Gameplay
 
         static void EnsureCollected()
         {
-            if (collected)
+            // The canonical plan appears when the city finishes building, which can be
+            // after a first, empty question. Rebuild once when it does, and never after.
+            var geography = RoadDemo.TerritoryRuntime.Instance?.Geography;
+            if (collected && (geography == null || ReferenceEquals(geography, canonical)))
                 return;
+
+            Known.Clear();
+            ById.Clear();
             collected = true;
+            canonical = geography;
+
+            if (CollectCanonical(geography))
+                return;
 
             var city = GameObject.Find("Generated City");
             var ground = city ? city.transform.Find("Ground") : null;
@@ -133,6 +149,58 @@ namespace LivingCity.Gameplay
             }
         }
 
+        /// <summary>The canonical projection: one entry per plan block, its world bounds
+        /// as its single slab. A block the plan gives no legacy number is skipped rather
+        /// than renumbered - a made-up integer id is exactly the divergence this shim
+        /// exists to end.</summary>
+        static bool CollectCanonical(ITerritoryGeography geography)
+        {
+            if (geography == null)
+                return false;
+
+            var ids = geography.BlockIds;
+            for (var i = 0; i < ids.Count; i++)
+            {
+                if (!geography.TryGetBlock(ids[i], out var definition) ||
+                    definition.LegacyBlockId < 0 || ById.ContainsKey(definition.LegacyBlockId))
+                    continue;
+
+                var bounds = definition.WorldBounds;
+                var rect = new Rect(bounds.XMin, bounds.ZMin, bounds.Width, bounds.Depth);
+                var block = new BlockInfo
+                {
+                    Id = definition.LegacyBlockId,
+                    Zone = ZoneOf(definition.SourceKind),
+                    Union = rect,
+                };
+                block.Slabs.Add(rect);
+                ById.Add(block.Id, block);
+                Known.Add(block);
+            }
+
+            return Known.Count > 0;
+        }
+
+        /// <summary>The plan's word for what a block is, in the zone vocabulary the
+        /// legacy consumers colour and label with. Presentation only - no rule of the
+        /// simulation reads it.</summary>
+        static BlockZone ZoneOf(string sourceKind)
+        {
+            if (string.IsNullOrEmpty(sourceKind))
+                return BlockZone.ResidentialHigh;
+            if (sourceKind == "park")
+                return BlockZone.Park;
+            if (sourceKind == "apron")
+                return BlockZone.Parking;
+            if (sourceKind == "quay")
+                return BlockZone.Port;
+            if (sourceKind == "bank")
+                return BlockZone.Bank;
+            if (sourceKind.StartsWith("yard-"))
+                return BlockZone.Industrial;
+            return BlockZone.ResidentialHigh;
+        }
+
         // Static state outlives Play when domain reload is off - same fix as OverlayRegistry.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
@@ -140,6 +208,7 @@ namespace LivingCity.Gameplay
             Known.Clear();
             ById.Clear();
             collected = false;
+            canonical = null;
         }
     }
 }

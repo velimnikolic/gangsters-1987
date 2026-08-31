@@ -42,6 +42,7 @@ namespace RoadDemo
             runtime = territoryRuntime;
             sections.Clear();
             sections.Add(new IdentitySection());
+            sections.Add(new GeographySection());
             sections.Add(new ResponsibilitySection());
             sections.Add(new PhysicalActorsSection());
             // The businesses page installs itself rather than waiting to be registered:
@@ -239,6 +240,73 @@ namespace RoadDemo
                     .Append(bounds.Width.ToString("0.0")).Append(" x ")
                     .Append(bounds.Depth.ToString("0.0")).AppendLine(" m")
                     .Append("identity source: ").Append(definition.IdentitySource);
+            }
+        }
+
+        /// <summary>
+        /// What the canonical geography says about this block: which neighborhood it
+        /// aggregates into, which blocks the graph calls its neighbours, how many
+        /// businesses stand on it, and whether the city-wide validation found anything.
+        /// Everything here is read from the one geography facade - if this page and the
+        /// map ever disagree, one of them is not reading it.
+        /// </summary>
+        sealed class GeographySection : ITerritoryDiagnosticsSection
+        {
+            public string Title => "Geography (canonical)";
+
+            public void Append(
+                StringBuilder text, TerritoryBlockTruth block, TerritoryRuntime runtime)
+            {
+                var geography = runtime?.Geography;
+                if (geography == null)
+                {
+                    text.Append("no canonical geography in this scene");
+                    return;
+                }
+
+                var id = block.Definition.Id;
+                var centre = block.Definition.Center;
+                text.Append("centre: ").Append(centre.X.ToString("0.0")).Append(", ")
+                    .Append(centre.Z.ToString("0.0")).AppendLine();
+
+                if (geography.TryGetNeighborhood(
+                        block.Definition.NeighborhoodId, out var hood))
+                    text.Append("neighborhood holds ").Append(hood.BlockIds.Count)
+                        .Append(" blocks, touches ").Append(hood.Neighbours.Count)
+                        .AppendLine(" other neighborhoods");
+
+                var neighbours = geography.Neighbours(id);
+                text.Append("block neighbours: ").Append(neighbours.Count);
+                for (var i = 0; i < neighbours.Count && i < 6; i++)
+                {
+                    text.AppendLine();
+                    text.Append("  · ");
+                    if (geography.TryGetBlock(neighbours[i], out var other))
+                        text.Append(other.DisplayName);
+                    else
+                        text.Append(neighbours[i].Value);
+                }
+
+                if (neighbours.Count > 6)
+                    text.AppendLine().Append("  · … ").Append(neighbours.Count - 6).Append(" more");
+
+                var businesses = geography.BusinessesOf(id);
+                text.AppendLine().Append("businesses on this block: ").Append(businesses.Count);
+                for (var i = 0; i < businesses.Count && i < 5; i++)
+                    text.AppendLine().Append("  · ").Append(businesses[i].Label)
+                        .Append("  [").Append(businesses[i].Binding).Append(']');
+                if (businesses.Count > 5)
+                    text.AppendLine().Append("  · … ").Append(businesses.Count - 5).Append(" more");
+
+                var report = geography.Report;
+                text.AppendLine().Append("city: ").Append(report.Blocks).Append(" blocks · ")
+                    .Append(report.Neighborhoods).Append(" neighborhoods · ")
+                    .Append(report.Edges).Append(" edges · ")
+                    .Append(report.PlacedBusinesses).Append(" businesses placed");
+                if (report.UnplacedBusinesses > 0 || report.IsolatedBlocks > 0)
+                    text.AppendLine().Append("faults: ").Append(report.UnplacedBusinesses)
+                        .Append(" unplaced businesses, ").Append(report.IsolatedBlocks)
+                        .Append(" lone blocks (F9 draws them)");
             }
         }
 

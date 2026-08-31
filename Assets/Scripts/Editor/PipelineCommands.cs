@@ -57,6 +57,185 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_geography_tests",
+                    "Run GAN-68 contracts for the canonical geography: blocks, neighborhoods, " +
+                    "the block neighbor graph, road-space resolution and business membership.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "territory", "tests" })]
+        public static object GeographyTests()
+        {
+            var failures = LivingCity.Tests.GeographyTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
+        /// <summary>
+        /// The canonical geography of a real city, judged. Like the business audit it can
+        /// deal its own quarter from a seed - CoreDistrict.Plan is pure data - so the whole
+        /// sweep runs with the editor idle, and it deals the SAME seed twice to prove the
+        /// identity and the graph do not move between runs.
+        /// </summary>
+        [CliCommand("gangsters_geography_audit",
+                    "Count and judge one city's canonical blocks, neighborhoods, block " +
+                    "adjacency and business membership, and prove they are the same twice.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "territory", "audit" })]
+        public static object GeographyAudit(
+            [CliArg("seed", "Deal a Core quarter from this seed and audit THAT plan. " +
+                            "-1 uses the running city when there is one.")] int seed = -1,
+            [CliArg("rows", "List every block with its neighbours and business count.")]
+            bool rows = false,
+            [CliArg("twice", "Deal the same seed a second time and prove the identity and " +
+                             "the graph did not move. Costs a second plan roll, which on a " +
+                             "big seed can outrun the CLI's half-minute.")] bool twice = false)
+        {
+            var live = seed < 0
+                ? UnityEngine.Object.FindAnyObjectByType<RoadDemo.TerritoryRuntime>()
+                : null;
+            var liveGeography = live != null ? live.Geography : null;
+
+            LivingCity.Territory.ITerritoryGeography geography;
+            int citySeed;
+            string source;
+            var failures = new List<string>();
+
+            if (liveGeography != null && liveGeography.BlockIds.Count > 0)
+            {
+                geography = liveGeography;
+                citySeed = -1;
+                source = "live city";
+            }
+            else
+            {
+                citySeed = seed < 0 ? 1987 : seed;
+                var dealt = DealGeography(citySeed, businesses: true);
+                geography = dealt;
+                source = "dealt from seed";
+
+                // Same seed, same city: identity, order and adjacency all have to survive
+                // a second deal, or every id saved in a campaign is worthless. The second
+                // deal is geography only (no businesses), and it is opt-in because one
+                // roll of a big seed already takes most of the CLI's half minute.
+                if (twice)
+                {
+                    var again = DealGeography(citySeed, businesses: false);
+                    if (dealt.BlockIds.Count != again.BlockIds.Count ||
+                        dealt.Report.Edges != again.Report.Edges)
+                        failures.Add("GEO: a second deal of seed " + citySeed +
+                                     " produced a different city.");
+                    else
+                        for (var i = 0; i < dealt.BlockIds.Count; i++)
+                            if (dealt.BlockIds[i] != again.BlockIds[i])
+                            {
+                                failures.Add("GEO: block identity moved between two deals " +
+                                             "of seed " + citySeed + " at index " + i + ".");
+                                break;
+                            }
+                }
+            }
+
+            var report = geography.Report;
+            failures.AddRange(report.Faults);
+
+            return new
+            {
+                passed = failures.Count == 0,
+                seed = citySeed,
+                source,
+                blocks = report.Blocks,
+                neighborhoods = report.Neighborhoods,
+                edges = report.Edges,
+                nested = report.NestedBlocks,
+                isolatedBlocks = report.IsolatedBlocks,
+                businessSitesPlaced = report.PlacedBusinesses,
+                businessSitesUnplaced = report.UnplacedBusinesses,
+                offGrid = geography.OffGridAreas
+                    .Select(area => new { area.Name, area.Kind, area.Classification }).ToArray(),
+                street = new
+                {
+                    alley = geography.Settings.AlleyWidth,
+                    street = geography.Settings.StreetWidth,
+                    boulevard = geography.Settings.BoulevardWidth,
+                    neighbourGap = geography.Settings.NeighbourGap,
+                    roadHysteresis = geography.Settings.RoadHysteresis,
+                },
+                unplaced = geography.UnplacedBusinesses
+                    .Select(business => business.SiteId).ToArray(),
+                notes = report.Notes.ToArray(),
+                failures = failures.ToArray(),
+                rows = rows
+                    ? geography.BlockIds.Select(id =>
+                    {
+                        geography.TryGetBlock(id, out var block);
+                        return new
+                        {
+                            id = id.Value,
+                            name = block?.DisplayName,
+                            legacy = block?.LegacyBlockId ?? -1,
+                            kind = block?.SourceKind,
+                            neighborhood = block?.NeighborhoodName,
+                            centre = new { x = block?.Center.X ?? 0f, z = block?.Center.Z ?? 0f },
+                            neighbours = geography.Neighbours(id).Count,
+                            businesses = geography.BusinessesOf(id).Count,
+                        };
+                    }).ToArray()
+                    : null,
+            };
+        }
+
+        /// <summary>One quarter dealt from a seed, as geography: the same block
+        /// definitions TerritoryRuntime builds, with the businesses bound to them.</summary>
+        static LivingCity.Territory.TerritoryGeography DealGeography(int seed, bool businesses)
+        {
+            var core = new RoadDemo.CoreDistrict();
+            core.Plan(null, seed);
+            core.Frame = RoadDemo.DistrictFrame.Identity;
+
+            var plan = core.Territory;
+            var definitions = new List<LivingCity.Territory.TerritoryBlockDefinition>();
+            if (plan != null)
+                for (var i = 0; i < plan.Blocks.Count; i++)
+                {
+                    var block = plan.Blocks[i];
+                    var quarter = plan.Quarter(block.QuarterId);
+                    var bounds = core.Frame.ToWorldRect(block.LocalBounds);
+                    definitions.Add(new LivingCity.Territory.TerritoryBlockDefinition(
+                        LivingCity.Territory.TerritoryIdentity.ExistingBlock(block.StableId),
+                        block.Id,
+                        LivingCity.Territory.TerritoryIdentity.CoreNeighborhood(
+                            plan.Seed, (int)block.QuarterId),
+                        quarter?.Name ?? block.QuarterId.ToString(),
+                        block.Name,
+                        new LivingCity.Territory.TerritoryBounds(
+                            bounds.xMin, bounds.yMin, bounds.width, bounds.height),
+                        "CoreTerritoryPlan.StableId",
+                        block.Kind));
+                }
+
+            var geography = new LivingCity.Territory.TerritoryGeography(
+                definitions,
+                new LivingCity.Territory.TerritoryGeographySettings(
+                    RoadDemo.CoreLayout.AlleyWidth, RoadDemo.CoreLayout.StreetWidth,
+                    RoadDemo.CoreLayout.BoulevardWidth));
+
+            if (!businesses)
+                return geography;
+
+            var catalog = new LivingCity.Business.BusinessSiteCatalog();
+            catalog.Add(new LivingCity.Business.ResidentialBusinessSites(
+                core.ResidentialBlocks, core.Frame));
+            catalog.Add(new LivingCity.Business.StandaloneBusinessSites(core));
+            catalog.Add(new LivingCity.Business.CompoundBusinessSites(core, null));
+            catalog.Build();
+
+            var directory = new LivingCity.Business.BusinessDirectory();
+            LivingCity.Business.BusinessPopulation.Populate(catalog, seed, directory);
+            geography.BindBusinesses(
+                new LivingCity.Business.BusinessGeographySites(catalog, directory));
+            return geography;
+        }
+
         [CliCommand("gangsters_organization_tests",
                     "Run GAN-55 contracts for Boss identity, hierarchy, soft capacity, " +
                     "responsibility, recruitment, tactical projection, queries and validation.",

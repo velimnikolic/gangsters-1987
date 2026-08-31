@@ -52,6 +52,7 @@ make it call the shared service/model.
 | the play harness, the trace, the reader | `Docs/play-harness.md` |
 | the tactical map (the turf map: survey plate on the wheel, panel, minimap) | `Docs/tactical-map.md` |
 | the city's districts | `Docs/city-districts-plan.md` |
+| the canonical blocks, neighborhoods and the block graph | `Docs/territory-geography.md` |
 | every source of a business, and which provider owns it | `Docs/business-inventory.md` |
 | what the port is made of | `Docs/harbor-detail.md` |
 | the period | `Docs/1987-period-reference.md` |

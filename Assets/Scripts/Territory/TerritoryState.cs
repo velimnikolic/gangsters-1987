@@ -3,7 +3,17 @@ using System.Collections.Generic;
 
 namespace LivingCity.Territory
 {
-    /// <summary>Immutable geography/identity from the authored or generated city plan.</summary>
+    /// <summary>
+    /// THE block model. Every Phase-1 system - Presence, Fear, business compliance,
+    /// derived control, the ledger, the maps - names a block with this record and this
+    /// record only; <see cref="RoadDemo.CoreBlockDefinition"/> is the plan it is read
+    /// from, and anything else that carries block rectangles (Gameplay.CityBlocks, the
+    /// map HUDs' own tables) is presentation or legacy and must be fed from here.
+    ///
+    /// It is deliberately immutable geography and identity: no OwnerGangId, no
+    /// ControlledBy, no capture progress. Who holds a block is derived from signals in
+    /// <see cref="TerritorySimulationState"/>, never stamped on the geography.
+    /// </summary>
     public sealed class TerritoryBlockDefinition
     {
         public TerritoryBlockDefinition(
@@ -13,7 +23,8 @@ namespace LivingCity.Territory
             string neighborhoodName,
             string displayName,
             TerritoryBounds worldBounds,
-            string identitySource)
+            string identitySource,
+            string sourceKind = "")
         {
             if (!id.IsValid)
                 throw new ArgumentException("A territory block requires a canonical ID.", nameof(id));
@@ -25,6 +36,7 @@ namespace LivingCity.Territory
             DisplayName = displayName ?? id.Value;
             WorldBounds = worldBounds;
             IdentitySource = identitySource ?? "";
+            SourceKind = sourceKind ?? "";
         }
 
         public TerritoryBlockId Id { get; }
@@ -33,7 +45,19 @@ namespace LivingCity.Territory
         public string NeighborhoodName { get; }
         public string DisplayName { get; }
         public TerritoryBounds WorldBounds { get; }
+
+        /// <summary>The middle of the block's world footprint - derived, never stored
+        /// twice: a consumer that needs somewhere to march to, plot a label at or measure
+        /// a distance from asks the block rather than re-deriving a rectangle.</summary>
+        public TerritoryPoint Center => WorldBounds.Center;
+
         public string IdentitySource { get; }
+
+        /// <summary>What the plan says the block IS - "res", "park", "yard-lot", "quay",
+        /// "apron", "bank", or the source prefab's name. Presentation reads it (a map card
+        /// wants a zone colour); no simulation rule may branch on it, because it is a
+        /// description of the ground and not of who holds it.</summary>
+        public string SourceKind { get; }
     }
 
     /// <summary>

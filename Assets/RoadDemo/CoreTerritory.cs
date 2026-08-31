@@ -30,8 +30,13 @@ namespace RoadDemo
         public CoreQuarterId QuarterId { get; }
         public Rect LocalBounds { get; }
 
+        /// <summary>What the plan says this block IS - "res", "park", "yard-lot", "quay",
+        /// "apron", "bank", or the source block's own name. The same word the StableId
+        /// ends in, kept as a field so a consumer never has to take the id apart.</summary>
+        public string Kind { get; }
+
         internal CoreBlockDefinition(int id, string stableId, string name, string sourceName,
-                                     CoreQuarterId quarterId, Rect localBounds)
+                                     CoreQuarterId quarterId, Rect localBounds, string kind)
         {
             Id = id;
             StableId = stableId;
@@ -39,6 +44,7 @@ namespace RoadDemo
             SourceName = sourceName;
             QuarterId = quarterId;
             LocalBounds = localBounds;
+            Kind = kind ?? "";
         }
     }
 
@@ -172,7 +178,7 @@ namespace RoadDemo
 
                 var definition = new CoreBlockDefinition(
                     block.BlockId, block.StableId, block.DisplayName, block.Name,
-                    block.QuarterId, block.Box);
+                    block.QuarterId, block.Box, Kind(block));
                 territory._blocks.Add(definition);
                 territory._blockById.Add(definition.Id, definition);
                 quarter.Add(definition.Id);
@@ -194,16 +200,21 @@ namespace RoadDemo
             return byArea != 0 ? byArea : string.CompareOrdinal(a.Name, b.Name);
         }
 
-        static string StableId(int seed, CoreLayout.Block block)
-        {
-            var box = block.Box;
-            string kind = CoreLayout.IsRes(block) ? "res"
+        /// <summary>What a block is, in one word. The StableId ends in it and
+        /// <see cref="CoreBlockDefinition.Kind"/> carries it, so both come from here.</summary>
+        static string Kind(CoreLayout.Block block) =>
+            CoreLayout.IsRes(block) ? "res"
                 : CoreLayout.IsPark(block) ? "park"
                 : CoreLayout.IsYard(block) ? "yard-" + (block.Unit ?? "lot")
                 : CoreLayout.IsQuay(block) ? "quay"
                 : CoreLayout.IsApron(block) ? "apron"
                 : CoreLayout.IsBank(block) ? "bank"
                 : block.Name;
+
+        static string StableId(int seed, CoreLayout.Block block)
+        {
+            var box = block.Box;
+            string kind = Kind(block);
             return $"core:{seed}:{(int)block.QuarterId}:" +
                    $"{Mathf.RoundToInt(box.xMin / CoreLayout.Cell)}:" +
                    $"{Mathf.RoundToInt(box.yMin / CoreLayout.Cell)}:" +
