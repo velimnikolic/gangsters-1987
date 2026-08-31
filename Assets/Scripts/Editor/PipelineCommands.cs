@@ -263,10 +263,15 @@ namespace GangstersTools
         public static object SkillTests()
         {
             var failures = LivingCity.Tests.SkillFoundationTests.Run();
+            // The contracts and the skill names come back with the verdict on purpose:
+            // a stale assembly answers ALL PASS just as cheerfully as a fresh one, and
+            // these two lists are what tell them apart at a glance.
             return new
             {
                 passed = failures.Count == 0,
                 failures = failures.ToArray(),
+                contracts = LivingCity.Tests.SkillFoundationTests.ContractNames(),
+                skills = LivingCity.Tests.SkillFoundationTests.SkillNames(),
             };
         }
 

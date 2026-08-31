@@ -16,26 +16,58 @@ namespace LivingCity.Tests
     /// </summary>
     public static class SkillFoundationTests
     {
+        /// <summary>
+        /// The contracts, named. A table rather than a run of calls so the suite can
+        /// REPORT what it ran: a stale assembly that answers ALL PASS is the trap this
+        /// project has been caught by before, and a caller comparing this list - and
+        /// <see cref="SkillNames"/> - against what it expects can tell a green run from
+        /// a green ghost.
+        /// </summary>
+        static readonly (string Name, Action<List<string>> Check)[] Contracts =
+        {
+            ("SameSeedSameRoster", SameSeedSameRoster),
+            ("SameSeedSameCeilings", SameSeedSameCeilings),
+            ("NeighboursDoNotShareARoll", NeighboursDoNotShareARoll),
+            ("NobodyStartsAboveHisCeiling", NobodyStartsAboveHisCeiling),
+            ("CeilingsSitInTheBandAndCentreOnFifty", CeilingsSitInTheBandAndCentreOnFifty),
+            ("NoPageCanReachTheCeiling", NoPageCanReachTheCeiling),
+            ("TheValueConventionRoundsUpAtTheHalf", TheValueConventionRoundsUpAtTheHalf),
+            ("TheCurveSteepensTowardTheCeiling", TheCurveSteepensTowardTheCeiling),
+            ("TheClimbSlowsAndThenStops", TheClimbSlowsAndThenStops),
+            ("NothingIsBankedPastTheCeiling", NothingIsBankedPastTheCeiling),
+            ("TheCalendarAgreesWithTheCampaign", TheCalendarAgreesWithTheCampaign),
+            ("TheYearsTakeTheFieldTradesOnly", TheYearsTakeTheFieldTradesOnly),
+            ("YoungMenAreLeftAlone", YoungMenAreLeftAlone),
+            ("DecayStopsAtOneStarAndIsPrinted", DecayStopsAtOneStarAndIsPrinted),
+            ("EverybodyIsDealtADateOfBirth", EverybodyIsDealtADateOfBirth),
+        };
+
         public static List<string> Run()
         {
             var failures = new List<string>();
-
-            SameSeedSameCeilings(failures);
-            NeighboursDoNotShareARoll(failures);
-            NobodyStartsAboveHisCeiling(failures);
-            CeilingsSitInTheBandAndCentreOnFifty(failures);
-            NoPageCanReachTheCeiling(failures);
-            TheValueConventionRoundsUpAtTheHalf(failures);
-            TheCurveSteepensTowardTheCeiling(failures);
-            TheClimbSlowsAndThenStops(failures);
-            NothingIsBankedPastTheCeiling(failures);
-            TheCalendarAgreesWithTheCampaign(failures);
-            TheYearsTakeTheFieldTradesOnly(failures);
-            YoungMenAreLeftAlone(failures);
-            DecayStopsAtOneStarAndIsPrinted(failures);
-            EverybodyIsDealtADateOfBirth(failures);
-
+            for (var i = 0; i < Contracts.Length; i++)
+                Contracts[i].Check(failures);
             return failures;
+        }
+
+        /// <summary>What this build actually ran, in order.</summary>
+        public static string[] ContractNames()
+        {
+            var names = new string[Contracts.Length];
+            for (var i = 0; i < Contracts.Length; i++)
+                names[i] = Contracts[i].Name;
+            return names;
+        }
+
+        /// <summary>The eleven skills as this build knows them - the cheapest tell that
+        /// a green run came off the assembly the source describes and not off a stale
+        /// one still carrying Firearms and Arson.</summary>
+        public static string[] SkillNames()
+        {
+            var names = new string[AttributeScale.Count];
+            for (var s = 0; s < AttributeScale.Count; s++)
+                names[s] = ((CharacterAttribute)s).ToString();
+            return names;
         }
 
         /// <summary>A man with one ceiling and nothing else on him.</summary>
@@ -52,6 +84,42 @@ namespace LivingCity.Tests
         }
 
         // ------------------------------------------------------------- determinism
+
+        /// <summary>The whole man, twice: stats, ceilings and date of birth. The three
+        /// arrays are asserted together because a bug that re-deals one of them and not
+        /// the others is exactly the kind that hides behind a suite that checks each on
+        /// its own roster.</summary>
+        static void SameSeedSameRoster(List<string> failures)
+        {
+            var first = RosterSeeder.Generate(1987);
+            var second = RosterSeeder.Generate(1987);
+
+            if (first.Members.Count != second.Members.Count)
+            {
+                failures.Add($"SameSeedSameRoster: {first.Members.Count} men one time " +
+                             $"and {second.Members.Count} the next.");
+                return;
+            }
+
+            for (var i = 0; i < first.Members.Count; i++)
+            {
+                var a = first.Members[i];
+                var b = second.Members[i];
+                if (a.BirthYear != b.BirthYear || a.BirthDayOfYear != b.BirthDayOfYear)
+                    failures.Add($"SameSeedSameRoster: {a.FullName} was born " +
+                                 $"{a.BirthYear} then {b.BirthYear}.");
+                if (a.Loyalty != b.Loyalty)
+                    failures.Add($"SameSeedSameRoster: {a.FullName}'s loyalty moved.");
+
+                for (var s = 0; s < AttributeScale.Count; s++)
+                {
+                    var skill = (CharacterAttribute)s;
+                    if (a.GetHalfSteps(skill) != b.GetHalfSteps(skill))
+                        failures.Add($"SameSeedSameRoster: {a.FullName}'s {skill} was " +
+                                     $"{a.GetHalfSteps(skill)} then {b.GetHalfSteps(skill)}.");
+                }
+            }
+        }
 
         static void SameSeedSameCeilings(List<string> failures)
         {
